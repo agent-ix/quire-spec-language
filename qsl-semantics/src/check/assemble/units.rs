@@ -135,35 +135,6 @@ fn reduce(number: &ExactNumberForm, limits: AssemblyLimits) -> Result<Rational, 
         .map_err(|_| error(AssemblyCause::ZeroDenominator, number.span))
 }
 
-/// The edges of one graph as the components that reach themselves, each as
-/// its dependency edges by name.
-fn cycles(names: &[&str], spans: &[Span], edges: &[Vec<usize>], errors: &mut Vec<AssemblyError>) {
-    for component in strongly_connected(edges) {
-        let cyclic = component.len() > 1
-            || component
-                .first()
-                .is_some_and(|member| edges[*member].contains(member));
-        if !cyclic {
-            continue;
-        }
-        let mut cycle = Vec::new();
-        for &member in &component {
-            for &target in &edges[member] {
-                if component.contains(&target) {
-                    cycle.push((names[member].to_owned(), names[target].to_owned()));
-                }
-            }
-        }
-        cycle.sort();
-        cycle.dedup();
-        let first = component.iter().min().copied().unwrap_or_default();
-        errors.push(error(
-            AssemblyCause::QuantityCycle { edges: cycle },
-            spans[first],
-        ));
-    }
-}
-
 /// A base dimension a normalized map names: a base dimension of the unit,
 /// by its index, or an imported one, by its key.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -242,6 +213,10 @@ pub(super) struct ImportedDimension {
     pub(super) has_unit: bool,
     /// Its model selection's span, where a refusal of it is located.
     pub(super) selection: Span,
+    /// The package dimensions its terms name, by `Alias::Name`.
+    pub(super) terms: Vec<String>,
+    /// Its place in the selections' order, then in its package's order.
+    pub(super) order: usize,
 }
 
 /// The dimensions of the unit's admitted domain packages, by `Alias::Name`,
@@ -281,17 +256,20 @@ impl Imported {
                             .iter()
                             .any(|unit| unit.dimension == dimension.key),
                         selection: *selection,
+                        terms: dimension
+                            .terms
+                            .iter()
+                            .filter_map(|(term, _)| {
+                                let named = model.dimensions.iter().find(|d| &d.key == term)?;
+                                Some(format!("{alias}::{}", named.name))
+                            })
+                            .collect(),
+                        order: imported.dimensions.len(),
                     },
                 );
             }
         }
         imported
-    }
-
-    fn by_key(&self, key: &NodeKey) -> Option<&ImportedDimension> {
-        self.dimensions
-            .values()
-            .find(|dimension| &dimension.key == key)
     }
 }
 
@@ -339,6 +317,7 @@ fn provisional(
     units: &[UnitForm],
     unit_dimension: &[Option<usize>],
     unit_edges: &[Vec<usize>],
+    unknown_target: &[bool],
     scales: &[Option<Rational>],
     offsets: &[Option<Rational>],
     owner: &SourceOwner,
@@ -364,7 +343,14 @@ fn provisional(
         }
     }
     for (index, form) in units.iter().enumerate() {
-        let composed = compose(index, unit_dimension, unit_edges, scales, offsets);
+        let composed = compose(
+            index,
+            unit_dimension,
+            unit_edges,
+            unknown_target,
+            scales,
+            offsets,
+        );
         fixed
             .units
             .entry(form.name.name.clone())
@@ -380,6 +366,7 @@ fn compose(
     index: usize,
     unit_dimension: &[Option<usize>],
     unit_edges: &[Vec<usize>],
+    unknown_target: &[bool],
     scales: &[Option<Rational>],
     offsets: &[Option<Rational>],
 ) -> Option<(Rational, Rational)> {
@@ -392,6 +379,9 @@ fn compose(
         }
         chain.push(target);
         at = target;
+    }
+    if *unknown_target.get(at)? {
+        return None;
     }
     // Fold from the root: `root = s_t × (s × v + o) + o_t`.
     let mut scale = Rational::from_integer(Integer::one());
@@ -406,6 +396,389 @@ fn compose(
         scale = scale.mul(unit_scale);
     }
     Some((scale, offset))
+}
+
+/// A node of FR-142's turn list: a local dimension, or a dimension of an
+/// admitted domain package by `Alias::Name`.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Turn {
+    Local(usize),
+    Imported(String),
+}
+
+/// What the unit-graph topology check reads, once every name that types a
+/// unit and every number resolved.
+struct Walk<'a> {
+    dimensions: &'a [DimensionForm],
+    units: &'a [UnitForm],
+    dimension_names: &'a [&'a str],
+    dimension_spans: &'a [Span],
+    unit_names: &'a [&'a str],
+    unit_spans: &'a [Span],
+    dimension_index: &'a BTreeMap<&'a str, usize>,
+    /// Each dimension's local term edges, in term order.
+    dimension_edges: &'a [Vec<usize>],
+    /// Whether a dimension has a term naming no dimension.
+    unknown_term: &'a [bool],
+    unit_dimension: &'a [usize],
+    unit_edges: &'a [Vec<usize>],
+    /// Whether a unit's target names no unit.
+    unknown_target: &'a [bool],
+    scales: &'a [Rational],
+    offsets: &'a [Rational],
+    imported: &'a Imported,
+    maps: &'a [BTreeMap<BaseRef, Integer>],
+}
+
+impl Walk<'_> {
+    fn topology(&self, fault: TopologyFault, declarations: Vec<&str>, span: Span) -> AssemblyError {
+        error(
+            AssemblyCause::UnitGraphTopology {
+                fault,
+                declarations: declarations.into_iter().map(str::to_owned).collect(),
+            },
+            span,
+        )
+    }
+
+    /// FR-142's turn list: a local dimension takes its turn at its own
+    /// declaration; a dimension of an admitted package takes its turn the
+    /// first time a declaration reaches it, before that declaration and
+    /// before the nodes reached through its terms; the package dimensions
+    /// no declaration reached follow, in the order of their selections.
+    fn turns(&self) -> Vec<Turn> {
+        enum Declaration {
+            Dimension(usize),
+            Unit(usize),
+        }
+        let mut declarations: Vec<(usize, Declaration)> = self
+            .dimension_spans
+            .iter()
+            .enumerate()
+            .map(|(index, span)| (span.start, Declaration::Dimension(index)))
+            .chain(
+                self.unit_spans
+                    .iter()
+                    .enumerate()
+                    .map(|(index, span)| (span.start, Declaration::Unit(index))),
+            )
+            .collect();
+        declarations.sort_by_key(|(start, _)| *start);
+
+        let mut turns = Vec::new();
+        let mut reached: BTreeSet<Turn> = BTreeSet::new();
+        // The nodes a declaration mentions, in mention order, expanded once
+        // depth-first through their own terms.
+        let mut mention = |roots: Vec<Turn>, turns: &mut Vec<Turn>| {
+            let mut stack: Vec<Turn> = roots.into_iter().rev().collect();
+            while let Some(node) = stack.pop() {
+                if !reached.insert(node.clone()) {
+                    continue;
+                }
+                let children: Vec<Turn> = match &node {
+                    Turn::Local(index) => self.dimensions[*index]
+                        .terms
+                        .iter()
+                        .filter_map(|term| self.named(&term.name.name))
+                        .collect(),
+                    Turn::Imported(name) => {
+                        let Some(dimension) = self.imported.dimensions.get(name.as_str()) else {
+                            continue;
+                        };
+                        turns.push(node.clone());
+                        dimension
+                            .terms
+                            .iter()
+                            .map(|term| Turn::Imported(term.clone()))
+                            .collect()
+                    }
+                };
+                stack.extend(children.into_iter().rev());
+            }
+        };
+        for (_, declaration) in &declarations {
+            match declaration {
+                Declaration::Dimension(index) => {
+                    let terms = self.dimensions[*index]
+                        .terms
+                        .iter()
+                        .filter_map(|term| self.named(&term.name.name))
+                        .collect();
+                    mention(terms, &mut turns);
+                    turns.push(Turn::Local(*index));
+                }
+                Declaration::Unit(index) => {
+                    let mut roots = vec![Turn::Local(self.unit_dimension[*index])];
+                    if let Some(&target) = self.unit_edges[*index].first() {
+                        roots.push(Turn::Local(self.unit_dimension[target]));
+                    }
+                    mention(roots, &mut turns);
+                }
+            }
+        }
+        let mut rest: Vec<(&String, usize)> = self
+            .imported
+            .dimensions
+            .iter()
+            .map(|(name, dimension)| (name, dimension.order))
+            .collect();
+        rest.sort_by_key(|(_, order)| *order);
+        for (name, _) in rest {
+            let node = Turn::Imported(name.clone());
+            if reached.insert(node.clone()) {
+                turns.push(node);
+            }
+        }
+        turns
+    }
+
+    /// The node a dimension name denotes, when it names one.
+    fn named(&self, name: &str) -> Option<Turn> {
+        match self.dimension_index.get(name) {
+            Some(&index) => Some(Turn::Local(index)),
+            None => self
+                .imported
+                .dimensions
+                .contains_key(name)
+                .then(|| Turn::Imported(name.to_owned())),
+        }
+    }
+
+    /// The first defect of the first node in turn-list order that has one.
+    fn first_defect(&self) -> Option<AssemblyError> {
+        let components = strongly_connected(self.dimension_edges);
+        let mut component_of = vec![0; self.dimensions.len()];
+        let mut cyclic = vec![false; self.dimensions.len()];
+        for (number, component) in components.iter().enumerate() {
+            let loops = component.len() > 1
+                || component
+                    .first()
+                    .is_some_and(|member| self.dimension_edges[*member].contains(member));
+            for &member in component {
+                component_of[member] = number;
+                cyclic[member] = loops;
+            }
+        }
+        // A dimension that has a cycle, an unknown term, or a term that
+        // reaches one has no normalized map.
+        let mut mapless = vec![false; self.dimensions.len()];
+        for component in &components {
+            let broken = component.iter().any(|&member| {
+                cyclic[member]
+                    || self.unknown_term[member]
+                    || self.dimension_edges[member]
+                        .iter()
+                        .any(|&term| mapless[term])
+            });
+            for &member in component {
+                mapless[member] = broken;
+            }
+        }
+        let unit_components = strongly_connected(self.unit_edges);
+        let mut unit_cyclic = vec![false; self.units.len()];
+        for component in &unit_components {
+            let loops = component.len() > 1
+                || component
+                    .first()
+                    .is_some_and(|member| self.unit_edges[*member].contains(member));
+            if loops {
+                for &member in component {
+                    unit_cyclic[member] = true;
+                }
+            }
+        }
+        let context = Context {
+            components: &components,
+            component_of: &component_of,
+            cyclic: &cyclic,
+            mapless: &mapless,
+            unit_cyclic: &unit_cyclic,
+        };
+        self.turns().into_iter().find_map(|turn| match turn {
+            Turn::Local(index) => self.local_turn(index, &context),
+            Turn::Imported(name) => self.imported_turn(&name, &context),
+        })
+    }
+
+    /// The first local unit, in source order, whose dimension has a normalized
+    /// map carrying `base`.
+    fn carrier(&self, base: &BaseRef, context: &Context<'_>) -> Option<usize> {
+        (0..self.units.len()).find(|&unit| {
+            let dimension = self.unit_dimension[unit];
+            !context.mapless[dimension] && self.maps[dimension].contains_key(base)
+        })
+    }
+
+    fn imported_turn(&self, name: &str, context: &Context<'_>) -> Option<AssemblyError> {
+        let dimension = self.imported.dimensions.get(name)?;
+        let base = dimension.map.len() == 1 && dimension.map.contains_key(&dimension.key);
+        if !base || dimension.has_unit {
+            return None;
+        }
+        let unit = self.carrier(&BaseRef::Imported(dimension.key.clone()), context)?;
+        Some(error(
+            AssemblyCause::UnanchoredBaseDimension {
+                dimension: dimension.identity.clone(),
+                unit: self.unit_names[unit].to_owned(),
+            },
+            dimension.selection,
+        ))
+    }
+
+    fn local_turn(&self, index: usize, context: &Context<'_>) -> Option<AssemblyError> {
+        let form = &self.dimensions[index];
+        // Step (-1): the dimension's own terms.
+        for term in &form.terms {
+            if self.named(&term.name.name).is_none() {
+                return Some(error(
+                    AssemblyCause::UnresolvedQuantityName {
+                        name: term.name.name.clone(),
+                    },
+                    term.name.span,
+                ));
+            }
+        }
+        if context.cyclic[index] {
+            return Some(error(
+                AssemblyCause::QuantityCycle {
+                    edges: self.dimension_cycle(index, context),
+                },
+                self.dimension_spans[index],
+            ));
+        }
+        let local: Vec<usize> = (0..self.units.len())
+            .filter(|&unit| self.unit_dimension[unit] == index)
+            .collect();
+        // Step (0): a base dimension no unit anchors.
+        if form.terms.is_empty() && local.is_empty() {
+            let unit = self.carrier(&BaseRef::Source(index), context)?;
+            return Some(error(
+                AssemblyCause::UnanchoredBaseDimension {
+                    dimension: self.dimension_names[index].to_owned(),
+                    unit: self.unit_names[unit].to_owned(),
+                },
+                self.dimension_spans[index],
+            ));
+        }
+        // Rows 1 to 3, unit by unit in source order.
+        for &unit in &local {
+            if self.scales[unit].is_zero() {
+                return Some(self.topology(
+                    TopologyFault::ZeroScale,
+                    vec![self.unit_names[unit]],
+                    self.unit_spans[unit],
+                ));
+            }
+            if self.unknown_target[unit] {
+                let target = self.units[unit].target.as_ref()?;
+                return Some(error(
+                    AssemblyCause::UnresolvedQuantityName {
+                        name: target.name.clone(),
+                    },
+                    target.span,
+                ));
+            }
+            if let Some(&target) = self.unit_edges[unit].first() {
+                if self.unit_dimension[target] != index {
+                    return Some(self.topology(
+                        TopologyFault::CrossDimensionTarget,
+                        vec![self.unit_names[unit], self.unit_names[target]],
+                        self.unit_spans[unit],
+                    ));
+                }
+            }
+        }
+        // Rows 4 and 5: the targetless units.
+        let roots: Vec<usize> = local
+            .iter()
+            .copied()
+            .filter(|&unit| self.units[unit].target.is_none())
+            .collect();
+        match roots.as_slice() {
+            [] => {}
+            [root] => {
+                let one = Rational::from_integer(Integer::one());
+                if self.scales[*root] != one || !self.offsets[*root].is_zero() {
+                    return Some(self.topology(
+                        TopologyFault::NonIdentityRoot,
+                        vec![self.unit_names[*root]],
+                        self.unit_spans[*root],
+                    ));
+                }
+            }
+            [_, second, ..] => {
+                let mut names = vec![self.dimension_names[index]];
+                names.extend(roots.iter().map(|root| self.unit_names[*root]));
+                return Some(self.topology(
+                    TopologyFault::TwoRoots,
+                    names,
+                    self.unit_spans[*second],
+                ));
+            }
+        }
+        // Row 6: the cycle that holds the least cyclic unit.
+        let least = local
+            .iter()
+            .copied()
+            .find(|&unit| context.unit_cyclic[unit])?;
+        let mut edges = Vec::new();
+        let mut at = least;
+        while let Some(&target) = self.unit_edges[at].first() {
+            edges.push((
+                self.unit_names[at].to_owned(),
+                self.unit_names[target].to_owned(),
+            ));
+            at = target;
+            if at == least {
+                break;
+            }
+        }
+        Some(error(
+            AssemblyCause::QuantityCycle { edges },
+            self.unit_spans[least],
+        ))
+    }
+
+    /// The term edges of the cycle `member` belongs to, in order from the
+    /// cycle's dimension declared first.
+    fn dimension_cycle(&self, member: usize, context: &Context<'_>) -> Vec<(String, String)> {
+        let component = &context.components[context.component_of[member]];
+        let Some(&first) = component.iter().min() else {
+            return Vec::new();
+        };
+        let mut edges = Vec::new();
+        let mut seen: BTreeSet<(usize, usize)> = BTreeSet::new();
+        let mut visited = BTreeSet::from([first]);
+        let mut stack = vec![(first, 0_usize)];
+        while let Some((node, next)) = stack.pop() {
+            let Some(&target) = self.dimension_edges[node].get(next) else {
+                continue;
+            };
+            stack.push((node, next + 1));
+            if context.component_of[target] != context.component_of[member] {
+                continue;
+            }
+            if seen.insert((node, target)) {
+                edges.push((
+                    self.dimension_names[node].to_owned(),
+                    self.dimension_names[target].to_owned(),
+                ));
+            }
+            if visited.insert(target) {
+                stack.push((target, 0));
+            }
+        }
+        edges
+    }
+}
+
+/// What the dimension graph and the unit graph decide before the walk.
+struct Context<'a> {
+    components: &'a [Vec<usize>],
+    component_of: &'a [usize],
+    cyclic: &'a [bool],
+    mapless: &'a [bool],
+    unit_cyclic: &'a [bool],
 }
 
 /// The dimensions and units of one unit, admitted (FR-091 "Dimension and
@@ -444,9 +817,10 @@ pub(super) fn assemble(
         &mut errors,
     );
 
-    // Names resolve in their own namespaces: dimension terms and a unit's
-    // `:` name against dimensions, a unit's `*` target against units. A
-    // term may name a dimension of an admitted package.
+    // The errors that come before the unit-graph topology (FR-091-AC-34):
+    // a duplicate name, a unit typed by no dimension, and an exact number
+    // that is not a value. A dimension term or a unit target that names
+    // nothing is a topology defect, found at its node's turn.
     let unresolved = |name: &str, span: Span| {
         error(
             AssemblyCause::UnresolvedQuantityName {
@@ -456,36 +830,32 @@ pub(super) fn assemble(
         )
     };
     let mut dimension_edges = vec![Vec::new(); dimensions.len()];
+    let mut unknown_term = vec![false; dimensions.len()];
     for (index, form) in dimensions.iter().enumerate() {
         for term in &form.terms {
             match dimension_index.get(term.name.name.as_str()) {
                 Some(&named) => dimension_edges[index].push(named),
                 None if imported.dimensions.contains_key(term.name.name.as_str()) => {}
-                None => errors.push(unresolved(&term.name.name, term.name.span)),
+                None => unknown_term[index] = true,
             }
         }
     }
     let mut unit_dimension = Vec::with_capacity(units.len());
     let mut unit_edges = vec![Vec::new(); units.len()];
+    let mut unknown_target = vec![false; units.len()];
     for (index, form) in units.iter().enumerate() {
-        unit_dimension.push(dimension_index.get(form.dimension.name.as_str()).copied());
-        if unit_dimension[index].is_none() {
+        let dimension = dimension_index.get(form.dimension.name.as_str()).copied();
+        if dimension.is_none() {
             errors.push(unresolved(&form.dimension.name, form.dimension.span));
         }
+        unit_dimension.push(dimension);
         if let Some(target) = &form.target {
             match unit_index.get(target.name.as_str()) {
                 Some(&named) => unit_edges[index].push(named),
-                None => errors.push(unresolved(&target.name, target.span)),
+                None => unknown_target[index] = true,
             }
         }
     }
-    cycles(
-        &dimension_names,
-        &dimension_spans,
-        &dimension_edges,
-        &mut errors,
-    );
-    cycles(&unit_names, &unit_spans, &unit_edges, &mut errors);
 
     let mut scales = Vec::with_capacity(units.len());
     let mut offsets = Vec::with_capacity(units.len());
@@ -508,6 +878,7 @@ pub(super) fn assemble(
         units,
         &unit_dimension,
         &unit_edges,
+        &unknown_target,
         &scales,
         &offsets,
         owner,
@@ -523,102 +894,37 @@ pub(super) fn assemble(
     }
     let scales: Vec<Rational> = scales.into_iter().flatten().collect();
     let offsets: Vec<Rational> = offsets.into_iter().flatten().collect();
+    let unit_dimension: Vec<usize> = unit_dimension.into_iter().flatten().collect();
 
-    // Unit-graph topology (FR-091-AC-35), only now that no other check
-    // found an error.
+    // Unit-graph topology (FR-091-AC-35): FR-142's turn list, the first
+    // defect of the first node that has one, and no other.
     let maps = normalized(dimensions, &dimension_index, imported, &dimension_edges);
-    let topology = |fault, declarations: Vec<&str>, span| {
-        error(
-            AssemblyCause::UnitGraphTopology {
-                fault,
-                declarations: declarations.into_iter().map(str::to_owned).collect(),
-            },
-            span,
-        )
+    let walk = Walk {
+        dimensions,
+        units,
+        dimension_names: &dimension_names,
+        dimension_spans: &dimension_spans,
+        unit_names: &unit_names,
+        unit_spans: &unit_spans,
+        dimension_index: &dimension_index,
+        dimension_edges: &dimension_edges,
+        unknown_term: &unknown_term,
+        unit_dimension: &unit_dimension,
+        unit_edges: &unit_edges,
+        unknown_target: &unknown_target,
+        scales: &scales,
+        offsets: &offsets,
+        imported,
+        maps: &maps,
     };
-    let one = Rational::from_integer(Integer::one());
-    let mut roots: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for (index, form) in units.iter().enumerate() {
-        let dimension = unit_dimension[index].unwrap_or_default();
-        if scales[index].is_zero() {
-            errors.push(topology(
-                TopologyFault::ZeroScale,
-                vec![unit_names[index]],
-                unit_spans[index],
-            ));
-        }
-        match unit_edges[index].first() {
-            None => {
-                roots.entry(dimension).or_default().push(index);
-                if scales[index] != one || !offsets[index].is_zero() {
-                    errors.push(topology(
-                        TopologyFault::NonIdentityRoot,
-                        vec![unit_names[index]],
-                        unit_spans[index],
-                    ));
-                }
-            }
-            Some(&target) => {
-                if unit_dimension[target] != unit_dimension[index] {
-                    errors.push(topology(
-                        TopologyFault::CrossDimensionTarget,
-                        vec![unit_names[index], unit_names[target]],
-                        unit_spans[index],
-                    ));
-                }
-            }
-        }
-        debug_assert!(form.target.is_some() == !unit_edges[index].is_empty());
-    }
-    // The base-dimension rule: a base dimension with no unit, here or in
-    // the package that declares it, that a local unit's dimension carries
-    // in its normalized map, retaining the first such unit.
-    let mut unanchored: BTreeMap<BaseRef, usize> = BTreeMap::new();
-    for (index, dimension) in unit_dimension.iter().enumerate() {
-        for base in maps[dimension.unwrap_or_default()].keys() {
-            let anchored = match base {
-                BaseRef::Source(base) => unit_dimension.contains(&Some(*base)),
-                BaseRef::Imported(key) => imported.by_key(key).is_some_and(|d| d.has_unit),
-            };
-            if !anchored {
-                unanchored.entry(base.clone()).or_insert(index);
-            }
-        }
-    }
-    for (base, unit) in unanchored {
-        let (dimension, span) = match base {
-            BaseRef::Source(base) => (dimension_names[base].to_owned(), dimension_spans[base]),
-            BaseRef::Imported(key) => match imported.by_key(&key) {
-                Some(imported) => (imported.identity.clone(), imported.selection),
-                None => continue,
-            },
-        };
-        errors.push(error(
-            AssemblyCause::UnanchoredBaseDimension {
-                dimension,
-                unit: unit_names[unit].to_owned(),
-            },
-            span,
-        ));
-    }
-    for (dimension, roots) in roots {
-        if roots.len() > 1 {
-            let mut names = vec![dimension_names[dimension]];
-            names.extend(roots.iter().map(|root| unit_names[*root]));
-            errors.push(topology(
-                TopologyFault::TwoRoots,
-                names,
-                unit_spans[roots[1]],
-            ));
-        }
-    }
-    if !errors.is_empty() {
+    if let Some(defect) = walk.first_defect() {
         return Err(Refused {
-            errors,
+            errors: vec![defect],
             topology: true,
             provisional: fixed,
         });
     }
+    let unit_dimension: Vec<Option<usize>> = unit_dimension.into_iter().map(Some).collect();
 
     // Keys: each base dimension, then each derived one, then each unit
     // after its target.

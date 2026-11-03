@@ -2602,7 +2602,7 @@ fn a_unit_name_is_not_a_type() {
 
 #[trace("FR-091-AC-34", "TC-483")]
 #[test]
-fn every_dimension_and_unit_source_error_is_reported() {
+fn name_and_number_errors_are_reported_and_the_topology_does_not_run() {
     let (text, found) = errors(
         "dimension Length;\n\
          dimension Mass;\n\
@@ -2612,82 +2612,103 @@ fn every_dimension_and_unit_source_error_is_reported() {
          dimension Q = P;\n\
          unit a : Length = rational(1, 0);\n\
          unit b : Length = rational(2, 1) * c;\n\
-         unit c : Length = rational(1, 2) * b;",
+         unit c : Length = rational(1, 2) * b;\n\
+         unit d : Ghost = rational(1, 1);",
     );
-    let codes: Vec<String> = found
-        .iter()
-        .map(|error| error.cause.catalog_code().to_string())
-        .collect();
-    assert_eq!(found.len(), 5, "{found:?}");
-    let has = |predicate: &dyn Fn(&AssemblyCause) -> bool| {
-        found.iter().any(|error| predicate(&error.cause))
-    };
     let mass_span = |start: usize| Span {
         start: start + "dimension ".len(),
         end: start + "dimension Mass".len(),
     };
     let first = text.find("dimension Mass").expect("first Mass");
     let second = text.rfind("dimension Mass").expect("second Mass");
-    assert!(has(&|cause| *cause
-        == AssemblyCause::DuplicateQuantityName {
-            name: "Mass".to_owned(),
-            spans: vec![mass_span(first), mass_span(second)],
-        }));
-    assert!(has(&|cause| matches!(
-        cause,
-        AssemblyCause::UnresolvedQuantityName { name } if name == "Width"
-    )));
-    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
-    assert!(has(&|cause| *cause
-        == AssemblyCause::QuantityCycle {
-            edges: vec![edge("P", "Q"), edge("Q", "P")]
-        }));
-    assert!(has(&|cause| *cause
-        == AssemblyCause::QuantityCycle {
-            edges: vec![edge("b", "c"), edge("c", "b")]
-        }));
+    let mut reported: Vec<(String, AssemblyCause)> = found
+        .iter()
+        .map(|error| (error.cause.catalog_code().to_string(), error.cause.clone()))
+        .collect();
+    reported.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        reported,
+        vec![
+            (
+                "ambiguous_declaration/ambiguous-name".to_owned(),
+                AssemblyCause::DuplicateQuantityName {
+                    name: "Mass".to_owned(),
+                    spans: vec![mass_span(first), mass_span(second)],
+                }
+            ),
+            (
+                "missing_declaration/missing-name".to_owned(),
+                AssemblyCause::UnresolvedQuantityName {
+                    name: "Ghost".to_owned()
+                }
+            ),
+            (
+                "undefined_expression/unproved-nonzero".to_owned(),
+                AssemblyCause::ZeroDenominator
+            ),
+        ]
+    );
     assert!(found
         .iter()
         .any(|error| error.cause == AssemblyCause::ZeroDenominator
             && error.span == last(&text, "rational(1, 0)")));
-    for expected in [
-        "ambiguous_declaration/ambiguous-name",
-        "missing_declaration/missing-name",
-        "invalid_package/definition-cycle",
-        "undefined_expression/unproved-nonzero",
-    ] {
-        assert!(
-            codes.iter().any(|code| code == expected),
-            "{expected}: {codes:?}"
-        );
-    }
+
+    // Without those three, the topology runs and reports the first defect
+    // alone: `Length`'s turn, before `Area`'s `Width` and the `P`/`Q` cycle.
+    let (_, found) = errors(
+        "dimension Length;\n\
+         dimension Mass;\n\
+         dimension Area = Width^2;\n\
+         dimension P = Q;\n\
+         dimension Q = P;\n\
+         unit b : Length = rational(2, 1) * c;\n\
+         unit c : Length = rational(1, 2) * b;",
+    );
+    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+    let [only] = found.as_slice() else {
+        panic!("one first defect, not {found:?}")
+    };
+    assert_eq!(
+        only.cause,
+        AssemblyCause::QuantityCycle {
+            edges: vec![edge("b", "c"), edge("c", "b")]
+        }
+    );
+    assert_eq!(
+        only.cause.catalog_code().to_string(),
+        "invalid_package/definition-cycle"
+    );
 }
 
 #[trace("FR-091-AC-35", "TC-483")]
 #[test]
 fn each_unit_graph_topology_error_refuses_alone() {
     use super::TopologyFault as Fault;
-    for (source, fault, declarations) in [
+    for (source, fault, declarations, code) in [
         (
             "dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;",
             Fault::ZeroScale,
             vec!["z"],
+            "invalid_package/invalid-value",
         ),
         (
             "dimension L; unit r : L = rational(2, 1);",
             Fault::NonIdentityRoot,
             vec!["r"],
+            "invalid_package/invalid-value",
         ),
         (
             "dimension L; dimension T; unit r : L = rational(1, 1); \
              unit s : T = rational(1, 1) * r;",
             Fault::CrossDimensionTarget,
             vec!["s", "r"],
+            "invalid_package/incompatible-definition",
         ),
         (
             "dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);",
             Fault::TwoRoots,
             vec!["L", "r", "q"],
+            "invalid_package/conflicting-definition",
         ),
     ] {
         let (_, found) = errors(source);
@@ -2702,7 +2723,187 @@ fn each_unit_graph_topology_error_refuses_alone() {
             },
             "{source}"
         );
+        assert_eq!(error.cause.catalog_code().to_string(), code, "{source}");
     }
+    let (_, found) =
+        errors("dimension L; unit r : L = rational(1, 1); unit u : L = rational(1, 1) * ghost;");
+    let [error] = found.as_slice() else {
+        panic!("one error, not {found:?}")
+    };
+    assert_eq!(
+        error.cause,
+        AssemblyCause::UnresolvedQuantityName {
+            name: "ghost".to_owned()
+        }
+    );
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "missing_declaration/missing-name"
+    );
+}
+
+/// The one error `source` refuses with: its code and cause, and the text at
+/// its span.
+fn first_defect(source: &str) -> (String, String) {
+    let (text, found) = errors(source);
+    let [error] = found.as_slice() else {
+        panic!("{source}: exactly one first defect, not {found:?}")
+    };
+    (
+        error.cause.catalog_code().to_string(),
+        text[error.span.start..error.span.end].to_owned(),
+    )
+}
+
+/// FR-091-AC-46 and QSpec FR-142-AC-15 (TC-187 U11h to U11k): the first
+/// defect is the earliest row of the earliest unit of the earliest node.
+#[trace("FR-091-AC-46", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-15")]
+#[test]
+fn the_first_defect_is_the_earliest_row_unit_and_node() {
+    let found = first_defect;
+    let pair = |code: &str, at: &str| (code.to_owned(), at.to_owned());
+    // U11h: row 1 before row 2 within one unit.
+    assert_eq!(
+        found(
+            "dimension L; unit r : L = rational(1, 1); \
+             unit z : L = rational(0, 1) * ghost;"
+        ),
+        pair("invalid_package/invalid-value", "z")
+    );
+    // U11i: the earlier unit's row 2 before the later unit's row 1.
+    assert_eq!(
+        found(
+            "dimension L; unit r : L = rational(1, 1); \
+             unit u : L = rational(1, 1) * ghost; unit z : L = rational(0, 1) * r;"
+        ),
+        pair("missing_declaration/missing-name", "ghost")
+    );
+    // U11j: row 4 before row 6.
+    assert_eq!(
+        found(
+            "dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1); \
+             unit s : L = rational(1, 1) * s;"
+        ),
+        pair("invalid_package/conflicting-definition", "q")
+    );
+    // U11k: `L` takes its turn before `T`, so row 5 at `l`, not row 1 at `t`.
+    assert_eq!(
+        found(
+            "dimension L; dimension T; unit t : T = rational(0, 1) * tr; \
+             unit tr : T = rational(1, 1); unit l : L = rational(2, 1);"
+        ),
+        pair("invalid_package/invalid-value", "l")
+    );
+    // A dimension cycle comes before any unit row of a later dimension.
+    assert_eq!(
+        found(
+            "dimension A = B; dimension B = A; dimension L; \
+             unit l : L = rational(2, 1);"
+        ),
+        pair("invalid_package/definition-cycle", "A")
+    );
+}
+
+/// FR-091-AC-47 and QSpec FR-142-AC-15 (TC-187 U11b, U11f, U11l): the cycle
+/// is retained from its least unit by source position.
+#[trace("FR-091-AC-47", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-15")]
+#[test]
+fn a_unit_cycle_is_retained_from_its_least_unit_by_source_position() {
+    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+    for (source, expected) in [
+        (
+            "dimension L; unit r : L = rational(1, 1); \
+             unit y : L = rational(1, 1) * x; unit x : L = rational(1, 1) * y;",
+            vec![edge("y", "x"), edge("x", "y")],
+        ),
+        (
+            "dimension L; unit m : L = rational(1, 1) * cm; \
+             unit cm : L = rational(1, 100) * m;",
+            vec![edge("m", "cm"), edge("cm", "m")],
+        ),
+        (
+            "dimension L; unit u_self : L = rational(1, 1) * u_self;",
+            vec![edge("u_self", "u_self")],
+        ),
+    ] {
+        let (_, found) = errors(source);
+        let [error] = found.as_slice() else {
+            panic!("{source}: one error, not {found:?}")
+        };
+        assert_eq!(
+            error.cause,
+            AssemblyCause::QuantityCycle { edges: expected },
+            "{source}"
+        );
+    }
+}
+
+/// QSpec FR-142-AC-15, TC-187 U11j: two targetless units beside a unit that
+/// targets itself refuse row 4, `invalid_package`/`conflicting-definition`,
+/// not row 6, and retain the dimension and both roots.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-15")]
+#[test]
+fn u11j_two_roots_refuse_before_a_self_cycle() {
+    let (text, found) = errors(
+        "dimension L; unit m : L = rational(1, 1); unit m_alt : L = rational(1, 1); \
+         unit u_self : L = rational(1, 1) * u_self;",
+    );
+    let [error] = found.as_slice() else {
+        panic!("one error, not {found:?}")
+    };
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "invalid_package/conflicting-definition"
+    );
+    assert_eq!(
+        error.cause,
+        AssemblyCause::UnitGraphTopology {
+            fault: super::TopologyFault::TwoRoots,
+            declarations: vec!["L".to_owned(), "m".to_owned(), "m_alt".to_owned()],
+        }
+    );
+    assert_eq!(&text[error.span.start..error.span.end], "m_alt");
+}
+
+/// QSpec FR-142-AC-16, TC-187 U11m: with `Area` declared before `L`, `Area`'s
+/// turn reports the unit cycle and `L` is not examined; with `L` first, `L`'s
+/// turn refuses the base dimension no unit anchors.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-16")]
+#[test]
+fn u11m_the_base_dimension_rule_runs_at_the_base_dimensions_own_turn() {
+    let units = "unit a : Area = rational(1, 1) * b; unit b : Area = rational(1, 1) * a;";
+    let (_, found) = errors(&format!("dimension Area = L ^ 2; dimension L; {units}"));
+    let [error] = found.as_slice() else {
+        panic!("one error, not {found:?}")
+    };
+    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+    assert_eq!(
+        error.cause,
+        AssemblyCause::QuantityCycle {
+            edges: vec![edge("a", "b"), edge("b", "a")]
+        }
+    );
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "invalid_package/definition-cycle"
+    );
+
+    let (text, found) = errors(&format!("dimension L; dimension Area = L ^ 2; {units}"));
+    let [error] = found.as_slice() else {
+        panic!("one error, not {found:?}")
+    };
+    assert_eq!(
+        error.cause,
+        AssemblyCause::UnanchoredBaseDimension {
+            dimension: "L".to_owned(),
+            unit: "a".to_owned(),
+        }
+    );
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "missing_declaration/missing-name"
+    );
+    assert_eq!(&text[error.span.start..error.span.end], "L");
 }
 
 /// FR-091-AC-45 (TC-483): the base-dimension rule refuses `L`, unitless
@@ -3168,7 +3369,7 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
                 fault: TopologyFault::TwoRoots,
                 declarations: Vec::new(),
             },
-            "invalid_package/unit-graph-topology",
+            "invalid_package/conflicting-definition",
         ),
         (
             AssemblyCause::DecimalScaleLimit(qsl_foundation::diagnostic::LimitExceeded::new(
