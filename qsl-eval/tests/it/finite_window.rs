@@ -1366,15 +1366,16 @@ fn a_window_settles_at_exactly_the_deadline() {
     }
 }
 
-/// FR-501 "Canonical order" (FND-013): two observations of one stamp from one
-/// order authority with the same key are comparable (the observation identity
-/// breaks the tie), so an order-sensitive operator evaluates over them and the
-/// listing order decides nothing. FR-501 does not say whether a repeated key
-/// is a usable key; this pins what the total order does.
-#[trace("TC-1295", "FR-501-AC-20")]
+/// FR-501-AC-26 (row 40): two observations of one stamp keyed with the same
+/// key of one order authority have no usable order, so an order-sensitive
+/// operator (`until` and `release` on origin, `since` and `triggered` on each,
+/// anchored at position 2) refuses at the later position in either listing,
+/// and the observation identity never breaks the tie; an order-insensitive
+/// operator evaluates, with one outcome and one result identity for both
+/// listings.
+#[trace("TC-1295", "FR-501-AC-26")]
 #[test]
-fn a_repeated_key_of_one_authority_is_ordered_by_identity() {
-    let until = clause("on origin", "holds(p) until[0,1] holds(q)");
+fn a_repeated_key_of_one_authority_is_not_a_usable_order() {
     let row = |tag: &'static str| Row {
         stamp: 1,
         atoms: vec![("p", "T"), ("q", "F"), (tag, "")],
@@ -1387,12 +1388,29 @@ fn a_repeated_key_of_one_authority_is_ordered_by_identity() {
     };
     let forward = request(vec![start.clone(), row("x"), row("y")], 1, Some(1));
     let backward = request(vec![start, row("y"), row("x")], 1, Some(1));
-    let first = run_with(&until, &forward, SCALAR_LIMITS_UNLIMITED)
+    for (body, activation) in [
+        ("holds(p) until[0,1] holds(q)", "on origin"),
+        ("holds(p) release[0,1] holds(q)", "on origin"),
+        ("holds(p) since[0,1] holds(q)", "on each (q: Counter)"),
+        ("holds(p) triggered[0,1] holds(q)", "on each (q: Counter)"),
+    ] {
+        let fixture = clause(activation, body);
+        for listing in [&forward, &backward] {
+            assert_eq!(
+                run_with(&fixture, listing, SCALAR_LIMITS_UNLIMITED).0.err(),
+                Some(TemporalRefusal::UnorderedTie { position: at(2) }),
+                "{body}"
+            );
+        }
+    }
+    let eventually = clause("on origin", "eventually[0,1] holds(p)");
+    let first = run_with(&eventually, &forward, SCALAR_LIMITS_UNLIMITED)
         .0
         .expect("evaluates");
-    let second = run_with(&until, &backward, SCALAR_LIMITS_UNLIMITED)
+    let second = run_with(&eventually, &backward, SCALAR_LIMITS_UNLIMITED)
         .0
         .expect("evaluates");
+    assert_eq!(first.verdict, WindowVerdict::Holds);
     assert_eq!(first.verdict, second.verdict);
     assert_eq!(first.identity, second.identity);
 }

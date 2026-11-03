@@ -187,9 +187,17 @@ ranks below 10.
   pointwise at each eligible position (FR-043 "Operators").
 - When two positions that both participate in an order-sensitive operator share
   a stamp and either lacks an order key, or their keys come from different
-  order authorities, the evaluator SHALL refuse at stage `evaluate`
+  order authorities, or their keys come from one order authority and are
+  equal, the evaluator SHALL refuse at stage `evaluate`
   `invalid_runtime_input`/`invalid-value` at the later position, and SHALL NOT
-  substitute trace index or ingestion order (QSpec FR-090-AC-4).
+  substitute trace index, ingestion order or observation identity (QSpec
+  FR-090-AC-4).
+- Two positions of one stamp have a **usable order** exactly when both carry an
+  order key, the keys come from one order authority and the keys differ. A key
+  that repeats another key of its authority at the same stamp is not usable:
+  the authority places both observations at one point of its sequence and so
+  admits no order between them, and observation identity is a content
+  identity, not a causal or sequence order (QSpec FR-090).
 
 ### Canonical order
 
@@ -203,9 +211,12 @@ ranks below 10.
 - The outcome and the result identity SHALL NOT depend on the listed order.
 - The `TemporalPosition` of an outcome (`where`, a failing position, the support)
   SHALL be the index of the observation in canonical order.
-- The order of observations that share a stamp and lack a usable order key SHALL
-  NOT decide a verdict, because an order-sensitive operator refuses over such a
-  pair (above).
+- The order of observations that share a stamp and lack a usable order (above),
+  repeated keys of one authority included, SHALL NOT decide a verdict, because
+  an order-sensitive operator refuses over such a pair. The observation-identity
+  step of the canonical order fixes only the positions' indices, so that the
+  outcome and the result identity do not depend on the listed order; it never
+  orders a pair for an order-sensitive operator.
 
 ### Established window
 
@@ -334,7 +345,7 @@ as its own ticket, referenced from QSL-1493; it is not part of this repository.
 | FR-501-AC-4 | Stamps 0, 2, 5, `eventually[0,5] holds(p)`, `W` 5, `Complete { through: 5 }`: with `p` false at 0 and 5 and its valuation absent at stamp 2, the result is `Indeterminate { where: 0, reason: MissingValuation { position: 1, atom: p } }`; with `p` true at 5 and absent at 2 it is `Completed(true)`; with a fourth observation stamped 2 (stamps 0, 2, 2, 5), `p` true at one of the two stamped 2, false at the other and false elsewhere, it is `Indeterminate` with `ConflictingValuation { position: 1, atom: p }`; with the absence at stamp 2 of the three-position trace and `W` 3 it is `Pending { deadline: 5 }`. None is `Completed(false)`. | Test (TC-1295) |
 | FR-501-AC-5 | Stamps 0, `p` true, scope `Closed`, `W` 5, completeness `Incomplete`: `always[0,5] holds(p)` is `Indeterminate { reason: IncompleteInput }`, and the same trace with `Complete { through: 5 }` is `Completed(true)`; with completeness `Incomplete`, `eventually[2,3] holds(p)` is `Indeterminate { reason: IncompleteInput }` and not `Completed(false)`; with `Complete { through: 2 }` and `W` 3 it is also `Indeterminate`. | Test (TC-1295) |
 | FR-501-AC-6 | Stamps 0 and 3, `q` true at 3, `W` 3, `Complete { through: 3 }`: `eventually[0,3] holds(q)` is `Completed(true)` (the position exactly at the inclusive deadline participates). Stamps 0 and 4, `q` true at 4, `W` 4, `Complete { through: 4 }`: `eventually[0,3] holds(q)` is `Completed(false)`. One position stamped 0 with `p` false, `W` 3, `Complete { through: 3 }` and no later observation: `eventually[0,3] holds(p)` is `Completed(false)`. A watermark supplied as half-open `[.., 3)` with no QSpec FR-289 mapping proving inclusive coverage is treated as `W` 2. | Test (TC-1295) |
-| FR-501-AC-7 | Stamps 0, 1, 1 (positions 1 and 2 share stamp 1) with no order keys: `holds(p) until[0,1] holds(q)` refuses `invalid_runtime_input`/`invalid-value` at position 2, and so do `release` and, anchored at position 2 where positions 1 and 2 participate, `holds(p) since[0,1] holds(q)` and its `triggered` dual, each at stage `evaluate`; `eventually[0,1] holds(p)` over the same positions evaluates. With keys from one order authority on positions 1 and 2 `until` evaluates; with keys from two order authorities it refuses; with a key on position 1 only it refuses at position 2. | Test (TC-1295) |
+| FR-501-AC-7 | Stamps 0, 1, 1 (positions 1 and 2 share stamp 1) with no order keys: `holds(p) until[0,1] holds(q)` refuses `invalid_runtime_input`/`invalid-value` at position 2, and so do `release` and, anchored at position 2 where positions 1 and 2 participate, `holds(p) since[0,1] holds(q)` and its `triggered` dual, each at stage `evaluate`; `eventually[0,1] holds(p)` over the same positions evaluates. With distinct keys from one order authority on positions 1 and 2 `until` evaluates; with keys from two order authorities it refuses; with a key on position 1 only it refuses at position 2. | Test (TC-1295) |
 | FR-501-AC-8 | Stamps 3 and 4 (the trace begins at 3), activation `on each`, `once[0,4] holds(p)` (future reach 0, so each activation is established at `W` 4 with `Complete { through: 4 }`) with `p` false at both: lower-boundary kind `HistoryCutoff` gives `Indeterminate { where: 0, reason: MissingHistory }` (the activation at position 0, the first in position order, reaches before the trace; the one at position 1 reaches back to tick 0 and is `Indeterminate` too) and `AuthoritativeOrigin` gives `Completed(false)`; with `p` true at stamp 3 both kinds give `Completed(true)`. | Test (TC-1295) |
 | FR-501-AC-9 | With the trace input's cover `Counter { uncertainty: 0 }`, a request `holds(req)` at tick 0 and `holds(req) implies eventually[0,3000] holds(ack)`, `W` and completeness through 3001: `ack` first at tick 2998 gives `Completed(true)`, at tick 3000 gives `Indeterminate { reason: StraddlesBound }`, and at tick 3001 gives `Completed(false)`; under `Exact` cover the three give true, true and false. The ack ticks 2997, 2998 and 3003 with uncertainty 1 (`W` and completeness through 3003) give QSpec `tick-cover-vectors.json` `TCV-06` to `TCV-08`; `TCV-02`, `TCV-05` and `TCV-09` to `TCV-15` are checked by calling the comparison functions `within_bound` and `definitely_before` directly, because the bounds 0, 1 and -1 and the `definitely_before` pairs are not clause intervals. | Test (TC-1295) |
 | FR-501-AC-10 | `eventually[0,2] holds(p)` `on each` over positions stamped 0 and 10 with `p` false at both, `W` 10, `Complete { through: 10 }`: the activation at position 0 is definitely false and the one at 10 is `Pending`, so the outcome is `Completed(false)` at position 0. With `p` true at stamp 0 the outcome is `Pending { where: 1, deadline: 12 }`, not `Completed(true)`. | Test (TC-1295) |
@@ -347,12 +358,13 @@ as its own ticket, referenced from QSL-1493; it is not part of this repository.
 | FR-501-AC-17 | `Complete { through: 9 }` with `W` 5 for `eventually[0,5] holds(p)` over stamps 0, 2, 5 with `p` false, false, false is `Completed(false)` (the activation is established at 5); with `W` 3 it is `Pending { deadline: 5 }`. A trace with no positions is refused at stage `admit`, `invalid_runtime_input`/`invalid-value`, before any position is visited; AC-7's equal-stamp refusal is at stage `evaluate`. | Test (TC-1295) |
 | FR-501-AC-18 | Over AC-1's request, listing the observations in the order of stamps 5, 0, 2 gives the outcome, the decision support and the `result_identity` that listing 0, 2, 5 gives. | Test (TC-1295) |
 | FR-501-AC-19 | Over AC-1's request listed as stamps 5, 0, 2 with `p` true at 0 and 5 and false at 2, the outcome is `Completed(false)` at position 0 and the decision support is {(position 1, p)}: positions are indices in canonical order, not in the listed order. | Test (TC-1295) |
-| FR-501-AC-20 | The `until` of AC-7 over keys from one authority gives one outcome for the listed order and for its reverse. | Test (TC-1295) |
+| FR-501-AC-20 | The `until` of AC-7 over distinct keys from one authority gives one outcome for the listed order and for its reverse. | Test (TC-1295) |
 | FR-501-AC-21 | Four observations at one stamp, keyed A1, A2 (authority A) and B1 (authority B) and one without a key, listed in each of three different orders, give one canonical order (A1, A2, B1, the keyless one) and one `result_identity`. | Test (TC-1295) |
 | FR-501-AC-22 | A `Timestamped` trace input that names no cover evaluates AC-9's clause as under `Exact`: `ack` at tick 2998, 3000 and 3001 gives true, true and false. | Test (TC-1295) |
 | FR-501-AC-23 | Over stamps 0, 2, 2, 5 with `eventually[0,5] holds(p)`, `W` 5 and `Complete { through: 5 }`, `p` true at both observations stamped 2 and false at the others is `Completed(true)` and not `Indeterminate`. | Test (TC-1295) |
 | FR-501-AC-24 | A `Timestamped` input that supplies `Counter { uncertainty: 1 }` gives AC-13's outcomes, and the same input with the cover `Exact` gives a different verdict for `W` 3001 and `Complete { through: 3002 }` and a different result identity. | Test (TC-1295) |
 | FR-501-AC-25 | A `Timestamped` input whose `execution` is `Open` and one whose `execution` is `Closed` report the surrounding-execution closure they carry and give the same verdict. | Test (TC-1295) |
+| FR-501-AC-26 | Stamps 0, 1, 1 with positions 1 and 2 both keyed `(A, 1)` (one order authority, one key) and valuations that differ in a third atom, so that the two observations have distinct identities: `holds(p) until[0,1] holds(q)` and its `release` dual `on origin`, and `holds(p) since[0,1] holds(q)` and its `triggered` dual `on each` (the anchor at position 2, where positions 1 and 2 participate), refuse at stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2, for the listed order and for the two keyed observations listed in reverse, and do not evaluate with the identity order as the tie-break; `eventually[0,1] holds(p)` over the same trace evaluates and gives one outcome and one `result_identity` for both listings. | Test (TC-1295) |
 
 ## Dependencies
 

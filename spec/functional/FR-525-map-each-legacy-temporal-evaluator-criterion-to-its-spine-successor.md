@@ -122,7 +122,7 @@ QSL-858's train.
 | `ProtocolLedger` trigger identity count mismatch | FR-516: the deliveries are a list, each with its identity, so no count can differ | RETIRE (structural reason: the request carries the deliveries as a list, each with its identity, so no count can differ; successor FR-516-AC-10) |
 | `ProtocolLedger` activation-mapping checks (control to temporal declaration) | FR-516-AC-15, AC-16 | PORT QSL-1503 |
 | FR-052-AC-13 | FR-502-AC-1 to AC-11 | PORT (FR-502) |
-| FR-052-AC-14 | FR-501-AC-1 to AC-25 | PORT (FR-501) |
+| FR-052-AC-14 | FR-501 (every criterion) | PORT (FR-501) |
 | FR-053-AC-7, AC-8 distinct identities stay distinct | FR-524-AC-1, AC-7; FR-516-AC-4 | PORT QSL-1503 |
 | FR-053-AC-9 empty identity | FR-516-AC-4; FR-526-AC-18 | PORT QSL-1503 |
 | FR-053-AC-9 mismatched or stale identity | FR-524-AC-20; FR-526-AC-8, AC-10 | PORT QSL-1503 |

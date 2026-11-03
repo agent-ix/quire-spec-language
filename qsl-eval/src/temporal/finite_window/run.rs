@@ -480,7 +480,9 @@ impl<L: TemporalLetters> Run<'_, L> {
     }
 
     /// QSpec FR-090-AC-4: two positions of equal stamp that both take part in
-    /// an order-sensitive operator need comparable order keys; the refusal
+    /// an order-sensitive operator need a usable order (FR-501): distinct keys
+    /// of one order authority. A key repeated within its authority orders
+    /// nothing, and the observation identity never breaks the tie. The refusal
     /// names the later position.
     fn require_order(&self, candidates: &[Candidate]) -> Result<(), Stop> {
         for pair in candidates.windows(2) {
@@ -494,11 +496,12 @@ impl<L: TemporalLetters> Run<'_, L> {
                     .get(position)
                     .and_then(|p| p.order_key.as_ref())
             };
-            let comparable = matches!(
+            let ordered = matches!(
                 (key(before.position), key(after.position)),
-                (Some(left), Some(right)) if left.authority == right.authority
+                (Some(left), Some(right))
+                    if left.authority == right.authority && left.key != right.key
             );
-            if !comparable {
+            if !ordered {
                 return Err(Stop::Refused(TemporalRefusal::UnorderedTie {
                     position: position_of(before.position.max(after.position))?,
                 }));
