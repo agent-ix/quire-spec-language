@@ -676,6 +676,111 @@ fn checked_protocol_source(bytes: &[u8]) -> CheckedUnit {
         .into_value()
 }
 
+/// FR-514-AC-8 (TC-1309 row 13): `T0` is a function, a post claim, a temporal
+/// clause and a protocol with a check. Its `Complete` inventory holds one
+/// obligation row per pending obligation, each with its exact capability kind
+/// and the ordinal of the requirement form that holds its span.
+#[trace("FR-514-AC-8", "TC-1309")]
+#[test]
+fn t0_inventory_gives_every_obligation_its_owning_requirement_form() {
+    use quire_contract_model::source_obligation::{
+        SourceDeclarationHandle, SourceInventoryIdentity, SourcePendingObligationKind,
+    };
+
+    static SOURCE: OnceLock<SourceIdentity> = OnceLock::new();
+    let source = SOURCE.get_or_init(|| SourceIdentity::new("agent-ix", "test:t0-inventory"));
+    let text = format!(
+        "{HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model M = \"acme/orders\";\n\
+         function g using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
+         post Keep using v on M::Widget::touch {{ true }}\n\
+         temporal Due using inf over (input: M::Widget) clock \"model-steps\" on origin {{ always holds(true) }}\n\
+         protocol Fill using Complete over (input: M::Widget) on origin {{\n\
+           role R on M::Widget;\n\
+           requires temporal Due;\n\
+           run sequence Main {{ check After using v {{ true }}; }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
+    let parsed = parse_named(source, text.as_bytes());
+    let (_, packages) = widget_with_touch(&[]);
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("model and profile selections admit")
+    .into_value();
+    let checked = check(
+        &parsed,
+        "t0-inventory".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Cancel::new(),
+    );
+    let unit = checked.as_ref().expect("T0 checks").value();
+    let obligations = unit.type_report().obligations();
+    assert!(
+        obligations.len() >= 4,
+        "value, post, temporal and protocol obligations"
+    );
+    let formal = quire_contract_model::SourceIdentity::new(
+        quire_contract_model::SourceDocumentId::new("NativeTypes0").expect("a document id"),
+        quire_contract_model::SourceRevision::new(1).expect("a revision"),
+    );
+    let outcome = crate::source_inventory::qsl_inventory(Some(&parsed), &checked, &formal)
+        .expect("a Complete inventory for a unit with post, temporal and protocol obligations");
+    let found: Vec<(String, usize)> = outcome
+        .items()
+        .iter()
+        .filter_map(|row| match row.identity() {
+            SourceInventoryIdentity::PendingObligation(id) => {
+                let SourcePendingObligationKind::CapabilityKind(label) = &id.kind else {
+                    panic!("every obligation carries its capability kind");
+                };
+                let SourceDeclarationHandle(owner) = id.site.declaration;
+                Some((label.to_string(), owner))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found.len(), obligations.len());
+    // Requirement forms in source order: g = 0, Keep = 1, Due = 2, Fill = 3;
+    // the expected owner is read from where each obligation sits in the text.
+    let starts: Vec<usize> = ["function g", "post Keep", "temporal Due", "protocol Fill"]
+        .iter()
+        .map(|form| text.find(form).expect("the declaration is present"))
+        .collect();
+    for (pending, (label, owner)) in obligations.iter().zip(&found) {
+        assert_eq!(label, pending.capability_kind());
+        let expected = starts
+            .iter()
+            .rposition(|start| *start <= pending.span().start)
+            .expect("a requirement form holds the span");
+        assert_eq!(*owner, expected, "{label} at {:?}", pending.span());
+    }
+    let labels: std::collections::BTreeSet<&str> =
+        found.iter().map(|(label, _)| label.as_str()).collect();
+    for label in [
+        "value-validity",
+        "global-conformance",
+        "operation-contract",
+        "temporal-satisfaction",
+    ] {
+        assert!(labels.contains(label), "{label} in {labels:?}");
+    }
+    let protocol_check = found
+        .iter()
+        .find(|(label, _)| label == "global-conformance")
+        .expect("the protocol check obligation");
+    assert_eq!(
+        protocol_check.1, 3,
+        "the check belongs to the protocol form"
+    );
+}
+
 /// FR-514-AC-1: the checked unit retains source-owned declaration type facts,
 /// with no source identity copied into the report.
 #[trace("FR-514-AC-1")]

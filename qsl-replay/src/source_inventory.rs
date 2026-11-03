@@ -12,6 +12,7 @@
 //! Any other refusal gives no inventory.
 
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus, StageFailure, Staged};
+use qsl_foundation::Span;
 use qsl_semantics::check::wire_id::structural_id;
 use quire_contract_model::source_obligation::{
     SourceByteRegion, SourceDeclarationHandle, SourceInventoryEnumerator, SourceInventoryIdentity,
@@ -32,10 +33,16 @@ pub enum InventoryRefusal {
     /// unit was refused, cancelled or faulted, so there are no rows.
     #[error("the check outcome is neither a checked unit nor a stage limit")]
     NoInventory,
-    /// No declaration of the unit's type report holds a pending
-    /// obligation's source span, so it has no owning declaration to report.
-    #[error("no declaration of the type report holds a pending obligation's span")]
+    /// No requirement form of the unit holds a pending obligation's source
+    /// span, so it has no owning form to report. An admitted unit's
+    /// obligations are all inside its requirement forms; this is a defensive
+    /// error.
+    #[error("no requirement form of the unit holds a pending obligation's span")]
     UnownedObligation,
+    /// The outcome needs the unit's S2 forms (a checked unit, or a limit after
+    /// S2) and `parsed` is `None`: a caller defect, not an empty inventory.
+    #[error("the outcome needs the parsed unit and none was supplied")]
+    MissingParsedUnit,
     /// The enumeration was inconsistent, which IR's outcome constructor
     /// reports.
     #[error("the source inventory enumeration was inconsistent: {0}")]
@@ -146,16 +153,20 @@ fn requirement(key: &qsl_foundation::source::provenance::OccurrenceKey) -> Sourc
 }
 
 /// The identity of one pending obligation (FR-514): its exact capability
-/// kind name, the ordinal of its owning declaration in the report's
-/// declaration list (the smallest declaration holding its span), unit 0 and
-/// its source span. `None` when no declaration holds the span.
-fn obligation(pending: &PendingObligation) -> Option<SourceInventoryIdentity> {
-    let declaration = pending.declaration_ordinal()?;
+/// kind name, the ordinal of its owning requirement form (the ordinal that
+/// form's row has in an `Incomplete` inventory), unit 0 and its source span.
+/// The owner is the one requirement form whose source span holds the
+/// obligation's span; top-level forms do not overlap, so there is at most
+/// one. `None` when no form holds the span.
+fn obligation(pending: &PendingObligation, forms: &[Span]) -> Option<SourceInventoryIdentity> {
     let span = pending.span();
+    let owner = forms
+        .iter()
+        .position(|form| form.start <= span.start && span.end <= form.end)?;
     Some(SourceInventoryIdentity::PendingObligation(
         SourcePendingObligationId {
             site: SourceObligationSite {
-                declaration: SourceDeclarationHandle(declaration),
+                declaration: SourceDeclarationHandle(owner),
                 unit: SourceUnitHandle(0),
                 expression: None,
                 start: span.start,
@@ -164,6 +175,17 @@ fn obligation(pending: &PendingObligation) -> Option<SourceInventoryIdentity> {
             kind: SourcePendingObligationKind::CapabilityKind(pending.capability_kind().into()),
         },
     ))
+}
+
+/// The source spans of `parsed`'s requirement forms in source order.
+fn requirement_form_spans(parsed: &ParsedUnitSource) -> Vec<Span> {
+    parsed
+        .unit()
+        .forms()
+        .iter()
+        .filter(|form| is_requirement_form(form.form()))
+        .map(|form| form.span())
+        .collect()
 }
 
 /// The identity of the `index`th S2 requirement form: its source-order
@@ -221,6 +243,8 @@ pub fn qsl_inventory(
 ) -> Result<SourceInventoryOutcome, InventoryRefusal> {
     let (rows, stop): (Vec<SourceInventoryIdentity>, _) = match outcome {
         Ok(staged) => {
+            let parsed = parsed.ok_or(InventoryRefusal::MissingParsedUnit)?;
+            let forms = requirement_form_spans(parsed);
             let report = staged.value().type_report();
             let mut rows: Vec<_> = report
                 .requirements()
@@ -228,12 +252,15 @@ pub fn qsl_inventory(
                 .map(|required| requirement(required.occurrence()))
                 .collect();
             for pending in report.obligations() {
-                rows.push(obligation(pending).ok_or(InventoryRefusal::UnownedObligation)?);
+                rows.push(obligation(pending, &forms).ok_or(InventoryRefusal::UnownedObligation)?);
             }
             (rows, None)
         }
         Err(StageFailure::Limit(limit) | StageFailure::LimitWithPayload(limit, _)) => {
             let stop = exhaustion(limit).ok_or(InventoryRefusal::NoInventory)?;
+            if parsed.is_none() && !matches!(limit.setting().stage(), "S1" | "S2") {
+                return Err(InventoryRefusal::MissingParsedUnit);
+            }
             let rows = parsed
                 .into_iter()
                 .flat_map(|parsed| parsed.unit().forms())
@@ -365,7 +392,11 @@ mod tests {
 
     /// What `unit` alone must report: its report's requirements, then its
     /// report's obligations.
-    fn expected_rows(unit: &CheckedUnit) -> Vec<SourceInventoryIdentity> {
+    fn expected_rows(
+        unit: &CheckedUnit,
+        parsed: &ParsedUnitSource,
+    ) -> Vec<SourceInventoryIdentity> {
+        let forms = requirement_form_spans(parsed);
         let report = unit.type_report();
         report
             .requirements()
@@ -375,7 +406,7 @@ mod tests {
                 report
                     .obligations()
                     .iter()
-                    .map(|pending| obligation(pending).expect("an owned obligation")),
+                    .map(|pending| obligation(pending, &forms).expect("an owned obligation")),
             )
             .collect()
     }
@@ -410,7 +441,7 @@ mod tests {
         );
         assert_eq!(outcome.observed_count(), 4);
         let rows = identities(&outcome);
-        assert_eq!(rows, expected_rows(unit));
+        assert_eq!(rows, expected_rows(unit, &parsed));
         assert!(rows[..2]
             .iter()
             .all(|row| matches!(row, SourceInventoryIdentity::RequirementRecord(_))));
@@ -431,7 +462,11 @@ mod tests {
             assert_eq!(id.site.end, pending.span().end);
             assert_eq!(id.site.unit, SourceUnitHandle(0));
             assert_eq!(id.site.expression, None);
-            assert_eq!(id.site.declaration, SourceDeclarationHandle(0));
+            assert_eq!(
+                id.site.declaration,
+                SourceDeclarationHandle(0),
+                "the function owns its claims"
+            );
         }
         assert_eq!(
             report.obligations()[0].capability_kind(),
@@ -441,11 +476,11 @@ mod tests {
     }
 
     /// FR-514-AC-8 (TC-1309 row 13): each obligation row names the ordinal of
-    /// the declaration that holds its span, so obligations of two functions
-    /// carry two declaration handles.
+    /// the requirement form that holds its span, so obligations of two
+    /// functions carry two owners.
     #[trace("FR-514-AC-8", "TC-1309")]
     #[test]
-    fn an_obligation_row_names_the_declaration_that_holds_its_span() {
+    fn an_obligation_row_names_the_requirement_form_that_holds_its_span() {
         let parsed = parse_text(
             &native("unit:main"),
             &format!("{HEADER}{GUARDED}\n{GUARDED_G}\n"),
@@ -453,15 +488,6 @@ mod tests {
         );
         let checked = run_check(&parsed, SpineLimits::default());
         let unit = checked.as_ref().expect("the fixture checks").value();
-        let declarations = unit.type_report().declarations();
-        let ordinal_of = |name: &str| {
-            declarations
-                .iter()
-                .position(|declaration| format!("{:?}", declaration.node()).contains(name))
-                .expect("the declaration is in the report")
-        };
-        let (f, g) = (ordinal_of("\"f\""), ordinal_of("\"g\""));
-        assert_ne!(f, g);
         let outcome =
             qsl_inventory(Some(&parsed), &checked, &formal("NativeTypes0")).expect("an inventory");
         let handles: Vec<_> = identities(&outcome)
@@ -475,14 +501,54 @@ mod tests {
             .collect();
         assert_eq!(handles.len(), 4);
         let text = unit.source().text();
+        let g_at = text.find("function g").expect("g is present");
         for (handle, start) in handles {
-            let expected = if start < text.find("function g").expect("g is present") {
-                f
-            } else {
-                g
-            };
+            let expected = usize::from(start >= g_at);
             assert_eq!(handle, SourceDeclarationHandle(expected));
         }
+    }
+
+    /// FR-514-AC-8 (TC-1309 row 13): an obligation no requirement form holds
+    /// has no owner, which is a defensive typed error, never an invented
+    /// ordinal.
+    #[trace("FR-514-AC-11", "TC-1309")]
+    #[test]
+    fn an_obligation_no_requirement_form_holds_has_no_owner() {
+        let parsed = parse_text(
+            &native("unit:main"),
+            &format!("{HEADER}{GUARDED}\n"),
+            SpineLimits::default(),
+        );
+        let checked = run_check(&parsed, SpineLimits::default());
+        let unit = checked.as_ref().expect("the fixture checks").value();
+        let pending = &unit.type_report().obligations()[0];
+        assert!(obligation(pending, &[]).is_none());
+        let before = Span { start: 0, end: 1 };
+        assert!(obligation(pending, &[before]).is_none());
+        let forms = requirement_form_spans(&parsed);
+        assert!(obligation(pending, &forms).is_some());
+    }
+
+    /// FR-514-AC-10 (TC-1309): a checked unit, or a limit after S2, with no
+    /// `parsed` is a caller defect, not an inventory with zero rows.
+    #[trace("FR-514-AC-10", "TC-1309")]
+    #[test]
+    fn a_missing_parsed_unit_is_refused_after_s2() {
+        let parsed = parse_text(
+            &native("unit:main"),
+            &format!("{HEADER}{GUARDED}\n"),
+            SpineLimits::default(),
+        );
+        let checked = run_check(&parsed, SpineLimits::default());
+        assert!(matches!(
+            qsl_inventory(None, &checked, &formal("NativeTypes0")),
+            Err(InventoryRefusal::MissingParsedUnit)
+        ));
+        let stopped = run_check(&parsed, one_below_need(&parsed));
+        assert!(matches!(
+            qsl_inventory(None, &stopped, &formal("NativeTypes0")),
+            Err(InventoryRefusal::MissingParsedUnit)
+        ));
     }
 
     /// FR-362-AC-4 (TC-1026): a unit that declares no claim site reports
@@ -590,7 +656,7 @@ mod tests {
             SpineLimits::default(),
         );
         let checked = run_check(&parsed, SpineLimits::default());
-        let rows = expected_rows(checked.as_ref().expect("checks").value());
+        let rows = expected_rows(checked.as_ref().expect("checks").value(), &parsed);
         assert!(rows.iter().all(|row| row != &form));
     }
 
@@ -630,7 +696,7 @@ mod tests {
     /// FR-514-AC-3 (TC-1309 row 3), FR-523: a tick-count limit is a runtime
     /// temporal-evidence limit with no type-work dimension, so it is not a
     /// type-admission exhaustion and gives no inventory.
-    #[trace("FR-514-AC-3", "TC-1309")]
+    #[trace("FR-514-AC-3", "FR-514-AC-12", "TC-1309")]
     #[test]
     fn a_runtime_tick_limit_yields_no_inventory_rather_than_a_type_work_cause() {
         let limit = qsl_foundation::diagnostic::LimitExceeded::new(
@@ -742,7 +808,11 @@ mod tests {
         .expect("both units check")
         .into_value();
         let package_records = units[0].package().graph().requirements().len();
-        let expected: Vec<_> = units.iter().map(expected_rows).collect();
+        let expected: Vec<_> = units
+            .iter()
+            .zip([&a, &b])
+            .map(|(unit, parsed)| expected_rows(unit, parsed))
+            .collect();
         let report_records: Vec<_> = units
             .iter()
             .map(|unit| unit.type_report().requirements().len())

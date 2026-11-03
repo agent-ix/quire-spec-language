@@ -863,7 +863,6 @@ pub struct PendingObligation {
     occurrence: qsl_foundation::source::provenance::OccurrenceKey,
     capability_kind: String,
     span: qsl_foundation::Span,
-    declaration: Option<usize>,
 }
 
 impl PendingObligation {
@@ -885,15 +884,6 @@ impl PendingObligation {
     /// The source span of this claim or protocol requirement.
     pub fn span(&self) -> qsl_foundation::Span {
         self.span
-    }
-
-    /// The ordinal in [`TypeReport::declarations`] of the declaration whose
-    /// source span is the smallest one holding this obligation's span, or
-    /// `None` when no declaration of the unit holds it. A claim node can be
-    /// shared by several declarations, so the owner is read from the
-    /// source position, not from the node.
-    pub fn declaration_ordinal(&self) -> Option<usize> {
-        self.declaration
     }
 
     /// Every retained obligation is pending until analysis or replay.
@@ -930,7 +920,7 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
             end: usize::try_from(region.end()).ok()?,
         })
     };
-    let declarations: Vec<TypeDeclaration> = graph
+    let declarations = graph
         .semantic_graph()
         .nodes()
         .filter(|node| owns(node) && node.declaration().is_some())
@@ -961,7 +951,6 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
                 occurrence: occurrence.clone(),
                 capability_kind: record.requirements().kind().to_wire().to_owned(),
                 span,
-                declaration: None,
             })
         })
         .collect();
@@ -1006,7 +995,6 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
                         .to_wire()
                         .to_owned(),
                     span: qsl_foundation::Span { start, end },
-                    declaration: None,
                 });
             }
         }
@@ -1028,7 +1016,6 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
                     .to_wire()
                     .to_owned(),
                 span: requirement.span,
-                declaration: None,
             });
         }
     }
@@ -1046,29 +1033,6 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
                 &right.capability_kind,
             ))
     });
-    let declaration_spans: Vec<Option<qsl_foundation::Span>> = declarations
-        .iter()
-        .map(|declaration: &TypeDeclaration| {
-            occurrence_span(
-                declaration.node(),
-                qsl_foundation::source::provenance::OccurrenceKey::declaration(
-                    declaration.node().clone(),
-                )
-                .origin(),
-            )
-        })
-        .collect();
-    for obligation in &mut obligations {
-        obligation.declaration = declaration_spans
-            .iter()
-            .enumerate()
-            .filter_map(|(ordinal, span)| Some((ordinal, (*span)?)))
-            .filter(|(_, span)| {
-                span.start <= obligation.span.start && obligation.span.end <= span.end
-            })
-            .min_by_key(|(_, span)| span.end - span.start)
-            .map(|(ordinal, _)| ordinal);
-    }
     TypeReport {
         declarations,
         requirements,

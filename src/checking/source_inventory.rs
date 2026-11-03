@@ -61,28 +61,36 @@ fn dimension(dimension: Dimension) -> SourceTypeWorkDimension {
     }
 }
 
-/// A measured amount widened to the IR's `u128` charge fields.
-fn widen(amount: usize) -> u128 {
-    u128::try_from(amount).unwrap_or(u128::MAX)
+/// The stop for a measured amount the IR's wider fields cannot hold: a
+/// typed owner request failure, never a clamped value.
+fn unrepresentable(field: &str) -> SourceInventoryIncompleteReason {
+    SourceInventoryIncompleteReason::RequestFailed {
+        owner: SourceInventoryOwner::Qsl,
+        cause: format!("the exhaustion's {field} does not fit the IR field").into(),
+    }
 }
 
 /// The composed lane's exhaustion: it measures a prior charge, a requested
 /// increment and a native site, and reports no owner stage, setting name or
 /// observed counter, so those fields are absent rather than invented.
-fn exhaustion(exhaustion: &Exhaustion) -> Box<SourceTypeExhaustion> {
-    Box::new(SourceTypeExhaustion {
+fn exhaustion(
+    exhaustion: &Exhaustion,
+) -> Result<Box<SourceTypeExhaustion>, SourceInventoryIncompleteReason> {
+    let widen =
+        |amount: usize, field: &str| u128::try_from(amount).map_err(|_| unrepresentable(field));
+    Ok(Box::new(SourceTypeExhaustion {
         stage: None,
         setting: None,
         dimension: dimension(exhaustion.dimension),
-        limit: u64::try_from(exhaustion.limit).unwrap_or(u64::MAX),
+        limit: u64::try_from(exhaustion.limit).map_err(|_| unrepresentable("limit"))?,
         observed: None,
-        prior: Some(widen(exhaustion.prior)),
-        requested: Some(widen(exhaustion.requested)),
+        prior: Some(widen(exhaustion.prior, "prior charge")?),
+        requested: Some(widen(exhaustion.requested, "requested increment")?),
         site: SourceTypeExhaustionSite {
             native: Some(site(&exhaustion.site)),
             region: None,
         },
-    })
+    }))
 }
 
 fn kind(kind: ObligationKind) -> SourcePendingObligationKind {
@@ -115,9 +123,10 @@ fn pending(obligation: &Obligation) -> SourcePendingObligationId {
 /// [`TypeDisposition::Unfinished`] is named.
 fn stop_reason(types: &TypeReport<'_, '_>) -> Option<SourceInventoryIncompleteReason> {
     if let Some(stopped) = types.exhaustion() {
-        return Some(SourceInventoryIncompleteReason::TypeWorkExhausted(
-            exhaustion(stopped),
-        ));
+        return Some(match exhaustion(stopped) {
+            Ok(cause) => SourceInventoryIncompleteReason::TypeWorkExhausted(cause),
+            Err(reason) => reason,
+        });
     }
     types
         .binding()

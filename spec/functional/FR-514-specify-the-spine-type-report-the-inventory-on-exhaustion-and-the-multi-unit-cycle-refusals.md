@@ -120,16 +120,22 @@ limit is `Incomplete`.
   `SourceInventoryIdentity::RequirementForm`. It names no checked node and is
   never a requirement-record identity.
 - **Pending obligation** row: the IR's `SourcePendingObligationId`.
-  `site.declaration` is the ordinal in
-  `type_report().declarations()` of the owning declaration, the declaration with
-  the smallest source span that holds the obligation's span (a claim node can be
-  shared by several declarations, so the node alone does not name the owner); `site.unit` is 0 (the unit is presented
-  alone); `site.expression` is absent; `site.start` and `site.end` are the
-  span's bytes; `kind` is `SourcePendingObligationKind::CapabilityKind` holding
-  the obligation's exact capability kind name (FR-057-AC-10, FR-290). An
-  obligation no declaration's span holds has no owning declaration and the
-  inventory is refused with `InventoryRefusal::UnownedObligation` instead of
-  carrying an invented ordinal.
+  `site.declaration` is the ordinal of the obligation's **owning requirement
+  form**: the form ordinal (the same ordinal the form has as an `Incomplete`
+  inventory's requirement-form row) of the one requirement form whose S2 source
+  span holds the obligation's span. A `function`'s value claims, a state
+  clause's `post` claim, a `temporal` clause's claim, a protocol's `check` and a
+  protocol's temporal requirement are each owned by the form that textually
+  contains them; top-level forms do not overlap, so the owner is unique. The
+  type report's `declarations()` is not the owner list (it holds only the
+  declarations that carry a value type). `site.unit` is 0 (the unit is
+  presented alone); `site.expression` is absent; `site.start` and `site.end`
+  are the span's bytes; `kind` is `SourcePendingObligationKind::CapabilityKind`
+  holding the obligation's exact capability kind name (FR-057-AC-10, FR-290).
+  An obligation no requirement form holds has no owner; the inventory is then
+  refused with the defensive `InventoryRefusal::UnownedObligation` instead of
+  carrying an invented ordinal. It is unreachable for an admitted unit, whose
+  obligations all lie inside its requirement forms.
 - **Exhaustion cause**, the IR's `TypeWorkExhausted(SourceTypeExhaustion)`:
   `stage` is the stage that owns the setting as FR-255's table spells it,
   `setting` the FR-255 setting name, `limit` the configured bound and `observed`
@@ -196,9 +202,11 @@ FR-480's criteria belong to four pieces of work (QSL-1508):
 | FR-514-AC-5 | The FR-480-AC-6 documents give, for `[1, 2]`, `invalid_package`/`invalid-value` at `z` in document 1; for `[2, 1]`, `invalid_package`/`definition-cycle` at `u_self` in document 2 with edge `u_self` to `u_self`; a two-unit cycle `z`, `z2` across documents gives `invalid_package`/`definition-cycle` with both edges; a dimension cycle across documents gives the same code; each names the document's source reference. | Test (TC-1309) |
 | FR-514-AC-6 | A consistency test over this requirement and FR-480 finds every `FR-480-AC-n` id of FR-480 in the pieces table; only FR-480-AC-2 appears in two rows, and the two rows quote disjoint sentences of it. | Test (TC-1309) |
 | FR-514-AC-7 | For `T0` with `s3.work_units` one below need, the `Incomplete` inventory lists one requirement-form row per requirement form of `T0`'s S2 list (the function `f`, the state clause and the protocol), each identified by its form ordinal 0, 1, 2 and its declared name when it has one, a `function` declaring no requirement included; none of those identities equals a `Complete` requirement record, and an `enum` declared beside them gives no row. | Test (TC-1309) |
-| FR-514-AC-8 | For `T0` with sufficient limits, `qsl_inventory` returns `Complete` with one requirement row per requirement record and one obligation row per pending obligation (FR-362-AC-4), and each obligation row's IR identity holds its exact capability kind name, owning declaration ordinal in `type_report().declarations()`, unit 0 and the span's bytes; two obligations of one declaration differ by span and kind. | Test (TC-1309) |
+| FR-514-AC-8 | For `T0` with sufficient limits, `qsl_inventory` returns `Complete` with one requirement row per requirement record and one obligation row per pending obligation (FR-362-AC-4), and each obligation row's IR identity holds its exact capability kind name, owning requirement form ordinal (the form's ordinal in source order: `f` 0, the state clause 1, the protocol 2 for `T0`; a protocol's `check` and its temporal requirement belong to the protocol), unit 0 and the span's bytes; two obligations of one form differ by span and kind. | Test (TC-1309) |
 | FR-514-AC-9 | For the limit outcomes of AC-3, the IR cause carries the stage (S3, S1), the setting (`s3.work_units`, `s1.nodes`), the dimension (`constraints` for the work budget, `expressions` for `s1.nodes`), `limit` the configured bound, `observed` the actual value (an amount above `u64::MAX` unchanged), no `prior`, no `requested`, no native site, and the limit's source region when it has one. | Test (TC-1309) |
 | FR-514-AC-10 | `qsl_inventory` with `parsed` `None` over a limit at S1 or S2 returns `Incomplete` with zero rows and the cause; with `parsed` `None` over a limit at S3, or over `Ok(unit)`, it returns `InventoryRefusal::MissingParsedUnit` and no inventory. | Test (TC-1309) |
+| FR-514-AC-11 | An obligation whose span no requirement form holds (a synthetic obligation over an empty or non-containing form list) has no owner: the owner lookup gives none and `qsl_inventory` over such a unit would return `InventoryRefusal::UnownedObligation`, never an obligation row with an invented ordinal. | Test (TC-1309) |
+| FR-514-AC-12 | `qsl_inventory` over a `StageFailure::Limit` whose kind is `TickCount` returns `InventoryRefusal::NoInventory` and no rows, because a runtime limit kind has no type-work dimension. | Test (TC-1309) |
 
 ## Dependencies
 
