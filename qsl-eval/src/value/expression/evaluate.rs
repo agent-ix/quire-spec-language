@@ -8,8 +8,8 @@
 //! make no charge.
 
 use quire_checked::node::{
-    Arithmetic, AuthoredBound, CheckedLiteral, Connective, EndSide, IntegerDivisionOperator,
-    NodeKind, OrderedKind, RecordSlot, Visit,
+    Arithmetic, AuthoredBound, CheckedLiteral, Connective, ConnectiveOrigin, EndSide,
+    IntegerDivisionOperator, NodeKind, OrderedKind, RecordSlot, Visit,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
@@ -42,6 +42,9 @@ use quire_eval::{
 };
 use quire_exact::Rational;
 use quire_exact::{
+    compare_ieee, evaluate_ieee, ieee_to_exact, IeeeComparison, IeeeFlags, IeeeOperation,
+};
+use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
     CompositeValue, FieldValue, ObjectReference, OptionValue, Quantity, UnionValue, Value,
     ValueType,
@@ -53,7 +56,6 @@ use quire_exact::{
     OrderingOperator, RationalArithmetic,
 };
 use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
-use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeFlags, IeeeOperation};
 use quire_exact::{
     BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Incomplete, Integer,
     IntegerInterval, LimitKind, Meter, PopulationId,
@@ -1621,11 +1623,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Short(node) => {
-                let NodeKind::Connective(connective, _, right) = node.kind() else {
+                let NodeKind::Connective(connective, origin, _, right) = node.kind() else {
                     return Err(invariant("evaluation-connective-node-expected"));
                 };
                 let left = self.pop_boolean()?;
-                self.decide(node, left);
+                // Only a connective the source wrote has a decision (FR-265);
+                // the checker's own composition of a float ordering has none.
+                if matches!(origin, ConnectiveOrigin::Authored) {
+                    self.decide(node, left);
+                }
                 let skipped = match connective {
                     Connective::And => (!left).then_some(false),
                     Connective::Or => left.then_some(true),
@@ -1793,7 +1799,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(node.at(*condition)));
                 return Ok(());
             }
-            NodeKind::Connective(_, left, _) => {
+            NodeKind::Connective(_, _, left, _) => {
                 self.tasks.push(Task::Short(node));
                 self.tasks.push(Task::Eval(node.at(*left)));
                 return Ok(());
@@ -2151,6 +2157,45 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 Value::Float(result.value())
             }
+            NodeKind::IeeeFloat32Fma(rounding, ..) | NodeKind::IeeeFloat64Fma(rounding, ..) => {
+                let (Value::Float(addend), Value::Float(right), Value::Float(left)) =
+                    (self.pop()?, self.pop()?, self.pop()?)
+                else {
+                    return Err(invariant("ieee-float-value-expected"));
+                };
+                if self.scope.ieee_profile().is_none() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                let result = outcome_into_stop(
+                    evaluate_ieee(
+                        IeeeOperation::FusedMultiplyAdd(left, right, addend),
+                        *rounding,
+                        self.meter,
+                    )
+                    .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?;
+                if result.flags() != IeeeFlags::EMPTY {
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                }
+                Value::Float(result.value())
+            }
+            NodeKind::IeeeTotalOrder(..) | NodeKind::IeeeBitIdentical(..) => {
+                let comparison = if matches!(node.kind(), NodeKind::IeeeTotalOrder(..)) {
+                    IeeeComparison::TotalOrder
+                } else {
+                    IeeeComparison::BitIdentical
+                };
+                let (Value::Float(right), Value::Float(left)) = (self.pop()?, self.pop()?) else {
+                    return Err(invariant("ieee-float-value-expected"));
+                };
+                if self.scope.ieee_profile().is_none() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                Value::Boolean(outcome_into_stop(
+                    compare_ieee(comparison, left, right, self.meter)
+                        .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?)
+            }
             NodeKind::Quantity(operator, _, _) => {
                 let (Value::Quantity(right), Value::Quantity(left)) = (self.pop()?, self.pop()?)
                 else {
@@ -2217,19 +2262,33 @@ impl<'a, 'm> Machine<'a, 'm> {
                         "typed-ieee-equality-operands-are-not-floats",
                     )));
                 };
-                let same_width = left.width() == right.width();
-                let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
-                    false
+                if !node.is_ordering_part() {
+                    // A standalone `=` or `numericEqual` is the one owned
+                    // core of FR-148: it charges its operands and result.
+                    if self.scope.ieee_profile().is_none() {
+                        return Err(invariant("ieee-profile-unresolved"));
+                    }
+                    Value::Boolean(outcome_into_stop(
+                        compare_ieee(IeeeComparison::NumericEqual, left, right, self.meter)
+                            .map_err(|_| invariant("ieee-operation-rejected"))?,
+                    )?)
                 } else {
-                    let zero = |value: quire_exact::IeeeValue| match value.width() {
-                        quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
-                        quire_exact::IeeeWidth::Binary64 => {
-                            value.bits() & 0x7fff_ffff_ffff_ffff == 0
-                        }
+                    // FR-397 "Evaluate once": the numeric-equality parts of
+                    // an ordering's composition add no charge.
+                    let same_width = left.width() == right.width();
+                    let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
+                        false
+                    } else {
+                        let zero = |value: quire_exact::IeeeValue| match value.width() {
+                            quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
+                            quire_exact::IeeeWidth::Binary64 => {
+                                value.bits() & 0x7fff_ffff_ffff_ffff == 0
+                            }
+                        };
+                        (zero(left) && zero(right)) || left.bits() == right.bits()
                     };
-                    (zero(left) && zero(right)) || left.bits() == right.bits()
-                };
-                Value::Boolean(numeric_equal)
+                    Value::Boolean(numeric_equal)
+                }
             }
             NodeKind::Not(_) => {
                 let operand = self.pop_boolean()?;
@@ -5334,5 +5393,176 @@ mod tests {
             fault.kernel_cause(),
             Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
         );
+    }
+    /// FR-265 records a decision for each authored `and`; the connectives a
+    /// float ordering lowers to carry none, so a claim's trail holds exactly
+    /// the authored decision.
+    #[trace("TC-1091", "FR-397-AC-12")]
+    #[test]
+    fn a_float_ordering_records_no_decision_but_an_authored_connective_does() {
+        use qsl_forms::BinaryOperator;
+        use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
+        use quire_exact::{FloatType, IeeeValue, IeeeWidth};
+        let package = qsl_package::CheckedPackage::link(
+            PackageDeclarations {
+                ieee_profile: Some(
+                    admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap(),
+                ),
+                ..PackageDeclarations::new(
+                    qsl_semantics::check::fixture_source(),
+                    "fixture".to_owned(),
+                    qsl_foundation::IdentityLimits::default(),
+                )
+            }
+            .check(CheckingLimits::default())
+            .unwrap(),
+        );
+        let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
+        let ordering =
+            |operator| Expression::binary(operator, Expression::name("f"), Expression::name("g"));
+        let run = |expression: &Expression| {
+            let checked = package
+                .graph()
+                .check_clause_expression(
+                    vec![
+                        ("f".to_owned(), double.clone()),
+                        ("g".to_owned(), double.clone()),
+                    ],
+                    expression,
+                    None,
+                    qsl_forms::ClauseKind::Invariant,
+                    CheckMode::Kernel,
+                    CheckingLimits::default(),
+                )
+                .unwrap();
+            let objects = ObjectEnvironment::default();
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let trail = Trail::new(
+                super::super::s6a::separation::ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "current".to_owned(),
+                    revision_namespace: "ns".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                None,
+            );
+            let (evaluation, trail) = Machine::new(
+                package.graph().scope(),
+                package.graph(),
+                &objects,
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(
+                checked.root(),
+                checked.slots(),
+                vec![
+                    Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000)),
+                    Value::Float(IeeeValue::binary64(0x4000_0000_0000_0000)),
+                ],
+            )
+            .unwrap();
+            assert!(matches!(
+                evaluation.outcome,
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+            ));
+            let mut nodes = vec![checked.root()];
+            let mut decisions = Vec::new();
+            while let Some(node) = nodes.pop() {
+                let children: Vec<_> = match node.kind() {
+                    NodeKind::Connective(_, _, left, right) => vec![*left, *right],
+                    NodeKind::Not(operand) => vec![*operand],
+                    _ => Vec::new(),
+                };
+                if matches!(node.kind(), NodeKind::Connective(..)) {
+                    decisions.push(trail.decision(node.location()));
+                }
+                nodes.extend(children.into_iter().map(|child| node.at(child)));
+            }
+            decisions
+        };
+        // 1.0 < 2.0 and 1.0 <= 2.0: no connective carries a decision.
+        for operator in [BinaryOperator::Less, BinaryOperator::LessOrEqual] {
+            let decisions = run(&ordering(operator));
+            assert!(!decisions.is_empty(), "the ordering lowers to connectives");
+            assert!(decisions.iter().all(Option::is_none), "{decisions:?}");
+        }
+        // An authored `and` over two orderings records exactly its own
+        // decision, the value of its left operand.
+        let authored = Expression::binary(
+            BinaryOperator::And,
+            ordering(BinaryOperator::Less),
+            ordering(BinaryOperator::Less),
+        );
+        let decisions = run(&authored);
+        assert_eq!(decisions.iter().flatten().count(), 1, "{decisions:?}");
+        assert!(decisions.contains(&Some(true)));
+    }
+    /// FR-265: whether a connective records a decision is read from its
+    /// origin, not from where it sits. Every node of this body has one
+    /// location, so an authored connective shares its left operand's.
+    #[trace("TC-1091", "FR-397-AC-12")]
+    #[test]
+    fn a_connective_records_a_decision_by_its_origin_not_its_location() {
+        use qsl_semantics::check::CheckedBody;
+        let package = qsl_package::CheckedPackage::link(
+            PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+            .check(CheckingLimits::default())
+            .unwrap(),
+        );
+        let decision = |origin| {
+            let literal = || {
+                (
+                    NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                    ValueType::Boolean,
+                )
+            };
+            let body = CheckedBody::from_nodes(vec![
+                literal(),
+                literal(),
+                (
+                    NodeKind::Connective(
+                        Connective::And,
+                        origin,
+                        CheckedBody::id_at(0),
+                        CheckedBody::id_at(1),
+                    ),
+                    ValueType::Boolean,
+                ),
+            ]);
+            assert_eq!(
+                body.root().at(CheckedBody::id_at(0)).location(),
+                body.root().location()
+            );
+            let objects = ObjectEnvironment::default();
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let trail = Trail::new(
+                super::super::s6a::separation::ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "current".to_owned(),
+                    revision_namespace: "ns".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                None,
+            );
+            let (_, trail) = Machine::new(
+                package.graph().scope(),
+                package.graph(),
+                &objects,
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(body.root(), 0, Vec::new())
+            .unwrap();
+            trail.decision(body.root().location())
+        };
+        assert_eq!(decision(ConnectiveOrigin::Authored), Some(true));
+        assert_eq!(decision(ConnectiveOrigin::Synthesized), None);
     }
 }

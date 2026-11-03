@@ -3981,7 +3981,7 @@ impl<'a> Lowering<'a> {
                 let identity = format!("quire.op.ieee.{width}.sqrt");
                 (
                     Keyed::Application(
-                        Operator::Unary,
+                        Operator::Call,
                         Operation {
                             laws: vec![law],
                             mode: Some(OperationMode::Rounding(*rounding)),
@@ -3991,6 +3991,47 @@ impl<'a> Lowering<'a> {
                     Operands::One(operand),
                 )
             }
+            NodeKind::IeeeFloat32Fma(rounding, a, b, c)
+            | NodeKind::IeeeFloat64Fma(rounding, a, b, c) => {
+                let width = if matches!(node.kind(), NodeKind::IeeeFloat32Fma(..)) {
+                    "float32"
+                } else {
+                    "float64"
+                };
+                let law = self.law(LawRole::IeeeProfile, node.location())?;
+                let identity = format!("quire.op.ieee.{width}.fma");
+                (
+                    Keyed::Application(
+                        Operator::Call,
+                        Operation {
+                            laws: vec![law],
+                            mode: Some(OperationMode::Rounding(*rounding)),
+                            ..plain(&identity)
+                        },
+                    ),
+                    Operands::Three(a, b, c),
+                )
+            }
+            NodeKind::IeeeTotalOrder(_, left, right) => (
+                Keyed::Application(
+                    Operator::Call,
+                    Operation {
+                        laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
+                        ..plain("quire.op.ieee.total_order")
+                    },
+                ),
+                Operands::Two(left, right),
+            ),
+            NodeKind::IeeeBitIdentical(left, right) => (
+                Keyed::Application(
+                    Operator::Call,
+                    Operation {
+                        laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
+                        ..plain("quire.op.ieee.bit_identical")
+                    },
+                ),
+                Operands::Two(left, right),
+            ),
             NodeKind::ConvertDecimal(operand, target) => {
                 // FR-149 scale reduction: a decimal of larger maximum scale,
                 // or a rational whose denominators exceed 1.
@@ -4028,6 +4069,11 @@ impl<'a> Lowering<'a> {
                     OrderedKind::Enums => "enum",
                     OrderedKind::Texts => "text",
                     OrderedKind::Quantities => "quantity",
+                    // The checker lowers a float ordering to
+                    // `IeeeTotalOrder` compositions, never to `Order`.
+                    OrderedKind::Float => {
+                        return Err(fault(node.location(), KeyFault::UntypedIeeeOperand))
+                    }
                 };
                 let mut operation =
                     plain(&format!("quire.op.{family}.{}", ordering_suffix(*operator)));
@@ -4055,7 +4101,7 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::IeeeNumericEquality(left, right) => (
                 Keyed::Application(
-                    Operator::Binary,
+                    Operator::Call,
                     Operation {
                         laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
                         ..plain("quire.op.ieee.numeric_equal")
@@ -4063,7 +4109,7 @@ impl<'a> Lowering<'a> {
                 ),
                 Operands::Two(left, right),
             ),
-            NodeKind::Connective(connective, left, right) => {
+            NodeKind::Connective(connective, _, left, right) => {
                 let identity = match connective {
                     Connective::And => "quire.op.boolean.and",
                     Connective::Or => "quire.op.boolean.or",

@@ -478,7 +478,7 @@ impl<'g> Expander<'g> {
                                     EqualityOperator::Equal => CompareOp::Eq,
                                     EqualityOperator::NotEqual => CompareOp::Ne,
                                 })),
-                                NodeKind::Connective(op, _, _) => Some(Build::Logic(match op {
+                                NodeKind::Connective(op, _, _, _) => Some(Build::Logic(match op {
                                     Connective::And => LogicOp::And,
                                     Connective::Or => LogicOp::Or,
                                     Connective::Implies => LogicOp::Implies,

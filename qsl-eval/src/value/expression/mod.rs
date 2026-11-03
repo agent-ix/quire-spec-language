@@ -1313,7 +1313,7 @@ fn resolve_quantifier<'g>(
                 pending.push((node.at(*otherwise), lets));
             }
             NodeKind::Not(operand) => pending.push((node.at(*operand), lets)),
-            NodeKind::Connective(_, left, right) => {
+            NodeKind::Connective(_, _, left, right) => {
                 pending.push((node.at(*left), lets.clone()));
                 pending.push((node.at(*right), lets));
             }

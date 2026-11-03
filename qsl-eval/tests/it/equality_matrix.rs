@@ -2467,7 +2467,7 @@ fn x04_compound_results_feed_further_quantity_operations() {
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-6")]
 #[test]
-fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
+fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
     let package = expression_package(TypeEnvironment::default(), true);
     let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
     let parameters = [
@@ -2556,9 +2556,19 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         ))
     };
     let ill = |cause| CheckCause::IllTyped(cause);
+    // FR-397-AC-12: a same-type float ordering checks as the IEEE
+    // comparison composition; unlike widths are a mismatch.
+    assert!(check_in(
+        &package,
+        &parameters,
+        &operation(BinaryOperator::Less, "f", "g"),
+        None,
+        CheckMode::Kernel,
+    )
+    .is_ok());
     assert_eq!(
-        cause(&package, &operation(BinaryOperator::Less, "f", "g")),
-        ill(IllTypedCause::OperatorIneligible)
+        cause(&package, &operation(BinaryOperator::Less, "f", "h")),
+        ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&package, &negation("f")),
@@ -2568,20 +2578,72 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         cause(&package, &operation(BinaryOperator::Add, "f", "h")),
         ill(IllTypedCause::TypeMismatch)
     );
-    // FR-397-AC-6: arithmetic over a float and an exact type is a mismatch,
-    // while any comparison with a float operand is ineligible.
+    // FR-397-AC-6, FR-397-AC-12: arithmetic or ordering over a float and an
+    // exact type is a mismatch.
     assert_eq!(
         cause(&package, &operation(BinaryOperator::Add, "f", "i")),
         ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&package, &operation(BinaryOperator::Less, "f", "i")),
-        ill(IllTypedCause::OperatorIneligible)
+        ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&plain_package(), &operation(BinaryOperator::Add, "f", "g")),
         CheckCause::IeeeProfileNotAdmitted
     );
+}
+
+/// The connectives under `node`: whether each is one the checker synthesized
+/// (true) or one the source wrote (false), by the origin the node carries.
+fn connective_sites(node: qsl_semantics::check::CheckedNode<'_>, found: &mut Vec<bool>) {
+    use quire_checked::node::{ConnectiveOrigin, NodeKind};
+    match node.kind() {
+        NodeKind::Connective(_, origin, left, right) => {
+            found.push(matches!(origin, ConnectiveOrigin::Synthesized));
+            connective_sites(node.at(*left), found);
+            connective_sites(node.at(*right), found);
+        }
+        NodeKind::Not(operand) => connective_sites(node.at(*operand), found),
+        NodeKind::Let { value, body, .. } => {
+            connective_sites(node.at(*value), found);
+            connective_sites(node.at(*body), found);
+        }
+        _ => {}
+    }
+}
+
+/// FR-265 records a decision for each authored `and`, `or`, `implies` and
+/// `if`; the connectives a float ordering lowers to carry the synthesized
+/// origin, which is how the evaluator tells them from authored ones.
+#[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
+#[trace("TC-1091", "FR-397-AC-12")]
+#[test]
+fn a_float_ordering_adds_no_connective_a_decision_could_attach_to() {
+    let package = expression_package(TypeEnvironment::default(), true);
+    let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
+    let parameters = [("f", double.clone()), ("g", double)];
+    let checked = |expression: &Expression| {
+        check_in(&package, &parameters, expression, None, CheckMode::Kernel)
+            .expect("the expression checks")
+    };
+    for operator in [
+        BinaryOperator::Less,
+        BinaryOperator::LessOrEqual,
+        BinaryOperator::Greater,
+        BinaryOperator::GreaterOrEqual,
+    ] {
+        let ordering = operation(operator, "f", "g");
+        let mut sites = Vec::new();
+        connective_sites(checked(&ordering).root(), &mut sites);
+        assert!(!sites.is_empty() && sites.iter().all(|synthetic| *synthetic));
+        // Written inside an `and`, only the written connective is one a
+        // decision attaches to.
+        let both = Expression::binary(BinaryOperator::And, ordering.clone(), ordering);
+        let mut sites = Vec::new();
+        connective_sites(checked(&both).root(), &mut sites);
+        assert_eq!(sites.iter().filter(|synthetic| !**synthetic).count(), 1);
+    }
 }
 
 fn record(name: &str, fields: Vec<(&str, Expression)>) -> Expression {
