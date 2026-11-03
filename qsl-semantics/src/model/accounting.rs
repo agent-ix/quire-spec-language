@@ -83,6 +83,7 @@ impl ModelNormalizationLimits {
         family_steps: u64::MAX,
         intake: qsl_foundation::IntakeLimits {
             input_bytes: u64::MAX,
+            sequence_maximum: u32::MAX,
         },
     };
 }
@@ -171,6 +172,10 @@ impl qsl_foundation::SettingLimits for ModelNormalizationLimits {
             (Setting::ModelAncestorSteps, self.ancestor_steps),
             (Setting::ModelFamilySteps, self.family_steps),
             (Setting::IntakeInputBytes, self.intake.input_bytes),
+            (
+                Setting::ModelSequenceMaximum,
+                u64::from(self.intake.sequence_maximum),
+            ),
         ]
     }
 
@@ -184,7 +189,9 @@ impl qsl_foundation::SettingLimits for ModelNormalizationLimits {
             Setting::ModelWorkUnits => self.work_units = bound,
             Setting::ModelAncestorSteps => self.ancestor_steps = bound,
             Setting::ModelFamilySteps => self.family_steps = bound,
-            Setting::IntakeInputBytes => self.intake.input_bytes = bound,
+            Setting::IntakeInputBytes | Setting::ModelSequenceMaximum => {
+                return self.intake.set_bound(setting, bound)
+            }
             _ => return false,
         }
         true

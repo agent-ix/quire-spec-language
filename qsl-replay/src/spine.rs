@@ -413,6 +413,7 @@ impl CompileRefusal {
                 | Setting::EnvironmentWorkUnits
                 | Setting::IdentityInputBytes => SpineStage::Assembly,
                 Setting::ModelDeclarationRecords
+                | Setting::ModelSequenceMaximum
                 | Setting::ModelDerivationFacts
                 | Setting::ModelEffectiveDeclarations
                 | Setting::ModelDispatchCandidates

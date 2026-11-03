@@ -403,10 +403,47 @@ impl PackageDocument {
                 }));
             }
         };
-        Ok(Self {
+        let document = Self {
             bundle: agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), ir)]),
             tree,
-        })
+        };
+        document.check_collection_maxima(limits.sequence_maximum)?;
+        Ok(document)
+    }
+
+    /// FR-506: refuses the first declared collection maximum, in document
+    /// order, above `bound` (`model.sequence_maximum`): the `upper` of a
+    /// field's, an operation parameter's or an operation result's
+    /// multiplicity, in every type, used or not. A multiplicity with no
+    /// `upper` declares no maximum.
+    fn check_collection_maxima(&self, bound: u32) -> Result<(), ModelRefusal> {
+        let multiplicity_upper = |holder: &Value| {
+            holder
+                .get("multiplicity")
+                .and_then(|multiplicity| multiplicity.get("upper"))
+                .and_then(Value::as_u64)
+        };
+        let exceeds =
+            |holder: &Value| multiplicity_upper(holder).filter(|upper| *upper > u64::from(bound));
+        fn elements<'v>(holder: &'v Value, name: &str) -> Vec<&'v Value> {
+            holder
+                .get(name)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .collect()
+        }
+        for declared in elements(&self.tree, "types") {
+            let mut holders = elements(declared, "fields");
+            for operation in elements(declared, "operations") {
+                holders.extend(elements(operation, "params"));
+                holders.extend(operation.get("returns"));
+            }
+            if let Some(upper) = holders.into_iter().find_map(exceeds) {
+                return Err(sequence_maximum_exceeded(bound, upper));
+            }
+        }
+        Ok(())
     }
 
     /// The parsed document.
@@ -419,6 +456,12 @@ impl PackageDocument {
 /// `intake.input_bytes` at `bound`.
 fn input_bytes_exceeded(bound: u64, actual: u64) -> ModelRefusal {
     limit_exceeded(IntakeLimit::InputBytes, bound, actual)
+}
+
+/// FR-506: a package document declares a collection maximum of `actual`, over
+/// `model.sequence_maximum` at `bound`.
+fn sequence_maximum_exceeded(bound: u32, actual: u64) -> ModelRefusal {
+    limit_exceeded(IntakeLimit::SequenceMaximum, u64::from(bound), actual)
 }
 
 /// ADR-011 Limits: a package document reached `limit`, whose bound is
@@ -988,9 +1031,9 @@ pub fn package_input<'a>(
     for bytes in documents {
         let document = PackageDocument::parse(
             bytes,
-            IntakeLimits {
-                input_bytes: u64::MAX,
-            },
+            IntakeLimits::default()
+                .with_input_bytes(u64::MAX)
+                .with_sequence_maximum(u32::MAX),
         )?;
         let identity = declared_member(&document, "identity");
         if identity.is_empty() {
@@ -3689,6 +3732,10 @@ fn read_value_type(
     })
 }
 
+/// FR-506: the Contract IR text ceiling, in scalars. A Text value type whose
+/// `maxLength` exceeds it is refused whatever the caller's limits.
+const TEXT_MAX_LENGTH_CEILING: u64 = 1_048_576;
+
 /// A `value-type/v1` whose `scalar` is `string` as a Text value type
 /// (FR-056's Text paragraph): `constraints` hold a `minLength`, a `maxLength`
 /// and a `format` named `text-profile:<profile>`, each once. The first defect
@@ -3787,6 +3834,11 @@ fn read_text_value_type(
     let Some(profile) = TextProfile::from_code(profile_name) else {
         return Err(form(format!("profile={profile_name}")));
     };
+    if max > TEXT_MAX_LENGTH_CEILING {
+        return Err(form(format!(
+            "maxLength={max} exceeds the Contract IR text ceiling {TEXT_MAX_LENGTH_CEILING}"
+        )));
+    }
     let text =
         TextType::new(min, max, profile).map_err(|_| form(format!("bounds={min}..{max}")))?;
     Ok(ScalarTypeRecord {
@@ -5612,6 +5664,27 @@ fn source_record_count(document: &Value) -> usize {
                 .get(member)
                 .and_then(Value::as_array)
                 .map_or(0, Vec::len);
+        }
+        // FR-506: an operation's parameters, result and frame entries
+        // (`modifies`, `creates`, `deletes`) are records too.
+        for operation in type_value
+            .get("operations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            count += operation
+                .get("params")
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len);
+            count += usize::from(operation.get("returns").is_some());
+            for entry in ["modifies", "creates", "deletes"] {
+                count += operation
+                    .get("frame")
+                    .and_then(|frame| frame.get(entry))
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len);
+            }
         }
     }
     count

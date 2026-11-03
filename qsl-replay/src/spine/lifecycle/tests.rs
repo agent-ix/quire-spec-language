@@ -1541,7 +1541,7 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 /// through `select` (FR-255 Behavior 1 and FR-260 item 5: `IntakeLimits` is a
 /// caller budget, not a stage's own limits type), naming that setting,
 /// its bound and the document's size, never a missing package.
-#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
+#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1", "FR-506-AC-5")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
@@ -1555,6 +1555,9 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     )
     .expect("the model fixture parses")
     .into_value();
+    let mut exact = limits.model;
+    exact.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size);
+    assert!(select(&parsed, &packages, exact, &Cancel::new()).is_ok());
     let Err(StageFailure::Refused(refusal)) =
         select(&parsed, &packages, limits.model, &Cancel::new())
     else {
@@ -1570,6 +1573,25 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
             ("actual", size.to_string()),
             ("setting", "intake.input_bytes".to_owned()),
         ]))
+    );
+    let mut zero = limits.model;
+    zero.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(0);
+    let Err(StageFailure::Refused(refusal)) = select(&parsed, &packages, zero, &Cancel::new())
+    else {
+        panic!("a nonempty document exceeds the zero intake limit");
+    };
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("setting").cloned()),
+        Some("intake.input_bytes".to_owned())
+    );
+    assert_eq!(
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("actual").cloned()),
+        Some(size.to_string())
     );
 }
 
@@ -2309,7 +2331,7 @@ fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit.
-#[trace("TC-758", "FR-277-AC-1")]
+#[trace("TC-758", "FR-277-AC-1", "FR-506-AC-5")]
 #[test]
 fn check_names_the_checking_limit_field_it_reached() {
     let chain = fixture_chain();
@@ -2338,6 +2360,16 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+    let zero_nodes = run(|mut limits, _| {
+        limits.checking = CheckingLimits::new(0)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        limits
+    })(0);
+    assert!(matches!(
+        zero_nodes,
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
     assert_field(
         Setting::S3InputBytes,
         FoundationKind::InputBytes,
@@ -2356,6 +2388,53 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+}
+
+/// FR-506-AC-5 (TC-1301 row 11): the model's S3 formal nodes admit at their
+/// exact count and refuse when the named setting is zero.
+#[trace("FR-506-AC-5", "TC-1301")]
+#[test]
+fn selected_model_formal_node_limit_is_exact() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
+    let parsed = parse(
+        &request(spine_model::unit().as_bytes()),
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the selected model unit parses")
+    .into_value();
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the model selects")
+    .into_value();
+    let s3_nodes = |bound: u64| {
+        let mut limits = SpineLimits::default();
+        limits.checking = CheckingLimits::new(bound)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        reached(check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &Cancel::new(),
+        ))
+    };
+    assert_field(
+        Setting::S3Nodes,
+        FoundationKind::NodeCount,
+        100_000,
+        s3_nodes,
+    );
+    assert!(matches!(
+        s3_nodes(0),
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
 }
 
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
