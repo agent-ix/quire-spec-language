@@ -976,11 +976,18 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
         }
     }
     obligations.sort_by(|left, right| {
-        (&left.node, left.span, &left.capability_kind).cmp(&(
-            &right.node,
-            right.span,
-            &right.capability_kind,
-        ))
+        (
+            &left.node,
+            left.span.start,
+            left.span.end,
+            &left.capability_kind,
+        )
+            .cmp(&(
+                &right.node,
+                right.span.start,
+                right.span.end,
+                &right.capability_kind,
+            ))
     });
     TypeReport {
         declarations,
