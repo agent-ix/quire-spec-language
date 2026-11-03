@@ -142,7 +142,9 @@ fn every(guard: &str, reset: bool) -> World {
 }
 
 /// FR-204-AC-1 (TC-639 step 1): over every scheduler the minimum is `99/100`
-/// and the maximum `9999/10000`.
+/// and the maximum `9999/10000`. This is the values half of FR-204-AC-1; the
+/// proved/refuted settlement and the refutation path with its replay are not
+/// asserted here.
 #[trace("TC-639", "FR-204-AC-1")]
 #[test]
 fn deadline_extrema_over_every_scheduler() {
@@ -436,8 +438,9 @@ fn mixed_given_and_free_races_keep_each_choice_a_distribution() {
 }
 
 /// FR-204-AC-3 (TC-639): identities that tie at one delay run in sequence on
-/// one edge, and the edge carries the sum of their rewards.
-#[trace("TC-639", "FR-204-AC-3")]
+/// one edge, and the edge carries the sum of their rewards. FR-204 owns the
+/// race; no acceptance criterion states this behaviour.
+#[trace("TC-639", "FR-204")]
 #[test]
 fn tied_identities_sum_their_rewards_on_one_edge() {
     let world = with_tick(
@@ -473,7 +476,7 @@ fn tied_identities_sum_their_rewards_on_one_edge() {
 /// timed subject label the digital product. The send is forced by the
 /// invariant and delivers with probability 9/10, so delivery is certain and
 /// the expected number of sends is `10/9` under every scheduler.
-#[trace("TC-639", "FR-204-AC-1")]
+#[trace("TC-639", "FR-204")]
 #[test]
 fn reach_and_expected_reward_label_the_digital_product() {
     use qsl_analyze::exact_probabilistic::{
@@ -518,9 +521,9 @@ fn reach_and_expected_reward_label_the_digital_product() {
     }
 }
 
-/// FR-204-AC-1 (TC-639): `holds(A) until[0 ms, D] holds(B)` is a deadline
+/// FR-204 "Admission" (TC-639): `holds(A) until[0 ms, D] holds(B)` is a deadline
 /// event with the extrema of the `eventually` form.
-#[trace("TC-639", "FR-204-AC-1")]
+#[trace("TC-639", "FR-204")]
 #[test]
 fn an_until_deadline_has_the_same_extrema() {
     let world = retx(
@@ -559,7 +562,7 @@ fn an_until_deadline_has_the_same_extrema() {
 /// FR-204 "Admission" (TC-639): a state where no identity races and delay is
 /// bounded is unsupported `NotStochastic`. The `send` is enabled at `x = 1`,
 /// but its only delay, 5 ms, lies outside its window.
-#[trace("TC-639", "FR-204-AC-3")]
+#[trace("TC-639", "FR-204")]
 #[test]
 fn a_bounded_state_where_nothing_races_is_not_stochastic() {
     let world = one_workload("delay M::Call::send ~ discrete { 5 ms: 1 };\n");
@@ -570,7 +573,8 @@ fn a_bounded_state_where_nothing_races_is_not_stochastic() {
 }
 
 /// FR-204-AC-1 (TC-639 step 1): the clocks span the AC's ranges, `x` from 0
-/// to 2 and the deadline clock from 0 to 5 (one past `D = 4 ms`).
+/// to 2 and the deadline clock from 0 to 5 (one past `D = 4 ms`). This is the
+/// clock-range clause of FR-204-AC-1 only.
 #[trace("TC-639", "FR-204-AC-1")]
 #[test]
 fn clocks_span_the_declared_ranges() {
@@ -587,10 +591,12 @@ fn clocks_span_the_declared_ranges() {
     assert_eq!(deadline.into_iter().collect::<Vec<_>>(), [0, 1, 2, 3, 4, 5]);
 }
 
-/// FR-204-AC-5 (TC-642): at the quiescent idle-delayed key at `D`, `IdleObserve`
+/// FR-204 (TC-642): at the quiescent idle-delayed key at `D`, `IdleObserve`
 /// reads the predicates at `D` with elapsed time `D`, and `IdleDelay` crosses
 /// `D` to elapsed `D + 1`, which rejects.
-#[trace("TC-642", "FR-204-AC-5")]
+/// The predicate never holds, so the success-at-`D` half of FR-204-AC-5 is not
+/// asserted: this checks the distinct actions, post-keys and phases only.
+#[trace("TC-642", "FR-204")]
 #[test]
 fn idle_observe_reads_at_the_deadline_and_idle_delay_crosses_it() {
     let world = retx(
