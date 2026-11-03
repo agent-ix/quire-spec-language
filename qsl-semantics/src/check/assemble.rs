@@ -3304,6 +3304,7 @@ impl PackageDeclarations {
             &unit.units,
             &imported,
             &owner,
+            &source_node_owners,
             &package_name,
             limits,
         );

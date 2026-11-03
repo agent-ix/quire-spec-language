@@ -187,8 +187,14 @@ impl ParsedUnit {
         for unit in units {
             if first {
                 combined.edition = unit.edition;
-                combined.selections.profiles = unit.selections.profiles;
                 first = false;
+            }
+            for profile in unit.selections.profiles {
+                if !combined.selections.profiles.iter().any(|existing| {
+                    existing.alias == profile.alias && existing.identity == profile.identity
+                }) {
+                    combined.selections.profiles.push(profile);
+                }
             }
             combined.selections.imports.extend(unit.selections.imports);
             combined.selections.models.extend(unit.selections.models);

@@ -29,7 +29,7 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     admit_parsed_unit_list, check, check_units, check_with_refinement_internals, execute,
-    failure_of, package, parse, preflight_unit_list, refusal_or_fault, select,
+    failure_of, package, parse, preflight_unit_list, refusal_or_fault, select, select_units,
     temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest,
     FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
@@ -686,12 +686,33 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     let source = SOURCE.get_or_init(|| {
         SourceIdentity::new("agent-ix", "test:lifecycle", "type-report", "type-report:1")
     });
-    let text = format!("{HEADER}function f using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}");
+    let text = format!(
+        "{HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model M = \"acme/orders\";\n\
+         function f using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n\
+         temporal Due using inf over (input: M::Widget) clock \"model-steps\" on origin {{ always holds(true) }}\n\
+         protocol Fill using Complete over (input: M::Widget) on origin {{\n\
+           requires temporal Due;\n\
+           role R on M::Widget;\n\
+           run sequence Main {{ }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
     let parsed = parse_named(source, text.as_bytes());
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("model and profile selections admit")
+    .into_value();
     let checked = check(
         &parsed,
         "type-report".to_owned(),
-        &AdmittedModels::default(),
+        &models,
         &DependencyInput::default(),
         SpineLimits::default(),
         &Cancel::new(),
@@ -706,6 +727,22 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     };
     assert_eq!(declaration.kind(), NodeTag::Function);
     assert!(declaration.value_type().is_some());
+    assert!(!checked.type_report().requirements().is_empty());
+    assert!(checked
+        .type_report()
+        .requirements()
+        .iter()
+        .all(|requirement| requirement.span().is_some()));
+    let temporal_requirements: Vec<_> = checked
+        .type_report()
+        .obligations()
+        .iter()
+        .filter(|obligation| obligation.capability_kind() == "temporal-satisfaction")
+        .collect();
+    assert_eq!(temporal_requirements.len(), 2);
+    assert!(temporal_requirements
+        .iter()
+        .all(|obligation| { obligation.span().start < obligation.span().end }));
 }
 
 /// FR-480-AC-2/AC-8 and FR-514-AC-2: aggregate type resolution returns two
@@ -758,6 +795,103 @@ fn aggregate_check_returns_source_bound_units_and_reports() {
     assert_eq!(
         checked_b.type_report().declarations()[0].kind(),
         NodeTag::Function
+    );
+}
+
+/// FR-480-AC-2: each source unit's admitted profile alias remains available
+/// while the aggregate namespace checks declarations from later units.
+#[trace("FR-480-AC-2")]
+#[test]
+fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:profile-a",
+            "profile-a",
+            "profile-a:1",
+        )
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:profile-b",
+            "profile-b",
+            "profile-b:1",
+        )
+    });
+    let a = parse_named(
+        source_a,
+        b"language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure { x < 5 }",
+    );
+    let b = parse_named(
+        source_b,
+        b"language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure { x < 5 }",
+    );
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("distinct source units are admitted");
+    let checked = check_units(
+        &admitted,
+        "aggregate-profile-package".to_owned(),
+        &AdmittedModels::default(),
+        &dependencies,
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("both source-local profile aliases resolve")
+    .into_value();
+    assert_eq!(checked.len(), 2);
+    assert!(checked
+        .iter()
+        .all(|unit| unit.type_report().declarations().len() == 1));
+}
+
+/// FR-480-AC-2: I1 has a public composition path for all model selections in
+/// an admitted list, preserving every unit's alias and admitting the shared
+/// identity once through the aggregate meter.
+#[trace("FR-480-AC-2")]
+#[test]
+fn aggregate_model_selection_admits_selections_from_every_unit() {
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:model-a", "model-a", "model-a:1")
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:model-b", "model-b", "model-b:1")
+    });
+    let a = parse_named(
+        source_a,
+        format!("{HEADER}model A = \"acme/orders\";").as_bytes(),
+    );
+    let b = parse_named(
+        source_b,
+        format!("{HEADER}model B = \"acme/orders\";").as_bytes(),
+    );
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("distinct source units are admitted");
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let selected = select_units(
+        &admitted,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the aggregate model selections are admitted")
+    .into_value();
+    assert_eq!(selected.models().len(), 2);
+    assert_eq!(
+        selected
+            .models()
+            .iter()
+            .map(|model| model.alias.as_str())
+            .collect::<Vec<_>>(),
+        ["A", "B"]
     );
 }
 
@@ -2040,8 +2174,7 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
 fn the_producer_refuses_a_profile_version_tail_as_invalid_syntax() {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
-    let source =
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\";\n";
+    let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\";\n";
     let failure = parse(&request(source.as_bytes()), limits.source, &cancel)
         .expect_err("the producer rejects a profile version tail");
     let syntax = refusal(failure);

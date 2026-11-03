@@ -848,6 +848,7 @@ pub struct PendingObligation {
     node: quire_exact::NodeKey,
     occurrence: qsl_foundation::source::provenance::OccurrenceKey,
     capability_kind: String,
+    span: qsl_foundation::Span,
 }
 
 impl PendingObligation {
@@ -864,6 +865,11 @@ impl PendingObligation {
     /// The claim form's capability kind.
     pub fn capability_kind(&self) -> &str {
         &self.capability_kind
+    }
+
+    /// The source span of this claim or protocol requirement.
+    pub fn span(&self) -> qsl_foundation::Span {
+        self.span
     }
 
     /// Every retained obligation is pending until analysis or replay.
@@ -922,18 +928,60 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
             }
         })
         .collect();
-    let obligations = graph
-        .occurrences()
-        .filter(|(_, origin, _)| origin.role().as_str() == "claim")
-        .filter_map(|(key, origin, _)| {
-            let node = graph.semantic_graph().node(key.clone())?;
-            owns(node).then(|| PendingObligation {
-                node: key.clone(),
-                occurrence: qsl_foundation::source::provenance::OccurrenceKey::new(key, origin),
-                capability_kind: node.semantic_form().to_owned(),
+    let mut obligations: Vec<_> = graph
+        .requirements()
+        .iter()
+        .filter_map(|(occurrence, record)| {
+            let node = graph.semantic_graph().node(occurrence.node().clone())?;
+            if !owns(node) {
+                return None;
+            }
+            let location = graph.occurrence(occurrence.node().clone(), occurrence.origin())?;
+            let region = graph.region(location)?;
+            Some(PendingObligation {
+                node: occurrence.node().clone(),
+                occurrence: occurrence.clone(),
+                capability_kind: record.requirements().kind().to_wire().to_owned(),
+                span: qsl_foundation::Span {
+                    start: usize::try_from(region.start()).ok()?,
+                    end: usize::try_from(region.end()).ok()?,
+                },
             })
         })
         .collect();
+    for protocol in graph.protocols() {
+        for requirement in &protocol.requirements {
+            let Some(temporal) = graph.temporal_clauses().get(requirement.temporal) else {
+                continue;
+            };
+            let key = temporal.identity();
+            let Some(node) = graph.semantic_graph().node(key.clone()) else {
+                continue;
+            };
+            if !owns(node) {
+                continue;
+            }
+            let occurrence = qsl_foundation::source::provenance::OccurrenceKey::new(
+                key.clone(),
+                temporal.claim().clone(),
+            );
+            obligations.push(PendingObligation {
+                node: key,
+                occurrence,
+                capability_kind: qsl_semantics::check::Capability::TemporalSatisfaction
+                    .to_wire()
+                    .to_owned(),
+                span: requirement.span,
+            });
+        }
+    }
+    obligations.sort_by(|left, right| {
+        (&left.node, left.span, &left.capability_kind).cmp(&(
+            &right.node,
+            right.span,
+            &right.capability_kind,
+        ))
+    });
     TypeReport {
         declarations,
         requirements,
@@ -1061,6 +1109,61 @@ pub fn select(
         let models = charged(cancel, &mut work.i1, || {
             select_models(parsed, packages, limits, cancel)
         })?;
+        Ok::<_, Box<CompileRefusal>>(AdmittedModels {
+            models,
+            packages: packages.clone(),
+        })
+    })
+}
+
+/// I1 for an admitted source-unit list: admit every unit's model selections
+/// together against `packages`, preserving all aliases and normalizing the
+/// aggregate once. `source_limits` bounds model clause parsing after
+/// admission; callers compose units only after choosing the limits for that
+/// aggregate operation.
+pub fn select_units(
+    admitted: &AdmittedUnitList,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    limits: ModelNormalizationLimits,
+    source_limits: SourceLimits,
+    cancel: &Cancel,
+) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
+    let source_len = |identity: &SourceIdentity| {
+        admitted
+            .units()
+            .iter()
+            .find(|unit| unit.source().identity() == identity)
+            .map(|unit| unit.source().text().len())
+    };
+    stage(cancel, &source_len, |work| {
+        let selections: Vec<_> = admitted
+            .units()
+            .iter()
+            .flat_map(|unit| unit.unit().selections().models.iter().cloned())
+            .collect();
+        let models = charged(cancel, &mut work.i1, || {
+            admit_unit_with_cancel(&selections, packages, limits, cancel).map_err(|refusal| {
+                let source = admitted
+                    .units()
+                    .iter()
+                    .find(|unit| {
+                        unit.unit().selections().models.iter().any(|selection| {
+                            selection.alias == refusal.alias
+                                && selection.identity == refusal.identity
+                                && selection.span == refusal.span
+                        })
+                    })
+                    .map(|unit| unit.source().reference());
+                Box::new(CompileRefusal::Intake {
+                    region: source.and_then(|source| region(source, refusal.span)),
+                    refusal,
+                })
+            })
+        })?;
+        let models = parse_type_invariants(
+            parse_operation_clauses(models, source_limits)?,
+            source_limits,
+        )?;
         Ok::<_, Box<CompileRefusal>>(AdmittedModels {
             models,
             packages: packages.clone(),

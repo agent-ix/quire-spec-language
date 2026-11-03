@@ -3893,6 +3893,24 @@ fn aggregate_dimension_equivalence_keeps_its_declaring_source_owner() {
         node.owner(),
         Some(&Owner::Source(SourceOwner::from(&source_b)))
     );
+    for name in ["Distance", "Duration", "dm", "ms"] {
+        let owned = checked
+            .semantic_graph()
+            .nodes()
+            .find(|candidate| {
+                candidate.declaration().is_some_and(|segments| {
+                    segments
+                        .last()
+                        .is_some_and(|segment| segment.as_str() == name)
+                })
+            })
+            .unwrap_or_else(|| panic!("{name} has a checked node"));
+        assert_eq!(
+            owned.owner(),
+            Some(&Owner::Source(SourceOwner::from(&source_b))),
+            "{name} retains the source that declared it"
+        );
+    }
     let region = checked
         .region(&Location::root(Origin::TypeDeclaration {
             name: super::super::lowering::equivalence_origin(0),

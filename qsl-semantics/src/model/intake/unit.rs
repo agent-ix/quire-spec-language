@@ -227,16 +227,18 @@ impl SelectedModels {
             NormalizeOutcome::Refused(refusals) => {
                 return Err(UnitIntakeRefusal {
                     alias: alias.to_owned(),
+                    identity: String::new(),
                     span,
                     cause: UnitIntakeCause::Refused(refusals),
-                })
+                });
             }
             NormalizeOutcome::Incomplete(incomplete) => {
                 return Err(UnitIntakeRefusal {
                     alias: alias.to_owned(),
+                    identity: String::new(),
                     span,
                     cause: UnitIntakeCause::Limit(incomplete),
-                })
+                });
             }
         };
         Ok(Self {
@@ -439,6 +441,8 @@ impl UnitIntakeCause {
 pub struct UnitIntakeRefusal {
     /// The declaration's alias.
     pub alias: String,
+    /// The selected domain package identity.
+    pub identity: String,
     /// The span of the `model` declaration.
     pub span: Span,
     /// The typed cause.
@@ -662,6 +666,7 @@ pub fn admit_unit_with_cancel(
 ) -> Result<SelectedModels, UnitIntakeRefusal> {
     let refuse = |selection: &ModelSelection, cause| UnitIntakeRefusal {
         alias: selection.alias.clone(),
+        identity: selection.identity.clone(),
         span: selection.span,
         cause,
     };
@@ -695,10 +700,10 @@ pub fn admit_unit_with_cancel(
         let view = match normalize_on(&package, &mut meter) {
             NormalizeOutcome::Completed(view) => view,
             NormalizeOutcome::Refused(refusals) => {
-                return Err(refuse(selection, UnitIntakeCause::Refused(refusals)))
+                return Err(refuse(selection, UnitIntakeCause::Refused(refusals)));
             }
             NormalizeOutcome::Incomplete(incomplete) => {
-                return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))
+                return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)));
             }
         };
         let SelectedExactRows {
