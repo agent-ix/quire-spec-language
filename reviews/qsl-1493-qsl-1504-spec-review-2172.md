@@ -59,3 +59,20 @@ AC-1..13 and TC-1315 rows 1..14, FR-501 AC-1..23 and TC-1295, FR-285 AC-1..11 an
 Not mergeable until FND-001 to FND-003 are fixed: each is a leftover statement that now contradicts
 the PR's own restatement. FND-004 to FND-006 are low. Everything else checked against the code and
 the merged specs holds (see Summary).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-007 | low | The rewritten FR-504 "Missing valuations and history" bullet reads "SHALL treat a missing valuation as FR-501 "Verdicts" states it with a possibility set", which is garbled, and one sentence then runs on into "and its `Indeterminate` carries the `instance` and `also_held_by` members"; the no-conflict rationale should be its own statement. | spec/functional/FR-504-carry-progress-on-event-position-and-fixed-sample-traces.md:97 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-501 line 283 reads "When the trace input's cover is `Counter { uncertainty: u }`"; AC-9 and AC-13 read "With the trace input's cover `Counter { ... }`". No "clock binding declares" cover wording remains in FR-501. |
+| FND-002 | fixed | FR-525: FR-043-AC-12 and FR-052-AC-13 map FR-502-AC-1 to AC-11; FR-052-AC-14 maps FR-501-AC-1 to AC-25; TimedProfile maps to FR-527-AC-22, AC-23; a new row maps a profile outside the admitted set to AC-18 and AC-16; FR-045-AC-6 adds AC-21; a new FR-045-AC-3 row maps to AC-24 gated on IR-1278. |
+| FND-003 | fixed | FR-504 now says a position of these traces is one document at its own coordinate, no two share one, so there is no conflicting-valuation case (position i has coordinate i, FR-504 line 57). Wording is poor; see FND-007. |
+| FND-004 | fixed | FR-285-AC-10 asserts only report equals ranking; the five label and exit pairs are FR-285-AC-12, and TC-769 scope reads AC-1 to AC-12. |
+| FND-005 | fixed | FR-520 table order is AC-1 to AC-13 in sequence. |
+| FND-006 | fixed | New FR-501-AC-24 (a supplied `Counter` cover is used; `Exact` gives a different verdict and result identity) and AC-25 (`execution` carried, same verdict), with TC-1295 rows 38 and 39 and scope AC-1 to AC-25. |
