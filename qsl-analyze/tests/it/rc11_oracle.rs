@@ -245,6 +245,7 @@ fn lt12_reaches_its_weak_outcome_under_ra_only() {
 
 /// The parallel `reachable` explorer admits states in the order a sequential
 /// FIFO search would: the same indices, steps and edges on LT-12 under `ra`.
+#[trace("TC-668")]
 #[test]
 fn the_parallel_explorer_matches_a_sequential_fifo_search() {
     let case = case_of(&lt12());

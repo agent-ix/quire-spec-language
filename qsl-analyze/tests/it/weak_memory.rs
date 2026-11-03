@@ -10,16 +10,18 @@
 //! the states after `finish`, which §10's table does not count.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest, SubjectContext};
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
+
 use qsl_eval::simulation::protocol::{
     classify_accesses, visible, AccessShape, CarriedComponent, ClaimReads, InstanceAccess,
     MemoryModel, MemorySelection, MemorySelectionRefusal, PositionAnchor, ProtocolLocation,
-    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Ra, RestKind, Sc, StepKind,
-    ThreadPath, Tso, WaitCause, WeakAccesses,
+    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Ra, ReachRefusal, RestKind,
+    Sc, StepKind, ThreadPath, Tso, WaitCause, WeakAccesses,
 };
 use qsl_eval::simulation::{
     independent, ExpansionLimit, Location, SubjectSystem, TransitionSystem,
@@ -39,6 +41,7 @@ use qsl_replay::{
 use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
 use quire_exact::{Cancel, Meter};
+use quire_semantic_value::catalog::CatalogCode;
 use serde_json::{json, Value as Json};
 
 use crate::fill::{reachable, Explored, Reached};
@@ -3467,4 +3470,46 @@ fn ra_message_bound_is_a_request_member_and_settles_memory_bound_reached() {
             reached: true,
         })
     );
+}
+
+/// A candidate bound of 6 builds `SB`'s system (the initial classification
+/// fits it) but stops a later expansion: `reachable` returns that
+/// expansion's stop, FR-120's `resource_exhausted`/`insufficient-next-charge`
+/// on `MaxCandidates`, the same refusal on one worker and on four, under
+/// `tso` and `ra`.
+#[trace("TC-668")]
+#[test]
+fn reachable_refuses_with_the_expansion_stop_on_any_worker_count() {
+    let case = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let ra = [select("SB::Both", MemoryModelName::Ra)];
+    let one = NonZeroUsize::new(1).expect("one is nonzero");
+    let four = NonZeroUsize::new(4).expect("four is nonzero");
+    let tso_system = case
+        .system_within(&tso, Tso::default(), 6, 0)
+        .expect("the bound fits construction");
+    let ra_system = case
+        .system_within(&ra, Ra::default(), 6, 0)
+        .expect("the bound fits construction");
+    let refusals = [
+        tso_system.reachable(one).err(),
+        tso_system.reachable(four).err(),
+        ra_system.reachable(one).err(),
+        ra_system.reachable(four).err(),
+    ];
+    for refusal in refusals {
+        let Some(ReachRefusal::Expansion(stop)) = refusal else {
+            panic!("{refusal:?}");
+        };
+        assert_eq!(stop.limit, Some(ExpansionLimit::MaxCandidates));
+        assert_eq!(
+            stop.cause,
+            CatalogCode::new("resource_exhausted", "insufficient-next-charge")
+        );
+    }
+    assert!(case
+        .system(&tso, Tso::default())
+        .expect("builds")
+        .reachable(four)
+        .is_ok());
 }
