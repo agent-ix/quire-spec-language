@@ -77,7 +77,7 @@ QSL-858's train.
 | FR-043-AC-10 four independent axes; no caller basis | FR-501-AC-15; FR-516-AC-1, AC-5 | PORT (FR-501) and QSL-1545 |
 | FR-043-AC-11 watermark settles a silent deadline; event-position does not | FR-501-AC-3, AC-6; FR-504-AC-1, AC-2 | PORT (FR-501, FR-504) |
 | FR-043-AC-12 regressing watermark, conflicting completeness | FR-502-AC-1 to AC-8 | PORT (FR-502) |
-| FR-043-AC-13 one identity per input set | FR-522-AC-15 to AC-22; FR-501-AC-16 | PORT QSL-1502 |
+| FR-043-AC-13 one identity per input set | FR-522-AC-15 to AC-23; FR-501-AC-16 | PORT QSL-1502 |
 | FR-043-AC-14 `/2` authenticated clock configuration and report | FR-522-AC-4, AC-6, AC-9, AC-12 | PORT QSL-1502 |
 | FR-043-AC-14 `/1` entry points: parameter mutations not refused, no authenticated binding | none | RETIRE with the `/1` lane (structural reason: no caller of the `/1` entry points exists; Contract IR FR-350 and quire-protocol IT-001 consume the `/2` entry points; successor FR-522-AC-9, the authenticated form) |
 

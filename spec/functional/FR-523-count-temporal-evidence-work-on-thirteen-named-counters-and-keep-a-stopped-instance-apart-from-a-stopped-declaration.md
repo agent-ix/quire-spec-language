@@ -171,7 +171,7 @@ at each eligible position and one scan per position).
 | FR-523-AC-16 | A stamp for which `t0 + Hf + m` exceeds `u64::MAX` returns `Incomplete` naming `history_span` before any position is visited (the charge log is empty), and a stamp whose sum is `u64::MAX` evaluates. | Test (TC-1318) |
 | FR-523-AC-17 | A formula nested 100,000 deep evaluates with `formula_nodes` and `evaluation_steps` raised to fit it, on a thread with a 512 KiB stack. | Test (TC-1318) |
 | FR-523-AC-18 | The `usage` of a call reports all thirteen counters, and two requests that differ only in one ceiling give distinct `result_identity` values (FR-522-AC-17). | Test (TC-1318) |
-| FR-523-AC-19 | A clone of the first call's result taken before the second call of AC-14 equals that result after the second call stopped, and the first call replayed with a fresh `Meter` returns an equal result. | Test (TC-1318) |
+| FR-523-AC-19 | After the second call of AC-14 stopped, the first call replayed with a fresh `Meter` returns a result equal to the first call's result. | Test (TC-1318) |
 
 ## Dependencies
 

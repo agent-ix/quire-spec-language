@@ -38,7 +38,7 @@ Verify FR-523-AC-1 to FR-523-AC-19. Each counter is driven to its exact usage an
 | 20 | 16 | `t0 + Hf + m` above `u64::MAX`; equal to `u64::MAX` | `Incomplete` naming `history_span`, empty charge log; evaluates |
 | 21 | 17 | a formula nested 100,000 deep, ceilings raised, on a 512 KiB stack | evaluates |
 | 22 | 18 | the `usage` of a call; two requests differing in one ceiling | all thirteen counters reported; distinct `result_identity` |
-| 23 | 19 | a clone of the first result taken before row 18's second call; the first call replayed with a fresh `Meter` | the clone equals the result after the second call; the replay is equal |
+| 23 | 19 | the first call replayed with a fresh `Meter` after row 18's second call stopped | a result equal to the first call's result |
 
 Tag the test `#[trace("FR-523-AC-1", ..., "FR-523-AC-19", "TC-1318")]`; rows 4a to 4c carry FR-523-AC-4 and rows 5a to 5c carry FR-523-AC-5. Row 5a to 5c also carry FR-516-AC-7 where it is the same vector.
 

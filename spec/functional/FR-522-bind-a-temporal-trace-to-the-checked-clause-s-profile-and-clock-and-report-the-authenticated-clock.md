@@ -193,7 +193,8 @@ The `result_identity` of every outcome follows the identity rule below.
 | FR-522-AC-19 | For an event-position `Progressed` request, changing alone the `sequence_authority` of the row, the watermark or the scope closure gives a distinct `result_identity`. | Test (TC-1317) |
 | FR-522-AC-20 | The `result_identity` of the in-process package equals the `result_identity` of the package read back with the reader. | Test (TC-1317) |
 | FR-522-AC-21 | Two requests that differ only in the relation, the `EvidenceLedger` or the progress ledger have equal `input_identity` values. | Test (TC-1317) |
-| FR-522-AC-22 | Two requests that differ only in the retained-instance entries of the ledger, or in the progress-ledger entry, have distinct `result_identity` values. | Test (TC-1317) |
+| FR-522-AC-22 | Two requests that differ only in a retained-instance entry of the ledger have distinct `result_identity` values. | Test (TC-1317) |
+| FR-522-AC-23 | Two requests that differ only in the progress-ledger entry have distinct `result_identity` values. | Test (TC-1317) |
 
 ## Dependencies
 

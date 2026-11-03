@@ -91,6 +91,12 @@ Not mergeable as written: two high findings (FND-001 depth limit against ADR-030
 | FND-029 | low | [QSL-1502] The one-outcome list of refusals in the Entry paragraph omits the two new refusals (trigger-unknown and a progress contradiction), and FR-504 is not edited although FR-501 says FR-504's Indeterminate carries instance and also_held_by. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:149 | missing-requirement |
 | FND-030 | low | [QSL-1502] AC-19 asserts that an earlier call's returned result is byte-equal after a later call stopped; a returned value cannot change unless it is shared, so no test can fail it. FR-522-AC-21 mixes two claims (equal input_identity, and distinct result_identity where a ledger entry exists). | spec/functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-instance-apart-from-a-stopped-declaration.md:174 | wrong-requirement |
 
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-031 | low | [QSL-1503] A request with no delivery and a withdrawn anchor falls under both the Inactive/Unknown disposition (AC-2, no trigger) and the Unavailable withdrawn-anchor rule (AC-23); no precedence is stated. FR-523-AC-19's clone-equals-original half cannot fail, and FR-522-AC-22 joins two claims with 'or'. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:141 | missing-requirement |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -121,6 +127,10 @@ Not mergeable as written: two high findings (FND-001 depth limit against ADR-030
 | FND-024 | fixed | The bullet states twelve successors, two retirements with reasons and the added instances counter; the count is right (nine carried plus three byte counters). |
 | FND-025 | fixed | No OPEN reference remains in FR-499, FR-525 or the TC rows; FR-525 and TC-1320 are renamed and linked in spec.md; the FR-052-AC-13 and AC-14 rows name criteria; the absent-identity row names FR-526-AC-18. |
 | FND-026 | fixed | FR-053-AC-9 is amended in place; every RETIRE row states a structural reason and a successor criterion (FR-525-AC-3); no unnamed planner ruling remains. |
+| FND-027 | fixed | trigger is optional, None when the request carries no delivery or origin, and then FR-524 scope dispositions are returned; AC-19 to AC-21 and AC-31 are consistent with AC-2 and an on each clause with zero deliveries. |
+| FND-028 | fixed | anchor is the EvidenceRef identity of one observed position; the activation position is its index in canonical order (timestamped, FR-501) or listed order, 0 for on origin; AC-22 and AC-23 test it. |
+| FND-029 | fixed | The refusal list names progress contradictions, trigger-required and trigger-unknown, and FR-504 states that its Indeterminate carries instance and also_held_by. |
+| FND-030 | fixed | FR-522-AC-21 and AC-22 are split; FR-523-AC-19 now adds a fresh-Meter replay that can fail. Residual lows in FND-031. |
 
 ## Verdict
 
@@ -129,3 +139,5 @@ Not mergeable as written: two high findings (FND-001 depth limit against ADR-030
 Disposition pass 1 at head 87bdf5f2828737f46113bab3ee801a1e369fd27b: 17 fixed, 0 still-open, 9 new findings.
 
 Disposition pass 2 at head da760198b81dcf5724c51f5841866f2a5284c275.
+
+Disposition pass 3 at head 74ee8f9ac72523baf480913db6d715866206032b.

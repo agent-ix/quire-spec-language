@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the typed request and result of the temporal evidence route. Scope:
-FR-516-AC-1 to FR-516-AC-23. The numeric vectors are the QSpec FR-370 and
+FR-516-AC-1 to FR-516-AC-24. The numeric vectors are the QSpec FR-370 and
 FR-043 cases and TC-144; they are referenced, never copied.
 
 ## Test Procedure
@@ -41,8 +41,9 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 21 | 21 | `trigger` naming a delivery with a false guard | no truth; FR-524's disposition |
 | 22 | 22 | `on each` clause with `anchor` naming the observation at index 2; `on origin` clause with `anchor` naming index 2 | position 2; position 0 |
 | 23 | 23 | `anchor` naming no observed position | `Unavailable`, `Missing` non-value naming the anchor |
+| 24 | 24 | closed complete scope, no delivery, `trigger` `None`, `anchor` naming no observed position | `Unavailable`, not `Inactive` |
 
-Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-23", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
+Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-24", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
 
 ## Expected Results
 

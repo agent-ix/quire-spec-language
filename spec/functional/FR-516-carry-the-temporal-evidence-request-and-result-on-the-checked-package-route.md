@@ -148,8 +148,12 @@ obligation was never activated.
 - **Assessed instance.** The instance activates once, at the activation position,
   so the call returns that one activation's outcome and combines no activations.
   `trigger` names the assessed instance among the resolved ones.
-- When the request carries no delivery and no origin and `trigger` is `None`, the
-  call returns the scope disposition of FR-524 (`Inactive` or `Unknown`), no truth
+- A withdrawn anchor takes precedence: whatever the trigger scope and the
+  deliveries, a request whose anchor is withdrawn returns `Unavailable`, and the
+  scope disposition below applies only to a request whose anchor names an
+  observed position.
+- When the request carries no delivery and no origin, `trigger` is `None` and the
+  anchor names an observed position, the call returns the scope disposition of FR-524 (`Inactive` or `Unknown`), no truth
   and the matching `non_value`.
 - When the request carries a delivery or an origin and `trigger` is `None`, the call
   is refused with cause `trigger-required` as `Err(CallFailure::Admission)`.
@@ -230,6 +234,7 @@ obligation was never activated.
 | FR-516-AC-21 | A request whose `trigger` names a delivery with a false guard returns no truth and the disposition of FR-524. | Test (TC-1311) |
 | FR-516-AC-22 | For a clause `on each` whose `anchor` names the observation at index 2, the activation outcome reports position 2, and for a clause `on origin` it reports position 0 whatever the `anchor` names among the positions. | Test (TC-1311) |
 | FR-516-AC-23 | A request whose `anchor` names no observed position returns `Unavailable` with a `Missing` non-value naming the anchor. | Test (TC-1311) |
+| FR-516-AC-24 | A request with a closed complete trigger scope, no delivery, `trigger` `None` and an `anchor` naming no observed position returns `Unavailable`, not `Inactive`. | Test (TC-1311) |
 
 ## Dependencies
 
