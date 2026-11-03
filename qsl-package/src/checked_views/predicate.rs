@@ -8,7 +8,7 @@ use quire_contract_model::{
 };
 
 use super::graph::Graph;
-use super::subject::{temporal_subject, Activation, TemporalSubjectView};
+use super::subject::{subject_in, Activation, TemporalSubjectView, FORMULA_VISITS};
 use super::ViewRefusal;
 
 /// Which clause leaf a [`PredicateSelection`] names.
@@ -142,7 +142,7 @@ impl<'p> CheckedPredicateView<'p> {
 /// Read the Boolean leaf `selection.leaf` of the clause `selection.clause`.
 ///
 /// Refuses [`ViewRefusal::UnresolvedClause`] for a clause that
-/// [`temporal_subject`] refuses, [`ViewRefusal::LeafNotInClause`] for a leaf
+/// [`super::temporal_subject`] refuses, [`ViewRefusal::LeafNotInClause`] for a leaf
 /// no term of the clause reads, [`ViewRefusal::LeafHasNoSource`] for a clause
 /// term with no source map entry and [`ViewRefusal::LeafNotBoolean`] for a leaf
 /// the package does not type `boolean`; no refusal leaves a partial view.
@@ -162,8 +162,8 @@ pub(crate) fn read_predicate<'p>(
     sources: &'p [CheckedSourceMapEntry],
     selection: &PredicateSelection,
 ) -> Result<CheckedPredicateView<'p>, ViewRefusal> {
-    let subject = temporal_subject(package, &selection.clause)?;
     let graph = Graph::new(package);
+    let subject = subject_in(&graph, &selection.clause, FORMULA_VISITS)?;
     let leaf_at = graph
         .position(&selection.leaf)
         .ok_or(ViewRefusal::LeafNotInClause)?;

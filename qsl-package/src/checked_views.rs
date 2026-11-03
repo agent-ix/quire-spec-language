@@ -15,6 +15,8 @@ pub(crate) mod predicate;
 mod subject;
 
 pub use predicate::{checked_predicate, CheckedPredicateView, PredicateKind, PredicateSelection};
+#[cfg(test)]
+pub(crate) use subject::temporal_subject_within;
 pub use subject::{
     temporal_subject, Activation, ClauseOccurrence, OperatorUse, TemporalSubjectView,
 };
@@ -36,6 +38,10 @@ pub enum ViewRefusal {
     /// entry for it.
     #[error("the leaf has no source map entry")]
     LeafHasNoSource,
+    /// The clause's formula, read once per use of each shared node, exceeds
+    /// the reader's `i2.work_units` default of visits.
+    #[error("the clause formula expands past the work budget")]
+    FormulaTooLarge,
     /// The selected leaf's semantic type is not the `boolean` node.
     #[error("the leaf is not a Boolean term")]
     LeafNotBoolean,

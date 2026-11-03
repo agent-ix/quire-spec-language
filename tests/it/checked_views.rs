@@ -5,11 +5,13 @@
 
 use ix_trace_rs::trace;
 use qsl_package::checked_views::{
-    checked_predicate, temporal_subject, Activation, PredicateSelection, TemporalSubjectView,
+    checked_predicate, temporal_subject, Activation, PredicateKind, PredicateSelection,
+    TemporalSubjectView,
 };
 use quire_contract_model::{
-    CheckedNodeId, CheckedNodeKind, CheckedOccurrenceRole, CheckedOperationInterval,
-    CheckedPackageV2, CheckedTerm, ProtocolForm,
+    CheckedBindingNameKind, CheckedLiteralValue, CheckedNodeId, CheckedNodeKind,
+    CheckedOccurrenceRole, CheckedOperationInterval, CheckedPackageV2, CheckedTerm, ProtocolForm,
+    ValueForm,
 };
 use quire_spec_language::checked_handoff::{evidence, write, Corpus};
 use serde_json::Value;
@@ -188,6 +190,61 @@ fn every_clause_of_each_recipe_package_reads_its_node_facts() {
     }
     seen.sort();
     assert_eq!(seen, ["Due", "DueLate", "DueSample", "DueTimestamp"]);
+}
+
+/// The `value`/`parameter` node named `name` in `package`, read from its term.
+fn parameter_named(package: &CheckedPackageV2, name: &str) -> CheckedNodeId {
+    let found: Vec<_> = package
+        .graph()
+        .nodes
+        .iter()
+        .zip(package.node_kinds())
+        .filter(|(_, kind)| **kind == CheckedNodeKind::Value(ValueForm::Parameter))
+        .filter(|(node, _)| match package.term(&node.node_id) {
+            Some(CheckedTerm::Aggregate { members }) => members.iter().any(|member| {
+                matches!(member, CheckedTerm::Binding { name: bound, value }
+                    if CheckedBindingNameKind::Other("name") == bound.kind()
+                        && value.literal_read().is_some_and(|literal|
+                            literal.value == CheckedLiteralValue::Text(name)))
+            }),
+            _ => false,
+        })
+        .map(|(node, _)| node.node_id.clone())
+        .collect();
+    let [id] = found.try_into().expect("one parameter of that name");
+    id
+}
+
+/// FR-515-AC-4 (TC-1310 row 4): the `HoldsLeaf` of the recipe's `Due` reads as
+/// a `HoldsLeaf` of that clause whose one binder is `view`, with a source span.
+#[trace("FR-515-AC-4", "TC-1310")]
+#[test]
+fn the_recipe_due_leaf_reads_the_view_binder() {
+    let (package, sidecar) = recipe_package("event_position");
+    let row = sidecar["clauses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "Due")
+        .expect("the clause Due");
+    let id = id_of(&row["node"]);
+    let subject = temporal_subject(&package, &id).unwrap();
+    let [leaf] = subject.predicate_leaves() else {
+        panic!("one holds leaf");
+    };
+    let view = checked_predicate(
+        &package,
+        &PredicateSelection {
+            clause: id.clone(),
+            leaf: leaf.clone(),
+        },
+    )
+    .expect("the leaf reads");
+    assert_eq!(view.kind(), PredicateKind::HoldsLeaf);
+    assert_eq!(view.leaf(), leaf);
+    assert_eq!(*view.declaration(), id);
+    assert_eq!(view.binders(), [parameter_named(&package, "view")]);
+    assert!(!view.source_span().regions.is_empty());
 }
 
 /// The clause name a view reads. The package carries none until IR-1278; the

@@ -1055,3 +1055,212 @@ fn an_activation_guard_reads_a_source_entry_of_its_node() {
     assert!(!entries.is_empty());
     assert!(entries.contains(&view.source_span()));
 }
+
+/// The Boolean `holds` operand every clause of the shared-operand tests reads.
+const SHARED_OPERAND: &str = "c.versionNumber <= 1";
+
+/// The source regions of the formula root node of `clause`.
+fn formula_regions(
+    package: &CheckedPackageV2,
+    clause: &CheckedNodeId,
+) -> Vec<quire_contract_model::CheckedSourceRegion> {
+    let quire_contract_model::CheckedTerm::Application { arguments, .. } =
+        package.term(clause).unwrap()
+    else {
+        panic!("a clause application");
+    };
+    let quire_contract_model::CheckedTerm::Reference { target } = arguments.last().unwrap() else {
+        panic!("a formula reference");
+    };
+    package
+        .source_map()
+        .iter()
+        .filter(|entry| entry.node_id == *target)
+        .flat_map(|entry| entry.regions.iter().cloned())
+        .collect()
+}
+
+fn inside(
+    inner: &[quire_contract_model::CheckedSourceRegion],
+    outer: &[quire_contract_model::CheckedSourceRegion],
+) -> bool {
+    !inner.is_empty()
+        && inner.iter().all(|region| {
+            outer.iter().any(|root| {
+                root.source == region.source && root.start <= region.start && region.end <= root.end
+            })
+        })
+}
+
+/// FR-515-AC-4 and AC-17: a `holds` operand two clauses share is one node with
+/// an entry per reading, and each clause's view picks the entry inside its own
+/// formula root's source.
+#[trace("FR-515-AC-4", "FR-515-AC-17", "TC-1310")]
+#[test]
+fn a_shared_operand_reads_the_span_inside_its_own_clause() {
+    let compiled = compile(&unit_of(
+        &[("t", INFINITE)],
+        &[
+            clause(
+                "First",
+                "t",
+                "on origin",
+                &format!("always holds({SHARED_OPERAND})"),
+            ),
+            clause(
+                "Second",
+                "t",
+                "on origin",
+                &format!("eventually holds({SHARED_OPERAND})"),
+            ),
+        ]
+        .join("\n"),
+    ));
+    let package = admit(&compiled);
+    let [first, second] = clause_ids(&package).try_into().expect("two clauses");
+    let leaf_of =
+        |id: &CheckedNodeId| temporal_subject(&package, id).unwrap().predicate_leaves()[0].clone();
+    let leaf = leaf_of(&first);
+    assert_eq!(leaf, leaf_of(&second), "the operand is one shared node");
+    assert!(
+        package
+            .source_map()
+            .iter()
+            .filter(|entry| entry.node_id == leaf)
+            .count()
+            >= 2,
+        "one entry per reading"
+    );
+    let mut spans = Vec::new();
+    for id in [&first, &second] {
+        let view = checked_predicate(
+            &package,
+            &PredicateSelection {
+                clause: id.clone(),
+                leaf: leaf.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(view.kind(), PredicateKind::HoldsLeaf);
+        assert!(
+            inside(&view.source_span().regions, &formula_regions(&package, id)),
+            "the span lies inside this clause's own formula root"
+        );
+        spans.push(view.source_span().regions.clone());
+    }
+    assert_ne!(spans[0], spans[1]);
+}
+
+/// FR-515-AC-3: a formula node shared by several parents is read once per
+/// parent, so a package of `n` formula nodes lists more than `n` applications,
+/// and an expansion past the budget refuses `FormulaTooLarge` rather than
+/// growing without bound.
+#[trace("FR-515-AC-3", "TC-1310")]
+#[test]
+fn a_formula_whose_expansion_exceeds_the_budget_is_refused() {
+    let atom = format!("holds({SHARED_OPERAND})");
+    let compiled = compile(&unit(
+        INFINITE,
+        &clause(
+            "Doubled",
+            "t",
+            "on origin",
+            &format!("always (({atom} and {atom}) and ({atom} and {atom}))"),
+        ),
+    ));
+    let package = admit(&compiled);
+    let id = only_clause(&package);
+    let formula_nodes = package
+        .node_kinds()
+        .iter()
+        .filter(|kind| **kind == CheckedNodeKind::Temporal(TemporalForm::Formula))
+        .count();
+    assert_eq!(formula_nodes, 4, "always, two levels of and, one holds");
+    let view = temporal_subject(&package, &id).unwrap();
+    assert_eq!(view.formula().len(), 8, "each shared use is listed");
+    assert_eq!(view.predicate_leaves().len(), 4);
+    assert!(crate::checked_views::temporal_subject_within(&package, &id, 8).is_ok());
+    assert_eq!(
+        crate::checked_views::temporal_subject_within(&package, &id, 7).err(),
+        Some(ViewRefusal::FormulaTooLarge)
+    );
+}
+
+/// FR-515-AC-2 and AC-5: a Boolean sub-term of the activation guard is a term
+/// the clause reads, so it selects as a `ClauseLeaf`; a sub-term of another
+/// clause's guard is not.
+#[trace("FR-515-AC-5", "FR-515-AC-2", "TC-1310")]
+#[test]
+fn a_sub_term_of_the_activation_guard_is_a_clause_leaf() {
+    let compiled = compile(&unit_of(
+        &[("t", INFINITE)],
+        &[
+            clause(
+                "Guarded",
+                "t",
+                "on each (q: Config::ConfigVersion) when ((c.versionNumber >= 3) and (c.versionNumber <= 9))",
+                "always holds(c.versionNumber <= 2)",
+            ),
+            clause(
+                "Plain",
+                "t",
+                "on origin",
+                "always holds(c.versionNumber <= 4)",
+            ),
+        ]
+        .join("\n"),
+    ));
+    let package = admit(&compiled);
+    let ids = clause_ids(&package);
+    let guarded = ids
+        .iter()
+        .find(|id| {
+            matches!(
+                temporal_subject(&package, id).unwrap().activation(),
+                Activation::Each { .. }
+            )
+        })
+        .unwrap()
+        .clone();
+    let plain = ids.iter().find(|id| **id != guarded).unwrap().clone();
+    let Activation::Each {
+        guard: Some(guard), ..
+    } = temporal_subject(&package, &guarded)
+        .unwrap()
+        .activation()
+        .clone()
+    else {
+        panic!("a guard");
+    };
+    let quire_contract_model::CheckedTerm::Application { arguments, .. } =
+        package.term(&guard).unwrap()
+    else {
+        panic!("a conjunction");
+    };
+    for argument in arguments {
+        let quire_contract_model::CheckedTerm::Reference { target } = argument else {
+            panic!("a reference operand");
+        };
+        let view = checked_predicate(
+            &package,
+            &PredicateSelection {
+                clause: guarded.clone(),
+                leaf: target.clone(),
+            },
+        )
+        .expect("a guard part reads");
+        assert_eq!(view.kind(), PredicateKind::ClauseLeaf);
+        assert_eq!(view.parent_operation(), Some("quire.op.boolean.and"));
+        assert_eq!(
+            checked_predicate(
+                &package,
+                &PredicateSelection {
+                    clause: plain.clone(),
+                    leaf: target.clone(),
+                },
+            )
+            .err(),
+            Some(ViewRefusal::LeafNotInClause)
+        );
+    }
+}

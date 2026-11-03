@@ -3,6 +3,7 @@
 //! admitted checked package.
 
 use qsl_foundation::source::provenance::OccurrenceKey;
+use quire_contract_model::CheckedPackageReadLimits;
 use quire_contract_model::{
     CheckedBindingNameKind, CheckedLiteralValue, CheckedNodeId, CheckedNodeKind,
     CheckedOccurrenceRole, CheckedOperationInterval, CheckedOperationMember, CheckedPackageV2,
@@ -14,6 +15,12 @@ use quire_exact::{Origin, Role};
 use super::graph::Graph;
 use super::ViewRefusal;
 use crate::checked_v2::{resolve_clause_root, role_spelling, wire_graph};
+
+/// The most formula applications one view expands: the reader's own
+/// `i2.work_units` default. A formula node shared by several parents is read
+/// once per parent, so the expansion of a package of `n` nodes can exceed `n`
+/// exponentially; the view refuses past this count instead.
+pub(super) const FORMULA_VISITS: u64 = CheckedPackageReadLimits::bounded().work;
 
 /// The operation identity of a `holds` atom.
 const HOLDS: &str = "quire.op.temporal.holds";
@@ -192,7 +199,9 @@ impl<'p> TemporalSubjectView<'p> {
 ///
 /// Refuses [`ViewRefusal::UnresolvedClause`] for a node the package does not
 /// hold, one that is no clause root, or one whose body lacks a fact FR-337
-/// states; no refusal leaves a partial view.
+/// states, and [`ViewRefusal::FormulaTooLarge`] for a formula whose per-use
+/// expansion exceeds the reader's work-unit default; no refusal leaves a
+/// partial view.
 ///
 /// The view's lifetime is the package's borrow: the package cannot be moved
 /// or dropped while the view is in use.
@@ -218,7 +227,28 @@ pub fn temporal_subject<'p>(
     package: &'p CheckedPackageV2,
     clause: &CheckedNodeId,
 ) -> Result<TemporalSubjectView<'p>, ViewRefusal> {
-    let graph = Graph::new(package);
+    subject_in(&Graph::new(package), clause, FORMULA_VISITS)
+}
+
+/// [`temporal_subject`] with an explicit formula-visit budget, so a test can
+/// read the [`ViewRefusal::FormulaTooLarge`] path without a package of a
+/// million expansions.
+#[cfg(test)]
+pub(crate) fn temporal_subject_within<'p>(
+    package: &'p CheckedPackageV2,
+    clause: &CheckedNodeId,
+    visits: u64,
+) -> Result<TemporalSubjectView<'p>, ViewRefusal> {
+    subject_in(&Graph::new(package), clause, visits)
+}
+
+/// The view of `clause` over a graph index the caller built once.
+pub(super) fn subject_in<'p>(
+    graph: &Graph<'p>,
+    clause: &CheckedNodeId,
+    visits: u64,
+) -> Result<TemporalSubjectView<'p>, ViewRefusal> {
+    let package = graph.package();
     let at = graph
         .position(clause)
         .ok_or(ViewRefusal::UnresolvedClause)?;
@@ -242,8 +272,8 @@ pub fn temporal_subject<'p>(
     else {
         return Err(ViewRefusal::UnresolvedClause);
     };
-    let over = parameter_reference(&graph, over)?;
-    let formula_at = reference_position(&graph, formula)?;
+    let over = parameter_reference(graph, over)?;
+    let formula_at = reference_position(graph, formula)?;
     let profile = operation
         .laws
         .iter()
@@ -260,13 +290,13 @@ pub fn temporal_subject<'p>(
         .iter()
         .find(|entry| entry.node_id == *declaration && entry.role == CheckedOccurrenceRole::Claim)
         .ok_or(ViewRefusal::UnresolvedClause)?;
-    let (formula, predicate_leaves) = formula_reads(&graph, formula_at)?;
+    let (formula, predicate_leaves) = formula_reads(graph, formula_at, visits)?;
     Ok(TemporalSubjectView {
         package,
         declaration,
         occurrences,
         over,
-        requirements: requirements(&graph, declaration),
+        requirements: requirements(graph, declaration),
         source_span,
         profile,
         clock: package
@@ -421,11 +451,15 @@ fn read_captures(term: &CheckedTerm) -> Result<Vec<CheckedNodeId>, ViewRefusal> 
 fn formula_reads<'p>(
     graph: &Graph<'p>,
     root: usize,
+    visits: u64,
 ) -> Result<(Vec<OperatorUse<'p>>, Vec<CheckedNodeId>), ViewRefusal> {
     let mut uses = Vec::new();
     let mut leaves = Vec::new();
     let mut pending = vec![root];
     while let Some(at) = pending.pop() {
+        if u64::try_from(uses.len()).map_or(true, |read| read >= visits) {
+            return Err(ViewRefusal::FormulaTooLarge);
+        }
         if graph.kind(at) != Some(CheckedNodeKind::Temporal(TemporalForm::Formula)) {
             return Err(ViewRefusal::UnresolvedClause);
         }
