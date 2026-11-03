@@ -96,8 +96,8 @@ use qsl_foundation::{Code, SourceIdentity};
 use qsl_package as pkg;
 use qsl_package::{read_import_view, AdmittedPackages, Emission, Import, ImportViewRefusal};
 use qsl_semantics::check::{
-    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CorrespondenceConflict, KeyFault,
-    PackageDeclarations,
+    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CheckRefusal,
+    CorrespondenceConflict, KeyFault, PackageDeclarations,
 };
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -123,6 +123,53 @@ pub type FrontEndFailure = StageFailure<Box<CompileRefusal>, Vec<super::Protocol
 struct StageError {
     refusal: Box<CompileRefusal>,
     protocol_results: Option<Vec<super::ProtocolResult>>,
+}
+
+#[derive(Clone, Debug)]
+enum ProtocolFailure {
+    Source(qsl_cst::CompleteDiagnostic),
+    Forms {
+        failure: FormsRefusal,
+        region: Option<SourceRegion>,
+    },
+    Check {
+        refusals: Vec<CheckRefusal>,
+        region: Option<SourceRegion>,
+    },
+}
+
+impl ProtocolFailure {
+    fn from_refusal(refusal: CompileRefusal) -> Self {
+        match refusal {
+            CompileRefusal::Source(diagnostic) => Self::Source(*diagnostic),
+            CompileRefusal::Forms { failure, region } => Self::Forms { failure, region },
+            CompileRefusal::Check { refusals, region } => Self::Check { refusals, region },
+            other => Self::Check {
+                refusals: Vec::new(),
+                region: match other {
+                    CompileRefusal::Limit(limit) => limit.locus().and_then(|locus| match locus {
+                        Locus::Region(region) => Some(region.clone()),
+                        _ => None,
+                    }),
+                    _ => None,
+                },
+            },
+        }
+    }
+
+    fn to_refusal(&self) -> CompileRefusal {
+        match self {
+            Self::Source(diagnostic) => CompileRefusal::Source(Box::new(diagnostic.clone())),
+            Self::Forms { failure, region } => CompileRefusal::Forms {
+                failure: failure.clone(),
+                region: region.clone(),
+            },
+            Self::Check { refusals, region } => CompileRefusal::Check {
+                refusals: refusals.clone(),
+                region: region.clone(),
+            },
+        }
+    }
 }
 
 impl From<Box<CompileRefusal>> for StageError {
@@ -656,6 +703,7 @@ pub struct CheckedUnit {
     /// during S4 for its import view and retained here by library identity.
     library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
     protocol_results: Vec<super::ProtocolResult>,
+    protocol_failure: Option<ProtocolFailure>,
 }
 
 impl CheckedUnit {
@@ -1025,14 +1073,21 @@ fn check_with_context_and_temporal_selections(
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
-        let package = resolution.check_unit(
+        let package = match resolution.check_unit(
             parsed,
             package_name.clone(),
             models.models.clone(),
             execution_points.clone(),
             refinement_internals,
-        )?;
-        resolution.check_unimported_refinement_values()?;
+        ) {
+            Ok(package) => package,
+            Err(refusal) => {
+                return Err(attach_protocol_results(parsed, refusal, &source_len).into());
+            }
+        };
+        if let Err(refusal) = resolution.check_unimported_refinement_values() {
+            return Err(attach_protocol_results(parsed, refusal, &source_len).into());
+        }
         *work = resolution.work;
         let mut library_packages = BTreeMap::new();
         let (library_names, libraries) = resolution
@@ -1045,9 +1100,9 @@ fn check_with_context_and_temporal_selections(
             .unzip();
         let (protocol_results, protocol_failure) = protocol_check_outcome(parsed, package.graph());
         if !continue_protocol_refusals {
-            if let Some(refusal) = protocol_failure {
+            if let Some(refusal) = protocol_failure.as_ref() {
                 return Err(StageError::with_protocol_results(
-                    Box::new(refusal),
+                    Box::new(refusal.to_refusal()),
                     protocol_results,
                 ));
             }
@@ -1059,6 +1114,7 @@ fn check_with_context_and_temporal_selections(
             library_names,
             library_packages: Arc::new(library_packages),
             protocol_results,
+            protocol_failure,
         };
         Ok(checked)
     })
@@ -1105,7 +1161,8 @@ pub fn package_with_temporal_selections(
                             source_ref: selection.source.clone(),
                             span: selection.declaration_span,
                         },
-                    )));
+                    ))
+                    .into());
                 }
             }
             let own = temporal_selections_for_source(selections, checked.source.reference());
@@ -1117,9 +1174,28 @@ pub fn package_with_temporal_selections(
                 )
             })
             .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
-            let results = lifecycle_emission_results(&protocol_emission);
+            let results = merge_emission_results(
+                &checked.protocol_results,
+                lifecycle_emission_results(&protocol_emission, &checked.source),
+            );
             let emission = match protocol_emission.aggregate() {
                 qsl_package::ProtocolEmissionAggregate::Emitted => {
+                    if checked.protocol_failure.is_some()
+                        || results
+                            .iter()
+                            .any(|result| matches!(result, super::ProtocolResult::Refused { .. }))
+                    {
+                        let refusal = checked.protocol_failure.as_ref().map_or_else(
+                            || {
+                                Box::new(CompileRefusal::Check {
+                                    refusals: Vec::new(),
+                                    region: None,
+                                })
+                            },
+                            |failure| Box::new(failure.to_refusal()),
+                        );
+                        return Err(StageError::with_protocol_results(refusal, results).into());
+                    }
                     protocol_emission.emission().ok_or_else(|| {
                         Box::new(CompileRefusal::Emit(
                             qsl_package::EmitRefusal::NothingToEmit {
@@ -1129,13 +1205,16 @@ pub fn package_with_temporal_selections(
                     })?
                 }
                 qsl_package::ProtocolEmissionAggregate::Refused { primary } => {
-                    return Err(StageError::with_protocol_results(
-                        Box::new(CompileRefusal::Check {
-                            refusals: vec![primary.clone()],
-                            region: None,
-                        }),
-                        results,
-                    ));
+                    let refusal = checked.protocol_failure.as_ref().map_or_else(
+                        || {
+                            Box::new(CompileRefusal::Check {
+                                refusals: vec![primary.clone()],
+                                region: None,
+                            })
+                        },
+                        |failure| Box::new(failure.to_refusal()),
+                    );
+                    return Err(StageError::with_protocol_results(refusal, results).into());
                 }
                 qsl_package::ProtocolEmissionAggregate::Incomplete { primary } => {
                     let limit =
@@ -1160,8 +1239,46 @@ pub fn package_with_temporal_selections(
     )
 }
 
+fn merge_emission_results(
+    checked: &[super::ProtocolResult],
+    emitted: Vec<super::ProtocolResult>,
+) -> Vec<super::ProtocolResult> {
+    use super::ProtocolResult;
+    let mut results = checked.to_vec();
+    for emission in emitted {
+        let declaration = match &emission {
+            ProtocolResult::Cleared { declaration, .. }
+            | ProtocolResult::Emitted { declaration, .. }
+            | ProtocolResult::Refused { declaration, .. }
+            | ProtocolResult::Incomplete { declaration, .. } => declaration,
+        };
+        if let Some(existing) = results.iter_mut().find(|existing| match existing {
+            ProtocolResult::Cleared {
+                declaration: name, ..
+            }
+            | ProtocolResult::Emitted {
+                declaration: name, ..
+            }
+            | ProtocolResult::Refused {
+                declaration: name, ..
+            }
+            | ProtocolResult::Incomplete {
+                declaration: name, ..
+            } => name == declaration,
+        }) {
+            if !matches!(existing, ProtocolResult::Refused { .. }) {
+                *existing = emission;
+            }
+        } else {
+            results.push(emission);
+        }
+    }
+    results
+}
+
 fn lifecycle_emission_results(
     emission: &qsl_package::ProtocolEmission,
+    source: &Source,
 ) -> Vec<super::ProtocolResult> {
     emission
         .results()
@@ -1191,7 +1308,7 @@ fn lifecycle_emission_results(
                     .catalog_code()
                     .map(|code| code.cause().to_owned())
                     .unwrap_or_else(|| "unknown-cause".to_owned()),
-                locus: None,
+                locus: region(source.reference(), *declaration_span).map(Locus::Region),
             },
             qsl_package::ProtocolEmissionResult::Incomplete { declaration, limit } => {
                 super::ProtocolResult::Incomplete {
@@ -1341,7 +1458,7 @@ fn forms_protocol_results(
 fn protocol_check_outcome(
     parsed: &ParsedUnitSource,
     graph: &qsl_semantics::check::CheckedGraph,
-) -> (Vec<super::ProtocolResult>, Option<CompileRefusal>) {
+) -> (Vec<super::ProtocolResult>, Option<ProtocolFailure>) {
     use qsl_cst::Production;
     let declarations: Vec<_> = parsed
         .syntax
@@ -1388,6 +1505,22 @@ fn protocol_check_outcome(
                         refusals: refused.refusals.clone(),
                     });
                 }
+                if let Some(limit) =
+                    refused
+                        .refusals
+                        .iter()
+                        .find_map(|refusal| match refusal.cause.unwrapped() {
+                            CheckCause::ResourceExhausted(cause) => Some(
+                                LimitExceeded::new(cause.kind.setting(), cause.limit, cause.actual)
+                                    .at(region(parsed.source().reference(), declaration_span)
+                                        .map(Locus::Region)),
+                            ),
+                            _ => None,
+                        })
+                {
+                    results.push(super::ProtocolResult::Incomplete { declaration, limit });
+                    continue;
+                }
                 let catalog = primary.cause.catalog_code();
                 results.push(super::ProtocolResult::Refused {
                     declaration,
@@ -1418,9 +1551,80 @@ fn protocol_check_outcome(
         }
     }
     if first_failure.is_none() {
+        if !graph.unit_refusals().is_empty() {
+            first_failure = Some(CompileRefusal::Check {
+                refusals: graph.unit_refusals().to_vec(),
+                region: None,
+            });
+        }
+    }
+    if first_failure.is_none() {
         first_failure = protocol_failure_from_parsed(parsed);
     }
-    (results, first_failure)
+    (results, first_failure.map(ProtocolFailure::from_refusal))
+}
+
+fn attach_protocol_results(
+    parsed: &ParsedUnitSource,
+    refusal: Box<CompileRefusal>,
+    source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
+) -> StageError {
+    use qsl_cst::Production;
+    let limit = limit_of(&refusal, source_len);
+    let results = parsed
+        .syntax
+        .cst()
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProtocolClause)
+        .filter_map(|node| {
+            let declaration_span = node.span();
+            let declaration = parsed
+                .source()
+                .text()
+                .get(declaration_span.start..declaration_span.end)?
+                .strip_prefix("protocol")?
+                .trim_start()
+                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .next()?
+                .to_owned();
+            let existing = parsed.protocol_results.iter().find(|result| match result {
+                super::ProtocolResult::Cleared {
+                    declaration: name, ..
+                }
+                | super::ProtocolResult::Emitted {
+                    declaration: name, ..
+                }
+                | super::ProtocolResult::Refused {
+                    declaration: name, ..
+                }
+                | super::ProtocolResult::Incomplete {
+                    declaration: name, ..
+                } => name == &declaration,
+            });
+            if let Some(super::ProtocolResult::Refused { .. }) = existing {
+                return existing.cloned();
+            }
+            if let Some(limit) = &limit {
+                return Some(super::ProtocolResult::Incomplete {
+                    declaration,
+                    limit: limit
+                        .clone()
+                        .at(region(parsed.source().reference(), declaration_span)
+                            .map(Locus::Region)),
+                });
+            }
+            Some(super::ProtocolResult::Cleared {
+                declaration,
+                stage: super::SpineStage::Check,
+            })
+        })
+        .collect::<Vec<_>>();
+    if results.is_empty() {
+        StageError::from(refusal)
+    } else {
+        StageError::with_protocol_results(refusal, results)
+    }
 }
 
 fn protocol_failure_from_parsed(parsed: &ParsedUnitSource) -> Option<CompileRefusal> {
@@ -1974,7 +2178,7 @@ impl<'a> Resolution<'a> {
         })?;
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
-            declarations.check_with_protocol_results_and_cancel(limits.checking, cancel)
+            declarations.check_with_protocol_continuation_and_cancel(limits.checking, cancel)
         })
         .map_err(|refusals| {
             let refusals = pending.report(refusals);

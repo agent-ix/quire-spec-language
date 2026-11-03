@@ -779,6 +779,9 @@ pub struct CheckedGraph {
     /// FR-383: protocol declarations refused by their own checks while
     /// independent declarations continued through checking.
     protocol_refusals: Vec<ProtocolCheckRefusal>,
+    /// Unit-level state-clause refusals retained by the protocol continuation
+    /// path so independent protocols can still be emitted.
+    unit_refusals: Vec<CheckRefusal>,
     /// Checked protocol classes retained for importing refinements (FR-147).
     protocol_classes: BTreeMap<String, refinement::ImportedProtocolClasses>,
     /// FR-390: emitted protocol node keys mapped back to their one S3
@@ -911,6 +914,7 @@ impl DebugWith for CheckedGraph {
             protocols,
             protocol_order,
             protocol_refusals,
+            unit_refusals,
             protocol_classes,
             protocol_node_keys,
             temporal_clauses,
@@ -996,6 +1000,7 @@ impl DebugWith for CheckedGraph {
             .field("protocols", &Seq(protocols, table))
             .field("protocol_order", protocol_order)
             .field("protocol_refusals", protocol_refusals)
+            .field("unit_refusals", unit_refusals)
             .field(
                 "protocol_classes",
                 &ValueMap(protocol_classes.iter(), table),
@@ -1510,7 +1515,13 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         let mut protocol_refusals = Vec::new();
-        let outcome = self.check_retaining_protocols(limits, cancel, false, &mut protocol_refusals);
+        let outcome = self.check_retaining_protocols(
+            limits,
+            cancel,
+            false,
+            false,
+            &mut protocol_refusals,
+        );
         let flatten = |results: &[ProtocolCheckRefusal]| -> Vec<CheckRefusal> {
             results
                 .iter()
@@ -1539,7 +1550,19 @@ impl PackageDeclarations {
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        self.check_retaining_protocols(limits, cancel, true, &mut Vec::new())
+        self.check_retaining_protocols(limits, cancel, true, false, &mut Vec::new())
+    }
+
+    /// Continue through a unit-level state-clause refusal so independent
+    /// protocol declarations can still be checked and reported by the
+    /// compiler. Public strict and protocol-results entry points keep their
+    /// established stop behavior.
+    pub fn check_with_protocol_continuation_and_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_retaining_protocols(limits, cancel, true, true, &mut Vec::new())
     }
 
     /// The check proper. `protocol_check_refusals` receives every refusal a
@@ -1555,6 +1578,7 @@ impl PackageDeclarations {
         limits: CheckingLimits,
         cancel: &Cancel,
         independent_protocols: bool,
+        continue_state_clause_refusals: bool,
         protocol_check_refusals: &mut Vec<ProtocolCheckRefusal>,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-230: S2 retains every timed declaration independent of header
@@ -1887,6 +1911,7 @@ impl PackageDeclarations {
             })
         };
         let mut refusals = Vec::new();
+        let mut unit_refusals = Vec::new();
         // QSL FR-246: the task sets and the claims over them. They are timed
         // forms, so FR-230's facet gate admits them; every defect is reported.
         let mut checked_task_sets = CheckedTaskSets::default();
@@ -3239,7 +3264,15 @@ impl PackageDeclarations {
                 .iter()
                 .flat_map(|(_, pending)| pending.refusals().iter().cloned())
                 .collect();
-            return Err(with_deferred(refusals, &prechecked_deferred));
+            if continue_state_clause_refusals
+                && refusals
+                    .iter()
+                    .all(|refusal| matches!(refusal.location.origin, Origin::StateClause { .. }))
+            {
+                unit_refusals.append(&mut refusals);
+            } else {
+                return Err(with_deferred(refusals, &prechecked_deferred));
+            }
         }
         // FR-220: the model's views, for the symbolic footprints the access
         // classification of a protocol's `parallel` attempts reads.
@@ -6609,6 +6642,7 @@ impl PackageDeclarations {
                 .map(|protocol| protocol.name.name.clone())
                 .collect(),
             protocol_refusals: std::mem::take(protocol_check_refusals),
+            unit_refusals,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
                 .map(|(name, members)| {
@@ -7721,6 +7755,13 @@ impl CheckedGraph {
     /// FR-383: typed refusals attributed to individual protocol declarations.
     pub fn protocol_refusals(&self) -> &[ProtocolCheckRefusal] {
         &self.protocol_refusals
+    }
+
+    /// Unit-level state-clause refusals preserved by the protocol
+    /// continuation check. Ordinary check operations still return these as
+    /// primary refusals.
+    pub fn unit_refusals(&self) -> &[CheckRefusal] {
+        &self.unit_refusals
     }
 
     /// FR-383: protocol names in declaration order, including refused ones.

@@ -1532,6 +1532,7 @@ impl OutcomeDocument {
 fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
     match refusal {
         ReplayRefusal::Recompile(refusal) => Some(refusal.stage().into()),
+        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => Some(refusal.stage().into()),
         ReplayRefusal::Fault(_)
         | ReplayRefusal::InvalidPackageName(_)
         | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))
