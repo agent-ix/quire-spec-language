@@ -2047,6 +2047,7 @@ fn node(kind: NodeKind<NodeId>, value_type: ValueType, location: &Location) -> N
         value_type,
         location: location.clone(),
         equality_producer: None,
+        ordering_part: false,
     }
 }
 
@@ -2197,6 +2198,7 @@ impl Typer<'_> {
                     value_type: required.clone(),
                     location,
                     equality_producer: None,
+                    ordering_part: false,
                 })
             }
             _ => Err(mismatch(&node.location)),
@@ -3207,8 +3209,13 @@ impl<'a> Typer<'a> {
             OrderingOperator::GreaterOrEqual => (right, left, false),
         };
         let boolean = |this: &mut Self, kind| this.push(node(kind, ValueType::Boolean, location));
-        let lesser_ordinary = boolean(self, NodeKind::IeeeNumericEquality(lesser, lesser));
-        let greater_ordinary = boolean(self, NodeKind::IeeeNumericEquality(greater, greater));
+        let part = |this: &mut Self, kind| {
+            let mut part = node(kind, ValueType::Boolean, location);
+            part.ordering_part = true;
+            this.push(part)
+        };
+        let lesser_ordinary = part(self, NodeKind::IeeeNumericEquality(lesser, lesser));
+        let greater_ordinary = part(self, NodeKind::IeeeNumericEquality(greater, greater));
         let both_ordinary = boolean(
             self,
             NodeKind::Connective(
@@ -3222,7 +3229,7 @@ impl<'a> Typer<'a> {
             self,
             NodeKind::IeeeTotalOrder(OrderedKind::Float, lesser, greater),
         );
-        let equal = boolean(self, NodeKind::IeeeNumericEquality(lesser, greater));
+        let equal = part(self, NodeKind::IeeeNumericEquality(lesser, greater));
         let relation = if strict {
             let apart = boolean(self, NodeKind::Not(equal));
             boolean(

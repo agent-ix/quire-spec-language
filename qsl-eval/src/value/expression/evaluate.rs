@@ -2262,19 +2262,33 @@ impl<'a, 'm> Machine<'a, 'm> {
                         "typed-ieee-equality-operands-are-not-floats",
                     )));
                 };
-                let same_width = left.width() == right.width();
-                let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
-                    false
+                if !node.is_ordering_part() {
+                    // A standalone `=` or `numericEqual` is the one owned
+                    // core of FR-148: it charges its operands and result.
+                    if self.scope.ieee_profile().is_none() {
+                        return Err(invariant("ieee-profile-unresolved"));
+                    }
+                    Value::Boolean(outcome_into_stop(
+                        compare_ieee(IeeeComparison::NumericEqual, left, right, self.meter)
+                            .map_err(|_| invariant("ieee-operation-rejected"))?,
+                    )?)
                 } else {
-                    let zero = |value: quire_exact::IeeeValue| match value.width() {
-                        quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
-                        quire_exact::IeeeWidth::Binary64 => {
-                            value.bits() & 0x7fff_ffff_ffff_ffff == 0
-                        }
+                    // FR-397 "Evaluate once": the numeric-equality parts of
+                    // an ordering's composition add no charge.
+                    let same_width = left.width() == right.width();
+                    let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
+                        false
+                    } else {
+                        let zero = |value: quire_exact::IeeeValue| match value.width() {
+                            quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
+                            quire_exact::IeeeWidth::Binary64 => {
+                                value.bits() & 0x7fff_ffff_ffff_ffff == 0
+                            }
+                        };
+                        (zero(left) && zero(right)) || left.bits() == right.bits()
                     };
-                    (zero(left) && zero(right)) || left.bits() == right.bits()
-                };
-                Value::Boolean(numeric_equal)
+                    Value::Boolean(numeric_equal)
+                }
             }
             NodeKind::Not(_) => {
                 let operand = self.pop_boolean()?;

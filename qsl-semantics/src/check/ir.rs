@@ -72,6 +72,9 @@ pub struct Node {
     /// QSL producer facts that the equality checker selected, retained until
     /// lowering assigns the checked application its structural key.
     pub(in crate::check) equality_producer: Option<Box<EqualityProducerData>>,
+    /// A numeric-equality part of a float ordering's composition: FR-397
+    /// charges the ordering once, so such a part adds no charge of its own.
+    pub(in crate::check) ordering_part: bool,
 }
 
 /// QSL's pre-wire equality facts, retained from typing through lowering.
@@ -404,6 +407,7 @@ impl CheckedBody {
                 value_type,
                 location: Location::root(quire_semantic_value::location::Origin::Expression),
                 equality_producer: None,
+                ordering_part: false,
             })
             .collect();
         nodes.push(Node {
@@ -411,6 +415,7 @@ impl CheckedBody {
             value_type: result,
             location: Location::root(quire_semantic_value::location::Origin::Expression),
             equality_producer: None,
+            ordering_part: false,
         });
         Self { nodes }
     }
@@ -443,6 +448,7 @@ impl CheckedBody {
                     value_type,
                     location: Location::root(quire_semantic_value::location::Origin::Expression),
                     equality_producer: None,
+                    ordering_part: false,
                 })
                 .collect(),
         }
@@ -584,6 +590,12 @@ impl<'a> CheckedNode<'a> {
     /// The node's source location.
     pub fn location(self) -> &'a Location {
         &self.node().location
+    }
+
+    /// Whether the node is a numeric-equality part of a float ordering's
+    /// composition (FR-397), which adds no charge beyond the ordering's own.
+    pub fn is_ordering_part(self) -> bool {
+        self.node().ordering_part
     }
 
     /// The QSL producer facts for a checked equality, if typing selected any.
@@ -1107,6 +1119,7 @@ mod tests {
             value_type: ValueType::Integer,
             location: Location::root(Origin::Expression),
             equality_producer: None,
+            ordering_part: false,
         };
         let mut builder = BodyBuilder::default();
         let mut operand = builder.push(node(NodeKind::Local(slot)));

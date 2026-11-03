@@ -495,3 +495,35 @@ fn an_ordering_spends_each_operand_once_and_stops_at_its_limit() {
         );
     }
 }
+
+/// FR-397-AC-26 and FR-148: a standalone `=`, `!=` and `numericEqual` charge
+/// the operands and the result as one owned comparison core (the same spend
+/// as `totalOrder`), while the numeric-equality parts of an ordering's
+/// composition add no charge, so an ordering costs far less than the three
+/// comparisons its parts would charge on top of its one `totalOrder`.
+#[trace("TC-1091", "FR-397-AC-26")]
+#[test]
+fn a_standalone_numeric_equality_charges_and_an_orderings_parts_do_not() {
+    const FOUR: u64 = 0x4010_0000_0000_0000;
+    const NINE: u64 = 0x4022_0000_0000_0000;
+    let at = |body: &str| spend("Boolean", body, FOUR, NINE, UNLIMITED).1;
+    let nothing = at("true");
+    let compare = at(&format!("{IEEE}totalOrder(p, q)")) - nothing;
+    assert!(compare > 0, "a comparison charges its operands and result");
+    assert_eq!(at("p = q") - nothing, compare, "standalone `=`");
+    assert_eq!(
+        at(&format!("{IEEE}numericEqual(p, q)")) - nothing,
+        compare,
+        "standalone numericEqual"
+    );
+    assert!(at("p != q") - nothing >= compare, "standalone `!=`");
+    for operator in ["<", "<=", ">", ">="] {
+        let ordering = at(&format!("p {operator} q")) - nothing;
+        // One totalOrder plus the connectives costs 3 comparisons; charging
+        // the three numeric-equality parts would make it 6.
+        assert!(
+            ordering < 5 * compare,
+            "p {operator} q spends {ordering}; a comparison is {compare}"
+        );
+    }
+}

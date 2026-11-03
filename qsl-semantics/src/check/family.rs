@@ -1263,6 +1263,7 @@ impl<'a> Application<'a> {
                 value_type: signature.result.clone(),
                 location: location.clone(),
                 equality_producer: None,
+                ordering_part: false,
             }),
             Self::Imported {
                 callee,
@@ -1277,6 +1278,7 @@ impl<'a> Application<'a> {
                 value_type: signature.result.clone(),
                 location: location.clone(),
                 equality_producer: None,
+                ordering_part: false,
             }),
             Self::Tuple { declaration, .. } => Ok(Node {
                 kind: NodeKind::Tuple {
@@ -1286,6 +1288,7 @@ impl<'a> Application<'a> {
                 value_type: ValueType::Composite(declaration),
                 location: location.clone(),
                 equality_producer: None,
+                ordering_part: false,
             }),
             Self::Ieee { intrinsic, .. } => {
                 // Every operand is a float of the first operand's type;
@@ -1335,6 +1338,7 @@ impl<'a> Application<'a> {
                     },
                     location: location.clone(),
                     equality_producer: None,
+                    ordering_part: false,
                 })
             }
         }
