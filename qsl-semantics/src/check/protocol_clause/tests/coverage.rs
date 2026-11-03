@@ -158,6 +158,9 @@ fn every_admitted_temporal_and_state_profile_is_accepted_at_its_use_site() {
             match event Seen by R for Undo as (seen: Boolean) { true }; \
             then sequence Then { } timeout sequence Timeout { }";
         checks_with_header(&header, &recovery_flow_with_await(await_form));
+        // FR-508-AC-3 requires every admitted temporal identity at both
+        // protocol temporal use sites, including the compensation template.
+        checks_with_header(&header, &recovery_flow("Main::Committed", ""));
     }
 
     let state_layers = [
