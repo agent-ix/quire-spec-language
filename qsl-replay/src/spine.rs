@@ -50,7 +50,8 @@ pub use lifecycle::{
     check_with_execution_points_and_refinement_internals, check_with_refinement_internals,
     check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
     parse, preflight_unit_list, refusal_or_fault, select, AdmittedModels, AdmittedUnitList,
-    CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
+    CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits, ParseRequest,
+    ParsedUnitSource, PendingObligation, TypeDeclaration, TypeReport, TypeRequirement,
 };
 pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
 
@@ -701,6 +702,7 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         return "no error recorded".to_owned();
     };
     let message = match &first.cause {
+        AssemblyCause::EmptyUnitList => "the package has no source units".to_owned(),
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
         AssemblyCause::ImportedTypeName { name } => {
             format!("`{name}` names an imported declaration, which stands only as a callee")

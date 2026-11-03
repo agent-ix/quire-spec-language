@@ -700,6 +700,7 @@ impl AdmittedModels {
 pub struct CheckedUnit {
     package: Arc<pkg::CheckedPackage>,
     source: Source,
+    type_report: TypeReport,
     libraries: Vec<Source>,
     /// The library identity of each entry of `libraries`, in the same order.
     library_names: Vec<LibraryName>,
@@ -733,6 +734,13 @@ impl CheckedUnit {
         &self.source
     }
 
+    /// The type evidence produced from this checked unit's source parse.
+    /// The report carries no source identity; its spans resolve through
+    /// [`Self::source`].
+    pub fn type_report(&self) -> &TypeReport {
+        &self.type_report
+    }
+
     /// Every library the check actually resolved, transitively, each
     /// exactly as its own S1 read it. Never the full dependency input: a
     /// supplied library the unit's own imports never reached is not compiled
@@ -755,6 +763,169 @@ impl CheckedUnit {
             .iter()
             .position(|name| name == identity)
             .and_then(|index| self.libraries.get(index))
+    }
+}
+
+/// Type evidence retained by S3 for one source unit.
+#[derive(Clone, Debug, Default)]
+pub struct TypeReport {
+    declarations: Vec<TypeDeclaration>,
+    requirements: Vec<TypeRequirement>,
+    obligations: Vec<PendingObligation>,
+}
+
+impl TypeReport {
+    /// Declarations owned by the checked unit, in ascending node order.
+    pub fn declarations(&self) -> &[TypeDeclaration] {
+        &self.declarations
+    }
+
+    /// Requirement records owned by the checked unit.
+    pub fn requirements(&self) -> &[TypeRequirement] {
+        &self.requirements
+    }
+
+    /// Claims retained for later analysis or replay.
+    pub fn obligations(&self) -> &[PendingObligation] {
+        &self.obligations
+    }
+}
+
+/// One source-owned declaration and its checked value type, when present.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeDeclaration {
+    node: quire_exact::NodeKey,
+    kind: qsl_semantics::check::NodeTag,
+    value_type: Option<quire_exact::NodeKey>,
+}
+
+impl TypeDeclaration {
+    /// The declaration's structural node.
+    pub fn node(&self) -> &quire_exact::NodeKey {
+        &self.node
+    }
+
+    /// The checked graph's declaration kind.
+    pub fn kind(&self) -> qsl_semantics::check::NodeTag {
+        self.kind
+    }
+
+    /// The declaration's checked value type, if it has one.
+    pub fn value_type(&self) -> Option<&quire_exact::NodeKey> {
+        self.value_type.as_ref()
+    }
+}
+
+/// A requirement occurrence retained with its checked record.
+#[derive(Clone, Debug)]
+pub struct TypeRequirement {
+    occurrence: qsl_foundation::source::provenance::OccurrenceKey,
+    record: qsl_semantics::check::RequirementRecord,
+}
+
+impl TypeRequirement {
+    /// The requirement's structural occurrence.
+    pub fn occurrence(&self) -> &qsl_foundation::source::provenance::OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The package's checked requirement record.
+    pub fn record(&self) -> &qsl_semantics::check::RequirementRecord {
+        &self.record
+    }
+}
+
+/// A checked claim that remains pending for analysis or replay.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingObligation {
+    node: quire_exact::NodeKey,
+    occurrence: qsl_foundation::source::provenance::OccurrenceKey,
+    capability_kind: String,
+}
+
+impl PendingObligation {
+    /// The claim node.
+    pub fn node(&self) -> &quire_exact::NodeKey {
+        &self.node
+    }
+
+    /// The claim's checked occurrence.
+    pub fn occurrence(&self) -> &qsl_foundation::source::provenance::OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The claim form's capability kind.
+    pub fn capability_kind(&self) -> &str {
+        &self.capability_kind
+    }
+
+    /// Every retained obligation is pending until analysis or replay.
+    pub const fn state(&self) -> ObligationState {
+        ObligationState::Pending
+    }
+}
+
+/// The discharge state of a checked obligation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObligationState {
+    /// The checked claim awaits analysis or replay.
+    Pending,
+}
+
+fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef) -> TypeReport {
+    use qsl_semantics::check::Owner;
+
+    let owner = qsl_semantics::check::SourceOwner::from(source);
+    let owns = |node: &qsl_semantics::check::SemanticNode| {
+        node.owner() == Some(&Owner::Source(owner.clone()))
+    };
+    let declarations = graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| owns(node) && node.declaration().is_some())
+        .map(|node| TypeDeclaration {
+            node: node.key(),
+            kind: node.node_tag(),
+            value_type: node.semantic_type(),
+        })
+        .collect();
+    let requirements = graph
+        .requirements()
+        .iter()
+        .filter(|(occurrence, _)| {
+            graph
+                .semantic_graph()
+                .node(occurrence.node().clone())
+                .is_some_and(owns)
+        })
+        .map(|(occurrence, record)| TypeRequirement {
+            occurrence: occurrence.clone(),
+            record: record.clone(),
+        })
+        .collect();
+    let obligations = graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| owns(node) && node.node_tag() == qsl_semantics::check::NodeTag::Claim)
+        .flat_map(|node| {
+            let key = node.key();
+            let capability_kind = node.semantic_form().to_owned();
+            graph
+                .occurrences()
+                .filter(move |(candidate, _, _)| candidate == &key)
+                .map(move |(node, origin, _)| PendingObligation {
+                    node: node.clone(),
+                    occurrence: qsl_foundation::source::provenance::OccurrenceKey::new(
+                        node, origin,
+                    ),
+                    capability_kind: capability_kind.clone(),
+                })
+        })
+        .collect();
+    TypeReport {
+        declarations,
+        requirements,
+        obligations,
     }
 }
 
@@ -1128,9 +1299,12 @@ fn check_with_context_and_temporal_selections(
                 ));
             }
         }
+        let package = Arc::new(package);
+        let type_report = type_report(package.graph(), parsed.source().reference());
         let checked = CheckedUnit {
-            package: Arc::new(package),
+            package,
             source: parsed.source().clone(),
+            type_report,
             libraries,
             library_names,
             library_packages: Arc::new(library_packages),

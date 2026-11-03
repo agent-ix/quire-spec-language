@@ -675,6 +675,39 @@ fn checked_protocol_source(bytes: &[u8]) -> CheckedUnit {
         .into_value()
 }
 
+/// FR-514-AC-1: the checked unit retains source-owned declaration type facts,
+/// with no source identity copied into the report.
+#[trace("FR-514-AC-1")]
+#[test]
+fn checked_unit_type_report_lists_its_checked_declarations() {
+    use qsl_semantics::check::NodeTag;
+
+    static SOURCE: OnceLock<SourceIdentity> = OnceLock::new();
+    let source = SOURCE.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle", "type-report", "type-report:1")
+    });
+    let text = format!("{HEADER}function f using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}");
+    let parsed = parse_named(source, text.as_bytes());
+    let checked = check(
+        &parsed,
+        "type-report".to_owned(),
+        &AdmittedModels::default(),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("function checks")
+    .into_value();
+    let [declaration] = checked.type_report().declarations() else {
+        panic!(
+            "one function declaration is retained, got {:?}",
+            checked.type_report().declarations()
+        );
+    };
+    assert_eq!(declaration.kind(), NodeTag::Function);
+    assert!(declaration.value_type().is_some());
+}
+
 /// FR-503-AC-3 (TC-1298 row 4): the compile continuation emits clean
 /// siblings byte-for-byte and returns the ordered refusal payload without a
 /// package.
