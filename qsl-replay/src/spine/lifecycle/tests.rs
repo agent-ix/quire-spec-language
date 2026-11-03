@@ -689,7 +689,7 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     let text = format!(
         "{HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model M = \"acme/orders\";\n\
-         function g using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n\
+         function g using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
          function f using v(x: Int[0, 9]): Int[0, 9] pure {{ g(x) }}\n\
          temporal Due using inf over (input: M::Widget) clock \"model-steps\" on origin {{ always holds(true) }}\n\
          protocol Fill using Complete over (input: M::Widget) on origin {{\n\
