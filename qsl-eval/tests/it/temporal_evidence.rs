@@ -254,10 +254,11 @@ fn the_first_differing_dimension_in_the_fixed_order_is_reported() {
     );
 }
 
-/// FR-522-AC-9: a binding that agrees is authenticated, and the retained
-/// binding holds the package, the declaration, the profile definition, the
-/// clock name and the clock configuration of the rows.
-#[trace("FR-522-AC-9", "TC-1317")]
+/// A binding that agrees is authenticated, and the retained binding holds
+/// the package, the declaration, the profile definition, the clock name and
+/// the clock configuration of the rows. No report carries it yet, so
+/// FR-522-AC-9's report half is not claimed here.
+#[trace("TC-1317")]
 #[test]
 fn an_agreeing_binding_retains_the_rows_it_agreed_with() {
     for recipe in [fixed_sample(), event_position(), timestamped_event()] {
@@ -412,9 +413,9 @@ impl Request {
     }
 }
 
-/// FR-522-AC-15, AC-16: one request has one identity, however often it is
+/// The identity builder gives one request one identity, however often it is
 /// built, and the three clauses' requests have pairwise distinct identities.
-#[trace("FR-522-AC-15", "FR-522-AC-16", "TC-1317")]
+#[trace("TC-1317")]
 #[test]
 fn a_request_has_one_identity_and_three_clauses_have_three() {
     let first = Request::fixed_sample().identity().result_identity();
@@ -447,16 +448,13 @@ fn changed(edit: impl FnOnce(&mut Request)) -> IdentityBuilder {
     request.identity()
 }
 
-/// FR-522-AC-17, AC-18, AC-22, AC-23: changing exactly one member of the
-/// identity list gives a distinct identity, each member varied alone, and
-/// the earlier identity is unchanged by building the changed one.
-#[trace(
-    "FR-522-AC-17",
-    "FR-522-AC-18",
-    "FR-522-AC-22",
-    "FR-522-AC-23",
-    "TC-1317"
-)]
+/// Changing exactly one member of the identity list gives a distinct
+/// identity, each member varied alone, and the earlier identity is unchanged
+/// by building the changed one. The trace, progress and ledger members are
+/// bytes this test chooses, since no evaluator produces them yet, so this
+/// proves the builder only and claims none of FR-522-AC-15 to AC-19, AC-22
+/// or AC-23.
+#[trace("TC-1317")]
 #[test]
 fn each_member_of_the_identity_list_changes_the_identity_alone() {
     let base = Request::fixed_sample().identity().result_identity();
@@ -534,10 +532,11 @@ fn each_member_of_the_identity_list_changes_the_identity_alone() {
     assert_eq!(Request::fixed_sample().identity().result_identity(), base);
 }
 
-/// FR-522-AC-19: for an event-position request, the sequence authority of
-/// the row, the watermark and the scope closure each alone give a distinct
-/// identity.
-#[trace("FR-522-AC-19", "TC-1317")]
+/// For an event-position request, the sequence authority of the row, the
+/// watermark and the scope closure each alone give a distinct identity in
+/// the builder. The watermark and scope are test-chosen, so FR-522-AC-19 is
+/// not claimed until an evaluator supplies them.
+#[trace("TC-1317")]
 #[test]
 fn an_event_position_identity_depends_on_authority_watermark_and_scope() {
     let identity = |authority: &str, watermark: u64, closed: bool| {
@@ -655,10 +654,12 @@ fn measured() -> qsl_eval::temporal::evidence::EvidenceUsage {
     usage
 }
 
-/// FR-523-AC-3: the call measures `formula_nodes` 2, `instances` 1,
+/// The scripted call of `exercise` measures `formula_nodes` 2, `instances` 1,
 /// `positions` 3, `valuations` 3, `captures` 0, `evaluation_steps` 8 and
-/// `visited` 8, and reports all thirteen counters (AC-18).
-#[trace("FR-523-AC-3", "FR-523-AC-18", "TC-1318")]
+/// `visited` 8, and reports all thirteen counters (AC-18). The script charges these
+/// numbers itself, so FR-523-AC-3 (the usage of a real evaluation) is not
+/// claimed.
+#[trace("FR-523-AC-18", "TC-1318")]
 #[test]
 fn the_usage_of_an_origin_clause_over_three_positions_is_measured_per_counter() {
     let usage = measured();
@@ -683,8 +684,10 @@ fn the_usage_of_an_origin_clause_over_three_positions_is_measured_per_counter() 
 /// FR-523-AC-4, AC-5: each counter completes with its ceiling at exactly its
 /// measured usage and returns `Incomplete` naming the counter and its
 /// setting, with no truth, one below it. The counters whose measured usage
-/// is zero (`captures`) cannot go one below and are charged by AC-9's
-/// capture call instead.
+/// is zero (`captures`, which the script never charges) cannot go one below
+/// here; `captures_are_charged_by_a_capture_and_an_evicted_record_spends_no_capture`
+/// covers it. The script's charges are its own, so this proves the ceiling
+/// machinery per counter and not the counts of a real evaluation.
 #[trace("FR-523-AC-4", "FR-523-AC-5", "TC-1318")]
 #[test]
 fn each_counter_completes_at_its_usage_and_stops_one_below() {
@@ -763,11 +766,11 @@ fn a_ceiling_above_its_default_is_not_clamped() {
     assert_eq!(reached.value, 2_000_000);
 }
 
-/// FR-523-AC-10, AC-11, AC-19: the charge log of a call stopped one below
-/// its usage equals the log of the successful prefix of the full call; a
-/// retry under sufficient ceilings gives the result of a call that never
-/// stopped, and the first call replayed with a fresh meter gives its result.
-#[trace("FR-523-AC-10", "FR-523-AC-11", "FR-523-AC-19", "TC-1318")]
+/// The charge log of a scripted call stopped one below its usage equals the
+/// log of the successful prefix of the full call; a retry under sufficient
+/// ceilings gives the result of a call that never stopped. The script is not
+/// an evaluation, so FR-523-AC-10, AC-11 and AC-19 are not claimed.
+#[trace("TC-1318")]
 #[test]
 fn a_stopped_call_logs_the_prefix_and_a_retry_equals_an_unstopped_call() {
     let mut full = Meter::new(SCALAR_LIMITS_UNLIMITED);
@@ -892,13 +895,13 @@ fn formula_nodes_counts_distinct_reachable_nodes() {
     assert_eq!(work.future_reach, 5);
 }
 
-/// FR-523-AC-14, AC-15: two calls share one meter whose work-unit ceiling is
+/// Two scripted calls share one meter whose work-unit ceiling is
 /// the first call's usage plus one: the first completes and the second
 /// stops at the `temporal.visit` charge point naming its instance. With
 /// `evaluation_steps` at 1000 and the meter one below the visits, the stop
 /// is at `temporal.visit`; with the meter unbounded and `evaluation_steps`
 /// one below it names `evaluation_steps`.
-#[trace("FR-523-AC-14", "FR-523-AC-15", "TC-1318")]
+#[trace("TC-1318")]
 #[test]
 fn calls_sharing_a_meter_accumulate_and_the_counter_is_charged_first() {
     let steps = measured().get(EvidenceCounter::EvaluationSteps);
@@ -938,6 +941,79 @@ fn calls_sharing_a_meter_accumulate_and_the_counter_is_charged_first() {
         panic!("the counter must stop first: {result:?}");
     };
     assert_eq!(reached.counter, EvidenceCounter::EvaluationSteps);
+}
+
+/// FR-523-AC-9: a charge the meter denies leaves every counter at its last
+/// successful value, as a charge a counter refuses does. The counters are
+/// raised only once the meter has admitted the unit.
+#[trace("FR-523-AC-9", "TC-1318")]
+#[test]
+fn a_meter_denial_leaves_every_counter_at_its_last_value() {
+    let mut meter = Meter::new(work_limit(1));
+    let mut call = CallMeter::new(TemporalEvidenceLimits::default(), &mut meter);
+    call.assess(b"t1".to_vec());
+    call.visit(Visit::Scan).expect("the meter admits one visit");
+    let admitted = call.usage();
+    assert_eq!(admitted.get(EvidenceCounter::Positions), 1);
+    assert_eq!(admitted.get(EvidenceCounter::EvaluationSteps), 1);
+    assert_eq!(admitted.get(EvidenceCounter::Visited), 1);
+    let Err(EvidenceStop::Meter {
+        incomplete,
+        instance,
+    }) = call.visit(Visit::Scan)
+    else {
+        panic!("the meter must deny the second visit");
+    };
+    assert_eq!(incomplete.charge_point, ChargePoint::TemporalVisit);
+    assert_eq!(instance.as_deref(), Some(b"t1".as_slice()));
+    assert_eq!(call.usage(), admitted);
+    assert_eq!(call.meter().admitted_charges().len(), 1);
+}
+
+/// FR-523-AC-4, AC-5: `captures` is spent by a capture established and
+/// retained, and by nothing else; its ceiling admits exactly that many
+/// captures and the next stops naming `captures`. An evicted record consulted
+/// spends `evaluation_steps` and `visited` and never `captures`.
+#[trace("FR-523-AC-4", "FR-523-AC-5", "TC-1318")]
+#[test]
+fn captures_are_charged_by_a_capture_and_an_evicted_record_spends_no_capture() {
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let limits = TemporalEvidenceLimits::default().with_ceiling(EvidenceCounter::Captures, 2);
+    let mut call = CallMeter::new(limits, &mut meter);
+    call.visit(Visit::Capture).expect("the first capture");
+    call.visit(Visit::Capture).expect("the second capture");
+    let usage = call.usage();
+    assert_eq!(usage.get(EvidenceCounter::Captures), 2);
+    assert_eq!(usage.get(EvidenceCounter::EvaluationSteps), 2);
+    assert_eq!(usage.get(EvidenceCounter::Visited), 2);
+    assert_eq!(usage.get(EvidenceCounter::Positions), 0);
+    assert_eq!(usage.get(EvidenceCounter::Valuations), 0);
+    let Err(EvidenceStop::Limit(reached)) = call.visit(Visit::Capture) else {
+        panic!("a third capture is over the ceiling of two");
+    };
+    assert_eq!(reached.counter, EvidenceCounter::Captures);
+    assert_eq!(reached.value, 2);
+    assert_eq!(reached.setting.name(), "temporal_evidence.captures");
+    assert_eq!(call.usage(), usage);
+
+    call.visit(Visit::Evicted).expect("an evicted record");
+    let after = call.usage();
+    assert_eq!(after.get(EvidenceCounter::Captures), 2);
+    assert_eq!(after.get(EvidenceCounter::EvaluationSteps), 3);
+    assert_eq!(after.get(EvidenceCounter::Visited), 3);
+
+    for counter in [EvidenceCounter::EvaluationSteps, EvidenceCounter::Visited] {
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let limits = TemporalEvidenceLimits::default().with_ceiling(counter, 0);
+        let mut call = CallMeter::new(limits, &mut meter);
+        let Err(EvidenceStop::Limit(reached)) = call.visit(Visit::Evicted) else {
+            panic!(
+                "an evicted record is over a ceiling of zero on {}",
+                counter.name()
+            );
+        };
+        assert_eq!(reached.counter, counter);
+    }
 }
 
 /// FR-523-AC-16: a stamp whose `t0 + Hf + m` exceeds `u64::MAX` stops naming
