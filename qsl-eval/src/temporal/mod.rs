@@ -54,10 +54,10 @@ mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use finite_window::{
-    evaluate_finite_window, Assessment, Basis, ClockCover, Containment, IndeterminateReason,
-    LowerBoundary, OrderKey, Premises, ProgressedRefusal, ResultIdentity, SampleProgress,
-    SupportPair, TimestampedObservation, TimestampedTrace, Valuation, Watermark, WindowClock,
-    WindowEvaluation, WindowProgress, WindowVerdict,
+    evaluate_finite_window, evaluate_finite_window_at, Assessment, Basis, ClockCover, Containment,
+    IndeterminateReason, LowerBoundary, OrderKey, Premises, ProgressedRefusal, ResultIdentity,
+    SampleProgress, SupportPair, TimestampedObservation, TimestampedTrace, Valuation, Watermark,
+    WindowCharge, WindowClock, WindowEvaluation, WindowProgress, WindowUnit, WindowVerdict,
 };
 pub use input::TemporalTrace;
 pub use ledger::{
