@@ -603,6 +603,66 @@ fn function_state<'a>(
     }
 }
 
+/// The kind of one resolved declaration reference retained by S3.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CheckedDependencyKind {
+    /// A function or predicate invocation in an expression.
+    PredicateCall,
+    /// An attempt's reference to a state precondition or postcondition.
+    OperationContract,
+    /// A protocol's reference to a temporal obligation.
+    TemporalObligation,
+}
+
+/// The typed syntax site of one resolved declaration reference.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDependencySite {
+    /// Expression location from the checked unit's source tree.
+    Expression(Location),
+    /// The authored `contracts [...]` name span.
+    OperationContract(qsl_foundation::Span),
+    /// The authored `requires temporal` name span.
+    TemporalRequirement(qsl_foundation::Span),
+}
+
+/// One S3-resolved native declaration reference.
+///
+/// Package-local contract and temporal references retain their referring
+/// declaration and target identity. An imported predicate call also retains
+/// the exact library identity; the resolved library closure is exposed
+/// separately by `CheckedPackage`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDependencyReference {
+    /// The declaration that contains this occurrence.
+    pub referring_declaration: String,
+    /// Which native declaration kind the occurrence requires.
+    pub kind: CheckedDependencyKind,
+    /// Its typed source occurrence.
+    pub site: CheckedDependencySite,
+    /// The name as authored at this occurrence.
+    pub name: String,
+    /// The exact checked target identity.
+    pub target: quire_exact::NodeKey,
+    /// The resolved library identity for an imported predicate, if any.
+    pub library: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum PendingDependencyTarget {
+    LocalFunction(usize),
+    Imported {
+        library: String,
+        target: quire_exact::NodeKey,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PendingDependencyReference {
+    pub(crate) name: String,
+    pub(crate) site: Location,
+    pub(crate) target: PendingDependencyTarget,
+}
+
 /// S3's stage output (ADR-013 T-1): a package whose every function is
 /// admitted. Its constructor and every field are private to this module
 /// (ADR-011 §4): `package`'s S4 link step (which builds the *different*
@@ -678,6 +738,9 @@ pub struct CheckedGraph {
     /// FR-092/FR-093: every lowered, keyed node of this
     /// package's functions.
     semantic_graph: lowering::SemanticGraph,
+    /// Cross-declaration reference occurrences, captured at their S3
+    /// resolution sites and sorted by source position.
+    dependency_references: Vec<CheckedDependencyReference>,
     /// QSL-owned equality producer facts retained by keyed equality
     /// application occurrences. The wire encoder remains an IR-owned
     /// follow-up.
@@ -892,6 +955,7 @@ impl DebugWith for CheckedGraph {
             model_correspondence,
             type_nodes,
             semantic_graph,
+            dependency_references,
             equality_producer_data,
             equality_producer_identities,
             dispatch_producer_decisions,
@@ -966,6 +1030,22 @@ impl DebugWith for CheckedGraph {
             .field("model_correspondence", &With(model_correspondence, table))
             .field("type_nodes", &NodeValueMap(type_nodes.iter(), table))
             .field("semantic_graph", &With(semantic_graph, table))
+            .field(
+                "dependency_references",
+                &dependency_references
+                    .iter()
+                    .map(|reference| {
+                        (
+                            &reference.referring_declaration,
+                            reference.kind,
+                            &reference.site,
+                            &reference.name,
+                            NodeKeyDebug(&reference.target, table),
+                            &reference.library,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
             .field(
                 "equality_producer_data",
                 &equality_producer_data
@@ -6611,6 +6691,135 @@ impl PackageDeclarations {
                 )
             })
             .collect();
+        let mut dependency_references = Vec::new();
+        for pending in scope.take_dependency_references() {
+            let referring_declaration = match &pending.site.origin {
+                Origin::Body { function, .. } | Origin::Measure { function, .. } => {
+                    function.clone()
+                }
+                Origin::StateClause { clause, .. } => clause.clone(),
+                Origin::TypeDeclaration { name } => {
+                    if let Some(index) = name
+                        .strip_prefix("temporal ")
+                        .and_then(|name| name.split_whitespace().next())
+                        .and_then(|index| index.parse::<usize>().ok())
+                    {
+                        let Some(temporal) = temporal_clauses.get(index) else {
+                            continue;
+                        };
+                        temporal.clause().name().to_owned()
+                    } else {
+                        name.clone()
+                    }
+                }
+                Origin::ProtocolAttempt { protocol, .. } => {
+                    let Some(protocol) = self.protocols.get(*protocol) else {
+                        continue;
+                    };
+                    protocol.name.name.clone()
+                }
+                Origin::ModelOperationClause { operation, .. } => operation.clone(),
+                Origin::Expression => continue,
+            };
+            if regions.region(&pending.site).is_none() {
+                // A compiler-synthesized expression has no authored source
+                // occurrence and therefore is not a static reference row.
+                continue;
+            }
+            let (target, library) = match pending.target {
+                PendingDependencyTarget::LocalFunction(index) => (
+                    functions
+                        .get(index)
+                        .map(|(_, function)| function.identity.clone()),
+                    None,
+                ),
+                PendingDependencyTarget::Imported { library, target } => {
+                    (Some(target), Some(library))
+                }
+            };
+            let Some(target) = target else {
+                continue;
+            };
+            dependency_references.push(CheckedDependencyReference {
+                referring_declaration,
+                kind: CheckedDependencyKind::PredicateCall,
+                site: CheckedDependencySite::Expression(pending.site),
+                name: pending.name,
+                target,
+                library,
+            });
+        }
+        for (source_index, form) in self.protocols.iter().enumerate() {
+            let Some(checked_index) = protocol_places.get(source_index).copied().flatten() else {
+                continue;
+            };
+            let Some(checked) = checked_protocols.get(checked_index) else {
+                continue;
+            };
+            for attempt in &form.attempts {
+                let Some(checked_attempt) = checked
+                    .attempts
+                    .iter()
+                    .find(|entry| entry.declaration == attempt.declaration)
+                else {
+                    continue;
+                };
+                for (contract, target) in attempt.contracts.iter().zip(&checked_attempt.contracts) {
+                    dependency_references.push(CheckedDependencyReference {
+                        referring_declaration: form.name.name.clone(),
+                        kind: CheckedDependencyKind::OperationContract,
+                        site: CheckedDependencySite::OperationContract(contract.span),
+                        name: contract.name.clone(),
+                        target: target.clone(),
+                        library: None,
+                    });
+                }
+            }
+            for requirement in &form.requirements {
+                let target = checked.requirements.iter().find_map(|bound| {
+                    temporal_clauses
+                        .get(bound.temporal)
+                        .filter(|temporal| temporal.clause().name() == requirement.temporal.name)
+                        .map(TemporalClauseNode::identity)
+                });
+                if let Some(target) = target {
+                    dependency_references.push(CheckedDependencyReference {
+                        referring_declaration: form.name.name.clone(),
+                        kind: CheckedDependencyKind::TemporalObligation,
+                        site: CheckedDependencySite::TemporalRequirement(requirement.temporal.span),
+                        name: requirement.temporal.name.clone(),
+                        target,
+                        library: None,
+                    });
+                }
+            }
+        }
+        dependency_references.sort_by(|left, right| {
+            let source_span = |reference: &CheckedDependencyReference| match &reference.site {
+                CheckedDependencySite::Expression(location) => regions
+                    .region(location)
+                    .map_or((u64::MAX, u64::MAX), |region| {
+                        (region.start(), region.end())
+                    }),
+                CheckedDependencySite::OperationContract(span)
+                | CheckedDependencySite::TemporalRequirement(span) => (
+                    u64::try_from(span.start).unwrap_or(u64::MAX),
+                    u64::try_from(span.end).unwrap_or(u64::MAX),
+                ),
+            };
+            source_span(left)
+                .cmp(&source_span(right))
+                .then_with(|| left.referring_declaration.cmp(&right.referring_declaration))
+                .then_with(|| left.kind.cmp(&right.kind))
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| left.target.cmp(&right.target))
+        });
+        dependency_references.dedup();
+        if !protocol_check_refusals.is_empty() || !unit_refusals.is_empty() {
+            // A continuation graph may retain clean siblings beside a
+            // refusal. It must not publish a partial package reference set.
+            dependency_references.clear();
+        }
         let mut graph = CheckedGraph {
             graph_identity: CheckedGraphIdentity::fresh(),
             source,
@@ -6631,6 +6840,7 @@ impl PackageDeclarations {
                 .into_iter()
                 .collect(),
             semantic_graph,
+            dependency_references,
             equality_producer_data,
             equality_producer_identities,
             dispatch_producer_decisions,
@@ -7312,6 +7522,20 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
+    /// Every checked predicate call, operation-contract reference and
+    /// temporal-obligation reference, in source order. Each row retains its
+    /// referring declaration, authored name, exact syntax site and resolved
+    /// target; an imported predicate additionally names its library. An
+    /// attributed refusal makes the graph incomplete, in which case this
+    /// returns an empty slice rather than exposing partial rows.
+    pub fn dependency_references(&self) -> &[CheckedDependencyReference] {
+        if self.protocol_refusals.is_empty() && self.unit_refusals.is_empty() {
+            &self.dependency_references
+        } else {
+            &[]
+        }
+    }
+
     /// The checked protocol-class view imported refinements use to resolve
     /// one of this package's protocol clauses by name.
     pub(crate) fn imported_protocol_classes(

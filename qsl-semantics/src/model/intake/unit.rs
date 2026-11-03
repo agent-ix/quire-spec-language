@@ -60,6 +60,7 @@ pub struct SelectedModel {
 #[derive(Clone, Debug)]
 pub struct SelectedModels {
     entries: Vec<SelectedModel>,
+    versions: BTreeMap<String, String>,
     meter: Meter,
     exact_declarations: Vec<SelectedExactDeclarationRow>,
     exact_fields: Vec<SelectedExactFieldRow>,
@@ -70,6 +71,7 @@ impl Default for SelectedModels {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            versions: BTreeMap::new(),
             meter: Meter::new(ModelNormalizationLimits::default()),
             exact_declarations: Vec::new(),
             exact_fields: Vec::new(),
@@ -151,6 +153,7 @@ impl SelectedModels {
     ) -> Result<Self, OperationClauseFailure<E>> {
         let Self {
             entries,
+            versions,
             meter,
             exact_declarations,
             exact_fields,
@@ -162,6 +165,7 @@ impl SelectedModels {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             entries,
+            versions,
             meter,
             exact_declarations,
             exact_fields,
@@ -177,6 +181,7 @@ impl SelectedModels {
     ) -> Result<Self, TypeInvariantFailure<E>> {
         let Self {
             entries,
+            versions,
             meter,
             exact_declarations,
             exact_fields,
@@ -188,6 +193,7 @@ impl SelectedModels {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             entries,
+            versions,
             meter,
             exact_declarations,
             exact_fields,
@@ -200,11 +206,20 @@ impl SelectedModels {
         self.meter.consumed(kind)
     }
 
+    /// The source package version of a selected package identity, when it
+    /// was admitted from a package document. Synthetic fixture models have
+    /// none. Identity is the lookup key because unit-local aliases can repeat
+    /// across a multi-unit admission.
+    pub fn version_for_identity(&self, identity: &str) -> Option<&str> {
+        self.versions.get(identity).map(String::as_str)
+    }
+
     /// Models whose admission is not under test: no work is counted.
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixture_entries(entries: Vec<SelectedModel>) -> Self {
         Self {
             entries,
+            versions: BTreeMap::new(),
             meter: Meter::new(ModelNormalizationLimits::UNLIMITED),
             exact_declarations: Vec::new(),
             exact_fields: Vec::new(),
@@ -242,6 +257,7 @@ impl SelectedModels {
             }
         };
         Ok(Self {
+            versions: BTreeMap::new(),
             entries: vec![SelectedModel {
                 alias: alias.to_owned(),
                 span,
@@ -688,6 +704,7 @@ pub fn admit_unit_with_cancel(
     })?;
     let mut meter = Meter::new(limits).with_cancel(cancel.clone());
     let mut entries = Vec::with_capacity(admitted.len());
+    let mut versions = BTreeMap::new();
     let mut exact_declarations = Vec::new();
     let mut exact_fields = Vec::new();
     let mut tuple_declarations = Vec::new();
@@ -720,6 +737,14 @@ pub fn admit_unit_with_cancel(
         exact_declarations.extend(declarations);
         exact_fields.extend(fields);
         tuple_declarations.extend(tuples);
+        if let Some(version) = document
+            .tree()
+            .get("package")
+            .and_then(|package| package.get("version"))
+            .and_then(serde_json::Value::as_str)
+        {
+            versions.insert(selection.identity.clone(), version.to_owned());
+        }
         entries.push(SelectedModel {
             alias: selection.alias.clone(),
             span: selection.span,
@@ -730,6 +755,7 @@ pub fn admit_unit_with_cancel(
     }
     Ok(SelectedModels {
         entries,
+        versions,
         meter,
         exact_declarations,
         exact_fields,
@@ -787,6 +813,7 @@ pub fn admit_units_with_cancel(
 
     let unique: Vec<_> = unique.into_values().collect();
     let admitted = admit_unit_with_cancel(&unique, packages, limits, cancel)?;
+    let versions = admitted.versions.clone();
     let by_identity: BTreeMap<_, _> = unique
         .into_iter()
         .zip(admitted.entries)
@@ -806,6 +833,7 @@ pub fn admit_units_with_cancel(
         .collect();
     Ok(SelectedModels {
         entries,
+        versions,
         meter: admitted.meter,
         exact_declarations: admitted.exact_declarations,
         exact_fields: admitted.exact_fields,

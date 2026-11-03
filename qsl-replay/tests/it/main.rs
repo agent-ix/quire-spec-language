@@ -33,5 +33,6 @@ mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod script_search;
+mod static_subject;
 mod vault_world;
 mod witness_entry_name;

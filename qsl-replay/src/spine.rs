@@ -45,6 +45,7 @@ pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
+mod subject;
 pub use lifecycle::{
     admit_parsed_unit_list, check, check_units, check_with_execution_points,
     check_with_execution_points_and_refinement_internals, check_with_refinement_internals,
@@ -55,6 +56,11 @@ pub use lifecycle::{
     TypeRequirement,
 };
 pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
+pub use subject::{
+    BuildProvenance, ComponentKind, DeclarationProfileComponent, DependencyComponent,
+    DependencyReferenceComponent, ModelComponent, ProfileComponent, RoleComponent, RoleKind,
+    SourceComponent, StaticSubject, SubjectUnavailable,
+};
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.

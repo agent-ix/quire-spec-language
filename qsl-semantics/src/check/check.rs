@@ -53,7 +53,7 @@ use quire_checked::node::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod native_literal;
 mod typing;
@@ -960,6 +960,8 @@ pub struct Scope {
     index: ScopeIndex,
     /// Each admitted import by its qualifier (ADR-015 D-5).
     imports: BTreeMap<String, super::AdmittedImport>,
+    /// Predicate calls resolved while this one package is checked.
+    pub(crate) dependency_references: Arc<Mutex<Vec<super::PendingDependencyReference>>>,
 }
 
 qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, model_selections: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
@@ -1162,6 +1164,7 @@ impl Scope {
             symmetric_objects: BTreeMap::new(),
             index,
             imports: BTreeMap::new(),
+            dependency_references: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1384,6 +1387,22 @@ impl Scope {
     /// The admitted import whose qualifier is `qualifier`.
     pub(crate) fn imported(&self, qualifier: &str) -> Option<&super::AdmittedImport> {
         self.imports.get(qualifier)
+    }
+
+    pub(crate) fn record_dependency_reference(&self, reference: super::PendingDependencyReference) {
+        self.dependency_references
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(reference);
+    }
+
+    pub(crate) fn take_dependency_references(&self) -> Vec<super::PendingDependencyReference> {
+        std::mem::take(
+            &mut *self
+                .dependency_references
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Every admitted import, for typed consumers that resolve declarations
