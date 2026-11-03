@@ -42,7 +42,7 @@ use quire_semantic_value::catalog::Category;
 /// The usage line, shown on a malformed command line.
 pub const USAGE: &str = "usage: emit_checked_v2 [--model <domain-package-file>]... \
 [--library <identity>=<source-file>]... [--execution-points <json-file>] \
---package-name <name> [--out <path>] <source-file>";
+[--clock-selections <json-file>] --package-name <name> [--out <path>] <source-file>";
 
 /// Why no bytes were emitted.
 #[derive(Debug, thiserror::Error)]
@@ -86,6 +86,15 @@ pub enum Error {
         /// What is wrong with it.
         message: String,
     },
+    /// A clock-selections file is not a JSON object from authored temporal
+    /// clause or compensation template name to clock configuration.
+    #[error("clock selections {path}: {message}")]
+    Clocks {
+        /// The file.
+        path: String,
+        /// What is wrong with it.
+        message: String,
+    },
     /// The producer refused the source.
     #[error("{}", without_limit_hint(.0))]
     Producer(Box<ReplayRefusal>),
@@ -115,6 +124,7 @@ impl Error {
             | Self::Write { .. }
             | Self::TooLarge { .. }
             | Self::Points { .. }
+            | Self::Clocks { .. }
             | Self::UnknownClause { .. }
             | Self::DuplicateClause { .. } => None,
         };
@@ -149,22 +159,25 @@ pub struct Request {
     /// an object from exact authored clause name to an execution point such
     /// as `{"kind": "post", "operation": "set"}`.
     pub execution_points: Option<PathBuf>,
-    /// The clock configuration of each temporal clause whose profile takes
-    /// one. The command line has no flag for it, so a parsed request holds
-    /// none.
+    /// The clock configuration of each temporal clause or compensation
+    /// template whose profile takes one, in the order given. On the command
+    /// line, `--clock-selections` names a JSON object from authored name to
+    /// clock configuration, read when the line is parsed.
     pub temporal_selections: Vec<ClockSelection>,
     /// Where to write the bytes instead of stdout.
     pub out: Option<PathBuf>,
 }
 
 impl Request {
-    /// Parse `arguments` (without the program name).
+    /// Parse `arguments` (without the program name), reading the
+    /// `--clock-selections` file if one is named.
     #[ix_trace_rs::string_edge]
     pub fn parse(arguments: &[OsString]) -> Result<Self, Error> {
         let mut models = Vec::new();
         let mut libraries = Vec::new();
         let mut out = None;
         let mut execution_points = None;
+        let mut clocks = None;
         let mut source = None;
         let mut package_name = None;
         let mut rest = arguments.iter();
@@ -179,6 +192,9 @@ impl Request {
                 }
                 Some("--execution-points") if execution_points.is_none() => {
                     execution_points = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
+                }
+                Some("--clock-selections") if clocks.is_none() => {
+                    clocks = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
                 }
                 Some("--package-name") if package_name.is_none() => {
                     package_name = Some(
@@ -197,13 +213,20 @@ impl Request {
                 _ => return Err(Error::Usage),
             }
         }
+        let source = source.ok_or(Error::Usage)?;
+        let package_name = package_name.ok_or(Error::Usage)?;
+        let temporal_selections = clocks
+            .as_deref()
+            .map(read_clock_selections)
+            .transpose()?
+            .unwrap_or_default();
         Ok(Self {
-            source: source.ok_or(Error::Usage)?,
-            package_name: package_name.ok_or(Error::Usage)?,
+            source,
+            package_name,
             models,
             libraries,
             execution_points,
-            temporal_selections: Vec::new(),
+            temporal_selections,
             out,
         })
     }
@@ -254,32 +277,33 @@ fn identity(kind: &str, path: &Path) -> SourceIdentity {
     SourceIdentity::new("local", format!("{kind}:{}", path.display()))
 }
 
-/// The points file's object, read so a repeated clause name is detected
-/// rather than silently last-wins.
-struct PointsFile(Vec<(String, serde_json::Value)>);
+/// A points or clock-selections file's object, from authored name to value,
+/// in file order, read so a repeated name is detected rather than silently
+/// last-wins.
+struct NamedEntries(Vec<(String, serde_json::Value)>);
 
-impl<'de> serde::Deserialize<'de> for PointsFile {
+impl<'de> serde::Deserialize<'de> for NamedEntries {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Visitor;
         impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = PointsFile;
+            type Value = NamedEntries;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("an object from authored clause name to execution point")
+                f.write_str("an object keyed by authored name")
             }
             fn visit_map<M: serde::de::MapAccess<'de>>(
                 self,
                 mut map: M,
-            ) -> Result<PointsFile, M::Error> {
+            ) -> Result<NamedEntries, M::Error> {
                 let mut entries: Vec<(String, serde_json::Value)> = Vec::new();
                 while let Some((name, point)) = map.next_entry::<String, serde_json::Value>()? {
                     if entries.iter().any(|(seen, _)| *seen == name) {
                         return Err(serde::de::Error::custom(format!(
-                            "clause {name:?} is given more than once"
+                            "{name:?} is given more than once"
                         )));
                     }
                     entries.push((name, point));
                 }
-                Ok(PointsFile(entries))
+                Ok(NamedEntries(entries))
             }
         }
         deserializer.deserialize_map(Visitor)
@@ -297,7 +321,7 @@ fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
         message,
     };
     let bytes = read(path, true)?;
-    let PointsFile(entries) = serde_json::from_slice(&bytes).map_err(|e| bad(e.to_string()))?;
+    let NamedEntries(entries) = serde_json::from_slice(&bytes).map_err(|e| bad(e.to_string()))?;
     if entries.is_empty() {
         return Err(bad("no execution points".to_owned()));
     }
@@ -308,6 +332,32 @@ fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
         points.insert(clause, point);
     }
     Ok(points)
+}
+
+/// The clock selections `path` holds: an object from the authored name of a
+/// `temporal` clause or `compensate` template to its clock configuration in
+/// the `TemporalBinding` `clock` wire form, in file order. An empty object, a
+/// repeated name, an unknown `kind` or a member the configuration does not
+/// define is an [`Error::Clocks`] refusal; whether the name exists is
+/// [`Error::UnknownClause`], reported when the request is compiled.
+fn read_clock_selections(path: &Path) -> Result<Vec<ClockSelection>, Error> {
+    let bad = |message: String| Error::Clocks {
+        path: path.display().to_string(),
+        message,
+    };
+    let bytes = read(path, true)?;
+    let NamedEntries(entries) = serde_json::from_slice(&bytes).map_err(|e| bad(e.to_string()))?;
+    if entries.is_empty() {
+        return Err(bad("no clock selections".to_owned()));
+    }
+    entries
+        .into_iter()
+        .map(|(clause, wire)| {
+            let clock: ClockConfiguration =
+                serde_json::from_value(wire).map_err(|e| bad(format!("{clause}: {e}")))?;
+            Ok(ClockSelection { clause, clock })
+        })
+        .collect()
 }
 
 /// What one compile read and produced: the exact bytes of every input, the

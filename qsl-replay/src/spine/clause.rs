@@ -33,7 +33,7 @@ mod temporal;
 pub use progress::{
     ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
     ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
-    ProgressLimitReached, ProgressValue,
+    ProgressLimitReached, ProgressLowerBoundary, ProgressValue,
 };
 use temporal::TemporalRun;
 pub use temporal::{
@@ -468,6 +468,13 @@ pub enum TemporalVerdict {
         /// The first watermark tick that can establish the activation.
         deadline: u64,
     },
+    /// An event-position activation that only a further observation can
+    /// resolve (FR-504): its deadline is `NextEvent`, because event position
+    /// does not advance in silence.
+    PendingNextEvent {
+        /// The activation position.
+        at: u64,
+    },
     /// A closed finite window whose evidence leaves the truth unresolved.
     Indeterminate {
         /// The activation position.
@@ -522,7 +529,9 @@ impl TemporalVerdict {
             Self::Violated { .. } | Self::Undefined { .. } => {
                 TemporalCategory::Shared(Category::Violation)
             }
-            Self::Pending | Self::PendingWindow { .. } => TemporalCategory::Pending,
+            Self::Pending | Self::PendingWindow { .. } | Self::PendingNextEvent { .. } => {
+                TemporalCategory::Pending
+            }
             Self::Indeterminate { .. } => TemporalCategory::Indeterminate,
             Self::MissingFairnessPremise { .. } => TemporalCategory::Shared(Category::Unsupported),
             Self::Incomplete(_)

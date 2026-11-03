@@ -82,7 +82,7 @@ impl Encode for Preimage<'_> {
             writer.end_array()?;
         }
         writer.end_array()?;
-        let progress = &trace.progress;
+        let progress = &trace.asserted;
         writer.integer(progress.watermark.inclusive())?;
         match progress.completeness {
             ProgressCompleteness::Complete { through } => {

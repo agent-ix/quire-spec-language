@@ -131,7 +131,12 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<WindowEvaluation, TemporalRefusal> {
-    if clause.profile() != TemporalProfile::TimestampedEventFiniteWindow {
+    if !matches!(
+        clause.profile(),
+        TemporalProfile::TimestampedEventFiniteWindow
+            | TemporalProfile::EventPositionFalseExtension
+            | TemporalProfile::FixedSampleFalseExtension
+    ) {
         return Err(TemporalRefusal::NotFiniteWindowProfile {
             profile: clause.profile(),
         });
@@ -180,7 +185,7 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
 }
 
 /// The future reach of every node.
-fn reaches(plan: &Plan) -> Result<Vec<i128>, InternalFault> {
+pub(super) fn reaches(plan: &Plan) -> Result<Vec<i128>, InternalFault> {
     let mut reach = vec![0_i128; plan.nodes.len()];
     for index in (0..plan.nodes.len()).rev() {
         let node = slot(&plan.nodes, index)?;
@@ -258,7 +263,9 @@ impl<L: TemporalLetters> Run<'_, L> {
     fn activations(&mut self, done: &mut Vec<Finished>) -> Result<(), Stop> {
         let (positions, guarded) = match self.clause.activation() {
             Activation::Origin => (1, false),
-            Activation::Each { guarded } => (self.stamps.len(), guarded),
+            // Silent samples are no observation: no `on each` activation
+            // anchors on one (FR-504).
+            Activation::Each { guarded } => (self.trace.observed, guarded),
         };
         for anchor in 0..positions {
             let at = position_of(anchor)?;
@@ -741,7 +748,7 @@ impl<L: TemporalLetters> Run<'_, L> {
         let first_open = done
             .iter()
             .find(|a| matches!(a.result, Ending::Pending { .. } | Ending::Indeterminate(_)));
-        let scope_closed = self.trace.progress.scope == ProgressClosure::Closed;
+        let scope_closed = self.trace.asserted.scope == ProgressClosure::Closed;
         let (verdict, basis, support) = if let Some(activation) = first_false {
             let basis = if activation.established && scope_closed {
                 Basis::ClosedScope
@@ -777,9 +784,15 @@ impl<L: TemporalLetters> Run<'_, L> {
                         let at = position_of(activation.anchor)?;
                         let (verdict, basis) = match &activation.result {
                             Ending::Pending { deadline } => (
-                                WindowVerdict::Pending {
-                                    at,
-                                    deadline: *deadline,
+                                if self.clause.profile()
+                                    == TemporalProfile::EventPositionFalseExtension
+                                {
+                                    WindowVerdict::PendingNextEvent { at }
+                                } else {
+                                    WindowVerdict::Pending {
+                                        at,
+                                        deadline: *deadline,
+                                    }
                                 },
                                 Basis::Unsettled,
                             ),
@@ -821,10 +834,11 @@ impl<L: TemporalLetters> Run<'_, L> {
             WindowVerdict::Holds
             | WindowVerdict::Violated { .. }
             | WindowVerdict::Pending { .. }
+            | WindowVerdict::PendingNextEvent { .. }
             | WindowVerdict::Indeterminate { .. }
             | WindowVerdict::Undefined(_) => Assessment::Completed,
         };
-        let progress = self.trace.progress;
+        let progress = self.trace.asserted;
         let mut readings: Vec<(usize, usize, Cell)> = self
             .cells
             .iter()
@@ -833,7 +847,7 @@ impl<L: TemporalLetters> Run<'_, L> {
         readings.sort_unstable_by_key(|(position, node, _)| (*position, *node));
         let identity = Preimage {
             trace: self.trace,
-            profile: TemporalProfile::TimestampedEventFiniteWindow.identity(),
+            profile: self.clause.profile().identity(),
             readings: &readings,
             ceilings: self.meter.limits(),
         }
@@ -847,7 +861,7 @@ impl<L: TemporalLetters> Run<'_, L> {
                 execution: progress.execution,
                 assessment,
                 completeness: progress.completeness,
-                watermark: self.watermark,
+                watermark: progress.watermark.inclusive(),
                 lower_boundary: progress.lower_boundary,
                 cover: self.trace.clock.cover,
                 unit: self.trace.clock.unit.clone(),

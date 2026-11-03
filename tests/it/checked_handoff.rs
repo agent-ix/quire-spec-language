@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use ix_trace_rs::trace;
 use quire_contract_model::{
     read_checked_package, CheckedNodeKind, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    ClockConfiguration, ClockExactNumber, ProtocolForm, TemporalForm,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCause,
+    CheckedPackageRefusalCode, CheckedPackageV2, ClockConfiguration, ClockExactNumber,
+    ProtocolForm, TemporalForm,
 };
 use quire_spec_language::checked_handoff::{
     evidence, write, write_with, CheckedHandoffRequest, Corpus, Environment, Error, ErrorCode,
@@ -29,18 +30,6 @@ fn recipe(kind: &str) -> (&'static str, Vec<(&'static str, ClockConfiguration)>)
             "unit-event-position.native",
             vec![
                 (
-                    "Due",
-                    ClockConfiguration::EventPosition {
-                        sequence_authority: "events-authority".into(),
-                    },
-                ),
-                (
-                    "DueLate",
-                    ClockConfiguration::EventPosition {
-                        sequence_authority: "events-authority".into(),
-                    },
-                ),
-                (
                     "Full",
                     ClockConfiguration::EventPosition {
                         sequence_authority: "events-authority".into(),
@@ -48,6 +37,18 @@ fn recipe(kind: &str) -> (&'static str, Vec<(&'static str, ClockConfiguration)>)
                 ),
                 (
                     "Partial",
+                    ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    },
+                ),
+                (
+                    "Due",
+                    ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    },
+                ),
+                (
+                    "DueLate",
                     ClockConfiguration::EventPosition {
                         sequence_authority: "events-authority".into(),
                     },
@@ -525,6 +526,118 @@ fn equal_requests_write_identical_trees() {
         let (_b, second) = written(kind, Corpus::None, &Double::default());
         assert_eq!(tree(&first), tree(&second));
     }
+}
+
+/// The command line of `request`'s emission, with its clock selections in
+/// `clocks` (a file this writes) passed as `--clock-selections`.
+fn command_line(request: &Request, clocks: &Path) -> Vec<std::ffi::OsString> {
+    let mut line: Vec<std::ffi::OsString> =
+        vec!["--package-name".into(), request.package_name.clone().into()];
+    for model in &request.models {
+        line.extend(["--model".into(), model.clone().into_os_string()]);
+    }
+    for (identity, file) in &request.libraries {
+        line.extend([
+            "--library".into(),
+            format!("{identity}={}", file.display()).into(),
+        ]);
+    }
+    line.extend(["--clock-selections".into(), clocks.as_os_str().to_owned()]);
+    line.push(request.source.clone().into_os_string());
+    line
+}
+
+/// FR-517-AC-15: `--clock-selections` carries each package's clock
+/// configurations, so the command line emits the bytes `emit` returns for the
+/// equal `Request`; a malformed file is a refusal naming it and writes no
+/// bytes.
+#[trace("FR-517-AC-15", "TC-1312")]
+#[test]
+fn the_clock_selections_flag_emits_the_requests_bytes_and_bad_files_refuse() {
+    let directory = tempfile::tempdir().unwrap();
+    for kind in KINDS {
+        let expected = request(kind, Corpus::None).emit;
+        let object: serde_json::Map<String, Value> = expected
+            .temporal_selections
+            .iter()
+            .map(|selection| {
+                (
+                    selection.clause.clone(),
+                    serde_json::to_value(&selection.clock).unwrap(),
+                )
+            })
+            .collect();
+        let clocks = directory.path().join(format!("{kind}.json"));
+        std::fs::write(&clocks, serde_json::to_vec(&object).unwrap()).unwrap();
+        let line = command_line(&expected, &clocks);
+        assert_eq!(Request::parse(&line).unwrap(), expected, "{kind}");
+        let mut stdout = Vec::new();
+        emit_checked_v2::run(&line, &mut stdout).expect(kind);
+        assert_eq!(stdout, emit_checked_v2::emit(&expected).unwrap(), "{kind}");
+    }
+
+    // File order is kept: keys written out of sorted order are parsed in it.
+    let ordered = request("event_position", Corpus::None).emit;
+    let clock = r#"{"kind": "event_position", "sequence_authority": "events-authority"}"#;
+    let clocks = directory.path().join("out-of-order.json");
+    std::fs::write(
+        &clocks,
+        format!(r#"{{"Partial": {clock}, "Due": {clock}, "Full": {clock}, "DueLate": {clock}}}"#),
+    )
+    .unwrap();
+    let parsed = Request::parse(&command_line(&ordered, &clocks)).unwrap();
+    let names: Vec<&str> = parsed
+        .temporal_selections
+        .iter()
+        .map(|selection| selection.clause.as_str())
+        .collect();
+    assert_eq!(names, ["Partial", "Due", "Full", "DueLate"]);
+
+    let base = request("timestamped_event", Corpus::None).emit;
+    for (name, text) in [
+        (
+            "missing",
+            r#"{"DueTimestamp": {"kind": "timestamped_event"}}"#,
+        ),
+        ("empty", "{}"),
+        (
+            "repeated",
+            r#"{"DueTimestamp": {"kind": "timestamped_event", "timestamp_unit": "rfc3339"}, "DueTimestamp": {"kind": "timestamped_event", "timestamp_unit": "rfc3339"}}"#,
+        ),
+        ("kind", r#"{"DueTimestamp": {"kind": "sundial"}}"#),
+        (
+            "member",
+            r#"{"DueTimestamp": {"kind": "timestamped_event", "timestamp_unit": "rfc3339", "extra": 1}}"#,
+        ),
+    ] {
+        let clocks = directory.path().join(format!("bad-{name}.json"));
+        std::fs::write(&clocks, text).unwrap();
+        let mut stdout = Vec::new();
+        let refusal =
+            emit_checked_v2::run(&command_line(&base, &clocks), &mut stdout).expect_err(name);
+        assert!(
+            matches!(&refusal, emit_checked_v2::Error::Clocks { path, .. } if path.ends_with(&format!("bad-{name}.json"))),
+            "{name}: {refusal:?}"
+        );
+        assert_eq!(refusal.exit_code(), 20, "{name}");
+        assert!(stdout.is_empty(), "{name}");
+    }
+
+    // A well-formed file naming no clause or template is refused before any
+    // bytes are emitted.
+    let clocks = directory.path().join("unknown-clause.json");
+    std::fs::write(
+        &clocks,
+        r#"{"NoSuchClause": {"kind": "timestamped_event", "timestamp_unit": "rfc3339"}}"#,
+    )
+    .unwrap();
+    let mut stdout = Vec::new();
+    let refusal = emit_checked_v2::run(&command_line(&base, &clocks), &mut stdout).unwrap_err();
+    assert!(
+        matches!(&refusal, emit_checked_v2::Error::UnknownClause { clause } if clause == "NoSuchClause"),
+        "{refusal:?}"
+    );
+    assert!(stdout.is_empty());
 }
 
 /// The names beside `holder`'s handoff directory.
@@ -1038,6 +1151,115 @@ fn every_case_gets_the_refusal_of_its_row() {
     }
     // 30 cases: 20 stage `reader` and 10 stage `selection`.
     assert_eq!((reader_cases, selection_cases), (20, 10));
+}
+
+/// TC-1308 row 23: Contract IR admits the emitted protocol package directly,
+/// then refuses substitutions to its source, selected model, result node
+/// identity, and canonical wire bytes.
+#[trace("TC-1308", "FR-513-AC-13")]
+#[test]
+fn protocol_package_is_independently_admitted_and_identity_mutations_refuse() {
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let files = tree(&out);
+    let bytes = &files["checked-package.json"];
+    let held = evidence(&request("event_position", Corpus::None)).unwrap();
+    admitted(bytes, &held);
+
+    let refusal = |package: Value| {
+        let bytes = serde_json::to_vec(&package).expect("mutated package is JSON");
+        match read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &held) {
+            CheckedPackageDispatchResult::Refused(refusal) => refusal,
+            other => panic!("mutated package was admitted: {other:?}"),
+        }
+    };
+
+    let round_trip = serde_json::to_vec(&serde_json::from_slice::<Value>(bytes).unwrap())
+        .expect("unmutated package round-trips as canonical JSON");
+    admitted(&round_trip, &held);
+
+    let mut source = serde_json::from_slice::<Value>(bytes).unwrap();
+    source["lock"]["sources"][0]["identity"] = serde_json::json!("source:foreign");
+    let source_refusal = refusal(source);
+    assert_eq!(
+        source_refusal.code,
+        CheckedPackageRefusalCode::InvalidSourceMap
+    );
+    assert_eq!(source_refusal.cause, None, "{source_refusal:?}");
+    assert_eq!(
+        source_refusal.loci[0]
+            .path
+            .as_ref()
+            .map(|path| path.as_str()),
+        Some("/source_map/0/regions/0/source")
+    );
+
+    let mut model = serde_json::from_slice::<Value>(bytes).unwrap();
+    let nodes = model["semantic_graph"]["nodes"].as_array_mut().unwrap();
+    let root_index = nodes
+        .iter()
+        .position(|node| node["semantic_form"] == "model_root")
+        .expect("the protocol package carries its selected model root");
+    let root = nodes
+        .get_mut(root_index)
+        .expect("the selected model root index is in range");
+    root["owner"]["identity"] = serde_json::json!("foreign/model");
+    let model_refusal = refusal(model);
+    assert_eq!(model_refusal.code, CheckedPackageRefusalCode::MissingImport);
+    assert_eq!(
+        model_refusal.cause,
+        Some(CheckedPackageRefusalCause::MissingSelection),
+        "{model_refusal:?}"
+    );
+    assert_eq!(
+        model_refusal.loci[0]
+            .path
+            .as_ref()
+            .map(|path| path.as_str()),
+        Some(format!("/semantic_graph/nodes/{root_index}/owner/identity").as_str())
+    );
+
+    let mut result = serde_json::from_slice::<Value>(bytes).unwrap();
+    let node = result["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .first_mut()
+        .expect("the protocol package has a result node");
+    let ordinal = node["node_id"]["ordinal"]
+        .as_u64()
+        .expect("the result identity ordinal is an unsigned integer");
+    node["node_id"]["ordinal"] = serde_json::json!(if ordinal == 0 { 1 } else { 0 });
+    let result_refusal = refusal(result);
+    assert_eq!(
+        result_refusal.code,
+        CheckedPackageRefusalCode::InvalidPackage,
+        "{result_refusal:?}"
+    );
+    assert_eq!(
+        result_refusal.cause,
+        Some(CheckedPackageRefusalCause::InvalidDerivedShape),
+        "{result_refusal:?}"
+    );
+    assert_eq!(
+        result_refusal.loci[0]
+            .path
+            .as_ref()
+            .map(|path| path.as_str()),
+        Some("/semantic_graph/nodes/0/node_id")
+    );
+
+    let noncanonical = serde_json::to_vec_pretty(&serde_json::from_slice::<Value>(bytes).unwrap())
+        .expect("the same package can be reserialized with whitespace");
+    let noncanonical_refusal =
+        match read_checked_package(&noncanonical, CheckedPackageReadLimits::bounded(), &held) {
+            CheckedPackageDispatchResult::Refused(refusal) => refusal,
+            other => panic!("noncanonical package bytes were admitted: {other:?}"),
+        };
+    assert_eq!(
+        noncanonical_refusal.code,
+        CheckedPackageRefusalCode::NoncanonicalWire
+    );
+    assert_eq!(noncanonical_refusal.cause, None, "{noncanonical_refusal:?}");
+    assert!(noncanonical_refusal.loci[0].path.is_none());
 }
 
 /// FR-518-AC-4: the case of row 12 (the clauses, the lock and the binding rows

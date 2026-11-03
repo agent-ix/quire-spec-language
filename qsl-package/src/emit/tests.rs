@@ -1633,6 +1633,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         SurplusTemporalClockSelection,
         DuplicateTemporalClockSelection,
         TemporalClockProfileMismatch,
+        InvalidTemporalClockReference,
         ProtocolResultInvariant,
         ProtocolResultsRequired,
     }
@@ -1666,6 +1667,12 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::TemporalClockProfileMismatch { .. }) => {
                 Seen::TemporalClockProfileMismatch
+            }
+            Err(EmitRefusal::InvalidTemporalClockReference { .. }) => {
+                Seen::InvalidTemporalClockReference
+            }
+            Err(EmitRefusal::InvalidTemporalClockValue { .. }) => {
+                panic!("the fixture set selects only valid temporal clock values")
             }
             Err(EmitRefusal::ProtocolResultInvariant) => Seen::ProtocolResultInvariant,
             Err(EmitRefusal::ProtocolResultsRequired) => Seen::ProtocolResultsRequired,

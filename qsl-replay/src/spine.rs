@@ -143,11 +143,11 @@ pub use clause::{
     ConsequentState, ContradictedDimension, FiniteWindowAssessment, FiniteWindowPremises,
     FiniteWindowReport, FiniteWindowSupport, LedgerBinding, ObservedPosition, OperationName,
     OverObject, ProgressAssertion, ProgressClosure, ProgressCompleteness, ProgressContradiction,
-    ProgressLedger, ProgressLedgerEntry, ProgressLimitReached, ProgressRefusal, ProgressValue,
-    TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedCover,
-    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
-    TraceBinding, TraceInput,
+    ProgressLedger, ProgressLedgerEntry, ProgressLimitReached, ProgressLowerBoundary,
+    ProgressRefusal, ProgressValue, TemporalIndeterminateReason, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TimestampedCover, TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
+    TimestampedWindow, TraceBinding, TraceInput,
 };
 mod refinement;
 pub use refinement::{

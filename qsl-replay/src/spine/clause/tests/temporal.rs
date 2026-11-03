@@ -61,6 +61,26 @@ enum Unit {
     TimestampedAlwaysFive,
     /// Timestamped finite-window past operator.
     TimestampedOnce,
+    /// `Sample`: `eventually[0,3]` under fixed-sample (FR-504).
+    FixedEventually,
+    /// `Sample`: `always[0,3]` under fixed-sample (FR-504).
+    FixedAlways,
+    /// `Sample`: `eventually[0,3]` under event-position (FR-504).
+    EventEventually,
+    /// `Sample`: `always[0,3]` under event-position (FR-504).
+    EventAlways,
+    /// `Sample`: `once[0,2]` `on each` under event-position (FR-504).
+    EventOnce,
+    /// `Sample`: `eventually[0,10^12]` under fixed-sample (large reach).
+    FixedHugeReach,
+    /// `Sample`: `eventually[0,1]` `on each` under fixed-sample.
+    FixedEach,
+    /// TC-144 `Reach`: `eventually[0,2] holds(c.value = 2)` under
+    /// event-position, `on origin`.
+    OwnerReach,
+    /// TC-144 `Window` and `Other`: `eventually[0,5] holds(c.value = 2)` under
+    /// finite-window, `on origin`.
+    OwnerWindow,
 }
 
 impl Unit {
@@ -84,6 +104,15 @@ impl Unit {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
             Self::TimestampedAlwaysFive | Self::TimestampedOnce => {
+                "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
+            }
+            Self::FixedEventually | Self::FixedAlways | Self::FixedHugeReach | Self::FixedEach => {
+                "profile t = \"quire.temporal.fixed-sample.false-extension/v1\";\n"
+            }
+            Self::EventEventually | Self::EventAlways | Self::EventOnce | Self::OwnerReach => {
+                "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
+            }
+            Self::OwnerWindow => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
         }
@@ -148,6 +177,44 @@ impl Unit {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on each (q: Counters::Counter) { once[0,4] holds(c.value > 0) }\n"
             }
+            Self::FixedEventually => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
+                 on origin { eventually[0,3] holds(c.value = 1) }\n"
+            }
+            Self::FixedHugeReach => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
+                 on origin { eventually[0,1000000000000] holds(c.value = 1) }\n"
+            }
+            Self::FixedEach => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
+                 on each (q: Counters::Counter) { eventually[0,1] holds(c.value = 1) }\n"
+            }
+            Self::FixedAlways => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
+                 on origin { always[0,3] holds(c.value = 1) }\n"
+            }
+            Self::EventEventually => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { eventually[0,3] holds(c.value = 1) }\n"
+            }
+            Self::EventAlways => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always[0,3] holds(c.value = 1) }\n"
+            }
+            Self::EventOnce => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on each (q: Counters::Counter) { once[0,2] holds(c.value = 1) }\n"
+            }
+            Self::OwnerReach => {
+                "temporal Reach using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { eventually[0,2] holds(c.value = 2) }\n"
+            }
+            Self::OwnerWindow => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { eventually[0,5] holds(c.value = 2) }\n\
+                 temporal Other using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { eventually[0,5] holds(c.value > 1) }\n"
+            }
         }
     }
 }
@@ -161,6 +228,38 @@ fn finite_window_binding() -> crate::spine::TraceBinding {
         parameters: qsl_package::ClockConfiguration::TimestampedEvent {
             timestamp_unit: "ms".into(),
         },
+    }
+}
+
+/// The binding a trace of a progressed clause asserts (FR-522): the profile
+/// and clock name the unit's clause is checked under.
+fn progressed_binding(unit: Unit) -> crate::spine::TraceBinding {
+    let (profile, clock_name, parameters) = match unit {
+        Unit::FixedEventually | Unit::FixedAlways | Unit::FixedHugeReach | Unit::FixedEach => (
+            "quire.temporal.fixed-sample.false-extension/v1",
+            "samples",
+            qsl_package::ClockConfiguration::FixedSample {
+                epoch: qsl_package::ClockExactNumber::Integer {
+                    decimal: "0".into(),
+                },
+                period: qsl_package::ClockExactNumber::Integer {
+                    decimal: "1".into(),
+                },
+                unit: "sample".into(),
+            },
+        ),
+        _ => (
+            "quire.temporal.event-position.false-extension/v1",
+            "model-steps",
+            qsl_package::ClockConfiguration::EventPosition {
+                sequence_authority: "counter-event-sequence".into(),
+            },
+        ),
+    };
+    crate::spine::TraceBinding {
+        profile: profile.to_owned(),
+        clock_name: clock_name.to_owned(),
+        parameters,
     }
 }
 
@@ -361,6 +460,17 @@ fn temporal_clock_selections(
                 "quire.temporal.timestamped-event.finite-window/v1" => {
                     ClockConfiguration::TimestampedEvent {
                         timestamp_unit: "ms".into(),
+                    }
+                }
+                "quire.temporal.fixed-sample.false-extension/v1" => {
+                    ClockConfiguration::FixedSample {
+                        epoch: qsl_package::ClockExactNumber::Integer {
+                            decimal: "0".into(),
+                        },
+                        period: qsl_package::ClockExactNumber::Integer {
+                            decimal: "1".into(),
+                        },
+                        unit: "sample".into(),
                     }
                 }
                 _ => return None,
@@ -2727,6 +2837,8 @@ fn with_progress(
             scope: crate::spine::ProgressClosure::Open,
             execution: crate::spine::ProgressClosure::Open,
         },
+        lower_boundary: crate::spine::ProgressLowerBoundary::AuthoritativeOrigin,
+        binding: progressed_binding(Unit::Bounded),
     };
     *ledger = Some(carried.clone());
     request
@@ -2828,12 +2940,11 @@ fn run_clause_returns_the_updated_ledger_and_preserves_it_on_regression() {
         crate::spine::ProgressCompleteness::Complete { through: 100 },
         &crate::spine::ProgressLedger::new(),
     ));
+    // FR-330-AC-10: a progressed event-position request evaluates (FR-504)
+    // and returns its ledger; it is never `ProfileNotEvaluated`. The clause
+    // `eventually[0,1] holds(c.value = 2)` over 0, 1, 2 is false at origin.
     assert_eq!(first.disposition.stage(), ClauseRunStage::Evaluate);
-    assert_eq!(first.disposition.category(), Category::Unsupported);
-    assert!(matches!(
-        &first.disposition,
-        ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::ProfileNotEvaluated { .. })
-    ));
+    assert_eq!(outcome(&first), &TemporalVerdict::Violated { at: 0 });
     let ledger = first
         .ledger
         .expect("the accepted run returns its updated ledger");
@@ -2985,3 +3096,6 @@ fn timestamped_progress_is_admitted_into_the_ledger() {
     );
     assert_eq!(refused.ledger.as_ref(), Some(&retained));
 }
+
+mod checked_route_owner;
+mod progressed;

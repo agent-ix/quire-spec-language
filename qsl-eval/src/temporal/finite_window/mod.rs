@@ -19,6 +19,7 @@ mod cover;
 mod identity;
 mod lift;
 mod outcome;
+mod progressed;
 mod run;
 mod trace;
 
@@ -27,6 +28,7 @@ pub use outcome::{
     Assessment, Basis, IndeterminateReason, Premises, ResultIdentity, SupportPair, Valuation,
     WindowEvaluation, WindowVerdict,
 };
+pub use progressed::{ProgressedRefusal, SampleProgress};
 pub use run::evaluate_finite_window;
 pub use trace::{
     LowerBoundary, OrderKey, TimestampedObservation, TimestampedTrace, Watermark, WindowClock,
