@@ -12,7 +12,7 @@ relationships:
 
 Verify the one exit function over every O-16 category, the severity order, the failure variants and the undefined case.
 
-Scope: FR-285-AC-1 to FR-285-AC-6.
+Scope: FR-285-AC-1 to FR-285-AC-11.
 
 ## Test Procedure
 
@@ -24,6 +24,9 @@ Scope: FR-285-AC-1 to FR-285-AC-6.
 6. Map `CallFailure::Unsupported` with cause `NotSupplied`, `CallFailure::Unsupported` with cause `Untranslatable`, and `CallFailure::Limit` naming `prepare.compile_work_units`.
 7. Map the three payload-carrying failures of FR-285-AC-8 with and without their `protocol_results`.
 8. Render a clause pending at the end of its supplied trace and a run whose clauses are all discharged; read each machine-output record.
+
+9. Run FR-501-AC-3's `Pending` case and FR-501-AC-4's `Indeterminate` case, FR-501-AC-1's `Completed(true)` and `Completed(false)` cases and a work-stopped `Incomplete` case through `run_clause`, and read each label and exit from the report and from the multi-item ranking.
+10. With a catalog whose `Category` holds `Indeterminate` and `Pending` (IR-1281), read the label and exit of the `Pending` and `Indeterminate` cases; gated on IR-1281.
 
 Tag the tests `#[trace("TC-769", "<AC id>")]`.
 
@@ -37,3 +40,5 @@ Tag the tests `#[trace("TC-769", "<AC id>")]`.
 - Step 6: 21, 21, 22.
 - Step 7: 20, 21, 22, each equal with and without the payload.
 - Step 8: category `pending`, exit 0, status `pending` and the pending clause ids; the discharged run has neither.
+- Step 9: `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22 from the report, each equal to the ranking's.
+- Step 10: the catalog's label and exit for each, and no local mapping in QSL.

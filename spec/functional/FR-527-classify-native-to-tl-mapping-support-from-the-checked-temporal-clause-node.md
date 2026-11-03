@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-337
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-234
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-515
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-499
@@ -29,8 +31,9 @@ table, reading the clause through the FR-515 `TemporalSubjectView`, and SHALL
 retain, on every classification, the profile selection the package authenticates
 for that clause. The table, its eight rows, its target identities and its
 outstanding premises are FR-045's and are not restated here. This requirement
-states the input, the surface, the reachability rule and the authenticated
-selection on the checked node.
+states the input, the surface, the reachability rule, the timed profile that
+FR-045's table does not list, and the authenticated selection on the checked
+node.
 
 This requirement is the successor of the legacy surface `temporal::{mapping_support_v2,
 Classification, AuthenticatedSelection}`, which FR-499 keeps until Contract IR
@@ -61,25 +64,36 @@ surrounding: Closure) -> Result<Classification, MappingRefusal>`.
 - `subject`: the view of a `temporal`/`temporal_clause` node (FR-515), from which
   the classifier reads `profile()`, `formula()` and `activation()`.
 - `surrounding`: `Complete` or `Open`, the surrounding-execution closure the
-  request names. The function takes no decision-scope closure.
+  request names. `Complete` is this surface's one spelling of a complete
+  surrounding execution; the legacy `temporal::Closure` spells it `Closed` and
+  stays until the Contract IR repoint (IR-1005), which maps the legacy value to
+  this one. The function takes no decision-scope closure.
 
 ## Outputs
 
 `Classification`: the disposition `Supported { target, total_sample_valuation,
 premises }` or `Unsupported { dimensions }`, the retained native subject (the
-clause's `CheckedNodeId`, name, profile identity and activation), and
-`selection: AuthenticatedSelection`.
+clause's `CheckedNodeId`, the clause's `profile_selections` row, which is the
+profile identity, and the activation), and `selection: AuthenticatedSelection`.
+The retained subject holds the clause's name once Contract IR IR-1278 lets the
+package carry it, and holds none until then, as FR-515's `name()` does.
 
 `AuthenticatedSelection` holds the package identity, the clause's
-`CheckedNodeId`, the definition identity and namespaced revision of the clause's
-`profile_selections` row, and the identity of the definition artifact the row
-selects. It holds no clock parameter map. It has no public constructor.
+`CheckedNodeId` and the definition artifact the clause's `profile_selections`
+row selects. The lock row is `{role, definition: {authority, identity}}`: it has
+no separate revision member, the namespaced revision is the `/vN` suffix of the
+definition identity (`quire.temporal.fixed-sample.false-extension/v1`), and the
+definition artifact's identity is the `authority` and `identity` pair of the
+row. `AuthenticatedSelection` holds no clock parameter map. It has no public
+constructor.
 
-`Unmatched` dimensions are `InfiniteTrace`, `FiniteWindow` and `MixedDirection`,
-the three FR-045 rows that accumulate or exclude.
+`Unmatched` dimensions are `InfiniteTrace`, `FiniteWindow`, `MixedDirection` and
+`TimedProfile`: the three FR-045 rows that accumulate or exclude, and the timed
+profile.
 
-`MappingRefusal` is `NoProfileSelection` (the lock has no `profile_selections`
-row whose definition equals the clause's `temporal_profile` law, FR-515).
+`MappingRefusal` is `NoProfileSelection`: the `profile_selections` row of the
+view names a definition identity that is none of the five temporal profiles the
+`TemporalTrace` family admits (FR-234, FR-326).
 
 ## Behavior
 
@@ -97,6 +111,13 @@ row whose definition equals the clause's `temporal_profile` law, FR-515).
   as bounded past operators (QSpec FR-092), `once[1,1]` being strong previous.
 - The classifier SHALL treat a clause with no bounded operator under either
   false-extension profile as FR-045's last row.
+- The classifier SHALL classify a clause selected under
+  `quire.temporal.timed/v1` (FR-234) as `Unsupported` naming `TimedProfile`.
+  FR-234 admits the timed profile at check, but FR-045's table lists four
+  profiles and no TL target evaluates exact rational time, so the classification
+  is sound and incomplete: it claims no support and no correspondence.
+- The classifier SHALL name `MixedDirection` beside `TimedProfile` when the
+  formula of a timed clause holds a past and a future operator.
 - The classifier SHALL set `total_sample_valuation` for FR-045's fixed-sample
   future row and for no other row.
 - The classifier SHALL return every matched dimension of the accumulating rows
@@ -109,11 +130,19 @@ row whose definition equals the clause's `temporal_profile` law, FR-515).
 - The classifier SHALL retain `selection` on every result, supported or not.
 - `selection` SHALL be constructible only by the classifier.
 - The classifier SHALL give the same disposition to the same clause whatever the
-  package's route: the in-process package and the package read back with the
-  reader.
+  package's route. The two routes are the IR reader applied to the bytes the
+  unit's emitter returns in process, and the IR reader applied to the bytes of
+  the handoff tree the writer wrote (FR-517); the reader is the one entry that
+  produces a `CheckedPackageV2`.
+- The classifier SHALL return `NoProfileSelection` for a view whose profile row
+  names a definition identity outside the five admitted profiles.
 - When the node is not a temporal clause, `mapping_support` is not reachable:
-  `temporal_subject` refuses it with `UnresolvedClause` (FR-515), and a view of a
-  clause whose lock has no matching selection returns `NoProfileSelection`.
+  `temporal_subject` refuses it with `UnresolvedClause` (FR-515).
+- A package whose lock has no `profile_selections` row for a temporal clause's
+  `temporal_profile` law is refused by the reader, so no view of such a clause
+  exists and `NoProfileSelection` does not stand for that case;
+  `temporal_subject`'s `UnresolvedClause` for it is a re-check that no reader
+  output reaches.
 - An operator index outside the clause cannot occur, because the view lists only
   operators of the clause (FR-515), so the legacy out-of-range-reaches-nothing rule
   has no successor case.
@@ -129,24 +158,30 @@ row whose definition equals the clause's `temporal_profile` law, FR-515).
 | FR-527-AC-5 | `once[0,1] holds(p)` classifies as past-only, `eventually[0,2] holds(q)` as future-only, and a formula holding both `once[0,1]` and `eventually[0,2]` as mixed-direction; the connectives `not`, `and`, `or` and `implies` change none of the three. | Test (TC-1322) |
 | FR-527-AC-6 | A clause `holds(p)` with no bounded operator, under each false-extension profile, returns `Supported` with the closed-trace target for `Complete` and the online-prefix target for `Open`. | Test (TC-1322) |
 | FR-527-AC-7 | The fixed-sample future clause returns `total_sample_valuation` true under both `surrounding` values, and the event-position future clause returns it false. | Test (TC-1322) |
-| FR-527-AC-8 | An unsupported result holds the clause's `CheckedNodeId`, name, profile identity and activation equal to the values read from the view, and the checked package is unchanged by classification. | Test (TC-1322) |
+| FR-527-AC-8 | An unsupported result holds the clause's `CheckedNodeId`, profile row and activation equal to the values read from the view, and the checked package is unchanged by classification. | Test (TC-1322) |
 | FR-527-AC-9 | A supported result names the exact TL target and the eight outstanding premises of FR-045, and no field of it claims a correspondence record. | Test (TC-1322) |
 | FR-527-AC-10 | Two clauses with equal formula bytes under different profiles receive different classifications. | Test (TC-1322) |
 | FR-527-AC-11 | A compile-fail test that passes a decision-scope closure to `mapping_support` fails to compile. | Test (TC-1322) |
 | FR-527-AC-12 | Changing `surrounding` changes the target of FR-045's future rows and nothing else. | Test (TC-1322) |
-| FR-527-AC-13 | Every result's `selection` holds the package identity, the clause, and the definition identity, revision and artifact identity equal to the values the test reads from the lock's `profile_selections` row, and holds no clock parameter map. | Test (TC-1322) |
+| FR-527-AC-13 | Every result's `selection` holds the package identity, the clause, and the definition `authority` and `identity` (the `/vN` suffix being the revision) equal to the values the test reads from the lock's `profile_selections` row, and holds no clock parameter map. | Test (TC-1322) |
 | FR-527-AC-14 | A compile-fail test that constructs `AuthenticatedSelection` outside the classifier fails to compile. | Test (TC-1322) |
-| FR-527-AC-15 | The classification of each of **R**'s three clauses from the in-process package equals the classification from the package read back with the reader. | Test (TC-1322) |
-| FR-527-AC-16 | A view of a clause whose lock has no `profile_selections` row for its `temporal_profile` law returns `NoProfileSelection`. | Test (TC-1322) |
+| FR-527-AC-15 | The classification of each temporal clause of each of **R**'s three packages, from the reader applied to the bytes the unit's emitter returns without a file, equals the classification from the reader applied to the bytes of the written handoff tree. | Test (TC-1322) |
+| FR-527-AC-16 | A view whose profile row names a definition identity outside the five admitted temporal profiles returns `NoProfileSelection`. | Test (TC-1322) |
 | FR-527-AC-17 | A node that is not a temporal clause is refused by `temporal_subject` with `UnresolvedClause`. | Test (TC-1322) |
-| FR-527-AC-18 | A unit that selects a temporal profile outside the four admitted identities is refused at check with FR-110's `UnsupportedSelection`, so no clause node exists for `mapping_support` to classify. | Test (TC-1322) |
+| FR-527-AC-18 | A unit that selects a temporal profile outside the five admitted identities is refused at check with FR-110's `UnsupportedSelection`, so no clause node exists for `mapping_support` to classify. | Test (TC-1322) |
 | FR-527-AC-19 | Classifying one clause twice gives equal results. | Test (TC-1322) |
 | FR-527-AC-20 | The classification code reads no value except the view and `surrounding`: no backend capability report, TL version or formula bytes. | Inspection |
+| FR-527-AC-21 | The reader refuses a package whose lock has no `profile_selections` row for a temporal clause's `temporal_profile` law, so the package yields no `TemporalSubjectView`. | Test (TC-1322) |
+| FR-527-AC-22 | A clause selected under `quire.temporal.timed/v1` returns `Unsupported` naming `TimedProfile` and no TL target. | Test (TC-1322) |
+| FR-527-AC-23 | A timed clause holding a past and a future operator returns `Unsupported` naming `TimedProfile` and `MixedDirection`. | Test (TC-1322) |
+| FR-527-AC-24 | With a reader that implements IR-1278, an unsupported result and a supported result hold the clause's name equal to `name()` of the view. This is gated on IR-1278. | Test (TC-1322) |
 
 ## Dependencies
 
 - FR-045-AC-1 to AC-6 (the legacy criteria this requirement succeeds), FR-515
   (the view), FR-337 (the node), FR-050 (the binding and selection).
+- Contract IR IR-1278 (the checked package carries no temporal clause name):
+  FR-527-AC-24.
 - Contract IR FR-350 and IR-1005 consume the classification; they repoint from
   `temporal::mapping_support_v2` to `mapping_support`.
 - Does not depend on FR-522 to FR-526: classification takes no trace.

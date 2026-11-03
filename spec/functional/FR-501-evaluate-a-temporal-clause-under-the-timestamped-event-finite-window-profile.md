@@ -85,10 +85,13 @@ that the answer depends on it says indeterminate and names the fact.
   (`AuthoritativeOrigin` or `HistoryCutoff`). `through` MAY exceed `W`: a
   completeness assertion may run ahead of progress, and the activation is then
   established only when both conditions of "Established window" hold.
-- The clock binding's declared **cover** for a stamp: `Exact` (default; a stamp
-  is the instant itself) or `Counter { uncertainty }` (a counter reading `k`
+- The **cover** the trace input declares for its stamps: `Exact` (default; a
+  stamp is the instant itself) or `Counter { uncertainty }` (a counter reading `k`
   covers the half-open interval `[k, k+1)` of the counter unit, widened to
-  `[k-u, k+1+u)`; ADR-026 MN-2, QSpec FR-160).
+  `[k-u, k+1+u)`; ADR-026 MN-2, QSpec FR-160). The checked clause's
+  `TimestampedEvent` clock configuration carries the timestamp unit only, so the
+  cover has no source in the package and comes from the request's trace input
+  (FR-330); an input that omits it is `Exact`.
 - A kernel `Meter` (ADR-014 B-2).
 
 A trace with no positions SHALL be refused `invalid_runtime_input`/
@@ -146,6 +149,10 @@ as separate fields that no one field determines:
   identity, and a change of the profile, unit, cover, any one of those inputs or a
   ceiling SHALL give a distinct identity, with the earlier result neither reused
   nor rewritten (FR-043-AC-13).
+
+The shared semantic catalog has no `Indeterminate` or `Pending` category until
+Contract IR IR-1281 adds them, so the QSL entry maps these two outcomes under
+the interim rule of FR-285.
 
 `Pending` maps to the category pending and takes the exit of FR-285's
 row for a supplied-trace clause pending when the trace ends (FR-283); this
@@ -227,9 +234,13 @@ ranks below 10.
 - The evaluator SHALL give every atom at an eligible position a possibility set over `{true, false}`
   (QSpec FR-160): a valuation present in the trace is a singleton; a valuation
   absent from the admitted observation of an eligible position is `MissingValuation`
-  (both possibilities); two admitted valuations of one atom at one position that
-  differ are `ConflictingValuation` (both possibilities, distinct reason). An
-  empty possibility set refuses `invalid_runtime_input`/`invalid-value`.
+  (both possibilities). A position is one admitted observation, so it holds at
+  most one valuation of an atom. Observations that share a stamp are readings of
+  one instant: when two of them give differing valuations of one atom, the atom
+  is `ConflictingValuation` at every position of that stamp (both possibilities,
+  distinct reason), and the reason names the lowest canonical position of the
+  stamp. Equal valuations at one stamp are a singleton. An empty possibility set
+  refuses `invalid_runtime_input`/`invalid-value`.
 - The evaluator SHALL lift Boolean and temporal operators pointwise over every consistent valuation
   of the possibilities and of every admissible continuation (a continuation is
   a set of further positions at stamps greater than `W`, and at stamps at most
@@ -320,7 +331,7 @@ as its own ticket, referenced from QSL-1493; it is not part of this repository.
 | FR-501-AC-1 | Over a `TimestampedTrace` with stamps 0, 2, 5 ms, `W` 5, `Complete { through: 5 }`, scope `Closed`: with `p` true at stamps 0 and 5 and false at 2, `always[0,5] holds(p)` `on origin` is `Completed(false)` at position 0; with `p` true at all three it is `Completed(true)`; `eventually[0,1] holds(p)` with `p` true only at stamp 2 is `Completed(false)` at position 0 (the position stamped 2 is outside `[0,1]`), and `eventually[0,2] holds(p)` is `Completed(true)`. With a position stamped 6 added, `[0,5]` still excludes it, and a position stamped 5 is included. | Test (TC-1295) |
 | FR-501-AC-2 | One position stamped 0 with `p` true, `W` 1, `Complete { through: 1 }`: `always[0,1] holds(p)` is `Completed(true)` (no synthetic false atom after closure) where the same valuations under event-position false-extension give `Completed(false)` (FR-043-AC-2). With the same single position, `W` 3 and `Complete { through: 3 }`: `eventually[2,3] holds(p)` is `Completed(false)` and `always[2,3] holds(p)` is `Completed(true)` (empty windows of an established activation). | Test (TC-1295) |
 | FR-501-AC-3 | Stamps 0 and 1 with `p` false at both, `W` 1, `Complete { through: 1 }`, scope `Open`: `eventually[0,5] holds(p)` is `Pending { where: 0, deadline: 5 }`; re-evaluated with the same two positions, `W` 5 and `Complete { through: 5 }`, with no further observation, it is `Completed(false)`. With `p` true at stamp 1 and `W` 1 it is `Completed(true)` while the scope is `Open` (decisive witness), and `always[0,5] holds(p)` with `p` false at stamp 1 and `W` 1 is `Completed(false)` while `Open` (decisive counterexample). | Test (TC-1295) |
-| FR-501-AC-4 | Stamps 0, 2, 5, `eventually[0,5] holds(p)`, `W` 5, `Complete { through: 5 }`: with `p` false at 0 and 5 and its valuation absent at stamp 2, the result is `Indeterminate { where: 0, reason: MissingValuation { position: 1, atom: p } }`; with `p` true at 5 and absent at 2 it is `Completed(true)`; with `p` both true and false admitted at stamp 2 and false elsewhere it is `Indeterminate` with `ConflictingValuation { position: 1, atom: p }`; with the absence at stamp 2 and `W` 3 it is `Pending { deadline: 5 }`. None is `Completed(false)`. | Test (TC-1295) |
+| FR-501-AC-4 | Stamps 0, 2, 5, `eventually[0,5] holds(p)`, `W` 5, `Complete { through: 5 }`: with `p` false at 0 and 5 and its valuation absent at stamp 2, the result is `Indeterminate { where: 0, reason: MissingValuation { position: 1, atom: p } }`; with `p` true at 5 and absent at 2 it is `Completed(true)`; with a fourth observation stamped 2 (stamps 0, 2, 2, 5), `p` true at one of the two stamped 2, false at the other and false elsewhere, it is `Indeterminate` with `ConflictingValuation { position: 1, atom: p }`; with the absence at stamp 2 of the three-position trace and `W` 3 it is `Pending { deadline: 5 }`. None is `Completed(false)`. | Test (TC-1295) |
 | FR-501-AC-5 | Stamps 0, `p` true, scope `Closed`, `W` 5, completeness `Incomplete`: `always[0,5] holds(p)` is `Indeterminate { reason: IncompleteInput }`, and the same trace with `Complete { through: 5 }` is `Completed(true)`; with completeness `Incomplete`, `eventually[2,3] holds(p)` is `Indeterminate { reason: IncompleteInput }` and not `Completed(false)`; with `Complete { through: 2 }` and `W` 3 it is also `Indeterminate`. | Test (TC-1295) |
 | FR-501-AC-6 | Stamps 0 and 3, `q` true at 3, `W` 3, `Complete { through: 3 }`: `eventually[0,3] holds(q)` is `Completed(true)` (the position exactly at the inclusive deadline participates). Stamps 0 and 4, `q` true at 4, `W` 4, `Complete { through: 4 }`: `eventually[0,3] holds(q)` is `Completed(false)`. One position stamped 0 with `p` false, `W` 3, `Complete { through: 3 }` and no later observation: `eventually[0,3] holds(p)` is `Completed(false)`. A watermark supplied as half-open `[.., 3)` with no QSpec FR-289 mapping proving inclusive coverage is treated as `W` 2. | Test (TC-1295) |
 | FR-501-AC-7 | Stamps 0, 1, 1 (positions 1 and 2 share stamp 1) with no order keys: `holds(p) until[0,1] holds(q)` refuses `invalid_runtime_input`/`invalid-value` at position 2, and so do `release` and, anchored at position 2 where positions 1 and 2 participate, `holds(p) since[0,1] holds(q)` and its `triggered` dual, each at stage `evaluate`; `eventually[0,1] holds(p)` over the same positions evaluates. With keys from one order authority on positions 1 and 2 `until` evaluates; with keys from two order authorities it refuses; with a key on position 1 only it refuses at position 2. | Test (TC-1295) |
@@ -338,6 +349,8 @@ as its own ticket, referenced from QSL-1493; it is not part of this repository.
 | FR-501-AC-19 | Over AC-1's request listed as stamps 5, 0, 2 with `p` true at 0 and 5 and false at 2, the outcome is `Completed(false)` at position 0 and the decision support is {(position 1, p)}: positions are indices in canonical order, not in the listed order. | Test (TC-1295) |
 | FR-501-AC-20 | The `until` of AC-7 over keys from one authority gives one outcome for the listed order and for its reverse. | Test (TC-1295) |
 | FR-501-AC-21 | Four observations at one stamp, keyed A1, A2 (authority A) and B1 (authority B) and one without a key, listed in each of three different orders, give one canonical order (A1, A2, B1, the keyless one) and one `result_identity`. | Test (TC-1295) |
+| FR-501-AC-22 | A `Timestamped` trace input that names no cover evaluates AC-9's clause as under `Exact`: `ack` at tick 2998, 3000 and 3001 gives true, true and false. | Test (TC-1295) |
+| FR-501-AC-23 | Over stamps 0, 2, 2, 5 with `eventually[0,5] holds(p)`, `W` 5 and `Complete { through: 5 }`, `p` true at both observations stamped 2 and false at the others is `Completed(true)` and not `Indeterminate`. | Test (TC-1295) |
 
 ## Dependencies
 
