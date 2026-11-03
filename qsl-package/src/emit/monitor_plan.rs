@@ -729,6 +729,7 @@ fn finish(
         selected_model_enum_member_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
+        wire_nodes: semantic_graph.nodes,
     })
 }
 
