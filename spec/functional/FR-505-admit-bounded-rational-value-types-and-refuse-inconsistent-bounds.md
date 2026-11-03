@@ -82,10 +82,12 @@ reader, checker and lowering realize it and invents none.
 
 ## Behavior
 
-- The intake reader SHALL bind a value type as Rational by its `scalar`, never
-  by a `target` alias, and SHALL read its bounds from its own `constraints`
-  only. The intake reader SHALL admit a Rational value type whose
-  `constraints` is empty as the unbounded `Rational`, not refuse it.
+- The intake reader SHALL bind a value type as Rational by its `scalar`,
+  never by a `target` alias.
+- The intake reader SHALL read a Rational value type's bounds from its own
+  `constraints` only.
+- The intake reader SHALL admit a Rational value type whose `constraints` is
+  empty as the unbounded `Rational`, not refuse it.
 - When a Rational value type has a non-empty `constraints`, the Rational
   reader SHALL refuse its first defect in this order, each at the value type node,
   so that exactly one refusal is reported. Rows 1 to 3 scan `constraints` in
@@ -164,9 +166,19 @@ reader, checker and lowering realize it and invents none.
   is reduced, rounded or converted (FR-106). A value at a member of a
   unit-bearing Rational value type is its magnitude in `u`, decided by the
   same rule.
-- A site typed by the bare native `ix://quire/native/Rational`, or by a
-  Rational value type with no constraints, keeps FR-056's behavior (admitted
-  with no checked type, every use refuses `ill_typed`/`operator-ineligible`).
+- A field, operation parameter or operation result typed by the bare native
+  `ix://quire/native/Rational`, or by a Rational value type with no
+  constraints, keeps FR-056's behavior (admitted with no checked type, every
+  use refuses `ill_typed`/`operator-ineligible`).
+- The package reader SHALL admit a bounded Rational value type as a tuple
+  position `typeRef` and as a variant case `payloadType`, with the type and
+  `rational_range` node a field of it has. It SHALL refuse a Rational value
+  type with no constraints there as it refuses the native `Rational` there
+  (QSpec FR-322-AC-181 and AC-182), at stage `package_read`: as a tuple
+  position `invalid_model_binding`/`malformed-declaration` at the position,
+  and as a variant payload `unsupported_construct`/`declaration-form` at
+  `Variant.payloadType`. Intake's reference-form check admits both; the
+  position restriction is the checked package's (QSpec FR-322).
   The legacy refusal of a whole model for a rational site without a role is
   not carried: an unbounded rational site is exactly the bare native, and
   FR-056-AC-43 owns it.
@@ -186,6 +198,7 @@ reader, checker and lowering realize it and invents none.
 | FR-505-AC-7 | With `dimension Length;`, `unit m : Length = rational(1, 1);` and `unit cm : Length = rational(1, 100);`, `Ratio` with `unit` `ix://quire/unit/m` types its members `Quantity<m, Rational[-3, 7; 1, 12]>`, lowered to the `scalar_type`/`carried_quantity` node over `m`'s unit node, AC-1's `rational_range` node and `rounding` `exact`; a second value type of equal bounds and unit `ix://quire/unit/m` names that same node, while `Ratio` with no unit and a value type of equal bounds with unit `ix://quire/unit/cm` name two other nodes. `unit` `ix://quire/unit/nosuch` refuses `missing_declaration`/`missing-name` at the value type node and `TypeDefinition.unit`; `unit` `m`, `unit` `1` and `unit` `ix://quire/native/Rational` on `Ratio`, and `unit` `ix://quire/unit/m` on a value type of `scalar` `string`, each refuse `invalid_model_binding`/`malformed-declaration` at `TypeDefinition.unit`; `Ratio` with `unit` `m` and `minNumerator` 8 reports only the bounds refusal. | Test (TC-1300) |
 | FR-505-AC-8 | When two defects of `Ratio` are present only the earlier row is reported: `minLength` with `maxNumerator` given twice reports `minLength`; a foreign `appliesTo` with `maxNumerator` given twice reports the `appliesTo`; `minLength` with a foreign `appliesTo` reports `minLength`; `maxNumerator` given twice with `minDenominator` removed reports the repeated keyword; `minDenominator` removed with `maxNumerator` `1.5` reports the missing keyword; `maxNumerator` `1.5` with `minNumerator` 8 reports the operand; `maxDenominator` `0.5` (listed first) with `maxNumerator` `1.5` reports `maxNumerator`, in keyword order. | Test (TC-1300) |
 | FR-505-AC-9 | Over AC-7's units, two fields `a` and `b` typed by `Ratio` with `unit` `ix://quire/unit/m`: the invariants `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each refuse `ill_typed`/`type-mismatch` at the expression, while `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` and `convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)` check. The source types `Rational[8, 7; 1, 12]` and `Rational[0, 7; 0, 12]` refuse `ill_typed` at the type as a function parameter type and as the carrier of `Quantity<m, ..>`. | Test (TC-1300) |
+| FR-505-AC-10 | A tuple type `P` with position `p0` typed `Ratio` and a variant type `V` with case `c` whose `payloadType` is `Ratio` admit, and `p0` and `c`'s payload have the type `Rational[-3, 7; 1, 12]` and name AC-1's `rational_range` node; with `Ratio`'s `constraints` empty, `p0` refuses `invalid_model_binding`/`malformed-declaration` at the position and `c` refuses `unsupported_construct`/`declaration-form` at `Variant.payloadType`, each at stage `package_read`, while a field typed the unconstrained `Ratio` admits with no checked type. | Test (TC-1300) |
 
 ## Dependencies
 

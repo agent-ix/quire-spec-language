@@ -34,12 +34,12 @@ is substituted per row; the smallest valid body sends and receives on `ch`.
 | 10 | `delivery [1,1]`; then each interval of rows 7 to 9 | no execution loses or duplicates the message; no `duplicate` or `lose` step on any interval channel |
 | 11 | `delivery [1,2]` in a unit with no temporal profile and no clock | checks and emits |
 | 12 | parse a channel clause with `delivery [0,3]` (CST only, no check); the AC is FR-509-AC-7 | parses with no syntax error |
-| 13 | a channel node with delivery text `[0,3]`, `[0,0]`, `[2,2]`, `[0,18446744073709551615]`; then each of `[4,3]`, `[0, 3]`, `[ 2 , 2 ]`, `[00,3]`, `[+0,3]`, `[-1,3]`, `[0.5,3]`, `[0,18446744073709551616]`, `[3]`, `[0,3`, `0,3`, read by the `delivery` view | the first four admitted; each of the rest a `ViewRefusal` naming `delivery`, no partial value |
+| 13 | a channel node with delivery text `[0,3]`, `[0,0]`, `[2,2]`, `[0,18446744073709551615]`; then each of `[4,3]`, `[0, 3]`, `[ 2 , 2 ]`, `[00,3]`, `[+0,3]`, `[-1,3]`, `[0.5,3]`, `[0,18446744073709551616]`, `[3]`, `[0,3`, `0,3`, read by the `delivery` view | the first four admitted; each of the rest `ViewRefusal::MalformedMember` naming `delivery` (not `MissingMember`), no partial value |
 | 14 | `fifo`, capacity 1, `block`, `delivery [0,3]`, the place full | the `d = 0` step enabled, queues nothing, settles; `d >= 1` steps wait |
 | 15 | `delivery [0,0]`, capacity 0 | the send completes by the `d = 0` step |
 | 16 | capacity 1, `overflow reject`, `delivery [2,2]`, queue empty | one step; send record `entries` `accepted` then `rejected`, `pending` `"0"` |
-| 17 | capacity 1, `block`, `delivery [2,2]`; one run's send of `m1` and another run's send of `m2`, otherwise equal, each leave count 1 pending | the two pending states have different keys; after a receive each continuation binds its own payload |
-| 18 | `delivery [0,18446744073709551615]` under a finite work limit; `delivery [0,2]` unlimited | steps generated in ascending `d` from `d = 0`; `incomplete` naming the work limit, no count dropped, no `hi` capped, no entries truncated; exactly `d = 0`, `1`, `2` for `[0,2]` |
+| 17 | `fifo`, capacity 1, `block`, `delivery [2,3]`, `carries Boolean`: one exploration of `send P` (payload `true` or `false`) then `receive R of P`, `R` read by no later step | after the receive empties the queue, the states pending (1, `true`), (1, `false`) and (2, `true`) differ only in `send-pending` and have pairwise different keys; each continuation binds the send's binder to its own payload |
+| 18 | `fifo`, capacity 2, `overflow reject`, `delivery [0,1000]`; `W0` the work an unlimited run consumes before expanding the state at the send; work limit `W0 + 3`, then unlimited | under `W0 + 3`: steps `d = 0` and `d = 1` generated, `d = 2` never, exactly 3 units consumed at the send, `incomplete` naming the work limit with the state at the send on the frontier; unlimited: exactly 1001 `send` steps, `count` 0 to 1000, in ascending order |
 
 Row 13 replaces the legacy reader test that admits `[ 2 , 2 ]`.
 

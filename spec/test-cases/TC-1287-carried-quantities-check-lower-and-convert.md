@@ -22,10 +22,10 @@ carrier. Scope: FR-497-AC-1 to FR-497-AC-8.
    `Rational[-3, 7; 1, 12]` carrier of `CQ-W16` by reference and compare the
    nodes with the vectors; check the ineligible carriers and
    carried-operand uses of FR-497-AC-2 from source, with `CQ-W13` as the
-   dimension refusal. `CQ-W05` to `CQ-W08`, `CQ-W11`, `CQ-W12` and `CQ-W14`
-   are strict-reader wire cases (IR leg) and out of scope here.
-2. Lower the conversions of `CQ-W09`, `CQ-W10`, `CQ-W15` and `CQ-W17` to
-   `CQ-W19` and compare the `result_type` node and `mode`.
+   dimension refusal. `CQ-W05` to `CQ-W08`, `CQ-W11`, `CQ-W12`, `CQ-W14`, `CQ-W17`
+   and `CQ-W19` are strict-reader wire cases (IR leg) and out of scope here.
+2. Lower the conversions of `CQ-W09`, `CQ-W10`, `CQ-W15` and `CQ-W18` and
+   compare the `result_type` node and `mode`.
 3. Evaluate the rows `CQ-E01` to `CQ-E20` under `CheckMode::Kernel` with the
    operands, work limits and `ScalarLimitsV1` tuples each states, and compare
    outcome, cause, `expected`, charge point and, for non-`exact` modes, the
