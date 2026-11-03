@@ -547,21 +547,6 @@ fn renamed_timestamp_unit(v: &Value) -> Option<Made> {
     rename_member(v, "timestamp_unit", "timestampUnit")
 }
 
-/// Row 28m: the package bytes stay as they are; the mutation is one byte of
-/// the source a `CheckedSourceRef` names. Contract IR's reader takes no source
-/// bytes yet (IR-1273), so the case carries the base bytes and the self-check
-/// reports the reader's admission.
-fn original_bytes_moved(v: &Value) -> Option<Made> {
-    ok(
-        clone(v),
-        reader(
-            "invalid_package",
-            Some("source-integrity"),
-            "/lock/sources/0".into(),
-        ),
-    )
-}
-
 fn clock_name_differs(v: &Value) -> Option<Made> {
     let mut w = clone(v);
     *row_mut(&mut w, 0)?.get_mut("clock_name")? = json!("other-clock");
@@ -573,8 +558,6 @@ fn clock_name_empty(v: &Value) -> Option<Made> {
     *row_mut(&mut w, 0)?.get_mut("clock_name")? = json!("");
     ok(w, malformed("/temporal_bindings/0/clock_name".into()))
 }
-
-const MOVED: &str = "definition-original-bytes-moved";
 
 /// The corpus table, in table order.
 fn table() -> Vec<Case> {
@@ -728,12 +711,6 @@ fn table() -> Vec<Case> {
             renamed_timestamp_unit,
         ),
         c(
-            MOVED,
-            "definition.original_bytes",
-            EVENT,
-            original_bytes_moved,
-        ),
-        c(
             "definition-artifact-wire-identity",
             "definition.authority",
             EVENT,
@@ -822,6 +799,17 @@ pub(super) fn build(
     evidence: &CheckedPackageEvidence,
     environment: &dyn Environment,
 ) -> Result<Cases, Error> {
+    build_cases(table(), base, selection, evidence, environment)
+}
+
+/// [`build`] over `cases`, the rows of one table.
+fn build_cases(
+    cases: Vec<Case>,
+    base: &[u8],
+    selection: &Selection,
+    evidence: &CheckedPackageEvidence,
+    environment: &dyn Environment,
+) -> Result<Cases, Error> {
     let value: Value = serde_json::from_slice(base).map_err(|source| Error::Encode {
         what: "checked-package.json",
         source,
@@ -833,7 +821,7 @@ pub(super) fn build(
         .to_owned();
     let mut manifest_cases = Vec::new();
     let mut files = Vec::new();
-    for case in table().into_iter().filter(|case| case.home == home) {
+    for case in cases.into_iter().filter(|case| case.home == home) {
         let made = (case.make)(&value).ok_or_else(|| mismatch(case.identity))?;
         let bytes = serde_json::to_vec(&made.value).map_err(|source| Error::Encode {
             what: "mutations case",
@@ -874,13 +862,6 @@ fn verify(
     evidence: &CheckedPackageEvidence,
     environment: &dyn Environment,
 ) -> Result<(), Error> {
-    if case.identity == MOVED {
-        // The reader reads no source bytes yet, so it admits this case.
-        return match environment.source_integrity() {
-            Some(refusal) if made.expected == Expected::Reader(refusal.clone()) => Ok(()),
-            _ => Err(mismatch(case.identity)),
-        };
-    }
     if bytes == base {
         return Err(mismatch(case.identity));
     }
@@ -901,6 +882,110 @@ fn verify(
                 Err(refusal) if refusal.axis == *axis => Ok(()),
                 _ => Err(mismatch(case.identity)),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use std::path::Path;
+
+    use quire_contract_model::{
+        CheckedPackageDispatchResult, CheckedPackageEvidence, CheckedPackageReadLimits,
+        CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
+    };
+    use serde_json::{json, Value};
+
+    use super::{build_cases, clone, ok, reader, Case, Made, EVENT};
+    use crate::checked_handoff::{
+        Environment, Error, Selection, SelectionRefusal, SELECTION_FORMAT,
+    };
+
+    /// A case whose mutation leaves the base bytes as they are.
+    fn unchanged(v: &Value) -> Option<Made> {
+        ok(clone(v), reader("invalid_package", None, String::new()))
+    }
+
+    /// A reader that gives every package exactly the refusal `unchanged`
+    /// declares, so only the unchanged-bytes guard can fail the case.
+    struct Agreeing;
+
+    impl Environment for Agreeing {
+        fn read(
+            &self,
+            _bytes: &[u8],
+            _limits: CheckedPackageReadLimits,
+            _evidence: &CheckedPackageEvidence,
+        ) -> CheckedPackageDispatchResult {
+            CheckedPackageDispatchResult::Refused(CheckedPackageRefusal {
+                code: CheckedPackageRefusalCode::InvalidPackage,
+                loci: vec![],
+                cause: None,
+                locus: None,
+                contract_version: None,
+                document_pointer: None,
+                extension_detail: None,
+                protocol_detail: None,
+                terminal_duplicate: None,
+            })
+        }
+
+        fn check(
+            &self,
+            _selection: &Selection,
+            _package: &CheckedPackageV2,
+        ) -> Result<(), SelectionRefusal> {
+            Ok(())
+        }
+
+        fn write_file(&self, _index: usize, _path: &Path, _contents: &[u8]) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn empty_selection() -> Selection {
+        let limits = json!({
+            "bytes": 0, "nodes": 0, "edges": 0,
+            "occurrences": 0, "diagnostics": 0, "work": 0,
+        });
+        let sidecar = json!({
+            "format": SELECTION_FORMAT,
+            "package": {
+                "contract_version": "",
+                "read_limits": limits,
+                "evidence": { "models": [], "libraries": [] },
+                "node_counts": {},
+            },
+            "clauses": [],
+            "compensations": [],
+        });
+        Selection::read(sidecar.to_string().as_bytes()).expect("a well-formed sidecar")
+    }
+
+    /// FR-518-AC-5: a case whose bytes equal the base is a `CaseMismatch`
+    /// naming it, before any stage sees it.
+    #[trace("FR-518-AC-5", "TC-1313")]
+    #[test]
+    fn a_case_that_leaves_the_base_bytes_unchanged_is_a_mismatch() {
+        let base = json!({ "temporal_bindings": [{ "clock": { "kind": EVENT } }] });
+        let base_bytes = serde_json::to_vec(&base).expect("the base encodes");
+        let cases = vec![Case {
+            identity: "unchanged-case",
+            axis: "none",
+            home: EVENT,
+            make: unchanged,
+        }];
+        let result = build_cases(
+            cases,
+            &base_bytes,
+            &empty_selection(),
+            &CheckedPackageEvidence::default(),
+            &Agreeing,
+        );
+        match result {
+            Err(Error::CaseMismatch { identity }) => assert_eq!(identity, "unchanged-case"),
+            other => panic!("expected CaseMismatch, got {:?}", other.map(|_| ())),
         }
     }
 }

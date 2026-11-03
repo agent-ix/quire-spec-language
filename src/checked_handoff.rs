@@ -214,10 +214,6 @@ pub trait Environment {
         package: &CheckedPackageV2,
     ) -> Result<(), SelectionRefusal>;
 
-    /// The refusal a reader that verifies source bytes (IR-1273) gives the
-    /// mutated-source case; `None` for a reader that admits it.
-    fn source_integrity(&self) -> Option<ReaderRefusal>;
-
     /// Write `contents` to a new file at `path`; the `index`th write of one
     /// tree.
     fn write_file(&self, index: usize, path: &Path, contents: &[u8]) -> std::io::Result<()>;
@@ -243,10 +239,6 @@ impl Environment for RealEnvironment {
         package: &CheckedPackageV2,
     ) -> Result<(), SelectionRefusal> {
         selection.check(package)
-    }
-
-    fn source_integrity(&self) -> Option<ReaderRefusal> {
-        None
     }
 
     fn write_file(&self, _index: usize, path: &Path, contents: &[u8]) -> std::io::Result<()> {
