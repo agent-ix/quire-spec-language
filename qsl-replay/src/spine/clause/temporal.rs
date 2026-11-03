@@ -1002,14 +1002,11 @@ fn window_verdict(
         },
         WindowVerdict::Undefined(undefined) => verdict_of_undefined(undefined),
         WindowVerdict::Incomplete(incomplete) => TemporalVerdict::Incomplete(incomplete),
-        WindowVerdict::ActivationIncomplete { at } => match guard {
-            Some(guard) => TemporalVerdict::ActivationIncomplete {
-                at: at.index(),
-                guard,
-            },
-            // An unresolved guard comes from the clause's own guard: a clause
-            // without one broke an evaluator invariant.
-            None => return None,
+        // An unresolved guard comes from the clause's own guard: a clause
+        // without one broke an evaluator invariant.
+        WindowVerdict::ActivationIncomplete { at } => TemporalVerdict::ActivationIncomplete {
+            at: at.index(),
+            guard: guard?,
         },
     })
 }

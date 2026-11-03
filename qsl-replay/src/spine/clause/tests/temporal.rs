@@ -1970,10 +1970,11 @@ fn a_guarded_on_each_clause_over_a_finite_trace_is_evaluated_at_its_guard() {
 
 /// The program source bytes of `request`, which these tests rewrite.
 fn program_source_bytes(request: &mut ClauseRunRequest) -> &mut Vec<u8> {
-    let ClauseRunSource::Program { bytes, .. } = &mut request.source else {
-        panic!("a program source");
-    };
-    bytes
+    match &mut request.source {
+        ClauseRunSource::Program { bytes, .. } => bytes,
+        #[cfg(feature = "quire-extraction")]
+        ClauseRunSource::Extracted(_) => panic!("a program source"),
+    }
 }
 
 /// The parts of a request's timestamped trace a test changes.
@@ -2928,7 +2929,7 @@ fn timestamped_undefined_guard_reports_a_named_incomplete_activation() {
 fn timestamped_progress_is_admitted_into_the_ledger() {
     let with_ledger_and_watermark = |watermark: u64, carried: &crate::spine::ProgressLedger| {
         let mut request = timestamped(&[0, 2, 5], &[0, 1, 0], 100, Some(100));
-        let mut trace = timestamped_trace_mut(&mut request);
+        let trace = timestamped_trace_mut(&mut request);
         trace.progress.watermark = watermark;
         let ClauseRunSelection::Temporal { ledger, .. } = &mut request.selection else {
             panic!("a temporal selection");
