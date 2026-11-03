@@ -29,7 +29,7 @@ is the subject of checking `Z0` under default limits.
 | 5 | source text edited (a body literal) | [sources] |
 | 6 | supply an extra library the unit never imports | [] |
 | 7 | the unit imports a second library | [sources, dependencies] |
-| 8 | two declarations each bind a role `x`; then rename one | two role entries with different owners; then [roles] |
+| 8 | two declarations each bind a role `x`; then rename one role in the source | two role entries with different owners; then [sources, roles] |
 | 9 | a unit that fails S3 | the refusal; no subject exists |
 | 10 | compile-fail: obtain a package identity or bytes from `StaticSubject` | does not compile |
 
