@@ -54,6 +54,12 @@ spine equivalent, the declared collection maximum.
 | nested value-type depth (hard maximum 64) | none: ADR-030 D-1 removes depth as a limit | deleted, recorded decision |
 | `MAX_SEQUENCE_ITEMS` 10,000 | none | ported: `model.sequence_maximum` |
 
+References to `identity.input_bytes` in this table and in the loosened hard
+caps note below apply only at actual identity-producing boundaries, as FR-259
+specifies. They do not make a model structural node or package key a byte
+preimage: FR-259-AC-2 and AC-4 retire those preimages, so model admission does
+not use those keys to exercise `identity.input_bytes`.
+
 - Model normalization SHALL charge `model.declaration_records` one record for
   each declared type, field, operation, operation parameter, operation result
   and frame entry (`modifies`, `creates`, `deletes`), so that an entry
@@ -90,7 +96,7 @@ spine equivalent, the declared collection maximum.
 | FR-506-AC-2 | A field with multiplicity upper bound 10,000, a nested option of a sequence of maximum 10,000, and an unused declaration with maximum 10,000 all admit at the default; the same shapes with maximum 10,001 each refuse `resource_exhausted` naming `model.sequence_maximum`, 10,000 and 10,001, the unused one included; setting `model.sequence_maximum` to 10,001 admits all three. The refusal exits 22. | Test (TC-1301) |
 | FR-506-AC-3 | `model.sequence_maximum` 0 refuses every package that declares any collection; a limit of 3 admits a maximum 3 and refuses 4 at the exact boundary. | Test (TC-1301) |
 | FR-506-AC-4 | A Text value type with `maxLength` 1,048,576 admits and with 1,048,577 refuses `unsupported_construct`/`declaration-form` naming the bound, whatever the limits. | Test (TC-1301) |
-| FR-506-AC-5 | At each of `intake.input_bytes` (document bytes), `s3.nodes` (formal nodes) and `identity.input_bytes` (identity preimage bytes), a model whose usage equals the setting admits, usage plus one refuses at that setting naming it, and zero refuses; none of the legacy messages (`model roles limit exceeded`, `model entries limit exceeded`, `model nodes limit exceeded`) is produced. | Test (TC-1301) |
+| FR-506-AC-5 | For model admission, at each of `intake.input_bytes` (document bytes) and `s3.nodes` (formal nodes), usage equal to the setting admits, usage one over refuses naming the setting, and zero refuses; none of the legacy messages (`model roles limit exceeded`, `model entries limit exceeded`, `model nodes limit exceeded`) is produced. The structural model keys have no `identity.input_bytes` preimage; identity-byte boundaries are tested by requirements that produce actual identity inputs, as FR-259 specifies. | Test (TC-1301) |
 | FR-506-AC-6 | A model nested 200 levels deep in option and sequence value types admits under default limits (ADR-030 D-1: depth is not a limit). | Test (TC-1301) |
 | FR-506-AC-7 | `model.sequence_maximum` set to 3 through the library limits builder, through a replay request's `stage_limits` entry and through the settings operand `model.sequence_maximum=3` each refuse a declared maximum 4 with `resource_exhausted`/`intake-limit-exceeded` carrying `kind`, `bound` 3, `actual` 4 and `setting` `model.sequence_maximum`, and each admits maximum 3. | Test (TC-1301) |
 | FR-506-AC-8 | `model.sequence_maximum` set to 4294967295 (`u32::MAX`) admits a declared maximum 4294967295; the settings operand `model.sequence_maximum=4294967296` is refused with the settings operation's usage refusal naming the operand and the cause `not an integer that fits a bound` (FR-255 Behavior 6), and no limit changes. | Test (TC-1301) |
