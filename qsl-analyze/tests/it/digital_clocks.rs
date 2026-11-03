@@ -7,6 +7,7 @@ use qsl_analyze::exact_probabilistic::{
     build_product, decide_bounded_event, ExactProbLimits, FhResult, ProbBuild, ProbProduct,
     ProductAction, ProductKind, ProductRefusal, ProductRequest,
 };
+use qsl_analyze::exact_probabilistic::{DeadlinePhase, MonitorState};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_semantics::check::Bound;
 use quire_exact::{Cancel, Integer, Rational};
@@ -21,8 +22,39 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 /// `Retx`: `late` is `delivered`, `send(lost)` needs `x >= guard` and resets
 /// `x`, the invariant `x <= 2 ms` holds until delivery.
 fn retx(guard: &str, reset: bool, declarations: &str, claims: &str) -> World {
+    retx_with(
+        &[("send", &["late", "x"])],
+        guard,
+        reset,
+        declarations,
+        claims,
+    )
+}
+
+/// The text of [`retx`]'s unit: the claim and declaration lines follow it.
+fn retx_body(guard: &str, reset: bool, declarations: &str, claims: &str) -> String {
+    let reset = if reset { " and self.x = 0 ms" } else { "" };
+    format!(
+        "{}\
+         pre Send using v on M::Call::send {{ not self.late{guard} }}\n\
+         post Sent using v on M::Call::send {{ self.late = not lost{reset} }}\n\
+         random M::Call::send(lost) ~ {{ true: 1, false: 9 }};\n\
+         time invariant Deadline when {{ not self.late }} {{ self.x <= 2 ms }}\n\
+         {declarations}{claims}",
+        timed_world::DENSE,
+    )
+}
+
+/// [`retx`] over the operations `operations`, `send` first.
+fn retx_with(
+    operations: &[(&str, &[&str])],
+    guard: &str,
+    reset: bool,
+    declarations: &str,
+    claims: &str,
+) -> World {
     let mut document: serde_json::Value =
-        serde_json::from_slice(&timed_world::document(&["x"], &[("send", &["late", "x"])]))
+        serde_json::from_slice(&timed_world::document(&["x"], operations))
             .expect("the timed fixture is JSON");
     let operation = &mut document["types"][1]["operations"][0];
     operation["params"] = json!([{
@@ -36,22 +68,16 @@ fn retx(guard: &str, reset: bool, declarations: &str, claims: &str) -> World {
         "origin": {"source": {"sourceIdentity": timed_world::ident("spec"),
             "path": "spec.qspec", "startLine": 1, "startColumn": 1}},
     }]);
-    let reset = if reset { " and self.x = 0 ms" } else { "" };
-    let body = format!(
-        "{}\
-         pre Send using v on M::Call::send {{ not self.late{guard} }}\n\
-         post Sent using v on M::Call::send {{ self.late = not lost{reset} }}\n\
-         random M::Call::send(lost) ~ {{ true: 1, false: 9 }};\n\
-         time invariant Deadline when {{ not self.late }} {{ self.x <= 2 ms }}\n\
-         {declarations}{claims}",
-        timed_world::DENSE,
-    );
+    let body = retx_body(guard, reset, declarations, claims);
     timed_world::world(
         &serde_json::to_vec(&document).expect("serializes"),
-        "profile ev = \"quire.temporal.timed/v1\";\n",
+        PROFILES,
         &body,
     )
 }
+
+const PROFILES: &str = "profile ev = \"quire.temporal.timed/v1\";\n\
+     profile inf = \"quire.temporal.infinite-trace/v1\";\n";
 
 const GUARD: &str = " and self.x >= 1 ms";
 
@@ -102,18 +128,17 @@ fn initial_value(product: &ProbProduct, bound: Bound) -> Rational {
     values[product.initial[0].2.index()].clone()
 }
 
-fn every(guard: &str, reset: bool) -> World {
-    retx(
-        guard,
-        reset,
-        "",
-        &format!(
-            "{}{}{}",
-            deadline_claim("Deadline", "under every scheduler", ">= 0.99", "eventually"),
-            deadline_claim("Max", "under every scheduler", "<= 0.999", "eventually"),
-            deadline_claim("Always", "under every scheduler", ">= 0.99", "always"),
-        ),
+fn every_claims() -> String {
+    format!(
+        "{}{}{}",
+        deadline_claim("Deadline", "under every scheduler", ">= 0.99", "eventually"),
+        deadline_claim("Max", "under every scheduler", "<= 0.999", "eventually"),
+        deadline_claim("Always", "under every scheduler", ">= 0.99", "always"),
     )
+}
+
+fn every(guard: &str, reset: bool) -> World {
+    retx(guard, reset, "", &every_claims())
 }
 
 /// FR-204-AC-1 (TC-639 step 1): over every scheduler the minimum is `99/100`
@@ -148,7 +173,17 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
     let ProductRefusal::ZeroDelayCycle { states } = refusal(&cyclic, "Deadline") else {
         panic!("a zero-delay cycle");
     };
-    assert!(!states.is_empty());
+    // Without a guard or a reset `send` loops at the initial state: x = 0,
+    // elapsed 0, the deadline still pending.
+    assert_eq!(states.len(), 1);
+    assert_eq!(digital_clocks_of(&states[0]), (vec![0], Some(0)));
+    assert!(matches!(
+        states[0].monitor,
+        Some(MonitorState::Deadline {
+            phase: DeadlinePhase::Pending,
+            ..
+        })
+    ));
     let world = every(GUARD, true);
     assert!(matches!(
         refusal(&world, "Always"),
@@ -161,10 +196,17 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
 #[test]
 fn a_strict_guard_is_unsupported() {
     let world = every(" and self.x > 1 ms", true);
-    assert!(matches!(
-        refusal(&world, "Deadline"),
-        ProductRefusal::StrictClockConstraint { .. }
-    ));
+    let ProductRefusal::StrictClockConstraint { span } = refusal(&world, "Deadline") else {
+        panic!("a strict clock constraint");
+    };
+    let guard = " and self.x > 1 ms";
+    let unit = timed_world::unit_text(
+        timed_world::PACKAGE,
+        PROFILES,
+        &retx_body(guard, true, "", &every_claims()),
+    );
+    assert_eq!(&unit[span.start..span.end], "self.x > 1 ms");
+    assert_eq!(unit.matches("self.x > 1 ms").count(), 1);
 }
 
 fn one_workload(declarations: &str) -> World {
@@ -282,4 +324,306 @@ fn exact_timed_claims_route_to_en5_and_statistical_ones_to_en4() {
         .map(crate::probabilistic_request_items::candidate_ids)
         .collect();
     assert_eq!(routed, [vec!["en-5".to_owned()], vec!["en-4".to_owned()]]);
+}
+
+/// The second operation of the mixed races: it modifies `retried`, has no
+/// guard, and is enabled until it has run.
+const TICK: &str = "pre Tick using v on M::Call::tick { not self.retried }\n\
+     post Ticked using v on M::Call::tick { self.retried = true }\n";
+
+fn with_tick(declarations: &str, claims: &str) -> World {
+    retx_with(
+        &[("send", &["late", "x"]), ("tick", &["retried"])],
+        GUARD,
+        true,
+        &format!(
+            "{TICK}{declarations}workload Both on M {{ weight Call::send = 1; \
+             weight Call::tick = 1; }}\n"
+        ),
+        claims,
+    )
+}
+
+fn claim_over(name: &str, scheduler: &str, bound: &str, event: &str) -> String {
+    format!(
+        "probabilistic {name} using ev on M over (c: M::Call) {scheduler} on origin \
+         {{ probability {bound} [ {event} ] }}\n"
+    )
+}
+
+/// The digital clocks and the deadline clock a product key carries, scaled
+/// back to model units: `(clock values, deadline clock)`.
+fn digital_clocks_of(key: &qsl_analyze::exact_probabilistic::ProbKey) -> (Vec<u64>, Option<u64>) {
+    let bytes = &key.model;
+    let word = |at: usize| {
+        let eight: [u8; 8] = bytes[at..at + 8].try_into().expect("a word");
+        u64::from_be_bytes(eight)
+    };
+    let prefix = b"quire.simulation.state-key/v1/digital\n".len();
+    let model = usize::try_from(word(prefix)).expect("a length");
+    let mut at = prefix + 8 + model;
+    let scale = word(at);
+    let count = usize::try_from(word(at + 8)).expect("a count");
+    at += 16;
+    let mut clocks = Vec::new();
+    for _ in 0..count {
+        clocks.push(word(at) / scale);
+        at += 16;
+    }
+    let deadline = (bytes[at] == 1).then(|| word(at + 1) / scale);
+    (clocks, deadline)
+}
+
+/// FR-204-AC-3 and AC-5 (TC-639, TC-642): a given delay and a free one race as
+/// the scheduler's choices. Every `WorkloadResolve` choice is a distribution
+/// of mass one on its own, so the minimum and maximum stay the free delay's
+/// `99/100` and `9999/10000`, and a deadline of 0 where the capped deadline
+/// clock makes every choice's targets coincide still solves.
+#[trace("TC-639", "FR-204-AC-3")]
+#[trace("TC-642", "FR-204-AC-5")]
+#[test]
+fn mixed_given_and_free_races_keep_each_choice_a_distribution() {
+    let world = with_tick(
+        "delay M::Call::tick ~ discrete { 3 ms: 1 };\n",
+        &format!(
+            "{}{}{}",
+            claim_over(
+                "Now",
+                "under Both",
+                ">= 0.5",
+                "eventually[0 ms, 0 ms] holds(c.late)"
+            ),
+            deadline_claim("Under", "under Both", ">= 0.99", "eventually"),
+            deadline_claim("UnderMax", "under Both", "<= 0.999", "eventually"),
+        ),
+    );
+    for name in ["Now", "Under"] {
+        let built = product(&world, name);
+        let mut mass: std::collections::BTreeMap<(usize, String), Rational> =
+            std::collections::BTreeMap::new();
+        for edge in &built.edges {
+            if let ProductAction::WorkloadResolve { delay, .. } = &edge.choice {
+                let total = mass
+                    .entry((edge.from.index(), format!("{:?}", edge.choice)))
+                    .or_insert_with(|| ratio(0, 1));
+                *total = total.add(&edge.probability);
+                assert!(*delay >= 1, "a resolve of the send waits for its guard");
+            }
+        }
+        assert!(!mass.is_empty(), "{name}: the free delays are choices");
+        for (choice, total) in &mass {
+            assert_eq!(*total, ratio(1, 1), "{name}: {choice:?}");
+        }
+    }
+    let now = product(&world, "Now");
+    assert_eq!(
+        initial_value(&now, Bound::AtLeast(ratio(1, 2))),
+        ratio(0, 1)
+    );
+    let built = product(&world, "Under");
+    assert_eq!(built.kind, ProductKind::Mdp);
+    assert_eq!(
+        initial_value(&built, Bound::AtLeast(ratio(99, 100))),
+        ratio(99, 100)
+    );
+    assert_eq!(
+        initial_value(
+            &product(&world, "UnderMax"),
+            Bound::AtMost(ratio(999, 1000))
+        ),
+        ratio(9999, 10000)
+    );
+}
+
+/// FR-204-AC-3 (TC-639): identities that tie at one delay run in sequence on
+/// one edge, and the edge carries the sum of their rewards.
+#[trace("TC-639", "FR-204-AC-3")]
+#[test]
+fn tied_identities_sum_their_rewards_on_one_edge() {
+    let world = with_tick(
+        "delay M::Call::send ~ discrete { 1 ms: 1 };\n\
+         delay M::Call::tick ~ discrete { 1 ms: 1 };\n\
+         reward cost on M::Call::send = 1;\n\
+         reward cost on M::Call::tick = 2;\n",
+        &deadline_claim("Tie", "under Both", ">= 0.5", "eventually"),
+    );
+    let built = product(&world, "Tie");
+    let start = built.initial[0].2;
+    let race: Vec<_> = built
+        .edges
+        .iter()
+        .filter(|edge| edge.from == start)
+        .collect();
+    assert!(!race.is_empty());
+    for edge in race {
+        let cost: Vec<_> = edge
+            .rewards
+            .iter()
+            .filter(|(name, _)| name.as_str() == "cost")
+            .map(|(_, value)| value.clone())
+            .collect();
+        assert!(
+            matches!(cost.as_slice(), [quire_exact::Value::Integer(sum)] if *sum == Integer::from(3_i64)),
+            "{edge:?}"
+        );
+    }
+}
+
+/// FR-204 "Admission" (TC-639): a `Reach` and an `ExpectedReward` claim over a
+/// timed subject label the digital product. The send is forced by the
+/// invariant and delivers with probability 9/10, so delivery is certain and
+/// the expected number of sends is `10/9` under every scheduler.
+#[trace("TC-639", "FR-204-AC-1")]
+#[test]
+fn reach_and_expected_reward_label_the_digital_product() {
+    use qsl_analyze::exact_probabilistic::{
+        decide_expected_reward, decide_reachability, ExtRational, UnboundedObjective,
+    };
+    let world = retx(
+        GUARD,
+        true,
+        "reward sends on M::Call::send = 1;\n",
+        &format!(
+            "{}{}",
+            "probabilistic Reach using inf on M over (c: M::Call) under every scheduler on origin \
+             { probability >= 0.5 [ eventually holds(c.late) ] }\n",
+            "probabilistic Cost using inf on M over (c: M::Call) under every scheduler on origin \
+             { expected accumulate sends until holds(c.late) <= 5 }\n",
+        ),
+    );
+    for name in ["Reach", "Cost"] {
+        let built = product(&world, name);
+        let target: Vec<bool> = built.labels.iter().map(|labels| labels[0]).collect();
+        assert!(target.iter().any(|reached| *reached), "{name}");
+        let start = built.initial[0].2.index();
+        for objective in [UnboundedObjective::Min, UnboundedObjective::Max] {
+            let limits = ExactProbLimits::default();
+            let result = if name == "Reach" {
+                decide_reachability(&built, &target, objective, &limits)
+            } else {
+                decide_expected_reward(&built, &target, "sends", objective, &limits)
+            }
+            .expect("the labelled product is solved");
+            let expected = if name == "Reach" {
+                ratio(1, 1)
+            } else {
+                ratio(10, 9)
+            };
+            assert_eq!(
+                result.values[start],
+                ExtRational::Finite(expected),
+                "{name}"
+            );
+        }
+    }
+}
+
+/// FR-204-AC-1 (TC-639): `holds(A) until[0 ms, D] holds(B)` is a deadline
+/// event with the extrema of the `eventually` form.
+#[trace("TC-639", "FR-204-AC-1")]
+#[test]
+fn an_until_deadline_has_the_same_extrema() {
+    let world = retx(
+        GUARD,
+        true,
+        "",
+        &format!(
+            "{}{}",
+            deadline_claim(
+                "Until",
+                "under every scheduler",
+                ">= 0.99",
+                "holds(not c.late) until"
+            ),
+            deadline_claim(
+                "UntilMax",
+                "under every scheduler",
+                "<= 0.999",
+                "holds(not c.late) until"
+            ),
+        ),
+    );
+    assert_eq!(
+        initial_value(&product(&world, "Until"), Bound::AtLeast(ratio(99, 100))),
+        ratio(99, 100)
+    );
+    assert_eq!(
+        initial_value(
+            &product(&world, "UntilMax"),
+            Bound::AtMost(ratio(999, 1000))
+        ),
+        ratio(9999, 10000)
+    );
+}
+
+/// FR-204 "Admission" (TC-639): a state where no identity races and delay is
+/// bounded is unsupported `NotStochastic`. The `send` is enabled at `x = 1`,
+/// but its only delay, 5 ms, lies outside its window.
+#[trace("TC-639", "FR-204-AC-3")]
+#[test]
+fn a_bounded_state_where_nothing_races_is_not_stochastic() {
+    let world = one_workload("delay M::Call::send ~ discrete { 5 ms: 1 };\n");
+    assert!(matches!(
+        refusal(&world, "Under"),
+        ProductRefusal::NotStochastic { .. }
+    ));
+}
+
+/// FR-204-AC-1 (TC-639 step 1): the clocks span the AC's ranges, `x` from 0
+/// to 2 and the deadline clock from 0 to 5 (one past `D = 4 ms`).
+#[trace("TC-639", "FR-204-AC-1")]
+#[test]
+fn clocks_span_the_declared_ranges() {
+    let world = every(GUARD, true);
+    let built = product(&world, "Deadline");
+    let mut x = std::collections::BTreeSet::new();
+    let mut deadline = std::collections::BTreeSet::new();
+    for key in &built.states {
+        let (clocks, elapsed) = digital_clocks_of(key);
+        x.insert(clocks[0]);
+        deadline.extend(elapsed);
+    }
+    assert_eq!(x.into_iter().collect::<Vec<_>>(), [0, 1, 2]);
+    assert_eq!(deadline.into_iter().collect::<Vec<_>>(), [0, 1, 2, 3, 4, 5]);
+}
+
+/// FR-204-AC-5 (TC-642): at the quiescent idle-delayed key at `D`, `IdleObserve`
+/// reads the predicates at `D` with elapsed time `D`, and `IdleDelay` crosses
+/// `D` to elapsed `D + 1`, which rejects.
+#[trace("TC-642", "FR-204-AC-5")]
+#[test]
+fn idle_observe_reads_at_the_deadline_and_idle_delay_crosses_it() {
+    let world = retx(
+        GUARD,
+        true,
+        "",
+        &claim_over(
+            "Never",
+            "under every scheduler",
+            ">= 0.5",
+            "eventually[0 ms, 4 ms] holds(c.retried)",
+        ),
+    );
+    let built = product(&world, "Never");
+    let at_deadline = built.edges.iter().find(|edge| {
+        matches!(edge.choice, ProductAction::IdleObserve)
+            && digital_clocks_of(&built.states[edge.from.index()]).1 == Some(4)
+    });
+    let observe = at_deadline.expect("an observation at D");
+    let source = observe.from;
+    let delay = built
+        .edges
+        .iter()
+        .find(|edge| edge.from == source && matches!(edge.choice, ProductAction::IdleDelay))
+        .expect("a delay across D from the same key");
+    let observed = &built.states[observe.to.index()];
+    let crossed = &built.states[delay.to.index()];
+    assert_eq!(digital_clocks_of(observed).1, Some(4));
+    assert_eq!(digital_clocks_of(crossed).1, Some(5));
+    let phase = |key: &qsl_analyze::exact_probabilistic::ProbKey| match key.monitor {
+        Some(MonitorState::Deadline { phase, .. }) => phase,
+        other => panic!("a deadline monitor: {other:?}"),
+    };
+    assert_eq!(phase(observed), DeadlinePhase::Pending);
+    assert_eq!(phase(crossed), DeadlinePhase::Reject);
 }

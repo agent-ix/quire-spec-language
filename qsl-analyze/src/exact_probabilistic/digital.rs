@@ -32,7 +32,9 @@ use qsl_semantics::check::{
     ConvexPart, DelayDistribution, Event, FormulaNode, ProbForm, ProbScheduler, UnaryTemporal,
     Workload,
 };
-use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
+use quire_exact::{
+    Cancel, Identifier, Integer, ObjectReference, Quantity, Rational, Value, ValueType,
+};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
@@ -288,7 +290,10 @@ fn admit(
         }
     }
     let delays = system.package().graph().probabilistic_model().delays();
-    for delay in delays {
+    for delay in delays
+        .iter()
+        .filter(|delay| delay.operation().model() == claim.subject.alias.as_str())
+    {
         let admitted =
             workload.is_some() && matches!(delay.distribution(), DelayDistribution::Discrete(_));
         if !admitted {
@@ -302,6 +307,45 @@ fn admit(
         }
     }
     Ok(())
+}
+
+/// Where a race outcome's edges go: `planned`, merging an edge into an
+/// existing one only from index `scope` on, so that edges of different
+/// scheduler choices stay apart.
+struct Edges<'p> {
+    planned: &'p mut Vec<Planned>,
+    scope: usize,
+}
+
+/// Two reward lists, added value by value: the rewards of consecutive steps
+/// of one chain. A reward is an integer or a quantity of one unit.
+fn add_rewards(
+    left: &[(Identifier, Value)],
+    right: &[(Identifier, Value)],
+) -> Step<Vec<(Identifier, Value)>> {
+    if left.len() != right.len() {
+        return Err(fault("rewards-have-one-name-each").into());
+    }
+    left.iter()
+        .zip(right)
+        .map(|((name, first), (other, second))| {
+            let sum = match (first, second) {
+                (Value::Integer(first), Value::Integer(second)) if name == other => {
+                    Value::Integer(first.add(second))
+                }
+                (Value::Quantity(first), Value::Quantity(second))
+                    if name == other && first.unit() == second.unit() =>
+                {
+                    Value::Quantity(Quantity::new(
+                        first.magnitude().add(second.magnitude()),
+                        first.unit().clone(),
+                    ))
+                }
+                _ => return Err(fault("a-reward-is-an-integer-or-a-quantity").into()),
+            };
+            Ok((name.clone(), sum))
+        })
+        .collect()
 }
 
 /// The least common denominator of every time constant of the model and the
@@ -1038,7 +1082,7 @@ impl<'c> Builder<'_, '_, 'c> {
             Some(last) => last.clone(),
             None => match self.truths(&reached.model, binding)? {
                 Ok(truths) => truths,
-                Err(_) => self.nodes[at].truths.clone(),
+                Err(_) => return Err(fault("a-pure-delay-reads-what-the-parent-read").into()),
             },
         };
         let source = self.nodes[at].key.monitor;
@@ -1553,7 +1597,10 @@ impl<'c> Builder<'_, '_, 'c> {
                     &trajectory,
                     (*delay, identities, probability.clone()),
                     &representative,
-                    &mut planned,
+                    Edges {
+                        planned: &mut planned,
+                        scope: 0,
+                    },
                 )?;
             }
             return Ok(planned);
@@ -1581,7 +1628,10 @@ impl<'c> Builder<'_, '_, 'c> {
                         &trajectory,
                         (winning, identities, probability.clone()),
                         &window.identity,
-                        &mut planned,
+                        Edges {
+                            planned: &mut planned,
+                            scope: first,
+                        },
                     )?;
                 }
                 for edge in &mut planned[first..] {
@@ -1607,7 +1657,7 @@ impl<'c> Builder<'_, '_, 'c> {
         trajectory: &Trajectory,
         outcome: (u64, Vec<ScheduledIdentity>, Rational),
         representative: &ScheduledIdentity,
-        planned: &mut Vec<Planned>,
+        out: Edges<'_>,
     ) -> Step<()> {
         let (delay, identities, probability) = outcome;
         let index = usize::try_from(delay).map_err(|_| fault("delay-count"))?;
@@ -1623,7 +1673,10 @@ impl<'c> Builder<'_, '_, 'c> {
                 &start,
                 &ordered,
                 (probability.mul(&order), delay == 0, representative),
-                planned,
+                Edges {
+                    planned: &mut *out.planned,
+                    scope: out.scope,
+                },
             )?;
         }
         Ok(())
@@ -1696,10 +1749,12 @@ impl<'c> Builder<'_, '_, 'c> {
         start: &DState,
         ordered: &[ScheduledIdentity],
         outcome: (Rational, bool, &ScheduledIdentity),
-        planned: &mut Vec<Planned>,
+        out: Edges<'_>,
     ) -> Step<()> {
+        let Edges { planned, scope } = out;
         let (probability, zero_delay, representative) = outcome;
-        // (probability, states reached after each step, first draw, first rewards)
+        // (probability, states reached after each step, first draw, rewards
+        // summed over the steps taken)
         type Chain = (
             Rational,
             Vec<DState>,
@@ -1712,9 +1767,9 @@ impl<'c> Builder<'_, '_, 'c> {
             None,
             self.system.zero_rewards(),
         )];
-        for (position, identity) in ordered.iter().enumerate() {
+        for identity in ordered {
             let mut next: Vec<Chain> = Vec::new();
-            for (chain_probability, states, first_draw, first_rewards) in chains {
+            for (chain_probability, states, first_draw, summed) in chains {
                 let current = states
                     .last()
                     .cloned()
@@ -1725,7 +1780,7 @@ impl<'c> Builder<'_, '_, 'c> {
                     .iter()
                     .find(|candidate| candidate.identity == *identity)
                 else {
-                    next.push((chain_probability, states, first_draw, first_rewards));
+                    next.push((chain_probability, states, first_draw, summed));
                     continue;
                 };
                 for draw in &action.draws {
@@ -1753,11 +1808,7 @@ impl<'c> Builder<'_, '_, 'c> {
                         chain_probability.mul(&draw.probability),
                         reached,
                         first_draw.clone().or_else(|| Some(draw.random.clone())),
-                        if position == 0 || first_draw.is_none() {
-                            draw.rewards.clone()
-                        } else {
-                            first_rewards.clone()
-                        },
+                        add_rewards(&summed, &draw.rewards)?,
                     ));
                 }
             }
@@ -1783,13 +1834,18 @@ impl<'c> Builder<'_, '_, 'c> {
                 probability: chain_probability.clone(),
             };
             let target = self.arrive(at, reached, &landed, Some(&taken))?;
-            if let Some(merged) = planned.iter_mut().find(|edge| {
+            if let Some(merged) = planned[scope..].iter_mut().find(|edge| {
                 edge.target.key == target.key
                     && edge.action.as_ref() == Some(&first)
                     && same_rewards(&edge.rewards, &rewards)
             }) {
                 merged.probability = merged.probability.add(&chain_probability);
                 merged.draw = None;
+                merged.step = Some(TraceStep {
+                    action: taken.action,
+                    draw: None,
+                    probability: merged.probability.clone(),
+                });
                 continue;
             }
             planned.push(Planned {
