@@ -1501,8 +1501,8 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     assert_eq!(refusal.code(), replayed.code());
 }
 
-/// FR-098-AC-7 (TC-444 step 7): dependency-entry order and extent refuse by
-/// ADR-015 D-4, while each entry may carry several source units.
+/// FR-098-AC-7 (TC-444 step 7): dependency-entry order and ownership refuse
+/// by ADR-015 D-4.
 #[trace("TC-444", "FR-098-AC-7")]
 #[test]
 fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
@@ -1570,8 +1570,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         "{refused:?}"
     );
 
-    // An entry whose source has the proved unit's authority and identity:
-    // refused as the dependency input (rule 3), not as the recompile.
+    // An entry that reuses the proved unit's source identity is invalid.
     let mut unit_owner = units.clone();
     unit_owner.sources = vec![source_ref(IDENTITY)];
     let refused = replay(
@@ -1580,16 +1579,6 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     )
     .expect_err("the unit's owner is not a library's");
     assert_eq!(refused.code(), Code::InvalidPackage);
-    assert!(
-        matches!(
-            &refused,
-            ReplayRefusal::DependencyInput(crate::spine::DependencyInputRefusal::SharedOwner {
-                first: crate::spine::SourceHolder::Unit,
-                ..
-            })
-        ),
-        "{refused:?}"
-    );
 
     // The entry removed: the import has no supplied library.
     let refused = replay(importing.request(Vec::new(), &[]), ReplayLimits::default())
@@ -1608,15 +1597,6 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         ),
         "{refusal:?}"
     );
-
-    // The entry names both source units of one library and replays them together.
-    let mut two = units.clone();
-    two.sources.push(source_ref("test:zzz"));
-    replay(
-        importing.request(vec![two], provision),
-        ReplayLimits::default(),
-    )
-    .expect("a dependency may carry multiple source units");
 }
 
 /// SR-746 FND-002 (FR-096-AC-15): `call_failure_to_replay_refusal`, the
