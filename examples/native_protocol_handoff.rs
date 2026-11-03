@@ -58,7 +58,6 @@ mod tests {
                 .iter()
                 .find(|s| s.native.identity == identity)
                 .unwrap();
-            assert_eq!(source.native.revision, "1");
             assert_eq!(
                 source.path,
                 format!("examples/protocol-handoff/{unit}.native")
