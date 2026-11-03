@@ -75,7 +75,8 @@ observable obligation of each FR-362 and FR-480 criterion.
     requirement form S2 built from `parsed` (none when the limit stopped S1 or
     S2 before any form existed), no obligation row, and the typed cause: the
     stage, the limit kind and the FR-255 setting name, with the configured
-    bound, the observed value and the limit's source region when it has one;
+    bound, the observed value and the limit's source region when it has one
+    (runtime-only limit kinds such as `TickCount` give no inventory);
     the IR reports this cause as `TypeWorkExhausted` (IR FR-052-AC-10) and the
     mapping of "The IR identities" below applies;
   - for any other refusal, an error and no inventory rows.
@@ -108,56 +109,47 @@ from the requirement record of a `Complete` row, which it never equals.
 ### The IR identities
 
 The inventory reports each row and the exhaustion cause as the IR's neutral
-identities (Contract IR FR-052-AC-26). The normative content is QSL's own: the
-row kinds and cause fields below. Where the IR has no member for a QSL value,
-the mapping is an explicit IR dependency (Dependencies, "Asks to the Contract IR
-owner"), and the **interim clauses** below say exactly what the producer carries
-until the IR adds the member. An interim clause is documented here and in the
-producer's rustdoc, is never silent, and ends when its removal condition holds;
-`Ok(unit)` is `Complete` and a stage limit is `Incomplete` throughout.
+identities (Contract IR FR-052-AC-26). `Ok(unit)` is `Complete` and a stage
+limit is `Incomplete`.
 
 - **Requirement record** row: `SourceRequirementOccurrenceId` of the record's
   structural `CheckedNodeId`, origin role and origin ordinal, as FR-052-AC-26
   states.
-- **Requirement form** row (only in an `Incomplete` outcome): the form ordinal
-  and declared name above. Interim I-1: until the IR has a requirement-form
-  identity, the row is carried as a requirement-record identity with package
-  `""`, a single name path segment holding the declared name (or `""`), node
-  ordinal and origin ordinal both the form ordinal, and role `form`; no
-  `Complete` requirement record has that package, so the two never compare equal.
-  Removal: the IR adds the identity (ask 1) and the producer returns it.
-- **Pending obligation** row. The normative content is the obligation's
-  **capability kind name** (FR-057-AC-10, FR-290), its owning declaration, its
-  source unit and its source span. The IR's `SourcePendingObligationId` maps it
-  as: `site.declaration` is the owning declaration's ordinal in
-  `type_report().declarations()`; `site.unit` is the unit's position in the
-  presented unit list (0 for a single unit); `site.expression` is absent; `site.start`
-  and `site.end` are the span's bytes resolved through the unit's `RawSourceRef`;
-  `kind` is the capability kind name. The IR's `SourcePendingObligationKind`
-  names type-level obligations only and has no member for a capability kind
-  (ask 2). Interim I-2: until it does, the producer carries `kind`
-  `GraphClosure` and `site.declaration` equal to the obligation's position in the
-  obligation list, `site.unit` 0, so that distinct obligations stay distinct; the
-  capability kind name is retained in QSL's own row beside the IR identity and is
-  what a consumer of QSL's row reads. These two interim values are placeholders,
-  not measured values, and no QSL test asserts them as the capability kind or the
-  declaration. Removal: the IR adds the member (ask 2), the producer maps the
-  capability kind and the owning declaration ordinal, and this clause is deleted.
-- **Exhaustion cause**, the IR's `TypeWorkExhausted(SourceTypeExhaustion)`: the
-  normative content is the stage, the limit kind, the FR-255 setting name, the
-  configured bound, the observed value and the limit's source region when it has
-  one, held in QSL's own `InventoryCause`. The IR `dimension` is the dimension of
-  the limit kind (token and node counts: expressions; edge count: edges;
-  occurrence and diagnostic counts: records; work budget: constraints; rational
-  bits: normalization; input bytes: bytes) and `limit` is the configured bound.
-  The spine holds no charged-before amount, no unpaid increment, no declaration
-  handle and no unit handle, and `SourceTypeExhaustion` has no field for the stage,
-  the setting or the observed value (ask 3). Interim I-3: until it does, the
-  producer carries `prior` equal to the bound, `requested` equal to the observed
-  value minus the bound (0 when not above), `site.declaration` and `site.unit` 0,
-  and the region as the site's span, as placeholders that no consumer may read as
-  measured; the stage and setting are in QSL's `InventoryCause`. Removal: the IR
-  adds ask 3 and the producer returns the stage, setting and observed value.
+- **Requirement form** row (only in an `Incomplete` outcome): the IR's
+  `SourceRequirementFormId` of the form ordinal and declared name above, under
+  `SourceInventoryIdentity::RequirementForm`. It names no checked node and is
+  never a requirement-record identity.
+- **Pending obligation** row: the IR's `SourcePendingObligationId`.
+  `site.declaration` is the ordinal of the obligation's **owning requirement
+  form**: the form ordinal (the same ordinal the form has as an `Incomplete`
+  inventory's requirement-form row) of the one requirement form whose S2 source
+  span holds the obligation's span. A `function`'s value claims, a state
+  clause's `post` claim, a `temporal` clause's claim, a protocol's `check` and a
+  protocol's temporal requirement are each owned by the form that textually
+  contains them; top-level forms do not overlap, so the owner is unique. The
+  type report's `declarations()` is not the owner list (it holds only the
+  declarations that carry a value type). `site.unit` is 0 (the unit is
+  presented alone); `site.expression` is absent; `site.start` and `site.end`
+  are the span's bytes; `kind` is `SourcePendingObligationKind::CapabilityKind`
+  holding the obligation's exact capability kind name (FR-057-AC-10, FR-290).
+  An obligation no requirement form holds has no owner; the inventory is then
+  refused with the defensive `InventoryRefusal::UnownedObligation` instead of
+  carrying an invented ordinal. It is unreachable for an admitted unit, whose
+  obligations all lie inside its requirement forms.
+- **Exhaustion cause**, the IR's `TypeWorkExhausted(SourceTypeExhaustion)`:
+  `stage` is the stage that owns the setting as FR-255's table spells it,
+  `setting` the FR-255 setting name, `limit` the configured bound and `observed`
+  the limit's actual value (`u128`, never narrowed). `dimension` is the
+  dimension of the limit kind (token and node counts: expressions; edge count:
+  edges; occurrence and diagnostic counts: records; work budget: constraints;
+  rational bits: normalization; input bytes: bytes). The spine holds no
+  charged-before amount, no unpaid increment and no declaration, unit or
+  expression handle, so `prior`, `requested` and the site's native handles are
+  absent; the site's region is the limit's source region (authority, identity
+  and byte bounds) when it has one. No placeholder value is carried.
+- A limit whose kind is a runtime limit (`TickCount`, FR-523) is not a
+  type-admission stage limit: it has no `dimension`, so it gives no inventory
+  and `qsl_inventory` returns `InventoryRefusal::NoInventory`.
 
 ### The `parsed` argument
 
@@ -210,27 +202,19 @@ FR-480's criteria belong to four pieces of work (QSL-1508):
 | FR-514-AC-5 | The FR-480-AC-6 documents give, for `[1, 2]`, `invalid_package`/`invalid-value` at `z` in document 1; for `[2, 1]`, `invalid_package`/`definition-cycle` at `u_self` in document 2 with edge `u_self` to `u_self`; a two-unit cycle `z`, `z2` across documents gives `invalid_package`/`definition-cycle` with both edges; a dimension cycle across documents gives the same code; each names the document's source reference. | Test (TC-1309) |
 | FR-514-AC-6 | A consistency test over this requirement and FR-480 finds every `FR-480-AC-n` id of FR-480 in the pieces table; only FR-480-AC-2 appears in two rows, and the two rows quote disjoint sentences of it. | Test (TC-1309) |
 | FR-514-AC-7 | For `T0` with `s3.work_units` one below need, the `Incomplete` inventory lists one requirement-form row per requirement form of `T0`'s S2 list (the function `f`, the state clause and the protocol), each identified by its form ordinal 0, 1, 2 and its declared name when it has one, a `function` declaring no requirement included; none of those identities equals a `Complete` requirement record, and an `enum` declared beside them gives no row. | Test (TC-1309) |
-| FR-514-AC-8 | For `T0` with sufficient limits, `qsl_inventory` returns `Complete` with one requirement row per requirement record and one obligation row per pending obligation (FR-362-AC-4), and each obligation row's QSL form holds its capability kind name, owning declaration ordinal in `type_report().declarations()`, unit 0 and the span's bytes; two obligations of one declaration differ by span and kind. The IR identity of each carries the interim values of I-2 and no QSL test asserts them as the capability kind. | Test (TC-1309) |
-| FR-514-AC-9 | For the limit outcomes of AC-3, `InventoryCause` holds the stage (S3, S1), the limit kind, the setting (`s3.work_units`, `s1.nodes`), the configured bound and the observed value, and the IR cause carries the dimension (`constraints` for the work budget, `expressions` for `s1.nodes`), `limit` the bound and the interim values of I-3. | Test (TC-1309) |
+| FR-514-AC-8 | For `T0` with sufficient limits, `qsl_inventory` returns `Complete` with one requirement row per requirement record and one obligation row per pending obligation (FR-362-AC-4), and each obligation row's IR identity holds its exact capability kind name, owning requirement form ordinal (the form's ordinal in source order: `f` 0, the state clause 1, the protocol 2 for `T0`; a protocol's `check` and its temporal requirement belong to the protocol), unit 0 and the span's bytes; two obligations of one form differ by span and kind. | Test (TC-1309) |
+| FR-514-AC-9 | For the limit outcomes of AC-3, the IR cause carries the stage (S3, S1), the setting (`s3.work_units`, `s1.nodes`), the dimension (`constraints` for the work budget, `expressions` for `s1.nodes`), `limit` the configured bound, `observed` the actual value (an amount above `u64::MAX` unchanged), no `prior`, no `requested`, no native site, and the limit's source region when it has one. | Test (TC-1309) |
 | FR-514-AC-10 | `qsl_inventory` with `parsed` `None` over a limit at S1 or S2 returns `Incomplete` with zero rows and the cause; with `parsed` `None` over a limit at S3, or over `Ok(unit)`, it returns `InventoryRefusal::MissingParsedUnit` and no inventory. | Test (TC-1309) |
+| FR-514-AC-11 | An obligation whose span no requirement form holds (a synthetic obligation over an empty or non-containing form list) has no owner: the owner lookup gives none and `qsl_inventory` over such a unit would return `InventoryRefusal::UnownedObligation`, never an obligation row with an invented ordinal. | Test (TC-1309) |
+| FR-514-AC-12 | `qsl_inventory` over a `StageFailure::Limit` whose kind is `TickCount` returns `InventoryRefusal::NoInventory` and no rows, because a runtime limit kind has no type-work dimension. | Test (TC-1309) |
 
 ## Dependencies
 
 - **Upstream:** FR-362, FR-480, FR-091 (topology table), FR-255 (setting
   names), FR-097, FR-218, FR-057-AC-10.
-### Asks to the Contract IR owner (FR-052)
-
-1. **Requirement-form identity.** A `SourceInventoryIdentity` member (a requirement
-   form) beside `SourceRequirementOccurrenceId`, carrying a form ordinal (`u64`)
-   and an optional declared name; ends I-1.
-2. **Capability-kind member.** A `SourcePendingObligationKind` member carrying
-   the FR-057 capability kind name (the enum is `Copy` today, so the member needs
-   a non-`Copy` payload or an interned handle); ends I-2.
-3. **Exhaustion fields.** In `SourceTypeExhaustion`: a `stage` (S1, S2 or S3
-   and later), a `setting` (the FR-255 setting name), an `observed` amount, and
-   `prior`, `requested` and the site's declaration and unit handles optional (the
-   spine holds a source region only); ends I-3.
-
+- **Contract IR FR-052 (landed):** the requirement-form identity, the
+  capability-kind obligation member and the exhaustion stage, setting, observed
+  and optional prior, requested and site fields are in the IR carrier.
 - **Contract IR FR-052 (decided):** IR FR-052 as amended by IR#854 keeps the
   `TypeAdmissionUnfinished` cause, scoped to QSL's legacy composed-lane
   inventory; IR-1304 retires it once QSL-830 deletes that lane. The spine
