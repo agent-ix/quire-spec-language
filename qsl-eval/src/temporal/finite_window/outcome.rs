@@ -169,4 +169,6 @@ pub struct WindowEvaluation {
     pub premises: Premises,
     /// The result identity.
     pub identity: ResultIdentity,
+    /// The `temporal.visit` charges the evaluation made.
+    pub visits: u64,
 }

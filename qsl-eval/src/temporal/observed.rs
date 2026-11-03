@@ -47,13 +47,6 @@ pub struct ObservedRun {
     pub stopped: Option<HoldsStop>,
     /// The first undefined atom read, with its trace position and cause.
     pub undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
-    /// Boolean atom readings in formula-node and trace-position order.
-    pub atom_readings: Vec<(FormulaNodeId, TemporalPosition, AtomReading)>,
-    /// Admitted `temporal.visit` charges made by finite-window evaluation.
-    pub temporal_visits: u64,
-    /// The first unresolved finite-window activation and its establishment
-    /// deadline, if the run contains a pending activation.
-    pub pending_activation: Option<(TemporalPosition, quire_exact::Rational)>,
 }
 
 /// Evaluate `clause`, a temporal clause of `package`, over `environments`,
@@ -106,176 +99,6 @@ pub fn evaluate_observed_at(
     )
 }
 
-/// Evaluate a timestamped finite-window activation over admitted snapshots.
-/// The timestamp trace and environments must have the same represented
-/// length; stamps are read by the timed finite-window evaluator, while atom
-/// values still come from the ordinary observed-letter adapter.
-pub fn evaluate_observed_finite_window(
-    package: &CheckedPackage,
-    clause: &TemporalClauseNode,
-    environments: &[ObjectEnvironment],
-    trace: &super::TimedTrace,
-    over: &ObjectReference,
-    progress: &super::FiniteWindowProgress,
-    meter: &mut Meter,
-) -> ObservedRun {
-    let shape = TemporalTrace::Finite {
-        len: u64::try_from(environments.len()).unwrap_or(u64::MAX),
-    };
-    let mut letters = ObservedLetters {
-        package,
-        clause,
-        environments,
-        trace: shape,
-        over,
-        stopped: None,
-        undefined: None,
-        atom_readings: Vec::new(),
-        missing_valuations: progress.missing_valuations(),
-    };
-    let clause_body = clause.clause();
-    let positions: Vec<usize> = match clause_body.activation() {
-        qsl_semantics::check::Activation::Origin => vec![0],
-        qsl_semantics::check::Activation::Each { guarded: false } => {
-            (0..environments.len()).collect()
-        }
-        qsl_semantics::check::Activation::Each { guarded: true } => {
-            let mut active = Vec::new();
-            for index in 0..environments.len() {
-                match letters.activation(TemporalPosition::new(index as u64), meter) {
-                    Ok(AtomReading::True) => active.push(index),
-                    Ok(AtomReading::False | AtomReading::Undefined(_)) => {}
-                    Err(LetterStop::Incomplete(incomplete)) => {
-                        return ObservedRun {
-                            result: Ok(TemporalOutcome::Incomplete(incomplete)),
-                            stopped: letters.stopped,
-                            undefined: letters.undefined,
-                            atom_readings: letters.atom_readings,
-                            temporal_visits: 0,
-                            pending_activation: None,
-                        };
-                    }
-                    Err(LetterStop::WindowLimit(limit)) => {
-                        return ObservedRun {
-                            result: Ok(TemporalOutcome::WindowLimitReached(limit)),
-                            stopped: letters.stopped,
-                            undefined: letters.undefined,
-                            atom_readings: letters.atom_readings,
-                            temporal_visits: 0,
-                            pending_activation: None,
-                        };
-                    }
-                    Err(LetterStop::Window(refusal)) => {
-                        return ObservedRun {
-                            result: Err(TemporalRefusal::Window(refusal)),
-                            stopped: letters.stopped,
-                            undefined: letters.undefined,
-                            atom_readings: letters.atom_readings,
-                            temporal_visits: 0,
-                            pending_activation: None,
-                        };
-                    }
-                    Err(LetterStop::Fault(fault)) => {
-                        return ObservedRun {
-                            result: Err(TemporalRefusal::Fault(fault)),
-                            stopped: letters.stopped,
-                            undefined: letters.undefined,
-                            atom_readings: letters.atom_readings,
-                            temporal_visits: 0,
-                            pending_activation: None,
-                        };
-                    }
-                }
-            }
-            active
-        }
-    };
-    let mut first_violation = None;
-    let mut first_pending = None;
-    let mut first_undefined = None;
-    let mut incomplete = None;
-    let mut temporal_visits = 0_u64;
-    for index in positions {
-        let position = TemporalPosition::new(u64::try_from(index).unwrap_or(u64::MAX));
-        let current = super::evaluate_finite_window_at(
-            clause_body,
-            trace,
-            position,
-            progress,
-            &mut letters,
-            meter,
-        );
-        let (current, visits) = match current {
-            Ok((outcome, visits)) => (Ok(outcome), visits),
-            Err(refusal) => (Err(refusal), 0),
-        };
-        temporal_visits = temporal_visits.saturating_add(visits);
-        match current {
-            Ok(TemporalOutcome::Violated { at }) => {
-                first_violation.get_or_insert(TemporalOutcome::Violated { at });
-            }
-            Ok(TemporalOutcome::Pending) => {
-                if first_pending.is_none() {
-                    first_pending = super::finite_window_deadline(
-                        clause_body,
-                        trace,
-                        position,
-                        progress.uncertainty_margin(),
-                    )
-                    .ok()
-                    .map(|deadline| (position, deadline));
-                }
-            }
-            Ok(TemporalOutcome::Undefined(undefined)) => {
-                first_undefined.get_or_insert(undefined);
-            }
-            Ok(TemporalOutcome::Incomplete(stopped)) => {
-                incomplete.get_or_insert(stopped);
-            }
-            Ok(TemporalOutcome::Holds) => {}
-            Ok(other) => {
-                return ObservedRun {
-                    result: Ok(other),
-                    stopped: letters.stopped,
-                    undefined: letters.undefined,
-                    atom_readings: letters.atom_readings,
-                    temporal_visits,
-                    pending_activation: first_pending,
-                };
-            }
-            Err(refusal) => {
-                return ObservedRun {
-                    result: Err(refusal),
-                    stopped: letters.stopped,
-                    undefined: letters.undefined,
-                    atom_readings: letters.atom_readings,
-                    temporal_visits,
-                    pending_activation: first_pending,
-                };
-            }
-        }
-    }
-    let result = if let Some(violation) = first_violation {
-        Ok(violation)
-    } else if let Some(undefined) = first_undefined {
-        Ok(TemporalOutcome::Undefined(undefined))
-    } else if let Some(incomplete) = incomplete {
-        Ok(TemporalOutcome::Incomplete(incomplete))
-    } else if first_pending.is_some() {
-        Ok(TemporalOutcome::Pending)
-    } else {
-        Ok(TemporalOutcome::Holds)
-    };
-    ObservedRun {
-        result,
-        stopped: letters.stopped,
-        undefined: letters.undefined,
-        atom_readings: letters.atom_readings,
-        temporal_visits,
-        pending_activation: first_pending,
-    }
-}
-
 fn evaluate_observed_goal(
     package: &CheckedPackage,
     clause: &TemporalClauseNode,
@@ -293,8 +116,9 @@ fn evaluate_observed_goal(
         over,
         stopped: None,
         undefined: None,
-        atom_readings: Vec::new(),
-        missing_valuations: &[],
+        absent: &[],
+        classes: &[],
+        conflicting: &[],
     };
     let result = super::engine::run(
         super::engine::Subject::of_clause(clause.clause()),
@@ -307,15 +131,27 @@ fn evaluate_observed_goal(
         result,
         stopped: letters.stopped,
         undefined: letters.undefined,
-        atom_readings: letters.atom_readings,
-        temporal_visits: 0,
-        pending_activation: None,
     }
 }
 
-/// What [`evaluate_observed_finite_window_report`] returns: the evaluator's
-/// result and, when a condition stopped the run, why (the result is then the
-/// stop's fault).
+/// What a finite-window run reads of each atom beyond the observations.
+#[derive(Clone, Copy, Debug)]
+pub struct WindowValuations<'a> {
+    /// The `(position, atom node)` valuations absent from the admitted
+    /// observations.
+    pub absent: &'a [(u64, u64)],
+    /// The `(position, atom node)` valuations admitted with two differing
+    /// values.
+    pub conflicting: &'a [(u64, u64)],
+    /// Each formula node's atom class: a node index shared by the nodes that
+    /// are one atom (the same `holds` condition), so they read one
+    /// valuation; empty makes every node its own atom.
+    pub classes: &'a [usize],
+}
+
+/// What [`evaluate_observed_finite_window`] returns: the evaluator's result
+/// and, when a condition stopped the run, why (the result is then the stop's
+/// fault).
 #[derive(Debug)]
 pub struct ObservedWindowRun {
     /// The evaluator's result.
@@ -325,17 +161,18 @@ pub struct ObservedWindowRun {
 }
 
 /// Evaluate `clause` under the finite-window profile (FR-501) over the object
-/// environment of each admitted position of `trace`, reading the possibility
-/// sets of its atoms, and return the full result report: verdict, basis,
-/// decision support, premises and result identity. `missing` names the
-/// `(position, atom node)` valuations absent from the admitted observations.
-pub fn evaluate_observed_finite_window_report(
+/// environment of each position of `trace` in canonical order, reading the
+/// possibility sets of its atoms, and return the full result report: verdict,
+/// basis, decision support, premises and result identity. `absent` and
+/// `conflicting` name the `(position, atom node)` valuations that are absent
+/// from the admitted observations or admitted with two differing values.
+pub fn evaluate_observed_finite_window(
     package: &CheckedPackage,
     clause: &TemporalClauseNode,
     environments: &[ObjectEnvironment],
     trace: &TimestampedTrace,
     over: &ObjectReference,
-    missing: &[(u64, u64)],
+    valuations: WindowValuations<'_>,
     meter: &mut Meter,
 ) -> ObservedWindowRun {
     let mut letters = ObservedLetters {
@@ -348,8 +185,9 @@ pub fn evaluate_observed_finite_window_report(
         over,
         stopped: None,
         undefined: None,
-        atom_readings: Vec::new(),
-        missing_valuations: missing,
+        absent: valuations.absent,
+        classes: valuations.classes,
+        conflicting: valuations.conflicting,
     };
     let result = evaluate_finite_window(clause.clause(), trace, &mut letters, meter);
     ObservedWindowRun {
@@ -381,8 +219,14 @@ struct ObservedLetters<'a> {
     over: &'a ObjectReference,
     stopped: Option<HoldsStop>,
     undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
-    atom_readings: Vec<(FormulaNodeId, TemporalPosition, AtomReading)>,
-    missing_valuations: &'a [(u64, u64)],
+    /// The `(position, atom node)` valuations the finite-window input names
+    /// as absent from the admitted observation (QSpec FR-160).
+    absent: &'a [(u64, u64)],
+    /// Each node's atom class (empty: every node is its own atom).
+    classes: &'a [usize],
+    /// The `(position, atom node)` valuations at which two differing
+    /// valuations were admitted (QSpec FR-160).
+    conflicting: &'a [(u64, u64)],
 }
 
 impl ObservedLetters<'_> {
@@ -474,17 +318,6 @@ impl TemporalLetters for ObservedLetters<'_> {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
-        let missing_atom = u64::try_from(atom.index()).ok();
-        if missing_atom
-            .is_some_and(|atom| self.missing_valuations.contains(&(position.index(), atom)))
-        {
-            let cause = UndefinedCause::Kernel(quire_exact::Undefined::NoneValue);
-            self.undefined
-                .get_or_insert((atom, position, cause.clone()));
-            let reading = AtomReading::Undefined(cause);
-            self.atom_readings.push((atom, position, reading.clone()));
-            return Ok(reading);
-        }
         let objects = self.environment(position)?;
         let evaluation = self.package.evaluate_holds(
             self.clause,
@@ -499,24 +332,34 @@ impl TemporalLetters for ObservedLetters<'_> {
                 self.undefined = Some((atom, position, cause.clone()));
             }
         }
-        self.atom_readings.push((atom, position, reading.clone()));
         Ok(reading)
     }
 
-    /// A valuation the finite-window input names as absent is
-    /// [`Valuation::Missing`] (QSpec FR-160), not an undefined atom.
     fn valuation(
         &mut self,
         atom: FormulaNodeId,
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<Valuation, LetterStop> {
-        let absent = u64::try_from(atom.index())
-            .is_ok_and(|atom| self.missing_valuations.contains(&(position.index(), atom)));
-        if absent {
+        let key = u64::try_from(atom.index())
+            .map(|atom| (position.index(), atom))
+            .map_err(|_| {
+                LetterStop::Fault(InternalFault::new("temporal.observed", "atom-in-u64"))
+            })?;
+        if self.conflicting.contains(&key) {
+            return Ok(Valuation::Conflicting);
+        }
+        if self.absent.contains(&key) {
             return Ok(Valuation::Missing);
         }
         self.atom(atom, position, meter).map(Valuation::from)
+    }
+
+    fn atom_class(&self, atom: FormulaNodeId) -> usize {
+        self.classes
+            .get(atom.index())
+            .copied()
+            .unwrap_or(atom.index())
     }
 
     fn activation(

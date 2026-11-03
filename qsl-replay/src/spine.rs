@@ -79,11 +79,11 @@ pub use clause::{
     run_clause, run_clause_with_temporal_selections, temporal_batch_exit_code, ClauseArgument,
     ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
     ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
-    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, CoverComparison,
-    FiniteWindowReport, OperationName, OverObject, TemporalIndeterminateReason,
-    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
-    TemporalWindowRefusal, TimestampedCover, TimestampedMissingValuation, TimestampedObservation,
-    TimestampedOrderKey, TimestampedTraceInput, TraceInput,
+    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, FiniteWindowReport,
+    OperationName, OverObject, TemporalIndeterminateReason, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
+    TimestampedTraceInput, TraceBinding, TraceInput,
 };
 mod refinement;
 pub use refinement::{

@@ -61,44 +61,6 @@ pub struct TimedTrace {
     looping: Option<TimedLoop>,
 }
 
-/// Progress premises for a timestamped finite-window assessment.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FiniteWindowProgress {
-    watermark: Rational,
-    complete_through: Option<Rational>,
-    uncertainty_margin: Rational,
-    /// Atom nodes whose observation valuation is absent.
-    missing_valuations: Vec<(u64, u64)>,
-}
-
-impl FiniteWindowProgress {
-    /// The inclusive watermark, optional inclusive completeness boundary and
-    /// counter-cover margin for one finite-window assessment.
-    pub fn new(
-        watermark: Rational,
-        complete_through: Option<Rational>,
-        uncertainty_margin: Rational,
-        missing_valuations: Vec<(u64, u64)>,
-    ) -> Self {
-        Self {
-            watermark,
-            complete_through,
-            uncertainty_margin,
-            missing_valuations,
-        }
-    }
-
-    /// The margin added to a finite-window establishment deadline.
-    pub fn uncertainty_margin(&self) -> &Rational {
-        &self.uncertainty_margin
-    }
-
-    /// The absent atom valuations carried by this progress input.
-    pub fn missing_valuations(&self) -> &[(u64, u64)] {
-        &self.missing_valuations
-    }
-}
-
 /// The loop of a timed lasso (ADR-026 CT-2): the position its end re-enters
 /// and its total delay.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -283,16 +245,7 @@ struct Evaluator<'a> {
     stamps: &'a [Rational],
     /// The lasso's repetition past the last stamp; none for a finite prefix.
     tail: Option<Tail<'a>>,
-    /// A timestamped finite window whose full future reach is covered by both
-    /// progress and completeness. Unlike a timed prefix, it has no unknown
-    /// continuation after the last represented position.
-    closed_window: bool,
-    /// A finite-window activation needs only its root value at the anchor.
-    root_activation_only: bool,
-    /// Finite-window possibility evaluation keeps reading after an absent atom.
-    continue_after_undefined: bool,
     meter: &'a mut Meter,
-    visits: u64,
     /// The value of each formula node at each position, once computed.
     values: Vec<Vec<Tri>>,
 }
@@ -300,7 +253,6 @@ struct Evaluator<'a> {
 impl Evaluator<'_> {
     fn charge(&mut self) -> Result<(), Stop> {
         self.meter.charge(Charge::new(VISIT))?;
-        self.visits = self.visits.saturating_add(1);
         Ok(())
     }
 
@@ -346,7 +298,7 @@ impl Evaluator<'_> {
             if let Some(guard) = guard {
                 held = held.min(self.value(guard, j)?.flip(dual));
             }
-            if !self.closed_window && (acc == Tri::True || held == Tri::False) {
+            if acc == Tri::True || held == Tri::False {
                 return Ok(acc.flip(dual));
             }
         }
@@ -359,9 +311,6 @@ impl Evaluator<'_> {
             .last()
             .ok_or_else(|| broken("trace-not-empty"))?
             .sub(&here);
-        if self.closed_window {
-            return Ok(acc.flip(dual));
-        }
         if window.reaches(&last) {
             acc = acc.max(held.min(Tri::Unknown));
         }
@@ -535,7 +484,6 @@ fn read_atoms<L: TemporalLetters>(
         .map(|(index, _)| index)
         .collect();
     let mut insufficient = None;
-    let mut first_undefined = None;
     for position in 0..represented {
         let at =
             TemporalPosition::new(u64::try_from(position).map_err(|_| broken("position-in-u64"))?);
@@ -554,19 +502,13 @@ fn read_atoms<L: TemporalLetters>(
                     Tri::Unknown
                 }
                 AtomReading::Undefined(cause) => {
-                    if !evaluator.continue_after_undefined {
-                        for &atom in &atoms {
-                            if let Some(values) = evaluator.values.get_mut(atom) {
-                                values.truncate(position);
-                                values.resize(evaluator.stamps.len(), Tri::Unknown);
-                            }
+                    for &atom in &atoms {
+                        if let Some(values) = evaluator.values.get_mut(atom) {
+                            values.truncate(position);
+                            values.resize(evaluator.stamps.len(), Tri::Unknown);
                         }
-                        return Ok((Some(UndefinedEvaluation { at, cause }), insufficient));
                     }
-                    if first_undefined.is_none() {
-                        first_undefined = Some(UndefinedEvaluation { at, cause });
-                    }
-                    Tri::Unknown
+                    return Ok((Some(UndefinedEvaluation { at, cause }), insufficient));
                 }
             };
             let slot = evaluator
@@ -588,7 +530,7 @@ fn read_atoms<L: TemporalLetters>(
             }
         }
     }
-    Ok((first_undefined, insufficient))
+    Ok((None, insufficient))
 }
 
 /// Evaluate `clause`'s formula at `position` of the timed `trace`, ignoring
@@ -647,11 +589,7 @@ pub fn evaluate_timed_at<L: TemporalLetters>(
             loop_len,
             delay: &looping.delay,
         }),
-        closed_window: false,
-        root_activation_only: false,
-        continue_after_undefined: false,
         meter,
-        visits: 0,
         values: vec![vec![Tri::Unknown; stamps.len()]; formula.nodes().len()],
     };
     match evaluate(
@@ -674,158 +612,6 @@ pub fn evaluate_timed_at<L: TemporalLetters>(
     }
 }
 
-/// Evaluate one activation under the timestamped-event finite-window profile.
-/// A window closes only when both the watermark and the completeness
-/// assertion cover the clause's conservative future reach from `position`.
-/// Until then the timed-prefix evaluator preserves possible future witnesses.
-///
-/// This entry deliberately accepts only bounded timestamp intervals; other
-/// profiles and step intervals retain their existing refusal behavior.
-pub fn evaluate_finite_window_at<L: TemporalLetters>(
-    clause: &CheckedTemporalClause,
-    trace: &TimedTrace,
-    position: TemporalPosition,
-    progress: &FiniteWindowProgress,
-    letters: &mut L,
-    meter: &mut Meter,
-) -> Result<(TemporalOutcome, u64), TemporalRefusal> {
-    if clause.profile() != TemporalProfile::TimestampedEventFiniteWindow {
-        return Err(TemporalRefusal::NotTimedProfile {
-            profile: clause.profile(),
-        });
-    }
-    if trace.is_lasso() {
-        return Err(TemporalRefusal::Fault(fault(
-            "finite-window-is-not-a-lasso",
-        )));
-    }
-    let formula = clause.formula();
-    let at = usize::try_from(position.index())
-        .ok()
-        .filter(|at| *at < trace.stamps.len())
-        .ok_or(PositionRefusal::OutsideTrace { position })?;
-    let horizon = finite_future_reach(formula)?;
-    let deadline = trace.stamps[at]
-        .add(&horizon)
-        .add(&progress.uncertainty_margin);
-    let closed_window = progress.watermark >= deadline
-        && progress
-            .complete_through
-            .as_ref()
-            .is_some_and(|through| through >= &deadline);
-    let mut evaluator = Evaluator {
-        stamps: &trace.stamps,
-        tail: None,
-        closed_window,
-        root_activation_only: true,
-        continue_after_undefined: true,
-        meter,
-        visits: 0,
-        values: vec![vec![Tri::Unknown; trace.stamps.len()]; formula.nodes().len()],
-    };
-    let outcome = match evaluate(formula, &mut evaluator, letters, at, trace.stamps.len(), 0) {
-        Ok((value, undefined, insufficient)) => match (value, undefined, insufficient) {
-            (Tri::True, Some(_), _) => TemporalOutcome::Holds,
-            (Tri::False, Some(_), _) => TemporalOutcome::Violated { at: position },
-            (_, Some(undefined), _) => TemporalOutcome::Undefined(undefined),
-            (Tri::False, None, None) => TemporalOutcome::Violated { at: position },
-            (_, None, Some(insufficient)) => TemporalOutcome::InsufficientData(insufficient),
-            (Tri::True, None, None) => TemporalOutcome::Holds,
-            (Tri::Unknown, None, None) => TemporalOutcome::Pending,
-        },
-        Err(Stop::Incomplete(incomplete)) => TemporalOutcome::Incomplete(incomplete),
-        Err(Stop::Refused(refusal)) => return Err(refusal),
-    };
-    Ok((outcome, evaluator.visits))
-}
-
-/// The finite-window establishment deadline for one activation.
-pub fn finite_window_deadline(
-    clause: &CheckedTemporalClause,
-    trace: &TimedTrace,
-    position: TemporalPosition,
-    uncertainty_margin: &Rational,
-) -> Result<Rational, TemporalRefusal> {
-    if clause.profile() != TemporalProfile::TimestampedEventFiniteWindow {
-        return Err(TemporalRefusal::NotTimedProfile {
-            profile: clause.profile(),
-        });
-    }
-    let at = usize::try_from(position.index())
-        .ok()
-        .filter(|at| *at < trace.stamps.len())
-        .ok_or(PositionRefusal::OutsideTrace { position })?;
-    Ok(trace.stamps[at]
-        .add(&finite_future_reach(clause.formula())?)
-        .add(uncertainty_margin))
-}
-
-/// The greatest future-operator upper-bound sum along any formula nesting
-/// path. Past operators add no reach; their operands are still inspected.
-fn finite_future_reach(formula: &CheckedFormula) -> Result<Rational, TemporalRefusal> {
-    fn reach_at(formula: &CheckedFormula, index: usize) -> Result<Rational, TemporalRefusal> {
-        let node = formula
-            .nodes()
-            .get(index)
-            .ok_or_else(|| TemporalRefusal::Fault(fault("formula-node-exists")))?;
-        let zero = Rational::from_integer(Integer::zero());
-        let (future, children): (bool, Vec<usize>) = match node {
-            FormulaNode::Unary {
-                operator,
-                interval,
-                operand,
-            } => {
-                let future = matches!(operator, UnaryTemporal::Eventually | UnaryTemporal::Always);
-                let upper = match interval.as_ref() {
-                    Some(CheckedInterval::Timed(interval)) if future => interval.upper().clone(),
-                    Some(CheckedInterval::Steps(_)) => {
-                        return Err(TemporalRefusal::Fault(fault(
-                            "timestamped-clause-has-timed-intervals",
-                        )));
-                    }
-                    _ => zero.clone(),
-                };
-                let child = reach_at(formula, operand.index())?;
-                return Ok(upper.add(&child));
-            }
-            FormulaNode::Binary {
-                operator,
-                interval,
-                left,
-                right,
-            } => {
-                let future = matches!(operator, BinaryTemporal::Until | BinaryTemporal::Release);
-                let upper = match interval.as_ref() {
-                    Some(CheckedInterval::Timed(interval)) if future => interval.upper().clone(),
-                    Some(CheckedInterval::Steps(_)) => {
-                        return Err(TemporalRefusal::Fault(fault(
-                            "timestamped-clause-has-timed-intervals",
-                        )));
-                    }
-                    _ => zero.clone(),
-                };
-                return Ok(upper.add(
-                    &reach_at(formula, left.index())?.max(reach_at(formula, right.index())?),
-                ));
-            }
-            FormulaNode::Not(operand) => (false, vec![operand.index()]),
-            FormulaNode::And(left, right)
-            | FormulaNode::Or(left, right)
-            | FormulaNode::Implies(left, right) => (false, vec![left.index(), right.index()]),
-            FormulaNode::Constant(_)
-            | FormulaNode::Holds { .. }
-            | FormulaNode::Aggregate { .. } => {
-                return Ok(zero);
-            }
-        };
-        let _ = future;
-        children.into_iter().try_fold(zero, |max_reach, child| {
-            Ok(max_reach.max(reach_at(formula, child)?))
-        })
-    }
-    reach_at(formula, formula.root().index())
-}
-
 /// The value of `formula`'s root at `at`, and the first undefined atom.
 /// The arena puts an operator before its operands, so a reverse pass values
 /// every operand first.
@@ -846,18 +632,11 @@ fn evaluate<L: TemporalLetters>(
 > {
     let (undefined, insufficient) =
         read_atoms(formula, evaluator, letters, represented, loop_start)?;
-    let root = formula.root().index();
     for (index, node) in formula.nodes().iter().enumerate().rev() {
         if matches!(node, FormulaNode::Holds { .. }) {
             continue;
         }
-        let positions: Box<dyn Iterator<Item = usize>> =
-            if evaluator.root_activation_only && index == root {
-                Box::new(std::iter::once(at))
-            } else {
-                Box::new(0..evaluator.stamps.len())
-            };
-        for position in positions {
+        for position in 0..evaluator.stamps.len() {
             let value = evaluator.node(node, position)?;
             let slot = evaluator
                 .values

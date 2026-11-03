@@ -113,6 +113,14 @@ pub trait TemporalLetters {
         self.atom(atom, position, meter).map(Valuation::from)
     }
 
+    /// The atom `atom` stands for under the finite-window profile: nodes that
+    /// are the same atom (the same `holds` condition) return one value, a node
+    /// index, and share one valuation at a position (QSpec FR-160). The
+    /// default makes every node its own atom.
+    fn atom_class(&self, atom: FormulaNodeId) -> usize {
+        atom.index()
+    }
+
     /// The `when` condition of an `on each` activation at the represented
     /// `position`. Called only for a clause whose activation has one.
     fn activation(

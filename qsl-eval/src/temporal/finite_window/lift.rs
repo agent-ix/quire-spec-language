@@ -160,6 +160,8 @@ pub(super) struct Variant {
 /// What a lifting reads: the plan, the atoms read and the scans visited.
 pub(super) struct Lifter<'a> {
     pub(super) plan: &'a Plan,
+    /// Each node's atom class (itself unless another node is the same atom).
+    pub(super) classes: &'a [usize],
     pub(super) cells: &'a HashMap<(usize, usize), Cell>,
     pub(super) frames: &'a HashMap<(usize, usize), ScanFrame>,
 }
@@ -200,14 +202,15 @@ impl Lifter<'_> {
                 }
             }
             Node::Atom => {
+                let class = self.classes.get(node).copied().unwrap_or(node);
                 let fixed = variant
                     .fixed
                     .iter()
-                    .find(|(key, _)| *key == (position, node))
+                    .find(|(key, _)| *key == (position, class))
                     .map(|(_, poss)| *poss);
                 match fixed {
                     Some(poss) => poss,
-                    None => self.cells.get(&(position, node))?.poss(),
+                    None => self.cells.get(&(position, class))?.poss(),
                 }
             }
             Node::Not(inner) => operand(inner, position)?.not(),
@@ -283,10 +286,10 @@ impl Lifter<'_> {
                 matches!(self.plan.nodes.get(*node), Some(Node::Atom))
                     && self
                         .cells
-                        .get(&(*position, *node))
+                        .get(&(*position, self.classes.get(*node).copied().unwrap_or(*node)))
                         .is_some_and(|cell| cell.ambiguous())
             })
-            .map(|(node, position)| (*position, *node))
+            .map(|(node, position)| (*position, self.classes.get(*node).copied().unwrap_or(*node)))
             .collect();
         ambiguous.sort_unstable();
         ambiguous.dedup();

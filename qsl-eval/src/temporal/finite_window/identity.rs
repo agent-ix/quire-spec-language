@@ -64,7 +64,7 @@ impl Encode for Preimage<'_> {
             match &position.order_key {
                 Some(key) => {
                     writer.string(&key.authority)?;
-                    count(writer, u128::from(key.key))?;
+                    writer.integer(i128::from(key.key))?;
                 }
                 None => writer.null()?,
             }

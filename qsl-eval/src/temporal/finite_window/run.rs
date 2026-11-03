@@ -94,9 +94,15 @@ struct Run<'a, L: TemporalLetters> {
     letters: &'a mut L,
     meter: &'a mut Meter,
     visited: HashSet<(usize, usize)>,
+    /// The atom each node stands for: nodes whose conditions are the same
+    /// atom share one valuation at a position (QSpec FR-160).
+    classes: Vec<usize>,
+    /// The valuations read, by (position, atom class).
     cells: HashMap<(usize, usize), Cell>,
     undefined: BTreeMap<(usize, usize), UndefinedCause>,
     frames: HashMap<(usize, usize), ScanFrame>,
+    /// The `temporal.visit` charges admitted so far.
+    visits: u64,
 }
 
 /// Evaluate `clause`, selected under
@@ -128,6 +134,15 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
     }
     let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
     let reach = reaches(&plan).map_err(TemporalRefusal::Fault)?;
+    let classes = (0..plan.nodes.len())
+        .map(|index| {
+            let atom = matches!(plan.nodes.get(index), Some(Node::Atom));
+            match clause.formula().node_id(index) {
+                Some(id) if atom => letters.atom_class(id),
+                _ => index,
+            }
+        })
+        .collect();
     let mut run = Run {
         clause,
         trace,
@@ -143,9 +158,11 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
         letters,
         meter,
         visited: HashSet::new(),
+        classes,
         cells: HashMap::new(),
         undefined: BTreeMap::new(),
         frames: HashMap::new(),
+        visits: 0,
     };
     let mut done = Vec::new();
     let tail = match run.activations(&mut done) {
@@ -210,7 +227,13 @@ fn position_of(index: usize) -> Result<TemporalPosition, InternalFault> {
 impl<L: TemporalLetters> Run<'_, L> {
     fn charge(&mut self) -> Result<(), Stop> {
         self.meter.charge(Charge::new(VISIT))?;
+        self.visits = self.visits.saturating_add(1);
         Ok(())
+    }
+
+    /// The atom class of `node`: itself unless another node is the same atom.
+    fn class(&self, node: usize) -> usize {
+        self.classes.get(node).copied().unwrap_or(node)
     }
 
     fn stamp(&self, position: usize) -> Result<i128, InternalFault> {
@@ -256,11 +279,11 @@ impl<L: TemporalLetters> Run<'_, L> {
                 }
             }
             let closure = self.demand(anchor)?;
-            if let Some((&(position, _), cause)) = self
-                .undefined
-                .iter()
-                .find(|(key, _)| closure.contains(&(key.1, key.0)))
-            {
+            if let Some((&(position, _), cause)) = self.undefined.iter().find(|(key, _)| {
+                closure
+                    .iter()
+                    .any(|(node, at)| *at == key.0 && self.class(*node) == key.1)
+            }) {
                 return Err(Stop::Undefined(UndefinedEvaluation {
                     at: position_of(position)?,
                     cause: cause.clone(),
@@ -330,6 +353,10 @@ impl<L: TemporalLetters> Run<'_, L> {
             .node_id(node)
             .ok_or_else(|| fault("atom-has-node-id"))?;
         let at = position_of(position)?;
+        let node = self.class(node);
+        if self.cells.contains_key(&(position, node)) {
+            return Ok(());
+        }
         match self.letters.valuation(id, at, &mut *self.meter)? {
             Valuation::True => {
                 self.cells.insert((position, node), Cell::True);
@@ -452,6 +479,7 @@ impl<L: TemporalLetters> Run<'_, L> {
     fn lifter(&self) -> Lifter<'_> {
         Lifter {
             plan: &self.plan,
+            classes: &self.classes,
             cells: &self.cells,
             frames: &self.frames,
         }
@@ -534,9 +562,9 @@ impl<L: TemporalLetters> Run<'_, L> {
             .filter(|(node, _)| matches!(self.plan.nodes.get(*node), Some(Node::Atom)))
             .filter_map(|(node, position)| {
                 self.cells
-                    .get(&(*position, *node))
+                    .get(&(*position, self.class(*node)))
                     .filter(|cell| cell.ambiguous())
-                    .map(|cell| (*position, *node, *cell))
+                    .map(|cell| (*position, self.class(*node), *cell))
             })
             .collect();
         cells.sort_unstable_by_key(|(position, node, _)| (*position, *node));
@@ -634,7 +662,7 @@ impl<L: TemporalLetters> Run<'_, L> {
         atoms.dedup();
         let mut pairs: Vec<(usize, usize)> = Vec::new();
         for &(position, node) in &atoms {
-            let Some(cell) = self.cells.get(&(position, node)) else {
+            let Some(cell) = self.cells.get(&(position, self.class(node))) else {
                 continue;
             };
             let perturbed: &[Poss] = match cell {
@@ -644,7 +672,7 @@ impl<L: TemporalLetters> Run<'_, L> {
             };
             let valuation = perturbed.iter().any(|poss| {
                 changes(&Variant {
-                    fixed: vec![((position, node), *poss)],
+                    fixed: vec![((position, self.class(node)), *poss)],
                     ..Variant::default()
                 })
             });
@@ -784,6 +812,7 @@ impl<L: TemporalLetters> Run<'_, L> {
                 unit: self.trace.clock.unit.clone(),
             },
             identity,
+            visits: self.visits,
         })
     }
 }

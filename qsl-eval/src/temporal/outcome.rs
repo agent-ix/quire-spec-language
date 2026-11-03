@@ -127,6 +127,16 @@ pub enum TemporalRefusal {
         /// The clause's profile.
         profile: TemporalProfile,
     },
+    /// A `Finite` or `Lasso` trace handed to a clause under the finite-window
+    /// profile, which reads the stamps of a timestamped trace (FR-501 "Entry
+    /// through the spine").
+    #[error(
+        "{profile:?} reads the stamps of a timestamped trace, which this trace does not carry"
+    )]
+    TraceCarriesNoStamps {
+        /// The clause's profile.
+        profile: TemporalProfile,
+    },
     /// A clause handed to the finite-window evaluator that was not checked
     /// under the timestamped-event finite-window profile (FR-501).
     #[error("the finite-window evaluator reads a clause under the timestamped-event finite-window profile, not {profile:?}")]
@@ -199,6 +209,7 @@ impl TemporalRefusal {
             | Self::NonPositiveLoopDelay
             | Self::LoopReentersBeforeLastStamp
             | Self::NotFiniteWindowProfile { .. }
+            | Self::TraceCarriesNoStamps { .. }
             | Self::UnorderedTie { .. }
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
             Self::AlignSkipNotLockstep

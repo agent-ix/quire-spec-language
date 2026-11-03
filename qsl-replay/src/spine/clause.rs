@@ -30,8 +30,8 @@ use quire_semantic_value::catalog::InternalFault;
 
 mod temporal;
 pub use temporal::{
-    CoverComparison, FiniteWindowReport, OverObject, TimestampedCover, TimestampedMissingValuation,
-    TimestampedObservation, TimestampedOrderKey, TimestampedTraceInput, TraceInput,
+    FiniteWindowReport, OverObject, TimestampedMissingValuation, TimestampedObservation,
+    TimestampedOrderKey, TimestampedTraceInput, TraceBinding, TraceInput,
 };
 
 use super::call::{convert_call_failure, convert_outcome, select};
@@ -466,53 +466,72 @@ pub enum TemporalVerdict {
 }
 
 impl TemporalVerdict {
-    /// The ADR-013 O-16 category of this verdict (FR-327 "Results").
-    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+    /// FR-285's category of this verdict, as the temporal run path names it:
+    /// the one mapping that [`Self::category`], [`Self::category_label`] and
+    /// [`Self::exit_code`] all read.
+    fn temporal_category(&self) -> TemporalCategory {
         use quire_semantic_value::catalog::Category;
         match self {
-            Self::Holds => Category::Success,
+            Self::Holds => TemporalCategory::Shared(Category::Success),
             Self::Undefined {
                 cause: TemporalUndefinedCause::InsufficientData { .. },
                 ..
-            } => Category::Undefined,
-            Self::Violated { .. } | Self::Undefined { .. } => Category::Violation,
-            Self::Pending | Self::PendingWindow { .. } | Self::Indeterminate { .. } => {
-                Category::Inconclusive
+            } => TemporalCategory::Shared(Category::Undefined),
+            Self::Violated { .. } | Self::Undefined { .. } => {
+                TemporalCategory::Shared(Category::Violation)
             }
-            Self::MissingFairnessPremise { .. } => Category::Unsupported,
-            Self::Incomplete(_) | Self::WindowLimitReached { .. } => Category::Incomplete,
+            Self::Pending | Self::PendingWindow { .. } => TemporalCategory::Pending,
+            Self::Indeterminate { .. } => TemporalCategory::Indeterminate,
+            Self::MissingFairnessPremise { .. } => TemporalCategory::Shared(Category::Unsupported),
+            Self::Incomplete(_) | Self::WindowLimitReached { .. } => {
+                TemporalCategory::Shared(Category::Incomplete)
+            }
         }
     }
 
-    /// Stable QSL category spelling, including temporal-only categories that
-    /// are not yet variants of the shared value catalog.
+    /// The ADR-013 O-16 category of this verdict (FR-327 "Results"), in the
+    /// shared catalog's eight values. The catalog has no `pending` and no
+    /// `indeterminate` (IR-1281): until it does, a pending result is
+    /// `inconclusive` (its trace exit is 0) and an indeterminate one
+    /// `undefined`, the nearest value that ranks below a violation. Callers
+    /// that need FR-285's categories and exits read
+    /// [`Self::category_label`] and [`Self::exit_code`].
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+        use quire_semantic_value::catalog::Category;
+        match self.temporal_category() {
+            TemporalCategory::Shared(category) => category,
+            TemporalCategory::Pending => Category::Inconclusive,
+            TemporalCategory::Indeterminate => Category::Undefined,
+        }
+    }
+
+    /// FR-285's category spelling, including `pending` and `indeterminate`.
     pub fn category_label(&self) -> &'static str {
-        match self {
-            Self::Holds => "success",
-            Self::Violated { .. } => "violation",
-            Self::Undefined {
-                cause: TemporalUndefinedCause::InsufficientData { .. },
-                ..
-            } => "undefined",
-            Self::Undefined { .. } => "violation",
-            Self::Pending | Self::PendingWindow { .. } => "pending",
-            Self::Indeterminate { .. } => "indeterminate",
-            Self::MissingFairnessPremise { .. } => "unsupported",
-            Self::Incomplete(_) | Self::WindowLimitReached { .. } => "incomplete",
+        match self.temporal_category() {
+            TemporalCategory::Shared(category) => category.as_str(),
+            TemporalCategory::Pending => "pending",
+            TemporalCategory::Indeterminate => "indeterminate",
         }
     }
 
-    /// FR-285's process exit for a temporal verdict, including the
-    /// finite-window `indeterminate` category absent from the shared catalog.
-    pub const fn exit_code(&self) -> u8 {
-        match self {
-            Self::Holds | Self::Pending | Self::PendingWindow { .. } => 0,
-            Self::Violated { .. } | Self::Undefined { .. } => 10,
-            Self::Indeterminate { .. } => 11,
-            Self::MissingFairnessPremise { .. } => 21,
-            Self::Incomplete(_) | Self::WindowLimitReached { .. } => 22,
+    /// FR-285's process exit: 0 for pending, 11 for indeterminate and the
+    /// shared category's exit otherwise (a supplied-trace clause still
+    /// pending exits 0).
+    pub fn exit_code(&self) -> u8 {
+        match self.temporal_category() {
+            TemporalCategory::Shared(category) => category.trace_exit_code(),
+            TemporalCategory::Pending => 0,
+            TemporalCategory::Indeterminate => 11,
         }
     }
+}
+
+/// FR-285's categories of a temporal verdict: the shared catalog's, and the
+/// two it lacks (IR-1281).
+enum TemporalCategory {
+    Shared(quire_semantic_value::catalog::Category),
+    Pending,
+    Indeterminate,
 }
 
 /// Why closed finite-window evidence cannot determine a Boolean result.
@@ -524,6 +543,12 @@ pub enum TemporalIndeterminateReason {
         position: u64,
         /// Atom whose valuation is absent.
         atom: String,
+        /// The assessed instance, set only for an instance-bound atom of an
+        /// evidence call (FR-524); `None` otherwise.
+        instance: Option<String>,
+        /// The other instances that hold a valuation of the atom at the
+        /// position; empty unless `instance` is set.
+        also_held_by: Vec<String>,
     },
     /// Conflicting atom valuations were admitted at one position.
     ConflictingValuation {

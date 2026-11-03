@@ -152,6 +152,18 @@ impl Unit {
     }
 }
 
+/// The binding a trace of the `Window` clause asserts (FR-522): its profile,
+/// clock name and clock parameters.
+fn finite_window_binding() -> crate::spine::TraceBinding {
+    crate::spine::TraceBinding {
+        profile: "quire.temporal.timestamped-event.finite-window/v1".to_owned(),
+        clock_name: "ms".to_owned(),
+        parameters: qsl_package::ClockConfiguration::TimestampedEvent {
+            timestamp_unit: "ms".into(),
+        },
+    }
+}
+
 /// `Window` over timestamped finite-window positions.
 fn timestamped(
     stamps: &[u64],
@@ -192,10 +204,12 @@ fn timestamped_with(
                     .collect(),
                 watermark,
                 complete_through,
+                binding: Some(finite_window_binding()),
                 scope_closed: true,
                 execution_closed: true,
-                cover: crate::spine::TimestampedCover::Exact,
+                cover: qsl_eval::temporal::ClockCover::Exact,
                 missing_valuations: Vec::new(),
+                conflicting_valuations: Vec::new(),
                 authoritative_origin: true,
             }),
             over: over("c1"),
@@ -1425,10 +1439,12 @@ fn timestamped_profile_and_trace_shape_must_match() {
                     .collect(),
                 watermark: 0,
                 complete_through: Some(0),
+                binding: Some(finite_window_binding()),
                 scope_closed: true,
                 execution_closed: true,
-                cover: crate::spine::TimestampedCover::Exact,
+                cover: qsl_eval::temporal::ClockCover::Exact,
                 missing_valuations: Vec::new(),
+                conflicting_valuations: Vec::new(),
                 authoritative_origin: true,
             }),
             over: over("c1"),
@@ -1475,7 +1491,9 @@ fn finite_window_report_preserves_pending_and_indeterminate_exit_classes() {
         at: 0,
         reason: crate::spine::TemporalIndeterminateReason::MissingValuation {
             position: 1,
-            atom: "holds-node@1".to_owned(),
+            atom: "holds(c.value > 0)".to_owned(),
+            instance: None,
+            also_held_by: Vec::new(),
         },
     };
     let outcomes = [indeterminate.clone(), TemporalVerdict::Violated { at: 0 }];
@@ -1490,36 +1508,54 @@ fn finite_window_report_preserves_pending_and_indeterminate_exit_classes() {
 #[trace("TC-1295", "FR-501-AC-9")]
 #[test]
 fn timestamped_counter_cover_uses_half_open_boundary_rules() {
-    use crate::spine::{CoverComparison, TimestampedCover};
+    use qsl_eval::temporal::{ClockCover, Containment};
 
-    let exact = TimestampedCover::Exact;
-    let counter0 = TimestampedCover::Counter { uncertainty: 0 };
-    let counter1 = TimestampedCover::Counter { uncertainty: 1 };
-    assert_eq!(exact.within_bound(0, 3000, 3000), CoverComparison::True);
-    assert_eq!(counter0.within_bound(0, 2998, 3000), CoverComparison::True);
-    assert_eq!(
-        counter0.within_bound(0, 3000, 3000),
-        CoverComparison::StraddlesBound
-    );
-    assert_eq!(counter0.within_bound(0, 3001, 3000), CoverComparison::False);
-    assert_eq!(counter1.within_bound(0, 2997, 3000), CoverComparison::True);
-    assert_eq!(
-        counter1.within_bound(0, 2998, 3000),
-        CoverComparison::StraddlesBound
-    );
-    assert_eq!(counter1.within_bound(0, 3003, 3000), CoverComparison::False);
-    assert!(counter0.definitely_before(5, 6));
-    assert!(!counter0.definitely_before(5, 5));
-    assert!(counter0.definitely_before(5, 7));
-    assert!(!counter1.definitely_before(5, 6));
-    assert_eq!(
-        counter0.within_bound(7, 7, 0),
-        CoverComparison::StraddlesBound
-    );
-    assert_eq!(counter0.within_bound(7, 7, 1), CoverComparison::True);
-    assert_eq!(counter0.within_bound(7, 7, -1), CoverComparison::False);
+    let exact = ClockCover::Exact;
+    let counter0 = ClockCover::Counter { uncertainty: 0 };
+    let counter1 = ClockCover::Counter { uncertainty: 1 };
+    // Every vector of QSpec's tick-cover file, read at test time: the
+    // expected value of each is the file's.
+    if let Some(qspec) = std::env::var_os("QSPEC_DIR") {
+        let path = std::path::Path::new(&qspec)
+            .join("proposals/checked-package-v2/tick-cover-vectors.json");
+        let document: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("the vectors read"))
+                .expect("the vectors parse");
+        let cases = document["cases"].as_array().expect("cases");
+        assert_eq!(cases.len(), 15);
+        for case in cases {
+            let id = case["id"].as_str().expect("id");
+            let cover = ClockCover::Counter {
+                uncertainty: case["uncertainty"].as_u64().expect("uncertainty"),
+            };
+            match case["kind"].as_str().expect("kind") {
+                "within_bound" => {
+                    let got = cover.within_bound(
+                        case["bound"].as_i64().expect("bound"),
+                        case["request_tick"].as_u64().expect("request"),
+                        case["ack_tick"].as_u64().expect("ack"),
+                    );
+                    let want = match case["expected"].as_str().expect("expected") {
+                        "true" => Containment::True,
+                        "false" => Containment::False,
+                        _ => Containment::Indeterminate,
+                    };
+                    assert_eq!(got, want, "{id}");
+                }
+                _ => assert_eq!(
+                    cover.definitely_before(
+                        case["a_tick"].as_u64().expect("a"),
+                        case["b_tick"].as_u64().expect("b"),
+                    ),
+                    case["expected"].as_bool().expect("expected"),
+                    "{id}"
+                ),
+            }
+        }
+    }
+    assert_eq!(exact.within_bound(0, 3000, 3000), Containment::True);
 
-    fn request(ack_tick: u64, cover: TimestampedCover) -> ClauseRunRequest {
+    fn request(ack_tick: u64, cover: ClockCover) -> ClauseRunRequest {
         let mut request = timestamped(&[0, ack_tick], &[1, 2], ack_tick.max(3_010), Some(3_010));
         let ClauseRunSource::Program { bytes, .. } = &mut request.source;
         let source = String::from_utf8(bytes.clone()).unwrap();
@@ -1607,7 +1643,9 @@ fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
             at: 0,
             reason: crate::spine::TemporalIndeterminateReason::MissingValuation {
                 position: 1,
-                atom: "holds-node@1".to_owned(),
+                atom: "holds(c.value > 0)".to_owned(),
+                instance: None,
+                also_held_by: Vec::new(),
             },
         }
     );
@@ -1617,19 +1655,39 @@ fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
     );
     assert_eq!(outcome(&missing(&[0, 2, 1], 5)), &TemporalVerdict::Holds);
 
-    let conflicting = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 0], 5, Some(5)));
+    // Two legal events at one stamp are not a conflict: an event that holds
+    // the atom settles the existential whatever the other reads.
+    let same_stamp = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 0], 5, Some(5)));
+    assert_eq!(outcome(&same_stamp), &TemporalVerdict::Holds);
+    // A conflict is two differing valuations admitted at one position.
+    let conflicting = |values: &[i64]| {
+        let mut request = timestamped(&[0, 2, 5], values, 5, Some(5));
+        let ClauseRunSelection::Temporal {
+            trace: TraceInput::Timestamped(trace),
+            ..
+        } = &mut request.selection
+        else {
+            unreachable!()
+        };
+        trace
+            .conflicting_valuations
+            .push(crate::spine::TimestampedMissingValuation {
+                position: 1,
+                atom: 1,
+            });
+        report(request)
+    };
     assert_eq!(
-        outcome(&conflicting),
+        outcome(&conflicting(&[0, 0, 0])),
         &TemporalVerdict::Indeterminate {
             at: 0,
             reason: crate::spine::TemporalIndeterminateReason::ConflictingValuation {
                 position: 1,
-                atom: "holds-node@1".to_owned(),
+                atom: "holds(c.value > 0)".to_owned(),
             },
         }
     );
-    let later_witness = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 1], 5, Some(5)));
-    assert_eq!(outcome(&later_witness), &TemporalVerdict::Holds);
+    assert_eq!(outcome(&conflicting(&[0, 0, 1])), &TemporalVerdict::Holds);
 }
 
 /// FR-501-AC-12 (TC-1295): a closed `[0,5]` existential on stamps 0,2,5
@@ -1648,19 +1706,23 @@ fn timestamped_window_charges_exact_visits_and_stops_on_the_denied_visit() {
         .map(|(_, consumed)| *consumed)
         .unwrap();
 
-    let mut six = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
-    six.accounting.work_units = work - 1;
-    let six = report(six);
-    assert!(
-        matches!(
-            outcome(&six),
-            TemporalVerdict::Incomplete(incomplete)
-                if incomplete.charge_point == quire_exact::ChargePoint::TemporalVisit
-        ),
-        "{:?}",
-        six.disposition
-    );
-    assert_eq!(six.usage.temporal_visits, 6);
+    // Every ceiling below the run's work denies a charge and returns no truth
+    // value; a ceiling of zero denies the first, a `temporal.visit`.
+    for ceiling in 0..work {
+        let mut starved = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
+        starved.accounting.work_units = ceiling;
+        let starved = report(starved);
+        let TemporalVerdict::Incomplete(incomplete) = outcome(&starved) else {
+            panic!("ceiling {ceiling}: {:?}", starved.disposition);
+        };
+        assert_eq!(starved.disposition.truth(), None);
+        if ceiling == 0 {
+            assert_eq!(
+                incomplete.charge_point,
+                quire_exact::ChargePoint::TemporalVisit
+            );
+        }
+    }
 
     let mut seven = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
     seven.accounting.work_units = work;
@@ -1886,7 +1948,7 @@ fn timestamped_counter_margin_delays_establishment() {
     fn handshake(
         watermark: u64,
         through: u64,
-        cover: crate::spine::TimestampedCover,
+        cover: qsl_eval::temporal::ClockCover,
     ) -> ClauseRunReport {
         let mut request = timestamped(&[0], &[1], watermark, Some(through));
         let ClauseRunSource::Program { bytes, .. } = &mut request.source;
@@ -1899,7 +1961,7 @@ fn timestamped_counter_margin_delays_establishment() {
             .into_bytes();
         report(timestamped_changed(request, |trace| trace.cover = cover))
     }
-    let counter = crate::spine::TimestampedCover::Counter { uncertainty: 1 };
+    let counter = qsl_eval::temporal::ClockCover::Counter { uncertainty: 1 };
     assert_eq!(
         outcome(&handshake(3_001, 3_002, counter)),
         &TemporalVerdict::PendingWindow {
@@ -1915,7 +1977,7 @@ fn timestamped_counter_margin_delays_establishment() {
         outcome(&handshake(
             3_000,
             3_000,
-            crate::spine::TimestampedCover::Exact
+            qsl_eval::temporal::ClockCover::Exact
         )),
         &TemporalVerdict::Violated { at: 0 }
     );
@@ -2070,7 +2132,7 @@ fn timestamped_result_identity_follows_every_input() {
     record(
         "cover",
         timestamped_changed(base(), |trace| {
-            trace.cover = crate::spine::TimestampedCover::Counter { uncertainty: 0 };
+            trace.cover = qsl_eval::temporal::ClockCover::Counter { uncertainty: 0 };
         }),
     );
     record(
@@ -2133,11 +2195,12 @@ fn timestamped_result_identity_follows_every_input() {
 }
 
 /// FR-501-AC-17 (TC-1295 row 31): completeness may run ahead of the
-/// watermark; an empty trace and a trace whose stamps decrease are refused at
-/// stage `admit`, `invalid_runtime_input`/`invalid-value`.
+/// watermark; an empty trace is refused at stage `admit`,
+/// `invalid_runtime_input`/`invalid-value`; a listing whose stamps decrease is
+/// read in canonical order, not refused.
 #[trace("TC-1295", "FR-501-AC-17")]
 #[test]
-fn timestamped_completeness_may_run_ahead_and_malformed_traces_are_refused() {
+fn timestamped_completeness_may_run_ahead_and_an_empty_trace_is_refused() {
     let ahead = report(timestamped(&[0, 2, 5], &[0, 0, 0], 5, Some(9)));
     assert_eq!(outcome(&ahead), &TemporalVerdict::Violated { at: 0 });
     let short = report(timestamped(&[0, 2, 5], &[0, 0, 0], 3, Some(9)));
@@ -2145,18 +2208,327 @@ fn timestamped_completeness_may_run_ahead_and_malformed_traces_are_refused() {
         outcome(&short),
         &TemporalVerdict::PendingWindow { at: 0, deadline: 5 }
     );
-    for (stamps, values) in [(&[][..], &[][..]), (&[0, 5, 2][..], &[0, 0, 0][..])] {
-        let refused = report(timestamped(stamps, values, 5, Some(5)));
+    let refused = report(timestamped(&[], &[], 5, Some(5)));
+    assert_eq!(refused.disposition.stage(), ClauseRunStage::Admit);
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &refused.disposition else {
+        panic!(
+            "expected an admission refusal, got {:?}",
+            refused.disposition
+        );
+    };
+    assert_eq!(record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.catalog.cause(), "invalid-value");
+    assert_eq!(refused.usage.temporal_visits, 0);
+    let decreasing = report(timestamped(&[0, 5, 2], &[0, 0, 0], 5, Some(5)));
+    assert_eq!(outcome(&decreasing), &TemporalVerdict::Violated { at: 0 });
+}
+
+/// `request` with the positions of its timestamped trace listed in `order`.
+fn listed_in(request: ClauseRunRequest, order: &[usize]) -> ClauseRunRequest {
+    timestamped_changed(request, |trace| {
+        let listed = trace.positions.clone();
+        trace.positions = order.iter().map(|index| listed[*index].clone()).collect();
+    })
+}
+
+/// FR-501-AC-18 (TC-1295 row 32): the outcome, decision support and
+/// `result_identity` do not depend on the listing order.
+#[trace("TC-1295", "FR-501-AC-18")]
+#[test]
+fn timestamped_listing_order_changes_neither_outcome_support_nor_identity() {
+    let base = || {
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 2, 5],
+            &[1, 0, 1],
+            5,
+            Some(5),
+        )
+    };
+    let canonical = report(base());
+    for order in [[2, 0, 1], [1, 2, 0], [2, 1, 0], [1, 0, 2]] {
+        let listed = report(listed_in(base(), &order));
+        assert_eq!(outcome(&listed), outcome(&canonical), "{order:?}");
+        assert_eq!(
+            window_report(&listed),
+            window_report(&canonical),
+            "{order:?}"
+        );
+    }
+}
+
+/// FR-501-AC-19 (TC-1295 row 33): positions and support are indices in
+/// canonical order, not in the listed order.
+#[trace("TC-1295", "FR-501-AC-19")]
+#[test]
+fn timestamped_positions_are_canonical_indices() {
+    let listed = report(listed_in(
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 2, 5],
+            &[1, 0, 1],
+            5,
+            Some(5),
+        ),
+        &[2, 0, 1],
+    ));
+    assert_eq!(outcome(&listed), &TemporalVerdict::Violated { at: 0 });
+    let support: Vec<u64> = window_report(&listed)
+        .support
+        .iter()
+        .map(|pair| pair.position.index())
+        .collect();
+    assert_eq!(support, vec![1]);
+}
+
+/// FR-501-AC-20 (TC-1295 row 34): the `until` of AC-7 over keys from one
+/// authority gives one outcome for the listed order and for its reverse.
+#[trace("TC-1295", "FR-501-AC-20")]
+#[test]
+fn timestamped_until_over_one_authority_is_the_same_reversed() {
+    let until = || {
+        let mut request = timestamped_with(Unit::Timestamped, &[0, 1, 1], &[1, 0, 2], 1, Some(1));
+        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let source = String::from_utf8(bytes.clone()).unwrap();
+        *bytes = source
+            .replace(
+                "eventually[0,5] holds(c.value > 0)",
+                "holds(c.value > 0) until[0,1] holds(c.value = 2)",
+            )
+            .into_bytes();
+        timestamped_changed(request, |trace| {
+            for (index, position) in trace.positions.iter_mut().enumerate() {
+                position.order = Some(crate::spine::TimestampedOrderKey {
+                    authority: "ledger".to_owned(),
+                    key: i64::try_from(index).unwrap(),
+                });
+            }
+        })
+    };
+    let forward = report(until());
+    let backward = report(listed_in(until(), &[2, 1, 0]));
+    assert_eq!(outcome(&forward), outcome(&backward));
+    assert_eq!(window_report(&forward), window_report(&backward));
+}
+
+/// FR-501-AC-21 (TC-1295 row 35): four observations at one stamp, keyed A1,
+/// A2 (authority A), B1 (authority B) and none, listed in three orders, give
+/// one canonical order and one `result_identity`.
+#[trace("TC-1295", "FR-501-AC-21")]
+#[test]
+fn timestamped_mixed_authorities_have_one_canonical_order() {
+    // Listed A1, A2, B1, none; the B1 observation alone is false, so its
+    // canonical index (2) is the support position under every listing.
+    let base = || {
+        timestamped_changed(
+            timestamped_with(
+                Unit::TimestampedAlwaysFive,
+                &[0, 0, 0, 0],
+                &[1, 1, 0, 1],
+                5,
+                Some(5),
+            ),
+            |trace| {
+                let keys = [Some(("A", 1)), Some(("A", 2)), Some(("B", 1)), None];
+                for (position, key) in trace.positions.iter_mut().zip(keys) {
+                    position.order =
+                        key.map(|(authority, key)| crate::spine::TimestampedOrderKey {
+                            authority: authority.to_owned(),
+                            key,
+                        });
+                }
+            },
+        )
+    };
+    let canonical = report(base());
+    let support: Vec<u64> = window_report(&canonical)
+        .support
+        .iter()
+        .map(|pair| pair.position.index())
+        .collect();
+    assert_eq!(support, vec![2]);
+    for order in [[3, 2, 1, 0], [1, 3, 0, 2], [2, 0, 3, 1]] {
+        let listed = report(listed_in(base(), &order));
+        assert_eq!(outcome(&listed), outcome(&canonical), "{order:?}");
+        assert_eq!(
+            window_report(&listed),
+            window_report(&canonical),
+            "{order:?}"
+        );
+    }
+}
+
+/// FR-330-AC-11 (TC-1317): a timestamped request with no binding, or whose
+/// binding asserts another profile or clock name, is refused at stage `admit`,
+/// `invalid_runtime_input`/`invalid-value`, naming the first differing
+/// dimension, before any position is visited.
+#[trace("TC-1295", "FR-330-AC-9")]
+#[trace("TC-1317", "FR-330-AC-11")]
+#[test]
+fn timestamped_binding_is_required_and_authenticated() {
+    let refusal = |request: ClauseRunRequest| {
+        let refused = report(request);
         assert_eq!(refused.disposition.stage(), ClauseRunStage::Admit);
-        let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &refused.disposition
+        assert_eq!(refused.usage.temporal_visits, 0);
+        assert_eq!(refused.usage.admission_consumed.objects, 0);
+        let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = refused.disposition
         else {
-            panic!(
-                "expected an admission refusal, got {:?}",
-                refused.disposition
-            );
+            panic!("expected an admission refusal");
         };
         assert_eq!(record.catalog.code(), "invalid_runtime_input");
         assert_eq!(record.catalog.cause(), "invalid-value");
-        assert_eq!(refused.usage.temporal_visits, 0);
+        record.fields
+    };
+    let base = || timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
+    assert!(refusal(timestamped_changed(base(), |trace| trace.binding = None)).is_empty());
+    let clock = refusal(timestamped_changed(base(), |trace| {
+        trace.binding.as_mut().unwrap().clock_name = "us".to_owned();
+    }));
+    assert_eq!(
+        clock.get("mismatched_dimension").map(String::as_str),
+        Some("Clock")
+    );
+    assert_eq!(clock.get("asserted").map(String::as_str), Some("us"));
+    assert_eq!(clock.get("expected").map(String::as_str), Some("ms"));
+    // Both differ: the first dimension in order, `Profile`, is reported, and
+    // it is reported even for an empty trace.
+    let profile = refusal(timestamped_changed(
+        timestamped(&[], &[], 5, Some(5)),
+        |trace| {
+            let binding = trace.binding.as_mut().unwrap();
+            binding.clock_name = "us".to_owned();
+            binding.profile = "quire.temporal.infinite-trace/v1".to_owned();
+        },
+    ));
+    assert_eq!(
+        profile.get("mismatched_dimension").map(String::as_str),
+        Some("Profile")
+    );
+    // An agreeing binding runs.
+    assert_eq!(outcome(&report(base())), &TemporalVerdict::Holds);
+}
+
+/// `request` with its `Window` clause body replaced by `body`.
+fn with_clause_body(mut request: ClauseRunRequest, body: &str) -> ClauseRunRequest {
+    let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+    let source = String::from_utf8(bytes.clone()).unwrap();
+    let source = [
+        "eventually[0,5] holds(c.value > 0)",
+        "eventually[0,2] holds(c.value > 0)",
+        "once[0,4] holds(c.value > 0)",
+    ]
+    .iter()
+    .fold(source, |source, pattern| source.replace(pattern, body));
+    *bytes = source.into_bytes();
+    request
+}
+
+/// FR-501 "Verdicts" (TC-1295 rows 8 to 10, 19): through `run_clause`, a
+/// valuation absent at one position settles a clause that does not depend on
+/// it (`p or not p`), and a history cutoff is `MissingHistory` only when the
+/// history present does not already decide.
+#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-8")]
+#[test]
+fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
+    let tautology = with_clause_body(
+        timestamped(&[0], &[0], 0, Some(0)),
+        "holds(c.value > 0) or not holds(c.value > 0)",
+    );
+    let tautology = timestamped_changed(tautology, |trace| {
+        // The atom's valuation is absent at position 0: both nodes of the one
+        // atom lose it.
+        trace
+            .missing_valuations
+            .push(crate::spine::TimestampedMissingValuation {
+                position: 0,
+                atom: 1,
+            });
+    });
+    assert_eq!(outcome(&report(tautology)), &TemporalVerdict::Holds);
+
+    let historically = |values: &[i64]| {
+        timestamped_changed(
+            with_clause_body(
+                timestamped_with(Unit::TimestampedOnce, &[3, 4], values, 6, Some(6)),
+                "historically[0,4] holds(c.value > 0)",
+            ),
+            |trace| trace.authoritative_origin = false,
+        )
+    };
+    assert_eq!(
+        outcome(&report(historically(&[0, 1]))),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    assert_eq!(
+        outcome(&report(historically(&[1, 1]))),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::MissingHistory,
+        }
+    );
+}
+
+/// FR-501 "Outputs", FR-285 (TC-1295 row 24): one mapping gives a finite-window
+/// result's category label and exit code: pending exits 0, indeterminate 11,
+/// a violation 10, and the three agree with the shared category where it has
+/// the value.
+#[trace("TC-1295", "FR-501-AC-11")]
+#[test]
+fn timestamped_category_label_and_exit_come_from_one_mapping() {
+    let held = report(timestamped(&[0, 5], &[0, 1], 5, Some(5)));
+    let violated = report(timestamped(&[0], &[0], 5, Some(5)));
+    let pending = report(timestamped(&[0], &[0], 1, Some(1)));
+    let indeterminate = report(timestamped(&[0], &[0], 5, None));
+    for (run, label, exit) in [
+        (&held, "success", 0),
+        (&violated, "violation", 10),
+        (&pending, "pending", 0),
+        (&indeterminate, "indeterminate", 11),
+    ] {
+        assert_eq!(run.category_label(), label);
+        assert_eq!(run.disposition.exit_code(), exit);
     }
+}
+
+/// FR-501-AC-12 (TC-1295 row 26): running a request twice gives equal outcomes
+/// and one result report.
+#[trace("TC-1295", "FR-501-AC-12")]
+#[test]
+fn timestamped_requests_run_twice_give_equal_reports() {
+    let requests: [fn() -> ClauseRunRequest; 4] = [
+        || timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)),
+        || timestamped(&[0, 1], &[0, 0], 1, Some(1)),
+        || timestamped(&[0], &[0], 5, None),
+        || timestamped_with(Unit::TimestampedEach, &[0, 10], &[0, 0], 12, Some(12)),
+    ];
+    for make in requests {
+        let first = report(make());
+        let second = report(make());
+        assert_eq!(outcome(&first), outcome(&second));
+        assert_eq!(first.finite_window, second.finite_window);
+        assert_eq!(first.usage.temporal_visits, second.usage.temporal_visits);
+    }
+}
+
+/// FR-501 "Established window": the watermark settles an activation at exactly
+/// its deadline and not one tick before.
+#[trace("TC-1295", "FR-501-AC-3")]
+#[test]
+fn timestamped_watermark_at_the_deadline_settles() {
+    let at_deadline = report(timestamped(&[0, 1], &[0, 0], 5, Some(5)));
+    assert_eq!(outcome(&at_deadline), &TemporalVerdict::Violated { at: 0 });
+    let before = report(timestamped(&[0, 1], &[0, 0], 4, Some(5)));
+    assert_eq!(
+        outcome(&before),
+        &TemporalVerdict::PendingWindow { at: 0, deadline: 5 }
+    );
+    let incomplete = report(timestamped(&[0, 1], &[0, 0], 5, Some(4)));
+    assert_eq!(
+        outcome(&incomplete),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
 }

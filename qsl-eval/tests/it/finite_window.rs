@@ -50,7 +50,7 @@ fn valuation(word: &str) -> Valuation {
 struct Row {
     stamp: u64,
     atoms: Vec<(&'static str, &'static str)>,
-    key: Option<(&'static str, u64)>,
+    key: Option<(&'static str, i64)>,
 }
 
 fn p(stamp: u64, value: &'static str) -> Row {
@@ -114,14 +114,13 @@ impl Request {
             },
             self.rows
                 .iter()
-                .enumerate()
-                .map(|(index, row)| TimestampedObservation {
+                .map(|row| TimestampedObservation {
                     stamp: row.stamp,
                     order_key: row.key.map(|(authority, key)| OrderKey {
                         authority: authority.to_owned(),
                         key,
                     }),
-                    observation: format!("{index}:{:?}", row.atoms),
+                    observation: format!("{:?}", row.atoms),
                 })
                 .collect(),
             WindowProgress {
@@ -199,6 +198,23 @@ impl TemporalLetters for Letters<'_> {
             .copied()
             .unwrap_or("absent");
         Ok(valuation(word))
+    }
+
+    fn atom_class(&self, atom: FormulaNodeId) -> usize {
+        let name = self.name(atom);
+        let nodes = self.fixture.clause.formula().nodes();
+        (0..nodes.len())
+            .find(|index| {
+                self.fixture
+                    .clause
+                    .formula()
+                    .node_id(*index)
+                    .is_some_and(|id| {
+                        matches!(nodes.get(*index), Some(FormulaNode::Holds { .. }))
+                            && self.name(id) == name
+                    })
+            })
+            .unwrap_or(atom.index())
     }
 
     fn activation(
@@ -540,7 +556,7 @@ fn equal_stamps_need_comparable_order_keys() {
     }
     assert!(refused("eventually[0,1] holds(p)", "on origin").is_ok());
     // Keys from one authority order the run, whatever the supply order.
-    let keyed_rows = |first: u64, second: u64, second_authority: &'static str| {
+    let keyed_rows = |first: i64, second: i64, second_authority: &'static str| {
         let atoms = vec![("p", "T"), ("q", "F")];
         let row = |stamp, key| Row {
             stamp,
@@ -985,11 +1001,152 @@ fn completeness_may_run_ahead_and_a_malformed_trace_is_refused() {
     );
     let empty = request(Vec::new(), 5, Some(5)).admit(&eventually);
     assert_eq!(empty.err(), Some(TemporalRefusal::EmptyTrace));
-    let decreasing = request(rows(&[0, 5, 2], &["F", "F", "F"]), 5, Some(5)).admit(&eventually);
+    // A listing whose stamps decrease is not refused: the evaluator reads the
+    // observations in canonical order, whatever order they were listed in.
     assert_eq!(
-        decreasing.err(),
-        Some(TemporalRefusal::DecreasingStamp { position: at(2) })
+        verdict(
+            &eventually,
+            &request(rows(&[0, 5, 2], &["F", "F", "F"]), 5, Some(5))
+        ),
+        violated(0)
     );
+}
+
+/// The row 1 request listed as the stamps `listing` in order, `p` true at
+/// stamps 0 and 5 and false at 2.
+fn listed(listing: &[u64]) -> Request {
+    let value = |stamp: u64| if stamp == 2 { "F" } else { "T" };
+    request(
+        listing
+            .iter()
+            .map(|stamp| p(*stamp, value(*stamp)))
+            .collect(),
+        5,
+        Some(5),
+    )
+}
+
+/// FR-501-AC-18 (row 32): the outcome, decision support and result identity
+/// do not depend on the order the observations were listed in.
+#[trace("TC-1295", "FR-501-AC-18")]
+#[test]
+fn the_listing_order_changes_neither_outcome_support_nor_identity() {
+    let always = origin("always[0,5] holds(p)");
+    let canonical = run_with(&always, &listed(&[0, 2, 5]), SCALAR_LIMITS_UNLIMITED)
+        .0
+        .expect("readable");
+    for listing in [[5, 0, 2], [2, 5, 0], [5, 2, 0], [2, 0, 5], [0, 5, 2]] {
+        let got = run_with(&always, &listed(&listing), SCALAR_LIMITS_UNLIMITED)
+            .0
+            .expect("readable");
+        assert_eq!(got.verdict, canonical.verdict, "{listing:?}");
+        assert_eq!(got.support, canonical.support, "{listing:?}");
+        assert_eq!(got.identity, canonical.identity, "{listing:?}");
+    }
+}
+
+/// FR-501-AC-19 (row 33): positions are indices in canonical order, not in the
+/// listed order.
+#[trace("TC-1295", "FR-501-AC-19")]
+#[test]
+fn positions_are_canonical_indices() {
+    let always = origin("always[0,5] holds(p)");
+    let atom = atom_id(&always);
+    let report = run_with(&always, &listed(&[5, 0, 2]), SCALAR_LIMITS_UNLIMITED)
+        .0
+        .expect("readable");
+    assert_eq!(report.verdict, violated(0));
+    assert_eq!(report.support.len(), 1);
+    assert_eq!(
+        (report.support[0].position, report.support[0].atom),
+        (at(1), atom)
+    );
+    // The observation at canonical position 1 is the one listed second last:
+    // stamp 2, listed at index 2.
+    let trace = listed(&[5, 0, 2]).admit(&always).expect("admits");
+    assert_eq!(trace.supplied_index(at(1)), Some(2));
+    assert_eq!(trace.supplied_index(at(0)), Some(1));
+    assert_eq!(trace.supplied_index(at(2)), Some(0));
+}
+
+/// FR-501-AC-20 (row 34): the `until` of AC-7 over keys from one authority
+/// gives one outcome for the listed order and for its reverse.
+#[trace("TC-1295", "FR-501-AC-20")]
+#[test]
+fn a_reversed_listing_gives_one_outcome() {
+    let until = clause("on origin", "holds(p) until[0,1] holds(q)");
+    let row = |stamp, key: Option<i64>| Row {
+        stamp,
+        atoms: vec![("p", "T"), ("q", "F")],
+        key: key.map(|key| ("A", key)),
+    };
+    let listing = vec![row(0, None), row(1, Some(1)), row(1, Some(2))];
+    let mut reversed = listing.clone();
+    reversed.reverse();
+    let forward = run_with(
+        &until,
+        &request(listing, 1, Some(1)),
+        SCALAR_LIMITS_UNLIMITED,
+    )
+    .0
+    .expect("evaluates");
+    let backward = run_with(
+        &until,
+        &request(reversed, 1, Some(1)),
+        SCALAR_LIMITS_UNLIMITED,
+    )
+    .0
+    .expect("evaluates");
+    assert_eq!(forward.verdict, backward.verdict);
+    assert_eq!(forward.identity, backward.identity);
+}
+
+/// FR-501-AC-21 (row 35): four observations at one stamp, keyed A1, A2 (A),
+/// B1 (B) and none, listed in three orders, give one canonical order and one
+/// result identity.
+#[trace("TC-1295", "FR-501-AC-21")]
+#[test]
+fn mixed_authorities_have_one_canonical_order() {
+    let eventually = origin("eventually[0,1] holds(p)");
+    // The tag is an extra atom nothing reads: it gives each observation an
+    // identity of its own.
+    let row = |tag: &'static str, key: Option<(&'static str, i64)>| Row {
+        stamp: 1,
+        atoms: vec![("p", "F"), (tag, "")],
+        key,
+    };
+    let a1 = row("a1", Some(("A", 1)));
+    let a2 = row("a2", Some(("A", 2)));
+    let b1 = row("b1", Some(("B", 1)));
+    let none = row("none", None);
+    let listings = [
+        vec![none.clone(), b1.clone(), a2.clone(), a1.clone()],
+        vec![a2.clone(), none.clone(), a1.clone(), b1.clone()],
+        vec![b1, a1, none, a2],
+    ];
+    let mut identities = Vec::new();
+    for listing in listings {
+        let request = request(listing, 1, Some(1));
+        let trace = request.admit(&eventually).expect("admits");
+        let order: Vec<&str> = trace
+            .positions()
+            .iter()
+            .map(|position| {
+                ["a1", "a2", "b1", "none"]
+                    .into_iter()
+                    .find(|tag| position.observation.contains(tag))
+                    .expect("a tag")
+            })
+            .collect();
+        assert_eq!(order, vec!["a1", "a2", "b1", "none"]);
+        identities.push(
+            run_with(&eventually, &request, SCALAR_LIMITS_UNLIMITED)
+                .0
+                .expect("evaluates")
+                .identity,
+        );
+    }
+    assert!(identities.windows(2).all(|pair| pair[0] == pair[1]));
 }
 
 /// FR-501 "Verdicts": a clause under another profile is refused.
@@ -1041,4 +1198,155 @@ fn a_nested_clause_lifts_over_missing_valuations() {
         ),
         violated(0)
     );
+}
+
+/// FR-501 "Verdicts" (TC-1295 rows 8 to 10): the lift is over every
+/// consistent valuation, so an atom correlated with itself is not `Unknown`:
+/// `p or not p` with `p` absent is true, `p and not p` false.
+#[trace("TC-1295", "FR-501-AC-4")]
+#[test]
+fn a_correlated_atom_lifts_over_its_one_valuation() {
+    let tautology = origin("holds(p) or not holds(p)");
+    let absent = request(vec![p(0, "absent")], 0, Some(0));
+    assert_eq!(verdict(&tautology, &absent), WindowVerdict::Holds);
+    let contradiction = origin("holds(p) and not holds(p)");
+    assert_eq!(verdict(&contradiction, &absent), violated(0));
+    // Uncorrelated atoms stay open.
+    let open = origin("holds(p) or holds(q)");
+    assert_eq!(
+        verdict(&open, &absent),
+        indeterminate(
+            0,
+            IndeterminateReason::MissingValuation {
+                position: at(0),
+                atom: atom_id(&open)
+            }
+        )
+    );
+}
+
+/// FR-501 "Verdicts": a history cutoff is `MissingHistory` only when the
+/// window reaches before the trace and the history present does not already
+/// decide; `once`, `historically` and `since` over activations at later
+/// positions.
+#[trace("TC-1295", "FR-501-AC-8")]
+#[test]
+fn a_history_cutoff_is_missing_history_only_when_unsettled() {
+    let each = |body: &str| clause("on each (q: Counter)", body);
+    let cutoff = |stamps: &[u64], values: &[&'static str]| {
+        request(rows(stamps, values), 6, Some(6)).cutoff()
+    };
+    let history = IndeterminateReason::MissingHistory;
+    // `historically` is false from the first false stamp, whatever precedes.
+    let historically = each("historically[0,4] holds(p)");
+    assert_eq!(
+        verdict(&historically, &cutoff(&[3, 4], &["F", "T"])),
+        violated(0)
+    );
+    // All true: unseen history could still hold a false.
+    assert_eq!(
+        verdict(&historically, &cutoff(&[3, 4], &["T", "T"])),
+        indeterminate(0, history.clone())
+    );
+    // `once` is true from the first true stamp; otherwise unseen history
+    // could hold one.
+    let once = each("once[0,4] holds(p)");
+    assert_eq!(
+        verdict(&once, &cutoff(&[3, 4], &["T", "F"])),
+        WindowVerdict::Holds
+    );
+    assert_eq!(
+        verdict(&once, &cutoff(&[3, 4], &["F", "F"])),
+        indeterminate(0, history.clone())
+    );
+    // Activations after position 0 whose window lies inside the trace are
+    // definite under a cutoff; the first activation is not, but a later
+    // definite false outranks it.
+    let short = each("once[0,1] holds(p)");
+    assert_eq!(
+        verdict(&short, &cutoff(&[3, 4, 5], &["F", "F", "F"])),
+        violated(1)
+    );
+    // `since`: the guard failing at the first stamp rules out an unseen
+    // witness behind it; the guard holding leaves it open.
+    let since = |p_value: &'static str| {
+        let row = |stamp, q: &'static str| Row {
+            stamp,
+            atoms: vec![("p", p_value), ("q", q)],
+            key: None,
+        };
+        request(vec![row(3, "F"), row(4, "F")], 6, Some(6)).cutoff()
+    };
+    let since_clause = each("holds(p) since[0,4] holds(q)");
+    assert_eq!(verdict(&since_clause, &since("F")), violated(0));
+    assert_eq!(
+        verdict(&since_clause, &since("T")),
+        indeterminate(0, history)
+    );
+}
+
+/// FR-501 "Counter cover": a straddled bound is judged by the covers over any
+/// clause shape and any activation, never by the shape of the clause.
+#[trace("TC-1295", "FR-501-AC-9")]
+#[test]
+fn a_straddled_bound_is_judged_by_the_covers_over_every_clause_shape() {
+    let straddles = IndeterminateReason::StraddlesBound;
+    // A lower bound straddled: the reading at 2 is within [1,2] only if its
+    // cover lies there.
+    let lower = origin("eventually[1,2] holds(p)");
+    let at_two = request(rows(&[0, 2], &["F", "T"]), 4, Some(4)).counter(0);
+    assert_eq!(
+        verdict(&lower, &at_two),
+        indeterminate(0, straddles.clone())
+    );
+    // The universal form of the same bound.
+    let always = origin("always[0,2] holds(p)");
+    let universal = request(rows(&[0, 2], &["T", "F"]), 4, Some(4)).counter(0);
+    assert_eq!(
+        verdict(&always, &universal),
+        indeterminate(0, straddles.clone())
+    );
+    // Several activations: one straddles, a later one is definitely false and
+    // outranks it.
+    let each = clause("on each (q: Counter)", "eventually[0,1] holds(p)");
+    let activations = request(rows(&[0, 1, 10], &["F", "T", "F"]), 20, Some(20)).counter(0);
+    assert_eq!(verdict(&each, &activations), violated(2));
+    // With nothing definitely false the straddling activation is reported.
+    let settled = request(rows(&[0, 1, 10], &["F", "T", "T"]), 20, Some(20)).counter(0);
+    assert_eq!(verdict(&each, &settled), indeterminate(0, straddles));
+    // The exact cover has no straddle for the same positions.
+    let exact = request(rows(&[0, 2], &["F", "T"]), 4, Some(4));
+    assert_eq!(verdict(&lower, &exact), WindowVerdict::Holds);
+}
+
+/// FR-501 "Established window" (TC-1295 rows 6, 12 and 31): the watermark and
+/// completeness settle at exactly the deadline, and short of it only the
+/// short one decides between pending and indeterminate.
+#[trace("TC-1295", "FR-501-AC-3")]
+#[test]
+fn a_window_settles_at_exactly_the_deadline() {
+    let eventually = origin("eventually[0,5] holds(p)");
+    let two = rows(&[0, 1], &["F", "F"]);
+    assert_eq!(
+        verdict(&eventually, &request(two.clone(), 5, Some(5)).open()),
+        violated(0)
+    );
+    assert_eq!(
+        verdict(&eventually, &request(two.clone(), 4, Some(5)).open()),
+        pending(0, 5)
+    );
+    assert_eq!(
+        verdict(&eventually, &request(two.clone(), 5, Some(4)).open()),
+        indeterminate(0, IndeterminateReason::IncompleteInput)
+    );
+    // Never a pending result whose deadline the watermark has reached.
+    for through in [None, Some(0), Some(4)] {
+        match verdict(&eventually, &request(two.clone(), 9, through)) {
+            WindowVerdict::Pending { deadline, .. } => {
+                panic!("pending with deadline {deadline} at watermark 9")
+            }
+            WindowVerdict::Indeterminate { .. } => {}
+            other => panic!("expected indeterminate, not {other:?}"),
+        }
+    }
 }

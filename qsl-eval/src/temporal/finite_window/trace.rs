@@ -79,7 +79,7 @@ pub struct OrderKey {
     /// The order authority.
     pub authority: String,
     /// The key within the authority.
-    pub key: u64,
+    pub key: i64,
 }
 
 /// One admitted observation of a timestamped trace.
@@ -118,8 +118,8 @@ pub struct WindowClock {
     pub cover: ClockCover,
 }
 
-/// A non-empty timestamped trace in admitted order whose stamps do not
-/// decrease (FR-501 Inputs).
+/// A non-empty timestamped trace in canonical order (FR-501 Inputs, "Canonical
+/// order").
 #[derive(Clone, Debug)]
 pub struct TimestampedTrace {
     pub(super) positions: Vec<TimestampedObservation>,
@@ -130,15 +130,14 @@ pub struct TimestampedTrace {
 }
 
 impl TimestampedTrace {
-    /// Admit `positions`, given in the order they were supplied. A trace with
-    /// no position is [`TemporalRefusal::EmptyTrace`] and one whose stamps
-    /// decrease is [`TemporalRefusal::DecreasingStamp`] at the first
-    /// position below its predecessor, both before any position is visited.
-    ///
-    /// Positions of equal stamp whose keys all come from one order authority
-    /// are admitted in key order, so the supply order of such a run changes
-    /// nothing; a run without keys, or with keys of several authorities,
-    /// keeps its supply order.
+    /// Admit `positions`, given in any order. A trace with no position is
+    /// [`TemporalRefusal::EmptyTrace`], refused before any position is
+    /// visited. The positions are put in canonical order (FR-501 "Canonical
+    /// order"): ascending stamp, then ascending order-authority identity (an
+    /// observation without an order key after every keyed one), then
+    /// ascending key within the authority, then ascending observation
+    /// identity. The listing order decides nothing: the admitted position of
+    /// an observation is its index in that order.
     pub fn admit(
         clause_identity: impl Into<String>,
         clock: WindowClock,
@@ -149,40 +148,20 @@ impl TimestampedTrace {
             return Err(TemporalRefusal::EmptyTrace);
         }
         let mut order: Vec<usize> = (0..positions.len()).collect();
-        for (index, pair) in positions.windows(2).enumerate() {
-            if let [before, after] = pair {
-                if after.stamp < before.stamp {
-                    return Err(TemporalRefusal::DecreasingStamp {
-                        position: TemporalPosition::new(
-                            u64::try_from(index + 1).unwrap_or(u64::MAX),
-                        ),
-                    });
-                }
-            }
-        }
-        let mut start = 0;
-        while start < order.len() {
-            let stamp = positions.get(start).map(|position| position.stamp);
-            let end = order
-                .iter()
-                .skip(start)
-                .take_while(|index| positions.get(**index).map(|p| p.stamp) == stamp)
-                .count()
-                + start;
-            if let Some(run) = order.get_mut(start..end) {
-                let keyed =
-                    |index: &usize| positions.get(*index).and_then(|p| p.order_key.as_ref());
-                let authority = run.first().and_then(keyed).map(|key| &key.authority);
-                let comparable = authority.is_some()
-                    && run
-                        .iter()
-                        .all(|index| keyed(index).map(|key| &key.authority) == authority);
-                if comparable {
-                    run.sort_by_key(|index| keyed(index).map(|key| key.key));
-                }
-            }
-            start = end.max(start + 1);
-        }
+        order.sort_by(|left, right| {
+            let (Some(left), Some(right)) = (positions.get(*left), positions.get(*right)) else {
+                return std::cmp::Ordering::Equal;
+            };
+            left.stamp
+                .cmp(&right.stamp)
+                .then_with(|| match (&left.order_key, &right.order_key) {
+                    (Some(left), Some(right)) => left.cmp(right),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                })
+                .then_with(|| left.observation.cmp(&right.observation))
+        });
         let admitted = order
             .iter()
             .filter_map(|index| positions.get(*index).cloned())
@@ -206,8 +185,8 @@ impl TimestampedTrace {
         self.positions.is_empty()
     }
 
-    /// The supply index of the admitted `position`: the observation a
-    /// letter reads at an admitted position is the one supplied there.
+    /// The listing index of the observation at the canonical `position`: the
+    /// observation a letter reads there is the one listed at that index.
     pub fn supplied_index(&self, position: TemporalPosition) -> Option<usize> {
         usize::try_from(position.index())
             .ok()
