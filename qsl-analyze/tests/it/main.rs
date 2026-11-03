@@ -9,6 +9,7 @@ mod counter;
 mod deadlock_item;
 mod dense_route;
 mod derived_request;
+mod digital_clocks;
 mod exact_probabilistic;
 mod example_units;
 mod fill;

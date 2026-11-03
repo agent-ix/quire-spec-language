@@ -11,6 +11,7 @@ use qsl_eval::simulation::model::{
     same_rewards, Action, ModelSimState, ModelSystem, NotMarkov, PredicateReading,
     ScheduledIdentity, Unsteppable,
 };
+use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
 use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::UndefinedCause;
@@ -43,9 +44,26 @@ pub fn build_product(
         claim,
         limits,
     } = request;
-    let limits = limits.model;
+    let limits_all = limits;
+    let limits = limits_all.model;
     let package = subject.simulation.package;
     let system = ModelSystem::new(subject.simulation).map_err(ProductRefusal::Admission)?;
+    match TimedSystem::new(&system, &claim.subject.alias) {
+        Ok(timed) => return super::digital::build(&system, timed, claim, &limits_all, cancel),
+        Err(TimedSubjectRefusal::NoTimedModel { .. }) => {}
+        Err(TimedSubjectRefusal::NotSimulated(refusal)) => {
+            return Err(ProductRefusal::NotSimulated(refusal));
+        }
+        Err(TimedSubjectRefusal::ParameterizedGuard { .. }) => {
+            return Err(fault("timed-guard-reads-no-operation-parameter"));
+        }
+        Err(TimedSubjectRefusal::NestedUnboundedCollection { .. }) => {
+            return Err(fault("timed-clocks-nest-no-unbounded-collections"));
+        }
+        Err(TimedSubjectRefusal::Unbounded { .. }) => {
+            return Err(fault("timed-clock-owners-have-universes"));
+        }
+    }
     let (kind, workload) = match &claim.scheduler {
         qsl_semantics::check::ProbScheduler::Workload(name) => {
             let workload = package
