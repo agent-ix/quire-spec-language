@@ -527,6 +527,118 @@ fn equal_requests_write_identical_trees() {
     }
 }
 
+/// The command line of `request`'s emission, with its clock selections in
+/// `clocks` (a file this writes) passed as `--clock-selections`.
+fn command_line(request: &Request, clocks: &Path) -> Vec<std::ffi::OsString> {
+    let mut line: Vec<std::ffi::OsString> =
+        vec!["--package-name".into(), request.package_name.clone().into()];
+    for model in &request.models {
+        line.extend(["--model".into(), model.clone().into_os_string()]);
+    }
+    for (identity, file) in &request.libraries {
+        line.extend([
+            "--library".into(),
+            format!("{identity}={}", file.display()).into(),
+        ]);
+    }
+    line.extend(["--clock-selections".into(), clocks.as_os_str().to_owned()]);
+    line.push(request.source.clone().into_os_string());
+    line
+}
+
+/// FR-517-AC-15: `--clock-selections` carries each package's clock
+/// configurations, so the command line emits the bytes `emit` returns for the
+/// equal `Request`; a malformed file is a refusal naming it and writes no
+/// bytes.
+#[trace("FR-517-AC-15", "TC-1312")]
+#[test]
+fn the_clock_selections_flag_emits_the_requests_bytes_and_bad_files_refuse() {
+    let directory = tempfile::tempdir().unwrap();
+    for kind in KINDS {
+        let expected = request(kind, Corpus::None).emit;
+        let object: serde_json::Map<String, Value> = expected
+            .temporal_selections
+            .iter()
+            .map(|selection| {
+                (
+                    selection.clause.clone(),
+                    serde_json::to_value(&selection.clock).unwrap(),
+                )
+            })
+            .collect();
+        let clocks = directory.path().join(format!("{kind}.json"));
+        std::fs::write(&clocks, serde_json::to_vec(&object).unwrap()).unwrap();
+        let line = command_line(&expected, &clocks);
+        assert_eq!(Request::parse(&line).unwrap(), expected, "{kind}");
+        let mut stdout = Vec::new();
+        emit_checked_v2::run(&line, &mut stdout).expect(kind);
+        assert_eq!(stdout, emit_checked_v2::emit(&expected).unwrap(), "{kind}");
+    }
+
+    // File order is kept: keys written out of sorted order are parsed in it.
+    let ordered = request("event_position", Corpus::None).emit;
+    let clock = r#"{"kind": "event_position", "sequence_authority": "events-authority"}"#;
+    let clocks = directory.path().join("out-of-order.json");
+    std::fs::write(
+        &clocks,
+        format!(r#"{{"Partial": {clock}, "Due": {clock}, "Full": {clock}, "DueLate": {clock}}}"#),
+    )
+    .unwrap();
+    let parsed = Request::parse(&command_line(&ordered, &clocks)).unwrap();
+    let names: Vec<&str> = parsed
+        .temporal_selections
+        .iter()
+        .map(|selection| selection.clause.as_str())
+        .collect();
+    assert_eq!(names, ["Partial", "Due", "Full", "DueLate"]);
+
+    let base = request("timestamped_event", Corpus::None).emit;
+    for (name, text) in [
+        (
+            "missing",
+            r#"{"DueTimestamp": {"kind": "timestamped_event"}}"#,
+        ),
+        ("empty", "{}"),
+        (
+            "repeated",
+            r#"{"DueTimestamp": {"kind": "timestamped_event", "timestamp_unit": "rfc3339"}, "DueTimestamp": {"kind": "timestamped_event", "timestamp_unit": "rfc3339"}}"#,
+        ),
+        ("kind", r#"{"DueTimestamp": {"kind": "sundial"}}"#),
+        (
+            "member",
+            r#"{"DueTimestamp": {"kind": "timestamped_event", "timestamp_unit": "rfc3339", "extra": 1}}"#,
+        ),
+    ] {
+        let clocks = directory.path().join(format!("bad-{name}.json"));
+        std::fs::write(&clocks, text).unwrap();
+        let mut stdout = Vec::new();
+        let refusal =
+            emit_checked_v2::run(&command_line(&base, &clocks), &mut stdout).expect_err(name);
+        assert!(
+            matches!(&refusal, emit_checked_v2::Error::Clocks { path, .. } if path.ends_with(&format!("bad-{name}.json"))),
+            "{name}: {refusal:?}"
+        );
+        assert_eq!(refusal.exit_code(), 20, "{name}");
+        assert!(stdout.is_empty(), "{name}");
+    }
+
+    // A well-formed file naming no clause or template is refused before any
+    // bytes are emitted.
+    let clocks = directory.path().join("unknown-clause.json");
+    std::fs::write(
+        &clocks,
+        r#"{"NoSuchClause": {"kind": "timestamped_event", "timestamp_unit": "rfc3339"}}"#,
+    )
+    .unwrap();
+    let mut stdout = Vec::new();
+    let refusal = emit_checked_v2::run(&command_line(&base, &clocks), &mut stdout).unwrap_err();
+    assert!(
+        matches!(&refusal, emit_checked_v2::Error::UnknownClause { clause } if clause == "NoSuchClause"),
+        "{refusal:?}"
+    );
+    assert!(stdout.is_empty());
+}
+
 /// The names beside `holder`'s handoff directory.
 fn entries(holder: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(holder)
