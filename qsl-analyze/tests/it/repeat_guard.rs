@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-228-AC-2 and TC-1268: the latest completed repeat-body attempt is
-//! readable by the guard, whose first body pass is unconditional. Under TSO
-//! flush fairness this load-until-seen protocol settles with a checked
-//! component certificate.
+//! TC-1268: entry-readable binders keep repeat guards pre-test. A guard that
+//! reads a body binder would require post-test semantics, which the current
+//! checked-package writer refuses explicitly.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
@@ -12,17 +11,14 @@ use qsl_eval::simulation::protocol::MemorySelection;
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::MemoryModelName;
 use qsl_replay::{
-    settle_protocol_check, Certification, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
-    ProofBasis, ProofCertificate, ProtocolCertificateRequest, ResultLabel, TerminalValue,
+    CompileRefusal, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ReplayRefusal,
 };
-use qsl_semantics::check::FormulaNodeId;
+use qsl_semantics::check::{CheckCause, FormulaNodeId, ProtocolConstruct, ProtocolReferenceCause};
 use quire_exact::{Cancel, Meter};
 
 use crate::litmus::{attempt, contracts, field, package, protocol, Documents};
 use crate::weak_memory::select;
 
-const CLAIM: &str = "temporal Eventually using t0 over (k: M::Core) clock \"model-steps\" \
-    on origin { eventually holds(k.r1 = 1) }\n";
 const PRETEST_CLAIM: &str = "temporal NoLoad using t0 over (k: M::Core) clock \"model-steps\" \
     on origin { always holds(k.r1 = 3) }\n";
 
@@ -50,7 +46,6 @@ impl ModelLetters for ReadsValue {
     }
 }
 
-static READS_ONE: ReadsValue = ReadsValue(1);
 static READS_THREE: ReadsValue = ReadsValue(3);
 
 struct Fixture {
@@ -61,31 +56,6 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new() -> Self {
-        Self::with_run(
-            &format!(
-                "parallel Both {{ branch w sequence W {{ {} }} \
-             branch r repeat Poll by c visible (bLx) while {{ not bLx }} \
-             sequence R {{ {} }} }} join all [w, r];",
-                attempt("Sx", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
-                attempt("Lx", "c", "Core::look", "relaxed", "LooksX, Looked"),
-            ),
-            CLAIM,
-            &READS_ONE,
-        )
-    }
-
-    fn pretest() -> Self {
-        let run = format!(
-            "parallel Both {{ branch w sequence W {{ {} }} \
-             branch r repeat Poll by c visible () while {{ false }} \
-             sequence R {{ {} }} }} join all [w, r];",
-            attempt("Sx", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
-            attempt("Lx", "c", "Core::look", "relaxed", "LooksX, Looked"),
-        );
-        Self::with_run(&run, PRETEST_CLAIM, &READS_THREE)
-    }
-
     /// The pre-test fixture whose guard reads `ready`, the binder of an
     /// event that precedes the repeat (so is readable at its entry) and is
     /// constrained false: a guard that
@@ -129,87 +99,33 @@ impl Fixture {
     }
 }
 
+/// FR-466/STD-539 does not emit a repeat whose guard reads a binder declared
+/// by its own body; such a repeat needs post-test semantics.
 #[trace("TC-1268", "FR-228-AC-2")]
 #[test]
-fn a_repeat_guard_reads_its_latest_attempt_and_settles_certified() {
-    let fixture = Fixture::new();
-    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&fixture.checked);
-    let outcome = check_protocol(
-        ProtocolCheckRequest {
-            temporal_clock_selections: &temporal_clock_selections,
-            subject: fixture.subject(),
-            item: fixture.item(),
-            max_depth: None,
-            max_store_buffer: None,
-            max_messages: None,
-            max_live_instances: None,
-            limits: ModelCheckLimits::default(),
-            ignore_memory_constraints: false,
-        },
-        &Cancel::new(),
-    )
-    .expect("the checked request runs");
-    let ModelCheckOutcome::Holds {
-        certificate: ProofCertificate::Component(certificate),
-        ..
-    } = &outcome
-    else {
-        panic!("expected the fair load-until-seen proof, got {outcome:?}");
+fn a_repeat_guard_over_its_body_binder_requires_post_test_emission() {
+    let run = "sequence Main { repeat Poll by w visible (ready) while { ready } \
+                sequence Body { event Ready by w as (ready: Boolean) { true }; } }";
+    let body = crate::fill::contracts("self.v = 0") + &crate::fill::protocol("P", "", run, "d");
+    let error = crate::fill::compiled(&body)
+        .expect_err("a body binder in the guard requires a post-test repeat");
+    let refusal = match error {
+        ReplayRefusal::Recompile(refusal) => *refusal,
+        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => *refusal,
+        other => panic!("expected a checked-stage refusal, got {other:?}"),
     };
-    let request = ProtocolCertificateRequest {
-        temporal_clock_selections: &temporal_clock_selections,
-        subject: fixture.subject(),
-        item: fixture.item(),
-        max_store_buffer: None,
-        max_messages: None,
-        max_live_instances: None,
+    let CompileRefusal::Check { refusals, .. } = refusal else {
+        panic!("expected the protocol check refusal, got {refusal:?}");
     };
-    assert_eq!(
-        qsl_replay::check_protocol_components(
-            &request,
-            certificate,
-            &ModelCheckLimits::default(),
-            &Cancel::new(),
-        )
-        .expect("the certificate checks"),
-        qsl_replay::TemporalCertificateCheck::Accepted
-    );
-
-    let record = settle_protocol_check(
-        &outcome,
-        &ModelCheckLimits::default(),
-        &request,
-        &Cancel::new(),
-        |_| unreachable!("a proved outcome does not replay a counterexample"),
-    );
-    assert_eq!(
-        record.value,
-        TerminalValue::Proved {
-            basis: ProofBasis::Exhaustive,
-            certification: Certification::Certified,
-        }
-    );
-    assert_eq!(record.label, ResultLabel::Proved);
-
-    let pretest = Fixture::pretest();
-    let outcome = check_protocol(
-        ProtocolCheckRequest {
-            temporal_clock_selections: &[],
-            subject: pretest.subject(),
-            item: pretest.item(),
-            max_depth: None,
-            max_store_buffer: None,
-            max_messages: None,
-            max_live_instances: None,
-            limits: ModelCheckLimits::default(),
-            ignore_memory_constraints: false,
-        },
-        &Cancel::new(),
-    )
-    .expect("the unchanged pre-test control checks");
     assert!(
-        matches!(outcome, ModelCheckOutcome::Holds { .. }),
-        "a false pre-test guard must skip the body load: {outcome:?}"
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+                if matches!(cause.as_ref(), ProtocolReferenceCause::NotEmitted {
+                    construct: ProtocolConstruct::PostTestRepeat
+                })
+        )),
+        "{refusals:?}"
     );
 }
 

@@ -33,10 +33,11 @@ use super::super::{fault, Binder, Binders, Lowering, NodeRef};
 use super::{
     empty_group, identifier, member, protocol_location, sorted, ProtocolInput, ProtocolSite,
 };
+use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedBody;
 use crate::check::node_key::{
-    BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, Operation, OperationLaw,
-    Operator, TupleMember, TupleTerm,
+    BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, NodeTag, Operation,
+    OperationLaw, Operator, TupleMember, TupleTerm,
 };
 use crate::check::protocol_clause::{CheckedControl, CheckedControlTree, ProtocolNodeId};
 use crate::check::refusal::{CheckRefusal, KeyFault};
@@ -749,12 +750,42 @@ impl Lowering<'_> {
         let mut nodes = Vec::with_capacity(visible.len());
         for body in visible {
             match self.scoped_body(controls, body, entry, location)? {
-                LeafTerm::Reference { target } => nodes.push(
-                    target
+                LeafTerm::Reference { target } => {
+                    let target = target
                         .admitted()
                         .cloned()
-                        .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?,
-                ),
+                        .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?;
+                    let expression = if self
+                        .graph
+                        .nodes
+                        .get(&target)
+                        .is_some_and(|node| node.content.node_tag == NodeTag::Expression)
+                    {
+                        target
+                    } else {
+                        // FR-466's visible set names expression nodes. A
+                        // bare binder read lowers to its parameter node, so
+                        // give that read the reference-expression carrier
+                        // required by the checked-package schema.
+                        let semantic_type =
+                            self.type_node(body.root().value_type(), body.root().location())?;
+                        let expression = self.insert(
+                            body.root().location(),
+                            NodeTag::Expression,
+                            "reference",
+                            Some(semantic_type),
+                            None,
+                            BodyTerm::Leaf(LeafTerm::reference(target)),
+                        )?;
+                        self.record(
+                            expression.clone(),
+                            OccurrenceRole::Expression,
+                            body.root().location().clone(),
+                        );
+                        expression
+                    };
+                    nodes.push(expression);
+                }
                 LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => {
                     return Err(fault(location, KeyFault::UncheckedProtocolFact));
                 }
