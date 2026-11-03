@@ -959,29 +959,44 @@ pub(in crate::emit::tests) fn tc134_selections(
     graph: &qsl_semantics::check::CheckedGraph,
 ) -> Vec<crate::emit::TemporalClockSelection> {
     let source = graph.source().clone();
-    let temporal = graph.temporal_clauses().iter().map(|t| t.clause().span());
-    let hyper = graph.hyper_clauses().iter().map(|h| h.span());
-    let compensations = graph.protocols().iter().flat_map(|protocol| {
-        protocol
-            .obligations
-            .compensations
-            .iter()
-            .filter(|template| {
-                matches!(
-                    template.temporal_profile,
-                    Some(
-                        qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
-                            | qsl_semantics::check::TemporalProfile::FixedSampleFalseExtension
-                            | qsl_semantics::check::TemporalProfile::TimestampedEventFiniteWindow
-                    )
+    let mut selections = Vec::new();
+    for temporal in graph.temporal_clauses() {
+        selections.push((
+            crate::emit::tests::node_id(temporal.identity()),
+            temporal.clause().span(),
+        ));
+    }
+    for hyper in graph.hyper_clauses() {
+        let Some(occurrence) = hyper.assembled_occurrence() else {
+            continue;
+        };
+        selections.push((crate::emit::tests::node_id(occurrence.node()), hyper.span()));
+    }
+    for protocol in graph.protocols() {
+        let Some(keys) = graph.protocol_node_keys(&protocol.name) else {
+            continue;
+        };
+        for (index, template) in protocol.obligations.compensations.iter().enumerate() {
+            if !matches!(
+                template.temporal_profile,
+                Some(
+                    qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
+                        | qsl_semantics::check::TemporalProfile::FixedSampleFalseExtension
+                        | qsl_semantics::check::TemporalProfile::TimestampedEventFiniteWindow
                 )
-            })
-            .map(|template| template.span)
-    });
-    temporal
-        .chain(hyper)
-        .chain(compensations)
-        .map(|span| crate::emit::TemporalClockSelection {
+            ) {
+                continue;
+            }
+            let Some(key) = keys.compensations.get(index) else {
+                continue;
+            };
+            selections.push((crate::emit::tests::node_id(key), template.span));
+        }
+    }
+    selections.sort_by(|left, right| left.0.cmp(&right.0));
+    selections
+        .into_iter()
+        .map(|(_, span)| crate::emit::TemporalClockSelection {
             source: source.clone(),
             declaration_span: span,
             clock: tc134_clock(),
@@ -1203,7 +1218,14 @@ fn tc134_strict_reader_admits_compensation_rows() {
 /// profile-incompatible clock selection for an explicit temporal declaration
 /// refuses emission, and so does each of those for a `compensate` window
 /// (CB-01 missing, CB-02 duplicate, CB-03 surplus, CB-05 kind mismatch).
-#[trace("FR-048-AC-8", "FR-050-AC-14", "FR-322-AC-305", "TC-134")]
+#[trace(
+    "FR-048-AC-8",
+    "FR-050-AC-14",
+    "FR-322-AC-305",
+    "TC-134",
+    "TC-1308",
+    "FR-513-AC-9"
+)]
 #[test]
 fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
     use crate::emit::EmitRefusal as R;
