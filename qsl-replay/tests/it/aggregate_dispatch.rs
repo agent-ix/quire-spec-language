@@ -4,8 +4,8 @@
 use ix_trace_rs::trace;
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_replay::spine::{self, ParseRequest, admit_parsed_unit_list, check_units, select_units};
-use qsl_replay::{DependencyInput, SourceIdentity};
+use qsl_replay::spine::{self, admit_parsed_unit_list, check_units, select_units, ParseRequest};
+use qsl_replay::{DependencyInput, SourceIdentity, SuppliedLibrary};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -17,7 +17,7 @@ use quire_exact::{
     Value as Quire,
 };
 use quire_semantic_value::object_closure::ObjectClosure;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 const PACKAGE: &str = "example/config-version";
 const HISTORY: &str = "ix://example/config-version/config_history";
@@ -436,7 +436,13 @@ fn split_pre_clauses_link_independently_of_request_order() {
     );
 }
 
-#[trace("QSpec-TC-196", "FR-120-AC-19", "FR-120-AC-20", "FR-480-AC-1")]
+#[trace(
+    "QSpec-TC-196",
+    "QSpec-TC-1210",
+    "FR-120-AC-19",
+    "FR-120-AC-20",
+    "FR-480-AC-1"
+)]
 #[test]
 fn split_d10_clauses_match_the_single_order_oracle_in_every_link_order() {
     for swapped in [false, true] {
@@ -457,11 +463,71 @@ fn split_d10_clauses_match_the_single_order_oracle_in_every_link_order() {
                     qsl_package::emit_checked(checked[0].package()).expect("D10 package emits");
                 let second_emission = qsl_package::emit_checked(opposite[0].package())
                     .expect("D10 package emits in opposite order");
+                let first_wire: Value = serde_json::from_slice(first_emission.package().bytes())
+                    .expect("canonical package wire is JSON");
+                let second_wire: Value = serde_json::from_slice(second_emission.package().bytes())
+                    .expect("opposite-order package wire is JSON");
                 assert_eq!(
                     first_emission.package().bytes(),
                     second_emission.package().bytes(),
                     "link order changed package bytes"
                 );
+                assert_eq!(
+                    first_wire["lock"]["sources"],
+                    json!([
+                        {"authority": "test", "identity": "d10:u1"},
+                        {"authority": "test", "identity": "d10:u2"}
+                    ]),
+                    "emitted source identities are canonical U1/U2 order"
+                );
+                assert_eq!(
+                    first_wire["lock"]["sources"], second_wire["lock"]["sources"],
+                    "request order changed emitted source list"
+                );
+                if !swapped && !split_pb1 {
+                    let nodes = first_wire["semantic_graph"]["nodes"]
+                        .as_array()
+                        .expect("emitted nodes");
+                    let shared_false = nodes
+                        .iter()
+                        .find(|node| {
+                            node["node_tag"] == "value"
+                                && node["semantic_form"] == "literal"
+                                && node["body"]["value"] == false
+                                && node["occurrences"].as_array().is_some()
+                        })
+                        .expect("PA and PB2 share the false expression node");
+                    let occurrences = shared_false["occurrences"]
+                        .as_array()
+                        .expect("false expression occurrences");
+                    assert_eq!(
+                        occurrences,
+                        json!((0..6)
+                            .map(|ordinal| json!({"role": "expression", "ordinal": ordinal}))
+                            .collect::<Vec<_>>())
+                        .as_array()
+                        .expect("expected occurrence array")
+                    );
+                    let node_id = &shared_false["node_id"];
+                    let rows = first_wire["source_map"]
+                        .as_array()
+                        .expect("source-map rows")
+                        .iter()
+                        .filter(|row| row["node_id"] == *node_id)
+                        .collect::<Vec<_>>();
+                    assert_eq!(rows.len(), 6, "all false occurrences have source rows");
+                    let sources = rows
+                        .iter()
+                        .map(|row| row["regions"][0]["source"]["identity"].as_str().unwrap())
+                        .collect::<Vec<_>>();
+                    assert_eq!(sources.first(), Some(&"d10:u1"));
+                    let first_u1 = sources.iter().position(|source| *source == "d10:u1");
+                    let first_u2 = sources.iter().position(|source| *source == "d10:u2");
+                    assert!(
+                        first_u1 < first_u2,
+                        "shared false occurrence source rows must put U1 before U2: {sources:?}"
+                    );
+                }
                 if let Some(expected) = &placement_oracle {
                     assert_eq!(
                         &first, expected,
@@ -583,4 +649,125 @@ fn aggregate_resolves_a_reused_model_alias_per_source_unit() {
     )
     .expect_err("a same-unit duplicate model alias refuses");
     assert!(format!("{refusal:?}").contains("DuplicateAlias"));
+}
+
+/// Import aliases are scoped to their declaring source unit: each unit's
+/// \x60m::f()\x60 resolves against its own selected library, even when the aliases
+/// name different function signatures.
+#[trace("FR-480-AC-3")]
+#[test]
+fn aggregate_resolves_a_reused_import_alias_per_source_unit() {
+    let header =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+    let library = |identity: &str, name: &str, declaration: &str| SuppliedLibrary {
+        identity: identity.to_owned(),
+        source: SourceIdentity::new("test-library", name, "git", "1"),
+        path: format!("{name}.native"),
+        bytes: format!("{header}{declaration}").into_bytes(),
+    };
+    let dependencies = DependencyInput::new([
+        library(
+            "example/boolean-lib",
+            "boolean-lib",
+            "function f using v(x: Integer): Boolean pure { true }\n",
+        ),
+        library(
+            "example/integer-lib",
+            "integer-lib",
+            "function f using v(x: Integer): Integer pure { x }\n",
+        ),
+    ])
+    .expect("distinct library identities admit");
+    let source_a = SourceIdentity::new("test", "import-a", "a", "1");
+    let source_b = SourceIdentity::new("test", "import-b", "b", "1");
+    let parse = |source: &SourceIdentity, library: &str, body: &str| {
+        let text = format!("{header}import \"{library}\" as m;\n{body}");
+        spine::parse(
+            &ParseRequest {
+                source,
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
+            SourceLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("importing unit parses")
+        .into_value()
+    };
+    let a = parse(
+        &source_a,
+        "example/boolean-lib",
+        "function a using v(): Boolean pure { m::f(1) }\n",
+    );
+    let b = parse(
+        &source_b,
+        "example/integer-lib",
+        "function b using v(): Integer pure { m::f(1) }\n",
+    );
+    let admitted = admit_parsed_unit_list(vec![b, a.clone()], &dependencies)
+        .expect("source units admit in either request order");
+    let packages = package_input(std::iter::empty::<&[u8]>()).expect("empty model input");
+    let models = select_units(
+        &admitted,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("units select with no models")
+    .into_value();
+    let checked = check_units(
+        &admitted,
+        "source-local-imports".to_owned(),
+        &models,
+        &dependencies,
+        spine::SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("each m::f resolves against its declaring unit's import")
+    .into_value();
+    assert_eq!(checked.len(), 2);
+
+    let source_without_import = SourceIdentity::new("test", "import-none", "none", "1");
+    let no_import = spine::parse(
+        &ParseRequest {
+            source: &source_without_import,
+            path: "unit.native",
+            bytes: format!("{header}function c using v(): Integer pure {{ m::f(1) }}\n").as_bytes(),
+        },
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("unit without an import parses")
+    .into_value();
+    let admitted =
+        admit_parsed_unit_list(vec![a, no_import], &dependencies).expect("source units admit");
+    let models = select_units(
+        &admitted,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("units select with no models")
+    .into_value();
+    let refusal = check_units(
+        &admitted,
+        "source-local-import-no-leak".to_owned(),
+        &models,
+        &dependencies,
+        spine::SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("unit B cannot use unit A's import alias");
+    let refusal = refusal
+        .into_refused()
+        .expect("the alias leakage case stops with a refusal");
+    let spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("expected an unbound qualified-name refusal, got {refusal:?}");
+    };
+    assert!(refusals.iter().any(|refusal| matches!(
+        &refusal.cause,
+        qsl_semantics::check::CheckCause::MissingQualifiedName(name) if name.name == "m::f"
+    )));
 }

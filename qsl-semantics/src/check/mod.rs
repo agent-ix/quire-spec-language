@@ -2786,6 +2786,7 @@ impl PackageDeclarations {
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
+                source_owner: self.function_sources.get(index).cloned(),
                 regions: Some(&regions),
                 cancel: Some(cancel),
             };
@@ -3119,7 +3120,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&terminal.name).cloned());
             match terminal::check_terminal(index, terminal, &declarations, &mut contract_cx) {
                 Ok((declaration, used)) => {
                     nodes_used = used;
@@ -3273,7 +3275,8 @@ impl PackageDeclarations {
                     &mut contract_meter,
                     &mut contract_diagnostics,
                     &mut contract_scopes,
-                );
+                )
+                .with_source_owner(self.source_owners.get(&$refinement.form.name.name).cloned());
                 let env = refinement::RefinementEnv {
                     support: self.refinement_support,
                     lists: &internal_lists,
@@ -3604,7 +3607,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
@@ -3680,7 +3684,8 @@ impl PackageDeclarations {
                         &mut contract_meter,
                         &mut contract_diagnostics,
                         &mut contract_scopes,
-                    );
+                    )
+                    .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
                     match protocol_slots::check(
                         protocol,
                         &checked,
@@ -3717,7 +3722,8 @@ impl PackageDeclarations {
                         &mut contract_meter,
                         &mut contract_diagnostics,
                         &mut contract_scopes,
-                    );
+                    )
+                    .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
                     match protocol_controls::check(
                         protocol,
                         &self.alias_names,
@@ -4030,7 +4036,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&clause.form.name.name).cloned());
             let outcome = temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx);
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
@@ -4262,7 +4269,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&claim.form.name.name).cloned());
             match state_graph_claim::StateGraphFamily::check(claim, &mut contract_cx) {
                 Ok(staged) => {
                     let checked = staged.into_value();
@@ -4385,7 +4393,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(clause.name()).cloned());
             match hyper_clause::HyperTraceFamily::check(clause, &mut contract_cx) {
                 Ok(staged) => match staged.into_value() {
                     // FR-488: a clause over `behaviours` is emitted unless

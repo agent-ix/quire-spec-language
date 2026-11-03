@@ -55,6 +55,7 @@ impl OperationClauseDeclaration {
     /// `ensures` a postcondition, with no profile selected.
     pub(crate) fn view(&self) -> ClauseView<'_> {
         ClauseView {
+            source_owner: None,
             kind: match self.clause.kind {
                 OperationClauseKind::Requires => StateClauseKind::Precondition,
                 OperationClauseKind::Ensures => StateClauseKind::Postcondition,

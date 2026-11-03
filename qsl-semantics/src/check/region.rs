@@ -157,6 +157,9 @@ fn resolve<'s>(
         Origin::Body { index, .. } | Origin::Measure { index, .. } => {
             function_sources.get(*index).unwrap_or(document.source)
         }
+        Origin::StateClause { index, .. } => source_owners
+            .get(&format!("state_clause:{index}"))
+            .unwrap_or(document.source),
         Origin::TypeDeclaration { name } => source_owners
             .get(name)
             .or_else(|| {

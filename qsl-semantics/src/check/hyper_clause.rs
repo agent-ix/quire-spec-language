@@ -103,6 +103,14 @@ pub enum HyperDeclaration {
 }
 
 impl HyperDeclaration {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Behaviours(form) => &form.name.name,
+            Self::Finite(form) => &form.name.name,
+            Self::Relation(form) => &form.name.name,
+        }
+    }
+
     /// The `using` alias the declaration selects its profile by.
     pub(crate) fn profile(&self) -> &qsl_forms::UsingAlias {
         match self {

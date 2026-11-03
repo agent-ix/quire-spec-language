@@ -2184,12 +2184,13 @@ fn equality_producer_emission_rows_excluding(
                     application: application.clone(),
                 });
             }
-            let package_source = source_artifact(graph.source());
+            let package_sources: Vec<_> =
+                graph.sources().into_iter().map(source_artifact).collect();
             if source_map_entry.regions.is_empty()
                 || source_map_entry
                     .regions
                     .iter()
-                    .any(|region| region.source != package_source)
+                    .any(|region| !package_sources.contains(&region.source))
             {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: application.clone(),
@@ -5146,7 +5147,7 @@ fn emit_package_inner(
         })
         .collect();
     let (mut source_map, mut sources) = source_map(&order, &regions)?;
-    sources.insert(source_artifact(graph.source()));
+    sources.extend(graph.sources().into_iter().map(source_artifact));
     let wire_nodes = order
         .iter()
         .map(

@@ -161,6 +161,8 @@ pub struct ParsedUnit {
     /// Single parsed units carry zeroes; aggregate assembly uses this to
     /// retain unit-local model aliases while checking aggregate conflicts.
     model_selection_units: Vec<usize>,
+    /// The source-unit index for each import selection after `combine`.
+    import_selection_units: Vec<usize>,
     forms: Vec<ParsedForm>,
 }
 
@@ -189,6 +191,7 @@ impl ParsedUnit {
             edition: None,
             selections: SourceSelections::default(),
             model_selection_units: Vec::new(),
+            import_selection_units: Vec::new(),
             forms: Vec::new(),
         };
         let mut first = true;
@@ -206,6 +209,9 @@ impl ParsedUnit {
                 }
             }
             combined.selections.imports.extend(unit.selections.imports);
+            combined.import_selection_units.extend(
+                std::iter::repeat(source_unit_index).take(unit.import_selection_units.len()),
+            );
             let mut unit_model_aliases = BTreeSet::new();
             for model in unit.selections.models {
                 let first_alias_in_unit = unit_model_aliases.insert(model.alias.clone());
@@ -238,6 +244,12 @@ impl ParsedUnit {
     /// [`Self::selections`]`().models` after aggregate combination.
     pub fn model_selection_units(&self) -> &[usize] {
         &self.model_selection_units
+    }
+
+    /// The source-unit index for each import selection, in the same order as
+    /// [`Self::selections`]`().imports` after aggregate combination.
+    pub fn import_selection_units(&self) -> &[usize] {
+        &self.import_selection_units
     }
 
     /// The parsed forms in source order.
@@ -480,6 +492,7 @@ pub fn build_unit(parsed: &ParsedSource) -> Result<ParsedUnit, FormsRefusal> {
         edition: declared_edition(parsed.cst()),
         selections: parsed.selections().clone(),
         model_selection_units: vec![0; parsed.selections().models.len()],
+        import_selection_units: vec![0; parsed.selections().imports.len()],
         forms,
     })
 }
@@ -612,6 +625,7 @@ pub fn build_unit_with_protocol_results(
             edition: declared_edition(cst),
             selections: parsed.selections().clone(),
             model_selection_units: vec![0; parsed.selections().models.len()],
+            import_selection_units: vec![0; parsed.selections().imports.len()],
             forms,
         },
         rejected,

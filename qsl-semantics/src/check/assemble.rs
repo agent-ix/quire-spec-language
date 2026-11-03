@@ -3106,8 +3106,14 @@ impl PackageDeclarations {
         let source = source.clone();
         let mut source_owners = BTreeMap::new();
         let sources: Vec<_> = units.iter().map(|(source, _)| source.clone()).collect();
+        let mut state_clause_index = 0usize;
         for (source, unit) in &units {
             for form in unit.forms() {
+                if matches!(form.form(), qsl_forms::DeclarationForm::StateClause(_)) {
+                    source_owners
+                        .insert(format!("state_clause:{state_clause_index}"), source.clone());
+                    state_clause_index += 1;
+                }
                 match form.form() {
                     qsl_forms::DeclarationForm::DimensionEquivalence(equivalence) => {
                         source_owners
@@ -3280,6 +3286,7 @@ impl PackageDeclarations {
             execution_points,
         } = run;
         let model_selection_units = unit.model_selection_units().to_vec();
+        let import_selection_units = unit.import_selection_units().to_vec();
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -3471,22 +3478,23 @@ impl PackageDeclarations {
         // Selection aliases are unique within a unit, and a `using` alias
         // names one of its profile selections.
         let mut aliases: BTreeMap<&str, Vec<(Span, Option<usize>)>> = BTreeMap::new();
-        for (alias, span, source_unit) in selections
-            .profiles
-            .iter()
-            .map(|profile| (profile.alias.as_str(), profile.span, None))
-            .chain(selections.imports.iter().filter_map(|import| {
-                Some((import.alias.as_deref()?, import.span, None))
-            }))
-            .chain(
-                selections
-                    .models
-                    .iter()
-                    .zip(&model_selection_units)
-                    .map(|(model, source_unit)| {
-                        (model.alias.as_str(), model.span, Some(*source_unit))
-                    }),
-            )
+        for (alias, span, source_unit) in
+            selections
+                .profiles
+                .iter()
+                .map(|profile| (profile.alias.as_str(), profile.span, None))
+                .chain(
+                    selections
+                        .imports
+                        .iter()
+                        .zip(&import_selection_units)
+                        .filter_map(|(import, source_unit)| {
+                            Some((import.alias.as_deref()?, import.span, Some(*source_unit)))
+                        }),
+                )
+                .chain(selections.models.iter().zip(&model_selection_units).map(
+                    |(model, source_unit)| (model.alias.as_str(), model.span, Some(*source_unit)),
+                ))
         {
             aliases.entry(alias).or_default().push((span, source_unit));
         }
@@ -3523,12 +3531,21 @@ impl PackageDeclarations {
             }
         }
         let mut qualified = BTreeMap::new();
-        for import in &selections.imports {
+        for (index, import) in selections.imports.iter().enumerate() {
             let admitted = imports
                 .iter()
                 .find(|admitted| admitted.identity.as_str() == import.identity);
             if let (Some(admitted), Some(alias)) = (admitted, &import.alias) {
                 qualified.insert(alias.clone(), admitted.clone());
+                if let Some(source) = import_selection_units
+                    .get(index)
+                    .and_then(|source_unit| sources.get(*source_unit))
+                {
+                    qualified.insert(
+                        super::check::source_import_key(source, alias),
+                        admitted.clone(),
+                    );
+                }
             }
             if admitted.is_none() {
                 errors.push(AssemblyError {
@@ -4171,6 +4188,8 @@ impl PackageDeclarations {
         // with a bad state clause and a bad attempt reports both in one
         // refusal (clause errors first, then attempt errors).
         let resolve = Resolve {
+            source: &source,
+            source_owners: &source_owners,
             profiles: &selections.profiles,
             object_names: &object_names,
             types: &types,
@@ -4658,6 +4677,8 @@ impl PackageDeclarations {
 /// over them, and the selected models.
 #[derive(Clone, Copy)]
 struct Resolve<'a> {
+    source: &'a RawSourceRef,
+    source_owners: &'a BTreeMap<String, RawSourceRef>,
     profiles: &'a [qsl_foundation::selection::ProfileSelection],
     object_names: &'a BTreeMap<String, EffectiveId>,
     types: &'a TypeEnvironment,
@@ -4681,6 +4702,8 @@ fn state_clauses(
     execution_points: &BTreeMap<String, quire_contract_model::ExecutionPoint>,
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
+        source,
+        source_owners,
         profiles,
         object_names,
         types,
@@ -4690,7 +4713,7 @@ fn state_clauses(
     let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();
     let mut clauses = Vec::with_capacity(forms.len());
-    for form in forms {
+    for (index, form) in forms.into_iter().enumerate() {
         let error = |cause, span| AssemblyError { cause, span };
         let selection = profiles
             .iter()
@@ -4805,6 +4828,10 @@ fn state_clauses(
         let Some(selection) = selection else {
             continue;
         };
+        let source_owner = source_owners
+            .get(&format!("state_clause:{index}"))
+            .cloned()
+            .unwrap_or_else(|| source.clone());
         let name = form.name.name;
         let execution_point = execution_points
             .get(&name)
@@ -4817,6 +4844,7 @@ fn state_clauses(
                 .as_ref()
                 .map(|operation| operation.name.clone()),
             name,
+            source_owner,
             name_span: form.name.span,
             selection,
             context,
@@ -5381,6 +5409,7 @@ fn operation_bodies(
         types,
         operations,
         selected,
+        ..
     } = *resolve;
     let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();

@@ -1385,7 +1385,7 @@ impl Scope {
     }
 
     /// The admitted import whose qualifier is `qualifier`.
-    pub(crate) fn imported(&self, qualifier: &str) -> Option<&super::AdmittedImport> {
+    pub(crate) fn imported<'a>(&'a self, qualifier: &str) -> Option<&'a super::AdmittedImport> {
         self.imports.get(qualifier)
     }
 
@@ -1405,10 +1405,24 @@ impl Scope {
         )
     }
 
+    pub(crate) fn imported_for_source<'a>(
+        &'a self,
+        source: Option<&qsl_foundation::source::provenance::RawSourceRef>,
+        qualifier: &str,
+    ) -> Option<&'a super::AdmittedImport> {
+        match source {
+            Some(source) => self.imports.get(&source_import_key(source, qualifier)),
+            None => self.imported(qualifier),
+        }
+    }
+
     /// Every admitted import, for typed consumers that resolve declarations
     /// by their selected model identity rather than the library alias.
     pub(crate) fn imported_packages(&self) -> impl Iterator<Item = &super::AdmittedImport> {
-        self.imports.values()
+        let mut seen = BTreeSet::new();
+        self.imports
+            .values()
+            .filter(move |import| seen.insert(import.identity.as_str()))
     }
 
     /// Every type `name` binds -- an alias, composite, enum or object type --
@@ -1700,6 +1714,20 @@ impl Scope {
     }
 }
 
+pub(crate) fn source_import_key(
+    source: &qsl_foundation::source::provenance::RawSourceRef,
+    qualifier: &str,
+) -> String {
+    format!(
+        "\0{}:{}{}:{}{}",
+        source.authority().len(),
+        source.authority(),
+        source.identity().len(),
+        source.identity(),
+        qualifier
+    )
+}
+
 /// Every declared function signature, index-aligned with the package's
 /// functions, with a by-name index built once so resolving a call
 /// is a map lookup, not a scan of every signature.
@@ -1804,6 +1832,7 @@ struct Local {
 /// One typing pass over a function or standalone expression.
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
+    source_owner: Option<qsl_foundation::source::provenance::RawSourceRef>,
     complete_value: bool,
     /// The derived StateModel family of a helper function body.
     model_family: bool,
@@ -2256,6 +2285,7 @@ impl<'a> Typer<'a> {
     ) -> Self {
         Self {
             scope,
+            source_owner: None,
             complete_value: scope.complete_value,
             model_family: false,
             signatures,
@@ -2277,6 +2307,20 @@ impl<'a> Typer<'a> {
             hyper: None,
             presence_places: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_source_owner(
+        mut self,
+        source: Option<qsl_foundation::source::provenance::RawSourceRef>,
+    ) -> Self {
+        self.source_owner = source;
+        self
+    }
+
+    pub(crate) fn imported(&self, qualifier: &str) -> Option<&'a super::AdmittedImport> {
+        let scope: &'a Scope = self.scope;
+        scope.imported_for_source(self.source_owner.as_ref(), qualifier)
     }
 
     /// The static range of the integer `node` computes (FR-139).
@@ -2354,6 +2398,9 @@ impl<'a> Typer<'a> {
 
     /// Borrow the enclosing family's stage state for nested model checks.
     pub(crate) fn with_context(mut self, cx: crate::family::CheckContext<'a, Scope>) -> Self {
+        if let Some(owner) = cx.source_owner() {
+            self.source_owner = Some(owner.clone());
+        }
         self.context = Some(cx);
         self
     }
