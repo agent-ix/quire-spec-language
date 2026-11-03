@@ -1147,6 +1147,11 @@ impl<'a> Gen<'a> {
             format!("{init_buffers}, ")
         };
         let zero_state = zero_buffers("s");
+        let gap_results_text = format!(
+            "let gcells = {gap_results} in \
+             let gacts = map(e in filter(e in s.activations: e.status.rep = {pending}): failedOf(e.subformula, e.origin_tick, gap)) in ",
+            pending = code::PENDING
+        );
         let _ = writeln!(
             out,
             "function {init} using v(): State pure {{ \
@@ -1188,11 +1193,7 @@ impl<'a> Gen<'a> {
                 ActivationKind::Each => "true".to_owned(),
                 ActivationKind::EachGuarded => self.guard_expr(),
             },
-            gap_results_text = format!(
-                "let gcells = {gap_results} in \
-                 let gacts = map(e in filter(e in s.activations: e.status.rep = {pending}): failedOf(e.subformula, e.origin_tick, gap)) in ",
-                pending = code::PENDING
-            ),
+            gap_results_text = gap_results_text,
         );
         out
     }

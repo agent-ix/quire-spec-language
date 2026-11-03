@@ -218,9 +218,12 @@ pub(crate) fn run_entries_probe(
     spec: &EntrySpec,
     inputs: &[Input],
     probe: &str,
-) -> (Vec<Vec<(i128, i64)>>, Vec<Vec<i128>>) {
+) -> (Vec<Vec<(i128, i64)>>, Probes) {
     run_entries_core(plan, spec, inputs, Some(probe))
 }
+
+/// The probe values read after each input.
+type Probes = Vec<Vec<i128>>;
 
 const PROBE_BASE: i128 = 1_000_000_000_000_000_000;
 
@@ -229,7 +232,7 @@ fn run_entries_core(
     spec: &EntrySpec,
     inputs: &[Input],
     probe: Option<&str>,
-) -> (Vec<Vec<(i128, i64)>>, Vec<Vec<i128>>) {
+) -> (Vec<Vec<(i128, i64)>>, Probes) {
     let mut body = String::from(
         "function scenario using v(): Sequence<Integer> pure { let s0 = monitorInit() in ",
     );
