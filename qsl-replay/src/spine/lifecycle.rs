@@ -111,6 +111,7 @@ use quire_exact::{Cancel, Meter, ScalarLimits, Value};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
+use super::subject::StaticSubjectInput;
 use super::{
     region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary,
     UnitListRefusal,
@@ -1353,18 +1354,18 @@ pub fn check_units(
                 if has_protocol_refusal || !package.graph().unit_refusals().is_empty() {
                     Err(SubjectUnavailable::RefusedCheck)
                 } else {
-                    StaticSubject::from_check(
-                        parsed.source(),
-                        &subject_libraries,
-                        parsed.unit().edition(),
-                        &parsed.unit().selections().profiles,
-                        &parsed.unit().selections().models,
-                        parsed.unit().forms(),
-                        &models.models,
-                        &models.packages,
-                        &resolved_libraries,
-                        package.graph(),
-                    )
+                    StaticSubject::from_check(StaticSubjectInput {
+                        source: parsed.source(),
+                        libraries: &subject_libraries,
+                        edition: parsed.unit().edition(),
+                        selected_profiles: &parsed.unit().selections().profiles,
+                        model_selections: &parsed.unit().selections().models,
+                        forms: parsed.unit().forms(),
+                        selected_models: &models.models,
+                        package_input: &models.packages,
+                        resolved_libraries: &resolved_libraries,
+                        graph: package.graph(),
+                    })
                 };
             let build_provenance = BuildProvenance {
                 limits,
@@ -1627,18 +1628,18 @@ fn check_with_context_and_temporal_selections(
         {
             Err(SubjectUnavailable::RefusedCheck)
         } else {
-            StaticSubject::from_check(
-                parsed.source(),
-                &libraries,
-                parsed.unit().edition(),
-                &parsed.unit().selections().profiles,
-                &parsed.unit().selections().models,
-                parsed.unit().forms(),
-                &models.models,
-                &models.packages,
-                &resolved_libraries,
-                package.graph(),
-            )
+            StaticSubject::from_check(StaticSubjectInput {
+                source: parsed.source(),
+                libraries: &libraries,
+                edition: parsed.unit().edition(),
+                selected_profiles: &parsed.unit().selections().profiles,
+                model_selections: &parsed.unit().selections().models,
+                forms: parsed.unit().forms(),
+                selected_models: &models.models,
+                package_input: &models.packages,
+                resolved_libraries: &resolved_libraries,
+                graph: package.graph(),
+            })
         };
         let build_provenance = BuildProvenance {
             limits,

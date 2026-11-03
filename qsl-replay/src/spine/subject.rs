@@ -156,6 +156,19 @@ pub struct StaticSubject {
     roles: Vec<RoleComponent>,
 }
 
+pub(super) struct StaticSubjectInput<'a> {
+    pub(super) source: &'a Source,
+    pub(super) libraries: &'a [Source],
+    pub(super) edition: Option<&'a str>,
+    pub(super) selected_profiles: &'a [ProfileSelection],
+    pub(super) model_selections: &'a [ModelSelection],
+    pub(super) forms: &'a [ParsedForm],
+    pub(super) selected_models: &'a SelectedModels,
+    pub(super) package_input: &'a PackageInput,
+    pub(super) resolved_libraries: &'a [String],
+    pub(super) graph: &'a qsl_semantics::check::CheckedGraph,
+}
+
 /// The resource configuration and stage usage of the successful check that
 /// produced a checked unit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -167,18 +180,19 @@ pub struct BuildProvenance {
 }
 
 impl StaticSubject {
-    pub(crate) fn from_check(
-        source: &Source,
-        libraries: &[Source],
-        edition: Option<&str>,
-        selected_profiles: &[ProfileSelection],
-        model_selections: &[ModelSelection],
-        forms: &[ParsedForm],
-        selected_models: &SelectedModels,
-        package_input: &PackageInput,
-        resolved_libraries: &[String],
-        graph: &qsl_semantics::check::CheckedGraph,
-    ) -> Result<Self, SubjectUnavailable> {
+    pub(super) fn from_check(input: StaticSubjectInput<'_>) -> Result<Self, SubjectUnavailable> {
+        let StaticSubjectInput {
+            source,
+            libraries,
+            edition,
+            selected_profiles,
+            model_selections,
+            forms,
+            selected_models,
+            package_input,
+            resolved_libraries,
+            graph,
+        } = input;
         let mut sources = Vec::with_capacity(libraries.len() + 1);
         sources.push(source_component(source));
         let mut library_sources: Vec<_> = libraries.iter().map(source_component).collect();
