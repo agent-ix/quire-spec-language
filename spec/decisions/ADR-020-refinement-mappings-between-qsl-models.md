@@ -258,9 +258,11 @@ per-step obligations are `operation-contract` records, which is QSpec
 FR-290's existing row. QSpec FR-290's `refinement` kind stays the
 `protocol`-family member of QSpec FR-177. No capability kind is added. QSL's
 S3 writes every one of these records, as it writes every requirement record
-(ADR-012): the refinement record (FR-144), the RE-2 per-step records
-(FR-146), and the `refinement` record of a refinement whose abstract side is
-a protocol subject (FR-147). RE-2 records are written for a refinement with
+(ADR-012): the refinement record (FR-144) and the RE-2 per-step records
+(FR-146). A refinement whose abstract side is a protocol subject (FR-147)
+writes the same `temporal-satisfaction` refinement record, never a
+`refinement` record (QSpec FR-375-AC-8); its family is `relation-claim`
+(FR-507). RE-2 records are written for a refinement with
 no hidden field, no history field and no `any` row, since `map` is then a
 function of the concrete state alone and every step row has an obligation.
 

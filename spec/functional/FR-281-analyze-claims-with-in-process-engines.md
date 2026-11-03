@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-507
+    type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-300"
     type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-331"
@@ -75,8 +77,10 @@ candidate.
   `unsupported-claim-kind` cause, and the claim kind travels in the
   diagnostic's FR-272 payload (the item's FR-290 kind, and its
   `requirements` when it carries them).
-- `analyze` reads no manifest to route an item: it computes no candidate set
-  and settles no disposition. An item's engine is its `Supported` candidate
+- `analyze` reads no manifest to route an item: it computes no candidate set,
+  and the only dispositions it settles are FR-507's `inapplicable-kind` and
+  the `unknown-backend` and `inconsistent-candidates` checks below. An
+  item's engine is its `Supported` candidate
   and no other, so an item two engines could decide reaches `analyze` only as
   the `invalid-request`/`ambiguous-backend` disposition above.
 - A `Supported` candidate that `engines` does not hold settles the item
@@ -88,6 +92,25 @@ candidate.
   backend). It settles the item `invalid-request` with
   `invalid_capability`/`inconsistent-candidates` naming the candidate and the
   item's kind and mode, and no engine runs.
+
+`analyze` judges each item in this order, and the first rule that applies
+settles it:
+
+1. FR-507's declaration-family check. An item whose kind does not apply to
+   its claim's declaration family settles `invalid-request` with
+   `invalid_capability`/`inapplicable-kind`, whatever disposition it was
+   handed: `Supported` on any candidate (held or not, advertising its
+   (kind, mode) or not), `RequiresBound`, `Unsupported`, or `InvalidRequest`
+   with any other cause, `ambiguous-backend` included. This is QSpec FR-290's
+   order, in which the check precedes every candidate-table cause, so the
+   record equals the one a conforming `negotiate_*` gives.
+2. A handed `RequiresBound`, `Unsupported` or `InvalidRequest`: a record
+   settled by that disposition with its diagnostic.
+3. `Supported(candidate)` with no engine in `engines` under that `BackendId`:
+   `unknown-backend`.
+4. `Supported(candidate)` on an engine that does not advertise the item's
+   (kind, mode): `inconsistent-candidates`.
+5. Otherwise the item runs on its candidate.
 
 `Engines` is the set of in-process engines `analyze` and the provider entry
 (FR-280) may run, each by its `BackendId` with its FR-331 manifest.
@@ -200,8 +223,9 @@ in `request_index` order, with the FR-331 result vocabulary, its O-16
 category, its typed cause, its basis, its counterexample or certificate
 where it has one, and its accounting. A record of an item an engine ran
 names that engine's `BackendId` and is settled by its result; a record of an
-item settled `requires-bound`, `unsupported` or `invalid-request` is settled
-by that disposition, names no engine and carries its diagnostic. An undefined
+item settled `requires-bound`, `unsupported` or `invalid-request`, or refused
+`inapplicable-kind` by FR-507, is settled by that disposition, names no engine
+and carries its diagnostic. An undefined
 claim evaluation gives a `refuted` record, category violation, with cause
 `UndefinedEvaluation{where, cause}` and the point where the evaluation was
 undefined as its counterexample. A binding that FR-120 admission does not admit
@@ -215,16 +239,23 @@ holding the `AdmissionFailure`, and no record.
 - When an item's disposition is `Supported(candidate)` and `engines` holds
   that candidate, the `analyze` operation shall run the item on that engine
   only.
-- If an item's disposition is `RequiresBound`, `Unsupported` or
-  `InvalidRequest`, then `analyze` shall return, without running any engine
-  for it, a record settled by that disposition with its diagnostic.
-- If an item's disposition is `Supported(candidate)` and `engines` holds no
+- If an item's kind does not apply to its claim's declaration family
+  (FR-507), then `analyze` shall settle the item, without running any engine
+  for it, `invalid-request` with `invalid_capability`/`inapplicable-kind`,
+  whatever disposition the item was handed, before any other rule below.
+- If an item's kind applies to its claim's family and its disposition is
+  `RequiresBound`, `Unsupported` or `InvalidRequest`, then `analyze` shall
+  return, without running any engine for it, a record settled by that
+  disposition with its diagnostic.
+- If an item's kind applies to its claim's family, its disposition is
+  `Supported(candidate)` and `engines` holds no
   engine with that `BackendId`, then `analyze` shall settle the item, without
   running any engine for it, `invalid-request` with
   `invalid_capability`/`unknown-backend` naming the candidate.
 - The `analyze` operation shall run an item only on the candidate its
   disposition names, and never choose among engines.
-- If an item's disposition is `Supported(candidate)` and the engine `engines`
+- If an item's kind applies to its claim's family, its disposition is
+  `Supported(candidate)` and the engine `engines`
   holds for that candidate does not advertise the item's (kind, mode), then
   `analyze` shall settle the item, without running any engine for it,
   `invalid-request` with `invalid_capability`/`inconsistent-candidates`.
@@ -288,6 +319,7 @@ holding the `AdmissionFailure`, and no record.
 | FR-281-AC-10 | `Engines::with` holding `qsl.test-a`, given a second engine whose manifest's `BackendId` is `qsl.test-a`, returns `invalid_capability`/`duplicate-backend` naming `qsl.test-a`, and the set still runs the first engine for an item settled `Supported(qsl.test-a)`. With `qsl.test-a` advertising only (`value-validity`, `bounded`), a `temporal-satisfaction` item settled `Supported(qsl.test-a)` settles `invalid-request` with `invalid_capability`/`inconsistent-candidates` naming `qsl.test-a` and the item's kind and mode, and `qsl.test-a` does not run. AC-3's unsupported record carries the diagnostic naming the claim kind and no `cause` member. | Test (TC-762) |
 | FR-281-AC-11 | With test engines that each refuse a `Supported` item, `analyze` settles: an `Admission` refusal `declined` with cause `invalid-input` and its diagnostic, and an incomplete admission `declined` with `incomplete-input`; a `RequiresBound` refusal `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names the item's kind, the engine's `BackendId` and the modes its manifest advertises for that kind; a `Symmetry` refusal `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; a `NotStatistical` refusal `invalid-request` with `invalid_capability`/`not-statistical` and no result; a refusal carrying `unsupported_construct`/`not-yet-implemented` `unsupported` with that diagnostic; and a refusal carrying `invalid_runtime_input`/`wrong-value-kind` `failed` with that diagnostic. Each record names its engine. One request holding the refused-admission case and the five cases after it returns those six records in `request_index` order; the incomplete admission is a seventh case, run as a request of its own because a test engine reports one admission outcome per run, and returns one `declined`, `incomplete-input` record. Over a model one of whose operations `modifies` a field of type `Integer` (an unbounded FR-120 root), an EN-1 item over `Engines::qsl()` settled `Supported` on EN-1 settles `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`, EN-1's one advertised mode. | Test (TC-763) |
 | FR-281-AC-12 | The `analyze` operation measures a finite `AnalyzeLimits.deadline_ms` from entry and applies it to the whole request; when it expires, `analyze` settles each open item `incomplete` with cause `cancelled{source: deadline}` and preserves records already settled. If caller cancellation ends the run first, open items carry `cancelled{source: requested}`; if an engine or accounting limit stops an item first, `analyze` keeps that item's typed limit result. A binding admission failure still returns `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs. | Test (TC-763) |
+| FR-281-AC-13 | With `engines` holding `qsl.test-a` advertising only (`value-validity`, `bounded`), a `finite-replay` item on a state clause's claim settles `invalid-request` with `invalid_capability`/`inapplicable-kind`, payload `family` `state-model`, and no engine runs, in each case: handed `Supported(qsl.test-c)`, which `engines` does not hold (not `unknown-backend`); handed `Supported(qsl.test-a)`, which does not advertise its (kind, mode) (not `inconsistent-candidates`); and handed `InvalidRequest` with `invalid_capability`/`ambiguous-backend` (not that disposition). A `temporal-satisfaction` item on a temporal clause's claim, whose kind applies, handed the same three settles `unknown-backend` naming `qsl.test-c`, `inconsistent-candidates` naming `qsl.test-a`, and `ambiguous-backend` respectively. | Test (TC-762, TC-1302) |
 
 ## Dependencies
 
@@ -299,6 +331,7 @@ holding the `AdmissionFailure`, and no record.
 - [FR-282](FR-282-check-analyze-certificates-in-the-qualified-core.md): the certificate checkers.
 - [FR-098](FR-098-execute-a-replay-request.md): replay.
 - [FR-120](FR-120-simulate-a-checked-package-s-state-family.md): the subject binding.
+- [FR-507](FR-507-apply-each-capability-kind-to-its-declaration-family-only.md): the declaration-family check that precedes every other disposition rule.
 - QSpec FR-300: the `analyze` operation; QSpec FR-331: the result vocabulary.
 
 ## References

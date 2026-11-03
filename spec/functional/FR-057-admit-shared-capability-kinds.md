@@ -203,8 +203,9 @@ on `relation-claim`. `finite-replay` applies to `protocol` only, because only
 a choreography is replayed.
 
 If a requested pair's kind does not apply to its claim's declaration family,
-then the pair SHALL be recorded as an inapplicable capability,
-`invalid_capability`/`inapplicable-kind`, naming the family (FR-507). A
+then the QSL composed linker SHALL record the pair as an inapplicable
+capability, `invalid_capability`/`inapplicable-kind`, naming the family
+(FR-507). A
 required inapplicable pair makes complete admission unavailable. An
 inapplicable pair withholds no declaration body from its family checker.
 

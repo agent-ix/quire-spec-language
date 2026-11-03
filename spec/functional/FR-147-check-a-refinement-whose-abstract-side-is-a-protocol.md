@@ -77,8 +77,10 @@ rows at compile time and requests one protocol refinement claim.
   (QSpec FR-375).
 - Step rows whose `StepTarget::Abstract` may name an abstract protocol node
   as well as an abstract operation.
-- A requirement record of kind `refinement` (QSpec FR-290's `protocol`
-  family member) for the declaration.
+- FR-144's requirement record of kind `temporal-satisfaction` for the
+  declaration, a whole model refinement (QSpec FR-375-AC-8), whose
+  declaration family is `relation-claim` (FR-507). It is not a refinement
+  between two protocols, so it is never of kind `refinement`.
 
 ## Behavior
 
@@ -276,17 +278,18 @@ under `abstract Spec::Twice` in a build omitting both features gives two.
 
 ### Requirement record
 
-- The `requirements` hook SHALL write one requirement record of kind
-  `refinement` for the declaration, in place of FR-144's
-  `temporal-satisfaction` record, binding the refinement node, the
-  concrete subject and the abstract protocol subject in its obligation
-  identity. For a dependency's clause the abstract protocol subject is the
+- The `requirements` hook SHALL write FR-144's one requirement record of
+  kind `temporal-satisfaction` for the declaration, and no record of kind
+  `refinement`, binding the refinement node, the concrete subject and the
+  abstract protocol subject in its obligation identity. QSpec FR-375-AC-8
+  gives a whole model refinement `temporal-satisfaction` whatever its
+  abstract subject, and FR-507 reads its family as `relation-claim`, to
+  which `refinement` does not apply. For a dependency's clause the abstract protocol subject is the
   dependency's `package_id` with the clause's `NodeKey`, so the same
   refinement over a local clause and over a dependency's clause gives
   different obligation identities.
-- Negotiation SHALL route it by its kind (FR-075); the explicit-state
-  engine's provider manifest SHALL advertise `refinement` for a protocol
-  abstract side.
+- Negotiation SHALL route it by its kind (FR-075) as it routes FR-144's
+  record, to an engine advertising `temporal-satisfaction`.
 - With `F_A` non-empty, the record's `F_A` liveness half SHALL settle
   `unsupported`, `unsupported-requested-capability`, naming liveness through
   hidden abstract fields, since the abstract control state is hidden
@@ -316,7 +319,7 @@ declares an `await` node (the `timeout` class) and a compensation template
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-147-AC-1 | In a build whose support set holds `protocol-abstract-side` and `refinement-internal-list`, `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [Twice::Done]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
+| FR-147-AC-1 | In a build whose support set holds `protocol-abstract-side` and `refinement-internal-list`, `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [Twice::Done]`, and writes one requirement record of kind `temporal-satisfaction` (FR-144's) and no `refinement` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
 | FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::zz` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::a1` beside a row `-> node Spec::Twice::a1(self)` (`invalid_model_binding`/`conflicting-binding`, naming the row and the entry); `-> node Spec::Twice::a1(self)` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`). In a build whose support set omits `refinement-internal-list`, a non-empty list on `CasRefinesCounter` is AC-7's, not a binding refusal; in a build that has it, AC-12's. A producer that has built a feature is checked by that feature's own criteria. The first three vectors need a build that holds `protocol-abstract-side` and `refinement-internal-list`; the `CasRefinesCounter` node-row vector runs in any build. | Test (TC-552) |
 | FR-147-AC-3 | In a build that holds both features, `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
 | FR-147-AC-4 | In a build that holds both features, `CasTwice` with `finish` removed from its `refinement_internals` list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::Done(self)` it refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-552) |
@@ -330,7 +333,7 @@ declares an `await` node (the `timeout` class) and a compensation template
 | FR-147-AC-12 | In a build that holds `refinement-internal-list`, a non-empty list for `CasRefinesCounter` (model side) refuses `invalid_model_binding`/`malformed-declaration` at (the unit's value, `/0`), with no `CheckedRefinement` and no `not-yet-implemented`; an empty list does not refuse. | Test (TC-552) |
 | FR-147-AC-13 | In a build that holds `protocol-abstract-side`, `CasTwice` checks to the same `CheckedRefinement` whether `protocol Twice` is declared before or after the refinement in the unit's source. With `Twice` refused by its own checks, the unit reports `Twice`'s refusals and no `missing-name` for the clause name and no `CheckedRefinement` for `CasTwice`. | Test (TC-552) |
 | FR-147-AC-14 | In a build that holds `protocol-abstract-side`, over `Twice`, whose attempt `a1` applies `Spec::Counter::inc` (no parameter and no result, so its binder record is the receiver alone), the rows `-> node Spec::Twice::a1(self)`, `-> node Spec::Twice::a1(_)` and `-> node Spec::Twice::a1` are admitted; `-> node Spec::Twice::a1(self, 1, 2)` and `-> node Spec::Twice::a1(self, _)` each refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1 and `actual` 3 and 2; `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument retaining `expected` the reference type of `Spec::Counter` and `actual` `Boolean`. | Test (TC-552) |
-| FR-147-AC-15 | In a build that holds `protocol-abstract-side` and `refinement-internal-list`, with `Spec` and `Twice` supplied as a dependency package (FR-135-AC-1's dependency form) and declared nowhere in the unit, `CasTwice` checks with `AbstractSide::Protocol` whose `dependency` is that package's `package_id` and whose `clause` is the key of `Twice` the dependency's `CheckedGraph` holds, with `abstract_internal = [Twice::Done]`; the row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`, and `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument as in AC-14. It writes one `refinement` record whose obligation identity names the dependency's `package_id`, and differs from the record of the same refinement over the local `Twice` of AC-1. The emitted refinement node's `protocol` is `Twice`'s structural node key in the dependency's package, its `dependencies` hold no entry for `Twice`, and its node id differs from the node id of the same refinement over the local `Twice`. `abstract Spec::Thrice` and `abstract Spec::Counter` (a type of the dependency) each refuse `missing_declaration`/`missing-name` at the name after `::`, and so does `abstract Spec::LocalTwice`, where `LocalTwice` is a protocol the unit itself declares over the dependency's `Spec`, at `LocalTwice`. | Test (TC-552) |
+| FR-147-AC-15 | In a build that holds `protocol-abstract-side` and `refinement-internal-list`, with `Spec` and `Twice` supplied as a dependency package (FR-135-AC-1's dependency form) and declared nowhere in the unit, `CasTwice` checks with `AbstractSide::Protocol` whose `dependency` is that package's `package_id` and whose `clause` is the key of `Twice` the dependency's `CheckedGraph` holds, with `abstract_internal = [Twice::Done]`; the row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`, and `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument as in AC-14. It writes one `temporal-satisfaction` record whose obligation identity names the dependency's `package_id`, and differs from the record of the same refinement over the local `Twice` of AC-1. The emitted refinement node's `protocol` is `Twice`'s structural node key in the dependency's package, its `dependencies` hold no entry for `Twice`, and its node id differs from the node id of the same refinement over the local `Twice`. `abstract Spec::Thrice` and `abstract Spec::Counter` (a type of the dependency) each refuse `missing_declaration`/`missing-name` at the name after `::`, and so does `abstract Spec::LocalTwice`, where `LocalTwice` is a protocol the unit itself declares over the dependency's `Spec`, at `LocalTwice`. | Test (TC-552) |
 | FR-147-AC-16 | In a build that holds `protocol-abstract-side`, a dependency package that imports the models `Spec` and `Other` and declares a protocol `OnOther` whose roles act only on `Other` refuses `abstract Spec::OnOther` `invalid_model_binding`/`malformed-declaration` at `OnOther`, with no `CheckedRefinement`; with `Spec` local, a protocol `OnImpl` of the declaring package whose roles act only on the concrete model `Impl` refuses `abstract Spec::OnImpl` the same way, at `OnImpl`. A dependency whose `Twice` fails its own checks gives `CompileRefusal::Dependency` and no S3 result for the unit. | Test (TC-552) |
 
 ## Dependencies

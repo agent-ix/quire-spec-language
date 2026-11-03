@@ -75,27 +75,42 @@ exactly these kinds:
 | `probabilistic` | `probabilistic-satisfaction` |
 | `real-time` | `schedulability` |
 
-Each family's kinds are exactly the kinds FR-057's claim-form table assigns to
-the claim forms that family holds. `finite-replay` applies to `protocol` only,
-because only a choreography is replayed; `state-model` admits
-`operation-contract` only.
+Each family's kinds are exactly the kinds the claim forms of that family's
+rows in "QSL claim forms and their families" below require. `finite-replay`
+applies to `protocol` only, because only a choreography is replayed;
+`state-model` admits `operation-contract` only.
 
 ### QSL claim forms and their families
 
 The family is a property of the claim, not of its kind. This table is QSL's
-producer mapping:
+producer mapping. Each row gives the kind its claim form requires, which is
+the kind FR-057's claim-form table gives where that table has the form:
 
-| QSL claim form | Declaration family |
-| --- | --- |
-| Boolean clause over pure expressions, including one holding a `case` expression; each scalar operation application in a `Value` function body (FR-062) | `value` |
-| State precondition, postcondition and invariant (FR-104), and frame obligation | `state-model` |
-| Temporal clause under a finite-trace or infinite-trace profile, including over a timed (FR-231) or hybrid (FR-447) subject; state-graph claim (FR-165); `hyper` clause (FR-173) | `temporal-trace` |
-| Derived deadlock-freedom item over a model (FR-124) or protocol (FR-211) subject, derived time-lock-freedom item (FR-232), derived race-freedom item (FR-224) | `temporal-trace` |
-| Model claim and code claim of a `relation` clause over model operations (FR-173, FR-180); whole refinement between two models (FR-144) and each of its per-step and initial-state obligations (FR-146); refinement between two operation contracts or state models | `relation-claim` |
-| Protocol analysis claim, refinement between two protocols, replay of one finite execution | `protocol` |
-| Probabilistic claim (FR-186) | `probabilistic` |
-| `schedulable` or `response` claim over a task set (FR-246) | `real-time` |
-| `case` exhaustiveness obligation over a `SumCase`, abstraction relation (QSpec FR-353) | none: no request item |
+| QSL claim form | Required kind | Declaration family |
+| --- | --- | --- |
+| Boolean clause over pure expressions, including one holding a `case` expression | `value-validity` | `value` |
+| Scalar operation application in a `Value` function body (FR-062), one claim per occurrence | `value-validity` | `value` |
+| State precondition, postcondition and invariant (FR-104) | `operation-contract` | `state-model` |
+| Frame obligation (`modifies`, `creates`, `deletes`) | `operation-contract` | `state-model` |
+| Temporal clause under a finite-trace or infinite-trace profile, including over a timed (FR-231) or hybrid (FR-447) subject | `temporal-satisfaction` | `temporal-trace` |
+| State-graph claim (FR-165) | `temporal-satisfaction` | `temporal-trace` |
+| `hyper` clause (FR-173) | `temporal-satisfaction` | `temporal-trace` |
+| Derived deadlock-freedom item over a model (FR-124) or protocol (FR-211) subject, derived time-lock-freedom item (FR-232), derived race-freedom item (FR-224) | `temporal-satisfaction` | `temporal-trace` |
+| Model claim of a `relation` clause over model operations (FR-173) | `temporal-satisfaction` | `relation-claim` |
+| Code claim of that `relation` clause when every operation has an implementation binding (FR-180) | `operation-contract` | `relation-claim` |
+| Whole refinement between two model subjects (FR-144), including one whose abstract side is a protocol (FR-147) | `temporal-satisfaction` | `relation-claim` |
+| Per-step and initial-state obligation of a model refinement (FR-146); refinement between two operation contracts or state models | `operation-contract` | `relation-claim` |
+| Replay of one finite execution against protocol semantics | `finite-replay` | `protocol` |
+| Refinement between two protocols | `refinement` | `protocol` |
+| Other protocol analysis claim | its `protocol`-family kind | `protocol` |
+| Probabilistic claim (FR-186) | `probabilistic-satisfaction` | `probabilistic` |
+| `schedulable` or `response` claim over a task set (FR-246) | `schedulability` | `real-time` |
+| `case` exhaustiveness obligation over a `SumCase`, abstraction relation (QSpec FR-353) | none | none: no request item |
+
+A refinement declaration is a model refinement whatever its abstract side:
+its items are `temporal-satisfaction` and `operation-contract` on
+`relation-claim`, never `refinement`. The `refinement` kind applies only to a
+refinement between two protocols, which a protocol declaration holds.
 
 A claim transferred through a refinement (QSpec FR-380) is planner-local and
 is not a request item, so it takes no family and is never checked.
@@ -133,14 +148,17 @@ settle the item `invalid-request` with `invalid_capability`/
 No engine SHALL run an inapplicable item, and no other kind SHALL be
 substituted for its kind.
 
-`analyze` SHALL NOT refuse `inapplicable-kind` an item whose kind is the kind
-FR-057's claim-form table assigns to its claim form.
+`analyze` SHALL NOT refuse `inapplicable-kind` an item whose kind is the
+required kind of its claim form's row in "QSL claim forms and their
+families".
 
 - **Order.** QSpec FR-290 makes this check `negotiate_*`'s first item rule
   after kind admission: it comes before the evidence-kind, `not-statistical`,
   `absent-extent` and candidate-table rules. `analyze` receives items the
   caller has already settled (FR-281), so it SHALL apply the check before it
-  routes an item, whatever disposition the caller supplied. An inapplicable
+  routes an item, whatever disposition the caller supplied, and before
+  FR-281's `unknown-backend` and `inconsistent-candidates` checks, as FR-281's
+  rule order states. An inapplicable
   item therefore settles `inapplicable-kind` whatever its extent, evidence
   kind, statistical method, candidates or named backend, and an item settled
   `Supported` runs on no engine when its kind does not apply. A conforming
@@ -175,7 +193,8 @@ FR-057's claim-form table assigns to its claim form.
 | FR-507-AC-7 | For one `relation` clause whose every operation has an implementation binding, its model claim requested as `temporal-satisfaction` and its code claim requested as `operation-contract` both apply, on family `relation-claim`. For one model refinement, its whole-refinement item (`item_kind` `refinement`, `temporal-satisfaction`) and each per-step and initial-state obligation (`operation-contract`) apply on `relation-claim`. A `global-conformance` item on the relation clause's claim settles `inapplicable-kind` with `family` `relation-claim`. | Test (TC-1302) |
 | FR-507-AC-8 | The derived deadlock-freedom, time-lock-freedom and race-freedom items, `temporal-satisfaction`, apply on `temporal-trace` read from their `item_kind`, including a deadlock-freedom and a race-freedom item anchored on a protocol clause node. A `global-conformance` item on that protocol clause node's own claim applies on `protocol`. | Test (TC-1302) |
 | FR-507-AC-9 | An item whose claim names a node absent from the package, or a node of no row of QSpec FR-290's node-to-family table, settles `inapplicable-kind` for each of the twelve kinds, and its payload has `request_index` and `capability` and no `family` member. | Test (TC-1302) |
-| FR-507-AC-10 | An item whose kind does not apply, handed to `analyze` settled `Supported`, `RequiresBound`, `Unsupported` or `invalid-request` with `absent-extent`, settles `invalid-request` with `inapplicable-kind` in every case, and no engine runs. | Test (TC-1302) |
+| FR-507-AC-10 | An item whose kind does not apply, handed to `analyze` settled `Supported` on a held engine advertising its (kind, mode), `Supported` on a candidate `engines` does not hold, `Supported` on a held engine that does not advertise its (kind, mode), `RequiresBound`, `Unsupported`, `invalid-request` with `absent-extent`, or `invalid-request` with `ambiguous-backend`, settles `invalid-request` with `inapplicable-kind` in every case, never `unknown-backend`, `inconsistent-candidates` or the handed disposition, and no engine runs (FR-281's order). | Test (TC-1302) |
+| FR-507-AC-11 | For each row of "QSL claim forms and their families" that requires a kind, an item of that row's kind on such a claim is not refused `inapplicable-kind`, and reads that row's family. This covers at least a Boolean value clause (an `expression` node, occurrence role `claim` and role `declaration`), a scalar operation application in a `Value` function body, a frame obligation (`state`/`operation_anchor`, role `anchor`), a state-graph claim, a `hyper` clause, a temporal claim over a timed subject and one over a hybrid subject, and a refinement whose abstract side is a protocol. | Test (TC-1302) |
 
 ## Dependencies
 
