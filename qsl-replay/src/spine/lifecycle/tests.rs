@@ -28,11 +28,12 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
-    admit_parsed_unit_list, check, check_units, check_with_refinement_internals, execute,
-    failure_of, package, package_with_temporal_selections, parse, preflight_unit_list,
-    refusal_or_fault, select, select_units, temporal_selections_for_source, AdmittedModels,
-    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
-    ParsedUnitSource,
+    admit_parsed_unit_list, check, check_units, check_units_with_options,
+    check_with_refinement_internals, execute, failure_of, package,
+    package_with_temporal_selections, parse, preflight_unit_list, refusal_or_fault, select,
+    select_units, temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit,
+    ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
+    UnitCheckOptions,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -1350,6 +1351,61 @@ fn a_continued_protocol_refusal_has_no_subject_or_partial_reference_rows() {
     assert!(!checked.package().graph().protocol_refusals().is_empty());
     assert!(checked.static_subject().is_err());
     assert!(checked.package().graph().dependency_references().is_empty());
+}
+
+/// FR-098: a replay recompile of a source-unit list keeps the continuation
+/// past a protocol refusal, as the single-unit continuation does, and a
+/// non-continuing check refuses at the first protocol failure.
+#[trace("FR-098-AC-1")]
+#[test]
+fn check_units_continues_past_a_protocol_refusal_only_when_asked() {
+    let unit = format!(
+        "{HEADER}model M = \"acme/orders\";\n{}\n{}",
+        protocol_source("W", true),
+        protocol_source("X", true).replace("M::Widget", "M::Absent")
+    );
+    let cancel = Cancel::new();
+    let dependencies = DependencyInput::default();
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("the fixture model package input");
+    let run = |continue_protocol_refusals| {
+        let parsed = super::parse_for_continuation(
+            &request(unit.as_bytes()),
+            SourceLimits::default(),
+            &cancel,
+        )
+        .expect("the attributed protocol refusal is continuable")
+        .into_value();
+        let admitted =
+            admit_parsed_unit_list(vec![parsed], &dependencies).expect("the unit is admitted");
+        let models = super::select_units(
+            &admitted,
+            &packages,
+            ModelNormalizationLimits::default(),
+            SourceLimits::default(),
+            &cancel,
+        )
+        .expect("the fixture model admits")
+        .into_value();
+        check_units_with_options(
+            &admitted,
+            "fixture".to_owned(),
+            &models,
+            &dependencies,
+            UnitCheckOptions {
+                temporal_selections: &[],
+                continue_protocol_refusals,
+            },
+            SpineLimits::default(),
+            &cancel,
+        )
+    };
+    assert!(run(false).is_err(), "the first protocol refusal stops");
+    let checked = run(true)
+        .expect("the continuation keeps the clean sibling graph")
+        .into_value();
+    assert!(checked[0].static_subject().is_err());
+    assert!(!checked[0].package().graph().protocol_refusals().is_empty());
 }
 
 /// FR-503-AC-4..5 (TC-1298 rows 5-6): an S3 refusal is attached to the

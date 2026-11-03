@@ -989,21 +989,20 @@ fn tc_444_a_blank_label_refuses_at_the_source_stage() {
     assert_eq!(diagnostic.region, None);
 }
 
-/// FR-098-AC-1: the package reference names exactly one source: a second
-/// source refuses before anything is recompiled.
+/// FR-098-AC-1: a package reference may name multiple source units for replay.
 #[trace("TC-444", "FR-098-AC-1")]
 #[test]
-fn tc_444_the_package_reference_names_one_source() {
-    let other = b"language \"ix:native\" edition \"1-draft\";\n".to_vec();
+fn tc_444_the_package_reference_replays_multiple_sources() {
+    let other = format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}function other using v(): Boolean pure {{ true }}\n"
+    );
+    let other = other.into_bytes();
     let mut two = small(7);
     two.sources
         .push((AUTHORITY.to_owned(), "test:other".to_owned()));
     two.byte_provision
         .push((AUTHORITY.to_owned(), "test:other".to_owned(), other));
-    assert!(matches!(
-        replay(two, ReplayLimits::default()),
-        Err(ReplayRefusal::SourceCount(2))
-    ));
+    replay(two, ReplayLimits::default()).expect("both referenced sources recompile together");
 }
 
 /// FR-098-AC-4: a selected function whose declared result is not
@@ -1502,8 +1501,8 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     assert_eq!(refusal.code(), replayed.code());
 }
 
-/// FR-098-AC-7 (TC-444 step 7): the `dependencies` entries' order, extent
-/// and sources refuse by ADR-015 D-4's rules, each with no verdict.
+/// FR-098-AC-7 (TC-444 step 7): dependency-entry order and ownership refuse
+/// by ADR-015 D-4.
 #[trace("TC-444", "FR-098-AC-7")]
 #[test]
 fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
@@ -1581,16 +1580,13 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     )
     .expect_err("the unit's owner is not a library's");
     assert_eq!(refused.code(), Code::InvalidPackage);
-    assert!(
-        matches!(
-            &refused,
-            ReplayRefusal::DependencyInput(crate::spine::DependencyInputRefusal::SharedOwner {
-                first: crate::spine::SourceHolder::Unit,
-                ..
-            })
-        ),
-        "{refused:?}"
-    );
+    assert!(matches!(
+        &refused,
+        ReplayRefusal::DependencyInput(crate::spine::DependencyInputRefusal::SharedOwner {
+            first: crate::spine::SourceHolder::Unit,
+            ..
+        })
+    ));
 
     // The entry removed: the import has no supplied library.
     let refused = replay(importing.request(Vec::new(), &[]), ReplayLimits::default())
@@ -1608,19 +1604,6 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
             } if identity.as_str() == "test/units"
         ),
         "{refusal:?}"
-    );
-
-    // The entry naming a second source.
-    let mut two = units.clone();
-    two.sources.push(source_ref("test:zzz"));
-    let refused = replay(
-        importing.request(vec![two], provision),
-        ReplayLimits::default(),
-    )
-    .expect_err("two sources");
-    assert!(
-        matches!(refused, ReplayRefusal::SourceCount(2)),
-        "{refused:?}"
     );
 }
 
@@ -2184,7 +2167,7 @@ fn assert_wrong_target(refusal: &ReplayRefusal, entry: crate::ReplayEntry, point
     };
     assert_eq!(*named, entry);
     assert_eq!(*member, crate::TargetMember::Function);
-    assert_eq!(refusal.pointer(), Some(pointer));
+    assert_eq!(refusal.pointer().as_deref(), Some(pointer));
     assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
     assert_eq!(refusal.cause(), Some("unknown-member"));
 }

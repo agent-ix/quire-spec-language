@@ -488,7 +488,11 @@ pub fn preflight_unit_list(
                 identity: request.source.identity.clone(),
             }));
         }
-        for (library, supplied) in &dependencies.libraries {
+        for (library, supplied) in dependencies
+            .library_units
+            .iter()
+            .flat_map(|(library, units)| units.iter().map(move |unit| (library, unit)))
+        {
             if same_owner(&supplied.source, request.source) {
                 return Err(unit_list_refusal(UnitListRefusal::LibraryOwner {
                     unit: second,
@@ -519,7 +523,11 @@ pub fn admit_parsed_unit_list(
     // Keep the same source/library admission rule for callers that compose
     // this helper without first calling preflight_unit_list.
     for (unit, identity) in requests.iter().enumerate() {
-        for (library, supplied) in &dependencies.libraries {
+        for (library, supplied) in dependencies
+            .library_units
+            .iter()
+            .flat_map(|(library, units)| units.iter().map(move |unit| (library, unit)))
+        {
             if same_owner(&supplied.source, identity) {
                 return Err(unit_list_refusal(UnitListRefusal::LibraryOwner {
                     unit,
@@ -1269,6 +1277,32 @@ pub fn check_units(
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<Vec<CheckedUnit>>, FrontEndFailure> {
+    check_units_with_options(
+        admitted,
+        package_name,
+        models,
+        dependencies,
+        UnitCheckOptions::default(),
+        limits,
+        cancel,
+    )
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct UnitCheckOptions<'a> {
+    pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
+    pub(crate) continue_protocol_refusals: bool,
+}
+
+pub(crate) fn check_units_with_options(
+    admitted: &AdmittedUnitList,
+    package_name: String,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    options: UnitCheckOptions<'_>,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<Vec<CheckedUnit>>, FrontEndFailure> {
     let source_len = |identity: &SourceIdentity| {
         admitted
             .units()
@@ -1277,8 +1311,9 @@ pub fn check_units(
             .map(|unit| unit.source().text().len())
             .or_else(|| {
                 dependencies
-                    .libraries
+                    .library_units
                     .values()
+                    .flatten()
                     .find(|library| &library.source == identity)
                     .map(|library| library.bytes.len())
             })
@@ -1299,7 +1334,7 @@ pub fn check_units(
             continuation_source: first.source().reference().clone(),
             limits,
             cancel,
-            temporal_selections: &[],
+            temporal_selections: options.temporal_selections,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
@@ -1321,14 +1356,13 @@ pub fn check_units(
             .map(|unit| resolved_libraries_for_unit(unit, &resolution.compiled))
             .collect();
         let mut library_packages = BTreeMap::new();
-        let (library_names, libraries): (Vec<_>, Vec<_>) = resolution
-            .compiled
-            .into_iter()
-            .map(|(name, library)| {
-                library_packages.insert(name.clone(), library.emitted.clone());
-                (name, library.source.clone())
-            })
-            .unzip();
+        let mut library_names = Vec::with_capacity(resolution.compiled.len());
+        let mut libraries = Vec::new();
+        for (name, library) in resolution.compiled {
+            library_packages.insert(name.clone(), library.emitted.clone());
+            library_names.push(name);
+            libraries.extend(library.sources.iter().cloned());
+        }
         let mut checked_units = Vec::with_capacity(sources.len());
         for ((parsed, source), (resolved_libraries, subject_libraries)) in admitted
             .units()
@@ -1338,19 +1372,22 @@ pub fn check_units(
         {
             let (protocol_results, protocol_failure) =
                 protocol_check_outcome(parsed, package.graph());
-            if let Some(refusal) = protocol_failure.as_ref() {
-                return Err(StageError::with_protocol_results(
-                    Box::new(refusal.to_refusal()),
-                    protocol_results,
-                ));
+            if !options.continue_protocol_refusals {
+                if let Some(refusal) = protocol_failure.as_ref() {
+                    return Err(StageError::with_protocol_results(
+                        Box::new(refusal.to_refusal()),
+                        protocol_results,
+                    ));
+                }
             }
-            let has_protocol_refusal = protocol_results.iter().any(|result| {
-                matches!(
-                    result,
-                    super::ProtocolResult::Refused { .. }
-                        | super::ProtocolResult::Incomplete { .. }
-                )
-            });
+            let has_protocol_refusal = protocol_failure.is_some()
+                || protocol_results.iter().any(|result| {
+                    matches!(
+                        result,
+                        super::ProtocolResult::Refused { .. }
+                            | super::ProtocolResult::Incomplete { .. }
+                    )
+                });
             let static_subject =
                 if has_protocol_refusal || !package.graph().unit_refusals().is_empty() {
                     Err(SubjectUnavailable::RefusedCheck)
@@ -1554,8 +1591,9 @@ fn check_with_context_and_temporal_selections(
             return Some(parsed.source().text().len());
         }
         dependencies
-            .libraries
+            .library_units
             .values()
+            .flatten()
             .find(|library| &library.source == identity)
             .map(|library| library.bytes.len())
     };
@@ -1594,14 +1632,13 @@ fn check_with_context_and_temporal_selections(
         }
         *work = resolution.work;
         let mut library_packages = BTreeMap::new();
-        let (library_names, libraries): (Vec<LibraryName>, Vec<Source>) = resolution
-            .compiled
-            .into_iter()
-            .map(|(name, library)| {
-                library_packages.insert(name.clone(), library.emitted.clone());
-                (name, library.source.clone())
-            })
-            .unzip();
+        let mut library_names = Vec::with_capacity(resolution.compiled.len());
+        let mut libraries = Vec::new();
+        for (name, library) in resolution.compiled {
+            library_packages.insert(name.clone(), library.emitted.clone());
+            library_names.push(name);
+            libraries.extend(library.sources.iter().cloned());
+        }
         let (protocol_results, protocol_failure) = protocol_check_outcome(parsed, package.graph());
         if !continue_protocol_refusals {
             if let Some(refusal) = protocol_failure.as_ref() {
@@ -2692,9 +2729,8 @@ struct ResolvedLibrary {
     view: ImportView,
     /// The v2 bytes S4 emitted for this library's import view.
     emitted: pkg::EmittedPackage,
-    /// This library's own source, exactly as its own `qsl_cst::parse` read
-    /// it (FND-016).
-    source: Source,
+    /// Every source unit in canonical library order, exactly as S1 read it.
+    sources: Vec<Source>,
 }
 
 /// The direct and transitive libraries reachable from one root source unit.
@@ -2715,12 +2751,13 @@ fn resolved_libraries_for_unit(
     }
     let sources = identities
         .iter()
-        .map(|identity| {
+        .flat_map(|identity| {
             compiled
                 .get(identity)
                 .expect("each selected dependency closure identity was compiled")
-                .source
-                .clone()
+                .sources
+                .iter()
+                .cloned()
         })
         .collect();
     let identities = identities
@@ -2805,6 +2842,7 @@ impl Frame {
         admitted: &AdmittedUnitList,
         package_name: String,
         models: SelectedModels,
+        refinement_internals: Option<serde_json::Value>,
     ) -> Self {
         let source_units = admitted.units.clone();
         let unit = ParsedUnit::combine(source_units.iter().map(|source| source.unit.clone()));
@@ -2816,7 +2854,7 @@ impl Frame {
             source_units,
             models,
             execution_points: super::StateClauseExecutionPoints::new(),
-            refinement_internals: None,
+            refinement_internals,
             next: 0,
             admitted: Vec::with_capacity(imports),
             links: Vec::with_capacity(imports),
@@ -2842,9 +2880,8 @@ impl Frame {
 /// A library whose compile is in progress on the resolution's stack.
 struct Library {
     identity: LibraryName,
-    /// This library's own source, exactly as its own `qsl_cst::parse` read
-    /// it (FND-016).
-    source: Source,
+    /// All source units in canonical order, exactly as S1 read them.
+    sources: Vec<Source>,
     frame: Frame,
 }
 
@@ -2853,7 +2890,7 @@ enum Selected<'a> {
     /// A library compiled earlier in this closure, reused.
     Reused(LibraryName, Arc<ResolvedLibrary>),
     /// The supplied library to compile.
-    Compile(LibraryName, &'a SuppliedLibrary),
+    Compile(LibraryName, &'a [Arc<SuppliedLibrary>]),
 }
 
 /// The frame the walk is in: the innermost library, or the unit itself when
@@ -2926,34 +2963,77 @@ impl<'a> Resolution<'a> {
     fn begin_library(
         &mut self,
         identity: LibraryName,
-        supplied: &SuppliedLibrary,
+        supplied: &[Arc<SuppliedLibrary>],
     ) -> Result<Library, Box<CompileRefusal>> {
         let (limits, cancel, packages) = (self.limits, self.cancel, self.packages);
-        let parsed = charged(cancel, &mut self.work.s1, || {
-            parse_unit(
-                supplied.source.clone(),
-                &supplied.path,
-                &supplied.bytes,
-                limits.source,
-                cancel,
-            )
-        })
-        .map_err(|error| error.refusal)?;
+        if supplied.is_empty() {
+            return Err(Box::new(CompileRefusal::DependencyInput(
+                super::DependencyInputRefusal::EmptyLibraryUnits {
+                    identity: identity.as_str().to_owned(),
+                },
+            )));
+        }
+        let mut parsed = Vec::with_capacity(supplied.len());
+        for source in supplied {
+            let unit = charged(cancel, &mut self.work.s1, || {
+                parse_unit(
+                    source.source.clone(),
+                    &source.path,
+                    &source.bytes,
+                    limits.source,
+                    cancel,
+                )
+            })
+            .map_err(|error| error.refusal)?;
+            parsed.push(unit);
+        }
+        let library_dependencies = self.dependencies.without_library(&identity);
+        let admitted = admit_parsed_unit_list(parsed, &library_dependencies)?;
+        let selections: Vec<_> = admitted
+            .units()
+            .iter()
+            .map(|unit| unit.unit().selections().models.as_slice())
+            .collect();
         let models = charged(cancel, &mut self.work.i1, || {
-            select_models(&parsed, packages, limits.model, cancel)
+            let models = admit_units_with_cancel(&selections, packages, limits.model, cancel)
+                .map_err(|refusal| {
+                    let source = admitted
+                        .units()
+                        .iter()
+                        .find(|unit| {
+                            unit.unit().selections().models.iter().any(|selection| {
+                                selection.alias == refusal.alias
+                                    && selection.identity == refusal.identity
+                                    && selection.span == refusal.span
+                            })
+                        })
+                        .map(|unit| unit.source().reference());
+                    Box::new(CompileRefusal::Intake {
+                        region: source.and_then(|source| region(source, refusal.span)),
+                        refusal,
+                    })
+                })?;
+            let models = parse_type_invariants(
+                parse_operation_clauses(models, limits.source)?,
+                limits.source,
+            )?;
+            Ok::<_, Box<CompileRefusal>>(models)
         })?;
-        // A library is compiled under its own identity, independently of
-        // whoever imports it.
+        let sources = admitted
+            .units()
+            .iter()
+            .map(|unit| unit.source().clone())
+            .collect();
+        let frame = Frame::new_units(
+            &admitted,
+            identity.as_str().to_owned(),
+            models,
+            self.dependencies.refinement_internals(&identity).cloned(),
+        );
         Ok(Library {
             identity: identity.clone(),
-            source: parsed.source().clone(),
-            frame: Frame::new(
-                &parsed,
-                identity.as_str().to_owned(),
-                models,
-                super::StateClauseExecutionPoints::new(),
-                self.dependencies.refinement_internals(&identity).cloned(),
-            ),
+            sources,
+            frame,
         })
     }
 
@@ -3103,7 +3183,7 @@ impl<'a> Resolution<'a> {
         package_name: String,
         models: SelectedModels,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let root = Frame::new_units(admitted, package_name, models);
+        let root = Frame::new_units(admitted, package_name, models, None);
         self.check_frame(root)
     }
 
@@ -3180,7 +3260,7 @@ impl<'a> Resolution<'a> {
                 package: Arc::new(package),
                 view,
                 emitted: emission.package().clone(),
-                source: done.source,
+                sources: done.sources,
             });
             self.compiled
                 .insert(done.identity.clone(), Arc::clone(&library));
@@ -3242,7 +3322,7 @@ impl<'a> Resolution<'a> {
         }
         // 3. Selection, by identity alone.
         let dependencies = self.dependencies;
-        let Some(supplied) = dependencies.libraries.get(&identity) else {
+        let Some(supplied) = dependencies.source_units(&identity) else {
             return Err(refuse(
                 ImportRefusal::MissingSelection { identity },
                 at_identity(),
@@ -3262,7 +3342,9 @@ impl<'a> Resolution<'a> {
                 libraries,
             ));
         }
-        let source_bytes = self.source_bytes.saturating_add(supplied.bytes.len());
+        let source_bytes = supplied.iter().fold(self.source_bytes, |bytes, unit| {
+            bytes.saturating_add(unit.bytes.len())
+        });
         if source_bytes > limits.source_bytes {
             return Err(reached(
                 Setting::DependencySourceBytes,

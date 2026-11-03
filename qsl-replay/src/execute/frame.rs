@@ -20,7 +20,7 @@ use quire_exact::NodeKey;
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    charges, check_envelope_target, domain_packages, one_source, recompile, wrong_target,
+    charges, check_envelope_target, domain_packages, recompile, wrong_target,
     MalformedOperationReason, ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
@@ -220,8 +220,35 @@ pub fn replay_frame(
     let (context, operation_frame) = resolve_target(graph, target, &package_name)?;
     check_identities(payload, operation_frame).map_err(ReplayRefusal::FrameIdentity)?;
 
-    // `recompile` already required exactly one source, provided.
-    let source = one_source(request.sources())?;
+    // The source is the request reference whose unit declares the frame's
+    // anchor, through the recompiled package's own occurrences.
+    let source_reference = graph
+        .occurrences()
+        .find_map(|(node, _, location)| {
+            (node == payload.anchor)
+                .then(|| graph.region(location))
+                .flatten()
+        })
+        .map(|region| region.source().clone())
+        .ok_or_else(|| {
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "checked-frame-anchor-has-source-region",
+            ))
+        })?;
+    let source = request
+        .sources()
+        .iter()
+        .find(|source| {
+            source.authority() == source_reference.authority()
+                && source.identity() == source_reference.identity()
+        })
+        .ok_or_else(|| {
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "checked-frame-source-is-in-package-reference",
+            ))
+        })?;
     let packages = domain_packages(&request)?;
     // FR-106 reads the invocation and its snapshots only from the byte
     // provision, by their identity labels.
