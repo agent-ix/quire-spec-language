@@ -6,9 +6,9 @@ use super::{
     DeclarationField, DefinitionField, Expected, ExpectedTemporal, HeaderField, InventorySide,
     Refusal, SelectionSide, MEDIA, SCHEMA, WIRE,
 };
+use crate::number::{NumberWire, ProtocolNumber, NUMERIC_PROFILE};
 use crate::protocol_artifact::{self as artifact, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report, Unsupported};
-use crate::number::{NumberWire, ProtocolNumber, NUMERIC_PROFILE};
 
 #[ix_trace_rs::string_edge]
 fn headers(
@@ -29,10 +29,7 @@ fn headers(
             inherited.encoding == artifact::ENCODING,
             HeaderField::Encoding,
         ),
-        (
-            inherited.numeric == NUMERIC_PROFILE,
-            HeaderField::Numeric,
-        ),
+        (inherited.numeric == NUMERIC_PROFILE, HeaderField::Numeric),
     ] {
         if !matches {
             return Err(Error::V2(Refusal::Header(field)));

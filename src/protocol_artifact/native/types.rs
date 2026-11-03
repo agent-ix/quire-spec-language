@@ -333,8 +333,7 @@ impl<'a> ValueBuilder<'a> {
                 (Shape::Option, w::Type::Option { value }) => at = *value as usize,
                 (Shape::Sequence(expected), w::Type::Sequence { element, maximum }) => {
                     work.bytes(20)?;
-                    let ProtocolNumber::Integer(maximum) = maximum.checked()?
-                    else {
+                    let ProtocolNumber::Integer(maximum) = maximum.checked()? else {
                         return Err(Error::Invalid(Invalid::Type));
                     };
                     if maximum.value() != i64::from(*expected) {

@@ -9,8 +9,8 @@ use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::model_source::{self, ModelSourceLimits};
-use quire_spec_language::number::{NumberWire, NUMERIC_PROFILE};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
+use quire_spec_language::number::{NumberWire, NUMERIC_PROFILE};
 use quire_spec_language::protocol_artifact::{self as artifact, wire as w};
 use serde_json::json;
 

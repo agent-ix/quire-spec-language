@@ -13,8 +13,8 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
-use quire_spec_language::number::ProtocolNumber;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
+use quire_spec_language::number::ProtocolNumber;
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Error, Invalid, Limits, Unsupported,
 };

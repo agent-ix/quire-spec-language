@@ -5,10 +5,8 @@
 use crate::checking::composed::{DeclarationTypes, ObservationOrigin};
 use crate::checking::NativeType;
 use crate::linking::composed::scopes::{self, DeclarationScope};
-use crate::protocol_artifact::{
-    wire as w, work::Work, Dimension, Error, Invalid, Unsupported,
-};
 use crate::number::{ExactRational, NumberWire};
+use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::composed::{self as c, ComposedUnit};
 use crate::syntax::{BinaryOp, Builtin, ExprId, ExprKind, UnaryOp};
 

@@ -6,9 +6,9 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
-use quire_spec_language::number::ProtocolNumber;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::number::ProtocolNumber;
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Dimension, Error, Invalid, Limits, Unsupported,
 };

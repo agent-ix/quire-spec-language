@@ -5,9 +5,9 @@ use super::{
     wire, AdmittedPackage, Expected, ExpectedActivation, InventorySide, MappingCause, MappingField,
     Refusal, MEDIA, SCHEMA, WIRE,
 };
+use crate::number::NUMERIC_PROFILE;
 use crate::protocol_artifact::{self as artifact, v2, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
-use crate::number::NUMERIC_PROFILE;
 
 #[ix_trace_rs::string_edge]
 fn headers(
