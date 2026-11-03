@@ -59,6 +59,7 @@ pub(crate) const EACH: &str = "on each (x: M::Level) when (true)";
 /// `run`. `bump` has a precondition that is false in every state.
 pub(crate) fn unit(activation: &str, roles: &str, members: &str, run: &str) -> String {
     contracts("self.v = 0")
+        + crate::fill::PROTOCOL_PROFILE
         + "pre StuckPre using v on M::Cell::bump { false }\n"
         + &format!(
             "protocol R using p over (k: M::Cell) {activation} {{\n\
@@ -688,6 +689,7 @@ fn a_receive_with_nothing_queued_owned_by_a_role_with_no_instance_gives_no_role_
 /// replicated role `r` of `lifetime`.
 fn pay_by_role(lifetime: &str) -> String {
     contracts("self.v = 0")
+        + crate::fill::PROTOCOL_PROFILE
         + REFUND
         + &format!(
             "protocol R using p over (k: M::Cell) on origin {{\n\
