@@ -130,6 +130,12 @@ pub(super) enum Details<'a> {
         #[serde(rename = "type")]
         type_name: AdmissionDeclarationKey,
     },
+    /// FR-049-AC-2: the call's entry refused the object environment,
+    /// naming the object and, when one attribute is at fault, the attribute.
+    ObjectEnvironment {
+        object: Option<&'a str>,
+        field: Option<&'a str>,
+    },
     /// FR-100 "Internal failure at S6a": the `InternalFault`'s own stable
     /// stage and invariant identifiers (`runtime_invariant`, exit 30).
     Invariant {

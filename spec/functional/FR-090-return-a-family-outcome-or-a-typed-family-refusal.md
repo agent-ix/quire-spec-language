@@ -322,7 +322,11 @@ built from it (ADR-013 O-16 records the rejected representations).
 
 `CheckedPackage::call` SHALL admit its arguments before S6a and return
 `Result<Evaluation, CallFailure>`, with `CallFailure { Input(InputRefusal),
-Fault(InternalFault) }` (ADR-013 T-4; ADR-011 §2.3 E6 row). A
+Admission(CallAdmissionFailure), Fault(InternalFault) }` (ADR-013 T-4;
+ADR-011 §2.3 E6 row). An object environment `call`, `call_supplied` or
+`evaluate` refuses at entry is `CallFailure::Admission`, a caller-input
+refusal `invalid_runtime_input`/`wrong-value-kind` naming the object and
+attribute (FR-049-AC-2, TC-136 H6). A
 `Value::Population(population_id)` argument whose identity names no recorded
 binding, or whose resolved binding's declared maximum differs from the
 parameter's, SHALL be refused there as `CallFailure::Input(InputRefusal)`.
@@ -496,9 +500,9 @@ unreachability, a fabricated identity, or a successful partial collection.
 | Evaluator Field: the value's own declaration has no slot for the checked field identity | `field-slot-unresolved` |
 | Evaluator Attribute: operand is not Reference | `attribute-reference-value-expected` |
 | Evaluator Attribute: its reference names an object absent from the current state, or the checked field names no attribute of the object's type | `attribute-slot-unresolved` |
-| Evaluator Attribute, protocol reader or edge traversal: admitting the stored attribute value against the package's declarations is denied storage | `object-field-admission-allocation-denied` |
-| Evaluator Attribute, protocol reader or edge traversal: admitting the stored attribute value exceeds a storage capacity | `object-field-admission-capacity-overflow` |
-| Evaluator Attribute, protocol reader or edge traversal: admitting the stored attribute value returns a limit or declaration refusal the package's own declarations cannot produce | `object-field-admission-contract-broken` |
+| Call or expression entry admitting the object environment, evaluator Attribute, protocol reader or edge traversal: admitting a stored attribute value against the package's declarations is denied storage | `object-field-admission-allocation-denied` |
+| Call or expression entry admitting the object environment, evaluator Attribute, protocol reader or edge traversal: admitting a stored attribute value exceeds a storage capacity | `object-field-admission-capacity-overflow` |
+| Call or expression entry admitting the object environment, evaluator Attribute, protocol reader or edge traversal: admitting a stored attribute value returns a limit or declaration refusal the package's own declarations cannot produce | `object-field-admission-contract-broken` |
 | Evaluator Present or Value: operand is not Option | `option-value-expected` |
 | Evaluator local Call, imported Call, dispatch guard or dispatch body: checked callable is not resolved | `evaluation-callable-unresolved` |
 | Evaluator imported Call: imported package graph is not resolved | `evaluation-imported-graph-unresolved` |

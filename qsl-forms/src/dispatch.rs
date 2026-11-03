@@ -22,6 +22,7 @@
 use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recovery, TokenClass};
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::abstraction_declaration;
 use super::hybrid_declaration;
@@ -156,6 +157,12 @@ impl ParsedForm {
 pub struct ParsedUnit {
     edition: Option<String>,
     selections: SourceSelections,
+    /// The source-unit index for each model selection after `combine`.
+    /// Single parsed units carry zeroes; aggregate assembly uses this to
+    /// retain unit-local model aliases while checking aggregate conflicts.
+    model_selection_units: Vec<usize>,
+    /// The source-unit index for each import selection after `combine`.
+    import_selection_units: Vec<usize>,
     forms: Vec<ParsedForm>,
 }
 
@@ -175,16 +182,21 @@ impl ParsedUnit {
     /// Combine source units for package-level assembly. The caller is
     /// responsible for admitting each source owner and for retaining the
     /// originating owner of every form; this operation retains the shared
-    /// profile selection once while preserving per-unit imports, model
-    /// selections and forms in the supplied canonical order.
+    /// profile selection once while preserving per-unit imports and forms in
+    /// the supplied canonical order. A model alias repeated by two units for
+    /// the same model identity is one package selection; repetitions within
+    /// one unit remain present for the assembler's duplicate-alias refusal.
     pub fn combine(units: impl IntoIterator<Item = Self>) -> Self {
         let mut combined = Self {
             edition: None,
             selections: SourceSelections::default(),
+            model_selection_units: Vec::new(),
+            import_selection_units: Vec::new(),
             forms: Vec::new(),
         };
         let mut first = true;
-        for unit in units {
+        let mut combined_models = BTreeSet::new();
+        for (source_unit_index, unit) in units.into_iter().enumerate() {
             if first {
                 combined.edition = unit.edition;
                 first = false;
@@ -197,7 +209,28 @@ impl ParsedUnit {
                 }
             }
             combined.selections.imports.extend(unit.selections.imports);
-            combined.selections.models.extend(unit.selections.models);
+            combined.import_selection_units.extend(std::iter::repeat_n(
+                source_unit_index,
+                unit.import_selection_units.len(),
+            ));
+            let mut unit_model_alias_counts = BTreeMap::new();
+            for model in &unit.selections.models {
+                *unit_model_alias_counts
+                    .entry(model.alias.clone())
+                    .or_insert(0usize) += 1;
+            }
+            for model in unit.selections.models {
+                let key = (model.alias.clone(), model.identity.clone());
+                let unique_alias_in_unit = unit_model_alias_counts
+                    .get(&model.alias)
+                    .is_some_and(|count| *count == 1);
+                if unique_alias_in_unit && combined_models.contains(&key) {
+                    continue;
+                }
+                combined_models.insert(key);
+                combined.selections.models.push(model);
+                combined.model_selection_units.push(source_unit_index);
+            }
             combined.forms.extend(unit.forms);
         }
         combined
@@ -213,6 +246,18 @@ impl ParsedUnit {
     /// none of them.
     pub fn selections(&self) -> &SourceSelections {
         &self.selections
+    }
+
+    /// The source-unit index for each model selection, in the same order as
+    /// [`Self::selections`]`().models` after aggregate combination.
+    pub fn model_selection_units(&self) -> &[usize] {
+        &self.model_selection_units
+    }
+
+    /// The source-unit index for each import selection, in the same order as
+    /// [`Self::selections`]`().imports` after aggregate combination.
+    pub fn import_selection_units(&self) -> &[usize] {
+        &self.import_selection_units
     }
 
     /// The parsed forms in source order.
@@ -454,6 +499,8 @@ pub fn build_unit(parsed: &ParsedSource) -> Result<ParsedUnit, FormsRefusal> {
     Ok(ParsedUnit {
         edition: declared_edition(parsed.cst()),
         selections: parsed.selections().clone(),
+        model_selection_units: vec![0; parsed.selections().models.len()],
+        import_selection_units: vec![0; parsed.selections().imports.len()],
         forms,
     })
 }
@@ -585,6 +632,8 @@ pub fn build_unit_with_protocol_results(
         ParsedUnit {
             edition: declared_edition(cst),
             selections: parsed.selections().clone(),
+            model_selection_units: vec![0; parsed.selections().models.len()],
+            import_selection_units: vec![0; parsed.selections().imports.len()],
             forms,
         },
         rejected,

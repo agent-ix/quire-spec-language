@@ -76,7 +76,7 @@ pub(crate) fn resolve_target<'a, V>(
         .map(|(binding, _)| binding.declaration.key())
         .collect();
     let import = name.split_once("::").and_then(|(alias, imported)| {
-        let import = scope.imported(alias)?;
+        let import = typer.imported(alias)?;
         ImportedNames::of(&import.view)
             .resolve(imported)
             .ok()

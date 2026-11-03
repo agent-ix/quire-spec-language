@@ -4612,6 +4612,7 @@ fn state_view<'v>(
     presence_places: &'v [PresencePlace],
 ) -> ClauseView<'v> {
     ClauseView {
+        source_owner: None,
         kind: StateClauseKind::Invariant,
         complete_value,
         context: Some(draft.context.clone()),
@@ -4665,6 +4666,7 @@ fn check_part(
         None => None,
         Some(form) => {
             let view = ClauseView {
+                source_owner: None,
                 kind: StateClauseKind::Precondition,
                 complete_value: super::state_clause::is_complete_value(&clause.selection),
                 context: Some(clause.context.clone()),
@@ -4935,6 +4937,7 @@ pub(crate) fn check(
                                     element_type(checking, &written.context, &path, reset.span)?;
                                 let binders = [(name.clone(), element)];
                                 let view = ClauseView {
+                                    source_owner: None,
                                     kind: StateClauseKind::Precondition,
                                     complete_value: checking.complete_value,
                                     context: Some(written.context.clone()),
