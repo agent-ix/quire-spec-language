@@ -318,7 +318,7 @@ impl<L: TemporalLetters> Run<'_, L> {
                 }
             }
         }
-        closure.sort_by(|left, right| right.0.cmp(&left.0));
+        closure.sort_by_key(|key| std::cmp::Reverse(key.0));
         Ok(closure)
     }
 
