@@ -923,22 +923,15 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
         })
         .collect();
     let obligations = graph
-        .semantic_graph()
-        .nodes()
-        .filter(|node| owns(node) && node.node_tag() == qsl_semantics::check::NodeTag::Claim)
-        .flat_map(|node| {
-            let key = node.key();
-            let capability_kind = node.semantic_form().to_owned();
-            graph
-                .occurrences()
-                .filter(move |(candidate, _, _)| candidate == &key)
-                .map(move |(node, origin, _)| PendingObligation {
-                    node: node.clone(),
-                    occurrence: qsl_foundation::source::provenance::OccurrenceKey::new(
-                        node, origin,
-                    ),
-                    capability_kind: capability_kind.clone(),
-                })
+        .occurrences()
+        .filter(|(_, origin, _)| origin.role().as_str() == "claim")
+        .filter_map(|(key, origin, _)| {
+            let node = graph.semantic_graph().node(key.clone())?;
+            owns(node).then(|| PendingObligation {
+                node: key.clone(),
+                occurrence: qsl_foundation::source::provenance::OccurrenceKey::new(key, origin),
+                capability_kind: node.semantic_form().to_owned(),
+            })
         })
         .collect();
     TypeReport {
