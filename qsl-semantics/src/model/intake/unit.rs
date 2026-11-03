@@ -787,7 +787,7 @@ pub fn admit_units_with_cancel(
 
     let unique: Vec<_> = unique.into_values().collect();
     let admitted = admit_unit_with_cancel(&unique, packages, limits, cancel)?;
-    let mut by_identity: BTreeMap<_, _> = unique
+    let by_identity: BTreeMap<_, _> = unique
         .into_iter()
         .zip(admitted.entries)
         .map(|(selection, model)| (selection.identity, model))

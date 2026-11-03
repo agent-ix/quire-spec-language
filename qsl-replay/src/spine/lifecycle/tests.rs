@@ -734,7 +734,7 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
         .type_report()
         .requirements()
         .iter()
-        .all(|requirement| requirement.span().is_some()));
+        .all(|requirement| requirement.span().start < requirement.span().end));
     assert!(checked
         .type_report()
         .requirements()
@@ -755,9 +755,7 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
         .filter(|requirement| {
             requirement.record().requirements().kind().to_wire() == "value-validity"
         })
-        .any(
-            |requirement| report_slice(requirement.span().expect("claim source span")) == "x + 1"
-        ));
+        .any(|requirement| report_slice(requirement.span()) == "x + 1"));
     assert!(checked
         .type_report()
         .obligations()
@@ -806,7 +804,7 @@ fn aggregate_check_returns_source_bound_units_and_reports() {
     );
     let b = parse_named(
         source_b,
-        format!("{HEADER}function px using v(p: Point): Integer pure {{ p.x }}").as_bytes(),
+        format!("{HEADER}function px using v(p: Point): Integer pure {{ p.x + 1 }}").as_bytes(),
     );
     let dependencies = DependencyInput::default();
     let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
@@ -832,6 +830,13 @@ fn aggregate_check_returns_source_bound_units_and_reports() {
     ));
     assert_eq!(checked_a.type_report().declarations().len(), 1);
     assert_eq!(checked_b.type_report().declarations().len(), 1);
+    assert!(checked_a.type_report().requirements().is_empty());
+    assert!(!checked_b.type_report().requirements().is_empty());
+    assert!(checked_b
+        .type_report()
+        .requirements()
+        .iter()
+        .all(|requirement| requirement.span().start < requirement.span().end));
     assert_eq!(
         checked_b.type_report().declarations()[0].kind(),
         NodeTag::Function

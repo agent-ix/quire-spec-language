@@ -822,7 +822,7 @@ impl TypeDeclaration {
 pub struct TypeRequirement {
     occurrence: qsl_foundation::source::provenance::OccurrenceKey,
     record: qsl_semantics::check::RequirementRecord,
-    span: Option<qsl_foundation::Span>,
+    span: qsl_foundation::Span,
 }
 
 impl TypeRequirement {
@@ -837,7 +837,7 @@ impl TypeRequirement {
     }
 
     /// The requirement's source span, resolved through its CheckedUnit.
-    pub fn span(&self) -> Option<qsl_foundation::Span> {
+    pub fn span(&self) -> qsl_foundation::Span {
         self.span
     }
 }
@@ -918,11 +918,12 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
     let requirements = graph
         .requirements()
         .iter()
-        .filter(|(occurrence, _)| occurrence_span(occurrence.node(), occurrence.origin()).is_some())
-        .map(|(occurrence, record)| TypeRequirement {
-            occurrence: occurrence.clone(),
-            record: record.clone(),
-            span: occurrence_span(occurrence.node(), occurrence.origin()),
+        .filter_map(|(occurrence, record)| {
+            Some(TypeRequirement {
+                occurrence: occurrence.clone(),
+                record: record.clone(),
+                span: occurrence_span(occurrence.node(), occurrence.origin())?,
+            })
         })
         .collect();
     let mut obligations: Vec<_> = graph
