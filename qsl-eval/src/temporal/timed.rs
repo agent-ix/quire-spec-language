@@ -36,7 +36,7 @@
 use qsl_foundation::bound::TimedInterval;
 use qsl_semantics::check::{
     BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,
-    TemporalProfile, UnaryTemporal,
+    FormulaNodeId, TemporalProfile, UnaryTemporal,
 };
 use quire_exact::{Charge, ChargePoint, Incomplete, Integer, Meter, NonZeroInteger, Rational};
 
@@ -79,13 +79,16 @@ impl FiniteWindowProgress {
         complete_through: Option<Rational>,
         uncertainty_margin: Rational,
         missing_valuations: Vec<(u64, u64)>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, TemporalRefusal> {
+        if uncertainty_margin < Rational::from_integer(Integer::zero()) {
+            return Err(TemporalRefusal::NegativeUncertaintyMargin);
+        }
+        Ok(Self {
             watermark,
             complete_through,
             uncertainty_margin,
             missing_valuations,
-        }
+        })
     }
 
     /// The margin added to a finite-window establishment deadline.
@@ -98,6 +101,14 @@ impl FiniteWindowProgress {
         &self.missing_valuations
     }
 }
+
+/// One finite-window activation's outcome, admitted visit count, and any
+/// equal-stamp conflicting atom position found while reading its letters.
+pub type FiniteWindowEvaluation = (
+    TemporalOutcome,
+    u64,
+    Option<(FormulaNodeId, TemporalPosition)>,
+);
 
 /// The loop of a timed lasso (ADR-026 CT-2): the position its end re-enters
 /// and its total delay.
@@ -293,6 +304,8 @@ struct Evaluator<'a> {
     continue_after_undefined: bool,
     meter: &'a mut Meter,
     visits: u64,
+    /// The first equal-stamp atom group with conflicting Boolean readings.
+    conflicting_valuation: Option<(FormulaNodeId, TemporalPosition)>,
     /// The value of each formula node at each position, once computed.
     values: Vec<Vec<Tri>>,
 }
@@ -577,6 +590,35 @@ fn read_atoms<L: TemporalLetters>(
             *slot = value;
         }
     }
+    if evaluator.continue_after_undefined {
+        for &atom in &atoms {
+            let Some(values) = evaluator.values.get_mut(atom) else {
+                continue;
+            };
+            let mut start = 0;
+            while start < represented {
+                let mut end = start + 1;
+                while end < represented && evaluator.stamps[end] == evaluator.stamps[start] {
+                    end += 1;
+                }
+                let has_true = values[start..end].contains(&Tri::True);
+                let has_false = values[start..end].contains(&Tri::False);
+                if has_true && has_false {
+                    values[start..end].fill(Tri::Unknown);
+                    evaluator.conflicting_valuation.get_or_insert((
+                        formula
+                            .node_id(atom)
+                            .ok_or_else(|| broken("conflicting-atom-has-node-id"))?,
+                        TemporalPosition::new(
+                            u64::try_from(start)
+                                .map_err(|_| broken("conflicting-position-in-u64"))?,
+                        ),
+                    ));
+                }
+                start = end;
+            }
+        }
+    }
     // Position `k >= represented` repeats `loop_start + (k - loop_start) %
     // loop_len`.
     let loop_len = represented - loop_start;
@@ -652,6 +694,7 @@ pub fn evaluate_timed_at<L: TemporalLetters>(
         continue_after_undefined: false,
         meter,
         visits: 0,
+        conflicting_valuation: None,
         values: vec![vec![Tri::Unknown; stamps.len()]; formula.nodes().len()],
     };
     match evaluate(
@@ -688,7 +731,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
     progress: &FiniteWindowProgress,
     letters: &mut L,
     meter: &mut Meter,
-) -> Result<(TemporalOutcome, u64), TemporalRefusal> {
+) -> Result<FiniteWindowEvaluation, TemporalRefusal> {
     if clause.profile() != TemporalProfile::TimestampedEventFiniteWindow {
         return Err(TemporalRefusal::NotTimedProfile {
             profile: clause.profile(),
@@ -721,6 +764,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
         continue_after_undefined: true,
         meter,
         visits: 0,
+        conflicting_valuation: None,
         values: vec![vec![Tri::Unknown; trace.stamps.len()]; formula.nodes().len()],
     };
     let outcome = match evaluate(formula, &mut evaluator, letters, at, trace.stamps.len(), 0) {
@@ -736,7 +780,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
         Err(Stop::Incomplete(incomplete)) => TemporalOutcome::Incomplete(incomplete),
         Err(Stop::Refused(refusal)) => return Err(refusal),
     };
-    Ok((outcome, evaluator.visits))
+    Ok((outcome, evaluator.visits, evaluator.conflicting_valuation))
 }
 
 /// The finite-window establishment deadline for one activation.

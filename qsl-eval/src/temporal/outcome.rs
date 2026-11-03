@@ -156,6 +156,9 @@ pub enum TemporalRefusal {
         /// The first position whose stamp decreases.
         position: TemporalPosition,
     },
+    /// A finite-window progress premise has a negative counter-cover margin.
+    #[error("a finite-window uncertainty margin is non-negative")]
+    NegativeUncertaintyMargin,
     /// A position is outside the represented trace (FR-327 "Positions").
     #[error(transparent)]
     Position(#[from] PositionRefusal),
@@ -181,6 +184,7 @@ impl TemporalRefusal {
             | Self::TupleArity { .. }
             | Self::NegativeStamp { .. }
             | Self::DecreasingStamp { .. }
+            | Self::NegativeUncertaintyMargin
             | Self::NonPositiveLoopDelay
             | Self::LoopReentersBeforeLastStamp
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),

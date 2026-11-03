@@ -51,6 +51,8 @@ enum Unit {
     TimestampedOne,
     /// Timestamped finite-window `[0,2]` property.
     TimestampedTwo,
+    /// Timestamped finite-window `[0,3]` property.
+    TimestampedThree,
     /// Timestamped finite-window `[2,3]` existential.
     TimestampedLaterEventually,
     /// Timestamped finite-window `[2,3]` universal.
@@ -76,6 +78,7 @@ impl Unit {
             }
             Self::TimestampedOne
             | Self::TimestampedTwo
+            | Self::TimestampedThree
             | Self::TimestampedLaterEventually
             | Self::TimestampedLaterAlways => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
@@ -127,6 +130,10 @@ impl Unit {
             Self::TimestampedTwo => {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { eventually[0,2] holds(c.value > 0) }\n"
+            }
+            Self::TimestampedThree => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { eventually[0,3] holds(c.value > 0) }\n"
             }
             Self::TimestampedLaterEventually => {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
@@ -201,6 +208,14 @@ fn timestamped_with(
         },
         values,
     )
+}
+
+#[allow(irrefutable_let_patterns)]
+fn program_source_bytes(request: &mut ClauseRunRequest) -> &mut Vec<u8> {
+    let ClauseRunSource::Program { bytes, .. } = &mut request.source else {
+        unreachable!("test request starts from program source")
+    };
+    bytes
 }
 
 /// The `Counter` unit and a request for `selection` over snapshots with
@@ -1381,6 +1396,106 @@ fn timestamped_windows_pending_and_decisive_witnesses() {
     );
 }
 
+/// FR-501-AC-5 (TC-1295): completeness is independent from scope closure and
+/// watermark progress; a short completeness boundary stays indeterminate.
+#[trace("TC-1295", "FR-501-AC-5")]
+#[test]
+fn timestamped_incomplete_completeness_is_indeterminate_until_complete() {
+    let incomplete_always = report(timestamped_with(
+        Unit::TimestampedAlwaysFive,
+        &[0],
+        &[1],
+        5,
+        None,
+    ));
+    assert_eq!(
+        outcome(&incomplete_always),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
+    let complete_always = report(timestamped_with(
+        Unit::TimestampedAlwaysFive,
+        &[0],
+        &[1],
+        5,
+        Some(5),
+    ));
+    assert_eq!(outcome(&complete_always), &TemporalVerdict::Holds);
+
+    let incomplete_eventually = report(timestamped_with(
+        Unit::TimestampedLaterEventually,
+        &[0],
+        &[1],
+        5,
+        None,
+    ));
+    assert_eq!(
+        outcome(&incomplete_eventually),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
+
+    let short_completeness = report(timestamped_with(
+        Unit::TimestampedLaterEventually,
+        &[0],
+        &[1],
+        3,
+        Some(2),
+    ));
+    assert_eq!(
+        outcome(&short_completeness),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
+}
+
+/// FR-501-AC-6 (TC-1295): the deadline tick participates, the next tick does
+/// not, and a half-open watermark ending at 3 covers only through tick 2.
+#[trace("TC-1295", "FR-501-AC-6")]
+#[test]
+fn timestamped_deadline_is_inclusive_and_half_open_watermark_is_not() {
+    let deadline = report(timestamped_with(
+        Unit::TimestampedThree,
+        &[0, 3],
+        &[0, 1],
+        3,
+        Some(3),
+    ));
+    assert_eq!(outcome(&deadline), &TemporalVerdict::Holds);
+
+    let after_deadline = report(timestamped_with(
+        Unit::TimestampedThree,
+        &[0, 4],
+        &[0, 1],
+        4,
+        Some(4),
+    ));
+    assert_eq!(
+        outcome(&after_deadline),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+
+    // A supplier's half-open [.., 3) watermark maps to inclusive W=2 unless
+    // an external QSpec mapping proves coverage of tick 3.
+    let half_open_without_mapping = report(timestamped_with(
+        Unit::TimestampedThree,
+        &[0],
+        &[0],
+        2,
+        Some(3),
+    ));
+    assert_eq!(
+        outcome(&half_open_without_mapping),
+        &TemporalVerdict::PendingWindow { at: 0, deadline: 3 }
+    );
+}
+
 /// FR-330-AC-9 (TC-1295): only the finite-window profile reads timestamped
 /// input, and it rejects a position-only trace at admission.
 #[trace("TC-1295", "FR-330-AC-9")]
@@ -1519,7 +1634,7 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
 
     fn request(ack_tick: u64, cover: TimestampedCover) -> ClauseRunRequest {
         let mut request = timestamped(&[0, ack_tick], &[1, 2], ack_tick.max(3_010), Some(3_010));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -1571,6 +1686,29 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
     assert_eq!(
         outcome(&report(request(3_003, counter1))),
         &TemporalVerdict::Violated { at: 0 }
+    );
+
+    let mut decisive_then_straddling =
+        timestamped(&[0, 2_998, 3_000], &[1, 2, 2], 3_010, Some(3_010));
+    let bytes = program_source_bytes(&mut decisive_then_straddling);
+    let source = String::from_utf8(bytes.clone()).unwrap();
+    *bytes = source
+        .replace(
+            "eventually[0,5] holds(c.value > 0)",
+            "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
+        )
+        .into_bytes();
+    let ClauseRunSelection::Temporal {
+        trace: TraceInput::Timestamped(trace),
+        ..
+    } = &mut decisive_then_straddling.selection
+    else {
+        unreachable!()
+    };
+    trace.cover = counter0;
+    assert_eq!(
+        outcome(&report(decisive_then_straddling)),
+        &TemporalVerdict::Holds
     );
 }
 
@@ -1628,6 +1766,26 @@ fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
     );
     let later_witness = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 1], 5, Some(5)));
     assert_eq!(outcome(&later_witness), &TemporalVerdict::Holds);
+
+    let mut always_conflict = timestamped(&[0, 2, 2, 5], &[1, 1, 0, 1], 5, Some(5));
+    let bytes = program_source_bytes(&mut always_conflict);
+    let source = String::from_utf8(bytes.clone()).unwrap();
+    *bytes = source
+        .replace(
+            "eventually[0,5] holds(c.value > 0)",
+            "always[0,5] holds(c.value > 0)",
+        )
+        .into_bytes();
+    assert_eq!(
+        outcome(&report(always_conflict)),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::ConflictingValuation {
+                position: 1,
+                atom: "holds-node@1".to_owned(),
+            },
+        }
+    );
 }
 
 /// FR-501-AC-12 (TC-1295): a closed `[0,5]` existential on stamps 0,2,5
@@ -1710,7 +1868,7 @@ fn timestamped_window_charges_exact_visits_and_stops_on_the_denied_visit() {
 fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
     fn until_request(values: &[i64]) -> ClauseRunRequest {
         let mut request = timestamped(&[0, 1, 1], values, 1, Some(1));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -1742,6 +1900,16 @@ fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
         ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::SameStampOrderUnavailable {
             position: 2,
         })
+    ));
+
+    let mut duplicate_outside_interval = until_request(&[1, 0, 2]);
+    let bytes = program_source_bytes(&mut duplicate_outside_interval);
+    let source = String::from_utf8(bytes.clone()).unwrap();
+    *bytes = source.replace("until[0,1]", "until[3,5]").into_bytes();
+    let duplicate_outside_interval = report(duplicate_outside_interval);
+    assert!(!matches!(
+        duplicate_outside_interval.disposition,
+        ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::SameStampOrderUnavailable { .. })
     ));
 
     let mut ordered = until_request(&[1, 0, 2]);
@@ -1808,6 +1976,23 @@ fn timestamped_past_windows_respect_history_cutoff() {
         &TemporalVerdict::Violated { at: 0 }
     );
     assert_eq!(outcome(&once(&[1, 0], false)), &TemporalVerdict::Holds);
+
+    let mut zero_width = timestamped_with(Unit::TimestampedOnce, &[3, 4], &[0, 0], 4, Some(4));
+    let bytes = program_source_bytes(&mut zero_width);
+    let source = String::from_utf8(bytes.clone()).unwrap();
+    *bytes = source.replace("once[0,4]", "once[0,0]").into_bytes();
+    let ClauseRunSelection::Temporal {
+        trace: TraceInput::Timestamped(trace),
+        ..
+    } = &mut zero_width.selection
+    else {
+        unreachable!()
+    };
+    trace.authoritative_origin = false;
+    assert_eq!(
+        outcome(&report(zero_width)),
+        &TemporalVerdict::Violated { at: 0 }
+    );
 }
 
 /// FR-501-AC-10 (TC-1295): guarded finite-window activations run only where
@@ -1817,7 +2002,7 @@ fn timestamped_past_windows_respect_history_cutoff() {
 fn timestamped_guarded_on_each_activations_are_evaluated() {
     fn guarded(values: &[i64]) -> ClauseRunReport {
         let mut request = timestamped_with(Unit::TimestampedEach, &[0, 10], values, 12, Some(12));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -1832,6 +2017,28 @@ fn timestamped_guarded_on_each_activations_are_evaluated() {
     assert_eq!(
         outcome(&guarded(&[1, 0])),
         &TemporalVerdict::Violated { at: 0 }
+    );
+}
+
+/// FR-044 / FR-501-AC-10 (TC-1295): an undefined `on each` guard is an
+/// unresolved activation, not a false guard that can yield vacuous success.
+#[trace("TC-1295", "FR-501-AC-10")]
+#[test]
+fn timestamped_guarded_on_each_undefined_guard_does_not_vacuously_hold() {
+    let mut request = timestamped_with(Unit::TimestampedEach, &[0, 10], &[2, 2], 12, Some(12));
+    let bytes = program_source_bytes(&mut request);
+    let source = String::from_utf8(bytes.clone()).unwrap();
+    *bytes = source
+        .replace(
+            "on each (q: Counters::Counter) { eventually[0,2] holds(c.value > 0) }",
+            "on each (q: Counters::Counter) when (3 mod (2 - q.value) >= 0) { eventually[0,2] holds(c.value > 0) }",
+        )
+        .into_bytes();
+    let report = report(request);
+    assert!(
+        matches!(outcome(&report), TemporalVerdict::Undefined { .. }),
+        "{:?}",
+        report.disposition
     );
 }
 

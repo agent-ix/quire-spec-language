@@ -20,7 +20,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 use super::{
     AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
-    TemporalRefusal, TemporalTrace, UndefinedCause,
+    TemporalRefusal, TemporalTrace, UndefinedCause, UndefinedEvaluation,
 };
 use crate::value::{evaluate_capture, CheckedPackageEvaluation};
 use quire_eval::{CallFailure, Evaluation};
@@ -48,6 +48,8 @@ pub struct ObservedRun {
     pub undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
     /// Boolean atom readings in formula-node and trace-position order.
     pub atom_readings: Vec<(FormulaNodeId, TemporalPosition, AtomReading)>,
+    /// The first equal-stamp atom group with conflicting Boolean readings.
+    pub conflicting_valuation: Option<(FormulaNodeId, TemporalPosition)>,
     /// Admitted `temporal.visit` charges made by finite-window evaluation.
     pub temporal_visits: u64,
     /// The first unresolved finite-window activation and its establishment
@@ -143,13 +145,28 @@ pub fn evaluate_observed_finite_window(
             for index in 0..environments.len() {
                 match letters.activation(TemporalPosition::new(index as u64), meter) {
                     Ok(AtomReading::True) => active.push(index),
-                    Ok(AtomReading::False | AtomReading::Undefined(_)) => {}
+                    Ok(AtomReading::False) => {}
+                    Ok(AtomReading::Undefined(cause)) => {
+                        return ObservedRun {
+                            result: Ok(TemporalOutcome::Undefined(UndefinedEvaluation {
+                                at: TemporalPosition::new(index as u64),
+                                cause,
+                            })),
+                            stopped: letters.stopped,
+                            undefined: letters.undefined,
+                            atom_readings: letters.atom_readings,
+                            conflicting_valuation: None,
+                            temporal_visits: 0,
+                            pending_activation: None,
+                        };
+                    }
                     Err(LetterStop::Incomplete(incomplete)) => {
                         return ObservedRun {
                             result: Ok(TemporalOutcome::Incomplete(incomplete)),
                             stopped: letters.stopped,
                             undefined: letters.undefined,
                             atom_readings: letters.atom_readings,
+                            conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
                         };
@@ -160,6 +177,7 @@ pub fn evaluate_observed_finite_window(
                             stopped: letters.stopped,
                             undefined: letters.undefined,
                             atom_readings: letters.atom_readings,
+                            conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
                         };
@@ -170,6 +188,7 @@ pub fn evaluate_observed_finite_window(
                             stopped: letters.stopped,
                             undefined: letters.undefined,
                             atom_readings: letters.atom_readings,
+                            conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
                         };
@@ -180,6 +199,7 @@ pub fn evaluate_observed_finite_window(
                             stopped: letters.stopped,
                             undefined: letters.undefined,
                             atom_readings: letters.atom_readings,
+                            conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
                         };
@@ -194,6 +214,7 @@ pub fn evaluate_observed_finite_window(
     let mut first_undefined = None;
     let mut incomplete = None;
     let mut temporal_visits = 0_u64;
+    let mut conflicting_valuation = None;
     for index in positions {
         let position = TemporalPosition::new(u64::try_from(index).unwrap_or(u64::MAX));
         let current = super::evaluate_finite_window_at(
@@ -205,7 +226,12 @@ pub fn evaluate_observed_finite_window(
             meter,
         );
         let (current, visits) = match current {
-            Ok((outcome, visits)) => (Ok(outcome), visits),
+            Ok((outcome, visits, conflict)) => {
+                if conflicting_valuation.is_none() {
+                    conflicting_valuation = conflict;
+                }
+                (Ok(outcome), visits)
+            }
             Err(refusal) => (Err(refusal), 0),
         };
         temporal_visits = temporal_visits.saturating_add(visits);
@@ -238,6 +264,7 @@ pub fn evaluate_observed_finite_window(
                     stopped: letters.stopped,
                     undefined: letters.undefined,
                     atom_readings: letters.atom_readings,
+                    conflicting_valuation,
                     temporal_visits,
                     pending_activation: first_pending,
                 };
@@ -248,6 +275,7 @@ pub fn evaluate_observed_finite_window(
                     stopped: letters.stopped,
                     undefined: letters.undefined,
                     atom_readings: letters.atom_readings,
+                    conflicting_valuation,
                     temporal_visits,
                     pending_activation: first_pending,
                 };
@@ -270,6 +298,7 @@ pub fn evaluate_observed_finite_window(
         stopped: letters.stopped,
         undefined: letters.undefined,
         atom_readings: letters.atom_readings,
+        conflicting_valuation,
         temporal_visits,
         pending_activation: first_pending,
     }
@@ -307,6 +336,7 @@ fn evaluate_observed_goal(
         stopped: letters.stopped,
         undefined: letters.undefined,
         atom_readings: letters.atom_readings,
+        conflicting_valuation: None,
         temporal_visits: 0,
         pending_activation: None,
     }

@@ -592,6 +592,9 @@ pub enum TemporalTraceRefusal {
         /// Later admitted position where ordering became ambiguous.
         position: u64,
     },
+    /// A finite-window progress premise is malformed.
+    #[error("finite-window progress premises are invalid")]
+    InvalidProgress,
     /// A lasso's prefix and loop together exceed `u64` positions.
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
@@ -634,6 +637,7 @@ impl TemporalTraceRefusal {
             Self::EmptyTrace
             | Self::EmptyLoop
             | Self::SameStampOrderUnavailable { .. }
+            | Self::InvalidProgress
             | Self::TraceTooLong
             | Self::TupleArity { .. }
             | Self::Position(_)

@@ -5,7 +5,7 @@
 //! the clause once through the TemporalTrace evaluator (FR-327, FR-328,
 //! FR-329).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::temporal::{
     AtomReading, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
@@ -226,40 +226,170 @@ fn same_stamp_order_refusal(
     input: &TimestampedTraceInput,
     clause: &qsl_semantics::check::CheckedTemporalClause,
 ) -> Option<u64> {
-    let order_sensitive = clause.formula().nodes().iter().any(|node| {
-        matches!(
-            node,
-            FormulaNode::Binary {
-                operator: BinaryTemporal::Until
-                    | BinaryTemporal::Release
-                    | BinaryTemporal::Since
-                    | BinaryTemporal::Triggered,
-                ..
+    timestamped_evaluation_positions(input, clause, None).2
+}
+
+fn timestamped_evaluation_positions<'a>(
+    input: &'a TimestampedTraceInput,
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    activation: Option<usize>,
+) -> (
+    Vec<&'a TimestampedObservation>,
+    BTreeSet<(usize, usize)>,
+    Option<u64>,
+) {
+    let positions = ordered_timestamped_positions(input);
+    let initial = activation.map_or_else(
+        || match clause.activation() {
+            qsl_semantics::check::Activation::Origin => vec![0],
+            qsl_semantics::check::Activation::Each { .. } => (0..positions.len()).collect(),
+        },
+        |position| vec![position],
+    );
+    let mut visited = BTreeSet::new();
+    let mut refusal = None;
+
+    fn visit(
+        node_id: qsl_semantics::check::FormulaNodeId,
+        at: usize,
+        formula: &qsl_semantics::check::CheckedFormula,
+        positions: &[&TimestampedObservation],
+        visited: &mut BTreeSet<(usize, usize)>,
+        refusal: &mut Option<u64>,
+    ) {
+        if refusal.is_some() || !visited.insert((node_id.index(), at)) {
+            return;
+        }
+        let Some(node) = formula.nodes().get(node_id.index()) else {
+            return;
+        };
+        match node {
+            FormulaNode::Not(child) => visit(*child, at, formula, positions, visited, refusal),
+            FormulaNode::And(left, right)
+            | FormulaNode::Or(left, right)
+            | FormulaNode::Implies(left, right) => {
+                visit(*left, at, formula, positions, visited, refusal);
+                visit(*right, at, formula, positions, visited, refusal);
             }
-        )
-    });
-    if !order_sensitive {
-        return None;
+            FormulaNode::Unary {
+                operator,
+                interval,
+                operand,
+            } => {
+                let future = matches!(operator, UnaryTemporal::Eventually | UnaryTemporal::Always);
+                for position in eligible_positions(positions, at, interval.as_ref(), future) {
+                    visit(*operand, position, formula, positions, visited, refusal);
+                }
+            }
+            FormulaNode::Binary {
+                operator,
+                interval,
+                left,
+                right,
+            } => {
+                let future = matches!(operator, BinaryTemporal::Until | BinaryTemporal::Release);
+                let eligible = eligible_positions(positions, at, interval.as_ref(), future);
+                if matches!(
+                    operator,
+                    BinaryTemporal::Until
+                        | BinaryTemporal::Release
+                        | BinaryTemporal::Since
+                        | BinaryTemporal::Triggered
+                ) {
+                    *refusal = incomparable_equal_stamp_position(positions, &eligible);
+                }
+                for position in eligible {
+                    visit(*left, position, formula, positions, visited, refusal);
+                    visit(*right, position, formula, positions, visited, refusal);
+                }
+            }
+            FormulaNode::Constant(_)
+            | FormulaNode::Holds { .. }
+            | FormulaNode::Aggregate { .. } => {}
+        }
     }
+
+    for position in initial {
+        visit(
+            clause.formula().root(),
+            position,
+            clause.formula(),
+            &positions,
+            &mut visited,
+            &mut refusal,
+        );
+    }
+    (positions, visited, refusal)
+}
+
+fn eligible_positions(
+    positions: &[&TimestampedObservation],
+    anchor: usize,
+    interval: Option<&qsl_semantics::check::CheckedInterval>,
+    future: bool,
+) -> Vec<usize> {
+    let Some(anchor_position) = positions.get(anchor) else {
+        return Vec::new();
+    };
+    positions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, position)| {
+            let delta = if future {
+                if position.stamp < anchor_position.stamp {
+                    return None;
+                }
+                position.stamp - anchor_position.stamp
+            } else {
+                if position.stamp > anchor_position.stamp {
+                    return None;
+                }
+                anchor_position.stamp - position.stamp
+            };
+            let delta = Rational::from_integer(Integer::from(delta));
+            match interval {
+                Some(qsl_semantics::check::CheckedInterval::Timed(interval))
+                    if !interval.contains(&delta) =>
+                {
+                    None
+                }
+                Some(qsl_semantics::check::CheckedInterval::Steps(_)) => None,
+                _ => Some(index),
+            }
+        })
+        .collect()
+}
+
+fn incomparable_equal_stamp_position(
+    positions: &[&TimestampedObservation],
+    eligible: &[usize],
+) -> Option<u64> {
+    let eligible: BTreeSet<_> = eligible.iter().copied().collect();
     let mut start = 0;
-    while start < input.positions.len() {
-        let stamp = input.positions[start].stamp;
+    while start < positions.len() {
+        let stamp = positions[start].stamp;
         let mut end = start + 1;
-        while end < input.positions.len() && input.positions[end].stamp == stamp {
+        while end < positions.len() && positions[end].stamp == stamp {
             end += 1;
         }
-        if end - start > 1 {
-            let Some(first_order) = input.positions[start].order.as_ref() else {
-                return Some(u64::try_from(end - 1).unwrap_or(u64::MAX));
+        let group: Vec<_> = (start..end)
+            .filter(|position| eligible.contains(position))
+            .collect();
+        if group.len() > 1 {
+            let Some(authority) = group
+                .first()
+                .and_then(|position| positions[*position].order.as_ref())
+                .map(|order| order.authority.as_str())
+            else {
+                return Some(u64::try_from(*group.last()?).unwrap_or(u64::MAX));
             };
-            let authority = first_order.authority.as_str();
-            let mut keys = std::collections::BTreeSet::new();
-            for position in &input.positions[start..end] {
-                let Some(order) = position.order.as_ref() else {
-                    return Some(u64::try_from(end - 1).unwrap_or(u64::MAX));
+            let mut keys = BTreeSet::new();
+            for position in &group {
+                let Some(order) = positions[*position].order.as_ref() else {
+                    return Some(u64::try_from(*group.last()?).unwrap_or(u64::MAX));
                 };
                 if order.authority != authority || !keys.insert(order.key) {
-                    return Some(u64::try_from(end - 1).unwrap_or(u64::MAX));
+                    return Some(u64::try_from(*group.last()?).unwrap_or(u64::MAX));
                 }
             }
         }
@@ -481,12 +611,19 @@ pub(super) fn run_temporal(
                             (u64::try_from(position).unwrap_or(u64::MAX), missing.atom)
                         })
                         .collect();
-                    let progress = qsl_eval::temporal::FiniteWindowProgress::new(
+                    let progress = match qsl_eval::temporal::FiniteWindowProgress::new(
                         watermark,
                         complete_through,
                         margin,
                         missing_valuations,
-                    );
+                    ) {
+                        Ok(progress) => progress,
+                        Err(refusal) => {
+                            return late(ClauseDisposition::TemporalRefusal(trace_refusal(
+                                refusal,
+                            )));
+                        }
+                    };
                     qsl_eval::temporal::evaluate_observed_finite_window(
                         run.package,
                         node,
@@ -513,6 +650,7 @@ pub(super) fn run_temporal(
     };
     let pending_activation = observed.pending_activation;
     let atom_readings = observed.atom_readings;
+    let conflicting_valuation = observed.conflicting_valuation;
     let temporal_visits = observed.temporal_visits;
     let disposition = match (observed.stopped, observed.result) {
         // A condition's refusal is reported as FR-109 reports a state
@@ -538,6 +676,7 @@ pub(super) fn run_temporal(
                     clause,
                     pending_activation,
                     &atom_readings,
+                    conflicting_valuation,
                 ),
                 TraceInput::Finite(_) | TraceInput::Lasso { .. } => verdict(outcome),
             };
@@ -561,7 +700,15 @@ fn finite_window_verdict(
         qsl_eval::temporal::TemporalPosition,
         AtomReading,
     )],
+    conflicting_valuation: Option<(
+        qsl_semantics::check::FormulaNodeId,
+        qsl_eval::temporal::TemporalPosition,
+    )>,
 ) -> TemporalVerdict {
+    let violated_activation = match &outcome {
+        TemporalOutcome::Violated { at } => Some(at.index()),
+        _ => None,
+    };
     let ordered_positions = ordered_timestamped_positions(input);
     let stamps = ordered_positions
         .iter()
@@ -597,6 +744,14 @@ fn finite_window_verdict(
                 TemporalVerdict::Indeterminate {
                     at: position,
                     reason: TemporalIndeterminateReason::IncompleteInput,
+                }
+            } else if let Some((atom, conflict_position)) = conflicting_valuation {
+                TemporalVerdict::Indeterminate {
+                    at: position,
+                    reason: TemporalIndeterminateReason::ConflictingValuation {
+                        position: conflict_position.index(),
+                        atom: format!("holds-node@{}", atom.index()),
+                    },
                 }
             } else {
                 TemporalVerdict::PendingWindow {
@@ -657,101 +812,19 @@ fn finite_window_verdict(
             reason: TemporalIndeterminateReason::StraddlesBound,
         };
     }
-    if let Some((conflict_position, atom)) =
-        conflicting_timestamped_valuation(input, clause, atom_readings)
-    {
-        return TemporalVerdict::Indeterminate {
-            at: 0,
-            reason: TemporalIndeterminateReason::ConflictingValuation {
-                position: conflict_position,
-                atom,
-            },
-        };
-    }
     if !input.authoritative_origin
-        && input.positions[0].stamp > 0
-        && has_past_operator(clause)
+        && violated_activation.is_some_and(|activation| {
+            history_cutoff_precedes_trace(input, clause, usize::try_from(activation).ok())
+        })
         && matches!(verdict, TemporalVerdict::Violated { .. })
     {
         TemporalVerdict::Indeterminate {
-            at: position,
+            at: violated_activation.unwrap_or_default(),
             reason: TemporalIndeterminateReason::MissingHistory,
         }
     } else {
         verdict
     }
-}
-
-fn conflicting_timestamped_valuation(
-    input: &TimestampedTraceInput,
-    clause: &qsl_semantics::check::CheckedTemporalClause,
-    readings: &[(
-        qsl_semantics::check::FormulaNodeId,
-        qsl_eval::temporal::TemporalPosition,
-        AtomReading,
-    )],
-) -> Option<(u64, String)> {
-    let nodes = clause.formula().nodes();
-    let FormulaNode::Unary {
-        operator: UnaryTemporal::Eventually,
-        interval: Some(qsl_semantics::check::CheckedInterval::Timed(interval)),
-        operand,
-    } = nodes.get(clause.formula().root().index())?
-    else {
-        return None;
-    };
-    if !matches!(nodes.get(operand.index()), Some(FormulaNode::Holds { .. })) {
-        return None;
-    }
-    let ordered = ordered_timestamped_positions(input);
-    let first_stamp = ordered.first()?.stamp;
-    let atom_index = operand.index();
-    for left in 0..ordered.len() {
-        let delta = i128::from(ordered[left].stamp) - i128::from(first_stamp);
-        if delta < 0 {
-            continue;
-        }
-        let delta = Rational::from_integer(Integer::from(u64::try_from(delta).ok()?));
-        if !interval.contains(&delta) {
-            continue;
-        }
-        let left_at = u64::try_from(left).ok()?;
-        let left_true = readings.iter().any(|(atom, at, value)| {
-            atom.index() == atom_index && at.index() == left_at && *value == AtomReading::True
-        });
-        if !left_true {
-            continue;
-        }
-        for right in left + 1..ordered.len() {
-            if ordered[right].stamp != ordered[left].stamp {
-                break;
-            }
-            let right_at = u64::try_from(right).ok()?;
-            let right_false = readings.iter().any(|(atom, at, value)| {
-                atom.index() == atom_index && at.index() == right_at && *value == AtomReading::False
-            });
-            if right_false {
-                let decisive_true_elsewhere = readings.iter().any(|(atom, at, value)| {
-                    if atom.index() != atom_index || *value != AtomReading::True {
-                        return false;
-                    }
-                    let index = usize::try_from(at.index()).ok();
-                    index.is_some_and(|index| {
-                        ordered.get(index).is_some_and(|position| {
-                            position.stamp != ordered[left].stamp
-                                && interval.contains(&Rational::from_integer(Integer::from(
-                                    position.stamp - first_stamp,
-                                )))
-                        })
-                    })
-                });
-                if !decisive_true_elsewhere {
-                    return Some((left_at, format!("holds-node@{atom_index}")));
-                }
-            }
-        }
-    }
-    None
 }
 
 fn counter_straddles_bound(
@@ -802,13 +875,18 @@ fn counter_straddles_bound(
     }
     let ordered = ordered_timestamped_positions(input);
     let request = ordered.first()?.stamp;
+    let bound = i64::try_from(bound).ok()?;
+    if ordered.iter().enumerate().any(|(index, observation)| {
+        is_true(consequent_id, u64::try_from(index).unwrap_or(u64::MAX))
+            && input.cover.within_bound(request, observation.stamp, bound) == CoverComparison::True
+    }) {
+        return None;
+    }
     for (index, observation) in ordered.iter().enumerate() {
         if !is_true(consequent_id, u64::try_from(index).ok()?) {
             continue;
         }
-        if input
-            .cover
-            .within_bound(request, observation.stamp, i64::try_from(bound).ok()?)
+        if input.cover.within_bound(request, observation.stamp, bound)
             == CoverComparison::StraddlesBound
         {
             return u64::try_from(index).ok();
@@ -817,18 +895,44 @@ fn counter_straddles_bound(
     None
 }
 
-fn has_past_operator(clause: &qsl_semantics::check::CheckedTemporalClause) -> bool {
-    clause.formula().nodes().iter().any(|node| {
-        matches!(
-            node,
+fn history_cutoff_precedes_trace(
+    input: &TimestampedTraceInput,
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    activation: Option<usize>,
+) -> bool {
+    let (positions, evaluated, _) = timestamped_evaluation_positions(input, clause, activation);
+    let Some(first_stamp) = positions.first().map(|position| position.stamp) else {
+        return false;
+    };
+    let first_stamp = Rational::from_integer(Integer::from(first_stamp));
+    evaluated.into_iter().any(|(node_index, position_index)| {
+        let Some(node) = clause.formula().nodes().get(node_index) else {
+            return false;
+        };
+        let interval = match node {
             FormulaNode::Unary {
                 operator: UnaryTemporal::Once | UnaryTemporal::Historically,
-                ..
-            } | FormulaNode::Binary {
-                operator: BinaryTemporal::Since | BinaryTemporal::Triggered,
+                interval,
                 ..
             }
-        )
+            | FormulaNode::Binary {
+                operator: BinaryTemporal::Since | BinaryTemporal::Triggered,
+                interval,
+                ..
+            } => interval.as_ref(),
+            _ => return false,
+        };
+        let Some(position) = positions.get(position_index) else {
+            return false;
+        };
+        let now = Rational::from_integer(Integer::from(position.stamp));
+        match interval {
+            Some(qsl_semantics::check::CheckedInterval::Timed(interval)) => {
+                now.sub(interval.upper()) < first_stamp
+            }
+            Some(qsl_semantics::check::CheckedInterval::Steps(_)) => false,
+            None => now > Rational::from_integer(Integer::from(0_i64)),
+        }
     })
 }
 
@@ -882,6 +986,7 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
         TemporalRefusal::AlignSkipNotLockstep => TemporalTraceRefusal::AlignSkipNotLockstep,
         TemporalRefusal::NotProjectionAligned => TemporalTraceRefusal::NotProjectionAligned,
         TemporalRefusal::EmptyLoop => TemporalTraceRefusal::EmptyLoop,
+        TemporalRefusal::NegativeUncertaintyMargin => TemporalTraceRefusal::InvalidProgress,
         TemporalRefusal::TraceTooLong => TemporalTraceRefusal::TraceTooLong,
         TemporalRefusal::LassoUnderBoundedProfile { profile } => {
             TemporalTraceRefusal::LassoUnderBoundedProfile { profile }

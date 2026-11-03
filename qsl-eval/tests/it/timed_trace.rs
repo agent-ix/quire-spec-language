@@ -15,8 +15,9 @@ use std::collections::HashMap;
 
 use qsl_eval::automaton::{translate_position_negation, Atom, Letter, TimedClaim};
 use qsl_eval::temporal::{
-    evaluate, evaluate_timed_at, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
-    TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimedTrace, UndefinedCause,
+    evaluate, evaluate_timed_at, AtomReading, FiniteWindowProgress, LetterStop, PositionRefusal,
+    TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimedTrace,
+    UndefinedCause,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
@@ -1478,4 +1479,16 @@ fn the_timed_claim_automaton_agrees_under_each_activation() {
         held > 50 && violated > 50,
         "{held} held, {violated} violated"
     );
+}
+
+/// A finite-window counter-cover margin is derived from non-negative
+/// uncertainty; callers cannot shorten a deadline with a negative margin.
+#[test]
+fn finite_window_progress_rejects_negative_uncertainty_margin() {
+    let zero = Rational::from_integer(Integer::from(0_i64));
+    let negative = Rational::from_integer(Integer::from(-1_i64));
+    assert!(matches!(
+        FiniteWindowProgress::new(zero.clone(), Some(zero), negative, Vec::new()),
+        Err(TemporalRefusal::NegativeUncertaintyMargin)
+    ));
 }
