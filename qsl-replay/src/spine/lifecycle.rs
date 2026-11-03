@@ -80,7 +80,7 @@
 //! }
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
@@ -115,6 +115,7 @@ use super::{
     region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary,
     UnitListRefusal,
 };
+use super::{BuildProvenance, StaticSubject, SubjectUnavailable};
 
 /// What a front-end operation returns when it produces no output: the
 /// stage's refusal, a reached limit, a cancellation or a fault.
@@ -710,6 +711,8 @@ pub struct CheckedUnit {
     library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
     protocol_results: Vec<super::ProtocolResult>,
     protocol_failure: Option<ProtocolFailure>,
+    static_subject: Result<StaticSubject, SubjectUnavailable>,
+    build_provenance: BuildProvenance,
 }
 
 impl CheckedUnit {
@@ -748,6 +751,16 @@ impl CheckedUnit {
     /// and carries no source here.
     pub fn libraries(&self) -> &[Source] {
         &self.libraries
+    }
+
+    /// The static subject established by this successful check.
+    pub fn static_subject(&self) -> Result<&StaticSubject, &SubjectUnavailable> {
+        self.static_subject.as_ref()
+    }
+
+    /// The compile limits and check-stage usage that produced this unit.
+    pub fn build_provenance(&self) -> BuildProvenance {
+        self.build_provenance
     }
 
     /// The retained v2 bytes of every resolved library, shared not copied.
@@ -1032,6 +1045,8 @@ pub struct EmittedUnit {
     package: pkg::EmittedPackage,
     sources: Vec<Source>,
     evidence: quire_contract_model::CheckedPackageEvidence,
+    static_subject: Result<StaticSubject, SubjectUnavailable>,
+    build_provenance: BuildProvenance,
 }
 
 impl EmittedUnit {
@@ -1050,6 +1065,16 @@ impl EmittedUnit {
     /// bytes back.
     pub fn evidence(&self) -> &quire_contract_model::CheckedPackageEvidence {
         &self.evidence
+    }
+
+    /// The static subject of the checked unit that produced these bytes.
+    pub fn static_subject(&self) -> Result<&StaticSubject, &SubjectUnavailable> {
+        self.static_subject.as_ref()
+    }
+
+    /// The compile limits and check-stage usage that produced this unit.
+    pub fn build_provenance(&self) -> BuildProvenance {
+        self.build_provenance
     }
 }
 
@@ -1288,6 +1313,11 @@ pub fn check_units(
             .iter()
             .map(|unit| unit.source().clone())
             .collect();
+        let unit_library_data: Vec<_> = admitted
+            .units()
+            .iter()
+            .map(|unit| resolved_libraries_for_unit(unit, &resolution.compiled))
+            .collect();
         let mut library_packages = BTreeMap::new();
         let (library_names, libraries): (Vec<_>, Vec<_>) = resolution
             .compiled
@@ -1298,7 +1328,12 @@ pub fn check_units(
             })
             .unzip();
         let mut checked_units = Vec::with_capacity(sources.len());
-        for (parsed, source) in admitted.units().iter().zip(sources.iter().cloned()) {
+        for ((parsed, source), (resolved_libraries, subject_libraries)) in admitted
+            .units()
+            .iter()
+            .zip(sources.iter().cloned())
+            .zip(unit_library_data)
+        {
             let (protocol_results, protocol_failure) =
                 protocol_check_outcome(parsed, package.graph());
             if let Some(refusal) = protocol_failure.as_ref() {
@@ -1307,6 +1342,34 @@ pub fn check_units(
                     protocol_results,
                 ));
             }
+            let has_protocol_refusal = protocol_results.iter().any(|result| {
+                matches!(
+                    result,
+                    super::ProtocolResult::Refused { .. }
+                        | super::ProtocolResult::Incomplete { .. }
+                )
+            });
+            let static_subject =
+                if has_protocol_refusal || !package.graph().unit_refusals().is_empty() {
+                    Err(SubjectUnavailable::RefusedCheck)
+                } else {
+                    StaticSubject::from_check(
+                        parsed.source(),
+                        &subject_libraries,
+                        parsed.unit().edition(),
+                        &parsed.unit().selections().profiles,
+                        &parsed.unit().selections().models,
+                        parsed.unit().forms(),
+                        &models.models,
+                        &models.packages,
+                        &resolved_libraries,
+                        package.graph(),
+                    )
+                };
+            let build_provenance = BuildProvenance {
+                limits,
+                usage: resolution.work,
+            };
             checked_units.push(CheckedUnit {
                 package: Arc::clone(&package),
                 type_report: type_report(package.graph(), source.reference()),
@@ -1317,6 +1380,8 @@ pub fn check_units(
                 library_packages: Arc::new(library_packages.clone()),
                 protocol_results,
                 protocol_failure,
+                static_subject,
+                build_provenance,
             });
         }
         *work = resolution.work;
@@ -1527,7 +1592,7 @@ fn check_with_context_and_temporal_selections(
         }
         *work = resolution.work;
         let mut library_packages = BTreeMap::new();
-        let (library_names, libraries) = resolution
+        let (library_names, libraries): (Vec<LibraryName>, Vec<Source>) = resolution
             .compiled
             .into_iter()
             .map(|(name, library)| {
@@ -1546,6 +1611,39 @@ fn check_with_context_and_temporal_selections(
         }
         let package = Arc::new(package);
         let type_report = type_report(package.graph(), parsed.source().reference());
+        let resolved_libraries: Vec<_> = library_names
+            .iter()
+            .map(|identity| identity.as_str().to_owned())
+            .collect();
+        let has_protocol_refusal = protocol_failure.is_some()
+            || protocol_results.iter().any(|result| {
+                matches!(
+                    result,
+                    super::ProtocolResult::Refused { .. }
+                        | super::ProtocolResult::Incomplete { .. }
+                )
+            });
+        let static_subject = if has_protocol_refusal || !package.graph().unit_refusals().is_empty()
+        {
+            Err(SubjectUnavailable::RefusedCheck)
+        } else {
+            StaticSubject::from_check(
+                parsed.source(),
+                &libraries,
+                parsed.unit().edition(),
+                &parsed.unit().selections().profiles,
+                &parsed.unit().selections().models,
+                parsed.unit().forms(),
+                &models.models,
+                &models.packages,
+                &resolved_libraries,
+                package.graph(),
+            )
+        };
+        let build_provenance = BuildProvenance {
+            limits,
+            usage: *work,
+        };
         let checked = CheckedUnit {
             package,
             source: parsed.source().clone(),
@@ -1556,6 +1654,8 @@ fn check_with_context_and_temporal_selections(
             library_packages: Arc::new(library_packages),
             protocol_results,
             protocol_failure,
+            static_subject,
+            build_provenance,
         };
         Ok(checked)
     })
@@ -1689,6 +1789,8 @@ pub fn package_with_temporal_selections(
                 package: emission.package().clone(),
                 sources,
                 evidence: emission.evidence().clone(),
+                static_subject: checked.static_subject.clone(),
+                build_provenance: checked.build_provenance,
             })
         },
     )
@@ -2591,6 +2693,39 @@ struct ResolvedLibrary {
     /// This library's own source, exactly as its own `qsl_cst::parse` read
     /// it (FND-016).
     source: Source,
+}
+
+/// The direct and transitive libraries reachable from one root source unit.
+/// A multi-unit package has one shared compiled map, but each unit's static
+/// subject contains only the closure named by that unit's own imports.
+fn resolved_libraries_for_unit(
+    parsed: &ParsedUnitSource,
+    compiled: &BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+) -> (Vec<String>, Vec<Source>) {
+    let mut identities = BTreeSet::new();
+    for import in &parsed.unit().selections().imports {
+        let identity =
+            LibraryName::new(&import.identity).expect("parsed library identity is valid");
+        identities.insert(identity.clone());
+        if let Some(library) = compiled.get(&identity) {
+            identities.extend(library.package.dependency_selections().keys().cloned());
+        }
+    }
+    let sources = identities
+        .iter()
+        .map(|identity| {
+            compiled
+                .get(identity)
+                .expect("each selected dependency closure identity was compiled")
+                .source
+                .clone()
+        })
+        .collect();
+    let identities = identities
+        .into_iter()
+        .map(|identity| identity.as_str().to_owned())
+        .collect();
+    (identities, sources)
 }
 
 /// One compile's S4 source resolution state (ADR-015 D-1).

@@ -1225,6 +1225,58 @@ fn syntax_refusal_does_not_suppress_clean_protocol_emission() {
     assert_eq!(emitted_z, &z_nodes);
 }
 
+/// FR-510-AC-5: continuation retains a graph for the clean sibling when one
+/// protocol refuses, but exposes neither a subject nor partial references.
+#[trace("FR-510-AC-5", "TC-1305")]
+#[test]
+fn a_continued_protocol_refusal_has_no_subject_or_partial_reference_rows() {
+    let unit = format!(
+        "{HEADER}model M = \"acme/orders\";\n\
+         function helper(): Boolean pure {{ true }}\n\
+         function answer using v(): Boolean pure {{ helper() }}\n\
+         {}\n\
+         {}",
+        protocol_source("W", true),
+        protocol_source("X", true).replace("M::Widget", "M::Absent")
+    );
+    let cancel = Cancel::new();
+    let parsed =
+        super::parse_for_continuation(&request(unit.as_bytes()), SourceLimits::default(), &cancel)
+            .expect("the attributed protocol refusal is continuable")
+            .into_value();
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("the fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &cancel,
+    )
+    .expect("the fixture model admits")
+    .into_value();
+    let checked = super::check_for_continuation(
+        &parsed,
+        super::ContinuationInputs {
+            package_name: "fixture".to_owned(),
+            execution_points: &BTreeMap::new(),
+            temporal_selections: &[],
+        },
+        &models,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .expect("the compiler retains the clean sibling graph")
+    .into_value();
+    assert!(checked
+        .protocol_results()
+        .iter()
+        .any(|result| matches!(result, super::super::ProtocolResult::Refused { declaration, .. } if declaration == "X")));
+    assert!(!checked.package().graph().protocol_refusals().is_empty());
+    assert!(checked.static_subject().is_err());
+    assert!(checked.package().graph().dependency_references().is_empty());
+}
+
 /// FR-503-AC-4..5 (TC-1298 rows 5-6): an S3 refusal is attached to the
 /// declaration and source index the checker owns, while clean siblings pass.
 #[trace("TC-1298", "FR-503-AC-4", "FR-503-AC-5")]
