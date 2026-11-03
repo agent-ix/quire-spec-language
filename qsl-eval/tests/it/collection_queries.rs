@@ -17,7 +17,7 @@ use quire_exact::NodeKey;
 use quire_exact::{
     BoundViolation, CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer,
     IntegerInterval, LimitKind, Meter, ObjectId, ObjectReference, Outcome, Refusal, ScalarLimits,
-    Undefined, UniverseId,
+    Undefined, UnitId, UniverseId,
 };
 use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
@@ -298,11 +298,26 @@ fn elements(value: &Value) -> Vec<Value> {
     }
 }
 
+/// The integer a value is, or a failed test.
+fn integer_of(value: &Value) -> Integer {
+    match value {
+        Value::Integer(integer) => integer.clone(),
+        other => panic!("an integer, not {other:?}"),
+    }
+}
+
+/// The boolean a value is, or a failed test.
+fn boolean_of(value: &Value) -> bool {
+    match value {
+        Value::Boolean(boolean) => *boolean,
+        other => panic!("a boolean, not {other:?}"),
+    }
+}
+
 fn assert_elements(run: &Run, expected: &[i64]) {
-    assert_eq!(
-        format!("{:?}", elements(completed(run))),
-        format!("{:?}", ints(expected))
-    );
+    let held: Vec<Integer> = elements(completed(run)).iter().map(integer_of).collect();
+    let expected: Vec<Integer> = expected.iter().copied().map(Integer::from).collect();
+    assert_eq!(held, expected);
 }
 
 fn incomplete(consumed_and_limit: u64, next_charge: i64, charge_point: ChargePoint) -> String {
@@ -1545,34 +1560,32 @@ fn fr041_the_amounts_example_keeps_duplicate_occurrences_and_its_exact_aggregate
     );
     assert_elements(&filter, &[2, 2, 3]);
     let counted = run_amounts(&count("Tiny", "q", is_two()), &[2, 2, 3]);
-    assert_eq!(
-        format!("{:?}", completed(&counted)),
-        format!("{:?}", int(2))
-    );
+    assert_eq!(integer_of(completed(&counted)), Integer::from(2_i64));
     let summed = run_amounts(&sum("Hundred", "q", name("x")), &[2, 2, 3]);
-    assert_eq!(format!("{:?}", completed(&summed)), format!("{:?}", int(7)));
+    assert_eq!(integer_of(completed(&summed)), Integer::from(7_i64));
     let size = run_amounts(&Expression::size(name("q")), &[2, 2, 3]);
-    assert_eq!(format!("{:?}", completed(&size)), format!("{:?}", int(3)));
+    assert_eq!(integer_of(completed(&size)), Integer::from(3_i64));
 }
 
 #[trace("QSpec-TC-041", "QSpec-FR-041-AC-2")]
 #[test]
 fn fr041_an_empty_domain_yields_the_declared_query_identities() {
-    let boolean =
-        |expression: &Expression| format!("{:?}", completed(&run_amounts(expression, &[])));
+    let empty = |expression: &Expression| completed(&run_amounts(expression, &[])).clone();
     let always = binary(BinaryOperator::Equal, literal(1), literal(1));
-    assert_eq!(
-        boolean(&query(BinderQuery::Forall, "q", always.clone())),
-        format!("{:?}", Value::Boolean(true))
-    );
-    assert_eq!(
-        boolean(&query(BinderQuery::Exists, "q", always)),
-        format!("{:?}", Value::Boolean(false))
-    );
-    assert_eq!(
-        boolean(&Expression::contains(name("q"), literal(2))),
-        format!("{:?}", Value::Boolean(false))
-    );
+    assert!(boolean_of(&empty(&query(
+        BinderQuery::Forall,
+        "q",
+        always.clone()
+    ))));
+    assert!(!boolean_of(&empty(&query(
+        BinderQuery::Exists,
+        "q",
+        always
+    ))));
+    assert!(!boolean_of(&empty(&Expression::contains(
+        name("q"),
+        literal(2)
+    ))));
     assert_elements(
         &run_amounts(&query(BinderQuery::Map, "q", name("x")), &[]),
         &[],
@@ -1586,7 +1599,7 @@ fn fr041_an_empty_domain_yields_the_declared_query_identities() {
         sum("Hundred", "q", name("x")),
         Expression::size(name("q")),
     ] {
-        assert_eq!(boolean(&zero), format!("{:?}", int(0)));
+        assert_eq!(integer_of(&empty(&zero)), Integer::from(0_i64));
     }
 }
 
@@ -1610,6 +1623,20 @@ fn fr041_a_wrong_domain_refuses_and_six_items_are_not_admitted_to_the_total() {
         ill_typed(&package, &five, &sum("Flag", "q", name("x"))),
         IllTypedCause::TypeMismatch
     );
+    // A summand of a unit-carrying type does not fit a unitless total.
+    let metres = [(
+        "q",
+        of(
+            CollectionKind::Sequence,
+            ValueType::Quantity(UnitId::declared(key("metre"))),
+            0,
+            5,
+        ),
+    )];
+    assert_eq!(
+        ill_typed(&package, &metres, &sum("Hundred", "q", name("x"))),
+        IllTypedCause::TypeMismatch
+    );
     // Six supplied items do not form a collection of cardinality at most 5.
     let source = amounts();
     let ValueType::Collection(five_type) = &source else {
@@ -1621,18 +1648,19 @@ fn fr041_a_wrong_domain_refuses_and_six_items_are_not_admitted_to_the_total() {
         &mut Meter::new(UNLIMITED),
     )
     .unwrap();
-    assert_eq!(
-        format!("{formed:?}"),
-        format!(
-            "{:?}",
-            Outcome::<Value>::Refused(Refusal::CardinalityOutOfBound {
-                violation: BoundViolation::AboveMaximum,
-                kind: CollectionKind::Sequence,
-                bound: five_type.bound().unwrap(),
-                count: 6,
-            })
-        )
-    );
+    let Outcome::Refused(Refusal::CardinalityOutOfBound {
+        violation,
+        kind,
+        bound,
+        count,
+    }) = formed
+    else {
+        panic!("six items refuse the cardinality bound, not {formed:?}");
+    };
+    assert_eq!(violation, BoundViolation::AboveMaximum);
+    assert_eq!(kind, CollectionKind::Sequence);
+    assert_eq!(Some(bound), five_type.bound());
+    assert_eq!(count, 6);
 }
 
 #[trace("QSpec-TC-041", "QSpec-FR-041-AC-4")]
@@ -1654,6 +1682,38 @@ fn fr041_decisive_forms_stop_and_the_rest_reach_every_occurrence() {
     // `forall` stops at its first false occurrence.
     assert_eq!(work(&forall, &[2, 3, 3]), work(&forall, &[2]));
     assert!(work(&forall, &[3, 3, 2]) > work(&forall, &[2, 3, 3]));
+    // filter, map, count and sum retain every reached occurrence, duplicates
+    // included, each read through its own binding of `x`.
+    let values = [2, 2, 3];
+    assert_elements(
+        &run_amounts(&query(BinderQuery::Filter, "q", is_two()), &values),
+        &[2, 2],
+    );
+    assert_elements(
+        &run_amounts(
+            &query(
+                BinderQuery::Map,
+                "q",
+                binary(BinaryOperator::Multiply, name("x"), literal(10)),
+            ),
+            &values,
+        ),
+        &[20, 20, 30],
+    );
+    assert_eq!(
+        integer_of(completed(&run_amounts(
+            &count("Tiny", "q", is_two()),
+            &values
+        ))),
+        Integer::from(2_i64)
+    );
+    assert_eq!(
+        integer_of(completed(&run_amounts(
+            &sum("Hundred", "q", name("x")),
+            &values
+        ))),
+        Integer::from(7_i64)
+    );
     // filter, map, count and sum visit every occurrence they reach.
     let reaching = [
         query(BinderQuery::Filter, "q", is_two()),
@@ -1664,5 +1724,71 @@ fn fr041_decisive_forms_stop_and_the_rest_reach_every_occurrence() {
     for expression in &reaching {
         assert!(work(expression, &[2, 2, 3]) > work(expression, &[2, 2]));
         assert!(work(expression, &[2, 2]) > work(expression, &[2]));
+    }
+}
+
+/// An `Incomplete` outcome of a query's domain reaches the enclosing query,
+/// aggregate and membership test: none reads it as an empty domain, and none
+/// completes.
+#[trace("QSpec-TC-041", "QSpec-FR-041-AC-5")]
+#[test]
+fn fr041_an_incomplete_domain_is_never_read_as_empty_or_aggregated() {
+    let package = plain();
+    let source = amounts();
+    let parameters = [("q", source.clone())];
+    let domain = || query(BinderQuery::Filter, "q", is_two());
+    let declared = |name: &str| qsl_forms::DeclaredName {
+        name: name.to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+    };
+    let over_domain = [
+        // An empty domain would make `forall` true and `exists` false.
+        Expression::query(
+            BinderQuery::Forall,
+            "x".to_owned(),
+            domain(),
+            binary(BinaryOperator::Equal, literal(1), literal(1)),
+        ),
+        Expression::query(
+            BinderQuery::Exists,
+            "x".to_owned(),
+            domain(),
+            binary(BinaryOperator::Equal, literal(1), literal(1)),
+        ),
+        // Unknown membership is not `false`.
+        Expression::contains(domain(), literal(2)),
+        // Zero is the aggregate of an empty domain.
+        Expression::size(domain()),
+        Expression::count(
+            declared("Tiny"),
+            "x".to_owned(),
+            domain(),
+            binary(BinaryOperator::Equal, literal(1), literal(1)),
+        ),
+        Expression::sum(declared("Hundred"), "x".to_owned(), domain(), name("x")),
+    ];
+    let arguments = || vec![collection(&source, ints(&[2, 2, 3]))];
+    // The least work that forms the whole domain.
+    let domain_work = run(&package, &parameters, &domain(), arguments(), UNLIMITED).work;
+    assert!(domain_work > 0);
+    for expression in &over_domain {
+        // With enough work the expression completes.
+        let whole = run(&package, &parameters, expression, arguments(), UNLIMITED);
+        assert!(matches!(whole.outcome, Outcome::Completed(_)));
+        // With too little work to form its domain it stays incomplete.
+        for limit in 0..domain_work {
+            let stopped = run(
+                &package,
+                &parameters,
+                expression,
+                arguments(),
+                work_limit(limit),
+            );
+            assert!(
+                matches!(stopped.outcome, Outcome::Incomplete(_)),
+                "limit {limit}: {:?}",
+                stopped.outcome
+            );
+        }
     }
 }
