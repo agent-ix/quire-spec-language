@@ -21,7 +21,7 @@ fn unit() -> String {
     profile p = \"quire.protocol.finite-global/v1\";\n\
     model M = \"acme/orders\";\n\
     function refers using v(): Boolean pure { protocol Fill }\n\
-    protocol Fill using v over (input: M::Gadget) on origin {\n\
+    protocol Fill using p over (input: M::Gadget) on origin {\n\
     role R on M::Gadget;\n\
     run sequence Main { }\n\
     finish End as (outcome: Boolean) { true };\n\

@@ -164,7 +164,7 @@ fn lifecycle_package(
     document: &serde_json::Value,
     body: &str,
 ) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
-    model_package(document, body, 23)
+    model_package(document, body, 25)
 }
 
 /// The K2-derived `document` normalized after exactly `charges`
@@ -1533,7 +1533,7 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
         "invariant NonNegativeAttempts using v on M::Fulfilment at current { self.attempts >= 0 }\n\
          pre RestartRequires using v on M::Fulfilment::restart { self.attempts < 3 }\n\
          post RestartEnsures using v on M::Fulfilment::restart { self.attempts = pre(self.attempts) + 1 }",
-        25,
+        26,
     )
     .expect("M16 checks");
 
@@ -1633,7 +1633,7 @@ fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
         "invariant NonNegativeAttempts using v on M::Fulfilment at current { self.attempts >= 0 }\n\
          pre RestartRequires using v on M::Fulfilment::restart { self.attempts < 3 }\n\
          post RestartEnsures using v on M::Fulfilment::restart { self.attempts = pre(self.attempts) + 1 }",
-        25,
+        26,
     )
     .expect("M16 checks");
     let set = |from: i64, to: i64| {
@@ -1746,7 +1746,7 @@ fn orders_fixture() -> OrdersFixture {
         "invariant Consistent using v on M::OrderLifecycle at current { not (self.placed and self.cancelled) }\n\
          pre PlaceRequires using v on M::OrderLifecycle::place { not self.placed }\n\
          post FlagsPlaced using v on M::OrderLifecycle::place { flags.placed }",
-        25,
+        28,
     )
     .expect("M22 checks");
     let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", &[(false, false)]);
@@ -1992,7 +1992,7 @@ fn items_fixture() -> OrdersFixture {
     let (package, _, packages) = model_package(
         &document,
         "pre ItemsPlaced using v on M::OrderLifecycle::place { forall(x in self.items: x.placed) }",
-        26,
+        29,
     )
     .expect("the items package checks");
     let with_items = |label: &str, observation: &str, contexts: &[(bool, bool)]| {

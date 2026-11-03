@@ -100,7 +100,7 @@ fn attempt_reference_in(unit: &str) -> (usize, String) {
 }
 
 fn protocol_attempt() -> &'static str {
-    "protocol AttemptUpdate using v over (input: Boolean) on origin {\n\
+    "protocol AttemptUpdate using p over (input: Boolean) on origin {\n\
      role R on Config::ConfigVersion;\n\
      run sequence Main {\n\
      attempt Update by R on Config::ConfigVersion::attemptUpdate contracts [] as (tried: Boolean) { true };\n\

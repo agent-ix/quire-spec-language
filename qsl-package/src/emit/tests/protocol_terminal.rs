@@ -17,7 +17,7 @@ const TICK: &str = "record Tick { ready: Boolean; n: Integer; }\n";
 /// empty `run`, and a `finish`.
 fn flow(activation: &str, members: &str) -> String {
     format!(
-        "{TICK}protocol Flow using v over (input: M::Order) {activation} {{\n\
+        "{TICK}protocol Flow using p over (input: M::Order) {activation} {{\n\
          role Buyer on M::Order;\n\
          {members}\n\
          run sequence Main {{ }}\n\
@@ -116,7 +116,7 @@ fn terminal_when_emits_the_condition_over_the_model_observation() {
 #[test]
 fn an_origin_terminal_condition_may_read_a_capture() {
     let lowered = admitted(&format!(
-        "{TICK}protocol Flow using v over (input: M::Order) on origin {{\n\
+        "{TICK}protocol Flow using p over (input: M::Order) on origin {{\n\
          capture seen: Boolean = true;\n\
          role Buyer on M::Order;\n\
          terminal when {{ seen }};\n\

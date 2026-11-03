@@ -104,6 +104,7 @@ fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, Che
         super::Selections {
             protocol: None,
             temporal: &[("t", crate::check::profile::TemporalProfile::InfiniteTrace)],
+            profiles: &[],
         },
     );
     (text, protocol, result)
@@ -219,12 +220,12 @@ fn anchors_at(protocol: &ProtocolDeclarationForm, site: AnchorSite) -> Vec<usize
 /// `receive-of` cases route a `receive` through it).
 fn recovery_flow(commit: &str, main_extra: &str) -> String {
     format!(
-        "protocol RecoveryFlow using v over (input: Boolean) on origin {{\n\
+        "protocol RecoveryFlow using pp over (input: M::Actor) on origin {{\n\
          role R on M::Actor;\n\
          channel C from R to R carries Boolean ordering unordered delivery at-most-once \
          capacity 1 overflow reject;\n\
          compensate Undo for Main::Applied as (failure: Boolean) by R \
-         on M::Actor::op using v clock \"ticks\" {{\n\
+         on M::Actor::op using e clock \"ticks\" {{\n\
          activate first (trigger: Boolean) when {{ true }} {{ }}\n\
          within [0,10]; attempts 2 of M::Try;\n\
          retry (current_attempt: M::Try, prior: M::Try) {{ true }};\n\
@@ -246,7 +247,7 @@ fn recovery_flow(commit: &str, main_extra: &str) -> String {
 /// cases).
 fn handoff_protocol(channel: &str) -> String {
     format!(
-        "protocol Handoff using v over (input: Boolean) on origin {{\n\
+        "protocol Handoff using pp over (input: Boolean) on origin {{\n\
          role R on M::Actor;\n\
          channel C from R to R carries Boolean ordering unordered delivery at-most-once \
          capacity 1 overflow reject;\n\

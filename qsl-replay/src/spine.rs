@@ -1060,6 +1060,14 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::MissingProfile { alias, .. } => {
                     format!("{message}: `using {alias}` names no profile selection of the unit")
                 }
+                ProtocolAnchorCause::WrongProfileKind {
+                    alias,
+                    selected,
+                    required,
+                    ..
+                } => format!(
+                    "{message}: `using {alias}` selects `{selected}`, which is not an admitted {required}"
+                ),
                 ProtocolAnchorCause::MissingRoleType { role, context, .. } => {
                     format!(
                         "{message}: role `{role}` is on `{context}`, which names no object type"
@@ -2508,7 +2516,7 @@ mod tests {
         let unit = "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.value.complete/v1\";\n\
             function f using v(): Boolean pure { true }\n\
-            protocol Flow using v over (input: Nope::Input) on origin {\n\
+            protocol Flow using p over (input: Nope::Input) on origin {\n\
             role R on Nope::Actor;\n\
             run sequence Main {\n\
             attempt Tried by R on Nope::Actor::op contracts [] as (tried: Undeclared) \
@@ -2684,7 +2692,7 @@ mod tests {
         let unit = "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.value.complete/v1\";\n\
             function f using v(): Boolean pure { true }\n\
-            protocol Flow using v over (input: Nope::Input) on origin {\n\
+            protocol Flow using p over (input: Nope::Input) on origin {\n\
             role R on Nope::Actor;\n\
             run sequence Main {\n\
             send S via Nope as (x: Undeclared) { 1 + true };\n\

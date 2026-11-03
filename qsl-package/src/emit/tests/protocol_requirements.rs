@@ -622,13 +622,11 @@ fn assert_activation_target_refusals(valid: &Lowered, document: &[u8]) {
     }
 }
 
-/// FR-383-AC-17: a unit that selects no protocol profile emits no protocol
-/// node and no refusal for a protocol declaration, whatever it requires; the
-/// temporal clause it requires is still emitted and read back verified, and
-/// no `protocol_clause` (hence no requirements set) is in the wire.
+/// FR-508: the protocol profile selection allows its required temporal
+/// relation to be emitted and read back.
 #[trace("FR-383-AC-17", "TC-1063")]
 #[test]
-fn a_requirement_without_a_protocol_profile_emits_no_protocol_node_and_no_refusal() {
+fn a_requirement_with_a_protocol_profile_emits_a_protocol_node() {
     let unit = format!(
         "temporal Due using t over (c: M::Order) clock \"model-steps\" \
          on origin {{ always true }}\n{}",
@@ -640,15 +638,15 @@ fn a_requirement_without_a_protocol_profile_emits_no_protocol_node_and_no_refusa
     );
     let lowered = lower_with(
         model(),
-        "profile t = \"quire.temporal.infinite-trace/v1\";\n",
+        "profile p = \"quire.protocol.finite-global/v1\";\nprofile t = \"quire.temporal.infinite-trace/v1\";\n",
         &unit,
     );
     assert!(lowered.verified, "{}", lowered.text);
     let nodes = lowered.wire["semantic_graph"]["nodes"].as_array().unwrap();
-    assert!(nodes.iter().all(|node| node["node_tag"] != "protocol"));
+    assert!(nodes.iter().any(|node| node["node_tag"] == "protocol"));
     assert!(nodes
         .iter()
-        .all(|node| node["semantic_form"] != "protocol_clause"));
+        .any(|node| node["semantic_form"] == "protocol_clause"));
     assert_eq!(
         nodes
             .iter()
@@ -687,7 +685,7 @@ fn a_protocol_requiring_a_refused_temporal_adds_no_second_refusal() {
     let unit = format!(
         "record Ack {{ ok: Boolean; }}\n\
          function refers using v(): Boolean pure {{ protocol Bad }}\n\
-         protocol Bad using v over (input: M::Order) on origin {{\n\
+         protocol Bad using p over (input: M::Order) on origin {{\n\
          role R on M::Order;\n\
          run sequence Main {{ repeat Again by R visible (e.ok) while {{ not e.ok }} \
          sequence Body {{ event E by R as (e: Ack) {{ true }}; }} }}\n\

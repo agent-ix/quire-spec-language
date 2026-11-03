@@ -70,7 +70,7 @@ const MEMBERS: &str = "role Buyer on M::Order;\nrole Seller on M::Person;\n\
 
 fn flow_with(members: &str, run: &str) -> String {
     format!(
-        "protocol Flow using v over (input: M::Order) on origin {{\n{members}\nrun {run}\n\
+        "protocol Flow using p over (input: M::Order) on origin {{\n{members}\nrun {run}\n\
          finish End as (outcome: Boolean) {{ true }};\n}}\n"
     )
 }
@@ -576,7 +576,7 @@ fn a_receive_sequenced_before_its_send_is_a_definition_cycle() {
 #[test]
 fn a_missing_or_swapped_control_binding_is_malformed_wire() {
     let mut attempt = admitted_config(
-        "protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
+        "protocol Flow using p over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run attempt Update by R on Config::ConfigVersion::attemptUpdate \
          contracts [] as (tried: Boolean) { true };\n\
@@ -621,7 +621,7 @@ fn a_missing_or_swapped_control_binding_is_malformed_wire() {
 #[test]
 fn a_check_condition_that_reads_model_state_is_operator_ineligible() {
     let captured = format!(
-        "protocol Flow using v over (input: M::Order) on origin {{\n\
+        "protocol Flow using p over (input: M::Order) on origin {{\n\
          capture seen: Boolean = present(deref(input).trail);\n{MEMBERS}\n\
          run sequence Main {{ check Gate using v {{ seen }}; }}\n\
          finish End as (outcome: Boolean) {{ true }};\n}}\n"
@@ -697,7 +697,7 @@ fn admitted_config(declarations: &str) -> Value {
 fn an_attempt_names_its_operation_anchor_and_contracts_and_an_effect_its_attempt() {
     let wire = admitted_config(
         "post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { 1 < 2 }\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
+         protocol Flow using p over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run sequence Main {\n\
          attempt Update by R on Config::ConfigVersion::attemptUpdate \
@@ -748,10 +748,10 @@ fn an_attempt_names_its_operation_anchor_and_contracts_and_an_effect_its_attempt
 #[trace("FR-383-AC-7", "TC-1061")]
 #[test]
 fn an_await_emits_its_anchor_clock_window_event_then_and_timeout() {
-    let profiles = format!("{PROFILES}profile t = \"quire.temporal.infinite-trace/v1\";\n");
+    let profiles = format!("{PROFILES}profile t = \"quire.temporal.timed/v1\";\n");
     let run = "sequence Main {\n\
         event Done by Buyer as (done: Boolean) { true };\n\
-        await Wait after Done using t clock \"ticks\" within [0,1] \
+        await Wait after Done using e clock \"ticks\" within [0,1] \
         match event Seen by Seller as (seen: Boolean) { true }; \
         then sequence Then { } timeout sequence Late { }\n}";
     let lowered = lower_with(document(), &profiles, &flow(run));
@@ -791,7 +791,7 @@ fn an_await_emits_its_anchor_clock_window_event_then_and_timeout() {
             "role": "temporal_profile",
             "definition": {
                 "authority": "agent-ix",
-                "identity": "quire.temporal.infinite-trace/v1"
+                "identity": "quire.temporal.timed/v1"
             }
         })),
         "{selected:?}"
@@ -826,20 +826,22 @@ fn temporal_rows(wire: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// FR-464 "Profiles and laws": an `await` in a protocol that emits no node
-/// (no protocol profile is selected) leaves the lock, and so the package,
-/// unchanged by the unit's temporal profile.
+/// FR-508: an emitted protocol's `await` retains its independently selected
+/// protocol and temporal profile identities.
 #[trace("FR-383-AC-7", "TC-1061")]
 #[test]
-fn an_await_without_a_protocol_profile_leaves_the_lock_unchanged() {
-    let profiles = "profile t = \"quire.temporal.infinite-trace/v1\";\n";
-    let with = lower_with(document(), profiles, &flow(&awaiting("t")));
+fn an_await_selects_protocol_and_temporal_profiles() {
+    let profiles = format!("{PROFILES}profile t = \"quire.temporal.timed/v1\";\n");
+    let with = lower_with(document(), &profiles, &flow(&awaiting("t")));
     assert!(with.ir.is_ok(), "{:?}\n{}", with.ir.err(), with.text);
-    assert!(
-        controls(&with.wire).is_empty(),
-        "no control node is emitted"
+    assert!(!controls(&with.wire).is_empty());
+    assert_eq!(
+        lock_selections(&with.wire)
+            .iter()
+            .filter_map(|row| row["role"].as_str())
+            .collect::<Vec<_>>(),
+        ["protocol_profile", "temporal_profile"]
     );
-    assert!(lock_selections(&with.wire).is_empty());
 }
 
 /// FR-464 "Profiles and laws", FR-322: an emitted `await` selects exactly
@@ -849,11 +851,11 @@ fn an_await_without_a_protocol_profile_leaves_the_lock_unchanged() {
 #[test]
 fn an_emitted_await_selects_exactly_one_temporal_profile() {
     let profiles = format!(
-        "{PROFILES}profile t = \"quire.temporal.infinite-trace/v1\";\n\
+        "{PROFILES}profile t = \"quire.temporal.timed/v1\";\n\
          profile u = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
     );
     for (alias, identity) in [
-        ("t", "quire.temporal.infinite-trace/v1"),
+        ("e", "quire.temporal.timed/v1"),
         ("u", "quire.temporal.timestamped-event.finite-window/v1"),
     ] {
         let lowered = lower_with(document(), &profiles, &flow(&awaiting(alias)));
@@ -875,7 +877,7 @@ fn an_emitted_await_selects_exactly_one_temporal_profile() {
 #[trace("FR-383-AC-9", "TC-1062")]
 #[test]
 fn await_then_and_timeout_binders_are_levelled_by_their_entry_sets() {
-    let profiles = format!("{PROFILES}profile t = \"quire.temporal.infinite-trace/v1\";\n");
+    let profiles = format!("{PROFILES}profile t = \"quire.temporal.timed/v1\";\n");
     let lowered = lower_with(document(), &profiles, &flow(&awaiting("t")));
     assert!(lowered.verified, "{}", lowered.text);
     let wire = &lowered.wire;
@@ -935,7 +937,7 @@ fn an_attempt_ordering_outside_a_parallel_is_refused_so_the_group_is_empty() {
          profile v = \"quire.model.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
          model Config = \"example/config-version\";\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
+         protocol Flow using p over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run attempt Update by R on Config::ConfigVersion::attemptUpdate \
          ordering seq_cst contracts [] as (tried: Boolean) { true };\n\
@@ -951,7 +953,7 @@ fn an_attempt_ordering_outside_a_parallel_is_refused_so_the_group_is_empty() {
         "{text}"
     );
     let unordered = admitted_config(
-        "protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
+        "protocol Flow using p over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run attempt Update by R on Config::ConfigVersion::attemptUpdate \
          contracts [] as (tried: Boolean) { true };\n\
@@ -972,7 +974,7 @@ fn two_contracts_are_listed_in_digest_order_whatever_the_source_order() {
         let wire = admitted_config(&format!(
             "post Alpha using v on Config::ConfigVersion::attemptUpdate {{ 1 < 2 }}\n\
              post Beta using v on Config::ConfigVersion::attemptUpdate {{ 2 < 3 }}\n\
-             protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+             protocol Flow using p over (input: Config::ConfigVersion) on origin {{\n\
              role R on Config::ConfigVersion;\n\
              run attempt Update by R on Config::ConfigVersion::attemptUpdate \
              contracts [{listed}] as (tried: Boolean) {{ true }};\n\
@@ -1292,7 +1294,7 @@ fn decisions_without_a_node_form_are_not_written() {
             ProtocolConstruct::ProtocolReferenceInBody,
             "QSL-1121g",
             format!(
-                "{}protocol Other using v over (input: M::Order) on origin {{\n\
+                "{}protocol Other using p over (input: M::Order) on origin {{\n\
                  role Buyer on M::Order;\nrun sequence Main {{ }}\n\
                  finish End as (outcome: Boolean) {{ true }};\n}}\n",
                 flow(

@@ -181,9 +181,43 @@ pub(super) fn lower_package(
         .collect();
     let selected_exact_declarations = graph.selected_exact_declaration_rows().to_vec();
     let selected_exact_fields = graph.selected_exact_field_rows().to_vec();
+    let temporal_selections = graph
+        .temporal_clauses()
+        .iter()
+        .filter(|temporal| {
+            temporal.clause().profile()
+                == qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
+        })
+        .map(|temporal| crate::emit::TemporalClockSelection {
+            source: graph.source().clone(),
+            declaration_span: temporal.clause().span(),
+            clock: quire_contract_model::ClockConfiguration::EventPosition {
+                sequence_authority: "test-order-events".into(),
+            },
+        })
+        .chain(graph.protocols().iter().flat_map(|protocol| {
+            protocol
+                .obligations
+                .compensations
+                .iter()
+                .filter(|template| {
+                    template.temporal_profile
+                        == Some(qsl_semantics::check::TemporalProfile::EventPositionFalseExtension)
+                })
+                .map(|template| crate::emit::TemporalClockSelection {
+                    source: graph.source().clone(),
+                    declaration_span: template.span,
+                    clock: quire_contract_model::ClockConfiguration::EventPosition {
+                        sequence_authority: "test-order-events".into(),
+                    },
+                })
+        }))
+        .collect::<Vec<_>>();
     let package = CheckedPackage::link(graph);
     let activation_rows = package.protocol_activation_relation();
-    let emission = emit_checked(&package).expect("the package emits");
+    let emission =
+        crate::emit::emit_checked_with_temporal_selections(&package, &temporal_selections)
+            .expect("the package emits");
     assert_eq!(emission.omitted, []);
     let occurrences = package.protocol_occurrence_schemas();
     let mut evidence = read_evidence(&emission);

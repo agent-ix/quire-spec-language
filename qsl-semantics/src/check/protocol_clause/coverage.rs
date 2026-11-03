@@ -8,8 +8,12 @@ use qsl_forms::{ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeKind
 use qsl_foundation::Span;
 
 use super::refusal;
+use crate::check::profile::protocol_profile;
+use crate::check::profile::TemporalProfile;
 use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause};
 use crate::check::Scope;
+use crate::value::layer::HeaderLayer;
+use qsl_foundation::selection::ProfileSelection;
 
 /// Whether this checker covers a static node of `kind`: every node kind of
 /// the `run` tree is checked (`graph`, `protocol_controls`, `protocol_slots`,
@@ -110,16 +114,6 @@ pub fn content(
     }
 
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
-    let using = &protocol.using;
-    if alias_names.get(&using.alias) != Some(&AliasKind::Profile) {
-        refusals.push((
-            using.span,
-            refusal(ProtocolAnchorCause::MissingProfile {
-                alias: using.alias.clone(),
-                span: using.span,
-            }),
-        ));
-    }
     let mut roles: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
     for role in &protocol.roles {
         roles
@@ -199,24 +193,6 @@ pub fn content(
             ));
         }
     }
-    // A `check` and an `await` are written `using` a profile selection, as
-    // the protocol itself is.
-    let usings = protocol
-        .checks
-        .iter()
-        .map(|check| &check.using)
-        .chain(protocol.awaits.iter().map(|await_form| &await_form.using));
-    for using in usings {
-        if alias_names.get(&using.alias) != Some(&AliasKind::Profile) {
-            refusals.push((
-                using.span,
-                refusal(ProtocolAnchorCause::MissingProfile {
-                    alias: using.alias.clone(),
-                    span: using.span,
-                }),
-            ));
-        }
-    }
     for binder in &protocol.binders {
         if let Err(error) = crate::check::type_form::resolve_form(scope, &binder.value_type) {
             refusals.push((
@@ -231,4 +207,82 @@ pub fn content(
     }
     refusals.sort_by_key(|(span, _)| span.start);
     refusals.into_iter().map(|(_, refusal)| refusal).collect()
+}
+
+/// Checks every profile alias declared at a protocol use site against that
+/// site's closed profile family, retaining refusal spans for source ordering.
+pub fn profile_uses(
+    protocol: &ProtocolDeclarationForm,
+    alias_names: &BTreeMap<String, AliasKind>,
+    profiles: &[ProfileSelection],
+) -> Vec<(Span, CheckRefusal)> {
+    let mut refusals = Vec::new();
+    let mut add = |using: &qsl_forms::UsingAlias, required, admits| {
+        if let Some(refusal) = validate_profile_use(using, required, profiles, alias_names, admits)
+        {
+            refusals.push(refusal);
+        }
+    };
+    add(&protocol.using, "protocol profile", admits_protocol_profile);
+    for check in &protocol.checks {
+        add(&check.using, "state-bearing layer", admits_state_layer);
+    }
+    for await_form in &protocol.awaits {
+        add(&await_form.using, "temporal profile", admits_timed_profile);
+    }
+    for compensation in &protocol.compensations {
+        add(
+            &compensation.using,
+            "temporal profile",
+            admits_timed_profile,
+        );
+    }
+    refusals.sort_by_key(|(span, _)| span.start);
+    refusals
+}
+
+fn validate_profile_use(
+    using: &qsl_forms::UsingAlias,
+    required: &'static str,
+    profiles: &[ProfileSelection],
+    alias_names: &BTreeMap<String, AliasKind>,
+    admits: fn(&str) -> bool,
+) -> Option<(Span, CheckRefusal)> {
+    let Some(selection) = profiles.iter().find(|profile| profile.alias == using.alias) else {
+        if alias_names.get(&using.alias) != Some(&AliasKind::Profile) {
+            return Some((
+                using.span,
+                refusal(ProtocolAnchorCause::MissingProfile {
+                    alias: using.alias.clone(),
+                    span: using.span,
+                }),
+            ));
+        }
+        return None;
+    };
+    if !admits(&selection.identity) {
+        return Some((
+            using.span,
+            refusal(ProtocolAnchorCause::WrongProfileKind {
+                alias: using.alias.clone(),
+                selected: selection.identity.clone(),
+                required,
+                span: using.span,
+            }),
+        ));
+    }
+    None
+}
+
+fn admits_protocol_profile(identity: &str) -> bool {
+    protocol_profile(identity).is_some()
+}
+
+fn admits_timed_profile(identity: &str) -> bool {
+    TemporalProfile::from_identity(identity)
+        .is_some_and(|profile| profile != TemporalProfile::InfiniteTrace)
+}
+
+fn admits_state_layer(identity: &str) -> bool {
+    HeaderLayer::from_identity(identity).is_some()
 }

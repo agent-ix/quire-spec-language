@@ -13,13 +13,15 @@ pub(crate) const SOURCE: &str = r#"
 language "ix:native" edition "1-draft";
 profile P = "quire.protocol.finite-global/v1";
 profile T = "quire.temporal.infinite-trace/v1";
+profile E = "quire.temporal.timed/v1";
+profile S = "quire.state.graph/v1";
 model M = "test/orders";
 protocol Refunds using P over (view: M::Node)
     on each (opened: M::Tick) when (opened.ready) {
   capture order: M::Total = view.total;
   role Service on M::Node;
   compensate Refund for Main::Applied as (forward: M::Receipt)
-      by Service on M::Node::step using T clock "refund-clock" {
+      by Service on M::Node::step using E clock "refund-clock" {
     capture target: M::Total = forward.total;
     activate first (trigger: M::Flag)
         when { not trigger.ready and target >= 0 } {
@@ -34,7 +36,7 @@ protocol Refunds using P over (view: M::Node)
     recover (recovered: M::Receipt) { recovered.total = target and not activated };
   }
   compensate Partial for Main::Applied as (partialForward: M::Receipt)
-      by Service on M::Node::step using T clock "partial-clock" {
+      by Service on M::Node::step using E clock "partial-clock" {
     capture partialTarget: M::Total = partialForward.total;
     activate first (partialTrigger: M::Flag)
         when { not partialTrigger.ready and partialTarget >= 0 } {
@@ -69,8 +71,8 @@ protocol Pipeline using P over (view: M::Node) on origin {
     receive Got via Pay of Main::Sent as (got: M::Flag)
         related by Owns (view, view) { true };
     choice Decide by Buyer visible (got.ready) {
-      case yes when { got.ready } check A using P { true };
-      case no when { not got.ready } check B using P { true };
+      case yes when { got.ready } check A using S { true };
+      case no when { not got.ready } check B using S { true };
     }
   }
   finish Closed as (closed: M::Flag) { true };

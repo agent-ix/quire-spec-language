@@ -45,8 +45,8 @@ use crate::counter::Letters;
 use crate::derived_request::{derived_subjects, protocol_request};
 use crate::fill::{
     attempt, compiled, contracts, document, fill_unit, instance, json_of, package, package_with,
-    projections, protocol, reachable, sc_system, subject, unit_text_with, universe, v, Documents,
-    Reached, PACKAGE, PROTOCOL_PROFILE,
+    package_without_protocol_profile_selection, projections, protocol, reachable, sc_system,
+    subject, unit_text_with, universe, v, Documents, Reached, PACKAGE, PROTOCOL_PROFILE,
 };
 use crate::model_settle::{envelope_at, protocol_anchor, request};
 
@@ -75,19 +75,6 @@ pub(crate) struct Case {
 impl Case {
     /// `body` from one initial snapshot per value of `c.v` in `values`.
     pub(crate) fn new(body: &str, values: &[i64]) -> Self {
-        Self::with_profile(PROTOCOL_PROFILE, body, values)
-    }
-
-    /// [`Self::new`] without the protocol profile: for a case that only
-    /// explores the protocol and uses a form the protocol clause node does
-    /// not write yet (a `visible` binder, a repeat that steps through a
-    /// nested repeat), so its package has no protocol clause node and the
-    /// case cannot replay.
-    pub(crate) fn unprofiled(body: &str, values: &[i64]) -> Self {
-        Self::with_profile("", body, values)
-    }
-
-    fn with_profile(profile: &str, body: &str, values: &[i64]) -> Self {
         let mut documents = Documents::new();
         let initial = values
             .iter()
@@ -98,7 +85,23 @@ impl Case {
             body: body.to_owned(),
             documents,
             initial,
-            checked: package_with(profile, body),
+            checked: package_with(PROTOCOL_PROFILE, body),
+        }
+    }
+
+    /// Build a runtime-only protocol case without selecting its wire profile.
+    pub(crate) fn new_without_protocol_profile_selection(body: &str, values: &[i64]) -> Self {
+        let mut documents = Documents::new();
+        let initial = values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| documents.start(&format!("s{index}"), &[("c", *value)]))
+            .collect();
+        Self {
+            body: body.to_owned(),
+            documents,
+            initial,
+            checked: package_without_protocol_profile_selection(body),
         }
     }
 

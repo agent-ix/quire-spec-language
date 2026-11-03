@@ -3573,6 +3573,11 @@ impl PackageDeclarations {
             .collect();
         for (index, protocol) in self.protocols.iter().enumerate() {
             let refusals_before = refusals.len();
+            let profile_refusals = protocol_clause::profile_uses(
+                protocol,
+                &self.alias_names,
+                &self.profile_selections,
+            );
             let attempts = self
                 .protocol_attempts
                 .get(index)
@@ -3589,6 +3594,7 @@ impl PackageDeclarations {
                 protocol_clause::Selections {
                     protocol: protocol_profile_identity.as_deref(),
                     temporal: &temporal_aliases,
+                    profiles: &self.profile_selections,
                 },
             );
             // FR-381: the protocol's activation, captures and compensation
@@ -3623,6 +3629,7 @@ impl PackageDeclarations {
             );
             match anchored {
                 Ok((mut checked, bound)) => {
+                    refusals.extend(profile_refusals.into_iter().map(|(_, refusal)| refusal));
                     let content = protocol_clause::content(protocol, &self.alias_names, &scope);
                     let content_refused = !content.is_empty();
                     refusals.extend(content);
@@ -3760,7 +3767,11 @@ impl PackageDeclarations {
                 }
                 Err(protocol_refusals) => {
                     protocol_places.push(None);
-                    let mut owned_refusals = protocol_refusals;
+                    let mut owned_refusals: Vec<CheckRefusal> = profile_refusals
+                        .into_iter()
+                        .map(|(_, refusal)| refusal)
+                        .collect();
+                    owned_refusals.extend(protocol_refusals);
                     if let protocol_obligation::Obligations::Refused(obligation_refusals) =
                         obligations
                     {

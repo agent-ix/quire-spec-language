@@ -189,6 +189,18 @@ pub enum ProtocolAnchorCause {
         /// The alias's own span.
         span: Span,
     },
+    /// FR-508: a profile alias resolves, but the selected identity is not
+    /// admitted at this protocol use site.
+    WrongProfileKind {
+        /// The alias as written.
+        alias: String,
+        /// The selected profile identity.
+        selected: String,
+        /// The kind required at this use site.
+        required: &'static str,
+        /// The alias's own span.
+        span: Span,
+    },
     /// A role's `on`/`each` object type names no object type of
     /// the package.
     MissingRoleType {
@@ -1052,6 +1064,7 @@ impl ProtocolAnchorCause {
             | Self::RefusedDependency { span, .. }
             | Self::JoinFunctionType { span, .. }
             | Self::MissingProfile { span, .. }
+            | Self::WrongProfileKind { span, .. }
             | Self::MissingRoleType { span, .. }
             | Self::MissingRole { span, .. }
             | Self::BinderType { span, .. }
@@ -1110,6 +1123,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => Code::MissingDeclaration,
             Self::JoinFunctionMissing { .. } => Code::MissingDeclaration,
+            Self::WrongProfileKind { .. } => Code::UnknownProfile,
             Self::RefusedDependency { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
@@ -1166,6 +1180,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => "missing-name",
             Self::JoinFunctionMissing { .. } => "missing-name",
+            Self::WrongProfileKind { .. } => "wrong-selection-role",
             Self::RefusedDependency { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }

@@ -11,7 +11,8 @@ use super::reachability::{lower_package, lower_with, Lowered};
 use super::*;
 use qsl_semantics::check::{CheckRefusal, ProtocolConstruct};
 
-pub(super) const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n";
+pub(super) const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
+                         profile e = \"quire.temporal.timed/v1\";\n";
 
 /// The `acme/orders` document of TC-1054 (`Order`, `Rush`, `Person` and the
 /// populations `orders` and `people`).
@@ -29,7 +30,7 @@ fn flow(activation: &str, members: &str) -> String {
 /// names that type's model declaration (QSpec FR-464).
 pub(super) fn flow_over(over: &str, activation: &str, members: &str) -> String {
     format!(
-        "protocol Flow using v over (input: {over}) {activation} {{\n\
+        "protocol Flow using p over (input: {over}) {activation} {{\n\
          {members}\n\
          run sequence Main {{ }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -639,7 +640,7 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         };
         format!(
             "function ok using v(): Boolean pure {{ true }}\n\
-             protocol Flow using v over (input: M::Order) {activation} {{\n\
+             protocol Flow using p over (input: M::Order) {activation} {{\n\
              {captures}\n{BUYER}\n{members}\nrun {run}\nfinish End as (outcome: Boolean) {{ {finish} }};\n}}\n"
         )
     };
@@ -1019,7 +1020,7 @@ fn assert_keyed_refusal(
 /// `Flow` over [`model`] whose `run` holds the `parallel` control `Par`.
 fn parallel_flow(parallel: &str) -> String {
     format!(
-        "protocol Flow using v over (input: M::Order) on origin {{\n\
+        "protocol Flow using p over (input: M::Order) on origin {{\n\
          {BUYER}\n\
          run sequence Main {{\n{parallel}\n}}\n\
          finish End as (outcome: Boolean) {{ true }};\n\

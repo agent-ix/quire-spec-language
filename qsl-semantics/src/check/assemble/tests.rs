@@ -922,7 +922,7 @@ fn assembler_capacity_cause_preserves_native_request_unit() {
 #[test]
 fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
     let (_, assembled) = assemble(
-        "protocol Flow using v over (input: M::Input) on origin {\n\
+        "protocol Flow using p over (input: M::Input) on origin {\n\
          role R on M::Actor;\n\
          run sequence Main {\n\
          effect Applied of Missing as (applied: M::Effect) { true };\n\
@@ -945,7 +945,7 @@ fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
 #[test]
 fn an_attempt_naming_an_unadmitted_model_refuses_at_assembly() {
     let (_, errors) = errors(
-        "protocol Flow using v over (input: M::Input) on origin {\n\
+        "protocol Flow using p over (input: M::Input) on origin {\n\
          role R on M::Actor;\n\
          run sequence Main {\n\
          attempt Tried by R on M::Actor::act contracts [] as (tried: Boolean) { true };\n\
