@@ -10,9 +10,7 @@ use crate::support::native_protocol as setup;
 use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::number::ProtocolNumber;
-use quire_spec_language::protocol_artifact::{
-    self as artifact, native, wire as w, Error, Limits, Unsupported,
-};
+use quire_spec_language::protocol_artifact::{native, wire as w, Error, Limits, Unsupported};
 use setup::{Inputs, Unit};
 
 /// One owned attempt by the deciding role; its record is the only Boolean atom.

@@ -9,9 +9,10 @@ use ix_trace_rs::trace;
 use qsl_foundation::{Source, SourceIdentity};
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::number::{NumberComponent, NumberError, NumberWire};
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid,
-    Limits, NumberComponent, NumberError, NumberWire, Unsupported,
+    Limits, Unsupported,
 };
 use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};

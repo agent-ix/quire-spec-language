@@ -17,9 +17,7 @@ use quire_spec_language::linking::composed::scopes::{
     DeclarationScope, ScopeIssue, StructuralKind,
 };
 use quire_spec_language::number::ProtocolNumber;
-use quire_spec_language::protocol_artifact::{
-    self as artifact, native, wire as w, Error, Limits, Unsupported,
-};
+use quire_spec_language::protocol_artifact::{native, wire as w, Error, Limits, Unsupported};
 use setup::{Inputs, Unit};
 
 /// The forward payment attempt and the one declared business effect of it.

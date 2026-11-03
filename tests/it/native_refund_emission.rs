@@ -16,9 +16,7 @@ use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::scopes::{ScopeIssue, StructuralKind};
 use quire_spec_language::number::ProtocolNumber;
-use quire_spec_language::protocol_artifact::{
-    self as artifact, native, wire as w, Error, Limits, Unsupported,
-};
+use quire_spec_language::protocol_artifact::{native, wire as w, Error, Limits, Unsupported};
 use setup::{Inputs, Unit};
 
 /// One refund obligation on the payment effect, with its authored attempt bound,
