@@ -449,6 +449,11 @@ pub struct Emission {
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
     pub(crate) equality_fact_witness_rows: Vec<EqualityFactWitnessRow>,
+    /// The typed graph nodes exactly as encoded into [`Self::package`], with
+    /// package-level index segments. IR's typed bodies (an operation anchor's
+    /// bare execution point) are not decodable through serde outside its
+    /// admitting reader, so protocol results read these rather than the bytes.
+    pub(crate) wire_nodes: Vec<CheckedSemanticNodeV2>,
 }
 
 /// A protocol's result from checked-package emission (FR-383).
@@ -568,6 +573,7 @@ impl DebugWith for Emission {
             selected_model_enum_member_rows,
             equality_producer_identity_rows,
             equality_fact_witness_rows,
+            wire_nodes,
         } = self;
         f.debug_struct("Emission")
             .field("package", package)
@@ -597,6 +603,7 @@ impl DebugWith for Emission {
                 equality_producer_identity_rows,
             )
             .field("equality_fact_witness_rows", equality_fact_witness_rows)
+            .field("wire_node_count", &wire_nodes.len())
             .finish()
     }
 }
@@ -3615,23 +3622,7 @@ pub fn emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
     };
     let structural_nodes = emission
         .as_ref()
-        .map(|emission| {
-            serde_json::from_slice::<serde_json::Value>(emission.package().bytes())
-                .map_err(encoding)
-                .and_then(|wire| {
-                    wire.pointer("/semantic_graph/nodes")
-                        .and_then(serde_json::Value::as_array)
-                        .cloned()
-                        .ok_or_else(|| encoding("emitted semantic graph has no nodes array"))
-                })
-                .and_then(|nodes| {
-                    serde_json::from_value::<Vec<CheckedSemanticNodeV2>>(serde_json::Value::Array(
-                        nodes,
-                    ))
-                    .map_err(encoding)
-                })
-        })
-        .transpose()?;
+        .map(|emission| emission.wire_nodes.clone());
     let ids = StructuralIds::default();
     let mut structural_nodes = structural_nodes;
     if let Some(nodes) = structural_nodes.as_mut() {
@@ -4739,6 +4730,7 @@ pub fn emit_timed_models(
         selected_model_enum_member_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
+        wire_nodes: semantic_graph.nodes,
     })
 }
 
@@ -5775,6 +5767,7 @@ fn emit_package_inner(
         selected_model_enum_member_rows,
         equality_producer_identity_rows,
         equality_fact_witness_rows,
+        wire_nodes: semantic_graph.nodes,
     })
 }
 

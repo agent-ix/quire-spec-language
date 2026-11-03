@@ -870,3 +870,59 @@ fn the_adjust_operation_emits_distinct_pre_and_post_clauses_with_their_points() 
         "P1 is the pre point and Q2 the post point"
     );
 }
+
+/// Emit the switch `adjust` source with only `points` bound and return the
+/// execution point (`null` when unbound) of every state clause node, sorted.
+fn adjust_points_with_only(points: &str) -> Vec<String> {
+    let model = Path::new(SWITCH_MODEL);
+    let program = Path::new("examples/switch-transition/adjust.native");
+    let document = std::fs::read(model).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("points.json");
+    std::fs::write(&file, points).unwrap();
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
+    command.extend(args(&[model]));
+    command.extend(strings(&["--execution-points"]));
+    command.extend(args(&[&file, program]));
+    let mut stdout = Vec::new();
+    run(&command, &mut stdout).expect("the bound clause emits");
+    read_back(&stdout, &[&document]);
+    let wire: Value = serde_json::from_slice(&stdout).unwrap();
+    let mut points: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause")
+        .map(|node| node["body"]["operation"]["member"]["execution_point"].to_string())
+        .collect();
+    points.sort();
+    points
+}
+
+/// FR-058-AC-1: binding only the precondition point `P1` emits a package that
+/// reads back with that point on the precondition clause and none on the
+/// postcondition clause.
+#[test]
+fn binding_only_the_precondition_point_emits_and_reads_back() {
+    assert_eq!(
+        adjust_points_with_only(r#"{"P1": {"kind": "pre", "operation": "adjust"}}"#),
+        vec![
+            "null".to_string(),
+            json!({"kind": "pre", "operation": "adjust"}).to_string(),
+        ],
+    );
+}
+
+/// FR-058-AC-1: binding only the postcondition point `Q2` emits a package that
+/// reads back with that point on the postcondition clause and none on the
+/// precondition clause.
+#[test]
+fn binding_only_the_postcondition_point_emits_and_reads_back() {
+    assert_eq!(
+        adjust_points_with_only(r#"{"Q2": {"kind": "post", "operation": "adjust"}}"#),
+        vec![
+            "null".to_string(),
+            json!({"kind": "post", "operation": "adjust"}).to_string(),
+        ],
+    );
+}
