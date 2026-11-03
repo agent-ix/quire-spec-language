@@ -6197,7 +6197,7 @@ fn temporal_binding_rows(
         };
         if previous
             .as_ref()
-            .is_some_and(|previous: &CheckedNodeId| previous >= declaration)
+            .is_some_and(|previous: &CheckedNodeId| previous > declaration)
         {
             return Err(EmitRefusal::InvalidTemporalClockReference {
                 source_ref,
