@@ -49,3 +49,16 @@ FR-330-AC-9: Timestamped/profile shape mismatch refusal is asserted; the ledger 
 
 Gaps found in verification strength for AC-4/8/9 and a ticket-stated removal not done. Code
 defects behind them are in SR-1493002.
+
+## Dispositions
+
+Round 1 against stacked PR 2169 head 0d9e923a61f1 (effective diff origin/main...head, main ceecfab74). Gates: workspace check and clippy -D warnings clean (default and --no-default-features); qsl-eval and qsl-replay tests green; qsl-semantics --all-features: 4 failures identical on origin/main (control run), none new; arch-lint qualified-core PASS.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | As SR-1493002 FND-001: historically/once/since and the activation at position 1 are asserted (finite_window.rs:1245-1265 and spine tests); mutation history-off is killed. |
+| FND-002 | fixed | Straddle and conflict are asserted under other clause shapes through the generic lift (possibility-lift and cover tests); mutations straddle-sure and atom-classes-off are killed. |
+| FND-003 | fixed | TCV-01..15 are read from QSPEC_DIR and asserted by id in both crates. |
+| FND-004 | deferred: FR-285-AC-7 machine output tracked by SR-1493002 FND-012 | label_and_exit is the single mapping read by run_clause and the ranking (FR-285-AC-10/12, spec interim mapping). FR-285-AC-7's machine-output sentence is not met: write_clause_run_result refuses every temporal disposition. See SR-1493002 FND-012; no ticket yet. |
+| FND-005 | fixed | engine.rs no longer refuses the profile as ProfileNotEvaluated (TraceCarriesNoStamps for a stampless trace). |
+| FND-006 | fixed | a_settled_sibling_keeps_its_verdict_when_a_charge_is_denied (finite_window.rs:783-795) and the run-twice equality tests (spine temporal tests around 1137) assert the sentences; AC-13..25 are tagged and asserted. |
