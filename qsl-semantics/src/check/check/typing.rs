@@ -1038,7 +1038,7 @@ impl<'a> Typer<'a> {
                 self.ieee_literal(IeeeWidth::Binary64, *bits, hint.as_deref(), &location)?
             }
             ExprNode::String(text) => node(
-                NodeKind::Literal(CheckedLiteral(Value::String(text.clone()))),
+                NodeKind::Literal(CheckedLiteral(Value::String(text.text().to_owned()))),
                 ValueType::String,
                 &location,
             ),
@@ -1425,6 +1425,17 @@ impl<'a> Typer<'a> {
                         }
                         ResolvedTarget::Value(application) => Callee::Value(application),
                     };
+                    if let Callee::Value(application) = &application {
+                        if let Some(target) = application.pending_dependency_target() {
+                            self.scope().record_dependency_reference(
+                                super::super::PendingDependencyReference {
+                                    name: name.name.clone(),
+                                    site: location.clone(),
+                                    target,
+                                },
+                            );
+                        }
+                    }
                     let arguments: Vec<_> = arguments.iter().map(|id| expression.at(*id)).collect();
                     let count = arguments.len();
                     let mut order: Vec<usize> = (0..count).collect();

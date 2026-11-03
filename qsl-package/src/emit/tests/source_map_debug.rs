@@ -311,23 +311,22 @@ fn canonical_record_field_debug_keeps_complete_keys_as_the_body_grows() {
             expression = Expression::binary(BinaryOperator::And, field(), expression);
         }
         let span = qsl_foundation::Span { start: 0, end: 0 };
-        let graph = PackageDeclarations {
-            types: types(),
-            functions: vec![FunctionDeclaration::new(
-                "f",
-                vec![("n".into(), TypeForm::name("N", span))],
-                TypeForm::builtin(BuiltinType::Boolean, span),
-                None,
-                expression,
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture",
-                qsl_foundation::IdentityLimits::default(),
-            )
-        }
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types();
+        declarations.functions = vec![FunctionDeclaration::new(
+            "f",
+            vec![("n".into(), TypeForm::name("N", span))],
+            TypeForm::builtin(BuiltinType::Boolean, span),
+            None,
+            expression,
+        )];
+        let graph = declarations
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
         let body = graph.function_state(0).unwrap().body.body();
         let started = Instant::now();
         let text = format!("{body:?}");

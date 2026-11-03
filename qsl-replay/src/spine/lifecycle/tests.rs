@@ -28,10 +28,11 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
-    admit_parsed_unit_list, check, check_with_refinement_internals, execute, failure_of, package,
-    parse, preflight_unit_list, refusal_or_fault, select, temporal_selections_for_source,
-    AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits,
-    ParseRequest, ParsedUnitSource,
+    admit_parsed_unit_list, check, check_units, check_with_refinement_internals, execute,
+    failure_of, package, package_with_temporal_selections, parse, preflight_unit_list,
+    refusal_or_fault, select, select_units, temporal_selections_for_source, AdmittedModels,
+    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
+    ParsedUnitSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -119,7 +120,7 @@ fn parse_named(identity: &SourceIdentity, bytes: &[u8]) -> ParsedUnitSource {
 fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing() {
     let dependencies = DependencyInput::default();
     assert!(matches!(
-        preflight_unit_list(&[], &dependencies),
+        preflight_unit_list(&[], &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::Empty
         ))
@@ -139,7 +140,7 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
         },
     ];
     assert!(matches!(
-        preflight_unit_list(&duplicate_requests, &dependencies),
+        preflight_unit_list(&duplicate_requests, &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::DuplicateOwner {
                 first: 0,
@@ -162,7 +163,7 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
         bytes: b"not valid",
     }];
     assert!(matches!(
-        preflight_unit_list(&requests, &dependencies),
+        preflight_unit_list(&requests, &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::LibraryOwner { unit: 0, .. }
         ))
@@ -183,7 +184,7 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        duplicate,
+        duplicate.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::DuplicateName { name, first_unit, second_unit, .. })) if name == "shared" && first_unit.identity == "z-unit" && second_unit.identity == "a-unit"
     ));
 
@@ -211,13 +212,13 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        refused,
+        refused.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::SiblingImport { identity, unit, region: Some(region) })) if identity == "a-unit" && unit.identity == "a-unit" && region.source().identity() == "z-unit" && region.start() < region.end()
     ));
 
-    let different_profiles = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"other.profile/v1\";\nfunction local(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let different_profiles =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"other.profile/v1\";\nfunction local(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     let refused = admit_parsed_unit_list(
         vec![
             parse_named(&first, unit_z.as_bytes()),
@@ -226,7 +227,7 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        refused,
+        refused.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::HeaderConflict {
             first_unit,
             second_unit,
@@ -241,12 +242,12 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
             && usize::try_from(region.end()).unwrap() == second_header.end
     ));
 
-    let profile_order_first = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile x = \"p1\";\nprofile y = \"p2\";\nfunction ordered_a(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
-    let profile_order_second = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile y = \"p2\";\nprofile x = \"p1\";\nfunction ordered_b(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let profile_order_first =
+        "language \"ix:native\" edition \"1-draft\";\nprofile x = \"p1\";\nprofile y = \"p2\";\nfunction ordered_a(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
+    let profile_order_second =
+        "language \"ix:native\" edition \"1-draft\";\nprofile y = \"p2\";\nprofile x = \"p1\";\nfunction ordered_b(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     assert!(matches!(
         admit_parsed_unit_list(
             vec![
@@ -254,7 +255,8 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
                 parse_named(&second, profile_order_second.as_bytes()),
             ],
             &DependencyInput::default(),
-        ),
+        )
+        .map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::HeaderConflict { .. }
         ))
@@ -267,12 +269,12 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &["p1"],
     ));
 
-    let alias_first = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
-    let alias_second = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let alias_first =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
+    let alias_second =
+        "language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     assert!(admit_parsed_unit_list(
         vec![
             parse_named(&first, alias_first.as_bytes()),
@@ -625,8 +627,10 @@ fn protocol_check_stage(
     )
     .unwrap_or_else(|failure| panic!("fixture model admits: {failure:?}"))
     .into_value();
-    let mut limits = SpineLimits::default();
-    limits.checking = checking;
+    let limits = SpineLimits {
+        checking,
+        ..SpineLimits::default()
+    };
     super::check(
         &parsed,
         "fixture".to_owned(),
@@ -670,6 +674,491 @@ fn checked_protocol_source(bytes: &[u8]) -> CheckedUnit {
     protocol_check_stage(bytes, CheckingLimits::default())
         .unwrap_or_else(|failure| panic!("protocol source checks: {failure:?}"))
         .into_value()
+}
+
+/// FR-514-AC-1: the checked unit retains source-owned declaration type facts,
+/// with no source identity copied into the report.
+#[trace("FR-514-AC-1")]
+#[test]
+fn checked_unit_type_report_lists_its_checked_declarations() {
+    use qsl_semantics::check::NodeTag;
+
+    static SOURCE: OnceLock<SourceIdentity> = OnceLock::new();
+    let source = SOURCE.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle", "type-report", "type-report:1")
+    });
+    let text = format!(
+        "{HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model M = \"acme/orders\";\n\
+         function g using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
+         function f using v(x: Int[0, 9]): Int[0, 10] pure {{ g(x) }}\n\
+         post Keep using v on M::Widget::touch {{ true }}\n\
+         temporal Due using inf over (input: M::Widget) clock \"model-steps\" on origin {{ always holds(true) }}\n\
+         protocol Fill using Complete over (input: M::Widget) on origin {{\n\
+           role R on M::Widget;\n\
+           requires temporal Due;\n\
+           run sequence Main {{ check After using v {{ true }}; }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
+    let parsed = parse_named(source, text.as_bytes());
+    let (_, packages) = widget_with_touch(&[]);
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("model and profile selections admit")
+    .into_value();
+    let checked = check(
+        &parsed,
+        "type-report".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("function, post-claim, and protocol checks")
+    .into_value();
+    let declarations = checked.type_report().declarations();
+    assert!(declarations
+        .windows(2)
+        .all(|pair| pair[0].node() < pair[1].node()));
+    let functions: Vec<_> = declarations
+        .iter()
+        .filter(|declaration| declaration.kind() == NodeTag::Function)
+        .collect();
+    assert_eq!(
+        functions.len(),
+        2,
+        "both function declarations are retained"
+    );
+    assert!(functions
+        .iter()
+        .all(|declaration| declaration.value_type().is_some()));
+    assert!(!checked.type_report().requirements().is_empty());
+    assert!(checked
+        .type_report()
+        .requirements()
+        .iter()
+        .all(|requirement| requirement.span().start < requirement.span().end));
+    assert_eq!(
+        checked.type_report().requirements().len(),
+        checked
+            .type_report()
+            .requirements()
+            .iter()
+            .map(|requirement| requirement.occurrence())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        "each checked requirement occurrence has one report row"
+    );
+    assert!(checked
+        .type_report()
+        .requirements()
+        .iter()
+        .any(|requirement| {
+            requirement.record().requirements().kind().to_wire() == "value-validity"
+        }));
+    let source_text = checked.source().text();
+    let report_slice = |span: qsl_foundation::Span| {
+        source_text
+            .get(span.start..span.end)
+            .expect("report spans index the source unit")
+    };
+    let post_start = source_text
+        .find("post Keep")
+        .expect("the post claim is present");
+    let post_end = source_text
+        .find("temporal Due")
+        .expect("the temporal claim follows the post claim");
+    let check_start = source_text
+        .find("check After")
+        .expect("the protocol check claim is present");
+    let check_end = source_text
+        .find("finish End")
+        .expect("the protocol finish follows the check claim");
+    let exact_body_span = |range: std::ops::Range<usize>| {
+        let relative = source_text[range.clone()]
+            .find("true")
+            .expect("the claim body contains true");
+        qsl_foundation::Span {
+            start: range.start + relative,
+            end: range.start + relative + "true".len(),
+        }
+    };
+    let post_claim_span = exact_body_span(post_start..post_end);
+    let protocol_check_span = exact_body_span(check_start..check_end);
+    assert!(checked
+        .type_report()
+        .requirements()
+        .iter()
+        .filter(|requirement| {
+            requirement.record().requirements().kind().to_wire() == "value-validity"
+        })
+        .any(|requirement| report_slice(requirement.span()) == "x + 1"));
+    assert!(checked
+        .type_report()
+        .obligations()
+        .iter()
+        .any(|obligation| obligation.capability_kind() == "value-validity"));
+    assert!(
+        checked
+            .type_report()
+            .obligations()
+            .iter()
+            .any(|obligation| {
+                obligation.capability_kind() == "operation-contract"
+                    && obligation.span() == post_claim_span
+            }),
+        "the post claim has one operation-contract obligation at its exact span"
+    );
+    assert!(checked
+        .type_report()
+        .obligations()
+        .iter()
+        .all(|obligation| obligation.state() == super::ObligationState::Pending));
+    let temporal_requirements: Vec<_> = checked
+        .type_report()
+        .obligations()
+        .iter()
+        .filter(|obligation| obligation.capability_kind() == "temporal-satisfaction")
+        .collect();
+    assert_eq!(temporal_requirements.len(), 2);
+    assert!(temporal_requirements
+        .iter()
+        .all(|obligation| { obligation.span().start < obligation.span().end }));
+    assert!(
+        temporal_requirements
+            .iter()
+            .any(|obligation| report_slice(obligation.span()) == "Due"),
+        "temporal obligation spans: {:?}",
+        temporal_requirements
+            .iter()
+            .map(|obligation| report_slice(obligation.span()))
+            .collect::<Vec<_>>()
+    );
+    let true_spans: Vec<_> = checked
+        .type_report()
+        .obligations()
+        .iter()
+        .filter(|obligation| report_slice(obligation.span()) == "true")
+        .map(|obligation| obligation.span())
+        .collect();
+    assert!(
+        true_spans.iter().any(|span| {
+            (post_start..post_end).contains(&span.start)
+                && (post_start..post_end).contains(&span.end)
+        }),
+        "the post claim's pending obligation is located in its own body"
+    );
+    assert!(
+        true_spans.iter().any(|span| {
+            (check_start..check_end).contains(&span.start)
+                && (check_start..check_end).contains(&span.end)
+        }),
+        "the protocol check's pending obligation is located in its own body"
+    );
+    let global_conformance: Vec<_> = checked
+        .type_report()
+        .obligations()
+        .iter()
+        .filter(|obligation| obligation.capability_kind() == "global-conformance")
+        .collect();
+    assert_eq!(global_conformance.len(), 1);
+    assert_eq!(global_conformance[0].span(), protocol_check_span);
+}
+
+/// FR-480-AC-2/AC-8 and FR-514-AC-2: aggregate type resolution returns two
+/// checked units sharing the package graph, each with only its own report.
+#[trace("FR-480-AC-2", "FR-480-AC-8", "FR-514-AC-2")]
+#[test]
+fn aggregate_check_returns_source_bound_units_and_reports() {
+    use qsl_semantics::check::NodeTag;
+
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:unit-a", "unit-a", "unit-a:1")
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:unit-b", "unit-b", "unit-b:1")
+    });
+    let a = parse_named(
+        source_a,
+        format!("{HEADER}record Point {{ x: Integer; }}").as_bytes(),
+    );
+    let b = parse_named(
+        source_b,
+        format!("{HEADER}function px using v(p: Point): Integer pure {{ p.x + 1 }}").as_bytes(),
+    );
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("the distinct source units are admitted");
+    let checked = check_units(
+        &admitted,
+        "aggregate-package".to_owned(),
+        &AdmittedModels::default(),
+        &dependencies,
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("cross-unit type references check")
+    .into_value();
+    let [checked_a, checked_b] = checked.as_slice() else {
+        panic!("one checked unit per canonical source is returned");
+    };
+    assert_eq!(checked_a.source().identity(), source_a);
+    assert_eq!(checked_b.source().identity(), source_b);
+    assert!(Arc::ptr_eq(
+        checked_a.shared_package(),
+        checked_b.shared_package()
+    ));
+    assert_eq!(checked_a.type_report().declarations().len(), 1);
+    assert_eq!(checked_b.type_report().declarations().len(), 1);
+    assert!(checked_a.type_report().requirements().is_empty());
+    assert!(!checked_b.type_report().requirements().is_empty());
+    assert!(checked_b
+        .type_report()
+        .requirements()
+        .iter()
+        .all(|requirement| requirement.span().start < requirement.span().end));
+    assert_eq!(
+        checked_b.type_report().declarations()[0].kind(),
+        NodeTag::Function
+    );
+}
+
+/// FR-480-AC-4: each source unit's admitted profile alias remains available
+/// while the aggregate namespace checks declarations from later units.
+#[trace("FR-480-AC-4")]
+#[test]
+fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:profile-a",
+            "profile-a",
+            "profile-a:1",
+        )
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:profile-b",
+            "profile-b",
+            "profile-b:1",
+        )
+    });
+    let a = parse_named(
+        source_a,
+        b"language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure { x < 5 }",
+    );
+    let b = parse_named(
+        source_b,
+        b"language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure { x < 5 }",
+    );
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("distinct source units are admitted");
+    let checked = check_units(
+        &admitted,
+        "aggregate-profile-package".to_owned(),
+        &AdmittedModels::default(),
+        &dependencies,
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("both source-local profile aliases resolve")
+    .into_value();
+    assert_eq!(checked.len(), 2);
+    assert!(checked
+        .iter()
+        .all(|unit| unit.type_report().declarations().len() == 1));
+}
+
+/// FR-480-AC-1: I1 has a public composition path for all model selections in
+/// an admitted list, preserving every unit's alias and admitting the shared
+/// identity once through the aggregate meter.
+#[trace("FR-480-AC-1")]
+#[test]
+fn aggregate_model_selection_admits_selections_from_every_unit() {
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:model-a", "model-a", "model-a:1")
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:model-b", "model-b", "model-b:1")
+    });
+    let a = parse_named(
+        source_a,
+        format!(
+            "{HEADER}model A = \"acme/orders\";\n\
+             function fa using v(x: Int[0, 9]): Boolean pure {{ x > 0 }}"
+        )
+        .as_bytes(),
+    );
+    let b = parse_named(
+        source_b,
+        format!(
+            "{HEADER}model B = \"acme/orders\";\n\
+             function fb using v(x: Int[0, 9]): Boolean pure {{ x > 0 }}"
+        )
+        .as_bytes(),
+    );
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("distinct source units are admitted");
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let selected = select_units(
+        &admitted,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the aggregate model selections are admitted")
+    .into_value();
+    assert_eq!(selected.models().len(), 2);
+    assert_eq!(
+        selected
+            .models()
+            .iter()
+            .map(|model| model.alias.as_str())
+            .collect::<Vec<_>>(),
+        ["A", "B"]
+    );
+}
+
+/// FR-480-AC-8: E4 accepts a clock selection whose source is a non-first
+/// root unit in the checked package and routes it to emission.
+#[trace("FR-480-AC-8")]
+#[test]
+fn aggregate_package_accepts_temporal_selection_from_later_source() {
+    use qsl_forms::DeclarationForm;
+    use qsl_package::{ClockConfiguration, TemporalClockSelection};
+
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:temporal-a",
+            "temporal-a",
+            "temporal-a:1",
+        )
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:temporal-b",
+            "temporal-b",
+            "temporal-b:1",
+        )
+    });
+    let header =
+        format!("{HEADER}profile ev = \"quire.temporal.event-position.false-extension/v1\";\n");
+    let a_text = format!(
+        "{header}model M = \"acme/orders\";\n\
+         record Point {{ x: Int[0, 9]; }}\n\
+         temporal Root using ev over (input: M::Widget) clock \"events\" on origin {{ eventually[0,1] holds(true) }}"
+    );
+    let a = parse_named(source_a, a_text.as_bytes());
+    let b_text = format!(
+        "{header}temporal Due using ev over (input: M::Widget) clock \"events\" on origin {{ eventually[0,1] holds(true) }}"
+    );
+    let b = parse_named(source_b, b_text.as_bytes());
+    let temporal_span = b
+        .unit()
+        .forms()
+        .iter()
+        .find(|form| matches!(form.form(), DeclarationForm::Temporal(_)))
+        .expect("the later source contains Due")
+        .span();
+    let first_temporal_span = a
+        .unit()
+        .forms()
+        .iter()
+        .find(|form| matches!(form.form(), DeclarationForm::Temporal(_)))
+        .expect("the first source contains Root")
+        .span();
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("the distinct source units are admitted");
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select_units(
+        &admitted,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the later source's model is admitted")
+    .into_value();
+    let checked = check_units(
+        &admitted,
+        "aggregate-temporal-package".to_owned(),
+        &models,
+        &dependencies,
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the aggregate temporal clause checks")
+    .into_value();
+    assert_eq!(checked[0].source().identity(), source_a);
+    let first_selection = TemporalClockSelection {
+        source: checked[0].source().reference().clone(),
+        declaration_span: first_temporal_span,
+        clock: ClockConfiguration::EventPosition {
+            sequence_authority: "aggregate-events".into(),
+        },
+    };
+    let selection = TemporalClockSelection {
+        source: checked[1].source().reference().clone(),
+        declaration_span: temporal_span,
+        clock: ClockConfiguration::EventPosition {
+            sequence_authority: "aggregate-events".into(),
+        },
+    };
+    let emitted = package_with_temporal_selections(
+        &checked[0],
+        &[first_selection, selection],
+        PackageLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("a selection for a later root source is not surplus")
+    .into_value();
+    assert!(!emitted.package().bytes().is_empty());
+
+    let uncompiled = TemporalClockSelection {
+        source: qsl_foundation::source::provenance::RawSourceRef::new(
+            "test:lifecycle:uncompiled",
+            "uncompiled:1",
+        )
+        .expect("the uncompiled source reference is valid"),
+        declaration_span: temporal_span,
+        clock: ClockConfiguration::EventPosition {
+            sequence_authority: "aggregate-events".into(),
+        },
+    };
+    let refusal = package_with_temporal_selections(
+        &checked[0],
+        &[uncompiled],
+        PackageLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("a selection for a source outside the checked package is refused");
+    let refusal = refusal_or_fault(refusal).expect("the surplus selection is a refusal");
+    assert!(matches!(
+        &*refusal,
+        CompileRefusal::Emit(qsl_package::EmitRefusal::SurplusTemporalClockSelection { .. })
+    ));
 }
 
 /// FR-503-AC-3 (TC-1298 row 4): the compile continuation emits clean
@@ -734,6 +1223,58 @@ fn syntax_refusal_does_not_suppress_clean_protocol_emission() {
     assert_eq!(z, "Z");
     assert_eq!(emitted_w, &w_nodes);
     assert_eq!(emitted_z, &z_nodes);
+}
+
+/// FR-510-AC-5: continuation retains a graph for the clean sibling when one
+/// protocol refuses, but exposes neither a subject nor partial references.
+#[trace("FR-510-AC-5", "TC-1305")]
+#[test]
+fn a_continued_protocol_refusal_has_no_subject_or_partial_reference_rows() {
+    let unit = format!(
+        "{HEADER}model M = \"acme/orders\";\n\
+         function helper(): Boolean pure {{ true }}\n\
+         function answer using v(): Boolean pure {{ helper() }}\n\
+         {}\n\
+         {}",
+        protocol_source("W", true),
+        protocol_source("X", true).replace("M::Widget", "M::Absent")
+    );
+    let cancel = Cancel::new();
+    let parsed =
+        super::parse_for_continuation(&request(unit.as_bytes()), SourceLimits::default(), &cancel)
+            .expect("the attributed protocol refusal is continuable")
+            .into_value();
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("the fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &cancel,
+    )
+    .expect("the fixture model admits")
+    .into_value();
+    let checked = super::check_for_continuation(
+        &parsed,
+        super::ContinuationInputs {
+            package_name: "fixture".to_owned(),
+            execution_points: &BTreeMap::new(),
+            temporal_selections: &[],
+        },
+        &models,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .expect("the compiler retains the clean sibling graph")
+    .into_value();
+    assert!(checked
+        .protocol_results()
+        .iter()
+        .any(|result| matches!(result, super::super::ProtocolResult::Refused { declaration, .. } if declaration == "X")));
+    assert!(!checked.package().graph().protocol_refusals().is_empty());
+    assert!(checked.static_subject().is_err());
+    assert!(checked.package().graph().dependency_references().is_empty());
 }
 
 /// FR-503-AC-4..5 (TC-1298 rows 5-6): an S3 refusal is attached to the
@@ -804,7 +1345,7 @@ fn check_retains_the_owning_protocol_locus() {
             && locus.start() == x_start as u64
             && locus.end() == (x_start + 1) as u64
     ));
-    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    let without_payload = crate::ReplayRefusal::Recompile(*refusal);
     assert_eq!(with_payload_category, without_payload.code().category());
     assert_eq!(
         with_payload_exit,
@@ -915,7 +1456,7 @@ fn state_clause_refusal_keeps_protocol_result_cleared() {
         [ProtocolResult::Cleared { declaration, stage: SpineStage::Check }]
             if declaration == "W"
     ));
-    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    let without_payload = crate::ReplayRefusal::Recompile(*refusal);
     assert_eq!(with_payload_category, without_payload.code().category());
     assert_eq!(
         with_payload_exit,
@@ -1541,7 +2082,7 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 /// through `select` (FR-255 Behavior 1 and FR-260 item 5: `IntakeLimits` is a
 /// caller budget, not a stage's own limits type), naming that setting,
 /// its bound and the document's size, never a missing package.
-#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
+#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1", "FR-506-AC-5")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
@@ -1555,6 +2096,9 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     )
     .expect("the model fixture parses")
     .into_value();
+    let mut exact = limits.model;
+    exact.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size);
+    assert!(select(&parsed, &packages, exact, &Cancel::new()).is_ok());
     let Err(StageFailure::Refused(refusal)) =
         select(&parsed, &packages, limits.model, &Cancel::new())
     else {
@@ -1570,6 +2114,25 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
             ("actual", size.to_string()),
             ("setting", "intake.input_bytes".to_owned()),
         ]))
+    );
+    let mut zero = limits.model;
+    zero.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(0);
+    let Err(StageFailure::Refused(refusal)) = select(&parsed, &packages, zero, &Cancel::new())
+    else {
+        panic!("a nonempty document exceeds the zero intake limit");
+    };
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("setting").cloned()),
+        Some("intake.input_bytes".to_owned())
+    );
+    assert_eq!(
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("actual").cloned()),
+        Some(size.to_string())
     );
 }
 
@@ -1929,8 +2492,7 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
 fn the_producer_refuses_a_profile_version_tail_as_invalid_syntax() {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
-    let source =
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\";\n";
+    let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\";\n";
     let failure = parse(&request(source.as_bytes()), limits.source, &cancel)
         .expect_err("the producer rejects a profile version tail");
     let syntax = refusal(failure);
@@ -2309,7 +2871,7 @@ fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit.
-#[trace("TC-758", "FR-277-AC-1")]
+#[trace("TC-758", "FR-277-AC-1", "FR-506-AC-5")]
 #[test]
 fn check_names_the_checking_limit_field_it_reached() {
     let chain = fixture_chain();
@@ -2338,6 +2900,16 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+    let zero_nodes = run(|mut limits, _| {
+        limits.checking = CheckingLimits::new(0)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        limits
+    })(0);
+    assert!(matches!(
+        zero_nodes,
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
     assert_field(
         Setting::S3InputBytes,
         FoundationKind::InputBytes,
@@ -2356,6 +2928,53 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+}
+
+/// FR-506-AC-5 (TC-1301 row 11): the model's S3 formal nodes admit at their
+/// exact count and refuse when the named setting is zero.
+#[trace("FR-506-AC-5", "TC-1301")]
+#[test]
+fn selected_model_formal_node_limit_is_exact() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
+    let parsed = parse(
+        &request(spine_model::unit().as_bytes()),
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the selected model unit parses")
+    .into_value();
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the model selects")
+    .into_value();
+    let s3_nodes = |bound: u64| {
+        let mut limits = SpineLimits::default();
+        limits.checking = CheckingLimits::new(bound)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        reached(check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &Cancel::new(),
+        ))
+    };
+    assert_field(
+        Setting::S3Nodes,
+        FoundationKind::NodeCount,
+        100_000,
+        s3_nodes,
+    );
+    assert!(matches!(
+        s3_nodes(0),
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
 }
 
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a

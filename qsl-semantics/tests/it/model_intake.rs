@@ -1553,7 +1553,9 @@ fn on_a_small_stack(body: impl FnOnce() + Send + 'static) {
 
 /// No byte limit: the tests below feed documents of many megabytes.
 fn unbounded() -> qsl_foundation::IntakeLimits {
-    qsl_foundation::IntakeLimits::default().with_input_bytes(u64::MAX)
+    qsl_foundation::IntakeLimits::default()
+        .with_input_bytes(u64::MAX)
+        .with_sequence_maximum(u32::MAX)
 }
 
 /// FR-260-AC-1 (TC-730 step 1): a package whose declarations are valid and

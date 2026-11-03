@@ -4542,8 +4542,13 @@ mod tests {
         let context_type = crate::test_ids::effective_id([12]);
         let collection_type =
             quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
-        let graph = PackageDeclarations {
-            types: TypeEnvironment::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.types = TypeEnvironment::new(
                 [],
                 [ObjectTypeDeclaration::new(
                     context_type.clone(),
@@ -4555,12 +4560,8 @@ mod tests {
                     )],
                 )],
             )
-            .unwrap(),
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            .unwrap();
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap();
@@ -4765,10 +4766,15 @@ mod tests {
         .expect("one object type admits cleanly");
         let model = qsl_semantics::check::AdmittedModel::new(&domain_package, &view)
             .expect("the view is the domain package's own");
-        let graph = PackageDeclarations {
-            types,
-            models: vec![model],
-            functions: vec![FunctionDeclaration::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.types = types;
+            declarations.models = vec![model];
+            declarations.functions = vec![FunctionDeclaration::new(
                 "F",
                 vec![(
                     "p".to_owned(),
@@ -4782,12 +4788,8 @@ mod tests {
                     TypeForm::name("M::A", SPAN),
                     Expression::name("p".to_owned()),
                 )),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p)) checks cleanly");
@@ -5070,14 +5072,15 @@ mod tests {
         .expect("one object type with one field admits cleanly");
         let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
             .expect("the view is the domain package's own");
-        let graph = PackageDeclarations {
-            types,
-            models: vec![model],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations.models = vec![model];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("one type with one field checks cleanly");
@@ -5182,14 +5185,15 @@ mod tests {
         .expect("one object type with one field admits cleanly");
         let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
             .expect("the view is the domain package's own");
-        let graph = PackageDeclarations {
-            types,
-            models: vec![model],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations.models = vec![model];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("one type with one field checks cleanly");
@@ -5295,13 +5299,14 @@ mod tests {
                 quire_exact::Presence::Required,
             )]),
         );
-        let graph = PackageDeclarations {
-            types: TypeEnvironment::new([record], []).expect("one record admits"),
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = TypeEnvironment::new([record], []).expect("one record admits");
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("the record checks");
@@ -5479,15 +5484,16 @@ mod tests {
         use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
         use quire_exact::{FloatType, IeeeValue, IeeeWidth};
         let package = qsl_package::CheckedPackage::link(
-            PackageDeclarations {
-                ieee_profile: Some(
-                    admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap(),
-                ),
-                ..PackageDeclarations::new(
+            {
+                let mut declarations = PackageDeclarations::new(
                     qsl_semantics::check::fixture_source(),
                     "fixture".to_owned(),
                     qsl_foundation::IdentityLimits::default(),
-                )
+                );
+                declarations.ieee_profile = Some(
+                    admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap(),
+                );
+                declarations
             }
             .check(CheckingLimits::default())
             .unwrap(),

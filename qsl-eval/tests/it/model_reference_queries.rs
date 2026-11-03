@@ -400,14 +400,15 @@ fn types(scenario: &Scenario) -> TypeEnvironment {
 }
 
 fn package(scenario: &Scenario) -> CheckedPackage {
-    let graph = PackageDeclarations {
-        types: types(scenario),
-        models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types(scenario);
+        declarations.models = vec![scenario.model.clone()];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -430,10 +431,15 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
 /// Like [`package_with_function`], with `p: Population<M::A>[maximum]`.
 fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPackage {
     let target = ValueType::Reference(scenario.a.clone());
-    let graph = PackageDeclarations {
-        types: types(scenario),
-        models: vec![scenario.model.clone()],
-        functions: vec![FunctionDeclaration::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types(scenario);
+        declarations.models = vec![scenario.model.clone()];
+        declarations.functions = vec![FunctionDeclaration::new(
             "F",
             vec![(
                 "p".to_owned(),
@@ -443,12 +449,8 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::size(all_instances(target)),
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -466,10 +468,15 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
 /// body (which, like `F`'s, is checked as `ClauseKind::Body` and could
 /// never see `pre(...)` regardless).
 fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
-    let graph = PackageDeclarations {
-        types: types(scenario),
-        models: vec![scenario.model.clone()],
-        functions: vec![FunctionDeclaration::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types(scenario);
+        declarations.models = vec![scenario.model.clone()];
+        declarations.functions = vec![FunctionDeclaration::new(
             "F2",
             vec![(
                 "elements".to_owned(),
@@ -480,12 +487,8 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::size(Expression::name("elements".to_owned())),
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -834,7 +837,9 @@ fn reference_elements(value: &Value) -> Vec<ObjectReference> {
     "QSpec-TC-198",
     "QSpec-FR-153-AC-1",
     "QSpec-FR-153-AC-5",
-    "QSpec-FR-153-AC-6"
+    "QSpec-FR-153-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
 )]
 fn l12_all_instances_expression_selects_subtype_population_once() {
     let scenario = scenario();
@@ -1163,7 +1168,13 @@ fn l14_lookup_expression_undefined_mode() {
 /// through the real checker/evaluator — backing FR-153-AC-2 and FR-153-AC-4's
 /// `Option<Reference<T>>` Outputs shape for `empty` mode specifically.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-2",
+    "QSpec-FR-153-AC-4",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l15_lookup_expression_empty_mode() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1222,6 +1233,41 @@ fn l15_lookup_expression_empty_mode() {
     }
 }
 
+/// FR-143-AC-18 (TC-188): `(lookup<M::A>(p, r) absent empty) = absent` takes
+/// the `none` of the lookup's `Option<Reference<M::A>>`: true for a key the
+/// population does not hold and false for one it holds.
+#[test]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-18")]
+fn the_empty_lookup_equals_absent_exactly_when_the_key_is_not_held() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(scenario.a.clone());
+    let expression = equal(lookup(target, AbsenceMode::Empty), Expression::absent());
+    for (reference_type, object, expected) in
+        [(&scenario.b, "b1", false), (&scenario.a, "c9", true)]
+    {
+        let parameters = [
+            ("p", ValueType::Population(Some(3))),
+            ("r", ValueType::Reference(reference_type.clone())),
+        ];
+        let (outcome, _) = run(
+            &package,
+            &parameters,
+            &expression,
+            vec![
+                population_argument(&scenario),
+                Value::Reference(object_reference(&scenario.universe, reference_type, object)),
+            ],
+            SCALAR_UNLIMITED,
+            &objects(&scenario),
+        );
+        let Outcome::Completed(Value::Boolean(held)) = outcome else {
+            panic!("{object}: a completed Boolean, not {outcome:?}");
+        };
+        assert_eq!(held, expected, "{object}");
+    }
+}
+
 /// TC-198 L16: `lookup<M::A>(p, r) absent refused` refuses outright on an
 /// absent key, and the real evaluator's `Outcome::Refused` carries the
 /// exact same closed `code`/`cause` pair
@@ -1277,14 +1323,15 @@ fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
         ],
     )
     .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.models = vec![scenario.model.clone()];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1416,7 +1463,13 @@ fn a_surviving_object_compares_equal_across_pre_and_post() {
 /// operands denote `b1`, so the comparison is `true`; the same query for a
 /// reference to `a1` against `b1` is `false`.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6", "QSpec-FR-149-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-6",
+    "QSpec-FR-149-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l08_upcast_lookup_result_equals_the_subtype_reference() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1519,14 +1572,15 @@ fn attribute_world_of(
     let objects = ObjectEnvironment::new(ObjectClosure::new(&types, world, &[]).unwrap())
         .with_population(scenario.binding.clone())
         .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.models = vec![scenario.model.clone()];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1584,7 +1638,12 @@ fn integer_of(value: Value) -> Integer {
 /// holds a `B` resolves `x`, a field `A` declares and `B` inherits, and
 /// reads `b1`'s inherited slot.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l11_deref_through_a_supertype_reference_reads_an_inherited_field() {
     let scenario = scenario();
     let (package, objects) = attribute_world(
@@ -2022,13 +2081,14 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         ],
     )
     .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -3833,15 +3893,16 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
     })
     .expect("the spans have the body's shape");
     let package = CheckedPackage::link(
-        PackageDeclarations {
-            types: types(&scenario),
-            models: vec![scenario.model.clone()],
-            functions: vec![function],
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 source.clone(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types(&scenario);
+            declarations.models = vec![scenario.model.clone()];
+            declarations.functions = vec![function];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("the unit checks"),
@@ -4084,10 +4145,15 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
             model: AdmittedModel::new(&domain, &view).unwrap(),
         };
         let query = all_instances(ValueType::Reference(scenario.a.clone()));
-        let graph = PackageDeclarations {
-            types: types(&scenario),
-            models: vec![scenario.model.clone()],
-            functions: vec![FunctionDeclaration::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.types = types(&scenario);
+            declarations.models = vec![scenario.model.clone()];
+            declarations.functions = vec![FunctionDeclaration::new(
                 "F",
                 vec![(
                     "p".to_owned(),
@@ -4113,12 +4179,8 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                     .with_bounds(vec!["0".to_owned(), "1".to_owned()]),
                 None,
                 query.clone(),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap();

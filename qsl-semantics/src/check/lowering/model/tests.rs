@@ -415,9 +415,10 @@ fn lower_with_occurrences<T>(
     let mut occurrences = OccurrenceMap::default();
     let owner = crate::check::SourceOwner::from(&fixture_source());
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
-    let mut lowering = Lowering::new(
+    let mut lowering = Lowering::new_with_source_owners(
         &scope,
         &owner,
+        &std::collections::BTreeMap::new(),
         models,
         &[],
         units,

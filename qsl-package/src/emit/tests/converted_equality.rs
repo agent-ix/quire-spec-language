@@ -1445,17 +1445,17 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
             None,
             Expression::binary(operator, left, right),
         );
-        let graph = PackageDeclarations {
-            types: TypeEnvironment::default().with_units(units.clone()),
-            aliases: vec![
-                ("Length".to_owned(), metre.clone()),
-                ("Km".to_owned(), kilometre.clone()),
-            ],
-            functions: vec![declared],
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("the package checks");
+        let mut declarations =
+            PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+        declarations.types = TypeEnvironment::default().with_units(units.clone());
+        declarations.aliases = vec![
+            ("Length".to_owned(), metre.clone()),
+            ("Km".to_owned(), kilometre.clone()),
+        ];
+        declarations.functions = vec![declared];
+        let graph = declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks");
         let emission = emit(&CheckedPackage::link(graph));
         assert_reader_outcome_for_equality_sidecar(&emission);
         let wire = wire(&emission);

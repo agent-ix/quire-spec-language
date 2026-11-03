@@ -149,15 +149,15 @@ fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
 }
 
 fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> CheckedPackage {
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = types;
+    declarations.functions = functions;
+    declarations.ieee_profile = Some(ieee_profile());
     CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            functions,
-            ieee_profile: Some(ieee_profile()),
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("the fixture functions check"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the fixture functions check"),
     )
 }
 

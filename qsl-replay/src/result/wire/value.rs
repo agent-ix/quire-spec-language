@@ -172,17 +172,16 @@ mod tests {
             [],
         )
         .expect("the records admit");
+        let mut declarations = qsl_semantics::check::PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types;
         let package = CheckedPackage::link(
-            qsl_semantics::check::PackageDeclarations {
-                types,
-                ..qsl_semantics::check::PackageDeclarations::new(
-                    qsl_semantics::check::fixture_source(),
-                    "fixture",
-                    qsl_foundation::IdentityLimits::default(),
-                )
-            }
-            .check(quire_semantic_value::checking::CheckingLimits::default())
-            .expect("the package checks"),
+            declarations
+                .check(quire_semantic_value::checking::CheckingLimits::default())
+                .expect("the package checks"),
         );
         (package, [money, taxed, pair])
     }

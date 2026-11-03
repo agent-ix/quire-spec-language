@@ -137,6 +137,19 @@ pub struct TemporalSubjectView<'p> {
 }
 
 impl<'p> TemporalSubjectView<'p> {
+    /// The package this view was read from.
+    pub(super) fn package(&self) -> &'p CheckedPackageV2 {
+        self.package
+    }
+
+    /// The view with `profile` as its profile row, so a test can present a
+    /// selection the reader would not admit.
+    #[cfg(test)]
+    pub(crate) fn with_profile(mut self, profile: &'p CheckedSelection) -> Self {
+        self.profile = profile;
+        self
+    }
+
     /// The clause node.
     pub fn declaration(&self) -> &'p CheckedNodeId {
         self.declaration

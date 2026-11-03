@@ -18,13 +18,14 @@ fn an_absent_enum_type_name_is_a_typed_missing_name() {
         None,
         Expression::boolean(true),
     );
-    let declarations = PackageDeclarations {
-        functions: vec![function],
-        ..PackageDeclarations::new(
+    let declarations = {
+        let mut package_declarations = PackageDeclarations::new(
             fixture_source(),
             crate::TEST_PACKAGE_NAME,
             IdentityLimits::default(),
-        )
+        );
+        package_declarations.functions = vec![function];
+        package_declarations
     };
 
     let refusals = declarations

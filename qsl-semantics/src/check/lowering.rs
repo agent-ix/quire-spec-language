@@ -709,6 +709,8 @@ pub(crate) struct Lowering<'a> {
     ordinals: HashMap<NodeKey, u64>,
     /// The checked unit's own source: the owner of every node it declares.
     owner: SourceOwner,
+    /// Per-declaration owners for an aggregate source-unit package.
+    source_owners: std::collections::BTreeMap<String, SourceOwner>,
     models: &'a [AdmittedModel],
     /// The package's units and every compound unit the check stage formed.
     units: UnitTable,
@@ -1747,9 +1749,10 @@ impl<'w> LeafWalk<'w> {
 
 impl<'a> Lowering<'a> {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
+    pub(crate) fn new_with_source_owners(
         scope: &'a Scope,
         owner: &SourceOwner,
+        source_owners: &std::collections::BTreeMap<String, SourceOwner>,
         models: &'a [AdmittedModel],
         dispatch_tables: &'a [DispatchTable],
         units: UnitTable,
@@ -1765,6 +1768,7 @@ impl<'a> Lowering<'a> {
             ordinals: HashMap::new(),
             scope,
             owner: owner.clone(),
+            source_owners: source_owners.clone(),
             models,
             dispatch_tables,
             units,
@@ -2025,9 +2029,14 @@ impl<'a> Lowering<'a> {
         declaration: Option<Vec<Identifier>>,
         body: BodyTerm,
     ) -> Result<NodeRef, CheckRefusal> {
-        let owner = declaration
-            .as_ref()
-            .map(|_| Owner::Source(self.owner.clone()));
+        let owner = declaration.as_ref().map(|segments| {
+            let source_owner = segments
+                .iter()
+                .rev()
+                .find_map(|segment| self.source_owners.get(segment.as_str()))
+                .unwrap_or(&self.owner);
+            Owner::Source(source_owner.clone())
+        });
         self.insert_node(
             location,
             NodeContent {
@@ -2808,7 +2817,12 @@ impl<'a> Lowering<'a> {
                 semantic_form: "enum",
                 semantic_type: None,
                 declaration: Some(name),
-                owner: Some(Owner::Source(self.owner.clone())),
+                owner: Some(Owner::Source(
+                    self.source_owners
+                        .get(&binding.name)
+                        .cloned()
+                        .unwrap_or_else(|| self.owner.clone()),
+                )),
                 body: BodyTerm::aggregate(Vec::new()),
             },
             Some(NominalPayload::Enum(EnumPayload::of(

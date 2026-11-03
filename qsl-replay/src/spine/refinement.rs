@@ -221,6 +221,7 @@ fn widen(bound: usize) -> u64 {
 /// The limit an assembly cause reached, where it carries one.
 fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
     match cause {
+        AssemblyCause::EmptyUnitList => None,
         AssemblyCause::TypeLimit(limit)
         | AssemblyCause::IdentityLimit(limit)
         | AssemblyCause::DecimalScaleLimit(limit) => Some(ReachedLimit::of(limit)),

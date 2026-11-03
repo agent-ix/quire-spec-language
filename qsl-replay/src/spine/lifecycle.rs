@@ -80,7 +80,7 @@
 //! }
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
@@ -102,7 +102,7 @@ use qsl_semantics::check::{
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{
-    admit_unit_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause,
+    admit_unit_with_cancel, admit_units_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause,
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
@@ -115,6 +115,7 @@ use super::{
     region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary,
     UnitListRefusal,
 };
+use super::{BuildProvenance, StaticSubject, SubjectUnavailable};
 
 /// What a front-end operation returns when it produces no output: the
 /// stage's refusal, a reached limit, a cancellation or a fault.
@@ -255,7 +256,7 @@ fn failure_of(
         return StageFailure::Fault(fault);
     }
     match protocol_results {
-        Some(results) => StageFailure::RefusedWithPayload(refusal, results),
+        Some(results) => StageFailure::RefusedWithPayload(Box::new(refusal), results),
         None => StageFailure::Refused(refusal),
     }
 }
@@ -417,7 +418,7 @@ fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
 pub fn refusal_or_fault(failure: FrontEndFailure) -> Result<Box<CompileRefusal>, InternalFault> {
     match failure {
         StageFailure::Refused(refusal) => Ok(refusal),
-        StageFailure::RefusedWithPayload(refusal, _) => Ok(refusal),
+        StageFailure::RefusedWithPayload(refusal, _) => Ok(*refusal),
         StageFailure::Limit(limit) => Ok(Box::new(CompileRefusal::Limit(limit))),
         StageFailure::LimitWithPayload(limit, _) => Ok(Box::new(CompileRefusal::Limit(limit))),
         StageFailure::Fault(fault) => Err(fault),
@@ -470,16 +471,16 @@ impl AdmittedUnitList {
 pub fn preflight_unit_list(
     requests: &[ParseRequest<'_>],
     dependencies: &DependencyInput,
-) -> Result<(), CompileRefusal> {
+) -> Result<(), Box<CompileRefusal>> {
     if requests.is_empty() {
-        return Err(CompileRefusal::UnitList(UnitListRefusal::Empty));
+        return Err(unit_list_refusal(UnitListRefusal::Empty));
     }
     for (second, request) in requests.iter().enumerate() {
         if let Some(first) = requests[..second]
             .iter()
             .position(|earlier| same_owner(earlier.source, request.source))
         {
-            return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateOwner {
+            return Err(unit_list_refusal(UnitListRefusal::DuplicateOwner {
                 first,
                 second,
                 authority: request.source.authority.clone(),
@@ -488,7 +489,7 @@ pub fn preflight_unit_list(
         }
         for (library, supplied) in &dependencies.libraries {
             if same_owner(&supplied.source, request.source) {
-                return Err(CompileRefusal::UnitList(UnitListRefusal::LibraryOwner {
+                return Err(unit_list_refusal(UnitListRefusal::LibraryOwner {
                     unit: second,
                     library: library.to_string(),
                     authority: request.source.authority.clone(),
@@ -506,9 +507,9 @@ pub fn preflight_unit_list(
 pub fn admit_parsed_unit_list(
     mut units: Vec<ParsedUnitSource>,
     dependencies: &DependencyInput,
-) -> Result<AdmittedUnitList, CompileRefusal> {
+) -> Result<AdmittedUnitList, Box<CompileRefusal>> {
     if units.is_empty() {
-        return Err(CompileRefusal::UnitList(UnitListRefusal::Empty));
+        return Err(unit_list_refusal(UnitListRefusal::Empty));
     }
     let requests: Vec<_> = units
         .iter()
@@ -519,7 +520,7 @@ pub fn admit_parsed_unit_list(
     for (unit, identity) in requests.iter().enumerate() {
         for (library, supplied) in &dependencies.libraries {
             if same_owner(&supplied.source, identity) {
-                return Err(CompileRefusal::UnitList(UnitListRefusal::LibraryOwner {
+                return Err(unit_list_refusal(UnitListRefusal::LibraryOwner {
                     unit,
                     library: library.to_string(),
                     authority: identity.authority.clone(),
@@ -532,7 +533,7 @@ pub fn admit_parsed_unit_list(
         if let Some(first) =
             (0..second).find(|first| same_owner(&requests[*first], &requests[second]))
         {
-            return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateOwner {
+            return Err(unit_list_refusal(UnitListRefusal::DuplicateOwner {
                 first,
                 second,
                 authority: requests[second].authority.clone(),
@@ -563,7 +564,7 @@ pub fn admit_parsed_unit_list(
             &profiles,
         ) {
             let second_header = header_span(unit);
-            return Err(CompileRefusal::UnitList(UnitListRefusal::HeaderConflict {
+            return Err(unit_list_refusal(UnitListRefusal::HeaderConflict {
                 first_unit: Box::new(requests[0].clone()),
                 first_header,
                 second_unit: Box::new(requests[index].clone()),
@@ -581,7 +582,7 @@ pub fn admit_parsed_unit_list(
                     &LibraryName::new(&import.identity)
                         .unwrap_or_else(|_| unreachable!("parsed import identities are validated")),
                 ) {
-                    return Err(CompileRefusal::UnitList(UnitListRefusal::SiblingImport {
+                    return Err(unit_list_refusal(UnitListRefusal::SiblingImport {
                         identity: import.identity.clone(),
                         unit: Box::new(requests[sibling].clone()),
                         region: region(unit.source().reference(), import.identity_span),
@@ -599,7 +600,7 @@ pub fn admit_parsed_unit_list(
             let span = form.span();
             if let Some((first, first_span)) = names.insert(name, (unit_index, span)) {
                 if first != unit_index {
-                    return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateName {
+                    return Err(unit_list_refusal(UnitListRefusal::DuplicateName {
                         name: name.to_owned(),
                         first_unit: Box::new(requests[first].clone()),
                         first_span,
@@ -620,6 +621,10 @@ pub fn admit_parsed_unit_list(
     Ok(AdmittedUnitList {
         units: paired.into_iter().map(|(_, unit)| unit).collect(),
     })
+}
+
+fn unit_list_refusal(refusal: UnitListRefusal) -> Box<CompileRefusal> {
+    Box::new(CompileRefusal::UnitList(refusal))
 }
 
 fn same_owner(first: &SourceIdentity, second: &SourceIdentity) -> bool {
@@ -696,6 +701,8 @@ impl AdmittedModels {
 pub struct CheckedUnit {
     package: Arc<pkg::CheckedPackage>,
     source: Source,
+    sources: Vec<Source>,
+    type_report: TypeReport,
     libraries: Vec<Source>,
     /// The library identity of each entry of `libraries`, in the same order.
     library_names: Vec<LibraryName>,
@@ -704,6 +711,8 @@ pub struct CheckedUnit {
     library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
     protocol_results: Vec<super::ProtocolResult>,
     protocol_failure: Option<ProtocolFailure>,
+    static_subject: Result<StaticSubject, SubjectUnavailable>,
+    build_provenance: BuildProvenance,
 }
 
 impl CheckedUnit {
@@ -729,12 +738,29 @@ impl CheckedUnit {
         &self.source
     }
 
+    /// The type evidence produced from this checked unit's source parse.
+    /// The report carries no source identity; its spans resolve through
+    /// [`Self::source`].
+    pub fn type_report(&self) -> &TypeReport {
+        &self.type_report
+    }
+
     /// Every library the check actually resolved, transitively, each
     /// exactly as its own S1 read it. Never the full dependency input: a
     /// supplied library the unit's own imports never reached is not compiled
     /// and carries no source here.
     pub fn libraries(&self) -> &[Source] {
         &self.libraries
+    }
+
+    /// The static subject established by this successful check.
+    pub fn static_subject(&self) -> Result<&StaticSubject, &SubjectUnavailable> {
+        self.static_subject.as_ref()
+    }
+
+    /// The compile limits and check-stage usage that produced this unit.
+    pub fn build_provenance(&self) -> BuildProvenance {
+        self.build_provenance
     }
 
     /// The retained v2 bytes of every resolved library, shared not copied.
@@ -754,6 +780,264 @@ impl CheckedUnit {
     }
 }
 
+/// Type evidence retained by S3 for one source unit.
+#[derive(Clone, Debug, Default)]
+pub struct TypeReport {
+    declarations: Vec<TypeDeclaration>,
+    requirements: Vec<TypeRequirement>,
+    obligations: Vec<PendingObligation>,
+}
+
+impl TypeReport {
+    /// Declarations owned by the checked unit, in ascending node order.
+    pub fn declarations(&self) -> &[TypeDeclaration] {
+        &self.declarations
+    }
+
+    /// Requirement records owned by the checked unit.
+    pub fn requirements(&self) -> &[TypeRequirement] {
+        &self.requirements
+    }
+
+    /// Claims retained for later analysis or replay.
+    pub fn obligations(&self) -> &[PendingObligation] {
+        &self.obligations
+    }
+}
+
+/// One source-owned declaration and its checked value type, when present.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeDeclaration {
+    node: quire_exact::NodeKey,
+    kind: qsl_semantics::check::NodeTag,
+    value_type: Option<quire_exact::NodeKey>,
+}
+
+impl TypeDeclaration {
+    /// The declaration's structural node.
+    pub fn node(&self) -> &quire_exact::NodeKey {
+        &self.node
+    }
+
+    /// The checked graph's declaration kind.
+    pub fn kind(&self) -> qsl_semantics::check::NodeTag {
+        self.kind
+    }
+
+    /// The declaration's checked value type, if it has one.
+    pub fn value_type(&self) -> Option<&quire_exact::NodeKey> {
+        self.value_type.as_ref()
+    }
+}
+
+/// A requirement occurrence retained with its checked record.
+#[derive(Clone, Debug)]
+pub struct TypeRequirement {
+    occurrence: qsl_foundation::source::provenance::OccurrenceKey,
+    record: qsl_semantics::check::RequirementRecord,
+    span: qsl_foundation::Span,
+}
+
+impl TypeRequirement {
+    /// The requirement's structural occurrence.
+    pub fn occurrence(&self) -> &qsl_foundation::source::provenance::OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The package's checked requirement record.
+    pub fn record(&self) -> &qsl_semantics::check::RequirementRecord {
+        &self.record
+    }
+
+    /// The requirement's source span, resolved through its CheckedUnit.
+    pub fn span(&self) -> qsl_foundation::Span {
+        self.span
+    }
+}
+
+/// A checked claim that remains pending for analysis or replay.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingObligation {
+    node: quire_exact::NodeKey,
+    occurrence: qsl_foundation::source::provenance::OccurrenceKey,
+    capability_kind: String,
+    span: qsl_foundation::Span,
+}
+
+impl PendingObligation {
+    /// The claim node.
+    pub fn node(&self) -> &quire_exact::NodeKey {
+        &self.node
+    }
+
+    /// The claim's checked occurrence.
+    pub fn occurrence(&self) -> &qsl_foundation::source::provenance::OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The claim form's capability kind.
+    pub fn capability_kind(&self) -> &str {
+        &self.capability_kind
+    }
+
+    /// The source span of this claim or protocol requirement.
+    pub fn span(&self) -> qsl_foundation::Span {
+        self.span
+    }
+
+    /// Every retained obligation is pending until analysis or replay.
+    pub const fn state(&self) -> ObligationState {
+        ObligationState::Pending
+    }
+}
+
+/// The discharge state of a checked obligation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObligationState {
+    /// The checked claim awaits analysis or replay.
+    Pending,
+}
+
+fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef) -> TypeReport {
+    use qsl_semantics::check::Owner;
+
+    let owner = qsl_semantics::check::SourceOwner::from(source);
+    let owns = |node: &qsl_semantics::check::SemanticNode| {
+        node.owner() == Some(&Owner::Source(owner.clone()))
+    };
+    let occurrence_span = |key: &quire_exact::NodeKey,
+                           origin: &quire_exact::Origin|
+     -> Option<qsl_foundation::Span> {
+        let location = graph.occurrence(key.clone(), origin)?;
+        let region = graph.region(location)?;
+        if region.source() != source {
+            return None;
+        }
+        Some(qsl_foundation::Span {
+            start: usize::try_from(region.start()).ok()?,
+            end: usize::try_from(region.end()).ok()?,
+        })
+    };
+    let declarations = graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| owns(node) && node.declaration().is_some())
+        .map(|node| TypeDeclaration {
+            node: node.key(),
+            kind: node.node_tag(),
+            value_type: node.semantic_type(),
+        })
+        .collect();
+    let requirements = graph
+        .requirements()
+        .iter()
+        .filter_map(|(occurrence, record)| {
+            Some(TypeRequirement {
+                occurrence: occurrence.clone(),
+                record: record.clone(),
+                span: occurrence_span(occurrence.node(), occurrence.origin())?,
+            })
+        })
+        .collect();
+    let mut obligations: Vec<_> = graph
+        .requirements()
+        .iter()
+        .filter_map(|(occurrence, record)| {
+            let span = occurrence_span(occurrence.node(), occurrence.origin())?;
+            Some(PendingObligation {
+                node: occurrence.node().clone(),
+                occurrence: occurrence.clone(),
+                capability_kind: record.requirements().kind().to_wire().to_owned(),
+                span,
+            })
+        })
+        .collect();
+    for protocol in graph.protocols() {
+        if let Some(keys) = graph.protocol_node_keys(&protocol.name) {
+            for control in protocol
+                .controls
+                .controls
+                .iter()
+                .filter(|control| control.kind == qsl_forms::ProtocolNodeKind::Check)
+            {
+                let Some(node) = keys.nodes.get(&control.node) else {
+                    continue;
+                };
+                let Some(body) = protocol
+                    .slots
+                    .bodies
+                    .iter()
+                    .find(|body| body.node == control.node)
+                else {
+                    continue;
+                };
+                let location = body.body.root().location();
+                let Some(region) = graph.region(location) else {
+                    continue;
+                };
+                if region.source() != source {
+                    continue;
+                }
+                let Some(start) = usize::try_from(region.start()).ok() else {
+                    continue;
+                };
+                let Some(end) = usize::try_from(region.end()).ok() else {
+                    continue;
+                };
+                let occurrence =
+                    qsl_foundation::source::provenance::OccurrenceKey::declaration(node.clone());
+                obligations.push(PendingObligation {
+                    node: node.clone(),
+                    occurrence,
+                    capability_kind: qsl_semantics::check::Capability::GlobalConformance
+                        .to_wire()
+                        .to_owned(),
+                    span: qsl_foundation::Span { start, end },
+                });
+            }
+        }
+        for requirement in &protocol.requirements {
+            let Some(temporal) = graph.temporal_clauses().get(requirement.temporal) else {
+                continue;
+            };
+            let key = temporal.identity();
+            let claim_origin = temporal.claim().clone();
+            if occurrence_span(&key, &claim_origin).is_none() {
+                continue;
+            }
+            let occurrence =
+                qsl_foundation::source::provenance::OccurrenceKey::new(key.clone(), claim_origin);
+            obligations.push(PendingObligation {
+                node: key,
+                occurrence,
+                capability_kind: qsl_semantics::check::Capability::TemporalSatisfaction
+                    .to_wire()
+                    .to_owned(),
+                span: requirement.span,
+            });
+        }
+    }
+    obligations.sort_by(|left, right| {
+        (
+            &left.node,
+            left.span.start,
+            left.span.end,
+            &left.capability_kind,
+        )
+            .cmp(&(
+                &right.node,
+                right.span.start,
+                right.span.end,
+                &right.capability_kind,
+            ))
+    });
+    TypeReport {
+        declarations,
+        requirements,
+        obligations,
+    }
+}
+
 /// A checked package emitted as `quire.checked-package/v2` bytes, with the
 /// sources another party needs to import or replay it.
 #[derive(Clone, Debug)]
@@ -761,6 +1045,8 @@ pub struct EmittedUnit {
     package: pkg::EmittedPackage,
     sources: Vec<Source>,
     evidence: quire_contract_model::CheckedPackageEvidence,
+    static_subject: Result<StaticSubject, SubjectUnavailable>,
+    build_provenance: BuildProvenance,
 }
 
 impl EmittedUnit {
@@ -779,6 +1065,16 @@ impl EmittedUnit {
     /// bytes back.
     pub fn evidence(&self) -> &quire_contract_model::CheckedPackageEvidence {
         &self.evidence
+    }
+
+    /// The static subject of the checked unit that produced these bytes.
+    pub fn static_subject(&self) -> Result<&StaticSubject, &SubjectUnavailable> {
+        self.static_subject.as_ref()
+    }
+
+    /// The compile limits and check-stage usage that produced this unit.
+    pub fn build_provenance(&self) -> BuildProvenance {
+        self.build_provenance
     }
 }
 
@@ -881,6 +1177,61 @@ pub fn select(
     })
 }
 
+/// I1 for an admitted source-unit list: admit every unit's model selections
+/// together against `packages`, preserving all aliases and normalizing the
+/// aggregate once. `source_limits` bounds model clause parsing after
+/// admission; callers compose units only after choosing the limits for that
+/// aggregate operation.
+pub fn select_units(
+    admitted: &AdmittedUnitList,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    limits: ModelNormalizationLimits,
+    source_limits: SourceLimits,
+    cancel: &Cancel,
+) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
+    let source_len = |identity: &SourceIdentity| {
+        admitted
+            .units()
+            .iter()
+            .find(|unit| unit.source().identity() == identity)
+            .map(|unit| unit.source().text().len())
+    };
+    stage(cancel, &source_len, |work| {
+        let selections: Vec<_> = admitted
+            .units()
+            .iter()
+            .map(|unit| unit.unit().selections().models.as_slice())
+            .collect();
+        let models = charged(cancel, &mut work.i1, || {
+            admit_units_with_cancel(&selections, packages, limits, cancel).map_err(|refusal| {
+                let source = admitted
+                    .units()
+                    .iter()
+                    .find(|unit| {
+                        unit.unit().selections().models.iter().any(|selection| {
+                            selection.alias == refusal.alias
+                                && selection.identity == refusal.identity
+                                && selection.span == refusal.span
+                        })
+                    })
+                    .map(|unit| unit.source().reference());
+                Box::new(CompileRefusal::Intake {
+                    region: source.and_then(|source| region(source, refusal.span)),
+                    refusal,
+                })
+            })
+        })?;
+        let models = parse_type_invariants(
+            parse_operation_clauses(models, source_limits)?,
+            source_limits,
+        )?;
+        Ok::<_, Box<CompileRefusal>>(AdmittedModels {
+            models,
+            packages: packages.clone(),
+        })
+    })
+}
+
 /// S3 and S4: check and link `parsed` against `models` and the dependency
 /// input (ADR-015 D-1, FR-099, FR-278). The S4 source resolution compiles
 /// each library the unit's `import`s reach, against the same package input,
@@ -902,6 +1253,140 @@ pub fn check(
         limits,
         cancel,
     )
+}
+
+/// S3 and S4: assemble an admitted source-unit list as one package and
+/// return one source-bound checked unit per canonical source. Every returned
+/// unit shares the same checked package; its report and `source()` are bound
+/// to its own parse. Imports are resolved over the combined list.
+pub fn check_units(
+    admitted: &AdmittedUnitList,
+    package_name: String,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<Vec<CheckedUnit>>, FrontEndFailure> {
+    let source_len = |identity: &SourceIdentity| {
+        admitted
+            .units()
+            .iter()
+            .find(|unit| unit.source().identity() == identity)
+            .map(|unit| unit.source().text().len())
+            .or_else(|| {
+                dependencies
+                    .libraries
+                    .values()
+                    .find(|library| &library.source == identity)
+                    .map(|library| library.bytes.len())
+            })
+    };
+    stage(cancel, &source_len, |work| {
+        for unit in admitted.units() {
+            dependencies
+                .check_unit_owner(unit.source().identity())
+                .map_err(|refusal| Box::new(CompileRefusal::DependencyInput(refusal)))?;
+        }
+        let first = admitted
+            .units()
+            .first()
+            .expect("an AdmittedUnitList is non-empty");
+        let mut resolution = Resolution {
+            dependencies,
+            packages: &models.packages,
+            continuation_source: first.source().reference().clone(),
+            limits,
+            cancel,
+            temporal_selections: &[],
+            active: Vec::new(),
+            compiled: BTreeMap::new(),
+            import_edges: 0,
+            source_bytes: 0,
+            admitted: AdmittedPackages::default(),
+            work: StageWork::default(),
+        };
+        let package = resolution.check_unit_list(admitted, package_name, models.models.clone())?;
+        resolution.check_unimported_refinement_values()?;
+        let package = Arc::new(package);
+        let sources: Vec<_> = admitted
+            .units()
+            .iter()
+            .map(|unit| unit.source().clone())
+            .collect();
+        let unit_library_data: Vec<_> = admitted
+            .units()
+            .iter()
+            .map(|unit| resolved_libraries_for_unit(unit, &resolution.compiled))
+            .collect();
+        let mut library_packages = BTreeMap::new();
+        let (library_names, libraries): (Vec<_>, Vec<_>) = resolution
+            .compiled
+            .into_iter()
+            .map(|(name, library)| {
+                library_packages.insert(name.clone(), library.emitted.clone());
+                (name, library.source.clone())
+            })
+            .unzip();
+        let mut checked_units = Vec::with_capacity(sources.len());
+        for ((parsed, source), (resolved_libraries, subject_libraries)) in admitted
+            .units()
+            .iter()
+            .zip(sources.iter().cloned())
+            .zip(unit_library_data)
+        {
+            let (protocol_results, protocol_failure) =
+                protocol_check_outcome(parsed, package.graph());
+            if let Some(refusal) = protocol_failure.as_ref() {
+                return Err(StageError::with_protocol_results(
+                    Box::new(refusal.to_refusal()),
+                    protocol_results,
+                ));
+            }
+            let has_protocol_refusal = protocol_results.iter().any(|result| {
+                matches!(
+                    result,
+                    super::ProtocolResult::Refused { .. }
+                        | super::ProtocolResult::Incomplete { .. }
+                )
+            });
+            let static_subject =
+                if has_protocol_refusal || !package.graph().unit_refusals().is_empty() {
+                    Err(SubjectUnavailable::RefusedCheck)
+                } else {
+                    StaticSubject::from_check(
+                        parsed.source(),
+                        &subject_libraries,
+                        parsed.unit().edition(),
+                        &parsed.unit().selections().profiles,
+                        &parsed.unit().selections().models,
+                        parsed.unit().forms(),
+                        &models.models,
+                        &models.packages,
+                        &resolved_libraries,
+                        package.graph(),
+                    )
+                };
+            let build_provenance = BuildProvenance {
+                limits,
+                usage: resolution.work,
+            };
+            checked_units.push(CheckedUnit {
+                package: Arc::clone(&package),
+                type_report: type_report(package.graph(), source.reference()),
+                source,
+                sources: sources.clone(),
+                libraries: libraries.clone(),
+                library_names: library_names.clone(),
+                library_packages: Arc::new(library_packages.clone()),
+                protocol_results,
+                protocol_failure,
+                static_subject,
+                build_provenance,
+            });
+        }
+        *work = resolution.work;
+        Ok(checked_units)
+    })
 }
 
 /// S3 and S4 with the unit's unchecked internal-list value and each
@@ -1011,13 +1496,21 @@ pub fn check_with_temporal_selections_and_execution_points(
     )
 }
 
+/// The per-unit inputs of [`check_for_continuation`].
+pub(crate) struct ContinuationInputs<'a> {
+    /// The package name the unit checks under.
+    pub(crate) package_name: String,
+    /// Accepted execution points keyed by authored state-clause name.
+    pub(crate) execution_points: &'a super::StateClauseExecutionPoints,
+    /// Explicit clock selections for configured temporal clauses.
+    pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
+}
+
 /// S3 continuation for the compiler: keep an attributable protocol refusal
 /// in the checked graph so S4 can still emit clean siblings.
 pub(crate) fn check_for_continuation(
     parsed: &ParsedUnitSource,
-    package_name: String,
-    execution_points: &super::StateClauseExecutionPoints,
-    temporal_selections: &[qsl_package::TemporalClockSelection],
+    inputs: ContinuationInputs<'_>,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -1025,10 +1518,10 @@ pub(crate) fn check_for_continuation(
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     check_with_context_and_temporal_selections(
         parsed,
-        package_name,
-        execution_points,
+        inputs.package_name,
+        inputs.execution_points,
         None,
-        temporal_selections,
+        inputs.temporal_selections,
         models,
         dependencies,
         limits,
@@ -1091,15 +1584,15 @@ fn check_with_context_and_temporal_selections(
         ) {
             Ok(package) => package,
             Err(refusal) => {
-                return Err(attach_protocol_results(parsed, refusal, &source_len).into());
+                return Err(attach_protocol_results(parsed, refusal, &source_len));
             }
         };
         if let Err(refusal) = resolution.check_unimported_refinement_values() {
-            return Err(attach_protocol_results(parsed, refusal, &source_len).into());
+            return Err(attach_protocol_results(parsed, refusal, &source_len));
         }
         *work = resolution.work;
         let mut library_packages = BTreeMap::new();
-        let (library_names, libraries) = resolution
+        let (library_names, libraries): (Vec<LibraryName>, Vec<Source>) = resolution
             .compiled
             .into_iter()
             .map(|(name, library)| {
@@ -1116,14 +1609,53 @@ fn check_with_context_and_temporal_selections(
                 ));
             }
         }
+        let package = Arc::new(package);
+        let type_report = type_report(package.graph(), parsed.source().reference());
+        let resolved_libraries: Vec<_> = library_names
+            .iter()
+            .map(|identity| identity.as_str().to_owned())
+            .collect();
+        let has_protocol_refusal = protocol_failure.is_some()
+            || protocol_results.iter().any(|result| {
+                matches!(
+                    result,
+                    super::ProtocolResult::Refused { .. }
+                        | super::ProtocolResult::Incomplete { .. }
+                )
+            });
+        let static_subject = if has_protocol_refusal || !package.graph().unit_refusals().is_empty()
+        {
+            Err(SubjectUnavailable::RefusedCheck)
+        } else {
+            StaticSubject::from_check(
+                parsed.source(),
+                &libraries,
+                parsed.unit().edition(),
+                &parsed.unit().selections().profiles,
+                &parsed.unit().selections().models,
+                parsed.unit().forms(),
+                &models.models,
+                &models.packages,
+                &resolved_libraries,
+                package.graph(),
+            )
+        };
+        let build_provenance = BuildProvenance {
+            limits,
+            usage: *work,
+        };
         let checked = CheckedUnit {
-            package: Arc::new(package),
+            package,
             source: parsed.source().clone(),
+            sources: vec![parsed.source().clone()],
+            type_report,
             libraries,
             library_names,
             library_packages: Arc::new(library_packages),
             protocol_results,
             protocol_failure,
+            static_subject,
+            build_provenance,
         };
         Ok(checked)
     })
@@ -1159,7 +1691,10 @@ pub fn package_with_temporal_selections(
         &|_| None,
         |work| -> Result<EmittedUnit, StageError> {
             for selection in selections {
-                let source_is_compiled = selection.source == *checked.source.reference()
+                let source_is_compiled = checked
+                    .sources
+                    .iter()
+                    .any(|source| selection.source == *source.reference())
                     || checked
                         .libraries
                         .iter()
@@ -1174,7 +1709,16 @@ pub fn package_with_temporal_selections(
                     .into());
                 }
             }
-            let own = temporal_selections_for_source(selections, checked.source.reference());
+            let own: Vec<_> = selections
+                .iter()
+                .filter(|selection| {
+                    checked
+                        .sources
+                        .iter()
+                        .any(|source| source.reference() == &selection.source)
+                })
+                .cloned()
+                .collect();
             let protocol_emission = charged(cancel, &mut work.e4, || {
                 qsl_package::emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
                     &checked.package,
@@ -1203,7 +1747,7 @@ pub fn package_with_temporal_selections(
                             },
                             |failure| Box::new(failure.to_refusal()),
                         );
-                        return Err(StageError::with_protocol_results(refusal, results).into());
+                        return Err(StageError::with_protocol_results(refusal, results));
                     }
                     protocol_emission.emission().ok_or_else(|| {
                         Box::new(CompileRefusal::Emit(
@@ -1223,7 +1767,7 @@ pub fn package_with_temporal_selections(
                         },
                         |failure| Box::new(failure.to_refusal()),
                     );
-                    return Err(StageError::with_protocol_results(refusal, results).into());
+                    return Err(StageError::with_protocol_results(refusal, results));
                 }
                 qsl_package::ProtocolEmissionAggregate::Incomplete { primary } => {
                     let limit =
@@ -1235,7 +1779,9 @@ pub fn package_with_temporal_selections(
                     ));
                 }
             };
-            let sources = std::iter::once(&checked.source)
+            let sources = checked
+                .sources
+                .iter()
                 .chain(&checked.libraries)
                 .cloned()
                 .collect();
@@ -1243,6 +1789,8 @@ pub fn package_with_temporal_selections(
                 package: emission.package().clone(),
                 sources,
                 evidence: emission.evidence().clone(),
+                static_subject: checked.static_subject.clone(),
+                build_provenance: checked.build_provenance,
             })
         },
     )
@@ -1798,13 +2346,11 @@ fn protocol_check_outcome(
             });
         }
     }
-    if first_failure.is_none() {
-        if !graph.unit_refusals().is_empty() {
-            first_failure = Some(CompileRefusal::Check {
-                refusals: graph.unit_refusals().to_vec(),
-                region: None,
-            });
-        }
+    if first_failure.is_none() && !graph.unit_refusals().is_empty() {
+        first_failure = Some(CompileRefusal::Check {
+            refusals: graph.unit_refusals().to_vec(),
+            region: None,
+        });
     }
     if first_failure.is_none() {
         first_failure = protocol_failure_from_parsed(parsed);
@@ -2149,6 +2695,39 @@ struct ResolvedLibrary {
     source: Source,
 }
 
+/// The direct and transitive libraries reachable from one root source unit.
+/// A multi-unit package has one shared compiled map, but each unit's static
+/// subject contains only the closure named by that unit's own imports.
+fn resolved_libraries_for_unit(
+    parsed: &ParsedUnitSource,
+    compiled: &BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+) -> (Vec<String>, Vec<Source>) {
+    let mut identities = BTreeSet::new();
+    for import in &parsed.unit().selections().imports {
+        let identity =
+            LibraryName::new(&import.identity).expect("parsed library identity is valid");
+        identities.insert(identity.clone());
+        if let Some(library) = compiled.get(&identity) {
+            identities.extend(library.package.dependency_selections().keys().cloned());
+        }
+    }
+    let sources = identities
+        .iter()
+        .map(|identity| {
+            compiled
+                .get(identity)
+                .expect("each selected dependency closure identity was compiled")
+                .source
+                .clone()
+        })
+        .collect();
+    let identities = identities
+        .into_iter()
+        .map(|identity| identity.as_str().to_owned())
+        .collect();
+    (identities, sources)
+}
+
 /// One compile's S4 source resolution state (ADR-015 D-1).
 struct Resolution<'a> {
     dependencies: &'a DependencyInput,
@@ -2184,6 +2763,7 @@ struct Frame {
     package_name: String,
     raw: RawSourceRef,
     unit: ParsedUnit,
+    source_units: Vec<ParsedUnitSource>,
     models: SelectedModels,
     /// Accepted points supplied for the root unit. Library frames always
     /// carry an empty map because they compile independently.
@@ -2209,9 +2789,32 @@ impl Frame {
             package_name,
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
+            source_units: vec![parsed.clone()],
             models,
             execution_points,
             refinement_internals,
+            next: 0,
+            admitted: Vec::with_capacity(imports),
+            links: Vec::with_capacity(imports),
+        }
+    }
+
+    fn new_units(
+        admitted: &AdmittedUnitList,
+        package_name: String,
+        models: SelectedModels,
+    ) -> Self {
+        let source_units = admitted.units.clone();
+        let unit = ParsedUnit::combine(source_units.iter().map(|source| source.unit.clone()));
+        let imports = unit.selections().imports.len();
+        Self {
+            package_name,
+            raw: source_units[0].source().reference().clone(),
+            unit,
+            source_units,
+            models,
+            execution_points: super::StateClauseExecutionPoints::new(),
+            refinement_internals: None,
             next: 0,
             admitted: Vec::with_capacity(imports),
             links: Vec::with_capacity(imports),
@@ -2360,6 +2963,7 @@ impl<'a> Resolution<'a> {
         let limits = self.limits;
         let raw = frame.raw.clone();
         let unit = frame.unit.clone();
+        let source_units = frame.source_units.clone();
         let package_name = frame.package_name.clone();
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
@@ -2375,18 +2979,32 @@ impl<'a> Resolution<'a> {
         let cancel = self.cancel;
         let execution_points = frame.execution_points.clone();
         let mut declarations = charged(cancel, &mut self.work.s3, || {
-            PackageDeclarations::assemble_with_execution_points_and_cancel(
-                raw.clone(),
-                package_name,
-                unit,
-                models,
-                admitted,
-                limits.assembly,
-                qsl_semantics::check::AssemblyRun {
+            if source_units.len() > 1 {
+                PackageDeclarations::assemble_units(
+                    package_name,
+                    source_units
+                        .iter()
+                        .map(|source| (source.source().reference().clone(), source.unit().clone()))
+                        .collect(),
+                    models,
+                    admitted,
+                    limits.assembly,
                     cancel,
-                    execution_points,
-                },
-            )
+                )
+            } else {
+                PackageDeclarations::assemble_with_execution_points_and_cancel(
+                    raw.clone(),
+                    package_name,
+                    unit,
+                    models,
+                    admitted,
+                    limits.assembly,
+                    qsl_semantics::check::AssemblyRun {
+                        cancel,
+                        execution_points,
+                    },
+                )
+            }
         })
         .map_err(|refusal| {
             Box::new(CompileRefusal::Assembly {
@@ -2467,13 +3085,27 @@ impl<'a> Resolution<'a> {
         execution_points: super::StateClauseExecutionPoints,
         refinement_internals: Option<serde_json::Value>,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(
+        let root = Frame::new(
             parsed,
             package_name,
             models,
             execution_points,
             refinement_internals,
         );
+        self.check_frame(root)
+    }
+
+    fn check_unit_list(
+        &mut self,
+        admitted: &AdmittedUnitList,
+        package_name: String,
+        models: SelectedModels,
+    ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
+        let root = Frame::new_units(admitted, package_name, models);
+        self.check_frame(root)
+    }
+
+    fn check_frame(&mut self, mut root: Frame) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

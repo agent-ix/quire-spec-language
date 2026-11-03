@@ -431,3 +431,26 @@ fn a_function_body_names_no_population_and_seq_stays_refused() {
     );
     assert_eq!(at, "seq(i in 0 .. 2: i)");
 }
+
+/// QSpec FR-149-AC-21 (`count`): `count(..)` is an `Integer`, so against an
+/// `Int[0, 2]` operand, on either side, it is `ill_typed`/`type-mismatch`
+/// without a `convert`.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-21")]
+#[test]
+fn a_count_against_an_int_operand_is_a_type_mismatch() {
+    for comparison in [
+        "o.v = count(p in M::counters where true)",
+        "count(p in M::counters where true) = o.v",
+    ] {
+        let declaration = format!(
+            "invariant N using v on M::Counter at current {{ \
+             forall(o in allInstances<M::Counter>(M::counters) : {comparison}) }}"
+        );
+        let (code, cause, _) = refused(false, &declaration);
+        assert_eq!(
+            (code.as_str(), cause.as_str()),
+            ("ill_typed", "type-mismatch"),
+            "{comparison}"
+        );
+    }
+}
