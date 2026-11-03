@@ -717,10 +717,12 @@ fn aggregate_check_returns_source_bound_units_and_reports() {
 
     static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
     static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
-    let source_a = SOURCE_A
-        .get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle", "unit-a", "unit-a:1"));
-    let source_b = SOURCE_B
-        .get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle", "unit-b", "unit-b:1"));
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:unit-a", "unit-a", "unit-a:1")
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new("agent-ix", "test:lifecycle:unit-b", "unit-b", "unit-b:1")
+    });
     let a = parse_named(
         source_a,
         format!("{HEADER}record Point {{ x: Integer; }}").as_bytes(),
