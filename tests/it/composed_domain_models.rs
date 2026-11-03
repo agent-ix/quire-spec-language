@@ -526,9 +526,10 @@ fn architecture_fixture_binds_references_through_spine_i2() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"quire.value.complete/v1\";\n\
+         profile P = \"quire.protocol.finite-global/v1\";\n\
          model M = \"{PACKAGE}\";\n\
          pre FieldRule using S on M::Pump::run {{ self.id }}\n\
-         protocol Plumbing using S over (view: M::Sys) on origin {{\n\
+         protocol Plumbing using P over (view: M::Sys) on origin {{\n\
              role Operator on M::Sys;\n\
              role Outlet on M::pump_out;\n\
              relationship Pipe = M::pipe;\n\
@@ -706,8 +707,7 @@ fn systems_records_are_not_value_types_on_the_spine() {
              model M = \"{PACKAGE}\";\n\
              predicate AsType using S (x: M::{record}): Boolean {{ true }}\n"
         );
-        let source =
-            SourceIdentity::new("agent-ix", "test:tc-1308-systems", "fixture", "fixture:1");
+        let source = SourceIdentity::new("agent-ix", "test:tc-1308-systems");
         let parsed = qsl_replay::spine::parse(
             &qsl_replay::spine::ParseRequest {
                 source: &source,
