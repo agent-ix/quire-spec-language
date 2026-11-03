@@ -2206,7 +2206,7 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
 /// the same checked protocol term, while foreign and dangling references
 /// refuse before changing any meter counter.
 #[test]
-#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-14", "FR-390-AC-15")]
+#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-14")]
 fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence() {
     let (package, model_view) = fixture_with_view();
     let domain_bytes = serde_json::to_vec(&document()).unwrap();
@@ -2245,11 +2245,10 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
             capture.index,
         ))
         .expect("reader view selects the capture term");
-    let reader_location = selected
-        .reader_projection()
-        .expect("reader view owns the root projection")
-        .location()
-        .clone();
+    assert!(
+        selected.reader_projection().is_some(),
+        "reader view owns the root projection"
+    );
     let unavailable = reader_view
         .evaluate_protocol_slot(
             &capture,
@@ -2267,10 +2266,18 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
             &mut meter,
         )
         .expect("unavailable supplied source is returned as a protocol outcome");
-    let ProtocolSlotEvaluation::Unavailable { location, .. } = unavailable else {
+    let ProtocolSlotEvaluation::Unavailable {
+        binder: reader_binder,
+        cause: reader_cause,
+        location,
+    } = unavailable
+    else {
         panic!("reader-backed unavailable source must halt at its read: {unavailable:?}");
     };
-    assert_eq!(location, reader_location);
+    assert_eq!(
+        location, None,
+        "the reader halt has no location and never takes the source package's"
+    );
     let checked_unavailable = package
         .evaluate_protocol_slot(
             &capture,
@@ -2289,13 +2296,19 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         )
         .expect("the checked view returns the same unavailable outcome");
     let ProtocolSlotEvaluation::Unavailable {
+        binder: checked_binder,
+        cause: checked_cause,
         location: checked_location,
-        ..
     } = checked_unavailable
     else {
         panic!("the checked view halts at the unavailable read");
     };
-    assert_eq!(location, checked_location, "FR-390-AC-15 equal locus");
+    assert!(checked_location.is_some(), "the in-process halt is located");
+    assert_eq!(
+        (reader_binder, reader_cause),
+        (checked_binder, checked_cause),
+        "the same unavailable binder and cause"
+    );
 
     let before = meter.clone();
     let mismatched = second_reader_view.evaluate_protocol_slot(
@@ -2699,15 +2712,31 @@ fn read_checked_package(package: &CheckedPackage) -> qsl_package::AdmittedPackag
     .expect("strict I2 admission accepts the emitted TC-1070 package")
 }
 
-/// TC-1073 / FR-390-AC-11, AC-15: every TC-1070 slot compared between the
-/// in-process view and the view over the package the strict reader returns.
-/// A reader-backed slot (its root is a plain-data reader projection) must
-/// agree in the complete result, every ordered charge entry, each AC-9
-/// counter boundary, repeated runs and unavailable supplies. A composed root
-/// has no reader projection yet: it is reported as the typed unmet
-/// dependency, never as a passing parity case.
+/// A call result with its location removed. A reader-backed result carries no
+/// location (the admitted wire has none for a leaf root yet, and a reader view
+/// never takes one from the source package), so parity is compared on
+/// everything else: outcome, value, binder, cause and losses.
+fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> String {
+    match result {
+        Ok(ProtocolSlotEvaluation::Evaluated(evaluation)) => {
+            format!("{:?} {:?}", evaluation.outcome, evaluation.losses)
+        }
+        Ok(ProtocolSlotEvaluation::Unavailable { binder, cause, .. }) => {
+            format!("unavailable {binder:?} {cause:?}")
+        }
+        other => format!("{other:?}"),
+    }
+}
+
+/// TC-1073: compares every TC-1070 slot between the in-process view and the view over
+/// the package the strict reader returns. A reader-backed slot (a plain-data
+/// root) must agree in value, ordered charge entries, each AC-9 counter
+/// boundary, repeated runs and unavailable supplies (binder and cause). The 11
+/// composed or literal roots have no reader projection yet: they are asserted
+/// as the typed unmet dependency, which leaves AC-11 and AC-15 open, so this
+/// test carries neither tag.
 #[test]
-#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-390-AC-11", "FR-390-AC-18")]
+#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-390-AC-18")]
 fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unmet() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);
@@ -2777,9 +2806,9 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
         }
         compared.push(label.clone());
         assert_eq!(
-            format!("{checked:?}").replace(&format!("{checked_reference:?}"), "REF"),
-            format!("{reader:?}").replace(&format!("{reader_reference:?}"), "REF"),
-            "{label}: complete results (value, location, losses)"
+            without_location(&checked).replace(&format!("{checked_reference:?}"), "REF"),
+            without_location(&reader).replace(&format!("{reader_reference:?}"), "REF"),
+            "{label}: complete results (value, losses)"
         );
         charges_and_usage_match(&label, &checked_meter, &reader_meter);
 
@@ -2787,8 +2816,8 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
         let mut again = Meter::new(UNLIMITED);
         let second = reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut again);
         assert_eq!(
-            format!("{second:?}"),
-            format!("{reader:?}"),
+            without_location(&second),
+            without_location(&reader),
             "{label}: run twice"
         );
         charges_and_usage_match(&format!("{label} twice"), &reader_meter, &again);
@@ -2803,8 +2832,8 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
         let exact_reader_result =
             reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut exact_reader);
         assert_eq!(
-            format!("{exact_checked_result:?}"),
-            format!("{exact_reader_result:?}"),
+            without_location(&exact_checked_result),
+            without_location(&exact_reader_result),
             "{label}: exact budget"
         );
         completed(exact_reader_result.unwrap());
@@ -2831,8 +2860,8 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
             );
         }
 
-        // Unavailable supply: the halt reports the same binder, cause, locus
-        // and charges made before the read.
+        // Unavailable supply: the halt reports the same binder, cause and
+        // charges made before the read (the location is not compared).
         let unavailable = |keyed: &[(&'static str, Value)]| ProtocolSupply {
             binders: keyed
                 .iter()
@@ -2869,9 +2898,26 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
                 "{label}: unavailable halt: {on_checked:?}"
             );
             assert_eq!(
-                format!("{on_checked:?}"),
-                format!("{on_reader:?}"),
-                "{label}: unavailable halt result and location (FR-390-AC-15)"
+                without_location(&on_checked),
+                without_location(&on_reader),
+                "{label}: unavailable halt binder and cause"
+            );
+            assert!(
+                matches!(
+                    on_checked,
+                    Ok(ProtocolSlotEvaluation::Unavailable {
+                        location: Some(_),
+                        ..
+                    })
+                ),
+                "{label}: the in-process halt is located"
+            );
+            assert!(
+                matches!(
+                    on_reader,
+                    Ok(ProtocolSlotEvaluation::Unavailable { location: None, .. })
+                ),
+                "{label}: the reader halt reports no location, never the source package's"
             );
             charges_and_usage_match(
                 &format!("{label} unavailable"),
@@ -2895,16 +2941,17 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
             "related to (Got.related.to)",
             "choice guard no (Decide.cases.guard)",
         ],
-        "the composed or literal roots without a reader projection are the AC-11 unmet dependency"
+        "the composed or literal roots without a reader projection are the unmet dependency"
     );
     assert!(!compared.is_empty());
 }
 
-/// FR-390-AC-15: selection refusals have the same locus on both views and
-/// leave their meters unchanged, including refusals only the view can make
-/// (an absent node, a node of another tag).
+/// Selection refusals have the same locus on both views and leave their
+/// meters unchanged, including refusals only the view can make (an absent
+/// node, a node of another tag). This covers the refusal clause of AC-15 only,
+/// so it is tagged AC-4 alone.
 #[test]
-#[trace("TC-1071", "FR-390-AC-4", "FR-390-AC-15")]
+#[trace("TC-1071", "FR-390-AC-4")]
 fn selection_refusals_match_across_the_checked_and_reader_views() {
     let package = fixture_from_source(&SOURCE.replace(
         "  run sequence Main {",
@@ -2958,6 +3005,35 @@ fn selection_refusals_match_across_the_checked_and_reader_views() {
             checked_failure, reader_failure,
             "{case:?}: same record and locus"
         );
+        // Pin what the reader refuses with, so a reader that ignored the
+        // descriptor (or refused for another reason) cannot pass by agreeing
+        // with the checked view: the record names this case's own locus.
+        let CallAdmissionFailure::Refused(record) = reader_failure.as_ref() else {
+            panic!("{case:?}: the reader refuses, it does not report incomplete");
+        };
+        let malformed = case.node == binder(&package, "Refunds", "target");
+        assert_eq!(
+            (record.record.catalog.code(), record.record.catalog.cause()),
+            if malformed {
+                ("invalid_model_binding", "malformed-declaration")
+            } else {
+                ("missing_declaration", "missing-name")
+            },
+            "{case:?}: reader refusal code and cause"
+        );
+        let absent = case.node == population_node("absent-node");
+        assert_eq!(
+            record.locus,
+            if absent || malformed {
+                CallAdmissionLocus::Node(case.node.clone())
+            } else {
+                CallAdmissionLocus::Member {
+                    name: case.member.clone(),
+                    index: case.index,
+                }
+            },
+            "{case:?}: reader refusal locus is the case's own"
+        );
         assert_eq!(
             checked_meter,
             Meter::new(UNLIMITED),
@@ -2975,7 +3051,7 @@ fn selection_refusals_match_across_the_checked_and_reader_views() {
 /// read keep their own in-process charge logs through emitted-package
 /// admission, including FR-107's explicit-dereference charge.
 #[test]
-#[trace("TC-1073", "FR-390-AC-19", "FR-390-AC-15")]
+#[trace("TC-1073", "FR-390-AC-19")]
 fn bare_and_explicit_dereference_reads_keep_their_charge_logs_through_the_reader() {
     let mut model_logs = Vec::new();
     for (replacement, expected) in [
@@ -3038,12 +3114,15 @@ fn bare_and_explicit_dereference_reads_keep_their_charge_logs_through_the_reader
     );
 }
 
-/// FR-390-AC-10 / AC-15: one meter passed to reader-backed slots in turn
-/// accumulates the sum of their charges on both views; a `work_units` budget
-/// of the sum completes all of them, one below returns Incomplete at the last
-/// call, and the reverse order gives the same total.
+/// TC-1073: one meter passed to the reader-backed (plain-data root) slots in
+/// turn accumulates the sum of their charges on both views; a `work_units`
+/// budget of the sum completes all of them, one below returns Incomplete at the
+/// last call, and the reverse order gives the same total. AC-10 names the
+/// registration capture, activation capture, trigger guard, retry relation and
+/// recovery predicate; the last three are composed roots with no reader
+/// projection yet, so this test does not carry the AC-10 tag.
 #[test]
-#[trace("TC-1073", "FR-390-AC-10", "FR-390-AC-15")]
+#[trace("TC-1073")]
 fn reader_backed_shared_meter_sums_and_bounds_in_both_orders() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);

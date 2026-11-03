@@ -1003,9 +1003,6 @@ impl AdmittedPackageRead<'_> {
                     optional: false,
                     derefed: false,
                     value_type,
-                    location: quire_semantic_value::location::Location::root(
-                        quire_semantic_value::location::Origin::Expression,
-                    ),
                 }));
             }
             return Ok(None);
@@ -1138,9 +1135,6 @@ impl AdmittedPackageRead<'_> {
                     .map_err(|_| InternalFault::new("FR-390", "reader-result-type-is-admitted"))?
                     .value_type()
                     .clone();
-                let location = quire_semantic_value::location::Location::root(
-                    quire_semantic_value::location::Origin::Expression,
-                );
                 return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
                     slot: index,
                     field,
@@ -1150,7 +1144,6 @@ impl AdmittedPackageRead<'_> {
                         Some(quire_contract_model::CheckedFieldReadForm::ExplicitDeref)
                     ),
                     value_type,
-                    location,
                 }));
             }
             if !visited.insert(target.clone()) {

@@ -143,7 +143,11 @@ impl<'package> AdmittedEvaluationView<'package> {
                 .iter()
                 .map(|source| source.node.clone())
                 .collect::<Vec<_>>();
-            let mut projection = reader
+            // The admitted wire carries no semantic location for a leaf
+            // root, and the producer writes no `protocol_locations` rows
+            // yet, so the reader projection reports no location. It never
+            // takes one from the source package's CheckedBody (FR-390).
+            let projection = reader
                 .protocol_reference_slot(&root_node, &binders)
                 .map_err(SlotSelectionFailure::Fault)?
                 .ok_or_else(|| {
@@ -152,22 +156,6 @@ impl<'package> AdmittedEvaluationView<'package> {
                         "reader-protocol-root-has-supported-plain-data-projection",
                     ))
                 })?;
-            // FR-390-AC-15: an unavailable halt reports the location the
-            // in-process view reports: the operand read of a field or
-            // attribute root, or the root of a bare reference. The producer
-            // emits no protocol-location sidecar rows yet, so the location
-            // comes from the emitting package this view is bound to, as the
-            // source binders' locations already do.
-            let root = body.root();
-            projection.location = match root.kind() {
-                quire_checked::NodeKind::Field { operand, .. } => {
-                    root.at(*operand).location().clone()
-                }
-                quire_checked::NodeKind::Attribute { reference, .. } => {
-                    root.at(*reference).location().clone()
-                }
-                _ => root.location().clone(),
-            };
             Some(projection)
         } else {
             None
@@ -409,11 +397,15 @@ pub struct ReaderProtocolProjection {
     pub(crate) optional: bool,
     pub(crate) derefed: bool,
     pub(crate) value_type: quire_exact::ValueType,
-    pub(crate) location: quire_semantic_value::location::Location,
 }
 
 /// The admitted field projection selected by a reader-backed protocol slot.
+///
+/// This is throwaway: it exists only until the reader returns canonical
+/// `NodeRead`s (FR-390-AC-16, AC-50), after which the evaluator matches the
+/// one `NodeKind` enum and this type is deleted.
 #[cfg(feature = "std")]
+#[doc(hidden)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReaderProtocolField {
     /// A direct selected reference to one of the supplied frame slots.
@@ -454,11 +446,6 @@ impl ReaderProtocolProjection {
     /// The selected expression result type projected from the admitted graph.
     pub fn value_type(&self) -> &quire_exact::ValueType {
         &self.value_type
-    }
-
-    /// The selected expression's reader-derived root location.
-    pub fn location(&self) -> &quire_semantic_value::location::Location {
-        &self.location
     }
 
     /// The selected expression's supplied frame slot admitted by the reader.

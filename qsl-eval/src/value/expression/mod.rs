@@ -1845,36 +1845,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     "reader-protocol-root-has-supported-plain-data-projection",
                 )));
             };
-            let operation = match projection.field() {
-                qsl_package::ReaderProtocolField::Local => {
-                    quire_checked::NodeKind::Local(projection.slot())
-                }
-                qsl_package::ReaderProtocolField::Attribute { owner, name } => {
-                    quire_checked::NodeKind::Attribute {
-                        reference: projection.slot(),
-                        field: quire_semantic_value::declaration::FieldRef::new(
-                            owner.clone(),
-                            name.clone(),
-                        ),
-                        optional: projection.optional(),
-                        derefed: projection.derefed(),
-                    }
-                }
-                qsl_package::ReaderProtocolField::RecordField { declaration, name } => {
-                    quire_checked::NodeKind::Field {
-                        operand: projection.slot(),
-                        field: quire_checked::node::RecordField::new(
-                            declaration.clone(),
-                            name.clone(),
-                        ),
-                        optional: projection.optional(),
-                    }
-                }
-            };
-            Some(quire_checked::NodeRead {
-                operation,
-                value_type: projection.value_type(),
-                location: projection.location(),
+            Some(evaluate::ReaderRoot {
+                slot: projection.slot(),
+                field: projection.field().clone(),
+                optional: projection.optional(),
+                derefed: projection.derefed(),
+                value_type: projection.value_type().clone(),
             })
         } else {
             None
