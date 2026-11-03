@@ -1282,8 +1282,9 @@ fn an_on_each_instance_records_the_event_position_it_was_created_at() {
     assert_eq!(sorted(entries), sorted(run_reference(&plan, &inputs)));
 }
 
-/// A guarded "on each" activation starts an instance only where the guard
-/// holds.
+/// A guarded "on each" activation evaluates the clause's own guard text and
+/// starts an instance only at events where it holds; the entries agree with
+/// the reference given the same guard truths.
 #[trace("TC-1081", "FR-251-AC-17")]
 #[test]
 fn a_guarded_on_each_activation_starts_instances_where_the_guard_holds() {
@@ -1292,8 +1293,73 @@ fn a_guarded_on_each_activation_starts_instances_where_the_guard_holds() {
         "on each (q: M::ConfigVersion) when (q.versionNumber = 2)",
         &tick_target(2, 8),
     );
-    let spec = spec_from_plan(&plan).unwrap();
+    let mut spec = spec_from_plan(&plan).unwrap();
     assert_eq!(spec.activation, ActivationKind::EachGuarded);
+    spec.clause = Some(ClauseSource {
+        parameters: vec![("versionNumber".to_owned(), "Integer".to_owned())],
+        atoms: spec
+            .atoms
+            .iter()
+            .zip(["versionNumber = 2", "versionNumber = 3"])
+            .map(|(atom, text)| (*atom, text.to_owned()))
+            .collect(),
+        guard: Some("versionNumber = 2".to_owned()),
+        profile: "v".to_owned(),
+    });
+    let (first, second) = (spec.atoms[0], spec.atoms[1]);
+    // The admitted value: 2 holds the guard and the first atom, 3 the second.
+    let readings = [(0_u64, 2), (100, 1), (200, 2), (300, 3)];
+    let mut inputs: Vec<Input> = readings
+        .iter()
+        .map(|(tick, value)| {
+            Input::Reading(*tick, vec![(first, *value == 2), (second, *value == 3)])
+        })
+        .collect();
+    inputs.push(Input::Watermark(1_000));
+    let entries = run_entries_with(&plan, &spec, &inputs);
+    let mut reference = TickMonitorReference::new(reference_spec(&plan));
+    let expected: Vec<Vec<(i128, i64)>> = inputs
+        .iter()
+        .zip(readings.iter().map(Some).chain(std::iter::once(None)))
+        .map(|(input, value)| {
+            let step = match (input, value) {
+                (Input::Reading(tick, atoms), Some((_, value))) => TickStep::Reading {
+                    reading: *tick,
+                    atoms: atoms.iter().copied().collect(),
+                    guard: *value == 2,
+                },
+                (Input::Watermark(boundary), _) => TickStep::Watermark {
+                    boundary: *boundary,
+                },
+                _ => unreachable!("the trace is readings then one watermark"),
+            };
+            reference
+                .step(&step)
+                .expect("the step applies")
+                .into_iter()
+                .map(|r| {
+                    (
+                        r.origin * 1000 + i128::try_from(r.subformula).unwrap(),
+                        reference_code(r.outcome),
+                    )
+                })
+                .collect()
+        })
+        .collect();
+    assert_eq!(sorted(entries.clone()), sorted(expected));
+    let root = i128::try_from(spec.root).unwrap();
+    let live: Vec<i128> = entries[4]
+        .iter()
+        .filter(|(key, code)| key % 1000 == root && *code == 3)
+        .map(|(key, _)| key / 1000)
+        .collect();
+    let mut live = live;
+    live.sort_unstable();
+    assert_eq!(
+        live,
+        [0, 200],
+        "no instance starts where the guard is false"
+    );
 }
 
 /// FR-251-AC-14 / TC-1081 step 10: with an activation capacity of 2 the
