@@ -235,3 +235,95 @@ fn a_compensation_body_calls_a_function_but_cannot_refer_to_a_protocol() {
         assert_eq!(refusals[0].cause, refused, "{guard} {retry}");
     }
 }
+
+/// The `(name, level)` of the `parameter` node `reference` names.
+fn parameter<'w>(nodes: &'w [Value], reference: &Value) -> (&'w str, &'w str) {
+    let node = nodes
+        .iter()
+        .find(|node| node["node_id"] == reference["target"])
+        .unwrap_or_else(|| panic!("{reference} names a node"));
+    assert_eq!(node["semantic_form"], "parameter", "{node}");
+    let members = &node["body"]["members"];
+    (
+        members[0]["value"]["value"].as_str().unwrap(),
+        members[1]["value"]["value"].as_str().unwrap(),
+    )
+}
+
+/// QSL-1555: a query binder written inside a compensation body is lowered
+/// as the `parameter` its source names. A `sum` in the `Partial` recovery
+/// predicate binds `line`, and an activation capture of `Full` that reads the
+/// registration capture `saved` reads `saved`'s own parameter, not the
+/// protocol input's.
+#[trace("FR-383-AC-8", "TC-1061")]
+#[test]
+fn a_sum_binder_in_a_recovery_predicate_is_a_parameter_named_by_its_source() {
+    let unit = unit_text("type Total = Integer;", "true", "false")
+        .replace(
+            "recover (recB: M::Money) { true }",
+            "recover (recB: M::Lines) { sum<Total>(line in recB.lines: line.amount_minor) >= 0 }",
+        )
+        .replace(
+            "capture activatedA: M::Money = trigA;",
+            "capture activatedA: M::Money = saved;",
+        );
+    let (_, wire, _) =
+        emitted_text(&unit).unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let nodes = nodes(&wire);
+    let template = |name: &str| {
+        nodes
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == "compensation"
+                    && node["declaration"]["qualified_name"][2] == name
+            })
+            .unwrap_or_else(|| panic!("the template {name}"))
+    };
+    let argument = |template: &'_ Value, name: &str| -> Value {
+        template["body"]["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|argument| argument["name"] == name)
+            .unwrap_or_else(|| panic!("the argument {name}"))["value"]
+            .clone()
+    };
+
+    let sums: Vec<&Value> = nodes
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.collection.sum.integer")
+        .collect();
+    let [sum] = sums[..] else {
+        panic!("one sum application: {sums:?}");
+    };
+    let binding = &sum["body"]["arguments"][1];
+    assert_eq!(
+        (&binding["term"], &binding["name"]),
+        (&json!("binding"), &json!("line")),
+        "the sum binds `line`: {sum}"
+    );
+    let lines: Vec<&Value> = nodes
+        .iter()
+        .filter(|node| {
+            node["semantic_form"] == "parameter"
+                && node["body"]["members"][0]["value"]["value"] == "line"
+        })
+        .collect();
+    assert_eq!(lines.len(), 1, "one parameter node `line`: {lines:?}");
+
+    let recovery = argument(template("Partial"), "recovery");
+    assert_eq!(
+        parameter(nodes, &recovery["members"][0]["value"]).0,
+        "recB",
+        "{recovery}"
+    );
+
+    let activation = argument(template("Full"), "activation_captures");
+    let capture = &activation["members"][0];
+    assert_eq!(
+        parameter(nodes, &capture["members"][0]["value"]).0,
+        "activatedA"
+    );
+    let read = &capture["members"][1]["value"];
+    assert_eq!(parameter(nodes, read), ("saved", "2"), "{capture}");
+}

@@ -86,6 +86,10 @@ pub struct CheckedCapture {
     pub stage: CaptureStage,
     /// The checked initializer.
     pub initializer: CheckedBody,
+    /// The name each slot of the initializer is bound under, indexed by slot: the
+    /// names the stage may read, then the binders the initializer itself introduces
+    /// (a query, `let` or aggregate binder).
+    pub slot_names: Vec<String>,
     /// The clause or the template that owns the capture.
     pub owner: CaptureOwner,
 }
@@ -114,6 +118,9 @@ pub enum CheckedActivation {
         /// The guard; `None` for the guard that is always true. A written
         /// `when ({true})` is a different clause from an absent guard.
         guard: Option<CheckedBody>,
+        /// The name each slot of the guard is bound under, indexed by slot;
+        /// empty when there is no guard.
+        guard_slot_names: Vec<String>,
     },
 }
 
@@ -135,6 +142,10 @@ pub struct CheckedRetry {
     pub later: CheckedBinder,
     /// The Boolean relation.
     pub relation: CheckedBody,
+    /// The name each slot of the relation is bound under, indexed by slot: the
+    /// names the stage may read, then the binders the relation itself introduces
+    /// (a query, `let` or aggregate binder).
+    pub slot_names: Vec<String>,
 }
 
 /// A template's `recover` binder and predicate.
@@ -144,6 +155,10 @@ pub struct CheckedRecovery {
     pub binder: CheckedBinder,
     /// The Boolean predicate.
     pub predicate: CheckedBody,
+    /// The name each slot of the predicate is bound under, indexed by slot: the
+    /// names the stage may read, then the binders the predicate itself introduces
+    /// (a query, `let` or aggregate binder).
+    pub slot_names: Vec<String>,
 }
 
 /// A template's `commit` member.
@@ -189,6 +204,10 @@ pub struct CheckedCompensation {
     pub trigger: CheckedBinder,
     /// The Boolean trigger guard.
     pub guard: CheckedBody,
+    /// The name each slot of the guard is bound under, indexed by slot: the
+    /// names the stage may read, then the binders the guard itself introduces
+    /// (a query, `let` or aggregate binder).
+    pub guard_slot_names: Vec<String>,
     /// The activation captures, as indices into
     /// [`CheckedObligations::captures`], in source order.
     pub activation_captures: Vec<usize>,
@@ -741,18 +760,22 @@ impl Checker<'_, '_> {
             return Some(CheckedActivation::Origin);
         };
         let guard = match when {
-            None => Some(None),
+            None => Some((None, Vec::new())),
             Some(when) => {
                 let site = self.site(types, ObligationStage::ProtocolActivation, None, 0);
-                self.expression(&site, when, Goal::Boolean, cx).map(Some)
+                self.expression(&site, when, Goal::Boolean, cx)
+                    .map(|(guard, slot_names)| (Some(guard), slot_names))
             }
         };
         match (&types.activation, guard) {
-            (Some((_, record_type)), Some(guard)) => Some(CheckedActivation::OnEach {
-                binder: parameter.name.name.clone(),
-                record_type: Box::new(record_type.clone()),
-                guard,
-            }),
+            (Some((_, record_type)), Some((guard, guard_slot_names))) => {
+                Some(CheckedActivation::OnEach {
+                    binder: parameter.name.name.clone(),
+                    record_type: Box::new(record_type.clone()),
+                    guard,
+                    guard_slot_names,
+                })
+            }
             _ => {
                 self.incomplete = true;
                 None
@@ -773,12 +796,13 @@ impl Checker<'_, '_> {
             capture: &form.parameter.name.name,
             declared,
         };
-        let initializer = self.expression(site, &form.value, goal, cx)?;
+        let (initializer, slot_names) = self.expression(site, &form.value, goal, cx)?;
         Some(CheckedCapture {
             name: form.parameter.name.name.clone(),
             declared_type: declared.clone(),
             stage,
             initializer,
+            slot_names,
             owner,
         })
     }
@@ -999,6 +1023,9 @@ impl Checker<'_, '_> {
             })
         };
         let build = move || -> Option<CheckedCompensation> {
+            let (guard, guard_slot_names) = guard?;
+            let (relation, relation_slot_names) = relation?;
+            let (predicate, predicate_slot_names) = predicate?;
             let registration_captures =
                 (captures.len()..captures.len() + registration.len()).collect::<Vec<_>>();
             let activation_captures = (captures.len() + registration.len()
@@ -1016,7 +1043,8 @@ impl Checker<'_, '_> {
                 forward: binder(&own.forward, &form.forward.name.name)?,
                 registration_captures,
                 trigger: binder(&own.trigger, &form.trigger.name.name)?,
-                guard: guard?,
+                guard,
+                guard_slot_names,
                 activation_captures,
                 within: within?,
                 maximum_attempts: form.attempts.count,
@@ -1024,12 +1052,14 @@ impl Checker<'_, '_> {
                 retry: CheckedRetry {
                     earlier: binder(&own.earlier, &form.retry.earlier.name.name)?,
                     later: binder(&own.later, &form.retry.later.name.name)?,
-                    relation: relation?,
+                    relation,
+                    slot_names: relation_slot_names,
                 },
                 commit: commit?,
                 recover: CheckedRecovery {
                     binder: binder(&own.recovery, &form.recover.binder.name.name)?,
-                    predicate: predicate?,
+                    predicate,
+                    slot_names: predicate_slot_names,
                 },
             };
             captures.extend(registration);
@@ -1153,7 +1183,8 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Checks `form` through the clause checker over `site`'s names. A
+    /// Checks `form` through the clause checker over `site`'s names: the
+    /// checked body and the name each of its slots is bound under. A
     /// refusal is recorded and `None` returned.
     fn expression(
         &mut self,
@@ -1161,16 +1192,16 @@ impl Checker<'_, '_> {
         form: &ExpressionForm,
         goal: Goal<'_>,
         cx: &mut CheckContext<'_, Scope>,
-    ) -> Option<CheckedBody> {
+    ) -> Option<(CheckedBody, Vec<String>)> {
         let mut nodes = self.nodes;
         let declarations = ClauseDeclarations {
             location: site.location.as_ref().unwrap_or(self.input.location),
             ..*self.input
         };
-        let typed = type_body(form, &site.bound, goal, &declarations, &mut nodes, cx);
+        let typed = type_named_body(form, &site.bound, goal, &declarations, &mut nodes, cx);
         self.nodes = nodes;
-        let body = match typed {
-            Ok(body) => body,
+        let (body, slot_names) = match typed {
+            Ok(named) => named,
             Err(refusal) => {
                 self.convert(site, form, goal, refusal, cx);
                 return None;
@@ -1201,7 +1232,7 @@ impl Checker<'_, '_> {
             self.convert(site, form, goal, refusal, cx);
             return None;
         }
-        Some(body)
+        Some((body, slot_names))
     }
 
     /// Records the clause checker's `refusal` of `form` at `site` as the
@@ -1294,6 +1325,20 @@ pub(super) fn type_body(
     nodes: &mut u64,
     cx: &mut CheckContext<'_, Scope>,
 ) -> Result<CheckedBody, CheckRefusal> {
+    type_named_body(form, bound, goal, input, nodes, cx).map(|(body, _)| body)
+}
+
+/// [`type_body`], with the name each slot of the body is bound under,
+/// indexed by slot: `bound`'s names, then the binders the body introduces.
+/// Lowering keys each binder's parameter node by its name (FR-093).
+fn type_named_body(
+    form: &ExpressionForm,
+    bound: &[(String, ValueType)],
+    goal: Goal<'_>,
+    input: &ClauseDeclarations<'_>,
+    nodes: &mut u64,
+    cx: &mut CheckContext<'_, Scope>,
+) -> Result<(CheckedBody, Vec<String>), CheckRefusal> {
     let mut typer = Typer::new(
         input.scope,
         input.signatures,
@@ -1311,23 +1356,23 @@ pub(super) fn type_body(
         self_slot: NO_SLOT,
         result_slot: None,
     });
-    match goal {
+    let body = match goal {
         Goal::Boolean => {
             let body = typer.infer(&form.expression, Some(&ValueType::Boolean), input.location)?;
-            if body.root().value_type() == &ValueType::Boolean {
-                Ok(body)
-            } else {
-                Err(CheckRefusal {
+            if body.root().value_type() != &ValueType::Boolean {
+                return Err(CheckRefusal {
                     location: input.location.clone(),
                     cause: CheckCause::NonBooleanRoot,
-                })
+                });
             }
+            body
         }
         Goal::Declared { declared, .. } => {
-            typer.check_as(&form.expression, declared, input.location)
+            typer.check_as(&form.expression, declared, input.location)?
         }
-        Goal::Infer => typer.infer(&form.expression, None, input.location),
-    }
+        Goal::Infer => typer.infer(&form.expression, None, input.location)?,
+    };
+    Ok((body, typer.slot_names().to_vec()))
 }
 
 /// The span of the node `location` reaches in `form`, or the whole

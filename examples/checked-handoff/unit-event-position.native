@@ -24,8 +24,10 @@ temporal DueLate using t over (view: M::Workflow) clock "events" on origin {
 }
 
 // The legacy recipe compares the receipt sum with the captured target in
-// `recover`; a `sum` query binder there fails emission (QSL-1555), so these
-// conditions read the target and bound the receipt count instead.
+// `recover`. QSL emits a `sum` query binder there (QSL-1555), but the Contract
+// IR reader refuses a binder bound inside a protocol slot as an out-of-stage
+// read, so these conditions read the target and bound the receipt count
+// instead.
 protocol Flow using p over (view: M::Workflow) on origin {
     role Service on M::Workflow;
     role Provider on M::Provider;

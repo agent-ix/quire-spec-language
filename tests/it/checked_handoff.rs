@@ -1703,7 +1703,7 @@ fn amount_and_total_carry_the_unit_u() {
 /// it.
 #[trace("FR-517-AC-14", "TC-1312")]
 #[test]
-#[ignore = "gated on QSL-1555: a `sum` query binder inside `recover` fails emission"]
+#[ignore = "gated on the Contract IR reader: a `sum` binder bound inside `recover` is refused `BinderScope` (QSL emits it since QSL-1555)"]
 fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
     let unit = std::fs::read_to_string(format!("{DIR}/unit-event-position.native")).unwrap();
     let recover = |name: &str| {

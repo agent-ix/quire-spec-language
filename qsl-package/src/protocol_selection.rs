@@ -446,6 +446,7 @@ pub(crate) fn select<'a>(
                     guard: Some(body),
                     binder,
                     record_type,
+                    ..
                 } = &protocol.obligations.activation
                 else {
                     return Err(absent());
