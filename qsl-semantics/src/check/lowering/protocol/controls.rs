@@ -14,7 +14,9 @@
 //! so a body is lowered over exactly the binders it was checked over.
 //!
 //! A node is keyed after every node it names: its children, and the control
-//! a `receive`, an `effect` or an `await` is anchored at, which may follow it
+//! a `receive`, an `effect` or an `await` is anchored at (or, for an `await`
+//! after a compensation, the template's forward effect and commit control),
+//! which may follow it
 //! in the tree. A `parallel`, a `choice` and a `repeat` are written with
 //! FR-466's layouts, except a `parallel` whose join is a predicate, which
 //! names a function, and a post-test `repeat`, whose guard reads its body's
@@ -109,7 +111,8 @@ struct Controls<'a, 'p> {
     binders: BTreeMap<usize, Binder>,
     /// The binder each control introduces.
     own: BTreeMap<ProtocolNodeId, Binder>,
-    /// The control each `receive`, `effect` and `await` is anchored at.
+    /// The control each `receive` and `effect` is anchored at, and the
+    /// control or compensation template each `await` is anchored at.
     anchored: BTreeMap<ProtocolNodeId, ProtocolNodeId>,
     /// The checked body of each control that has one.
     bodies: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
@@ -166,8 +169,8 @@ impl Lowering<'_> {
                         .anchored
                         .insert(ProtocolNodeId(anchor.owner), *target);
                 }
-                // A compensation is not written yet
-                // (`compensate` templates are carried by the protocol clause).
+                // These anchors name a `compensate` template's own members,
+                // which the protocol clause carries.
                 AnchorSite::EventFor | AnchorSite::CompensateFor | AnchorSite::CompensateCommit => {
                 }
             }
@@ -1030,7 +1033,9 @@ impl Controls<'_, '_> {
     }
 
     /// The controls of the tree in an order that keys each after every node
-    /// it names: its children, and the control it is anchored at. A cycle is
+    /// it names: its children, and the control it is anchored at (for a
+    /// compensation anchor, the template's forward effect and commit
+    /// control). A cycle is
     /// a fact S3 refused (QSpec FR-464 "Derived causal relation").
     fn build_order(&self) -> Result<Vec<ProtocolNodeId>, CheckRefusal> {
         let tree = &self.protocol.checked.controls;

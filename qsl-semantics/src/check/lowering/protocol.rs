@@ -1364,10 +1364,7 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         operation: &Operation,
         roles: &[(String, NodeKey)],
-        controls: &std::collections::BTreeMap<
-            crate::check::protocol_clause::ProtocolNodeId,
-            NodeRef,
-        >,
+        controls: &BTreeMap<ProtocolNodeId, NodeRef>,
         readable: &[Binder],
         boolean: NodeKey,
         anchors: &[CompensationNodes],
@@ -1396,15 +1393,12 @@ impl Lowering<'_> {
 
     /// The node of the compensation template at `index`.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn compensation_node(
+    fn compensation_node(
         &mut self,
         protocol: &ProtocolInput<'_>,
         operation: &Operation,
         roles: &[(String, NodeKey)],
-        controls: &std::collections::BTreeMap<
-            crate::check::protocol_clause::ProtocolNodeId,
-            NodeRef,
-        >,
+        controls: &BTreeMap<ProtocolNodeId, NodeRef>,
         readable: &[Binder],
         boolean: NodeKey,
         anchors: &[CompensationNodes],

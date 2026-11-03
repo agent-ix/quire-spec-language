@@ -530,6 +530,12 @@ fn an_await_after_a_compensation_is_anchored_at_the_forward_effect() {
     assert_eq!(kind, Some(json!("compensation")));
     assert_eq!(target, Some(CheckedTerm::reference(refund)));
 
+    assert_eq!(
+        derived_pairs(package).into_iter().collect::<BTreeSet<_>>(),
+        in_process_pairs(&fixture.protocol),
+        "the emitted relation equals the checked clause's own"
+    );
+
     let wait = wait.node_id.clone();
     let anchors: Vec<_> = causal_relation(package, &clause_id)
         .unwrap()
@@ -552,6 +558,77 @@ fn an_await_after_a_compensation_is_anchored_at_the_forward_effect() {
             }
         )],
         "the forward effect's enter port, not an event's exit port"
+    );
+}
+
+/// Two awaits after one template read one template node, and a template with
+/// `commit never` is anchored at its forward effect alone. Both emit and
+/// derive the same relation as the checked clause.
+#[trace("FR-519-AC-1", "FR-466-AC-6", "TC-1314", "TC-948")]
+#[test]
+fn awaits_after_one_template_and_a_template_without_a_commit_check() {
+    let second = "await WaitAgain after Refund using T clock \"ticks\" within [0,1] \
+         match event SeenAgain by Orders as (seenAgain: Boolean) { true }; \
+         then sequence AfterAgain { } timeout sequence LateAgain { }\n\
+         await WaitPartial after PartialRefund using T clock \"ticks\" within [0,1] \
+         match event SeenPartial by Orders as (seenPartial: Boolean) { true }; \
+         then sequence AfterPartial { } timeout sequence LatePartial { }\n\
+         commit Finalized by Orders";
+    let text = source_text()
+        .replace(
+            "after Main::PaymentRetries::ChargeCycle::Applied",
+            "after Refund",
+        )
+        .replace("commit Finalized by Orders", second);
+    let fixture = fixture_over(&text);
+    let package = &*fixture.admitted;
+    let forward = by_name(package, "Applied").node_id.clone();
+    let targets = ["WaitEvent", "WaitAgain", "WaitPartial"].map(|wait| {
+        let CheckedTerm::Application { arguments, .. } = &by_name(package, wait).body else {
+            panic!("an application body");
+        };
+        let after = arguments.iter().find_map(|argument| match argument {
+            CheckedTerm::Binding { name, value } if &**name == "after" => Some(&**value),
+            _ => None,
+        });
+        let Some(CheckedTerm::Aggregate { members }) = after else {
+            panic!("after is a group");
+        };
+        members
+            .iter()
+            .find_map(|member| match member {
+                CheckedTerm::Binding { name, value } if &**name == "target" => {
+                    Some((**value).clone())
+                }
+                _ => None,
+            })
+            .expect("a target")
+    });
+    let refund = CheckedTerm::reference(by_name(package, "Refund").node_id.clone());
+    let partial = CheckedTerm::reference(by_name(package, "PartialRefund").node_id.clone());
+    assert_eq!(targets, [refund.clone(), refund, partial]);
+
+    assert_eq!(
+        derived_pairs(package).into_iter().collect::<BTreeSet<_>>(),
+        in_process_pairs(&fixture.protocol)
+    );
+    let clause_id = clause(package).node_id.clone();
+    let anchored: BTreeSet<_> = causal_relation(package, &clause_id)
+        .unwrap()
+        .edges()
+        .iter()
+        .filter(|edge| edge.kind == InEdge::AwaitAnchor)
+        .map(|edge| (edge.from.node.clone(), edge.from.port))
+        .collect();
+    assert_eq!(anchored, BTreeSet::from([(forward, InPort::Enter)]));
+    assert_eq!(
+        causal_relation(package, &clause_id)
+            .unwrap()
+            .edges()
+            .iter()
+            .filter(|edge| edge.kind == InEdge::AwaitAnchor)
+            .count(),
+        3
     );
 }
 
