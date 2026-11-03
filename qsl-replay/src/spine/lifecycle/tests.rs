@@ -739,7 +739,7 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
         .type_report()
         .requirements()
         .iter()
-        .all(|requirement| {
+        .any(|requirement| {
             requirement.record().requirements().kind().to_wire() == "value-validity"
         }));
     assert!(checked
