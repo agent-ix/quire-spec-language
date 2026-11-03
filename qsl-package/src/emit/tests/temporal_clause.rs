@@ -467,9 +467,11 @@ fn malformed_temporal_clock_values_refuse_emission_at_the_field() {
     }
 
     fn refuses_field(package: &CheckedPackage, selected: &TemporalClockSelection, field: &str) {
-        let refusal =
-            crate::emit::emit_checked_with_temporal_selections(package, &[selected.clone()])
-                .expect_err("an invalid clock value cannot produce a package");
+        let refusal = crate::emit::emit_checked_with_temporal_selections(
+            package,
+            std::slice::from_ref(selected),
+        )
+        .expect_err("an invalid clock value cannot produce a package");
         assert!(matches!(
             &refusal,
             EmitRefusal::InvalidTemporalClockValue { field: actual, .. } if *actual == field
