@@ -175,7 +175,7 @@ fn a_collection_or_option_of_the_child_is_refused_at_a_parent_slot() {
 
 /// FR-359-AC-4, FR-359-AC-5: equality is over one static type; a child and
 /// its parent are different static types and stay `ill_typed`.
-#[trace("FR-359-AC-4", "TC-999")]
+#[trace("FR-359-AC-4", "TC-999", "QSpec-TC-194", "QSpec-FR-149-AC-17")]
 #[test]
 fn equality_over_a_child_and_a_parent_static_type_stays_ill_typed() {
     check(
@@ -255,7 +255,7 @@ fn refused_with_events(declarations: &str) -> Vec<CheckRefusal> {
 /// event operands, and over an optional or a sequence of events, are `ill_typed`/`operator-ineligible` whether or not the
 /// two operands have one type. Each refusal is located in the comparing
 /// function's own body.
-#[trace("FR-359-AC-5", "TC-999")]
+#[trace("FR-359-AC-5", "TC-999", "QSpec-TC-194", "QSpec-FR-149-AC-18")]
 #[test]
 fn equality_over_event_operands_stays_refused() {
     for (function, declaration) in [
@@ -288,6 +288,26 @@ fn equality_over_event_operands_stays_refused() {
                 Origin::Body { function: found, .. } if found == function),
             "{function}: {:?}",
             refusals[0].location
+        );
+    }
+}
+
+/// QSpec FR-149-AC-18: a `Set`, `Bag` or `OrderedSet` of an event type is
+/// `ill_typed`/`operator-ineligible`, the same reason as `=` over an event
+/// (FR-144's membership relation).
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-18")]
+#[test]
+fn a_set_bag_or_ordered_set_of_events_is_operator_ineligible() {
+    for kind in ["Set", "Bag", "OrderedSet"] {
+        let declaration = format!(
+            "function pooled using v(a: {kind}<M::Shipped>[0, 2], b: {kind}<M::Shipped>[0, 2]): Boolean pure {{ a = b }}"
+        );
+        let refusals = refused_with_events(&declaration);
+        assert!(
+            !refusals.is_empty()
+                && refusals.iter().all(|refusal| refusal.cause
+                    == CheckCause::IllTyped(IllTypedCause::OperatorIneligible)),
+            "{kind}: {refusals:?}"
         );
     }
 }
@@ -389,7 +409,7 @@ fn an_event_type_is_one_model_owned_event_type_node_in_a_package() {
 /// FR-359-AC-11: the declaration key a model record has in the type
 /// environment is its model node's key; two units that select the model under
 /// different aliases give every record the same key.
-#[trace("FR-359-AC-11", "TC-1000")]
+#[trace("FR-359-AC-11", "TC-1000", "QSpec-TC-188", "QSpec-FR-143-AC-17")]
 #[test]
 fn a_model_record_key_is_its_model_node_key_whatever_the_alias() {
     let keys = |alias: &str| {

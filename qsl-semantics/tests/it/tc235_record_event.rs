@@ -102,7 +102,7 @@ fn tc235_m16_process_field_invariant_and_operation_sources_are_bound() {
     });
 
     let package = read_k2(&document).expect("M16 fixture passes the reader");
-    let view = record_charges(&package, 25);
+    let view = record_charges(&package, 26);
     assert_eq!(
         field_for(&package, "Fulfilment/attempts").value_type,
         ValueTypeRef::Native(qsl_semantics::model::domain_package::NativeValueType::Integer),
@@ -841,7 +841,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     });
 
     let package = read_k2(&document).expect("M22 K2 plus Flags passes the reader");
-    let view = record_charges(&package, 25);
+    let view = record_charges(&package, 27);
 
     let bytes = serde_json::to_vec(&document).expect("M22 package serializes");
     let packages = package_input([bytes.as_slice()]).unwrap();
@@ -993,7 +993,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
     });
 
     let package = read_k2(&document).expect("M13 K2 source reads");
-    let view = record_charges(&package, 26);
+    let view = record_charges(&package, 27);
     let money_type = view.type_identities()[&key("Money")].clone();
     let invariant = clause_for(&package, "Money/NonNegative");
     assert_eq!(invariant.owner, key("Money"));
@@ -1073,7 +1073,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
         order["fields"].as_array_mut().unwrap().push(discount);
     });
     let pre_package = read_k2(&pre_document).expect("M13 pre-read clause is retained as source");
-    record_charges(&pre_package, 26);
+    record_charges(&pre_package, 27);
     assert_eq!(
         clause_for(&pre_package, "Money/NonNegative").text,
         "pre(self.amount_minor) >= 0",

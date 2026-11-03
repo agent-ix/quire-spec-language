@@ -100,9 +100,9 @@ fn view_over(wobble: bool) -> EffectiveView {
     let bytes = model_document_over(wobble);
     let document = qsl_semantics::model::intake::PackageDocument::parse(
         &bytes,
-        qsl_foundation::IntakeLimits {
-            input_bytes: u64::MAX,
-        },
+        qsl_foundation::IntakeLimits::default()
+            .with_input_bytes(u64::MAX)
+            .with_sequence_maximum(u32::MAX),
     )
     .expect("the existing Semantic IR fixture parses");
     let selection = DomainPackageRef {

@@ -52,7 +52,7 @@ pub use lifecycle::{
     parse, preflight_unit_list, refusal_or_fault, select, AdmittedModels, AdmittedUnitList,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
-pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation};
+pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.
@@ -127,12 +127,12 @@ pub use clause::{
     admit_progress, run_clause, run_clause_with_temporal_selections, ClauseArgument,
     ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
     ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
-    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, LedgerBinding,
-    ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
-    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLimitReached,
-    ProgressRefusal, ProgressValue, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedObservation,
-    TraceInput,
+    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, ContradictedDimension,
+    LedgerBinding, ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
+    ProgressLimitReached, ProgressRefusal, ProgressValue, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TimestampedObservation, TraceInput,
 };
 mod refinement;
 pub use refinement::{
@@ -413,6 +413,7 @@ impl CompileRefusal {
                 | Setting::EnvironmentWorkUnits
                 | Setting::IdentityInputBytes => SpineStage::Assembly,
                 Setting::ModelDeclarationRecords
+                | Setting::ModelSequenceMaximum
                 | Setting::ModelDerivationFacts
                 | Setting::ModelEffectiveDeclarations
                 | Setting::ModelDispatchCandidates

@@ -3475,8 +3475,13 @@ pub(crate) mod checking_tests {
                 CheckContext::new(&declarations, limits, meter, &mut diagnostics, &mut scopes);
             match ValueFunctionFamily::check(&form, &mut cx) {
                 Ok(_) => None,
-                Err(StageFailure::Limit(exceeded)) => Some(exceeded),
+                Err(
+                    StageFailure::Limit(exceeded) | StageFailure::LimitWithPayload(exceeded, ()),
+                ) => Some(exceeded),
                 Err(StageFailure::Refused(refusal)) => panic!("unexpected refusal {refusal:?}"),
+                Err(StageFailure::RefusedWithPayload(refusal, ())) => {
+                    panic!("unexpected refusal {refusal:?}")
+                }
                 Err(StageFailure::Cancelled(cause)) => panic!("unexpected cancellation {cause:?}"),
                 Err(StageFailure::Fault(fault)) => panic!("unexpected fault {fault:?}"),
             }
@@ -3538,8 +3543,12 @@ pub(crate) mod checking_tests {
                     let _checked = staged.into_value();
                     Seen::Checked
                 }
-                Err(StageFailure::Refused(_)) => Seen::Refused,
-                Err(StageFailure::Limit(exceeded)) => Seen::Limit(exceeded.kind()),
+                Err(StageFailure::Refused(_) | StageFailure::RefusedWithPayload(_, ())) => {
+                    Seen::Refused
+                }
+                Err(
+                    StageFailure::Limit(exceeded) | StageFailure::LimitWithPayload(exceeded, ()),
+                ) => Seen::Limit(exceeded.kind()),
                 Err(StageFailure::Cancelled(cause)) => panic!("unexpected cancellation {cause:?}"),
                 Err(StageFailure::Fault(fault)) => panic!("unexpected fault {fault:?}"),
             }

@@ -650,6 +650,99 @@ fn compound_unit_preimages_identify_by_terms_and_mutations_refuse() {
     );
 }
 
+/// `patch` (RFC 6902 `replace` and `move` over objects and arrays) applied to
+/// `base`.
+fn patched(base: &Value, patch: &Value) -> Value {
+    let mut document = base.clone();
+    for operation in patch.as_array().expect("a patch is an array") {
+        let path = operation["path"].as_str().expect("a path");
+        match operation["op"].as_str().expect("an op") {
+            "replace" => {
+                *document
+                    .pointer_mut(path)
+                    .expect("the replaced path exists") = operation["value"].clone();
+            }
+            "move" => {
+                let from = operation["from"].as_str().expect("a source path");
+                let (from_parent, from_index) = from.rsplit_once('/').expect("a pointer");
+                let moved = document
+                    .pointer_mut(from_parent)
+                    .and_then(Value::as_array_mut)
+                    .expect("the source parent is an array")
+                    .remove(from_index.parse().expect("an array index"));
+                let (parent, index) = path.rsplit_once('/').expect("a pointer");
+                document
+                    .pointer_mut(parent)
+                    .and_then(Value::as_array_mut)
+                    .expect("the target parent is an array")
+                    .insert(index.parse().expect("an array index"), moved);
+            }
+            other => panic!("the vectors use only replace and move, not {other}"),
+        }
+    }
+    document
+}
+
+/// FR-142-AC-8: the published `quire.value.compound-unit/v1` vectors are
+/// schema-valid and each authored noncanonical mutation, including a `-0`
+/// exponent, is refused by exactly the check it names (`schema`: the
+/// preimage reader; `semantic`: the unit graph's term check). Fails when
+/// `QSPEC_DIR` is unset; `make conformance` sets it.
+#[trace("QSpec-TC-233", "QSpec-FR-142-AC-8")]
+#[test]
+fn published_compound_unit_vectors_admit_and_each_mutation_is_refused_by_its_named_check() {
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/quire-v1/definitions/value-compound-unit-vectors.json");
+    let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("reading {path:?}: {error}"));
+    let vectors: Value = serde_json::from_slice(&bytes).expect("the vectors are JSON");
+    let graph = Nodes::default().admit().unwrap();
+
+    let admitted = vectors["vectors"].as_array().expect("vectors");
+    assert!(!admitted.is_empty());
+    for vector in admitted {
+        let preimage = CompoundUnitPreimage::from_json(vector["identity"].clone())
+            .unwrap_or_else(|refusal| panic!("{}: {refusal:?}", vector["name"]));
+        assert!(preimage.id().is_some(), "{}", vector["name"]);
+    }
+
+    let mutations = vectors["invalid_mutations"].as_array().expect("mutations");
+    let mut named = std::collections::BTreeSet::new();
+    for mutation in mutations {
+        let name = mutation["name"].as_str().expect("a name");
+        let base = admitted
+            .iter()
+            .find(|vector| vector["name"] == mutation["base"])
+            .unwrap_or_else(|| panic!("{name}: the base vector exists"));
+        let mutated = patched(&base["identity"], &mutation["patch"]);
+        match mutation["refused_by"].as_str().expect("refused_by") {
+            "schema" => assert_eq!(
+                CompoundUnitPreimage::from_json(mutated),
+                Err(InvalidCompoundUnit {
+                    cause: CompoundUnitCause::NonCanonicalPreimage
+                }),
+                "{name}"
+            ),
+            "semantic" => {
+                let preimage = CompoundUnitPreimage::from_json(mutated)
+                    .unwrap_or_else(|refusal| panic!("{name} is schema-valid: {refusal:?}"));
+                let cause = graph.compound_unit(preimage.terms()).expect_err(name).cause;
+                let expected = match name {
+                    "zero-exponent" => CompoundUnitCause::ZeroExponent,
+                    "duplicate-term" => CompoundUnitCause::DuplicateTerm,
+                    "unsorted-terms" => CompoundUnitCause::UnsortedTerms,
+                    other => panic!("an unnamed semantic mutation {other}"),
+                };
+                assert_eq!(cause, expected, "{name}");
+            }
+            other => panic!("{name}: an unknown refuser {other}"),
+        }
+        named.insert(name.to_owned());
+    }
+    assert!(named.contains("negative-zero-exponent"), "{named:?}");
+}
+
 // ---- TC-411: the two-domain UnitId ---------------------------------------------
 
 /// TC-411: a declared unit's `UnitId` is its node key under the

@@ -834,7 +834,9 @@ fn reference_elements(value: &Value) -> Vec<ObjectReference> {
     "QSpec-TC-198",
     "QSpec-FR-153-AC-1",
     "QSpec-FR-153-AC-5",
-    "QSpec-FR-153-AC-6"
+    "QSpec-FR-153-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
 )]
 fn l12_all_instances_expression_selects_subtype_population_once() {
     let scenario = scenario();
@@ -1163,7 +1165,13 @@ fn l14_lookup_expression_undefined_mode() {
 /// through the real checker/evaluator — backing FR-153-AC-2 and FR-153-AC-4's
 /// `Option<Reference<T>>` Outputs shape for `empty` mode specifically.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-2",
+    "QSpec-FR-153-AC-4",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l15_lookup_expression_empty_mode() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1219,6 +1227,41 @@ fn l15_lookup_expression_empty_mode() {
             assert!(option.payload().is_none());
         }
         other => panic!("expected a completed none option, got {other:?}"),
+    }
+}
+
+/// FR-143-AC-18 (TC-188): `(lookup<M::A>(p, r) absent empty) = absent` takes
+/// the `none` of the lookup's `Option<Reference<M::A>>`: true for a key the
+/// population does not hold and false for one it holds.
+#[test]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-18")]
+fn the_empty_lookup_equals_absent_exactly_when_the_key_is_not_held() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(scenario.a.clone());
+    let expression = equal(lookup(target, AbsenceMode::Empty), Expression::absent());
+    for (reference_type, object, expected) in
+        [(&scenario.b, "b1", false), (&scenario.a, "c9", true)]
+    {
+        let parameters = [
+            ("p", ValueType::Population(Some(3))),
+            ("r", ValueType::Reference(reference_type.clone())),
+        ];
+        let (outcome, _) = run(
+            &package,
+            &parameters,
+            &expression,
+            vec![
+                population_argument(&scenario),
+                Value::Reference(object_reference(&scenario.universe, reference_type, object)),
+            ],
+            SCALAR_UNLIMITED,
+            &objects(&scenario),
+        );
+        let Outcome::Completed(Value::Boolean(held)) = outcome else {
+            panic!("{object}: a completed Boolean, not {outcome:?}");
+        };
+        assert_eq!(held, expected, "{object}");
     }
 }
 
@@ -1416,7 +1459,13 @@ fn a_surviving_object_compares_equal_across_pre_and_post() {
 /// operands denote `b1`, so the comparison is `true`; the same query for a
 /// reference to `a1` against `b1` is `false`.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6", "QSpec-FR-149-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-6",
+    "QSpec-FR-149-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l08_upcast_lookup_result_equals_the_subtype_reference() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1584,7 +1633,12 @@ fn integer_of(value: Value) -> Integer {
 /// holds a `B` resolves `x`, a field `A` declares and `B` inherits, and
 /// reads `b1`'s inherited slot.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l11_deref_through_a_supertype_reference_reads_an_inherited_field() {
     let scenario = scenario();
     let (package, objects) = attribute_world(

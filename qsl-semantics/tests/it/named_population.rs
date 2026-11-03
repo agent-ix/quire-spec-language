@@ -134,7 +134,7 @@ fn population(graph: &CheckedGraph, name: &str) -> DomainKey {
 /// TC-1076 rows 1 and 2 (FR-391-AC-1): `Room` checks as a `Precondition`,
 /// the operand typed `Population<Counter>`, the result `Set<Reference<Counter>>`
 /// and every read at `pre`; `Cap` reads at `current`.
-#[trace("TC-1076", "FR-391-AC-1")]
+#[trace("TC-1076", "FR-391-AC-1", "QSpec-TC-198", "QSpec-FR-153-AC-12")]
 #[test]
 fn a_precondition_and_an_invariant_name_a_population_as_an_operand() {
     let graph = checked(false, &format!("{ROOM}\n{CAP}")).graph;
@@ -164,7 +164,7 @@ fn a_precondition_and_an_invariant_name_a_population_as_an_operand() {
 /// TC-1076 row 3 (FR-391-AC-2): `M::nothing` as the operand refuses
 /// `missing_declaration`/`missing-name`; an alias `M` that is also an enum
 /// name refuses `ambiguous_declaration`/`ambiguous-name` at the name.
-#[trace("TC-1076", "FR-391-AC-2")]
+#[trace("TC-1076", "FR-391-AC-2", "QSpec-TC-198", "QSpec-FR-153-AC-13")]
 #[test]
 fn an_unknown_population_or_an_alias_that_is_also_an_enum_refuses() {
     let (code, cause, at) = refused(
@@ -209,7 +209,7 @@ fn an_unknown_population_or_an_alias_that_is_also_an_enum_refuses() {
 /// by `let`, measured by `size` or returned as the body it refuses
 /// `ill_typed`/`operator-ineligible` at the name; `M::Counter` names a type,
 /// so as a value it refuses `missing_declaration`/`missing-name`.
-#[trace("TC-1076", "FR-391-AC-3")]
+#[trace("TC-1076", "FR-391-AC-3", "QSpec-TC-198", "QSpec-FR-153-AC-13")]
 #[test]
 fn a_population_as_a_value_refuses_as_operator_ineligible() {
     let clause = |body: &str| format!("invariant V using v on M::Counter at current {{ {body} }}");
@@ -240,7 +240,7 @@ fn a_population_as_a_value_refuses_as_operator_ineligible() {
 /// and `counters` a bounded domain; with `archive` a clause on `M::Counter`
 /// is ambiguous at its `on` whichever population it names; a clause on
 /// `M::Widget` naming `M::counters` records `widgets` and `counters`.
-#[trace("TC-1076", "FR-391-AC-4")]
+#[trace("TC-1076", "FR-391-AC-4", "QSpec-TC-198", "QSpec-FR-153-AC-12")]
 #[test]
 fn a_bound_names_a_bounded_domain_and_a_named_population_is_a_domain() {
     let unbounded = checked(false, ROOM).graph;
@@ -409,7 +409,7 @@ fn a_population_is_the_domain_of_a_quantifier_a_count_and_a_holds_atom() {
 /// `unsupported_construct`/`expression-form` at its span. The type-level
 /// invariant case has no fixture here (a domain-package clause record), so
 /// the test claims no criterion.
-#[trace("TC-1076")]
+#[trace("TC-1076", "QSpec-TC-198", "QSpec-FR-153-AC-13")]
 #[test]
 fn a_function_body_names_no_population_and_seq_stays_refused() {
     let (code, cause, at) = refused(
@@ -430,4 +430,27 @@ fn a_function_body_names_no_population_and_seq_stays_refused() {
         ("unsupported_construct", "expression-form")
     );
     assert_eq!(at, "seq(i in 0 .. 2: i)");
+}
+
+/// QSpec FR-149-AC-21 (`count`): `count(..)` is an `Integer`, so against an
+/// `Int[0, 2]` operand, on either side, it is `ill_typed`/`type-mismatch`
+/// without a `convert`.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-21")]
+#[test]
+fn a_count_against_an_int_operand_is_a_type_mismatch() {
+    for comparison in [
+        "o.v = count(p in M::counters where true)",
+        "count(p in M::counters where true) = o.v",
+    ] {
+        let declaration = format!(
+            "invariant N using v on M::Counter at current {{ \
+             forall(o in allInstances<M::Counter>(M::counters) : {comparison}) }}"
+        );
+        let (code, cause, _) = refused(false, &declaration);
+        assert_eq!(
+            (code.as_str(), cause.as_str()),
+            ("ill_typed", "type-mismatch"),
+            "{comparison}"
+        );
+    }
 }

@@ -123,7 +123,7 @@ fn a_quantity_literal_evaluates_with_its_own_unit_magnitude() {
 
 /// FR-497-AC-4 (TC-1287): a source-checked carried conversion returns its
 /// exact value with the target carrier admitted as the function result.
-#[trace("FR-497-AC-4", "TC-1287")]
+#[trace("FR-497-AC-4", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-28")]
 #[test]
 fn a_carried_quantity_conversion_returns_a_carried_value() {
     let package = package();
@@ -145,7 +145,15 @@ fn a_carried_quantity_conversion_returns_a_carried_value() {
 
 /// FR-497-AC-4/5/7 (TC-1287): rounding, exact refusals, carrier bounds and
 /// conversion back to an uncarried quantity retain their checked behavior.
-#[trace("FR-497-AC-4", "FR-497-AC-5", "FR-497-AC-7", "TC-1287")]
+#[trace(
+    "FR-497-AC-4",
+    "FR-497-AC-5",
+    "FR-497-AC-7",
+    "TC-1287",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-28",
+    "QSpec-FR-142-AC-29"
+)]
 #[test]
 fn carried_quantity_rounding_refusal_and_back_conversion() {
     let package = package();
@@ -247,7 +255,7 @@ fn carried_quantity_rounding_refusal_and_back_conversion() {
 
 /// FR-497-AC-6 (TC-1287): records and collections retain equality when their
 /// fields or elements have the same carried quantity type.
-#[trace("FR-497-AC-6", "TC-1287")]
+#[trace("FR-497-AC-6", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-30")]
 #[test]
 fn records_and_collections_compare_same_typed_carried_quantities() {
     let package = package();
@@ -260,7 +268,7 @@ fn records_and_collections_compare_same_typed_carried_quantities() {
 /// FR-497-AC-2 (TC-1287): a carried value refuses as an arithmetic,
 /// negation, equality or ordering operand, and a conversion to an unlike
 /// dimension refuses during checking before an evaluator or meter exists.
-#[trace("FR-497-AC-2", "TC-1287")]
+#[trace("FR-497-AC-2", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-27")]
 #[test]
 fn a_carried_quantity_is_not_an_arithmetic_operand() {
     let source = format!(
@@ -325,7 +333,7 @@ fn a_carried_quantity_is_not_an_arithmetic_operand() {
 
 /// FR-497-AC-2 (TC-1287): exponentiation spelling is refused by the source
 /// reader, so a carried quantity can never reach an evaluator as `a ** 2`.
-#[trace("FR-497-AC-2", "TC-1287")]
+#[trace("FR-497-AC-2", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-27")]
 #[test]
 fn a_carried_quantity_exponent_expression_is_not_admitted() {
     let source = format!(
