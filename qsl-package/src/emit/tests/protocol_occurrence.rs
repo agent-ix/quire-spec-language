@@ -184,6 +184,56 @@ fn w_schema_holds_the_slots_the_owners_and_the_template() {
     );
 }
 
+/// The structural key of the selected `acme/orders` object type `name`.
+fn object_type(name: &str) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "acme/orders",
+        ["model", "object_type", &format!("ix://acme/orders/{name}")]
+            .into_iter()
+            .map(|segment| quire_exact::PathSegment::Text(segment.to_owned()))
+            .collect(),
+        0,
+    )
+    .expect("a structural key")
+}
+
+/// QSL-1579: each role slot carries the selected model type node it is `on`,
+/// equally in process and after the package IR's read, and that node is an
+/// emitted `object_type` node of the selected package.
+#[trace("FR-384-AC-1", "TC-1064")]
+#[test]
+fn role_slots_carry_their_selected_model_type_through_read_back() {
+    let lowered = lower_with(document(), PROFILES_W, W);
+    let occurrence = only(parity(&lowered));
+    let models: Vec<_> = occurrence
+        .schema
+        .roles
+        .iter()
+        .map(|role| (last(&role.path), role.model.clone()))
+        .collect();
+    assert_eq!(
+        models,
+        [
+            ("Fulfillment", object_type("Shipment")),
+            ("Orders", object_type("OrderView")),
+            ("Payments", object_type("Payment")),
+        ],
+        "each role slot names its authored model type"
+    );
+    let ir = lowered.ir.as_ref().expect("IR admits fixture W");
+    let graph = crate::checked_v2::wire_graph(ir).expect("wire identities decode");
+    for (_, model) in &models {
+        assert!(
+            ir.graph()
+                .nodes
+                .iter()
+                .any(|node| &*node.semantic_form == "object_type"
+                    && graph.key(&node.node_id).ok().as_ref() == Some(model)),
+            "{model:?} is an emitted object type node"
+        );
+    }
+}
+
 #[trace("FR-384-AC-1", "TC-1064")]
 #[test]
 fn an_await_and_a_fence_are_structural() {
@@ -354,7 +404,7 @@ fn w_holds_no_runtime_value_and_parity_holds_across_variants() {
 fn same_named_roles_and_controls_of_two_protocols_are_distinct_entries() {
     let protocol = |name: &str| {
         format!(
-            "protocol {name} using v over (input: M::Order) on origin {{\n\
+            "protocol {name} using p over (input: M::Order) on origin {{\n\
              role Payer on M::Order;\n\
              run sequence Main {{ check Charge using v {{ true }}; }}\n\
              finish End as (outcome: Boolean) {{ true }};\n}}\n"
@@ -503,7 +553,7 @@ fn requirements_are_exactly_the_subject_kinds_of_the_operator_table() {
 #[trace("FR-384-AC-5", "TC-1064")]
 #[test]
 fn a_replicated_role_is_marked_one_for_each_spawned_object() {
-    let source = "protocol Flow using v over (input: M::Order) on origin {\n\
+    let source = "protocol Flow using p over (input: M::Order) on origin {\n\
         role Static on M::Person;\n\
         role Agent each M::Person from people max 3 lifetime workflow;\n\
         run sequence Main { }\n\

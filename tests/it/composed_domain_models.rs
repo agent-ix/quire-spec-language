@@ -674,6 +674,46 @@ fn architecture_fixture_binds_references_through_spine_i2() {
         !emitted.package().bytes().is_empty(),
         "the checked package carrying the bindings emits"
     );
+    // QSL-1579: the checked-package round trip keeps each role's selected
+    // model type. A Port role is on the Port's owning object type; the Port
+    // key itself has no carrier on the current CheckedPackageV2 role layout.
+    let read = crate::emit_checked_v2::read_back(emitted.package().bytes(), &[bytes.as_slice()]);
+    let in_process = checked
+        .package()
+        .protocol_occurrence_schemas()
+        .expect("in-process occurrence schema");
+    let read_back = qsl_package::protocol_occurrence_schemas_from_read(&read)
+        .expect("read-back occurrence schema");
+    assert_eq!(in_process, read_back, "in-process/read-back parity");
+    let role_model = |name: &str| {
+        read_back
+            .iter()
+            .flat_map(|occurrence| &occurrence.schema.roles)
+            .find(|role| role.path.last().map(String::as_str) == Some(name))
+            .unwrap_or_else(|| panic!("read-back role {name}"))
+            .model
+            .clone()
+    };
+    let sys = quire_exact::NodeKey::new(
+        PACKAGE,
+        ["model", "object_type", &format!("ix://{PACKAGE}/Sys")]
+            .into_iter()
+            .map(|segment| quire_exact::PathSegment::Text(segment.to_owned()))
+            .collect(),
+        0,
+    )
+    .expect("a structural key");
+    assert_eq!(
+        role_model("Outlet"),
+        sys,
+        "the Port role reads back on the Port's owning object type"
+    );
+    assert_eq!(
+        role_model("Operator"),
+        sys,
+        "the whole-type role reads back on the same object type, so only a \
+         role `model_member` carrier can tell the Port role apart"
+    );
     assert!(
         checked
             .package()
