@@ -539,7 +539,7 @@ fn architecture_fixture_binds_references_through_spine_i2() {
          }}\n\
          predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n"
     );
-    let source = SourceIdentity::new("agent-ix", "test:tc-1308-fcd-i2", "fixture", "fixture:1");
+    let source = SourceIdentity::new("agent-ix", "test:tc-1308-fcd-i2");
     let cancel = Cancel::new();
     let limits = qsl_replay::spine::SpineLimits::default();
     let failure = |failure| {

@@ -255,6 +255,12 @@ pub struct AdmittedModel {
     pub(crate) units: Vec<crate::model::domain_package::PackageUnitRecord>,
     types: BTreeMap<EffectiveId, DeclarationKey>,
     index: std::sync::Arc<crate::model::index::ModelIndex>,
+    /// The systems kind mapping, computed at most once under the same limits
+    /// as the effective view. Protocol relationship references reuse this
+    /// admitted projection instead of rescanning the whole package.
+    systems: std::sync::OnceLock<Option<crate::model::systems::SystemsClassification>>,
+    /// The limits under which the package's effective view was normalized.
+    normalization_limits: crate::model::accounting::ModelNormalizationLimits,
     /// Each type's direct supertypes, from the inherit facts of its effective
     /// declaration; ancestry beyond one edge is followed on demand.
     supertypes: BTreeMap<DeclarationKey, Vec<DeclarationKey>>,
@@ -430,7 +436,7 @@ impl AdmittedModel {
     /// endpoints do not resolve to their owner types, or the connection's
     /// admission rule refuses it.
     pub(crate) fn admitted_connection_ends(&self, key: &DeclarationKey) -> Option<[ValueType; 2]> {
-        use crate::model::accounting::{Meter, ModelNormalizationLimits};
+        use crate::model::accounting::Meter;
         use crate::model::systems::{
             check_connection, classify, ConnectionCheckOutcome, ConnectionOutcome, Kind,
         };
@@ -438,13 +444,19 @@ impl AdmittedModel {
         let DomainPackageRecord::Relationship(relationship) = self.records.get(key)? else {
             return None;
         };
-        let mut meter = Meter::new(ModelNormalizationLimits::default());
-        let systems = classify(self.index.package(), &mut meter).ok()?;
+        let systems = self
+            .systems
+            .get_or_init(|| {
+                let mut meter = Meter::new(self.normalization_limits);
+                classify(self.index.package(), &mut meter).ok()
+            })
+            .as_ref()?;
         if systems.actual_kind(key) != Kind::Connection {
             return None;
         }
+        let mut meter = Meter::new(self.normalization_limits);
         if !matches!(
-            check_connection(&self.index, &systems, key, &mut meter),
+            check_connection(&self.index, systems, key, &mut meter),
             ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted)
         ) {
             return None;
@@ -865,6 +877,8 @@ impl AdmittedModel {
     fn assemble(domain_package: &DomainPackage, view: &EffectiveView) -> Self {
         Self {
             index: view.shared_model_index().clone(),
+            systems: std::sync::OnceLock::new(),
+            normalization_limits: *view.effective_limits(),
             supertypes: view
                 .declarations()
                 .iter()
@@ -922,6 +936,8 @@ impl AdmittedModel {
             index: std::sync::Arc::new(crate::model::index::ModelIndex::build(
                 domain_package.clone(),
             )),
+            systems: std::sync::OnceLock::new(),
+            normalization_limits: crate::model::accounting::ModelNormalizationLimits::default(),
             supertypes: BTreeMap::new(),
             alias: None,
             population_bounds: BTreeMap::new(),

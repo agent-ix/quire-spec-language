@@ -170,7 +170,7 @@ fn predicate_calls_from_each_clause_family_share_one_checked_callee() {
         "finish End as (outcome: Boolean) { true }; }\n",
     );
     let emitted = crate::support::front_end::emitted(
-        SourceIdentity::new("agent-ix", "test:tc-1308-calls", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:tc-1308-calls"),
         "predicate-calls.native",
         unit.as_bytes(),
         &packages,
@@ -309,7 +309,7 @@ fn recursive_predicate_cycles_without_measures_refuse_on_the_spine() {
         "predicate B using v(x: Boolean): Boolean { A(x) }\n",
     );
     let refusal = crate::support::front_end::emitted(
-        SourceIdentity::new("agent-ix", "test:tc-1308-recursion", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:tc-1308-recursion"),
         "recursive-predicates.native",
         unit.as_bytes(),
         &BTreeMap::new(),
@@ -355,7 +355,7 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
              profile v = \"quire.value.complete/v1\";\n{declarations}"
         );
         let result = crate::support::front_end::emitted(
-            SourceIdentity::new("agent-ix", identity, "fixture", "fixture:1"),
+            SourceIdentity::new("agent-ix", identity),
             "predicate-errors.native",
             unit.as_bytes(),
             &BTreeMap::new(),
@@ -506,12 +506,7 @@ fn empty_collection_queries_return_their_defined_identity_on_the_spine() {
         Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
     );
     let empty = quire_exact::from_admitted(sequence_type, Vec::new());
-    let source = SourceIdentity::new(
-        "agent-ix",
-        "test:tc-1308-empty-query",
-        "fixture",
-        "fixture:1",
-    );
+    let source = SourceIdentity::new("agent-ix", "test:tc-1308-empty-query");
     let cancel = Cancel::new();
     let limits = qsl_replay::spine::SpineLimits::default();
     let failure = |failure| {
@@ -651,12 +646,7 @@ fn nested_predicate_query_stops_at_work_and_result_boundaries_on_the_spine() {
         "predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }\n",
         "function nested using v(groups: Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3]): Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3] pure { map(group in groups: filter(item in group: Positive(item))) }\n",
     );
-    let source = SourceIdentity::new(
-        "agent-ix",
-        "test:tc-1308-query-budgets",
-        "fixture",
-        "fixture:1",
-    );
+    let source = SourceIdentity::new("agent-ix", "test:tc-1308-query-budgets");
     let cancel = Cancel::new();
     let limits = qsl_replay::spine::SpineLimits::default();
     let packages = BTreeMap::new();
@@ -805,12 +795,7 @@ fn query_inputs_reject_before_evaluation_and_keep_nested_occurrence_order() {
         "function preserve using v(s: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { map(item in s: item) }\n",
         "function preserveNested using v(s: Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3]): Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3] pure { map(group in s: map(item in group: item)) }\n",
     );
-    let source = SourceIdentity::new(
-        "agent-ix",
-        "test:tc-1308-query-inputs",
-        "fixture",
-        "fixture:1",
-    );
+    let source = SourceIdentity::new("agent-ix", "test:tc-1308-query-inputs");
     let cancel = Cancel::new();
     let limits = qsl_replay::spine::SpineLimits::default();
     let packages = BTreeMap::new();
