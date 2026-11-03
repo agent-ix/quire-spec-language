@@ -764,7 +764,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     wrong_source.source = crate::ReplaySource::ObservedTemporal(Box::new(envelope));
     let refusal = replay_observed(wrong_source, crate::ReplayLimits::default())
         .expect_err("the observed temporal source must be a witness envelope");
-    assert_eq!(refusal.pointer(), Some("/replay/source"));
+    assert_eq!(refusal.pointer().as_deref(), Some("/replay/source"));
     assert_eq!(refusal.code().as_str(), "invalid_runtime_input");
     assert_eq!(refusal.cause(), Some("invalid-value"));
 
@@ -786,7 +786,10 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     wrong_target.replay_target.over = None;
     let refusal = replay_observed(wrong_target, crate::ReplayLimits::default())
         .expect_err("the observed temporal arm requires a state-clause target");
-    assert_eq!(refusal.pointer(), Some("/replay/observed_counterexample"));
+    assert_eq!(
+        refusal.pointer().as_deref(),
+        Some("/replay/observed_counterexample")
+    );
     assert_eq!(refusal.cause(), Some("unknown-member"));
 
     let mut ordinary_state_clause = observed_replay_request(
@@ -817,7 +820,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     let refusal = replay_observed(mismatched_position, crate::ReplayLimits::default())
         .expect_err("the envelope and payload positions must agree");
     assert_eq!(
-        refusal.pointer(),
+        refusal.pointer().as_deref(),
         Some("/replay/observed_counterexample/trace_position")
     );
     assert_eq!(refusal.code().as_str(), "invalid_runtime_input");
@@ -837,7 +840,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     let refusal = replay_observed(empty_loop, crate::ReplayLimits::default())
         .expect_err("an observed lasso cannot have an empty loop");
     assert_eq!(
-        refusal.pointer(),
+        refusal.pointer().as_deref(),
         Some("/replay/observed_counterexample/loop")
     );
     assert_eq!(refusal.cause(), Some("invalid-value"));
@@ -863,7 +866,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     let refusal = replay_observed(out_of_range, crate::ReplayLimits::default())
         .expect_err("the decoded position must lie in the observed trace");
     assert_eq!(
-        refusal.pointer(),
+        refusal.pointer().as_deref(),
         Some("/replay/observed_counterexample/trace_position")
     );
     assert_eq!(refusal.cause(), Some("invalid-value"));

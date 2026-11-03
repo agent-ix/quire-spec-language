@@ -2184,7 +2184,7 @@ fn assert_wrong_target(refusal: &ReplayRefusal, entry: crate::ReplayEntry, point
     };
     assert_eq!(*named, entry);
     assert_eq!(*member, crate::TargetMember::Function);
-    assert_eq!(refusal.pointer(), Some(pointer));
+    assert_eq!(refusal.pointer().as_deref(), Some(pointer));
     assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
     assert_eq!(refusal.cause(), Some("unknown-member"));
 }

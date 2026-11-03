@@ -71,6 +71,7 @@ use qsl_semantics::model::observation::{
 };
 use quire_exact::Identifier;
 use quire_semantic_value::catalog::Category;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 mod argument;
@@ -159,6 +160,15 @@ pub enum ReplayRefusal {
     /// owner, or names a document from the byte provision.
     #[error("invalid_package/invalid-value at /package/sources: {0}")]
     PackageSources(&'static str),
+    /// FR-098: one dependency entry's source list is empty, repeats an owner,
+    /// or names a definition document.
+    #[error("invalid_package/invalid-value at /package/dependencies/{index}/sources: {reason}")]
+    DependencySources {
+        /// The dependency entry's zero-based index.
+        index: usize,
+        /// Why the source list is invalid.
+        reason: &'static str,
+    },
     /// The recompile refused at one spine stage, or reached one of the
     /// stage limits the request carries (`stage_limit_exceeded`).
     #[error("the recompile refused at stage {stage}: {refusal}", stage = .0.stage().as_str(), refusal = .0)]
@@ -505,6 +515,7 @@ impl ReplayRefusal {
             Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::SourceCount(_) => Code::InvalidRequest,
             Self::PackageSources(_) => Code::InvalidPackage,
+            Self::DependencySources { .. } => Code::InvalidPackage,
             Self::InvalidPackageName(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.code(),
@@ -571,6 +582,7 @@ impl ReplayRefusal {
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::PackageSources(_) => Some("invalid-value"),
+            Self::DependencySources { .. } => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
@@ -638,32 +650,45 @@ impl ReplayRefusal {
     /// counterexample member. The member names are the wire's, so this is a
     /// string edge.
     #[ix_trace_rs::string_edge]
-    pub fn pointer(&self) -> Option<&'static str> {
+    pub fn pointer(&self) -> Option<Cow<'static, str>> {
         match self {
-            Self::Request(refusal) => refusal.pointer(),
-            Self::WrongReplayTarget { target, .. } => Some(target.member().pointer()),
-            Self::WrongObservedTemporalTarget { .. } => Some("/replay/observed_counterexample"),
-            Self::WrongObservedTemporalSource => Some("/replay/source"),
-            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => Some("/replay/source"),
+            Self::Request(refusal) => refusal.pointer().map(Cow::Borrowed),
+            Self::WrongReplayTarget { target, .. } => {
+                Some(Cow::Borrowed(target.member().pointer()))
+            }
+            Self::WrongObservedTemporalTarget { .. } => {
+                Some(Cow::Borrowed("/replay/observed_counterexample"))
+            }
+            Self::WrongObservedTemporalSource => Some(Cow::Borrowed("/replay/source")),
+            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => {
+                Some(Cow::Borrowed("/replay/source"))
+            }
             Self::ObservedTemporalMismatch { member } => Some(match *member {
-                "clause_node" => "/replay/observed_counterexample/clause_node",
-                "occurrence_key" => "/replay/observed_counterexample/occurrence_key",
-                "fairness" => "/replay/observed_counterexample/fairness",
-                "interval" => "/replay/observed_counterexample/interval",
-                "profile_selections" => "/replay/profile_selections",
-                "obligation_identity" => "/replay/obligation_identity",
-                _ => "/replay/source",
+                "clause_node" => Cow::Borrowed("/replay/observed_counterexample/clause_node"),
+                "occurrence_key" => Cow::Borrowed("/replay/observed_counterexample/occurrence_key"),
+                "fairness" => Cow::Borrowed("/replay/observed_counterexample/fairness"),
+                "interval" => Cow::Borrowed("/replay/observed_counterexample/interval"),
+                "profile_selections" => Cow::Borrowed("/replay/profile_selections"),
+                "obligation_identity" => Cow::Borrowed("/replay/obligation_identity"),
+                _ => Cow::Borrowed("/replay/source"),
             }),
             Self::ModelGraphMismatch { member } => Some(match *member {
-                "claim_identity" | "clause_node" => "/replay/source/model_graph/clause_node",
-                "occurrence_key" => "/replay/source/model_graph/occurrence_key",
-                "profile_selections" => "/replay/profile_selections",
-                "declared_domains" => "/replay/declared_domains",
-                "undefined_locus" => "/replay/source/model_graph/undefined/where/locus",
-                _ => "/replay/obligation_identity",
+                "claim_identity" | "clause_node" => {
+                    Cow::Borrowed("/replay/source/model_graph/clause_node")
+                }
+                "occurrence_key" => Cow::Borrowed("/replay/source/model_graph/occurrence_key"),
+                "profile_selections" => Cow::Borrowed("/replay/profile_selections"),
+                "declared_domains" => Cow::Borrowed("/replay/declared_domains"),
+                "undefined_locus" => {
+                    Cow::Borrowed("/replay/source/model_graph/undefined/where/locus")
+                }
+                _ => Cow::Borrowed("/replay/obligation_identity"),
             }),
-            Self::ObservedTemporalInput { pointer, .. } => Some(pointer),
-            Self::PackageSources(_) => Some("/package/sources"),
+            Self::ObservedTemporalInput { pointer, .. } => Some(Cow::Borrowed(pointer)),
+            Self::PackageSources(_) => Some(Cow::Borrowed("/package/sources")),
+            Self::DependencySources { index, .. } => {
+                Some(Cow::Owned(format!("/package/dependencies/{index}/sources")))
+            }
             _ => None,
         }
     }
@@ -1579,7 +1604,8 @@ pub(crate) fn recompile_with_temporal_selections(
     let library_sources = request
         .dependencies()
         .iter()
-        .map(|entry| canonical_dependency_sources(entry.sources()))
+        .enumerate()
+        .map(|(index, entry)| canonical_dependency_sources(request, index, entry.sources()))
         .collect::<Result<Vec<_>, _>>()?;
     let provided = |reference: &DefinitionSourceRef| {
         request.byte_provision().get(reference).ok_or_else(|| {
@@ -1680,11 +1706,32 @@ fn one_source(references: &[DefinitionSourceRef]) -> Result<&DefinitionSourceRef
 
 /// A source reference's two FR-001 labels.
 
-fn canonical_dependency_sources(
-    references: &[DefinitionSourceRef],
-) -> Result<Vec<&DefinitionSourceRef>, ReplayRefusal> {
+fn canonical_dependency_sources<'a>(
+    request: &ReplayRequest,
+    index: usize,
+    references: &'a [DefinitionSourceRef],
+) -> Result<Vec<&'a DefinitionSourceRef>, ReplayRefusal> {
     if references.is_empty() {
-        return Err(ReplayRefusal::SourceCount(0));
+        return Err(ReplayRefusal::DependencySources {
+            index,
+            reason: "the list is empty",
+        });
+    }
+    for (second, source) in references.iter().enumerate() {
+        if references[..second].iter().any(|earlier| {
+            earlier.authority() == source.authority() && earlier.identity() == source.identity()
+        }) {
+            return Err(ReplayRefusal::DependencySources {
+                index,
+                reason: "an owner is repeated",
+            });
+        }
+        if source_names_definition_document(request, source) {
+            return Err(ReplayRefusal::DependencySources {
+                index,
+                reason: "a source reference names a definition document",
+            });
+        }
     }
     let mut canonical = references.iter().collect::<Vec<_>>();
     canonical.sort_by(|left, right| {
@@ -1693,14 +1740,18 @@ fn canonical_dependency_sources(
             .cmp(right.authority().as_bytes())
             .then_with(|| left.identity().as_bytes().cmp(right.identity().as_bytes()))
     });
-    if canonical.windows(2).any(|pair| {
-        pair[0].authority() == pair[1].authority() && pair[0].identity() == pair[1].identity()
-    }) {
-        return Err(ReplayRefusal::PackageSources(
-            "a dependency source owner is repeated",
-        ));
-    }
     Ok(canonical)
+}
+fn source_names_definition_document(request: &ReplayRequest, source: &DefinitionSourceRef) -> bool {
+    request.byte_provision().documents().any(|bytes| {
+        qsl_semantics::model::observation::document_reference(bytes).is_some_and(|document| {
+            document.authority == source.authority()
+                && document.identity == source.identity()
+                && document.revision_namespace == source.revision_namespace()
+                && document.revision == source.revision()
+        })
+    }) || qsl_semantics::model::intake::package_input(request.byte_provision().package_documents())
+        .is_ok_and(|packages| packages.contains_key(source.identity()))
 }
 fn package_sources(request: &ReplayRequest) -> Result<Vec<&DefinitionSourceRef>, ReplayRefusal> {
     let references = request.sources();
@@ -1713,21 +1764,7 @@ fn package_sources(request: &ReplayRequest) -> Result<Vec<&DefinitionSourceRef>,
         }) {
             return Err(ReplayRefusal::PackageSources("an owner is repeated"));
         }
-        if request.byte_provision().documents().any(|bytes| {
-            qsl_semantics::model::observation::document_reference(bytes).is_some_and(|document| {
-                document.authority == source.authority()
-                    && document.identity == source.identity()
-                    && document.revision_namespace == source.revision_namespace()
-                    && document.revision == source.revision()
-            })
-        }) {
-            return Err(ReplayRefusal::PackageSources(
-                "a source reference names a definition document",
-            ));
-        }
-        if qsl_semantics::model::intake::package_input(request.byte_provision().package_documents())
-            .is_ok_and(|packages| packages.contains_key(source.identity()))
-        {
+        if source_names_definition_document(request, source) {
             return Err(ReplayRefusal::PackageSources(
                 "a source reference names a definition document",
             ));

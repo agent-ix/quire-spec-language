@@ -389,7 +389,20 @@ fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
     (replayed, package_bytes)
 }
 
-fn multi_source_dependency_replay(reverse: bool) -> (qsl_replay::ReplayResult, Vec<u8>) {
+fn dependency_reference(identity: &str) -> (String, String, String, String) {
+    (
+        "test".to_owned(),
+        identity.to_owned(),
+        "unit".to_owned(),
+        "1".to_owned(),
+    )
+}
+
+fn multi_source_dependency_request(
+    sources: Vec<(String, String, String, String)>,
+    documents: Vec<Vec<u8>>,
+    extra_source: Option<(String, String, Vec<u8>)>,
+) -> (ReplayRequestWire, Vec<u8>) {
     let first = SuppliedLibrary {
         identity: "test/library".to_owned(),
         source: SourceIdentity::new("test", "library-u1", "unit", "1"),
@@ -402,11 +415,7 @@ fn multi_source_dependency_replay(reverse: bool) -> (qsl_replay::ReplayResult, V
         path: "library-u2.native".to_owned(),
         bytes: LIBRARY_SECOND.as_bytes().to_vec(),
     };
-    let units = if reverse {
-        vec![second.clone(), first.clone()]
-    } else {
-        vec![first.clone(), second.clone()]
-    };
+    let units = vec![first.clone(), second.clone()];
     let dependencies = DependencyInput::new([first.clone()])
         .expect("one library identity admits")
         .with_library_units("test/library", units)
@@ -422,30 +431,31 @@ fn multi_source_dependency_replay(reverse: bool) -> (qsl_replay::ReplayResult, V
     )
     .expect("the call site resolves through the multi-unit dependency");
     let package = selection.package;
-    let dependency_reference = |identity: &str| {
-        (
-            "test".to_owned(),
-            identity.to_owned(),
-            "unit".to_owned(),
-            "1".to_owned(),
-        )
-    };
-    let source_refs = if reverse {
-        vec![
-            dependency_reference("library-u2"),
-            dependency_reference("library-u1"),
-        ]
-    } else {
-        vec![
-            dependency_reference("library-u1"),
-            dependency_reference("library-u2"),
-        ]
-    };
     let dependency = DependencyEntryWire {
         identity: "test/library".to_owned(),
-        sources: source_refs.clone(),
+        sources,
     };
     let target = RequestTargetWire::function(selected(), selection.site.declaration.clone());
+    let mut byte_provision = vec![
+        (
+            AUTHORITY.to_owned(),
+            FIRST_ID.to_owned(),
+            LIBRARY_CALLER.as_bytes().to_vec(),
+        ),
+        (
+            "test".to_owned(),
+            "library-u1".to_owned(),
+            LIBRARY_FIRST.as_bytes().to_vec(),
+        ),
+        (
+            "test".to_owned(),
+            "library-u2".to_owned(),
+            LIBRARY_SECOND.as_bytes().to_vec(),
+        ),
+    ];
+    if let Some(source) = extra_source {
+        byte_provision.push(source);
+    }
     let wire = ReplayRequestWire {
         package_name: "fixture".to_owned(),
         profile_selections: Vec::new(),
@@ -461,25 +471,25 @@ fn multi_source_dependency_replay(reverse: bool) -> (qsl_replay::ReplayResult, V
         supplied_limits: None,
         object_environment: None,
         declared_domains: Vec::new(),
-        byte_provision: vec![
-            (
-                AUTHORITY.to_owned(),
-                FIRST_ID.to_owned(),
-                LIBRARY_CALLER.as_bytes().to_vec(),
-            ),
-            (
-                "test".to_owned(),
-                "library-u1".to_owned(),
-                LIBRARY_FIRST.as_bytes().to_vec(),
-            ),
-            (
-                "test".to_owned(),
-                "library-u2".to_owned(),
-                LIBRARY_SECOND.as_bytes().to_vec(),
-            ),
-        ],
-        documents: Vec::new(),
+        byte_provision,
+        documents,
     };
+    (wire, package)
+}
+
+fn multi_source_dependency_replay(reverse: bool) -> (qsl_replay::ReplayResult, Vec<u8>) {
+    let sources = if reverse {
+        vec![
+            dependency_reference("library-u2"),
+            dependency_reference("library-u1"),
+        ]
+    } else {
+        vec![
+            dependency_reference("library-u1"),
+            dependency_reference("library-u2"),
+        ]
+    };
+    let (wire, package) = multi_source_dependency_request(sources, Vec::new(), None);
     let replayed = replay(wire, ReplayLimits::default())
         .expect("multi-unit dependency recompiles and replays");
     (replayed, package)
@@ -499,6 +509,55 @@ fn replay_accepts_canonical_and_reversed_dependency_unit_sources() {
         result.value(),
         Some(qsl_replay::EvaluatedValue::Boolean(true))
     );
+}
+
+fn assert_dependency_source_list_refusal(mut wire: ReplayRequestWire) {
+    wire.byte_provision[0].2 = b"not valid QSL".to_vec();
+    let refusal = replay(wire, ReplayLimits::default())
+        .expect_err("invalid dependency source lists refuse before source parsing");
+    assert!(matches!(
+        &refusal,
+        ReplayRefusal::DependencySources { index: 0, .. }
+    ));
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("invalid-value"));
+    assert_eq!(
+        refusal.pointer().as_deref(),
+        Some("/package/dependencies/0/sources")
+    );
+}
+
+#[trace("TC-1210", "FR-480-AC-7")]
+#[test]
+fn empty_dependency_source_list_refuses_at_its_sources_pointer() {
+    let (wire, _) = multi_source_dependency_request(Vec::new(), Vec::new(), None);
+    assert_dependency_source_list_refusal(wire);
+}
+
+#[trace("TC-1210", "FR-480-AC-7")]
+#[test]
+fn duplicate_dependency_source_owner_refuses_at_its_sources_pointer() {
+    let repeated = dependency_reference("library-u1");
+    let (wire, _) =
+        multi_source_dependency_request(vec![repeated.clone(), repeated], Vec::new(), None);
+    assert_dependency_source_list_refusal(wire);
+}
+
+#[trace("TC-1210", "FR-480-AC-7")]
+#[test]
+fn definition_document_dependency_source_refuses_at_its_sources_pointer() {
+    let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE;
+    let identity = "example/config-version";
+    let (wire, _) = multi_source_dependency_request(
+        vec![reference(identity)],
+        vec![document.as_bytes().to_vec()],
+        Some((
+            AUTHORITY.to_owned(),
+            identity.to_owned(),
+            b"not valid QSL".to_vec(),
+        )),
+    );
+    assert_dependency_source_list_refusal(wire);
 }
 
 #[trace("TC-1210", "FR-480-AC-7")]
@@ -523,7 +582,7 @@ fn duplicate_unit_source_refuses_before_recompile() {
     assert!(matches!(refusal, ReplayRefusal::PackageSources(_)));
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
     assert_eq!(refusal.cause(), Some("invalid-value"));
-    assert_eq!(refusal.pointer(), Some("/package/sources"));
+    assert_eq!(refusal.pointer().as_deref(), Some("/package/sources"));
 }
 
 #[trace("TC-1210", "FR-480-AC-7")]
@@ -544,5 +603,5 @@ fn definition_document_source_refuses_before_recompile() {
     assert!(matches!(refusal, ReplayRefusal::PackageSources(_)));
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
     assert_eq!(refusal.cause(), Some("invalid-value"));
-    assert_eq!(refusal.pointer(), Some("/package/sources"));
+    assert_eq!(refusal.pointer().as_deref(), Some("/package/sources"));
 }
