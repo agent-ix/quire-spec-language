@@ -8,6 +8,7 @@ use qsl_forms::{ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeKind
 use qsl_foundation::Span;
 
 use super::refusal;
+use crate::check::profile::protocol_profile;
 use crate::check::profile::TemporalProfile;
 use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause};
 use crate::check::Scope;
@@ -208,6 +209,8 @@ pub fn content(
     refusals.into_iter().map(|(_, refusal)| refusal).collect()
 }
 
+/// Checks every profile alias declared at a protocol use site against that
+/// site's closed profile family, retaining refusal spans for source ordering.
 pub fn profile_uses(
     protocol: &ProtocolDeclarationForm,
     alias_names: &BTreeMap<String, AliasKind>,
@@ -272,7 +275,7 @@ fn validate_profile_use(
 }
 
 fn admits_protocol_profile(identity: &str) -> bool {
-    identity == "quire.protocol.finite-global/v1"
+    protocol_profile(identity).is_some()
 }
 
 fn admits_timed_profile(identity: &str) -> bool {

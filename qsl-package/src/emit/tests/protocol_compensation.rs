@@ -134,22 +134,9 @@ fn a_compensation_without_a_selected_temporal_profile_is_refused_by_i2() {
         refusal.code,
         quire_contract_model::CheckedPackageRefusalCode::InvalidPackage
     );
-    let at = wire["semantic_graph"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .position(|node| {
-            node["semantic_form"] == "compensation"
-                && node["declaration"]["qualified_name"]
-                    .as_array()
-                    .unwrap()
-                    .last()
-                    == Some(&json!("Full"))
-        })
-        .expect("the Full compensation");
     assert_eq!(
         refusal.loci[0].path.as_ref().map(|path| path.as_str()),
-        Some(format!("/semantic_graph/nodes/{at}").as_str())
+        Some("/temporal_bindings/0/clock/kind")
     );
 }
 
