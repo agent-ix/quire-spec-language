@@ -527,7 +527,7 @@ fn leaf_of(view: &CheckedPredicateView<'_>) -> CheckedNodeId {
 /// FR-515-AC-4: a Boolean sub-term of a `holds` operand that is neither the
 /// operand nor the guard reads as a `ClauseLeaf` with the operation that reads
 /// it as its parent.
-#[trace("FR-515-AC-4", "TC-1310")]
+#[trace("FR-515-AC-4", "FR-515-AC-17", "TC-1310")]
 #[test]
 fn a_boolean_term_below_a_holds_operand_is_a_clause_leaf() {
     let compiled = compile(&unit(
@@ -571,6 +571,35 @@ fn a_boolean_term_below_a_holds_operand_is_a_clause_leaf() {
         assert_eq!(view.kind(), PredicateKind::ClauseLeaf);
         assert_eq!(leaf_of(&view), part);
         assert_eq!(operation(&view), Some("quire.op.boolean.and".to_owned()));
+        // The entry is the leaf node's own, inside the formula root's source.
+        let formula_root = match package.term(view.declaration()).unwrap() {
+            quire_contract_model::CheckedTerm::Application { arguments, .. } => {
+                match arguments.last().unwrap() {
+                    quire_contract_model::CheckedTerm::Reference { target } => target.clone(),
+                    other => panic!("a formula reference: {other:?}"),
+                }
+            }
+            other => panic!("a clause application: {other:?}"),
+        };
+        let outer: Vec<_> = package
+            .source_map()
+            .iter()
+            .filter(|entry| entry.node_id == formula_root)
+            .flat_map(|entry| entry.regions.iter())
+            .collect();
+        assert!(package
+            .source_map()
+            .iter()
+            .any(|entry| entry.node_id == part && view.source_span() == entry));
+        assert!(!view.source_span().regions.is_empty());
+        for region in &view.source_span().regions {
+            assert!(
+                outer.iter().any(|root| root.source == region.source
+                    && root.start <= region.start
+                    && region.end <= root.end),
+                "{region:?} outside {outer:?}"
+            );
+        }
         seen.push(part);
     }
     assert_eq!(seen.len(), 2);
@@ -681,7 +710,7 @@ fn a_selection_the_package_does_not_hold_is_refused() {
 
 /// FR-515-AC-5: the id of a `protocol_clause` is no temporal clause, and the
 /// clause a protocol requires names that protocol in `requirements()`.
-#[trace("FR-515-AC-5", "TC-1310")]
+#[trace("FR-515-AC-5", "FR-515-AC-15", "TC-1310")]
 #[test]
 fn a_protocol_clause_is_no_temporal_clause_and_requirements_name_it() {
     const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
@@ -737,11 +766,11 @@ fn a_protocol_clause_is_no_temporal_clause_and_requirements_name_it() {
 }
 
 /// FR-515-AC-6 (TC-1310 row 6): a view answers `belongs_to` for the package
-/// it was read from and not for another package whose clause has the same name.
+/// it was read from and not for a second package emitted from the same source.
 #[trace("FR-515-AC-6", "TC-1310")]
 #[test]
 fn a_view_belongs_to_the_package_it_was_read_from() {
-    let first = admit(&compile(&unit(
+    let source = unit(
         INFINITE,
         &clause(
             "Due",
@@ -749,16 +778,14 @@ fn a_view_belongs_to_the_package_it_was_read_from() {
             "on origin",
             "always holds(c.versionNumber <= 1)",
         ),
-    )));
-    let second = admit(&compile(&unit(
-        INFINITE,
-        &clause(
-            "Due",
-            "t",
-            "on origin",
-            "always holds(c.versionNumber <= 2)",
-        ),
-    )));
+    );
+    let first = admit(&compile(&source));
+    let second = admit(&compile(&source));
+    assert_eq!(
+        first.as_ref(),
+        second.as_ref(),
+        "the same source, the same package"
+    );
     let view = temporal_subject(&first, &only_clause(&first)).unwrap();
     assert!(view.belongs_to(&first));
     assert!(!view.belongs_to(&second));
@@ -888,61 +915,6 @@ fn a_second_read_of_the_same_bytes_gives_the_same_view() {
     }
 }
 
-/// FR-515-AC-14 (TC-1310 row 14), the clause `name`: each clause of a package
-/// reads the name it was declared with.
-#[trace("FR-515-AC-14", "TC-1310")]
-#[test]
-#[ignore = "IR-1278: the checked package carries no temporal clause name until the reader admits one"]
-fn each_clause_reads_its_declared_name() {
-    let compiled = compile(&unit_of(
-        &[("t", INFINITE)],
-        &[
-            clause(
-                "Due",
-                "t",
-                "on origin",
-                "always holds(c.versionNumber <= 1)",
-            ),
-            clause(
-                "Other",
-                "t",
-                "on origin",
-                "always holds(c.versionNumber >= 7)",
-            ),
-        ]
-        .join("\n"),
-    ));
-    let package = admit(&compiled);
-    let mut names: Vec<_> = clause_ids(&package)
-        .iter()
-        .map(|id| clause_name(&temporal_subject(&package, id).unwrap()))
-        .collect();
-    names.sort();
-    assert_eq!(names, ["Due", "Other"]);
-}
-
-/// FR-515-AC-14, the predicate's `name`: the view of a leaf names the clause
-/// it was read from.
-#[trace("FR-515-AC-14", "TC-1310")]
-#[test]
-#[ignore = "IR-1278: the checked package carries no temporal clause name until the reader admits one"]
-fn a_predicate_reads_its_clauses_declared_name() {
-    let compiled = compile(&unit(
-        INFINITE,
-        &clause(
-            "Due",
-            "t",
-            "on origin",
-            "always holds(c.versionNumber <= 1)",
-        ),
-    ));
-    let package = admit(&compiled);
-    let id = only_clause(&package);
-    let leaf = temporal_subject(&package, &id).unwrap().predicate_leaves()[0].clone();
-    let view = checked_predicate(&package, &PredicateSelection { clause: id, leaf }).unwrap();
-    assert_eq!(predicate_clause_name(&view), "Due");
-}
-
 /// FR-515-AC-13 (TC-1310 row 13): two structurally equal clauses under a
 /// clock-configured profile are one node with two occurrences of different
 /// ordinals. Today IR refuses the package (`TimedNodeReference` at the second
@@ -965,18 +937,6 @@ fn equal_clauses_under_a_clock_profile_share_a_node_with_two_occurrences() {
     assert_ne!(ordinals[0], ordinals[1]);
     assert!(view.occurrences().iter().all(|o| o.node == node));
     assert_eq!(view.clock().map(|row| &row.declaration), Some(&node));
-}
-
-/// The declared name of a temporal clause view. The package carries no clause
-/// name until IR-1278; the gated tests change here when it lands (this
-/// becomes `view.name()`).
-fn clause_name(_view: &crate::checked_views::TemporalSubjectView<'_>) -> String {
-    unimplemented!("IR-1278: the checked package carries no temporal clause name")
-}
-
-/// The declared name of a predicate view's clause (see [`clause_name`]).
-fn predicate_clause_name(_view: &CheckedPredicateView<'_>) -> String {
-    unimplemented!("IR-1278: the checked package carries no temporal clause name")
 }
 
 /// FR-515-AC-11 (TC-1310 row 11): a guard equal to a `holds` operand is one
@@ -1051,4 +1011,47 @@ fn a_clause_leaf_without_a_source_entry_is_refused() {
         crate::checked_views::predicate::read_predicate(&package, &without, &selection).err(),
         Some(ViewRefusal::LeafHasNoSource)
     );
+}
+
+/// FR-515-AC-16 (TC-1310 row 16): the `source_span` of an activation guard is
+/// one of the source map entries of the guard node.
+#[trace("FR-515-AC-16", "TC-1310")]
+#[test]
+fn an_activation_guard_reads_a_source_entry_of_its_node() {
+    let compiled = compile(&unit(
+        INFINITE,
+        &clause(
+            "Guarded",
+            "t",
+            "on each (q: Config::ConfigVersion) when (c.versionNumber >= 3)",
+            "always holds(c.versionNumber <= 2)",
+        ),
+    ));
+    let package = admit(&compiled);
+    let id = only_clause(&package);
+    let Activation::Each {
+        guard: Some(guard), ..
+    } = temporal_subject(&package, &id)
+        .unwrap()
+        .activation()
+        .clone()
+    else {
+        panic!("a guarded activation");
+    };
+    let view = checked_predicate(
+        &package,
+        &PredicateSelection {
+            clause: id,
+            leaf: guard.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(view.kind(), PredicateKind::ActivationGuard);
+    let entries: Vec<_> = package
+        .source_map()
+        .iter()
+        .filter(|entry| entry.node_id == guard)
+        .collect();
+    assert!(!entries.is_empty());
+    assert!(entries.contains(&view.source_span()));
 }
