@@ -312,7 +312,7 @@ fn a_finite_trace_is_unchanged_and_inconsistent_progress_is_refused() {
 
 /// FR-330-AC-11 for `Progressed`: a binding asserting another profile or clock
 /// is refused at admit naming the dimension, before any position is visited.
-#[trace("TC-1299", "FR-330-AC-11")]
+#[trace("TC-1317", "FR-330-AC-11")]
 #[test]
 fn a_progressed_binding_that_asserts_another_profile_or_clock_is_refused() {
     let progressed = Progressed::new(Unit::FixedEventually, &[0], 3, complete(3));
@@ -435,4 +435,77 @@ fn a_distant_watermark_reads_only_the_samples_the_clause_reaches() {
     .run();
     assert_eq!(outcome(&distant), &TemporalVerdict::Violated { at: 0 });
     assert_eq!(distant.usage.temporal_visits, near.usage.temporal_visits);
+}
+
+/// FR-504 "Silent samples": a reach the work budget cannot afford ends
+/// `Incomplete` with no truth before any silent sample is allocated. A reach
+/// of 10^12 with a watermark of 10^12 would otherwise materialize 10^12
+/// samples.
+#[trace("TC-1299", "FR-504-AC-1")]
+#[test]
+fn a_reach_past_the_work_budget_is_incomplete_without_materializing_samples() {
+    let limit = 1_000_000_000_000;
+    let starved = Progressed::new(Unit::FixedHugeReach, &[0], limit, complete(limit)).run();
+    assert!(
+        matches!(outcome(&starved), TemporalVerdict::Incomplete(_)),
+        "{:?}",
+        starved.disposition
+    );
+    assert_eq!(starved.disposition.truth(), None);
+}
+
+/// FR-504 "Silent samples (fixed-sample only)": samples after the last
+/// observation are no observation, so an `on each` clause anchors no
+/// activation on them. `eventually[0,1] holds(p)` anchored on the silent
+/// sample at index 2 would read two false samples and violate.
+#[trace("TC-1299", "FR-504-AC-1", "FR-504-AC-3")]
+#[test]
+fn silent_samples_anchor_no_on_each_activation() {
+    let holds = Progressed::new(Unit::FixedEach, &[1, 1], 5, complete(5)).run();
+    assert_eq!(outcome(&holds), &TemporalVerdict::Holds);
+    // The control: the observed anchors still decide. The last observation
+    // reads `p` false with a silent false sample after it.
+    let violated = Progressed::new(Unit::FixedEach, &[1, 0], 5, complete(5)).run();
+    assert_eq!(outcome(&violated), &TemporalVerdict::Violated { at: 1 });
+}
+
+/// FR-504 "Open scope" and "Incomplete input": under an open scope an
+/// unsettled fixed-sample obligation is `Pending` with deadline `anchor +
+/// reach` until `W` reaches it, and `Indeterminate` from there when the input
+/// stays incomplete.
+#[trace("TC-1299", "FR-504-AC-1", "FR-504-AC-4")]
+#[test]
+fn an_open_fixed_sample_obligation_is_indeterminate_once_the_watermark_reaches_the_deadline() {
+    let before = Progressed::new(
+        Unit::FixedEventually,
+        &[0],
+        2,
+        ProgressCompleteness::Incomplete,
+    )
+    .run();
+    assert_eq!(
+        outcome(&before),
+        &TemporalVerdict::PendingWindow { at: 0, deadline: 3 }
+    );
+    let at = Progressed::new(
+        Unit::FixedEventually,
+        &[0],
+        3,
+        ProgressCompleteness::Incomplete,
+    )
+    .run();
+    assert_eq!(
+        outcome(&at),
+        &indeterminate(0, TemporalIndeterminateReason::IncompleteInput)
+    );
+}
+
+/// FR-504-AC-3: a fixed-sample witness inside the seen horizon settles an
+/// open scope as `Completed(true)` with basis `decisive-witness`.
+#[trace("TC-1299", "FR-504-AC-3")]
+#[test]
+fn a_fixed_sample_witness_inside_the_seen_horizon_is_decisive() {
+    let witness = Progressed::new(Unit::FixedEventually, &[0, 1], 3, complete(3)).run();
+    assert_eq!(outcome(&witness), &TemporalVerdict::Holds);
+    assert_eq!(window(&witness).basis, SettlementBasis::DecisiveWitness);
 }

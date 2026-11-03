@@ -71,6 +71,10 @@ enum Unit {
     EventAlways,
     /// `Sample`: `once[0,2]` `on each` under event-position (FR-504).
     EventOnce,
+    /// `Sample`: `eventually[0,10^12]` under fixed-sample (large reach).
+    FixedHugeReach,
+    /// `Sample`: `eventually[0,1]` `on each` under fixed-sample.
+    FixedEach,
     /// TC-144 `Reach`: `eventually[0,2] holds(c.value = 2)` under
     /// event-position, `on origin`.
     OwnerReach,
@@ -102,7 +106,7 @@ impl Unit {
             Self::TimestampedAlwaysFive | Self::TimestampedOnce => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
-            Self::FixedEventually | Self::FixedAlways => {
+            Self::FixedEventually | Self::FixedAlways | Self::FixedHugeReach | Self::FixedEach => {
                 "profile t = \"quire.temporal.fixed-sample.false-extension/v1\";\n"
             }
             Self::EventEventually | Self::EventAlways | Self::EventOnce | Self::OwnerReach => {
@@ -177,6 +181,14 @@ impl Unit {
                 "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
                  on origin { eventually[0,3] holds(c.value = 1) }\n"
             }
+            Self::FixedHugeReach => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
+                 on origin { eventually[0,1000000000000] holds(c.value = 1) }\n"
+            }
+            Self::FixedEach => {
+                "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
+                 on each (q: Counters::Counter) { eventually[0,1] holds(c.value = 1) }\n"
+            }
             Self::FixedAlways => {
                 "temporal Sample using t over (c: Counters::Counter) clock \"samples\" \
                  on origin { always[0,3] holds(c.value = 1) }\n"
@@ -223,7 +235,7 @@ fn finite_window_binding() -> crate::spine::TraceBinding {
 /// and clock name the unit's clause is checked under.
 fn progressed_binding(unit: Unit) -> crate::spine::TraceBinding {
     let (profile, clock_name, parameters) = match unit {
-        Unit::FixedEventually | Unit::FixedAlways => (
+        Unit::FixedEventually | Unit::FixedAlways | Unit::FixedHugeReach | Unit::FixedEach => (
             "quire.temporal.fixed-sample.false-extension/v1",
             "samples",
             qsl_package::ClockConfiguration::FixedSample {

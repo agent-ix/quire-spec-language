@@ -11,6 +11,7 @@
 //! request's own assertion is kept for the report and the result identity.
 
 use qsl_semantics::check::{CheckedTemporalClause, TemporalProfile};
+use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 
 use super::cover::ClockCover;
 use super::run::reaches;
@@ -39,12 +40,15 @@ pub struct SampleProgress {
 
 /// An assertion that contradicts the trace it accompanies (FR-504
 /// "Consistency"): the evaluator refuses it and never shortens it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ProgressedRefusal {
     /// A fixed-sample watermark below the last position's coordinate.
     WatermarkBelowLastPosition,
     /// A `Complete { through }` below the last position's coordinate.
     CompletenessBelowLastPosition,
+    /// The silent samples outgrew the caller's work budget before any was
+    /// materialized: no truth value.
+    Incomplete(Incomplete),
     /// The clause is not under the event-position or fixed-sample profile.
     NotSampleProfile {
         /// The clause's profile.
@@ -61,7 +65,9 @@ impl TimestampedTrace {
     /// event-position it is the last position, because the watermark does
     /// not advance the clock in silence. Fixed-sample positions after the
     /// last observation up to `S` are silent samples, kept only as far as the
-    /// clause's reach can read them.
+    /// clause's reach can read them. Each silent sample is charged one
+    /// `temporal.visit` on `meter` before it is allocated, so a reach the
+    /// budget cannot afford ends `Incomplete` with nothing allocated.
     ///
     /// # Errors
     ///
@@ -71,6 +77,7 @@ impl TimestampedTrace {
         clause: &CheckedTemporalClause,
         observations: Vec<String>,
         progress: SampleProgress,
+        meter: &mut Meter,
     ) -> Result<Result<Self, ProgressedRefusal>, TemporalRefusal> {
         let profile = clause.profile();
         let fixed = match profile {
@@ -146,6 +153,9 @@ impl TimestampedTrace {
             });
         }
         for offset in 1..=silent {
+            if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::TemporalVisit)) {
+                return Ok(Err(ProgressedRefusal::Incomplete(incomplete)));
+            }
             let stamp = last
                 .checked_add(offset)
                 .ok_or(TemporalRefusal::TraceTooLong)?;

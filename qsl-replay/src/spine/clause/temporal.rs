@@ -561,6 +561,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
 
     // FR-504 "Consistency": an assertion the trace contradicts is refused at
     // admit before any snapshot is read, and is never shortened.
+    let mut meter = Meter::new(run.accounting);
     let progressed = match trace {
         TraceInput::Progressed {
             trace: documents,
@@ -583,13 +584,18 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
                 },
             };
             let identities = documents.iter().map(observation_identity).collect();
-            match TimestampedTrace::admit_progressed(clause, identities, assertion) {
+            match TimestampedTrace::admit_progressed(clause, identities, assertion, &mut meter) {
                 Ok(Ok(admitted)) => Some(admitted),
                 Ok(Err(inconsistent)) => {
                     let member = match inconsistent {
                         ProgressedRefusal::WatermarkBelowLastPosition => "watermark",
                         ProgressedRefusal::CompletenessBelowLastPosition => "completeness",
                         ProgressedRefusal::NotSampleProfile { .. } => "profile",
+                        ProgressedRefusal::Incomplete(incomplete) => {
+                            return early(ClauseDisposition::Temporal(
+                                TemporalVerdict::Incomplete(incomplete),
+                            ));
+                        }
                     };
                     return early(refused(
                         "invalid-value",
@@ -709,7 +715,6 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         };
     }
 
-    let mut meter = Meter::new(run.accounting);
     if let Some(window_trace) = progressed {
         let silent_from = u64::try_from(window_trace.observed()).ok();
         let (disposition, visits, window_report) = run_window(
