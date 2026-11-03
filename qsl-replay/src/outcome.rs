@@ -1497,6 +1497,17 @@ impl OutcomeDocument {
                     Some(OutcomeStage::S6a),
                     refusal.category(),
                 ),
+                RunRefusal::ObjectEnvironment(record) => Self::new(
+                    Operation::Execute,
+                    Some(OutcomeStage::S6a),
+                    refusal.category(),
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::new(
+                    Some(record.catalog.cause()),
+                    refusal.code().as_str(),
+                    None,
+                    refusal.to_string(),
+                )]),
                 RunRefusal::MissingDeclaration { .. }
                 | RunRefusal::UnsupportedResult { .. }
                 | RunRefusal::UnknownParameter { .. }

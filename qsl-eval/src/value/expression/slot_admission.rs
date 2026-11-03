@@ -27,18 +27,30 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::declaration::{
     CompositeShape, EnvironmentFailure, FieldDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::supplied_stop::{SuppliedPhase, SuppliedRun};
 
 /// Admit every object of `objects` against `types`: each object's type is a
 /// model object type of the package, each attribute the package declares
 /// for it has an admitted slot ([`admits_slot`]), and the caller declared no
 /// attribute the package does not. A defect is caller input and refuses
 /// `invalid_runtime_input`/`wrong-value-kind` naming the object and the
-/// attribute; nothing is charged.
+/// attribute; nothing is charged to the meter.
+///
+/// `run` is the call's supplied-value run (FR-277): the walk polls its
+/// original cancellation before each object, stopping as a supplied-value
+/// admission stop at `position`, the position after the last argument. It
+/// charges nothing to the run's admission budget, which counts the supplied
+/// arguments' membership events and has no unit for an environment value;
+/// the walk is linear in the environment, whose size its own admission
+/// (`ObjectClosure::new`, FR-106 document limits) already bounded.
 pub(super) fn admit_objects(
     objects: &ObjectEnvironment,
     types: &TypeEnvironment,
+    run: &mut SuppliedRun,
+    position: usize,
 ) -> Result<(), CallFailure> {
     for (reference, held) in objects.objects().iter() {
+        run.check_cancelled(SuppliedPhase::Admission, position)?;
         let object_type = reference.object_type().clone();
         let Some(declared) = types.attributes(object_type.clone()) else {
             return Err(refused(reference, None));
@@ -67,6 +79,23 @@ pub(super) fn admit_objects(
     Ok(())
 }
 
+/// The locus member an object-environment entry refusal names.
+const OBJECT_ENVIRONMENT: &str = "object-environment";
+
+/// The record of `failure` when it is [`admit_objects`]'s refusal of the
+/// object environment -- caller input, refused before any charge, that a
+/// caller maps to its own typed input refusal -- and `None` for any other
+/// call admission failure.
+pub fn object_environment_refusal(failure: &CallAdmissionFailure) -> Option<&AdmissionRecord> {
+    match failure {
+        CallAdmissionFailure::Refused(CallAdmissionRecord {
+            record,
+            locus: CallAdmissionLocus::Member { name, index: None },
+        }) if name == OBJECT_ENVIRONMENT => Some(record),
+        CallAdmissionFailure::Refused(_) | CallAdmissionFailure::Incomplete(_) => None,
+    }
+}
+
 fn refused(reference: &ObjectReference, field: Option<&str>) -> CallFailure {
     let mut fields = BTreeMap::from([("object", reference.object().as_str().to_owned())]);
     if let Some(field) = field {
@@ -81,7 +110,7 @@ fn refused(reference: &ObjectReference, field: Option<&str>) -> CallFailure {
                 kernel: None,
             },
             locus: CallAdmissionLocus::Member {
-                name: "object-environment".to_owned(),
+                name: OBJECT_ENVIRONMENT.to_owned(),
                 index: None,
             },
         },
@@ -117,10 +146,24 @@ pub(super) fn admits_slot(
     widened: bool,
 ) -> Result<bool, EnvironmentFailure> {
     match slot {
-        FieldValue::Present(value) => admits(types, field.value_type(), value, witnesses, widened),
+        FieldValue::Present(value) => {
+            let root = presence_steps(field.presence());
+            admits(types, field.value_type(), value, root, witnesses, widened)
+        }
         FieldValue::Absent | FieldValue::Null => {
             Ok(field.presence() == Presence::Optional && witnesses.is_empty())
         }
+    }
+}
+
+/// The path step FR-106 enters for a present value of an attribute or
+/// record member of `presence`: an optional one's present value is admitted
+/// "one option-value step down" (`document.rs`'s `admit_value`), although the
+/// slot holds the bare value.
+fn presence_steps(presence: Presence) -> Vec<PathStep> {
+    match presence {
+        Presence::Optional => vec![PathStep::OptionValue],
+        Presence::Required => Vec::new(),
     }
 }
 
@@ -128,10 +171,14 @@ pub(super) fn admits_slot(
 /// member admitted against the package's own record declaration.
 ///
 /// `witnesses` are the FR-106 check 6.5 out-of-range witnesses recorded for
-/// the slot. Each names one integer by its path (`index` for a sequence
-/// element of the slot, then `steps` through options, sequence elements and
-/// record fields) and relaxes the declared range at that position only, for
-/// that observed integer. Every other integer is admitted at its declared
+/// the slot. Each names one integer by its path, in FR-106's step model: the
+/// slot's `index` when the slot is a sequence and its element is the first
+/// step, then `steps`, outermost first. The steps are `OptionValue` into an
+/// `Option` value's payload and into the present value of an optional
+/// attribute or record member, `Index` into a collection element and `Field`
+/// into a record member; `root` is the slot's own prefix
+/// ([`presence_steps`]). A witness relaxes the declared range at its
+/// position only, for that observed integer. Every other integer is admitted at its declared
 /// range, and every witness must name an integer the slot holds; a witness
 /// that names none is forged. Type and unit are never relaxed. No witness
 /// names a position inside a tuple or a union payload.
@@ -145,6 +192,7 @@ fn admits(
     types: &TypeEnvironment,
     declared: &ValueType,
     value: &Value,
+    root: Vec<PathStep>,
     witnesses: &[&OutOfRange],
     widened: bool,
 ) -> Result<bool, EnvironmentFailure> {
@@ -166,7 +214,7 @@ fn admits(
     let mut named = vec![false; witnesses.len()];
     // A position's path, or `None` where no witness can name a position (no
     // witness at all, or inside a tuple or a union payload).
-    let root = (!witnesses.is_empty()).then(Vec::new);
+    let root = (!witnesses.is_empty()).then_some(root);
     let mut pending: Vec<(&ValueType, &Value, Option<Vec<PathStep>>)> =
         vec![(declared, value, root)];
     let child = |path: &Option<Vec<PathStep>>, step: PathStep| {
@@ -235,11 +283,14 @@ fn admits(
                         }
                         for (field, slot) in fields.iter().zip(record.slots()) {
                             match slot {
-                                FieldValue::Present(member) => pending.push((
-                                    field.value_type(),
-                                    member,
-                                    child(&path, PathStep::Field(field.name().to_owned())),
-                                )),
+                                FieldValue::Present(member) => {
+                                    let mut at =
+                                        child(&path, PathStep::Field(field.name().to_owned()));
+                                    for step in presence_steps(field.presence()) {
+                                        at = child(&at, step);
+                                    }
+                                    pending.push((field.value_type(), member, at));
+                                }
                                 FieldValue::Absent | FieldValue::Null => {
                                     if field.presence() == Presence::Required {
                                         return Ok(false);
@@ -445,11 +496,11 @@ mod tests {
     fn a_record_inside_a_union_payload_is_admitted_against_the_package_record() {
         let package = types(ValueType::Boolean, ValueType::Integer);
         let declared = environment(&package, Value::Boolean(true), int(1));
-        assert!(admit_objects(&declared, &package).is_ok());
+        assert!(admit_objects(&declared, &package, &mut run(), 0).is_ok());
         let caller = types(ValueType::Integer, ValueType::Integer);
         let foreign = environment(&caller, int(7), int(1));
         assert_eq!(
-            refused_field(admit_objects(&foreign, &package)).as_deref(),
+            refused_field(admit_objects(&foreign, &package, &mut run(), 0)).as_deref(),
             Some("u")
         );
     }
@@ -464,12 +515,20 @@ mod tests {
         let caller = types(ValueType::Boolean, ValueType::Integer);
         let objects = environment(&caller, Value::Boolean(true), int(1));
         assert_eq!(
-            refused_field(admit_objects(&objects, &package)).as_deref(),
+            refused_field(admit_objects(&objects, &package, &mut run(), 0)).as_deref(),
             Some("m")
         );
     }
 
     fn int(value: i64) -> Value {
         Value::Integer(quire_exact::Integer::from(value))
+    }
+
+    fn run() -> SuppliedRun {
+        SuppliedRun::new(
+            quire_semantic_value::supplied_stop::SuppliedLimits::default(),
+            quire_exact::Cancel::new(),
+        )
+        .expect("a run has a path arena")
     }
 }

@@ -68,3 +68,4 @@ mod union_value_profile;
 mod variant_fields;
 mod weighted_sampler;
 mod window_aggregates;
+mod witnessed_environment;

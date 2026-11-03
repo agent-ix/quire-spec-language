@@ -2096,6 +2096,90 @@ fn convert_call_failure_maps_wrong_value_kind_and_forwards_faults() {
     }
 }
 
+/// QSL-1565 (FR-049-AC-2): qsl-eval's entry refusal of an ill-typed object
+/// environment -- produced here by the real `admit_arguments` the spine's bind
+/// step calls -- is the typed `RunRefusal::ObjectEnvironment` refusal at stage
+/// `call`, `invalid_runtime_input`/`wrong-value-kind` naming the object and
+/// attribute, never the internal fault every other call admission failure
+/// still maps to.
+#[test]
+#[trace("TC-136", "FR-049-AC-2")]
+fn an_object_environment_entry_refusal_is_a_typed_run_refusal() {
+    use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallAdmissionRecord, CallFailure};
+    use quire_exact::{FieldValue, ObjectId, ObjectReference, Presence, ValueType};
+    use quire_semantic_value::declaration::{
+        FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+    };
+    use quire_semantic_value::object_closure::ObjectClosure;
+    use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
+
+    let object_type = crate::fixture_effective(7);
+    let types = |value_type: ValueType| {
+        TypeEnvironment::new(
+            [],
+            [ObjectTypeDeclaration::new(
+                object_type.clone(),
+                "E",
+                vec![FieldDeclaration::new("a", value_type, Presence::Required)],
+            )],
+        )
+        .expect("one object type admits")
+    };
+    let caller = types(ValueType::Integer);
+    let objects = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &caller,
+            [(
+                ObjectReference::new(
+                    crate::fixture_universe(7),
+                    object_type.clone(),
+                    ObjectId::new("e").unwrap(),
+                ),
+                vec![(
+                    "a",
+                    FieldValue::Present(Value::Integer(Integer::from(1_i64))),
+                )],
+            )],
+            &[],
+        )
+        .expect("the caller's closure admits"),
+    );
+    let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new()).unwrap();
+    let failure =
+        qsl_eval::value::admit_arguments(&[], &[], &objects, &types(ValueType::Boolean), &mut run)
+            .expect_err("an ill-typed object environment refuses at entry");
+    let refusal = convert_call_failure(failure);
+    let RunRefusal::ObjectEnvironment(record) = refusal.as_ref() else {
+        panic!("a typed object-environment refusal, not {refusal:?}");
+    };
+    assert_eq!(record.catalog.cause(), "wrong-value-kind");
+    assert_eq!(record.fields.get("object").map(String::as_str), Some("e"));
+    assert_eq!(record.fields.get("field").map(String::as_str), Some("a"));
+    assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+    assert_eq!(refusal.stage(), Some("call"));
+    assert_ne!(refusal.category(), Category::InternalFailure);
+
+    // Any other call admission failure on this path is still a fault.
+    let protocol = CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
+        CallAdmissionRecord {
+            record: quire_semantic_value::admission::AdmissionRecord {
+                catalog: CatalogCode::new("invalid_runtime_input", "unknown-member"),
+                fields: BTreeMap::new(),
+                path: Vec::new(),
+                kernel: None,
+            },
+            locus: CallAdmissionLocus::Member {
+                name: "binder".to_owned(),
+                index: None,
+            },
+        },
+    )));
+    assert!(matches!(
+        *convert_call_failure(protocol),
+        RunRefusal::Fault(_)
+    ));
+}
+
 /// SR-748 FND-001: `convert_refusal`'s `record == None && fallback == None`
 /// branch (call.rs:513-518) is unreachable from `convert_outcome` today (see
 /// its own doc comment), but is built directly here -- nothing else can

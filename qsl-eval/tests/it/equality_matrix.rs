@@ -3254,6 +3254,73 @@ fn a_range_witness_relaxes_only_the_position_it_names() {
     ));
 }
 
+/// QSL-1565 (FR-049-AC-2/AC-3): only an environment holding range witnesses
+/// carries range-widened option and collection types. Without one, a
+/// `Sequence<Integer>` at a `Sequence<Int[0, 9]>` attribute and an
+/// `Option<Integer>` at an `Option<Int[0, 9]>` attribute refuse at entry even
+/// when every integer is in range: no implicit conversion of the carried type.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn an_unwitnessed_range_widened_carried_type_refuses_at_entry() {
+    let digit = ValueType::Int(IntegerInterval::new(integer(0), integer(9)).unwrap());
+    let sequence =
+        |element: ValueType| CollectionType::new(CollectionKind::Sequence, element, None);
+    let declared = |name: &str, value_type: ValueType| {
+        TypeEnvironment::new(
+            [],
+            [ObjectTypeDeclaration::new(
+                object_type("E"),
+                "E",
+                vec![FieldDeclaration::new(name, value_type, Presence::Required)],
+            )],
+        )
+        .unwrap()
+    };
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let held_sequence = quire_exact::form_collection(
+        &sequence(ValueType::Integer),
+        vec![Value::Integer(integer(1))],
+        &mut Meter::new(UNLIMITED),
+    )
+    .unwrap()
+    .completed()
+    .unwrap();
+    let held_option = OptionValue::present(ValueType::Integer, Value::Integer(integer(1))).unwrap();
+    for (name, package_type, caller_type, held) in [
+        (
+            "xs",
+            ValueType::collection(sequence(digit.clone())),
+            ValueType::collection(sequence(ValueType::Integer)),
+            held_sequence,
+        ),
+        (
+            "o",
+            ValueType::option(digit.clone()),
+            ValueType::option(ValueType::Integer),
+            held_option,
+        ),
+    ] {
+        let package = expression_package(declared(name, package_type), false);
+        let objects = ObjectEnvironment::new(
+            ObjectClosure::new(
+                &declared(name, caller_type),
+                [(reference.clone(), vec![(name, FieldValue::Present(held))])],
+                &[],
+            )
+            .unwrap(),
+        );
+        let parameters = [("r", ValueType::Reference(object_type("E")))];
+        let read = Expression::field(Expression::deref(operand("r")), name.to_owned());
+        let checked = check_in(&package, &parameters, &read, None, CheckMode::Kernel).unwrap();
+        let (result, meter, before) = evaluate_over(&package, &checked, &reference, &objects);
+        assert_object_environment_refused(result, Some(name), &meter, &before, name);
+    }
+}
+
 /// QSL-1565 (FR-049-AC-2/AC-3): a range witness inside a record relaxes only
 /// the record member its steps name. The package declares
 /// `E { r: R }`, `R { lo: Int[0, 9], hi: Int[0, 9] }`; a witness for `r.lo`

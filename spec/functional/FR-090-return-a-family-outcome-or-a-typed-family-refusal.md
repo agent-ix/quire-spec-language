@@ -322,7 +322,11 @@ built from it (ADR-013 O-16 records the rejected representations).
 
 `CheckedPackage::call` SHALL admit its arguments before S6a and return
 `Result<Evaluation, CallFailure>`, with `CallFailure { Input(InputRefusal),
-Fault(InternalFault) }` (ADR-013 T-4; ADR-011 §2.3 E6 row). A
+Admission(CallAdmissionFailure), Fault(InternalFault) }` (ADR-013 T-4;
+ADR-011 §2.3 E6 row). An object environment `call`, `call_supplied` or
+`evaluate` refuses at entry is `CallFailure::Admission`, a caller-input
+refusal `invalid_runtime_input`/`wrong-value-kind` naming the object and
+attribute (FR-049-AC-2, TC-136 H6). A
 `Value::Population(population_id)` argument whose identity names no recorded
 binding, or whose resolved binding's declared maximum differs from the
 parameter's, SHALL be refused there as `CallFailure::Input(InputRefusal)`.

@@ -7,7 +7,8 @@
 //! Each position of the trace is the object environment its snapshot
 //! admitted. Each expression has one parameter, the object the clause's
 //! `over` parameter is bound to, and is read through
-//! [`CheckedPackageEvaluation::evaluate`] with that position's environment.
+//! [`crate::value::CheckedPackageEvaluation::evaluate`]'s expression path with
+//! that position's environment, which FR-106 already admitted.
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedExpression;
@@ -19,7 +20,7 @@ use quire_semantic_value::catalog::InternalFault;
 use super::observed::HoldsStop;
 use super::window::{WindowRead, WindowSource};
 use super::{LetterStop, TemporalPosition, UndefinedCause};
-use crate::value::CheckedPackageEvaluation;
+use crate::value::evaluate_over_admitted_environment;
 
 /// The expressions of an aggregate term, each with the `over` object as its
 /// one parameter.
@@ -86,7 +87,12 @@ impl<'a> ObservedWindowSource<'a> {
             .ok()
             .and_then(|slot| self.environments.get(slot))
             .ok_or_else(|| fault("position-has-an-environment"))?;
-        let evaluation: Evaluation = match self.package.evaluate(
+        // Each position's environment is the one FR-106 admitted for its
+        // snapshot under this package's declarations, so the read does not
+        // walk it again at entry (QSL-1565); each attribute read still
+        // admits its own slot.
+        let evaluation: Evaluation = match evaluate_over_admitted_environment(
+            self.package,
             expression,
             vec![Value::Reference(self.over.clone())],
             objects,

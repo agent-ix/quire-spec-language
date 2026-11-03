@@ -21,6 +21,7 @@ mod family;
 mod protocol_slot;
 mod s6a;
 mod slot_admission;
+pub use slot_admission::object_environment_refusal;
 mod value_invariants;
 
 use evaluate::Machine;
@@ -556,6 +557,22 @@ pub fn admit_arguments(
     types: &TypeEnvironment,
     run: &mut SuppliedRun,
 ) -> Result<(), CallFailure> {
+    admit_argument_values(parameters, arguments, objects, types, run)?;
+    // FR-049-AC-2: the object environment is caller input too, admitted
+    // whole against the package's own declarations before any charge. A
+    // cancellation during it names the position after the last argument.
+    slot_admission::admit_objects(objects, types, run, parameters.len())
+}
+
+/// [`admit_arguments`] without the object environment: every argument's
+/// arity, membership and reference resolution.
+fn admit_argument_values(
+    parameters: &[(String, ValueType)],
+    arguments: &[Value],
+    objects: &ObjectEnvironment,
+    types: &TypeEnvironment,
+    run: &mut SuppliedRun,
+) -> Result<(), CallFailure> {
     if parameters.len() != arguments.len() {
         return Err(InputRefusal::Arity {
             declared: parameters.len(),
@@ -626,9 +643,7 @@ pub fn admit_arguments(
             }
         }
     }
-    // FR-049-AC-2: the object environment is caller input too, admitted
-    // whole against the package's own declarations before any charge.
-    slot_admission::admit_objects(objects, types)
+    Ok(())
 }
 
 /// The evaluation environment `evaluate_declaration` runs `identity`
@@ -1332,6 +1347,72 @@ fn resolve_quantifier<'g>(
     None
 }
 
+/// [`CheckedPackageEvaluation::evaluate`], admitting the object environment
+/// at entry when `admit_environment`. The one caller that does not is
+/// [`evaluate_over_admitted_environment`].
+fn evaluate_expression(
+    package: &CheckedPackage,
+    expression: &CheckedExpression,
+    arguments: Vec<Value>,
+    objects: &ObjectEnvironment,
+    meter: &mut Meter,
+    admit_environment: bool,
+) -> Result<Evaluation, CallFailure> {
+    if !expression.is_from_graph(package.graph()) {
+        return Err(protocol_slot::resolve::refused(
+            "invalid_runtime_input",
+            "foreign-checked-expression",
+            CallAdmissionLocus::Member {
+                name: "checked-expression".to_owned(),
+                index: None,
+            },
+        ));
+    }
+    let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
+        .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
+    let types = package.graph().scope().types();
+    if admit_environment {
+        admit_arguments(
+            expression.parameters(),
+            &arguments,
+            objects,
+            types,
+            &mut run,
+        )?;
+    } else {
+        admit_argument_values(
+            expression.parameters(),
+            &arguments,
+            objects,
+            types,
+            &mut run,
+        )?;
+    }
+    // An expression root incurs no call charge unless it reaches an
+    // application (FR-262).
+    let mut registry =
+        Registry::new(PackageClosure::<&CheckedPackage, &CheckedExpression>::pre_admitted(package));
+    registry
+        .begin_expression(expression, arguments, objects, meter)?
+        .run()
+}
+
+/// [`CheckedPackageEvaluation::evaluate`] over an environment FR-106 admitted
+/// against this package's own declarations (a snapshot position of an
+/// observed trace): the arguments are admitted, the environment is not walked
+/// again, and every attribute read still admits its own slot. An observed
+/// window reads several expressions at every position, so admitting the
+/// whole environment on each read would cost O(environment) per read.
+pub(crate) fn evaluate_over_admitted_environment(
+    package: &CheckedPackage,
+    expression: &CheckedExpression,
+    arguments: Vec<Value>,
+    objects: &ObjectEnvironment,
+    meter: &mut Meter,
+) -> Result<Evaluation, CallFailure> {
+    evaluate_expression(package, expression, arguments, objects, meter, false)
+}
+
 impl CheckedPackageEvaluation for CheckedPackage {
     fn call(
         &self,
@@ -1443,33 +1524,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
-        if !expression.is_from_graph(self.graph()) {
-            return Err(protocol_slot::resolve::refused(
-                "invalid_runtime_input",
-                "foreign-checked-expression",
-                CallAdmissionLocus::Member {
-                    name: "checked-expression".to_owned(),
-                    index: None,
-                },
-            ));
-        }
-        let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
-            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
-        admit_arguments(
-            expression.parameters(),
-            &arguments,
-            objects,
-            self.graph().scope().types(),
-            &mut run,
-        )?;
-        // An expression root incurs no call charge unless it reaches an
-        // application (FR-262).
-        let mut registry = Registry::new(
-            PackageClosure::<&CheckedPackage, &CheckedExpression>::pre_admitted(self),
-        );
-        registry
-            .begin_expression(expression, arguments, objects, meter)?
-            .run()
+        evaluate_expression(self, expression, arguments, objects, meter, true)
     }
 
     fn evaluate_protocol_slot(

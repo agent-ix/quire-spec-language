@@ -1815,18 +1815,28 @@ fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_rep
         // the declared `Int[0, 9]`; the entry refuses the object environment
         // before any charge, so no equality-source fault reaches replay from
         // caller input.
-        let record = match result {
-            Err(quire_eval::CallFailure::Admission(failure)) => match *failure {
-                quire_eval::CallAdmissionFailure::Refused(record) => record,
-                other => panic!("an entry refusal, not {other:?}"),
-            },
-            other => panic!("an out-of-type stored value refuses at entry: {other:?}"),
+        let failure = result.expect_err("an out-of-type stored value refuses at entry");
+        assert_eq!(admitted_charge_points(&meter), &[] as &[ChargePoint]);
+        // Replay reports it as the typed object-environment refusal, not an
+        // internal fault (FR-049-AC-2).
+        let refusal = call_failure_to_replay_refusal(failure);
+        let ReplayRefusal::ObjectEnvironment(
+            super::object_environment::ObjectEnvironmentFailure::Admission(
+                qsl_semantics::model::observation::AdmissionFailure::Refused(record),
+            ),
+        ) = &refusal
+        else {
+            panic!("a typed object-environment refusal, not {refusal:?}");
         };
         assert_eq!(
-            (record.record.catalog.code(), record.record.catalog.cause()),
+            (record.catalog.code(), record.catalog.cause()),
             ("invalid_runtime_input", "wrong-value-kind")
         );
-        assert_eq!(admitted_charge_points(&meter), &[] as &[ChargePoint]);
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some("number")
+        );
+        assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
     }
 }
 
