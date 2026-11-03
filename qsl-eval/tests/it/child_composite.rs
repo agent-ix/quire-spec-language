@@ -831,6 +831,7 @@ fn an_optional_field_holding_a_child_reads_back_the_same_child() {
 /// fields has two elements, ordered by declaration key bytes in either
 /// source order, an `OrderedSet` and a `Sequence` keep their own order.
 #[trace("FR-359-AC-7", "TC-1000")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-15")]
 #[test]
 fn collections_of_the_parent_hold_children_and_order_by_declaration_key() {
     let package = package(
@@ -886,6 +887,21 @@ fn collections_of_the_parent_hold_children_and_order_by_declaration_key() {
             .expect("the child is kept");
         assert!(same_value(&held, &child));
     }
+
+    // QSpec FR-144-AC-15: two `TaxedMoney` of equal fields are one member of
+    // a `Set<Money>`, and two that differ in `tax_minor` are two.
+    let members = |first: Value, second: Value| {
+        let built = completed(&package, "sequenceOf", vec![first, second]);
+        elements(&field_of(&package, &built, "tags")).len()
+    };
+    assert_eq!(
+        members(taxed(&package, 100, 20), taxed(&package, 100, 20)),
+        1
+    );
+    assert_eq!(
+        members(taxed(&package, 100, 20), taxed(&package, 100, 21)),
+        2
+    );
 }
 
 /// FR-359-AC-11: two units that select the same model under different
