@@ -136,6 +136,11 @@ The adapter is needed independently of any one request member: FR-350-AC-10
 requires every in-scope `replay` vector to run, and `xtask` decodes no
 `replay-request` file without it.
 
+**Open question, not decided (relates to FR-350-AC-12).** QSpec FR-336's
+top-level mapping lists a `package` member of `ReplayRequestWire`, but the
+published `$defs.ReplayRequest` has 13 properties and no `package`. Which of
+the two the adapter follows for the proved package's `sources` is unresolved.
+
 ### Settlement
 
 If executing a vector panics, returns an internal fault, or cannot read a

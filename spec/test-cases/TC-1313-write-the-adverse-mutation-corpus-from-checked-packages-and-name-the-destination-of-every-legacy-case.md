@@ -25,6 +25,8 @@ The case table is FR-518's; rows are referenced by number.
 | 6 | 6 | two writes | identical manifest and case files; cases in table order |
 | 7 | 7 | search each case's `expected` for `digest`, `seal`, `v2.`; write with `None` | none names any of them; no `mutations/` directory |
 | 8 | 8 | list `mutations/` and the manifest's cases; look for a case-count or identity-list export | each file named by one case and each case by one file; no such export |
+| 9 | 9 | **RETIRED (source-byte integrity removed).** | none |
+| 10 | 10 | **RETIRED (source-byte integrity removed).** | none |
 | 11 | 11 | submit a package whose temporal clause declares a name differing from the sidecar's, to a reader implementing IR-1278, then to `Selection::check` | admitted, then refused with `clause.name`; gated on IR-1278 |
 | 12 | 12 | edit the sidecar's profile law revision against the admitted **R** and call `Selection::check` | refused with `definition.revision` |
 

@@ -134,6 +134,13 @@ refusal differs from this table because Contract IR gives the mutation an
 earlier refusal, the table is amended with that code in the same change; the
 case is not removed.
 
+> **INTERIM.** This requirement is ahead of the code. The writer in
+> `src/checked_handoff.rs` and `src/checked_handoff/corpus.rs` still carries the
+> `source_integrity` reader check and writes the 28m case (31 cases), and
+> `tests/it/checked_handoff.rs` still tests it. A coder change removes the
+> emission and the 28m case so the code matches the 30 cases above; the
+> source-integrity work of QSL-1559 and QSL-1560 is canceled.
+
 ### Moved cases for rows 14, 15 and 28
 
 Rows 14, 15 and 28 tested a digest, a digest domain and a source-byte seal. The
