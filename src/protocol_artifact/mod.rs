@@ -42,10 +42,6 @@ mod value_graph;
 pub mod wire;
 mod work;
 
-// Compatibility re-export for downstream users that still import this type
-// from `protocol_artifact`; new consumers should use the root `number` module.
-pub use crate::number::ProtocolNumber;
-
 pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_REVISION_NAMESPACE};
 pub use encoding::encode_candidate;
 pub use intake::read;
