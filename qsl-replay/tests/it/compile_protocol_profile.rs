@@ -72,6 +72,52 @@ fn a_protocol_must_use_an_alias_selecting_the_protocol_profile() {
     assert_eq!(refusal.cause(), Some("wrong-selection-role"), "{refusal:?}");
 }
 
+/// FR-508-AC-6 (TC-1303): distinct protocol and value aliases admit both
+/// declarations into the checked package.
+#[trace("FR-508-AC-6", "TC-1303")]
+#[test]
+fn a_protocol_and_value_function_use_their_own_profile_aliases() {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile m = \"quire.model.complete/v1\";\n\
+         profile p = \"{PROFILE}\";\n\
+         model M = \"acme/orders\";\n\
+         function f using v(): Boolean pure {{ true }}\n\
+         {PROTOCOL}"
+    );
+    let wire = compile(&source).expect("the unit admits the protocol and value function");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("semantic graph nodes");
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| node["semantic_form"] == "protocol_clause")
+            .count(),
+        1
+    );
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| node["semantic_form"] == "pure_function")
+            .count(),
+        1
+    );
+    assert_eq!(
+        wire["lock"]["profile_selections"],
+        json!([{
+            "role": "protocol_profile",
+            "definition": {"authority": "agent-ix", "identity": PROFILE},
+        }])
+    );
+    assert!(wire["lock"]["definition_selections"]
+        .as_array()
+        .expect("definition selections")
+        .iter()
+        .any(|selection| selection["identity"] == "quire.value.complete/v1"));
+}
+
 /// Source to IR: a unit that selects the protocol profile and refers to a
 /// protocol compiles, and its lock selects exactly the `protocol_profile`
 /// the header named.

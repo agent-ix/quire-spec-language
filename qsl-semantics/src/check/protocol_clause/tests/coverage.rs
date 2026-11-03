@@ -5,6 +5,14 @@ use ix_trace_rs::trace;
 use super::attempt_fixture::attempt_flow;
 use super::{assemble, checks, only_cause, recovery_flow, refusals};
 use crate::check::refusal::ProtocolAnchorCause;
+use quire_semantic_value::checking::CheckingLimits;
+
+fn checks_with_header(header: &str, source: &str) {
+    let (_, assembled) = super::assemble_with(header, source);
+    assembled
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{source}: {refusals:?}"));
+}
 
 /// FR-508 / TC-1303: each protocol use resolves its own alias to the required
 /// profile kind, and a wrong-kind selection refuses at that alias with the
@@ -27,9 +35,30 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
     let cases = [
         (protocol, "v", "quire.value.complete/v1", "protocol profile"),
         (
+            attempt_flow("Flow", "").replace("using pp", "using t"),
+            "t",
+            "quire.temporal.infinite-trace/v1",
+            "protocol profile",
+        ),
+        (
+            attempt_flow("Flow", "").replace("using pp", "using e"),
+            "e",
+            "quire.temporal.event-position.false-extension/v1",
+            "protocol profile",
+        ),
+        (
             recovery_flow("Main::Committed", await_form),
             "v",
             "quire.value.complete/v1",
+            "temporal profile",
+        ),
+        (
+            recovery_flow(
+                "Main::Committed",
+                &await_form.replace("using v", "using pp"),
+            ),
+            "pp",
+            "quire.protocol.finite-global/v1",
             "temporal profile",
         ),
         (
@@ -39,12 +68,36 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
             "state-bearing layer",
         ),
         (
+            recovery_flow("Main::Committed", "check Fine using e { true };"),
+            "e",
+            "quire.temporal.event-position.false-extension/v1",
+            "state-bearing layer",
+        ),
+        (
             recovery_flow("Main::Committed", "").replace(
                 "on M::Actor::op using e clock",
                 "on M::Actor::op using pp clock",
             ),
             "pp",
             "quire.protocol.finite-global/v1",
+            "temporal profile",
+        ),
+        (
+            recovery_flow("Main::Committed", "").replace(
+                "on M::Actor::op using e clock",
+                "on M::Actor::op using v clock",
+            ),
+            "v",
+            "quire.value.complete/v1",
+            "temporal profile",
+        ),
+        (
+            recovery_flow("Main::Committed", "").replace(
+                "on M::Actor::op using e clock",
+                "on M::Actor::op using t clock",
+            ),
+            "t",
+            "quire.temporal.infinite-trace/v1",
             "temporal profile",
         ),
     ];
@@ -80,11 +133,82 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
     }
 }
 
+/// FR-508-AC-3/4 (TC-1303): every identity in the closed admission sets is
+/// accepted at the use sites that need it.
+#[trace("FR-508-AC-3", "FR-508-AC-4", "TC-1303")]
+#[test]
+fn every_admitted_temporal_and_state_profile_is_accepted_at_its_use_site() {
+    let temporal = [
+        "quire.temporal.event-position.false-extension/v1",
+        "quire.temporal.fixed-sample.false-extension/v1",
+        "quire.temporal.timestamped-event.finite-window/v1",
+        "quire.temporal.timed/v1",
+    ];
+    for identity in temporal {
+        let header = super::attempt_fixture::HEADER.replace(
+            "profile e = \"quire.temporal.event-position.false-extension/v1\";",
+            &format!("profile e = \"{identity}\";"),
+        );
+        let await_form = "await Wait after Applied using e clock \"ticks\" within [0,1] \
+            match event Seen by R for Undo as (seen: Boolean) { true }; \
+            then sequence Then { } timeout sequence Timeout { }";
+        checks_with_header(&header, &recovery_flow("Main::Committed", await_form));
+    }
+
+    let state_layers = [
+        "quire.state.core/v1",
+        "quire.state.queries/v1",
+        "quire.state.graph/v1",
+        "quire.value.complete/v1",
+        "quire.model.complete/v1",
+        "quire.temporal.complete/v1",
+    ];
+    for identity in state_layers {
+        let header = super::attempt_fixture::HEADER.replace(
+            "profile v = \"quire.value.complete/v1\";",
+            &format!("profile v = \"{identity}\";"),
+        );
+        checks_with_header(
+            &header,
+            &recovery_flow("Main::Committed", "check Fine using v { true };"),
+        );
+    }
+}
+
+/// FR-508-AC-5 (TC-1303): all wrong-kind sites are returned together in
+/// source order, leaving the package rejected.
+#[trace("FR-508-AC-5", "TC-1303")]
+#[test]
+fn wrong_kind_protocol_and_check_aliases_refuse_in_source_order() {
+    let source = recovery_flow("Main::Committed", "check Fine using e { true };").replace(
+        "protocol RecoveryFlow using pp",
+        "protocol RecoveryFlow using v",
+    );
+    let (text, refusals) = refusals(&source);
+    let wrong: Vec<_> = refusals
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            crate::check::CheckCause::ProtocolAnchor(cause) => match cause.as_ref() {
+                ProtocolAnchorCause::WrongProfileKind { span, .. } => Some(span),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(wrong.len(), 2, "{refusals:?}");
+    assert!(wrong[0].start < wrong[1].start, "{wrong:?}");
+    assert_eq!(&text[wrong[0].start..wrong[0].end], "v");
+    assert_eq!(&text[wrong[1].start..wrong[1].end], "e");
+}
+
 /// FR-508: an absent alias keeps the existing `MissingProfile` refusal.
 #[trace("FR-508-AC-5", "TC-1303")]
 #[test]
 fn a_missing_protocol_profile_alias_keeps_missing_profile() {
-    let source = attempt_flow("Flow", "").replace("using pp", "using absent");
+    let source = format!(
+        "function absent using v(): Boolean pure {{ true }}\n{}",
+        attempt_flow("Flow", "").replace("using pp", "using absent")
+    );
     let (_, refusals) = refusals(&source);
     assert!(refusals.iter().any(|refusal| matches!(
         &refusal.cause,
