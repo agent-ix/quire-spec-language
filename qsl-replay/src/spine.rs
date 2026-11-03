@@ -57,6 +57,52 @@ pub use lifecycle::{
 /// (FR-104-AC-15). An absent entry means no point was supplied.
 pub type StateClauseExecutionPoints = BTreeMap<String, quire_contract_model::ExecutionPoint>;
 
+/// One protocol declaration's result through the lifecycle operation that
+/// stopped the unit. Results stay in source declaration order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProtocolResult {
+    /// The declaration passed every stage the operation reached.
+    Cleared {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The last stage the operation completed for this declaration.
+        stage: SpineStage,
+    },
+    /// The declaration emitted independently, even though another protocol
+    /// prevented the unit package from being admitted.
+    Emitted {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The emitted clause's stable structural key.
+        clause_key: String,
+        /// Canonical protocol-owned nodes retained from emission.
+        nodes: Vec<serde_json::Value>,
+    },
+    /// The declaration was refused at an attributable stage.
+    Refused {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The source-unit index of the declaration.
+        source_index: usize,
+        /// The declaration's full source span.
+        declaration_span: qsl_foundation::Span,
+        /// Stable catalog code of the primary refusal.
+        code: qsl_foundation::Code,
+        /// Stable catalog cause of the primary refusal.
+        cause: String,
+        /// The refusal locus, when the stage supplied one.
+        locus: Option<qsl_foundation::diagnostic::Locus>,
+    },
+    /// The shared protocol work budget ended before this declaration
+    /// completed its check.
+    Incomplete {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The reached typed stage limit.
+        limit: qsl_foundation::diagnostic::LimitExceeded,
+    },
+}
+
 #[cfg(test)]
 pub(crate) use lifecycle::composed_declaration;
 #[cfg(test)]

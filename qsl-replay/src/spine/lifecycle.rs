@@ -118,7 +118,7 @@ use super::{
 
 /// What a front-end operation returns when it produces no output: the
 /// stage's refusal, a reached limit, a cancellation or a fault.
-pub type FrontEndFailure = StageFailure<Box<CompileRefusal>>;
+pub type FrontEndFailure = StageFailure<Box<CompileRefusal>, Vec<super::ProtocolResult>>;
 
 /// The charges `run` made against `cancel`, added to `counter`: the work of
 /// one stage (FR-275-AC-5).
