@@ -421,8 +421,10 @@ pub struct CheckedRole {
     /// Exact selected model declaration when a role is bound to a systems
     /// Port; `None` for value-type and whole-model roles.
     pub model_member: Option<quire_checked::key::DeclarationKey>,
-    /// The selected package when a static role is `on` a model alias. This
-    /// retains the model binding identity for checked protocol consumers.
+    /// The selected package when a static role is `on` a model alias, or
+    /// when a Port role is written `on M::X` (the model that owns the Port).
+    /// A qualified role that is not a Port has `None`. This retains the
+    /// model binding identity for checked protocol consumers.
     pub model_selection: Option<String>,
     /// Whether the role is replicated (`each`).
     pub replicated: bool,

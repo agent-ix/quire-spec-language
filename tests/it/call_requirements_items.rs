@@ -291,9 +291,19 @@ fn predicate_calls_from_each_clause_family_share_one_checked_callee() {
         "self and c bind to distinct checked model receiver identities"
     );
     assert!(
-        wire.to_string().contains("saved"),
+        has_string_leaf(&wire, "saved"),
         "the emitted protocol retains the capture binder referenced by its call"
     );
+}
+
+/// Whether any string leaf of `value` equals `needle` exactly.
+fn has_string_leaf(value: &serde_json::Value, needle: &str) -> bool {
+    match value {
+        serde_json::Value::String(text) => text == needle,
+        serde_json::Value::Array(items) => items.iter().any(|item| has_string_leaf(item, needle)),
+        serde_json::Value::Object(map) => map.values().any(|item| has_string_leaf(item, needle)),
+        _ => false,
+    }
 }
 
 /// TC-1308 row 7: recursive predicate cycles without an accepted measure are
@@ -437,9 +447,28 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
     let (unit, result) = compile(
         "test:tc-1308-unguarded-division",
         "predicate D using v(x: Rational[-10, 10; 1, 5]): Boolean { rational(10, 1) / x > rational(1, 1) }\n\
-         function Caller using v(x: Rational[-10, 10; 1, 5]): Boolean pure { D(x) }\n",
+         function Caller using v(x: Rational[-10, 10; 1, 5]): Boolean pure { D(x) }\n\
+         function Dependent using v(x: Rational[-10, 10; 1, 5]): Boolean pure { Caller(x) }\n",
     );
     let refusal = result.expect_err("an unguarded divisor that may be zero refuses");
+    // The refused predicate `D` is reported once, at its own body; the
+    // callers `Caller` and `Dependent` have no package to emit, so the unit
+    // as a whole refuses and nothing is emitted for them.
+    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = refusal.as_ref() else {
+        panic!("the division refusal is a check refusal: {refusal:?}");
+    };
+    assert_eq!(
+        refusals.len(),
+        1,
+        "one refusal, at the predicate: {refusals:?}"
+    );
+    assert!(
+        matches!(
+            &refusals[0].location.origin,
+            quire_semantic_value::location::Origin::Body { function, .. } if function == "D"
+        ),
+        "the refusal is located in D: {refusals:?}"
+    );
     assert!(
         refusal.causes().iter().any(|cause| {
             cause.code.as_str() == "undefined_expression" && cause.cause == Some("unproved-nonzero")
@@ -463,19 +492,28 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
         "refusal span is {span:?}"
     );
 
-    let (_, non_boolean) = compile(
+    let (non_boolean_unit, non_boolean) = compile(
         "test:tc-1308-non-boolean-predicate",
         "predicate NonBoolean using v(): Int[0, 9] { 1 }\n",
     );
     let refusal = non_boolean.expect_err("a predicate with a non-Boolean result refuses");
-    assert!(
-        !refusal.causes().is_empty(),
-        "the non-Boolean predicate refusal should retain its assembly cause: {refusal:?}"
+    let qsl_replay::spine::CompileRefusal::Source(diagnostic) = refusal.as_ref() else {
+        panic!("a non-Boolean predicate refuses at the parser: {refusal:?}");
+    };
+    assert_eq!(diagnostic.message, "expected `Boolean`");
+    let region = diagnostic.region.as_ref().expect("the refusal is located");
+    let start = usize::try_from(region.start()).unwrap();
+    let end = usize::try_from(region.end()).unwrap();
+    assert_eq!(
+        non_boolean_unit.get(start..end),
+        Some("Int"),
+        "the refusal points at the non-Boolean result type"
     );
 }
 
 /// TC-1308 rows 11 and 16: query records retain their checked declaration,
-/// binder/type/unit selections, and replay is separately executed below.
+/// binder/type/unit selections, and replay of the empty identities is
+/// executed below (FR-046-AC-4, FR-513-AC-5).
 #[trace("TC-1308", "FR-046-AC-4", "FR-513-AC-5")]
 #[test]
 fn empty_collection_queries_return_their_defined_identity_on_the_spine() {
@@ -568,23 +606,39 @@ fn empty_collection_queries_return_their_defined_identity_on_the_spine() {
         })
         .collect();
     assert_eq!(query_declarations.len(), query_names.len());
-    for declaration in &query_declarations {
-        assert!(
-            declaration["node_id"].is_object(),
-            "query handle survives: {declaration}"
-        );
-        assert!(
-            declaration["semantic_type"].is_object(),
-            "query's selected result type survives"
-        );
-    }
-    assert!(
-        wire.to_string().contains("meter"),
-        "the query's selected unit survives emission"
+    let declaration_of = |name: &str| {
+        query_declarations
+            .iter()
+            .find(|node| node["declaration"]["qualified_name"][0] == name)
+            .copied()
+            .unwrap_or_else(|| panic!("{name} declaration is emitted"))
+    };
+    let node_ids: std::collections::BTreeSet<String> = query_declarations
+        .iter()
+        .map(|declaration| declaration["node_id"].to_string())
+        .collect();
+    assert_eq!(
+        node_ids.len(),
+        query_names.len(),
+        "every query keeps its own node identity"
+    );
+    assert_eq!(
+        declaration_of("queryContains")["semantic_type"],
+        declaration_of("queryForall")["semantic_type"],
+        "both Boolean queries select the same result type"
+    );
+    assert_ne!(
+        declaration_of("queryContains")["semantic_type"],
+        declaration_of("querySize")["semantic_type"],
+        "a Boolean query and an Integer query select different result types"
     );
     assert!(
-        wire.to_string().contains("queryMap") && wire.to_string().contains("x"),
-        "the query binder and its owning declaration survive emission"
+        has_string_leaf(&wire, "meter"),
+        "the selected unit `meter` survives emission as its own value"
+    );
+    assert!(
+        has_string_leaf(declaration_of("queryMap"), "x"),
+        "the map query's own declaration references its binder `x`"
     );
 
     for (function, expected) in [

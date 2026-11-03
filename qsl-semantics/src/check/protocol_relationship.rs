@@ -166,20 +166,6 @@ pub(crate) fn check(
                 }
             },
         };
-        if ends
-            .iter()
-            .any(|end| !matches!(end, ValueType::Reference(_)))
-        {
-            refusals.push((
-                target.span,
-                refusal(ProtocolAnchorCause::Unimplemented {
-                    name: protocol.name.name.clone(),
-                    construct: ProtocolConstructKind::Relationship.label(),
-                    span: target.span,
-                }),
-            ));
-            continue;
-        }
         checked.push(CheckedRelationship {
             name: relationship.name.name.clone(),
             key: record.key.clone(),

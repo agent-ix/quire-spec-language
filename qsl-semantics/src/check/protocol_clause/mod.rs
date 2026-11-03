@@ -230,8 +230,15 @@ pub fn check(
                     .map(|(_, owner)| owner.clone())
                     .or_else(|| scope.object_type_named(&role.context.name)),
                 model_member: port.map(|(key, _)| key.clone()),
+                // Only a Port role is written `on M::X` and binds the
+                // model's selection; every other role keeps the whole-name
+                // lookup, so a qualified non-Port role gets no selection.
                 model_selection: scope
-                    .model_selection(alias)
+                    .model_selection(if port.is_some() {
+                        alias
+                    } else {
+                        role.context.name.as_str()
+                    })
                     .map(|selection| selection.identity.clone()),
                 replicated: role.replicated.is_some(),
             }

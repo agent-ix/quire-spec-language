@@ -10,10 +10,8 @@
 //! FR-152 classification. No semantic context or model JSON is hand-built.
 //!
 //! The bundle is read at test time from the pinned
-//! `agent-ix-extraction-frontend` checkout. The temporary test root hard-links
-//! untouched files to that canonical fixture; edits detach only the files a
-//! test changes. This keeps the frontend's directory walk on regular files
-//! while avoiding a second copy of the upstream fixture tree. The unedited bundle does not admit whole at this pin, for
+//! `agent-ix-extraction-frontend` checkout. The temporary test root is a plain
+//! copy of that fixture, so edits never touch the shared checkout. The unedited bundle does not admit whole at this pin, for
 //! reasons owned outside this linker (asserted by `qsl-semantics`'
 //! `model_intake` tests):
 //!
@@ -90,22 +88,22 @@ fn fcd_fixtures_dir() -> &'static Path {
     })
 }
 
-fn hard_link_tree(from: &Path, to: &Path) {
+fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).expect("create bundle directory");
     for entry in std::fs::read_dir(from).expect("read bundle directory") {
         let entry = entry.expect("bundle entry");
         let target = to.join(entry.file_name());
         if entry.file_type().expect("entry type").is_dir() {
-            hard_link_tree(&entry.path(), &target);
+            copy_tree(&entry.path(), &target);
         } else {
-            std::fs::hard_link(entry.path(), &target).expect("link canonical bundle file");
+            std::fs::copy(entry.path(), &target).expect("copy canonical bundle file");
         }
     }
 }
 
 fn write_overlay(path: &Path, bytes: &[u8]) {
     if std::fs::symlink_metadata(path).is_ok() {
-        std::fs::remove_file(path).expect("detach canonical fixture hard link");
+        std::fs::remove_file(path).expect("detach canonical fixture file");
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("create overlay parent");
@@ -123,15 +121,15 @@ pub(crate) fn edit(path: &Path, from: &str, to: &str) {
     write_overlay(path, text.replace(from, to).as_bytes());
 }
 
-/// The canonical architecture fixture with only edited files detached into
-/// the temp root, then `extra` applied to those overlays.
+/// A temp copy of the canonical architecture fixture, then `extra` applied
+/// to the copy.
 pub(crate) fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let source = fcd_fixtures_dir().join("architecture");
-    hard_link_tree(&source, dir.path());
+    copy_tree(&source, dir.path());
     assert!(
         dir.path().join("spec/spec.md").is_file(),
-        "canonical fixture root did not link spec/spec.md from {}",
+        "canonical fixture root did not copy spec/spec.md from {}",
         source.display()
     );
     let spec = dir.path().join("spec");
@@ -528,9 +526,10 @@ fn architecture_fixture_binds_references_through_spine_i2() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"quire.value.complete/v1\";\n\
+         profile P = \"quire.protocol.finite-global/v1\";\n\
          model M = \"{PACKAGE}\";\n\
          pre FieldRule using S on M::Pump::run {{ self.id }}\n\
-         protocol Plumbing using S over (view: M::Sys) on origin {{\n\
+         protocol Plumbing using P over (view: M::Sys) on origin {{\n\
              role Operator on M::Sys;\n\
              role Outlet on M::pump_out;\n\
              relationship Pipe = M::pipe;\n\
@@ -638,6 +637,21 @@ fn architecture_fixture_binds_references_through_spine_i2() {
         .expect("Outlet role binds to the selected Port");
     assert_eq!(outlet.model_member.as_ref(), Some(&key("pump_out")));
     assert_eq!(
+        outlet.model_selection.as_deref(),
+        Some(PACKAGE),
+        "a Port role binds the selection of the model that owns the Port"
+    );
+    let operator = plumbing
+        .roles
+        .iter()
+        .find(|role| role.name == "Operator")
+        .expect("Operator role");
+    assert_eq!(operator.model_member, None);
+    assert_eq!(
+        operator.model_selection, None,
+        "a qualified role that is not a Port keeps the whole-name lookup and binds no selection"
+    );
+    assert_eq!(
         plumbing.relationships[0].key,
         key("pipe"),
         "the protocol relationship retains the connection declaration key"
@@ -669,6 +683,80 @@ fn architecture_fixture_binds_references_through_spine_i2() {
             .any(|protocol| protocol.name == "Plumbing"),
         "the checked protocol retains the fixture's role and relationship bindings"
     );
+}
+
+/// A systems part, port or allocation is retained for model-reference
+/// binding but is not a value type: used where a type is written, each still
+/// refuses on the spine.
+#[trace("TC-1308", "FR-036-AC-9")]
+#[test]
+fn systems_records_are_not_value_types_on_the_spine() {
+    let bundle = architecture_bundle(|_| {});
+    let bytes = lift(bundle.path());
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
+        .expect("the lifted FCD package enters I2 intake");
+    let cancel = Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let failure = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure).expect("no internal front-end fault")
+    };
+    for record in ["sys_pump", "pump_out", "pump_alloc"] {
+        let text = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile S = \"quire.value.complete/v1\";\n\
+             model M = \"{PACKAGE}\";\n\
+             predicate AsType using S (x: M::{record}): Boolean {{ true }}\n"
+        );
+        let source = SourceIdentity::new("agent-ix", "test:tc-1308-systems");
+        let parsed = qsl_replay::spine::parse(
+            &qsl_replay::spine::ParseRequest {
+                source: &source,
+                path: "systems.native",
+                bytes: text.as_bytes(),
+            },
+            limits.source,
+            &cancel,
+        )
+        .map_err(failure)
+        .expect("the native unit parses")
+        .into_value();
+        let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
+            .map_err(failure)
+            .expect("the fixture is selected by model M")
+            .into_value();
+        let refusal = match qsl_replay::spine::check(
+            &parsed,
+            "tc-1308-systems".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &cancel,
+        ) {
+            Ok(_) => panic!("M::{record} is not a value type"),
+            Err(refusal) => failure(refusal),
+        };
+        let qsl_replay::spine::CompileRefusal::Assembly {
+            refusal,
+            region: Some(region),
+        } = refusal.as_ref()
+        else {
+            panic!("M::{record} refuses at the assembler: {refusal:?}");
+        };
+        let written = format!("M::{record}");
+        assert!(
+            matches!(
+                refusal.errors.as_slice(),
+                [qsl_semantics::check::AssemblyError {
+                    cause: qsl_semantics::check::AssemblyCause::UnresolvedTypeName { name },
+                    ..
+                }] if *name == written
+            ),
+            "M::{record} is an unresolved type name: {refusal:?}"
+        );
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert_eq!(text.get(start..end), Some(written.as_str()));
+    }
 }
 
 /// Refusals at the same reference sites: a name the package does not
