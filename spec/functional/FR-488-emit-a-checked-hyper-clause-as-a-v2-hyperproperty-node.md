@@ -409,6 +409,30 @@ other binary operators as their own identities.
 The nodes this requirement mints count toward the package's node ceiling
 and checking work (NFR-011), the conditions as FR-487 states.
 
+### Clause names and clock bindings
+
+A hyper clause is named and clocked by its body wrapper, the node a consumer
+resolves as the clause's claim, not by the `hyperproperty` node, so the rows
+of QSpec FR-322-AC-342 to FR-322-AC-370 key on the wrapper.
+
+- The emitter SHALL write one `temporal_clause_names` row
+  `{declaration, occurrence, name}` for every hyper clause, whatever its
+  profile: `declaration` is the wrapper's emitted NodeId, `occurrence` is the
+  ordinal of the clause's assembled `claim` occurrence of the wrapper (the
+  occurrence of AC-14) and `name` is the declared clause name. Two
+  structurally equal hyper clauses share a wrapper and carry two rows at their
+  own ordinals; the name enters no key (AC-12).
+- The emitter SHALL write one `temporal_bindings` row
+  `{declaration, occurrence, clock_name, clock}` at the same key for a hyper
+  clause whose profile is clock-configured. `clock_name` is the text of the
+  wrapper's clock argument and `clock` is the declaration's own
+  `ClockConfiguration`; the emitter refuses a missing, unused or
+  profile-mismatched clock selection as FR-337 states, and a clause under an
+  unclocked profile writes a name row and no binding.
+- These rows share the arrays, the (NodeId, occurrence) order and the
+  omission rule of FR-337 "Clause names and clock bindings per occurrence"
+  with the temporal clauses of the same unit.
+
 ## Acceptance Criteria
 
 The vault, `NonInterference` and `SavesPower` are ADR-023 §1's and §8's, as
@@ -440,6 +464,8 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 | FR-488-AC-19 | An event-position false-extension clause with body `always[0,3] holds(...)` emits a wrapper whose law is that profile's row and an `always` node with the interval `{lower: "0", upper: "3"}`; an infinite-trace `v.l @ a = 0 until v.l @ b = 1` clause emits `quire.op.temporal.until` with a `null` interval and `eventually[2,*]` emits `{lower: "2", upper: null}`. All are admitted. | Test (TC-1266) |
 | FR-488-AC-20 | A bounded-profile clause with `fair weak V::Vault::step` on `a`, which S3 admits, is refused `unsupported_construct`/`not-yet-implemented` at the constraint. | Test (TC-1266) |
 | FR-488-AC-21 | The nodes this requirement mints count toward the package node ceiling: with a ceiling one node below `NonInterference`'s emission, compiling is refused with the ceiling's existing refusal, and at the ceiling it compiles. | Test (TC-1266) |
+| FR-488-AC-24 | `NonInterference` emits one `temporal_clause_names` row keyed by its body wrapper's NodeId, at the ordinal of its assembled `claim` occurrence, with the name `NonInterference`; the `hyperproperty` node has no row; two structurally equal hyper clauses with different names share one wrapper and carry two rows at distinct ordinals; renaming one changes no NodeId; and the rows sort with the unit's temporal-clause rows by (NodeId, occurrence). | Test (TC-1327) |
+| FR-488-AC-25 | Under event-position false-extension with a declared clock, the clause emits one `temporal_bindings` row at the wrapper's NodeId and the same occurrence, whose `clock_name` is the wrapper's clock text and whose `clock` is the declared configuration; an absent, unused or profile-mismatched clock selection refuses the compile with no package; under infinite-trace the clause has a name row and no binding. | Test (TC-1327) |
 
 ## Open QSpec questions
 

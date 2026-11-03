@@ -588,6 +588,27 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
   or its relation, a classification or a claim, its clock, activation,
   captures and fairness included, have different `package_id`s.
 
+### Clause names and clock bindings
+
+A hybrid claim is emitted as a `temporal_clause` node, so it takes part in the
+per-occurrence rows of QSpec FR-322-AC-342 to FR-322-AC-370 and FR-337
+"Clause names and clock bindings per occurrence".
+
+- The emitter SHALL write one `temporal_clause_names` row
+  `{declaration, occurrence, name}` for every checked hybrid claim, from the
+  checked graph's hybrid claim sites: `declaration` is the claim node's
+  emitted NodeId, `occurrence` is the ordinal of its `claim` occurrence and
+  `name` is the declared claim name. Two claims that share a node carry one
+  row each at their own ordinals.
+- A hybrid claim writes no `temporal_bindings` row when its profile is not
+  clock-configured. The claim's `clock` member selects `ModelTime` or
+  `ModelSteps` (see "Hybrid claims"), which is read by the claim's checked
+  record and the provider request and is not a `ClockConfiguration`, so a
+  hybrid claim has a name row and no binding, and a package whose only
+  clauses are hybrid claims omits `temporal_bindings`.
+- The rows are sorted with the unit's other clause rows by (NodeId,
+  occurrence).
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -609,6 +630,8 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 | FR-447-AC-15 | `SlowEnough` written `using` a profile alias selecting `quire.temporal.timed/v1` checks with the interval `{lower: 0, lower_open: false, upper: Some(10), upper_open: false}` and horizon `Some(Seconds(10))`, and S4 emits its `always` node with the timed interval `{lower: 0, upper: 10, lower_end: closed, upper_end: closed}` in exact rational seconds and the `timed/v1` law, which QSpec's v2 reader admits; under the infinite-trace profile the same claim emits the integer `[0, 10]`. Under `timed/v1`, `always [0, *] holds(h.v < 30)` is admitted, a hybrid claim admitting `[q, *]` there, with `upper: None`, horizon `None` and the emitted timed interval `upper` `null`, `upper_end` `open`; `always holds(h.v < 30)`, with no interval, is admitted under `timed/v1` with horizon `None`, and under `quire.temporal.event-position.false-extension/v1` it refuses `unsupported_construct`/`expression-form` at the operator's span, naming the profile. | Test (TC-1187) |
 | FR-447-AC-16 | QSL's I2 reader admits AC-12's emitted package and reads back `Braking2`'s `CheckedHybridModel`, with its two initial entries and its reset constraints `Eq` and `Ge`, and `Slows`'s and `Recent`'s `CheckedHybridClaim`s, with their clocks, the `Each` activation and its guard, the capture `v0` and its type, the fairness constraint, the `Once` operator and the intervals, each equal to the checked one; and it refuses a written default `initial` `invalid_semantic_graph` at `initial` and a fairness member naming `Halted` `missing_declaration`/`missing-name`, at QSpec FR-481's loci. | Test (TC-1220) |
 | FR-447-AC-17 | The request writer writes `SlowEnough`'s item with the member `"requirements": ["hybrid-dynamics"]` beside `"kind": "temporal-satisfaction"`, and writes no `requirements` on the item of a temporal clause over a model without hybrid dynamics in the same unit; with EN-6 and an in-process fixture hybrid provider whose descriptor `dynamics` is `["hybrid"]` both registered, `SlowEnough`'s item routes to the fixture alone and the other item to EN-6 alone, neither settling `ambiguous-backend`; two requests that differ only in `SlowEnough`'s `requirements` have different request identities. | Test (TC-1187) |
+| FR-447-AC-18 | The package of AC-5 holds exactly one `temporal_clause_names` row for `SlowEnough`, keyed by its `temporal_clause` node's NodeId at the ordinal of its `claim` occurrence, with the name `SlowEnough`, and no `temporal_bindings` member; two hybrid claims with equal bodies and different names share one node and carry two rows at distinct ordinals, in (NodeId, occurrence) order. | Test (TC-1328) |
+| FR-447-AC-19 | A unit holding a hybrid claim, a temporal clause with a clock-configured profile and a hyper clause emits one name row per `claim` occurrence of all three and a `temporal_bindings` row only for the clock-configured clause, all name rows in one array sorted by (NodeId, occurrence); the hybrid claim's `claim` occurrence has a name row and no binding row. | Test (TC-1328) |
 
 ## Dependencies
 

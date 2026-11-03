@@ -449,6 +449,42 @@ For QSL-1081 (captures):
   bounded monitors refuse a clause whose `holds` reads a capture with
   `ModelCheckRefusal::CaptureRead`.
 
+### Clause names and clock bindings per occurrence
+
+A `temporal_clause` node is shared by every structurally equal clause
+declaration, so its identity says nothing about which declaration, name or
+clock a consumer is reading. The package therefore carries that information in
+two sidecar arrays keyed by `claim` occurrence, not by node, and the emitter
+writes them from the checked graph at the same point as the nodes
+(QSpec FR-322-AC-342 to FR-322-AC-370).
+
+- The emitter SHALL write exactly one `temporal_clause_names` row
+  `{declaration, occurrence, name}` for every `claim` occurrence of every
+  `temporal_clause` node, whatever the clause's profile: `declaration` is the
+  node's emitted NodeId, `occurrence` is that occurrence's ordinal and `name`
+  is the clause's declared name. Two structurally equal clauses with different
+  names share one node and carry two rows with their own ordinals and names;
+  the name enters no node key, so renaming a clause changes a row and no
+  NodeId. A package with no `temporal_clause` node omits the member.
+- The emitter SHALL write one `temporal_bindings` row
+  `{declaration, occurrence, clock_name, clock}` for every `claim` occurrence
+  of a clause whose selected profile is clock-configured (event-position,
+  fixed-sample or timestamped-event false-extension): `occurrence` is the
+  occurrence's ordinal and `clock_name` and `clock` are that declaration's own
+  clock text and `ClockConfiguration`. The configuration is per occurrence,
+  not per node, so two declarations sharing a node may carry different
+  configurations. The emitter SHALL refuse an occurrence with no clock
+  selection, a selection that no occurrence uses, or a selection whose kind
+  the profile does not determine, and writes no package. A clause whose
+  profile selects no clock writes a name row and no binding, and a package
+  with no binding omits `temporal_bindings`.
+- The emitter SHALL sort both arrays by (`declaration` NodeId, `occurrence`),
+  so the order is a function of the checked graph and not of declaration
+  order.
+
+Hyper clauses and hybrid claims write into the same arrays by the rules of
+FR-488 and FR-447.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -468,6 +504,8 @@ For QSL-1081 (captures):
 | FR-337-AC-13 | Over the `Counter` subject with a capture `n: Int[0, 3] = c.value;` no `holds` reads: infinite-trace `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` is `Violated`, as FR-125-AC-18 returns it, and FR-128 replays its counterexample to `reproduced-with-evaluated-witness`; the unguarded `on each (q: M::Counter)` clause with the same capture is `Holds{Exhaustive}` (a guarded clause carries no closure certificate) and FR-338's checker accepts the `ClosureCertificate`, reading the captures from the recompiled package. For AC-11's `z` clause, FR-338's checker rejects a certificate for a reached state at which `z` is undefined `BadState` at the reached product state, as it rejects an undefined atom. FR-128 replays the same clause's `UndefinedEvaluation` counterexample to `reproduced-with-evaluated-witness` with the undefined value at position 2 located at `z`, and the payload with `where.locus` naming the activation or another capture, or with `where.position` 1, settles `inconclusive`, `ReplayParity`; FR-339's component checker is not built, so its rejection of the same certificate waits on it. | Test (TC-1267) |
 | FR-337-AC-14 | The footprint (FR-156 "Atom footprints") of `always holds(true)` `on each (q: M::Counter) when (true)` with `capture n: Int[0, 3] = c.value;` holds the location `Counter::value` with the `over` parameter as its receiver, which the same clause with no capture does not, and FR-126's partial-order run joins it into the atoms'; a capture initializer reading through `q` has the same receiver. | Test (TC-1267) |
 | FR-337-AC-15 | A clause with an aggregate atom emits a `temporal`/`formula` node with identity `quire.op.temporal.aggregate` and the normalized typed argument defined by QSpec FR-370-AC-14; its expression terms bind the clause's `over` parameter and captures, spans resolve through the source map, and changing the window, normalized `min_count`, expression, comparison or converted threshold changes the formula key and package identity. | Test (TC-1267) |
+| FR-337-AC-16 | Two structurally equal clauses `eventually[0,1] holds(true)` over one subject named `Alpha` and `Beta` emit one `temporal_clause` node and two `temporal_clause_names` rows at occurrences 0 and 1 with names `Alpha` and `Beta`, sorted by (NodeId, occurrence); renaming `Alpha` changes that row and no NodeId or `package_id` of any node; a unit with no clause omits the member, and a unit whose clauses all have one occurrence carries a row at occurrence 0 for each, whatever the clause's profile. | Test (TC-1326) |
+| FR-337-AC-17 | The same two clauses under event-position false-extension with the clocks `"a"` (event-position) and `"b"` (a different configuration) emit one `temporal_bindings` row per occurrence, each with its own `clock_name` and `clock`, sorted by (NodeId, occurrence); an occurrence with no clock selection, a selection no occurrence uses, and a selection of a kind the profile does not determine each refuse the compile with no package; under an unclocked profile the package has name rows and no `temporal_bindings` member. | Test (TC-1326) |
 
 ### Aggregate formula emission
 
