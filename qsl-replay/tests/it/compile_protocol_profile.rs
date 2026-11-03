@@ -55,6 +55,7 @@ fn compile(text: &str) -> Result<Value, ReplayRefusal> {
 fn refusal_code(result: Result<Value, ReplayRefusal>) -> Code {
     match result {
         Err(ReplayRefusal::Recompile(refusal)) => refusal.code(),
+        Err(ReplayRefusal::RecompileWithProtocolResults { refusal, .. }) => refusal.code(),
         other => panic!("expected a recompile refusal, got {other:?}"),
     }
 }
