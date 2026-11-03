@@ -209,9 +209,10 @@ impl ParsedUnit {
                 }
             }
             combined.selections.imports.extend(unit.selections.imports);
-            combined.import_selection_units.extend(
-                std::iter::repeat(source_unit_index).take(unit.import_selection_units.len()),
-            );
+            combined.import_selection_units.extend(std::iter::repeat_n(
+                source_unit_index,
+                unit.import_selection_units.len(),
+            ));
             let mut unit_model_alias_counts = BTreeMap::new();
             for model in &unit.selections.models {
                 *unit_model_alias_counts
