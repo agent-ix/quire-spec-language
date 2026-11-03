@@ -119,7 +119,7 @@ fn parse_named(identity: &SourceIdentity, bytes: &[u8]) -> ParsedUnitSource {
 fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing() {
     let dependencies = DependencyInput::default();
     assert!(matches!(
-        preflight_unit_list(&[], &dependencies),
+        preflight_unit_list(&[], &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::Empty
         ))
@@ -139,7 +139,7 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
         },
     ];
     assert!(matches!(
-        preflight_unit_list(&duplicate_requests, &dependencies),
+        preflight_unit_list(&duplicate_requests, &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::DuplicateOwner {
                 first: 0,
@@ -162,7 +162,7 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
         bytes: b"not valid",
     }];
     assert!(matches!(
-        preflight_unit_list(&requests, &dependencies),
+        preflight_unit_list(&requests, &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::LibraryOwner { unit: 0, .. }
         ))
@@ -183,7 +183,7 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        duplicate,
+        duplicate.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::DuplicateName { name, first_unit, second_unit, .. })) if name == "shared" && first_unit.identity == "z-unit" && second_unit.identity == "a-unit"
     ));
 
@@ -211,13 +211,13 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        refused,
+        refused.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::SiblingImport { identity, unit, region: Some(region) })) if identity == "a-unit" && unit.identity == "a-unit" && region.source().identity() == "z-unit" && region.start() < region.end()
     ));
 
-    let different_profiles = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"other.profile/v1\";\nfunction local(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let different_profiles =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"other.profile/v1\";\nfunction local(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     let refused = admit_parsed_unit_list(
         vec![
             parse_named(&first, unit_z.as_bytes()),
@@ -226,7 +226,7 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        refused,
+        refused.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::HeaderConflict {
             first_unit,
             second_unit,
@@ -241,12 +241,12 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
             && usize::try_from(region.end()).unwrap() == second_header.end
     ));
 
-    let profile_order_first = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile x = \"p1\";\nprofile y = \"p2\";\nfunction ordered_a(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
-    let profile_order_second = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile y = \"p2\";\nprofile x = \"p1\";\nfunction ordered_b(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let profile_order_first =
+        "language \"ix:native\" edition \"1-draft\";\nprofile x = \"p1\";\nprofile y = \"p2\";\nfunction ordered_a(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
+    let profile_order_second =
+        "language \"ix:native\" edition \"1-draft\";\nprofile y = \"p2\";\nprofile x = \"p1\";\nfunction ordered_b(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     assert!(matches!(
         admit_parsed_unit_list(
             vec![
@@ -254,7 +254,8 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
                 parse_named(&second, profile_order_second.as_bytes()),
             ],
             &DependencyInput::default(),
-        ),
+        )
+        .map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::HeaderConflict { .. }
         ))
@@ -267,12 +268,12 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &["p1"],
     ));
 
-    let alias_first = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
-    let alias_second = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let alias_first =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
+    let alias_second =
+        "language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     assert!(admit_parsed_unit_list(
         vec![
             parse_named(&first, alias_first.as_bytes()),
@@ -625,8 +626,10 @@ fn protocol_check_stage(
     )
     .unwrap_or_else(|failure| panic!("fixture model admits: {failure:?}"))
     .into_value();
-    let mut limits = SpineLimits::default();
-    limits.checking = checking;
+    let limits = SpineLimits {
+        checking,
+        ..SpineLimits::default()
+    };
     super::check(
         &parsed,
         "fixture".to_owned(),
@@ -804,7 +807,7 @@ fn check_retains_the_owning_protocol_locus() {
             && locus.start() == x_start as u64
             && locus.end() == (x_start + 1) as u64
     ));
-    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    let without_payload = crate::ReplayRefusal::Recompile(*refusal);
     assert_eq!(with_payload_category, without_payload.code().category());
     assert_eq!(
         with_payload_exit,
@@ -915,7 +918,7 @@ fn state_clause_refusal_keeps_protocol_result_cleared() {
         [ProtocolResult::Cleared { declaration, stage: SpineStage::Check }]
             if declaration == "W"
     ));
-    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    let without_payload = crate::ReplayRefusal::Recompile(*refusal);
     assert_eq!(with_payload_category, without_payload.code().category());
     assert_eq!(
         with_payload_exit,

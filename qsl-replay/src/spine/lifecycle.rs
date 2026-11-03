@@ -255,7 +255,7 @@ fn failure_of(
         return StageFailure::Fault(fault);
     }
     match protocol_results {
-        Some(results) => StageFailure::RefusedWithPayload(refusal, results),
+        Some(results) => StageFailure::RefusedWithPayload(Box::new(refusal), results),
         None => StageFailure::Refused(refusal),
     }
 }
@@ -417,7 +417,7 @@ fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
 pub fn refusal_or_fault(failure: FrontEndFailure) -> Result<Box<CompileRefusal>, InternalFault> {
     match failure {
         StageFailure::Refused(refusal) => Ok(refusal),
-        StageFailure::RefusedWithPayload(refusal, _) => Ok(refusal),
+        StageFailure::RefusedWithPayload(refusal, _) => Ok(*refusal),
         StageFailure::Limit(limit) => Ok(Box::new(CompileRefusal::Limit(limit))),
         StageFailure::LimitWithPayload(limit, _) => Ok(Box::new(CompileRefusal::Limit(limit))),
         StageFailure::Fault(fault) => Err(fault),
@@ -470,16 +470,16 @@ impl AdmittedUnitList {
 pub fn preflight_unit_list(
     requests: &[ParseRequest<'_>],
     dependencies: &DependencyInput,
-) -> Result<(), CompileRefusal> {
+) -> Result<(), Box<CompileRefusal>> {
     if requests.is_empty() {
-        return Err(CompileRefusal::UnitList(UnitListRefusal::Empty));
+        return Err(unit_list_refusal(UnitListRefusal::Empty));
     }
     for (second, request) in requests.iter().enumerate() {
         if let Some(first) = requests[..second]
             .iter()
             .position(|earlier| same_owner(earlier.source, request.source))
         {
-            return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateOwner {
+            return Err(unit_list_refusal(UnitListRefusal::DuplicateOwner {
                 first,
                 second,
                 authority: request.source.authority.clone(),
@@ -488,7 +488,7 @@ pub fn preflight_unit_list(
         }
         for (library, supplied) in &dependencies.libraries {
             if same_owner(&supplied.source, request.source) {
-                return Err(CompileRefusal::UnitList(UnitListRefusal::LibraryOwner {
+                return Err(unit_list_refusal(UnitListRefusal::LibraryOwner {
                     unit: second,
                     library: library.to_string(),
                     authority: request.source.authority.clone(),
@@ -506,9 +506,9 @@ pub fn preflight_unit_list(
 pub fn admit_parsed_unit_list(
     mut units: Vec<ParsedUnitSource>,
     dependencies: &DependencyInput,
-) -> Result<AdmittedUnitList, CompileRefusal> {
+) -> Result<AdmittedUnitList, Box<CompileRefusal>> {
     if units.is_empty() {
-        return Err(CompileRefusal::UnitList(UnitListRefusal::Empty));
+        return Err(unit_list_refusal(UnitListRefusal::Empty));
     }
     let requests: Vec<_> = units
         .iter()
@@ -519,7 +519,7 @@ pub fn admit_parsed_unit_list(
     for (unit, identity) in requests.iter().enumerate() {
         for (library, supplied) in &dependencies.libraries {
             if same_owner(&supplied.source, identity) {
-                return Err(CompileRefusal::UnitList(UnitListRefusal::LibraryOwner {
+                return Err(unit_list_refusal(UnitListRefusal::LibraryOwner {
                     unit,
                     library: library.to_string(),
                     authority: identity.authority.clone(),
@@ -532,7 +532,7 @@ pub fn admit_parsed_unit_list(
         if let Some(first) =
             (0..second).find(|first| same_owner(&requests[*first], &requests[second]))
         {
-            return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateOwner {
+            return Err(unit_list_refusal(UnitListRefusal::DuplicateOwner {
                 first,
                 second,
                 authority: requests[second].authority.clone(),
@@ -563,7 +563,7 @@ pub fn admit_parsed_unit_list(
             &profiles,
         ) {
             let second_header = header_span(unit);
-            return Err(CompileRefusal::UnitList(UnitListRefusal::HeaderConflict {
+            return Err(unit_list_refusal(UnitListRefusal::HeaderConflict {
                 first_unit: Box::new(requests[0].clone()),
                 first_header,
                 second_unit: Box::new(requests[index].clone()),
@@ -581,7 +581,7 @@ pub fn admit_parsed_unit_list(
                     &LibraryName::new(&import.identity)
                         .unwrap_or_else(|_| unreachable!("parsed import identities are validated")),
                 ) {
-                    return Err(CompileRefusal::UnitList(UnitListRefusal::SiblingImport {
+                    return Err(unit_list_refusal(UnitListRefusal::SiblingImport {
                         identity: import.identity.clone(),
                         unit: Box::new(requests[sibling].clone()),
                         region: region(unit.source().reference(), import.identity_span),
@@ -599,7 +599,7 @@ pub fn admit_parsed_unit_list(
             let span = form.span();
             if let Some((first, first_span)) = names.insert(name, (unit_index, span)) {
                 if first != unit_index {
-                    return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateName {
+                    return Err(unit_list_refusal(UnitListRefusal::DuplicateName {
                         name: name.to_owned(),
                         first_unit: Box::new(requests[first].clone()),
                         first_span,
@@ -620,6 +620,10 @@ pub fn admit_parsed_unit_list(
     Ok(AdmittedUnitList {
         units: paired.into_iter().map(|(_, unit)| unit).collect(),
     })
+}
+
+fn unit_list_refusal(refusal: UnitListRefusal) -> Box<CompileRefusal> {
+    Box::new(CompileRefusal::UnitList(refusal))
 }
 
 fn same_owner(first: &SourceIdentity, second: &SourceIdentity) -> bool {
@@ -1011,13 +1015,21 @@ pub fn check_with_temporal_selections_and_execution_points(
     )
 }
 
+/// The per-unit inputs of [`check_for_continuation`].
+pub(crate) struct ContinuationInputs<'a> {
+    /// The package name the unit checks under.
+    pub(crate) package_name: String,
+    /// Accepted execution points keyed by authored state-clause name.
+    pub(crate) execution_points: &'a super::StateClauseExecutionPoints,
+    /// Explicit clock selections for configured temporal clauses.
+    pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
+}
+
 /// S3 continuation for the compiler: keep an attributable protocol refusal
 /// in the checked graph so S4 can still emit clean siblings.
 pub(crate) fn check_for_continuation(
     parsed: &ParsedUnitSource,
-    package_name: String,
-    execution_points: &super::StateClauseExecutionPoints,
-    temporal_selections: &[qsl_package::TemporalClockSelection],
+    inputs: ContinuationInputs<'_>,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -1025,10 +1037,10 @@ pub(crate) fn check_for_continuation(
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     check_with_context_and_temporal_selections(
         parsed,
-        package_name,
-        execution_points,
+        inputs.package_name,
+        inputs.execution_points,
         None,
-        temporal_selections,
+        inputs.temporal_selections,
         models,
         dependencies,
         limits,
@@ -1091,11 +1103,11 @@ fn check_with_context_and_temporal_selections(
         ) {
             Ok(package) => package,
             Err(refusal) => {
-                return Err(attach_protocol_results(parsed, refusal, &source_len).into());
+                return Err(attach_protocol_results(parsed, refusal, &source_len));
             }
         };
         if let Err(refusal) = resolution.check_unimported_refinement_values() {
-            return Err(attach_protocol_results(parsed, refusal, &source_len).into());
+            return Err(attach_protocol_results(parsed, refusal, &source_len));
         }
         *work = resolution.work;
         let mut library_packages = BTreeMap::new();
@@ -1203,7 +1215,7 @@ pub fn package_with_temporal_selections(
                             },
                             |failure| Box::new(failure.to_refusal()),
                         );
-                        return Err(StageError::with_protocol_results(refusal, results).into());
+                        return Err(StageError::with_protocol_results(refusal, results));
                     }
                     protocol_emission.emission().ok_or_else(|| {
                         Box::new(CompileRefusal::Emit(
@@ -1223,7 +1235,7 @@ pub fn package_with_temporal_selections(
                         },
                         |failure| Box::new(failure.to_refusal()),
                     );
-                    return Err(StageError::with_protocol_results(refusal, results).into());
+                    return Err(StageError::with_protocol_results(refusal, results));
                 }
                 qsl_package::ProtocolEmissionAggregate::Incomplete { primary } => {
                     let limit =
@@ -1798,13 +1810,11 @@ fn protocol_check_outcome(
             });
         }
     }
-    if first_failure.is_none() {
-        if !graph.unit_refusals().is_empty() {
-            first_failure = Some(CompileRefusal::Check {
-                refusals: graph.unit_refusals().to_vec(),
-                region: None,
-            });
-        }
+    if first_failure.is_none() && !graph.unit_refusals().is_empty() {
+        first_failure = Some(CompileRefusal::Check {
+            refusals: graph.unit_refusals().to_vec(),
+            region: None,
+        });
     }
     if first_failure.is_none() {
         first_failure = protocol_failure_from_parsed(parsed);

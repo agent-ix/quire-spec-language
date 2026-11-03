@@ -52,7 +52,7 @@ pub use lifecycle::{
     parse, preflight_unit_list, refusal_or_fault, select, AdmittedModels, AdmittedUnitList,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
-pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation};
+pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.

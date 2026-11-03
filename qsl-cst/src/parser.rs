@@ -244,7 +244,7 @@ fn recover_at_protocol_delimiter(
         .take(next)
         .filter(|(_, token)| is_protocol(token))
         .map(|(index, _)| index)
-        .last()?;
+        .next_back()?;
     if owner >= failure_position {
         return None;
     }
