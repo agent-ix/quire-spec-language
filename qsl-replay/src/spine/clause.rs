@@ -385,24 +385,31 @@ impl ClauseDisposition {
     }
 }
 
-/// The FR-285 severity order for a finite-window clause batch. The QSL
-/// run_clause entry currently returns one report; callers aggregating its
-/// temporal items can use this same order without collapsing `indeterminate`
-/// into the shared catalog's `inconclusive` category.
-pub fn temporal_batch_exit_code<'a>(outcomes: impl IntoIterator<Item = &'a TemporalVerdict>) -> u8 {
+/// The FR-285 multi-item ranking of temporal outcomes: the label and exit of
+/// the most severe one under the order 30, 20, 21, 22, 10, 11, 0, each read
+/// from [`TemporalVerdict::label_and_exit`], the mapping the single-report run
+/// path reads; `None` for no outcome.
+pub fn temporal_batch_outcome<'a>(
+    outcomes: impl IntoIterator<Item = &'a TemporalVerdict>,
+) -> Option<(&'static str, u8)> {
+    let severity = |exit: u8| match exit {
+        30 => 6,
+        20 => 5,
+        21 => 4,
+        22 => 3,
+        10 => 2,
+        11 => 1,
+        _ => 0,
+    };
     outcomes
         .into_iter()
-        .map(TemporalVerdict::exit_code)
-        .max_by_key(|code| match code {
-            30 => 6,
-            20 => 5,
-            21 => 4,
-            22 => 3,
-            10 => 2,
-            11 => 1,
-            _ => 0,
-        })
-        .unwrap_or(0)
+        .map(TemporalVerdict::label_and_exit)
+        .max_by_key(|(_, exit)| severity(*exit))
+}
+
+/// The exit of [`temporal_batch_outcome`]: 0 for no outcome.
+pub fn temporal_batch_exit_code<'a>(outcomes: impl IntoIterator<Item = &'a TemporalVerdict>) -> u8 {
+    temporal_batch_outcome(outcomes).map_or(0, |(_, exit)| exit)
 }
 
 /// The settlement of a temporal clause on one trace (FR-327 "Outputs"), as
@@ -505,24 +512,28 @@ impl TemporalVerdict {
         }
     }
 
+    /// FR-285's category label and exit for this verdict, including `pending`
+    /// (exit 0) and `indeterminate` (exit 11): the one interim mapping
+    /// (FR-285 "Interim mapping until Contract IR IR-1281") that the
+    /// single-report run path and the multi-item ranking both read.
+    pub fn label_and_exit(&self) -> (&'static str, u8) {
+        match self.temporal_category() {
+            TemporalCategory::Shared(category) => (category.as_str(), category.trace_exit_code()),
+            TemporalCategory::Pending => ("pending", 0),
+            TemporalCategory::Indeterminate => ("indeterminate", 11),
+        }
+    }
+
     /// FR-285's category spelling, including `pending` and `indeterminate`.
     pub fn category_label(&self) -> &'static str {
-        match self.temporal_category() {
-            TemporalCategory::Shared(category) => category.as_str(),
-            TemporalCategory::Pending => "pending",
-            TemporalCategory::Indeterminate => "indeterminate",
-        }
+        self.label_and_exit().0
     }
 
     /// FR-285's process exit: 0 for pending, 11 for indeterminate and the
     /// shared category's exit otherwise (a supplied-trace clause still
     /// pending exits 0).
     pub fn exit_code(&self) -> u8 {
-        match self.temporal_category() {
-            TemporalCategory::Shared(category) => category.trace_exit_code(),
-            TemporalCategory::Pending => 0,
-            TemporalCategory::Indeterminate => 11,
-        }
+        self.label_and_exit().1
     }
 }
 

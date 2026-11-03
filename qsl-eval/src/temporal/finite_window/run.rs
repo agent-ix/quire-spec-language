@@ -345,34 +345,61 @@ impl<L: TemporalLetters> Run<'_, L> {
         Ok(closure)
     }
 
+    /// Read the atom `node` at `position`. Observations that share a stamp
+    /// are readings of one instant, so every position of the stamp is read:
+    /// when two of them give differing valuations of the atom, it is
+    /// `ConflictingValuation` at every position of that stamp (FR-501
+    /// "Verdicts"), whatever order they were listed in.
     fn read_atom(&mut self, node: usize, position: usize) -> Result<(), Stop> {
         self.charge()?;
+        let class = self.class(node);
         let id = self
             .clause
             .formula()
-            .node_id(node)
+            .node_id(class)
             .ok_or_else(|| fault("atom-has-node-id"))?;
-        let at = position_of(position)?;
-        let node = self.class(node);
-        if self.cells.contains_key(&(position, node)) {
-            return Ok(());
+        let stamp = self.stamp(position)?;
+        let mut group = Vec::new();
+        for (index, candidate) in self.stamps.iter().enumerate() {
+            if *candidate == stamp {
+                group.push(index);
+            }
         }
-        match self.letters.valuation(id, at, &mut *self.meter)? {
-            Valuation::True => {
-                self.cells.insert((position, node), Cell::True);
+        for member in &group {
+            if self.cells.contains_key(&(*member, class)) {
+                continue;
             }
-            Valuation::False => {
-                self.cells.insert((position, node), Cell::False);
+            let at = position_of(*member)?;
+            match self.letters.valuation(id, at, &mut *self.meter)? {
+                Valuation::True => {
+                    self.cells.insert((*member, class), Cell::True);
+                }
+                Valuation::False => {
+                    self.cells.insert((*member, class), Cell::False);
+                }
+                Valuation::Missing => {
+                    self.cells.insert((*member, class), Cell::Missing);
+                }
+                Valuation::Undefined(cause) => {
+                    self.cells.insert((*member, class), Cell::Missing);
+                    self.undefined.insert((*member, class), cause);
+                }
             }
-            Valuation::Missing => {
-                self.cells.insert((position, node), Cell::Missing);
-            }
-            Valuation::Conflicting => {
-                self.cells.insert((position, node), Cell::Conflicting);
-            }
-            Valuation::Undefined(cause) => {
-                self.cells.insert((position, node), Cell::Missing);
-                self.undefined.insert((position, node), cause);
+        }
+        let held = |cell: Option<&Cell>, want: Cell| cell == Some(&want);
+        let differ = group
+            .iter()
+            .any(|member| held(self.cells.get(&(*member, class)), Cell::True))
+            && group
+                .iter()
+                .any(|member| held(self.cells.get(&(*member, class)), Cell::False));
+        if differ {
+            for member in &group {
+                if let Some(cell) = self.cells.get_mut(&(*member, class)) {
+                    if matches!(cell, Cell::True | Cell::False) {
+                        *cell = Cell::Conflicting;
+                    }
+                }
             }
         }
         Ok(())

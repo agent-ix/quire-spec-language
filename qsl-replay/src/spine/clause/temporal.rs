@@ -48,7 +48,7 @@ pub enum TraceInput {
     },
     /// A finite trace whose positions carry non-negative timestamp ticks and
     /// whose watermark and completeness assertion describe window closure.
-    Timestamped(TimestampedTraceInput),
+    Timestamped(Box<TimestampedTraceInput>),
 }
 
 /// The timestamped observations and progress premises for FR-501.
@@ -70,15 +70,14 @@ pub struct TimestampedTraceInput {
     /// Whether the surrounding execution has closed. It changes only the
     /// reported premise, never the verdict (FR-501 "Verdicts").
     pub execution_closed: bool,
-    /// The clock binding's declared cover of a stamp (FR-501 Inputs).
-    pub cover: ClockCover,
+    /// The cover the trace declares for its stamps (FR-501 Inputs); `None`
+    /// is `Exact`. The checked clause's clock configuration names the
+    /// timestamp unit only, so the cover has no other source (FR-330).
+    pub cover: Option<ClockCover>,
     /// Atom valuations absent from an admitted observation (QSpec FR-160):
     /// each is a position, by its index in `positions`, and the zero-based
     /// `holds` formula node of the checked clause.
     pub missing_valuations: Vec<TimestampedMissingValuation>,
-    /// Atom valuations at which two differing valuations were admitted at the
-    /// one position (QSpec FR-160), named as `missing_valuations` are.
-    pub conflicting_valuations: Vec<TimestampedMissingValuation>,
     /// Whether the first represented position is an authoritative origin.
     pub authoritative_origin: bool,
 }
@@ -95,8 +94,8 @@ pub struct TraceBinding {
     pub parameters: qsl_package::ClockConfiguration,
 }
 
-/// One timestamped atom valuation, absent or conflicting, named by position
-/// and atom.
+/// One timestamped atom valuation, absent from its observation, named by
+/// position and atom.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TimestampedMissingValuation {
     /// Zero-based trace position.
@@ -484,7 +483,7 @@ fn run_finite_window(
         clause.name(),
         WindowClock {
             unit: clause.clock().to_owned(),
-            cover: input.cover,
+            cover: input.cover.unwrap_or(ClockCover::Exact),
         },
         ordered
             .iter()
@@ -555,7 +554,6 @@ fn run_finite_window(
             .collect()
     };
     let absent = same_atom(canonical(&input.missing_valuations));
-    let conflicting = same_atom(canonical(&input.conflicting_valuations));
     let observed = evaluate_observed_finite_window(
         run.package,
         node,
@@ -564,7 +562,6 @@ fn run_finite_window(
         over,
         qsl_eval::temporal::WindowValuations {
             absent: &absent,
-            conflicting: &conflicting,
             classes: &classes,
         },
         meter,

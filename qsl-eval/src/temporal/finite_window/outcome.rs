@@ -22,9 +22,6 @@ pub enum Valuation {
     /// The valuation is absent from the admitted observation: both
     /// possibilities.
     Missing,
-    /// Two admitted valuations of the atom at the position differ: both
-    /// possibilities, with a reason of their own.
-    Conflicting,
     /// The atom is undefined at the position (FR-327).
     Undefined(UndefinedCause),
 }

@@ -192,7 +192,7 @@ fn timestamped_with(
         unit,
         |labels| ClauseRunSelection::Temporal {
             name: "Window".to_owned(),
-            trace: TraceInput::Timestamped(crate::spine::TimestampedTraceInput {
+            trace: TraceInput::Timestamped(Box::new(crate::spine::TimestampedTraceInput {
                 positions: labels
                     .iter()
                     .zip(stamps)
@@ -207,11 +207,10 @@ fn timestamped_with(
                 binding: Some(finite_window_binding()),
                 scope_closed: true,
                 execution_closed: true,
-                cover: qsl_eval::temporal::ClockCover::Exact,
+                cover: None,
                 missing_valuations: Vec::new(),
-                conflicting_valuations: Vec::new(),
                 authoritative_origin: true,
-            }),
+            })),
             over: over("c1"),
         },
         values,
@@ -1428,7 +1427,7 @@ fn timestamped_profile_and_trace_shape_must_match() {
         Unit::Bounded,
         |labels| ClauseRunSelection::Temporal {
             name: "Bounded".to_owned(),
-            trace: TraceInput::Timestamped(crate::spine::TimestampedTraceInput {
+            trace: TraceInput::Timestamped(Box::new(crate::spine::TimestampedTraceInput {
                 positions: labels
                     .iter()
                     .map(|document| crate::spine::TimestampedObservation {
@@ -1442,11 +1441,10 @@ fn timestamped_profile_and_trace_shape_must_match() {
                 binding: Some(finite_window_binding()),
                 scope_closed: true,
                 execution_closed: true,
-                cover: qsl_eval::temporal::ClockCover::Exact,
+                cover: None,
                 missing_valuations: Vec::new(),
-                conflicting_valuations: Vec::new(),
                 authoritative_origin: true,
-            }),
+            })),
             over: over("c1"),
         },
         &[1],
@@ -1572,7 +1570,7 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
         else {
             unreachable!()
         };
-        trace.cover = cover;
+        trace.cover = Some(cover);
         request
     }
 
@@ -1655,39 +1653,95 @@ fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
     );
     assert_eq!(outcome(&missing(&[0, 2, 1], 5)), &TemporalVerdict::Holds);
 
-    // Two legal events at one stamp are not a conflict: an event that holds
-    // the atom settles the existential whatever the other reads.
-    let same_stamp = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 0], 5, Some(5)));
-    assert_eq!(outcome(&same_stamp), &TemporalVerdict::Holds);
-    // A conflict is two differing valuations admitted at one position.
-    let conflicting = |values: &[i64]| {
-        let mut request = timestamped(&[0, 2, 5], values, 5, Some(5));
-        let ClauseRunSelection::Temporal {
-            trace: TraceInput::Timestamped(trace),
-            ..
-        } = &mut request.selection
-        else {
-            unreachable!()
-        };
-        trace
-            .conflicting_valuations
-            .push(crate::spine::TimestampedMissingValuation {
-                position: 1,
-                atom: 1,
-            });
-        report(request)
+    // Observations that share a stamp are readings of one instant: differing
+    // readings of the atom are a conflict, named at the lowest canonical
+    // position of the stamp, whatever order they were listed in.
+    let conflicting = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 0], 5, Some(5)));
+    let conflict = TemporalVerdict::Indeterminate {
+        at: 0,
+        reason: crate::spine::TemporalIndeterminateReason::ConflictingValuation {
+            position: 1,
+            atom: "holds(c.value > 0)".to_owned(),
+        },
     };
+    assert_eq!(outcome(&conflicting), &conflict);
+    let reversed = report(listed_in(
+        timestamped(&[0, 2, 2, 5], &[0, 1, 0, 0], 5, Some(5)),
+        &[3, 2, 1, 0],
+    ));
+    assert_eq!(outcome(&reversed), &conflict);
     assert_eq!(
-        outcome(&conflicting(&[0, 0, 0])),
-        &TemporalVerdict::Indeterminate {
+        window_report(&reversed).identity,
+        window_report(&conflicting).identity
+    );
+    // A later witness settles around the conflict.
+    let later_witness = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 1], 5, Some(5)));
+    assert_eq!(outcome(&later_witness), &TemporalVerdict::Holds);
+}
+
+/// FR-501-AC-23 (TC-1295 row 37): equal readings at one stamp are not a
+/// conflict.
+#[trace("TC-1295", "FR-501-AC-23")]
+#[test]
+fn timestamped_equal_readings_at_one_stamp_are_not_a_conflict() {
+    let report = report(timestamped(&[0, 2, 2, 5], &[0, 1, 1, 0], 5, Some(5)));
+    assert_eq!(outcome(&report), &TemporalVerdict::Holds);
+}
+
+/// FR-501-AC-22, AC-24, AC-25 (TC-1295 rows 36, 38, 39): the cover comes from
+/// the trace input and defaults to `Exact`; the execution closure is carried
+/// and does not change the verdict.
+#[trace("TC-1295", "FR-501-AC-22")]
+#[trace("TC-1295", "FR-501-AC-24")]
+#[trace("TC-1295", "FR-501-AC-25")]
+#[test]
+fn timestamped_cover_and_execution_come_from_the_trace_input() {
+    use qsl_eval::temporal::{ClockCover, Closure};
+    let handshake = |ack: u64, watermark: u64, through: u64, cover: Option<ClockCover>| {
+        let request = with_clause_body(
+            timestamped(&[0, ack], &[1, 2], watermark, Some(through)),
+            "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
+        );
+        report(timestamped_changed(request, |trace| trace.cover = cover))
+    };
+    // AC-22: no cover is `Exact`.
+    assert_eq!(
+        outcome(&handshake(2_998, 3_001, 3_001, None)),
+        &TemporalVerdict::Holds
+    );
+    assert_eq!(
+        outcome(&handshake(3_000, 3_001, 3_001, None)),
+        &TemporalVerdict::Holds
+    );
+    assert_eq!(
+        outcome(&handshake(3_001, 3_001, 3_001, None)),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    // AC-24: a supplied cover is the one used.
+    let counter = Some(ClockCover::Counter { uncertainty: 1 });
+    let supplied = handshake(3_500, 3_001, 3_002, counter);
+    let exact = handshake(3_500, 3_001, 3_002, Some(ClockCover::Exact));
+    assert_eq!(
+        outcome(&supplied),
+        &TemporalVerdict::PendingWindow {
             at: 0,
-            reason: crate::spine::TemporalIndeterminateReason::ConflictingValuation {
-                position: 1,
-                atom: "holds(c.value > 0)".to_owned(),
-            },
+            deadline: 3_002
         }
     );
-    assert_eq!(outcome(&conflicting(&[0, 0, 1])), &TemporalVerdict::Holds);
+    assert_eq!(outcome(&exact), &TemporalVerdict::Violated { at: 0 });
+    assert_ne!(
+        window_report(&supplied).identity,
+        window_report(&exact).identity
+    );
+    // AC-25: the execution closure is carried and changes no verdict.
+    let closed = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
+    let open = report(timestamped_changed(
+        timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)),
+        |trace| trace.execution_closed = false,
+    ));
+    assert_eq!(outcome(&open), outcome(&closed));
+    assert_eq!(window_report(&closed).premises.execution, Closure::Closed);
+    assert_eq!(window_report(&open).premises.execution, Closure::Open);
 }
 
 /// FR-501-AC-12 (TC-1295): a closed `[0,5]` existential on stamps 0,2,5
@@ -1959,7 +2013,9 @@ fn timestamped_counter_margin_delays_establishment() {
                 "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
             )
             .into_bytes();
-        report(timestamped_changed(request, |trace| trace.cover = cover))
+        report(timestamped_changed(request, |trace| {
+            trace.cover = Some(cover)
+        }))
     }
     let counter = qsl_eval::temporal::ClockCover::Counter { uncertainty: 1 };
     assert_eq!(
@@ -2132,7 +2188,7 @@ fn timestamped_result_identity_follows_every_input() {
     record(
         "cover",
         timestamped_changed(base(), |trace| {
-            trace.cover = qsl_eval::temporal::ClockCover::Counter { uncertainty: 0 };
+            trace.cover = Some(qsl_eval::temporal::ClockCover::Counter { uncertainty: 0 });
         }),
     );
     record(
@@ -2317,17 +2373,12 @@ fn timestamped_until_over_one_authority_is_the_same_reversed() {
 #[trace("TC-1295", "FR-501-AC-21")]
 #[test]
 fn timestamped_mixed_authorities_have_one_canonical_order() {
-    // Listed A1, A2, B1, none; the B1 observation alone is false, so its
-    // canonical index (2) is the support position under every listing.
-    let base = || {
+    // Equal readings; the B1 observation's valuation is absent, so the
+    // position the reason names is B1's index in canonical order: A1, A2, B1,
+    // the keyless one puts it at 2 under every listing.
+    let keyed = || {
         timestamped_changed(
-            timestamped_with(
-                Unit::TimestampedAlwaysFive,
-                &[0, 0, 0, 0],
-                &[1, 1, 0, 1],
-                5,
-                Some(5),
-            ),
+            timestamped_with(Unit::Timestamped, &[0, 0, 0, 0], &[0, 0, 0, 0], 5, Some(5)),
             |trace| {
                 let keys = [Some(("A", 1)), Some(("A", 2)), Some(("B", 1)), None];
                 for (position, key) in trace.positions.iter_mut().zip(keys) {
@@ -2340,15 +2391,43 @@ fn timestamped_mixed_authorities_have_one_canonical_order() {
             },
         )
     };
-    let canonical = report(base());
-    let support: Vec<u64> = window_report(&canonical)
-        .support
-        .iter()
-        .map(|pair| pair.position.index())
-        .collect();
-    assert_eq!(support, vec![2]);
+    let run = |order: &[usize]| {
+        report(timestamped_changed(listed_in(keyed(), order), |trace| {
+            let b1 = trace
+                .positions
+                .iter()
+                .position(|position| {
+                    position
+                        .order
+                        .as_ref()
+                        .is_some_and(|key| key.authority == "B")
+                })
+                .unwrap();
+            trace
+                .missing_valuations
+                .push(crate::spine::TimestampedMissingValuation {
+                    position: u64::try_from(b1).unwrap(),
+                    atom: 1,
+                });
+        }))
+    };
+    let canonical = run(&[0, 1, 2, 3]);
+    assert!(
+        matches!(
+            outcome(&canonical),
+            TemporalVerdict::Indeterminate {
+                at: 0,
+                reason: crate::spine::TemporalIndeterminateReason::MissingValuation {
+                    position: 2,
+                    ..
+                },
+            }
+        ),
+        "{:?}",
+        canonical.disposition
+    );
     for order in [[3, 2, 1, 0], [1, 3, 0, 2], [2, 0, 3, 1]] {
-        let listed = report(listed_in(base(), &order));
+        let listed = run(&order);
         assert_eq!(outcome(&listed), outcome(&canonical), "{order:?}");
         assert_eq!(
             window_report(&listed),
@@ -2469,26 +2548,61 @@ fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
     );
 }
 
-/// FR-501 "Outputs", FR-285 (TC-1295 row 24): one mapping gives a finite-window
-/// result's category label and exit code: pending exits 0, indeterminate 11,
-/// a violation 10, and the three agree with the shared category where it has
-/// the value.
+/// FR-285-AC-10 and AC-12 (TC-769), FR-501-AC-11 (TC-1295 row 24): one
+/// interim mapping gives a finite-window outcome's label and exit, and the
+/// multi-item ranking reads the same one: pending `pending`/0, indeterminate
+/// `indeterminate`/11, true `success`/0, false `violation`/10, work stop
+/// `incomplete`/22.
+#[trace("TC-769", "FR-285-AC-10")]
+#[trace("TC-769", "FR-285-AC-12")]
 #[trace("TC-1295", "FR-501-AC-11")]
 #[test]
 fn timestamped_category_label_and_exit_come_from_one_mapping() {
-    let held = report(timestamped(&[0, 5], &[0, 1], 5, Some(5)));
-    let violated = report(timestamped(&[0], &[0], 5, Some(5)));
-    let pending = report(timestamped(&[0], &[0], 1, Some(1)));
-    let indeterminate = report(timestamped(&[0], &[0], 5, None));
-    for (run, label, exit) in [
-        (&held, "success", 0),
-        (&violated, "violation", 10),
-        (&pending, "pending", 0),
-        (&indeterminate, "indeterminate", 11),
-    ] {
-        assert_eq!(run.category_label(), label);
-        assert_eq!(run.disposition.exit_code(), exit);
+    let mut starved = timestamped(&[0, 2], &[0, 0], 5, Some(5));
+    starved.accounting.work_units = 0;
+    let runs = [
+        (
+            report(timestamped(&[0, 5], &[0, 1], 5, Some(5))),
+            "success",
+            0,
+        ),
+        (report(timestamped(&[0], &[0], 5, Some(5))), "violation", 10),
+        (report(timestamped(&[0], &[0], 1, Some(1))), "pending", 0),
+        (
+            report(timestamped(&[0], &[0], 5, None)),
+            "indeterminate",
+            11,
+        ),
+        (report(starved), "incomplete", 22),
+    ];
+    for (run, label, exit) in &runs {
+        assert_eq!(run.category_label(), *label);
+        assert_eq!(run.disposition.exit_code(), *exit);
+        // The ranking of the one outcome is the run path's pair.
+        let ClauseDisposition::Temporal(verdict) = &run.disposition else {
+            panic!("expected a temporal verdict, got {:?}", run.disposition);
+        };
+        assert_eq!(
+            crate::spine::temporal_batch_outcome([verdict]),
+            Some((*label, *exit))
+        );
     }
+    // FR-285's order: {violation, indeterminate} exits 10, {success,
+    // indeterminate} 11, {indeterminate, incomplete} 22.
+    let verdicts: Vec<&TemporalVerdict> = runs
+        .iter()
+        .map(|(run, _, _)| match &run.disposition {
+            ClauseDisposition::Temporal(verdict) => verdict,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    let pick = |indices: &[usize]| {
+        crate::spine::temporal_batch_exit_code(indices.iter().map(|index| verdicts[*index]))
+    };
+    assert_eq!(pick(&[1, 3]), 10);
+    assert_eq!(pick(&[0, 3]), 11);
+    assert_eq!(pick(&[3, 4]), 22);
+    assert_eq!(pick(&[0, 2]), 0);
 }
 
 /// FR-501-AC-12 (TC-1295 row 26): running a request twice gives equal outcomes

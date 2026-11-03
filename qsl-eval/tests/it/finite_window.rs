@@ -33,13 +33,12 @@ fn origin(body: &str) -> Fixture {
     clause("on origin", body)
 }
 
-/// A valuation spelled as the vectors do: `T`, `F`, `absent`, `conflict`.
+/// A valuation spelled as the vectors do: `T`, `F`, `absent`.
 fn valuation(word: &str) -> Valuation {
     match word {
         "T" => Valuation::True,
         "F" => Valuation::False,
         "absent" => Valuation::Missing,
-        "conflict" => Valuation::Conflicting,
         other => panic!("unknown valuation {other}"),
     }
 }
@@ -405,6 +404,7 @@ fn an_open_window_is_pending_until_progress_or_a_decisive_event() {
 /// FR-501-AC-4 (rows 8 to 11): a missing or conflicting valuation is never
 /// read as false.
 #[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-23")]
 #[test]
 fn missing_and_conflicting_valuations_are_never_false() {
     let eventually = origin("eventually[0,5] holds(p)");
@@ -430,18 +430,33 @@ fn missing_and_conflicting_valuations_are_never_false() {
         ),
         WindowVerdict::Holds
     );
+    // Two observations of stamp 2 that read differently: a conflict at the
+    // lowest canonical position of the stamp, in either listing order.
+    let conflicting = rows(&[0, 2, 2, 5], &["F", "T", "F", "F"]);
+    let conflict = indeterminate(
+        0,
+        IndeterminateReason::ConflictingValuation {
+            position: at(1),
+            atom,
+        },
+    );
+    assert_eq!(
+        verdict(&eventually, &request(conflicting.clone(), 5, Some(5))),
+        conflict
+    );
+    let mut reversed = conflicting;
+    reversed.reverse();
+    assert_eq!(
+        verdict(&eventually, &request(reversed, 5, Some(5))),
+        conflict
+    );
+    // FR-501-AC-23: equal readings at one stamp are not a conflict.
     assert_eq!(
         verdict(
             &eventually,
-            &request(rows(&stamps, &["F", "conflict", "F"]), 5, Some(5))
+            &request(rows(&[0, 2, 2, 5], &["F", "T", "T", "F"]), 5, Some(5))
         ),
-        indeterminate(
-            0,
-            IndeterminateReason::ConflictingValuation {
-                position: at(1),
-                atom
-            }
-        )
+        WindowVerdict::Holds
     );
     assert_eq!(
         verdict(

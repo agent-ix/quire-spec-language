@@ -76,14 +76,14 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    run_clause, run_clause_with_temporal_selections, temporal_batch_exit_code, ClauseArgument,
-    ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
-    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
-    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, FiniteWindowReport,
-    OperationName, OverObject, TemporalIndeterminateReason, TemporalPositionRefusal,
-    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
-    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
-    TimestampedTraceInput, TraceBinding, TraceInput,
+    run_clause, run_clause_with_temporal_selections, temporal_batch_exit_code,
+    temporal_batch_outcome, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
+    ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
+    ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents,
+    ConsequentState, FiniteWindowReport, OperationName, OverObject, TemporalIndeterminateReason,
+    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
+    TemporalWindowRefusal, TimestampedMissingValuation, TimestampedObservation,
+    TimestampedOrderKey, TimestampedTraceInput, TraceBinding, TraceInput,
 };
 mod refinement;
 pub use refinement::{
