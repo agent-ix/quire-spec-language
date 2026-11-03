@@ -323,28 +323,39 @@ fn parse_carries_protocol_results_for_a_confined_syntax_refusal() {
     ));
 }
 
-/// FR-503-AC-2 (TC-1298 row 2): header and EOF syntax errors are
-/// unattributable and carry no protocol result payload.
+/// FR-503-AC-2 (TC-1298 row 2): header syntax errors are unattributable and
+/// carry no protocol result payload.
 #[trace("TC-1298", "FR-503-AC-2")]
 #[test]
-fn parse_does_not_attach_protocol_results_to_unattributable_syntax_errors() {
+fn header_syntax_error_does_not_attach_protocol_results() {
     let complete = protocol_source("W", true);
-    for unit in [
-        format!("language broken;\n{HEADER}{complete}"),
-        format!("{HEADER}{}", protocol_source("X", false)),
-    ] {
-        let failure = parse(
-            &request(unit.as_bytes()),
-            SourceLimits::default(),
-            &Cancel::new(),
-        )
-        .expect_err("the unit syntax is invalid");
-        assert!(failure.payload().is_none(), "{failure:?}");
-    }
+    let unit = format!("language broken;\n{HEADER}{complete}");
+    let failure = parse(
+        &request(unit.as_bytes()),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("the header syntax is invalid");
+    assert!(failure.payload().is_none(), "{failure:?}");
+}
+
+/// FR-503-AC-2 (TC-1298 row 2): an unbounded protocol EOF remains
+/// unattributable and carries no protocol result payload.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn unbounded_protocol_eof_does_not_attach_protocol_results() {
+    let unit = format!("{HEADER}{}", protocol_source("X", false));
+    let failure = parse(
+        &request(unit.as_bytes()),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("the protocol reaches EOF without its closing delimiter");
+    assert!(failure.payload().is_none(), "{failure:?}");
 }
 
 /// FR-503-AC-2 (TC-1298 row 2): a non-protocol brace error between two
-/// protocols is unit-level and never marks a protocol as refused.
+/// protocols is unit-level; both bounded protocols remain Cleared.
 #[trace("TC-1298", "FR-503-AC-2")]
 #[test]
 fn non_protocol_unterminated_state_clause_has_no_protocol_results() {
@@ -359,14 +370,16 @@ fn non_protocol_unterminated_state_clause_has_no_protocol_results() {
     )
     .expect_err("a state-clause brace error cannot be attributed to protocol W");
 
-    if let Some(results) = failure.payload() {
-        assert!(
-            results
-                .iter()
-                .all(|result| matches!(result, crate::spine::ProtocolResult::Cleared { .. })),
-            "an unrelated state-clause error cannot refuse a protocol: {results:?}"
-        );
-    }
+    let results = failure
+        .payload()
+        .expect("bounded protocols retain their reached-stage results");
+    assert!(matches!(
+        results.as_slice(),
+        [
+            crate::spine::ProtocolResult::Cleared { declaration: w, stage: SpineStage::Forms },
+            crate::spine::ProtocolResult::Cleared { declaration: z, stage: SpineStage::Forms },
+        ] if w == "W" && z == "Z"
+    ));
 }
 
 /// FR-503-AC-1 (TC-1298 row 3): S2's recovery-aware build retains clean

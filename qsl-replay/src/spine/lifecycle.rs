@@ -1391,7 +1391,13 @@ fn parse_unit(
         Ok(built) => built,
         Err(failure) => {
             if let Some(diagnostic) = parsed.diagnostics().first() {
-                return Err(Box::new(CompileRefusal::Source(Box::new(diagnostic.clone()))).into());
+                let refusal = Box::new(CompileRefusal::Source(Box::new(diagnostic.clone())));
+                if let Some(results) =
+                    bounded_protocol_results_around_nonprotocol_diagnostic(&parsed, diagnostic)
+                {
+                    return Err(StageError::with_protocol_results(refusal, results));
+                }
+                return Err(refusal.into());
             }
             return Err(Box::new(CompileRefusal::Forms {
                 region: failure.span.and_then(|span| region(&raw, span)),
@@ -1412,6 +1418,105 @@ fn parse_unit(
         protocol_results,
         protocol_forms_refusal,
     })
+}
+
+/// Clean, brace-bounded protocol declarations on both sides of a
+/// non-protocol S1/S2 diagnostic have reached forms independently, even
+/// when the unit-level forms builder must refuse the containing source.
+/// Header errors, diagnostics inside a protocol, and unbounded EOF failures
+/// remain payload-free.
+fn bounded_protocol_results_around_nonprotocol_diagnostic(
+    parsed: &qsl_cst::ParsedSource,
+    diagnostic: &qsl_cst::CompleteDiagnostic,
+) -> Option<Vec<super::ProtocolResult>> {
+    use qsl_cst::{TokenClass, TokenKind};
+
+    let diagnostic_span = diagnostic.byte_span()?;
+    let tokens: Vec<_> = parsed
+        .cst()
+        .tokens()
+        .iter()
+        .filter(|token| token.class() == TokenClass::Token)
+        .collect();
+    let starts: Vec<usize> = tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| {
+            (token.kind() == TokenKind::Grammar && token.spelling() == b"protocol").then_some(index)
+        })
+        .collect();
+    if starts.len() < 2 {
+        return None;
+    }
+
+    let mut protocols = Vec::with_capacity(starts.len());
+    for (source_index, start) in starts.iter().copied().enumerate() {
+        let end_before = starts
+            .get(source_index + 1)
+            .copied()
+            .unwrap_or(tokens.len());
+        let mut depth = 0_usize;
+        let mut declaration_end = None;
+        for token in tokens.get(start..end_before)? {
+            match token.spelling() {
+                b"{" => depth = depth.checked_add(1)?,
+                b"}" => {
+                    depth = depth.checked_sub(1)?;
+                    if depth == 0 {
+                        declaration_end = Some(token.span().end);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let end = declaration_end?;
+        let name = tokens
+            .get(start + 1..end_before)?
+            .iter()
+            .find(|token| token.kind() == TokenKind::Identifier)?;
+        protocols.push((
+            source_index,
+            String::from_utf8(name.spelling().to_vec()).ok()?,
+            qsl_foundation::Span {
+                start: tokens[start].span().start,
+                end,
+            },
+        ));
+    }
+
+    if protocols
+        .iter()
+        .any(|(_, _, span)| span.start < diagnostic_span.start && diagnostic_span.start < span.end)
+    {
+        return None;
+    }
+    let previous = protocols
+        .iter()
+        .rposition(|(_, _, span)| span.end <= diagnostic_span.start)?;
+    let next = protocols
+        .iter()
+        .position(|(_, _, span)| span.start >= diagnostic_span.start)?;
+    if previous >= next {
+        return None;
+    }
+    let gap_has_declaration = tokens.iter().any(|token| {
+        protocols[previous].2.end <= token.span().start
+            && token.span().end <= protocols[next].2.start
+    });
+    if !gap_has_declaration {
+        return None;
+    }
+
+    Some(
+        protocols
+            .into_iter()
+            .map(|(_, declaration, _)| super::ProtocolResult::Cleared {
+                declaration,
+                stage: super::SpineStage::Forms,
+            })
+            .collect(),
+    )
 }
 
 fn forms_protocol_results(
