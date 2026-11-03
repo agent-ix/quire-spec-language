@@ -742,6 +742,22 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
         .any(|requirement| {
             requirement.record().requirements().kind().to_wire() == "value-validity"
         }));
+    let source_text = checked.source().text();
+    let report_slice = |span: qsl_foundation::Span| {
+        source_text
+            .get(span.start..span.end)
+            .expect("report spans index the source unit")
+    };
+    assert!(checked
+        .type_report()
+        .requirements()
+        .iter()
+        .filter(|requirement| {
+            requirement.record().requirements().kind().to_wire() == "value-validity"
+        })
+        .any(
+            |requirement| report_slice(requirement.span().expect("claim source span")) == "x + 1"
+        ));
     assert!(checked
         .type_report()
         .obligations()
@@ -757,6 +773,9 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     assert!(temporal_requirements
         .iter()
         .all(|obligation| { obligation.span().start < obligation.span().end }));
+    assert!(temporal_requirements
+        .iter()
+        .any(|obligation| report_slice(obligation.span()) == "requires temporal Due;"));
 }
 
 /// FR-480-AC-2/AC-8 and FR-514-AC-2: aggregate type resolution returns two
