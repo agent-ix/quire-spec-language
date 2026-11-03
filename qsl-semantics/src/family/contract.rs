@@ -134,6 +134,7 @@ pub struct StageLimits {
 /// type; the shared contract takes no position on its shape.
 pub struct CheckContext<'a, D> {
     declarations: &'a D,
+    source_owner: Option<qsl_foundation::source::provenance::RawSourceRef>,
     limits: StageLimits,
     pub(crate) meter: &'a mut Meter,
     pub(crate) diagnostics: &'a mut DiagnosticSink,
@@ -150,6 +151,7 @@ impl<'a, D> CheckContext<'a, D> {
     ) -> Self {
         Self {
             declarations,
+            source_owner: None,
             limits,
             meter,
             diagnostics,
@@ -162,6 +164,19 @@ impl<'a, D> CheckContext<'a, D> {
         self.declarations
     }
 
+    /// Resolve source-local imports against the authored declaration's unit.
+    pub(crate) fn with_source_owner(
+        mut self,
+        source_owner: Option<qsl_foundation::source::provenance::RawSourceRef>,
+    ) -> Self {
+        self.source_owner = source_owner;
+        self
+    }
+
+    pub(crate) fn source_owner(&self) -> Option<&qsl_foundation::source::provenance::RawSourceRef> {
+        self.source_owner.as_ref()
+    }
+
     /// Reborrow the same mutable stage state under nested declarations.
     pub(crate) fn reborrow<'b, E>(&'b mut self, declarations: &'b E) -> CheckContext<'b, E> {
         CheckContext::new(
@@ -171,6 +186,7 @@ impl<'a, D> CheckContext<'a, D> {
             self.diagnostics,
             self.scopes,
         )
+        .with_source_owner(self.source_owner.clone())
     }
 
     /// Read-only stage-entry limits.

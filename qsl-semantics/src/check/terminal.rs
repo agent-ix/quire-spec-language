@@ -165,6 +165,7 @@ pub(crate) fn check_terminal<'a>(
         return Ok((TerminalDeclaration::Any, declarations.nodes_used));
     };
     let view = ClauseView {
+        source_owner: None,
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
         context: Some(context.clone()),

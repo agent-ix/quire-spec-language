@@ -1094,7 +1094,7 @@ impl<'a> Application<'a> {
             });
         }
         if let Some((qualifier, member)) = name.split_once("::") {
-            if let Some(import) = typer.scope().imported(qualifier) {
+            if let Some(import) = typer.imported(qualifier) {
                 return Self::imported(import, member, arity, location);
             }
         }
@@ -1482,6 +1482,7 @@ pub(crate) fn check_declaration_body(
         &mut nodes,
         form.clause_kind(),
     )
+    .with_source_owner(input.source_owner.clone())
     .with_cancel(input.cancel)
     .with_complete_value(input.complete_value)
     .with_context(cx.reborrow(input.scope));
@@ -1939,6 +1940,8 @@ pub struct ValueDeclarations<'a> {
     pub(crate) measure_location: &'a CheckLocation,
     /// See this struct's own doc.
     pub(crate) nodes_used: u64,
+    /// The source declaring this body, for FR-480 source-local imports.
+    pub(crate) source_owner: Option<qsl_foundation::source::provenance::RawSourceRef>,
     /// FR-096: the regions of the unit the declarations were read from,
     /// through which a limit's locus resolves. `None` for declarations not
     /// read from a unit, whose positions no region names.
@@ -2451,6 +2454,7 @@ pub mod fixtures {
             location,
             measure_location: location,
             nodes_used: 0,
+            source_owner: None,
             regions: None,
             cancel: None,
         }

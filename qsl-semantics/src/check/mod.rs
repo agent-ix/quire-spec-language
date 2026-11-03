@@ -2306,6 +2306,15 @@ impl PackageDeclarations {
             .map(|(index, function)| (function.name.as_str(), index))
             .collect();
         let mut model_function_bodies = vec![false; self.functions.len()];
+        // Operation bodies and their synthesized precondition functions are
+        // model-family declarations even when no ordinary named function
+        // calls them. They can read model populations just like clauses
+        // reached from a model-context function.
+        for index in self.model_clauses.keys() {
+            if let Some(model_function) = model_function_bodies.get_mut(*index) {
+                *model_function = true;
+            }
+        }
         while let Some(name) = model_context_calls.pop() {
             let Some(index) = function_indices.get(name.as_str()).copied() else {
                 continue;
@@ -2514,25 +2523,25 @@ impl PackageDeclarations {
                     .map(|node| (declaration.clone(), node))
             })
             .collect();
-        let mut model_selections: Vec<_> = models
-            .iter()
-            .map(|model| model.selection().clone())
-            .collect();
-        model_selections.sort_by(|a, b| a.identity.cmp(&b.identity));
-        // FR-094 (ADR-013 O-01): a check selects one version of each domain
-        // package identity, so a model owner names one declaration.
-        let mut selected = std::collections::BTreeSet::new();
-        if let Some(model) = models
-            .iter()
-            .find(|model| !selected.insert(model.selection().identity.as_str()))
-        {
-            return Err(vec![CheckRefusal {
-                location: root(Origin::Expression),
-                cause: CheckCause::InternalFault(Box::new(KeyFault::DuplicateModelSelection(
-                    model.selection().identity.clone(),
-                ))),
-            }]);
+        let mut selections_by_identity = BTreeMap::new();
+        for model in &models {
+            let selection = model.selection();
+            if let Some(existing) = selections_by_identity.get(&selection.identity) {
+                if existing != selection {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(
+                            KeyFault::DuplicateModelSelection(selection.identity.clone()),
+                        )),
+                    }]);
+                }
+            } else {
+                selections_by_identity.insert(selection.identity.clone(), selection.clone());
+            }
         }
+        let model_selections: Vec<_> = selections_by_identity.into_values().collect();
+        // FR-094 (ADR-013 O-01): aliases that select one package version
+        // share one model root; conflicting versions of one identity refuse.
         // QSpec FR-322 `model_root`: one key per selection, from the check's
         // identity limits, shared by the refinement headers and the emitter.
         let mut model_roots = Vec::with_capacity(model_selections.len());
@@ -2777,6 +2786,7 @@ impl PackageDeclarations {
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
+                source_owner: self.function_sources.get(index).cloned(),
                 regions: Some(&regions),
                 cancel: Some(cancel),
             };
@@ -3110,7 +3120,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&terminal.name).cloned());
             match terminal::check_terminal(index, terminal, &declarations, &mut contract_cx) {
                 Ok((declaration, used)) => {
                     nodes_used = used;
@@ -3264,7 +3275,8 @@ impl PackageDeclarations {
                     &mut contract_meter,
                     &mut contract_diagnostics,
                     &mut contract_scopes,
-                );
+                )
+                .with_source_owner(self.source_owners.get(&$refinement.form.name.name).cloned());
                 let env = refinement::RefinementEnv {
                     support: self.refinement_support,
                     lists: &internal_lists,
@@ -3595,7 +3607,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
@@ -3671,7 +3684,8 @@ impl PackageDeclarations {
                         &mut contract_meter,
                         &mut contract_diagnostics,
                         &mut contract_scopes,
-                    );
+                    )
+                    .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
                     match protocol_slots::check(
                         protocol,
                         &checked,
@@ -3708,7 +3722,8 @@ impl PackageDeclarations {
                         &mut contract_meter,
                         &mut contract_diagnostics,
                         &mut contract_scopes,
-                    );
+                    )
+                    .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
                     match protocol_controls::check(
                         protocol,
                         &self.alias_names,
@@ -4021,7 +4036,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&clause.form.name.name).cloned());
             let outcome = temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx);
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
@@ -4253,7 +4269,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&claim.form.name.name).cloned());
             match state_graph_claim::StateGraphFamily::check(claim, &mut contract_cx) {
                 Ok(staged) => {
                     let checked = staged.into_value();
@@ -4376,7 +4393,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(clause.name()).cloned());
             match hyper_clause::HyperTraceFamily::check(clause, &mut contract_cx) {
                 Ok(staged) => match staged.into_value() {
                     // FR-488: a clause over `behaviours` is emitted unless

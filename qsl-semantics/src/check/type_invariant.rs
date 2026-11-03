@@ -76,6 +76,7 @@ impl TypeInvariantDeclaration {
     /// What the family check reads: an invariant with no profile selected.
     pub(crate) fn view(&self) -> ClauseView<'_> {
         ClauseView {
+            source_owner: None,
             kind: StateClauseKind::Invariant,
             complete_value: false,
             context: Some(self.context.clone()),

@@ -474,6 +474,7 @@ fn span_at(operand: &ExpressionForm, location: &Location) -> Option<Span> {
 /// `over` binding.
 fn view_of<'v>(declaration: &'v StateGraphDeclaration, body: &'v Expression) -> ClauseView<'v> {
     ClauseView {
+        source_owner: None,
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
         context: declaration.context.clone(),
