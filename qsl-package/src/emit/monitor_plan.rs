@@ -707,6 +707,7 @@ fn finish(
             CheckedPackageSidecarsRef {
                 checked_term_data: base.checked_term_data(),
                 temporal_bindings: base.temporal_bindings(),
+                temporal_clause_names: base.temporal_clause_names(),
                 operation_effects: operation_effects.as_deref(),
                 schedulability_claims: None,
             },

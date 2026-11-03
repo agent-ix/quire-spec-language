@@ -154,6 +154,85 @@ fn event_position_binding_uses_the_exact_checked_selection() {
     );
 }
 
+/// FR-322-AC-344, FR-322-AC-361: two structurally equal clauses share one
+/// node with two `claim` occurrences, and the package carries one binding row
+/// and one name row per occurrence ordinal, each name the clause's own.
+#[trace("TC-233", "FR-322-AC-344", "FR-322-AC-361")]
+#[test]
+fn a_shared_clause_node_carries_one_binding_and_one_name_per_occurrence() {
+    let body = "eventually[0,1] holds(true)";
+    let compiled = compile(&unit(
+        EVENT,
+        &format!("{}\n{}", declared("First", body), declared("Second", body)),
+    ));
+    let [first, second] = compiled.clauses.as_slice() else {
+        panic!("two checked clauses");
+    };
+    assert_eq!(first.identity(), second.identity());
+    let node_id = clause_node(&compiled.wire)["node_id"].clone();
+    let ordinals = [first.claim().ordinal(), second.claim().ordinal()];
+    assert_eq!(ordinals, [0, 1]);
+    let bindings = compiled.wire["temporal_bindings"]
+        .as_array()
+        .expect("bindings");
+    assert_eq!(
+        bindings
+            .iter()
+            .map(|row| (row["declaration"].clone(), row["occurrence"].as_u64()))
+            .collect::<Vec<_>>(),
+        [(node_id.clone(), Some(0)), (node_id.clone(), Some(1))]
+    );
+    let names = compiled.wire["temporal_clause_names"]
+        .as_array()
+        .expect("names");
+    assert_eq!(
+        names
+            .iter()
+            .map(|row| (
+                row["declaration"].clone(),
+                row["occurrence"].as_u64(),
+                row["name"].as_str().map(str::to_owned)
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (node_id.clone(), Some(0), Some("First".to_owned())),
+            (node_id, Some(1), Some("Second".to_owned()))
+        ]
+    );
+    admit(&compiled);
+}
+
+/// FR-322-AC-343, FR-322-AC-345: a clause's name is no part of its identity,
+/// and the name rows are present exactly when the graph holds a clause.
+#[trace("TC-233", "FR-322-AC-343", "FR-322-AC-345")]
+#[test]
+fn names_follow_clauses_and_never_enter_node_identity() {
+    let body = "eventually[0,1] holds(true)";
+    let ids = |wire: &Value| {
+        wire["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("nodes")
+            .iter()
+            .map(|node| node["node_id"].clone())
+            .collect::<Vec<_>>()
+    };
+    let one = compile(&unit(EVENT, &declared("Alpha", body)));
+    let other = compile(&unit(EVENT, &declared("Beta", body)));
+    assert_eq!(ids(&one.wire), ids(&other.wire));
+    assert_eq!(one.wire["temporal_clause_names"][0]["name"], "Alpha");
+    assert_eq!(other.wire["temporal_clause_names"][0]["name"], "Beta");
+    // An unconfigured profile still names its clause, with no binding row.
+    let plain = compile(&unit(INFINITE, &reaches_two("")));
+    assert_eq!(plain.wire["temporal_clause_names"][0]["name"], "ReachesTwo");
+    assert!(plain.wire.get("temporal_bindings").is_none());
+    // A graph with no clause omits the member.
+    let none = compile(&unit(
+        INFINITE,
+        "function same using v(a: String, b: String): Boolean pure { a = b }",
+    ));
+    assert!(none.wire.get("temporal_clause_names").is_none());
+}
+
 /// FR-322-AC-294: the compatibility entry point cannot invent a selection
 /// for a profile whose checked declarations require clock configuration.
 #[trace("TC-134", "FR-322-AC-294")]

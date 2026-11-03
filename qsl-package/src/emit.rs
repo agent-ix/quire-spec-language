@@ -4708,6 +4708,7 @@ pub fn emit_timed_models(
             CheckedPackageSidecarsRef {
                 checked_term_data: None,
                 temporal_bindings: base.temporal_bindings(),
+                temporal_clause_names: base.temporal_clause_names(),
                 operation_effects: operation_effects.as_deref(),
                 schedulability_claims: None,
             },
@@ -5631,7 +5632,7 @@ fn emit_package_inner(
         &mut step_rows,
         &mut schedulability_claim_rows,
     )?;
-    let temporal_bindings =
+    let (temporal_bindings, temporal_clause_names) =
         temporal_binding_rows(graph, &emitted_node_ids, &nodes, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
@@ -5743,6 +5744,8 @@ fn emit_package_inner(
                 checked_term_data: checked_term_data.as_ref(),
                 temporal_bindings: (!temporal_bindings.is_empty())
                     .then_some(temporal_bindings.as_slice()),
+                temporal_clause_names: (!temporal_clause_names.is_empty())
+                    .then_some(temporal_clause_names.as_slice()),
                 operation_effects,
                 schedulability_claims: (!schedulability_claim_rows.is_empty())
                     .then_some(schedulability_claim_rows.as_slice()),
@@ -5793,12 +5796,45 @@ fn temporal_clock_matches_profile(
     )
 }
 
+/// The wrapper node a hyper clause's `body` member references.
+fn hyper_wrapper(graph: &CheckedGraph, hyper: &NodeKey) -> Result<NodeKey, EmitRefusal> {
+    let hyper_node = graph
+        .semantic_graph()
+        .node(hyper.clone())
+        .ok_or(EmitRefusal::SourceMapInvariant)?;
+    let BodyTerm::Aggregate(aggregate) = hyper_node.body() else {
+        return Err(EmitRefusal::SourceMapInvariant);
+    };
+    aggregate
+        .members
+        .iter()
+        .find_map(|member| {
+            let MemberTerm::Binding(binding) = member else {
+                return None;
+            };
+            if binding.name != "body" {
+                return None;
+            }
+            let BindingValue::Leaf(LeafTerm::Reference { target }) = &binding.value else {
+                return None;
+            };
+            target.admitted().cloned()
+        })
+        .ok_or(EmitRefusal::SourceMapInvariant)
+}
+
 fn temporal_binding_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     nodes: &[CheckedSemanticNodeV2],
     selections: &[TemporalClockSelection],
-) -> Result<Vec<quire_contract_model::TemporalBinding>, EmitRefusal> {
+) -> Result<
+    (
+        Vec<quire_contract_model::TemporalBinding>,
+        Vec<quire_contract_model::TemporalClauseName>,
+    ),
+    EmitRefusal,
+> {
     use qsl_semantics::check::TemporalProfile;
 
     let mut selected = BTreeMap::new();
@@ -5817,9 +5853,28 @@ fn temporal_binding_rows(
     }
 
     let mut rows = Vec::new();
+    let mut names = Vec::new();
+    for site in graph.hybrid_claim_sites() {
+        names.push(quire_contract_model::TemporalClauseName {
+            declaration: emitted_node_ids
+                .get(&site.identity)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?,
+            occurrence: site.claim.ordinal(),
+            name: site.name.as_str().into(),
+        });
+    }
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
         let profile = clause.profile();
+        names.push(quire_contract_model::TemporalClauseName {
+            declaration: emitted_node_ids
+                .get(&temporal.identity())
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?,
+            occurrence: temporal.claim().ordinal(),
+            name: clause.name().into(),
+        });
         if !matches!(
             profile,
             TemporalProfile::EventPositionFalseExtension
@@ -5857,12 +5912,25 @@ fn temporal_binding_rows(
             .ok_or(EmitRefusal::SourceMapInvariant)?;
         rows.push(quire_contract_model::TemporalBinding {
             declaration,
+            occurrence: temporal.claim().ordinal(),
             clock_name: clause.clock().into(),
             clock: clock.clone(),
         });
     }
 
     for hyper in graph.hyper_clauses() {
+        let occurrence = hyper
+            .assembled_occurrence()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let wrapper = hyper_wrapper(graph, occurrence.node())?;
+        names.push(quire_contract_model::TemporalClauseName {
+            declaration: emitted_node_ids
+                .get(&wrapper)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?,
+            occurrence: occurrence.origin().ordinal(),
+            name: hyper.name().into(),
+        });
         let profile = hyper.profile();
         if !matches!(
             profile,
@@ -5872,9 +5940,6 @@ fn temporal_binding_rows(
         ) {
             continue;
         }
-        let occurrence = hyper
-            .assembled_occurrence()
-            .ok_or(EmitRefusal::SourceMapInvariant)?;
         let location = graph
             .occurrence(occurrence.node().clone(), occurrence.origin())
             .ok_or(EmitRefusal::SourceMapInvariant)?;
@@ -5897,26 +5962,6 @@ fn temporal_binding_rows(
                 profile: profile.identity(),
             });
         }
-        let hyper_node = graph
-            .semantic_graph()
-            .node(occurrence.node().clone())
-            .ok_or(EmitRefusal::SourceMapInvariant)?;
-        let BodyTerm::Aggregate(aggregate) = hyper_node.body() else {
-            return Err(EmitRefusal::SourceMapInvariant);
-        };
-        let wrapper = aggregate.members.iter().find_map(|member| {
-            let MemberTerm::Binding(binding) = member else {
-                return None;
-            };
-            if binding.name != "body" {
-                return None;
-            }
-            let BindingValue::Leaf(LeafTerm::Reference { target }) = &binding.value else {
-                return None;
-            };
-            target.admitted().cloned()
-        });
-        let wrapper = wrapper.ok_or(EmitRefusal::SourceMapInvariant)?;
         let clock_name = graph
             .semantic_graph()
             .node(wrapper.clone())
@@ -5938,6 +5983,7 @@ fn temporal_binding_rows(
             .ok_or(EmitRefusal::SourceMapInvariant)?;
         rows.push(quire_contract_model::TemporalBinding {
             declaration,
+            occurrence: occurrence.origin().ordinal(),
             clock_name: clock_name.into(),
             clock: clock.clone(),
         });
@@ -6000,11 +6046,21 @@ fn temporal_binding_rows(
                     profile: profile.identity(),
                 });
             }
-            rows.push(quire_contract_model::TemporalBinding {
-                declaration,
-                clock_name: template.clock.as_str().into(),
-                clock: clock.clone(),
-            });
+            for node in nodes.iter().filter(|node| node.node_id == declaration) {
+                for ordinal in node
+                    .occurrences
+                    .iter()
+                    .filter(|occurrence| occurrence.role == CheckedOccurrenceRole::Declaration)
+                    .map(|occurrence| occurrence.ordinal)
+                {
+                    rows.push(quire_contract_model::TemporalBinding {
+                        declaration: declaration.clone(),
+                        occurrence: ordinal,
+                        clock_name: template.clock.as_str().into(),
+                        clock: clock.clone(),
+                    });
+                }
+            }
         }
     }
 
@@ -6014,8 +6070,13 @@ fn temporal_binding_rows(
             span: qsl_foundation::Span { start, end },
         });
     }
-    rows.sort_by(|left, right| left.declaration.cmp(&right.declaration));
-    Ok(rows)
+    rows.sort_by(|left, right| {
+        (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
+    });
+    names.sort_by(|left, right| {
+        (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
+    });
+    Ok((rows, names))
 }
 
 /// The ids `node` holds that this emitter can reach through IR's public

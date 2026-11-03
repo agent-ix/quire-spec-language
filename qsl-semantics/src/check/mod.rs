@@ -869,6 +869,9 @@ pub struct CheckedGraph {
     hybrid_models: Vec<CheckedHybridModel>,
     /// FR-447: every checked hybrid claim, in declaration order.
     hybrid_claims: Vec<CheckedHybridClaim>,
+    /// QSpec FR-322-AC-344: the node, `claim` occurrence and declared name of
+    /// each checked hybrid claim, in declaration order.
+    hybrid_claim_sites: Vec<ClauseSite>,
     /// FR-185: every checked random parameter, reward and workload.
     probabilistic: CheckedProbabilisticModel,
     /// QSL FR-246: every checked task set and the claims over them.
@@ -996,6 +999,7 @@ impl DebugWith for CheckedGraph {
             state_graph_claims,
             hybrid_models,
             hybrid_claims,
+            hybrid_claim_sites,
             probabilistic,
             task_sets,
             operation_frames,
@@ -1107,6 +1111,7 @@ impl DebugWith for CheckedGraph {
             .field("state_graph_claims", &state_graph_claims)
             .field("hybrid_models", &hybrid_models)
             .field("hybrid_claims", &hybrid_claims)
+            .field("hybrid_claim_sites", &hybrid_claim_sites)
             .field("probabilistic", &probabilistic)
             .field("task_sets", &With(task_sets, table))
             .field("operation_frames", &Seq(operation_frames, table))
@@ -1185,6 +1190,18 @@ impl std::fmt::Debug for TemporalClauseNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         standalone(f, self)
     }
+}
+
+/// A clause node with the `claim` occurrence one source declaration of it
+/// owns and the name that declaration wrote.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseSite {
+    /// The clause's node.
+    pub identity: quire_exact::NodeKey,
+    /// The declaration's `claim` occurrence of the node.
+    pub claim: quire_exact::Origin,
+    /// The declared clause name.
+    pub name: String,
 }
 
 impl TemporalClauseNode {
@@ -6349,6 +6366,7 @@ impl PackageDeclarations {
         // per checked hybrid claim, keyed by the claim's `claim` occurrence,
         // carrying the hybrid-dynamics requirement every hybrid claim has
         // (every checked hybrid model has a `Hybrid` variable).
+        let mut hybrid_claim_sites = Vec::with_capacity(lowered_hybrid_claims.len());
         for (index, lowered) in lowered_hybrid_claims {
             let location = lowering::hybrid_location(lowering::HybridSite::Claim(index));
             let unkeyable = || {
@@ -6363,6 +6381,12 @@ impl PackageDeclarations {
                 })
                 .ok_or_else(unkeyable)?;
             let checked_claim = checked_hybrid_claim_list.get(index).ok_or_else(unkeyable)?;
+            let declared = self.hybrid_claims.get(index).ok_or_else(unkeyable)?;
+            hybrid_claim_sites.push(ClauseSite {
+                identity: lowered.key.clone(),
+                claim: claim.clone(),
+                name: declared.form.name.name.clone(),
+            });
             let bounded = checked_claim.horizon.is_some();
             // The class S3 recorded for each variable; the request label is
             // read from it, never classified again (FR-250).
@@ -6952,6 +6976,7 @@ impl PackageDeclarations {
             state_graph_claims: state_graph_nodes,
             hybrid_models: checked_hybrid_models,
             hybrid_claims: checked_hybrid_claim_list,
+            hybrid_claim_sites,
             probabilistic: probabilistic_model,
             task_sets: checked_task_sets,
             operation_frames,
@@ -7984,6 +8009,12 @@ impl CheckedGraph {
     /// FR-447: every checked hybrid claim, in declaration order.
     pub fn hybrid_claims(&self) -> &[CheckedHybridClaim] {
         &self.hybrid_claims
+    }
+
+    /// QSpec FR-322-AC-344: the node, `claim` occurrence and declared name of
+    /// each checked hybrid claim, in declaration order.
+    pub fn hybrid_claim_sites(&self) -> &[ClauseSite] {
+        &self.hybrid_claim_sites
     }
 
     /// FR-185: the package's checked random parameters, rewards and

@@ -156,6 +156,35 @@ fn slots(wire: &Value) -> BTreeMap<String, &Value> {
 /// FR-488-AC-1, AC-2, AC-3, AC-6: `NonInterference` emits one
 /// `claim`/`hyperproperty` node whose body binds the seven FR-402 members in
 /// order, with the `quantifiers` Tuple of Groups.
+/// FR-322-AC-344, FR-322-AC-346: a hyper clause's name row is keyed by its
+/// body wrapper node, at the ordinal of the clause's assembled `claim`
+/// occurrence, and carries the declared name.
+#[trace("TC-233", "FR-322-AC-344", "FR-322-AC-346")]
+#[test]
+fn a_hyper_clause_has_one_name_row_on_its_wrapper() {
+    let compiled = compile(&unit(INFINITE, &non_interference()));
+    let [clause] = compiled.graph_clauses.as_slice() else {
+        panic!("one hyper clause");
+    };
+    let occurrence = clause.assembled_occurrence().expect("assembled");
+    let wrapper = target(binding(&hyper_node(&compiled.wire)["body"], "body"));
+    assert_ne!(wrapper, &hyper_node(&compiled.wire)["node_id"]);
+    let names = compiled.wire["temporal_clause_names"]
+        .as_array()
+        .expect("names");
+    let [row] = names.as_slice() else {
+        panic!("one name row: {names:?}");
+    };
+    assert_eq!(&row["declaration"], wrapper);
+    assert_eq!(
+        row["occurrence"].as_u64(),
+        Some(occurrence.origin().ordinal())
+    );
+    assert_eq!(row["name"], clause.name());
+    assert_eq!(row["name"], "NonInterference");
+    admit(&compiled);
+}
+
 #[trace("TC-1266", "FR-488-AC-1", "FR-488-AC-2", "FR-488-AC-3")]
 #[test]
 fn a_hyper_clause_emits_the_hyperproperty_node_with_its_seven_bindings() {

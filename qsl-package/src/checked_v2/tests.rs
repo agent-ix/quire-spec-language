@@ -2968,6 +2968,16 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
             .expect("checked package is an object")
             .remove("temporal_bindings");
     }
+    // FR-322-AC-343: a name row is keyed by the clause node, so it follows
+    // the node to its changed identity.
+    for row in package["temporal_clause_names"]
+        .as_array_mut()
+        .expect("the fixture carries temporal clause names")
+        .iter_mut()
+        .filter(|row| row["declaration"] == original_node_id)
+    {
+        row["declaration"] = changed_node_id.clone();
+    }
     let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &package);
     let Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) = &outcome else {
         panic!("expected an unknown_profile refusal, got {outcome:?}");

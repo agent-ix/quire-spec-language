@@ -438,6 +438,7 @@ fn retarget(
         CheckedPackageSidecarsRef {
             checked_term_data: base.checked_term_data(),
             temporal_bindings: base.temporal_bindings(),
+            temporal_clause_names: base.temporal_clause_names(),
             schedulability_claims: base.schedulability_claim_rows(),
             operation_effects: base.operation_effect_rows(),
         },
