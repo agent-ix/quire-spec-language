@@ -58,8 +58,7 @@ pub(crate) const EACH: &str = "on each (x: M::Level) when (true)";
 /// the role declarations `roles`, the members `members` and the control
 /// `run`. `bump` has a precondition that is false in every state.
 pub(crate) fn unit(activation: &str, roles: &str, members: &str, run: &str) -> String {
-    contracts("self.v = 0")
-        + crate::fill::PROTOCOL_PROFILE
+    let body = contracts("self.v = 0")
         + "pre StuckPre using v on M::Cell::bump { false }\n"
         + &format!(
             "protocol R using p over (k: M::Cell) {activation} {{\n\
@@ -69,7 +68,8 @@ pub(crate) fn unit(activation: &str, roles: &str, members: &str, run: &str) -> S
              run {run}\n\
              finish Done as (d: Boolean) {{ true }};\n\
              }}\n"
-        )
+        );
+    crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body)
 }
 
 /// A role `r` with `max` live instances and `lifetime`.
@@ -688,8 +688,7 @@ fn a_receive_with_nothing_queued_owned_by_a_role_with_no_instance_gives_no_role_
 /// ADR-027 §7.1's `Pay` with its template `Refund` taken `by r` and the
 /// replicated role `r` of `lifetime`.
 fn pay_by_role(lifetime: &str) -> String {
-    contracts("self.v = 0")
-        + crate::fill::PROTOCOL_PROFILE
+    let body = contracts("self.v = 0")
         + REFUND
         + &format!(
             "protocol R using p over (k: M::Cell) on origin {{\n\
@@ -702,7 +701,8 @@ fn pay_by_role(lifetime: &str) -> String {
             role(1, lifetime),
             refund("Main::Paid", "dec", 1, "false", "never", "true").replace("by w on", "by r on"),
             pay_run("")
-        )
+        );
+    crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body)
 }
 
 /// The compensation thread of `R::Refund` with ordinal 0.
