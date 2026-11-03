@@ -79,6 +79,11 @@ pub struct ProtocolSupply<'a> {
 /// the S6a `Evaluation` it carries has an `as_bool` method or an
 /// `Into<bool>` conversion.
 ///
+/// The doctests below pin that each coercion fails to compile. On stable
+/// rustdoc the error code after `compile_fail` is not enforced, so a doctest
+/// broken for another reason would also pass; the `no_run` control at the end
+/// shows only that the type paths resolve.
+///
 /// ```compile_fail,E0599
 /// fn coerce(result: qsl_eval::value::ProtocolSlotEvaluation) -> bool {
 ///     result.as_bool()

@@ -143,6 +143,7 @@ fn every_outcome_row_has_its_successor_outcome() {
     let ProtocolSlotEvaluation::Unavailable { location, .. } = halted else {
         panic!("an unavailable binder halts the slot: {halted:?}");
     };
+    let location = location.expect("an in-process checked read is located");
     assert_eq!(
         format!("{:?}", location.origin),
         "TypeDeclaration { name: \"protocol Refunds compensate Refund trigger-guard 0\" }",
@@ -305,16 +306,8 @@ fn recovery_requires_the_exact_relation_target_and_achieved_state() {
         &mut Meter::new(UNLIMITED),
     );
     assert!(
-        !matches!(
-            refused,
-            Ok(ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                    true
-                ))),
-                ..
-            }))
-        ),
-        "a call without the achieved state never succeeds: {refused:?}"
+        matches!(refused, Err(CallFailure::Admission(_))),
+        "a call without the achieved state is refused at admission: {refused:?}"
     );
 }
 
@@ -593,6 +586,9 @@ fn doc_blocks(text: &str) -> Vec<(String, String)> {
 #[test]
 #[trace("FR-520-AC-12", "TC-1315")]
 fn no_boolean_coercion_is_pinned_by_compile_fail_doctests_with_a_compiling_control() {
+    // Stable rustdoc does not enforce the error code in `compile_fail,EXXXX`, so
+    // this test pins that the doctests exist with the intended code and body;
+    // the doctests themselves pin only that each coercion fails to compile.
     let path = format!(
         "{}/src/value/expression/protocol_slot.rs",
         env!("CARGO_MANIFEST_DIR")
@@ -686,60 +682,7 @@ fn no_evaluation_result_is_coerced_with_unwrap_or_false() {
     );
 }
 
-#[test]
-#[ignore = "gated on IR-1280: quire-exact's Meter has no per-binder attribution or accounting_version"]
-#[trace("FR-520-AC-11", "TC-1315")]
-fn per_binder_accounting_attributes_every_charge_and_carries_the_version() {
-    let package = fixture();
-    let call = || {
-        let mut meter = Meter::new(UNLIMITED);
-        let result = package
-            .evaluate_protocol_slot(
-                &slot(&package, "Refunds", "Refund", "recovery.predicate", None),
-                &ProtocolSupply {
-                    binders: vec![
-                        (
-                            binder(&package, "Refunds", "recovered"),
-                            SuppliedValue::Unavailable(CatalogCode::new(
-                                "unavailable_observation",
-                                "missing-required-artifact",
-                            ))
-                            .into(),
-                        ),
-                        (
-                            binder(&package, "Refunds", "target"),
-                            protocol_value(SuppliedValue::Value(int(10))),
-                        ),
-                        (
-                            binder(&package, "Refunds", "activated"),
-                            protocol_value(SuppliedValue::Value(Value::Boolean(false))),
-                        ),
-                    ],
-                    observation: None,
-                },
-                &mut meter,
-            )
-            .expect("an unavailable binder is a slot outcome");
-        assert!(matches!(result, ProtocolSlotEvaluation::Unavailable { .. }));
-        meter
-    };
-    let first = call();
-    let second = call();
-    assert_eq!(first, second, "equal supplies give equal logs");
-    assert_eq!(
-        first.admitted_charges(),
-        second.admitted_charges(),
-        "equal supplies give equal charge logs"
-    );
-    // What IR-1280 adds: attribution per binder read and the version.
-    let log = format!("{first:?}");
-    assert!(
-        log.contains("accounting_version"),
-        "the log carries accounting_version"
-    );
-    assert!(
-        log.contains("recovered"),
-        "the read binder has its own entry"
-    );
-    assert!(!log.contains("activated"), "an unread binder has no entry");
-}
+// FR-520-AC-11 (per-binder charge accounting with `accounting_version`) has no
+// test here: it needs QSL's binder routing onto the quire-exact interval
+// accounting API, which is not built yet. Until it is, the matrix shows AC-11
+// uncovered rather than covered by a test that does not run.
