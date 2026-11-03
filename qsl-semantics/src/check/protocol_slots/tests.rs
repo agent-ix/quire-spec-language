@@ -23,7 +23,7 @@ use fixture::{obligation_model_with, HEADER};
 /// `members` written before `run`.
 fn fill(activation: &str, members: &str) -> String {
     format!(
-        "{HEADER}protocol Fill using v over (k: M::Node) {activation} {{\n\
+        "{HEADER}protocol Fill using p over (k: M::Node) {activation} {{\n\
          capture start: M::Total = k.total;\n\
          role w on M::Node;\n\
          {members}\n\
@@ -143,7 +143,7 @@ fn decision(construct: &str, visible: &str) -> String {
         other => panic!("unknown decision construct: {other}"),
     };
     format!(
-        "{HEADER}protocol Decisions using v over (k: M::Node) on origin {{\n\
+        "{HEADER}protocol Decisions using p over (k: M::Node) on origin {{\n\
          capture lim: M::Total = k.total;\nrole w on M::Node;\n\
          run sequence Main {{ event Got by w as (got: M::Flag) {{ true }};\
          {control}\n}}\nfinish Done as (d: M::Receipt) {{ true }};\n}}\n"
@@ -291,7 +291,7 @@ fn an_on_each_terminal_predicate_reads_no_capture_and_no_activation_binder() {
 /// followed by a `check` outside it.
 fn workers(lifetime: &str) -> String {
     format!(
-        "{HEADER}protocol Workers using v over (k: M::Node) on origin {{\n\
+        "{HEADER}protocol Workers using p over (k: M::Node) on origin {{\n\
          capture start: M::Total = k.total;\n\
          role w on M::Node;\n\
          role r each M::Node from nodes max 1 lifetime {lifetime};\n\
@@ -505,7 +505,7 @@ fn a_replicated_roles_population_resolves_in_the_package_of_its_type() {
 #[test]
 fn send_and_receive_are_owned_by_their_channel_roles_and_count_in_the_region() {
     let text = format!(
-        "{HEADER}protocol Duplex using v over (k: M::Node) on origin {{\n\
+        "{HEADER}protocol Duplex using p over (k: M::Node) on origin {{\n\
          role c on M::Node;\n\
          role w each M::Node from nodes max 1 lifetime workflow;\n\
          channel out from w to c carries M::Flag ordering unordered delivery unknown \
@@ -600,7 +600,7 @@ fn a_node_records_the_role_that_owns_it() {
 
 /// ADR-027 §7.1's `Pay` over fixture R: an attempt, its effect with a
 /// refund template, and a failure event.
-const PAY: &str = "protocol Pay using v over (k: M::Node) on origin {\n\
+const PAY: &str = "protocol Pay using p over (k: M::Node) on origin {\n\
     role w on M::Node;\n\
     compensate Refund for Main::Paid as (fwd: M::Receipt)\n\
         by w on M::Node::undo using v clock \"c\" {\n\
@@ -621,7 +621,7 @@ const PAY: &str = "protocol Pay using v over (k: M::Node) on origin {\n\
 
 /// FR-212's `Chatter` over fixture R: a send and an attempt in one branch,
 /// the receive in the other, over a channel of capacity 2.
-const CHATTER: &str = "protocol Chatter using v over (k: M::Node) on origin {\n\
+const CHATTER: &str = "protocol Chatter using p over (k: M::Node) on origin {\n\
     role w on M::Node;\n\
     channel ch from w to w carries M::Flag ordering unordered delivery unknown \
     capacity 2 overflow block;\n\

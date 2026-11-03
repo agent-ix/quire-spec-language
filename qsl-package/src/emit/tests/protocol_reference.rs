@@ -8,9 +8,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::{
-    CheckCause, CheckRefusal, LawRole, ProtocolConstruct, ProtocolReferenceCause,
-};
+use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolConstruct, ProtocolReferenceCause};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -22,7 +20,7 @@ const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 /// empty `run` sequence and a `finish`.
 fn protocol(name: &str) -> String {
     format!(
-        "protocol {name} using v over (input: M::Gadget) on origin {{\n\
+        "protocol {name} using p over (input: M::Gadget) on origin {{\n\
          role R on M::Gadget;\n\
          run sequence Main {{ }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -78,7 +76,7 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
          model Config = \"example/config-version\";\n\
          record Ack {{ ok: Boolean; }}\n\
          {function}\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         protocol Flow using p over (input: Config::ConfigVersion) on origin {{\n\
          role R on Config::ConfigVersion;\n\
          run {root}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -99,19 +97,17 @@ pub(super) fn not_emitted(construct: ProtocolConstruct) -> CheckCause {
     CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted { construct }))
 }
 
-/// SR-9123 FND-001: a protocol whose `run` root is an event node (a
-/// `commit` root does not check at S3 at all, on main or here) is a unit that checks, whether or not it is referred to, until a protocol
-/// profile is selected. With no profile selected there is no node to build,
-/// so the unit checks and emits no protocol node.
+/// FR-508: a protocol whose `run` root is an event node still builds its
+/// clause when the required protocol profile alias is selected.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
-fn a_non_control_root_checks_and_emits_no_protocol_node_without_a_profile() {
-    let graph = check_attempt_unit(&rooted(ATTEMPT_ROOT, false, false), false)
+fn a_non_control_root_emits_a_protocol_node_with_a_valid_profile_alias() {
+    let graph = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, false), false)
         .unwrap_or_else(|refusals| panic!("{refusals:?}"));
     assert!(graph
         .semantic_graph()
         .nodes()
-        .all(|node| node.node_tag() != qsl_semantics::check::NodeTag::Protocol));
+        .any(|node| node.node_tag() == qsl_semantics::check::NodeTag::Protocol));
 }
 
 /// With a protocol profile selected, a protocol that names a construct
@@ -175,13 +171,13 @@ fn a_function_referring_to_a_protocol_with_an_attempt_refuses_typed() {
 #[trace("FR-383-AC-18", "TC-1297")]
 #[test]
 fn a_later_attempt_protocol_lowers_after_an_earlier_refusal() {
-    let broken = "protocol Broken using v over (input: Config::ConfigVersion) on origin {\n\
+    let broken = "protocol Broken using p over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run sequence Main { parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, ghost]; }\n\
          finish End as (outcome: Boolean) { true };\n\
          }\n";
     let later = format!(
-        "protocol Later using v over (input: Config::ConfigVersion) on origin {{\n\
+        "protocol Later using p over (input: Config::ConfigVersion) on origin {{\n\
          role R on Config::ConfigVersion;\n\
          run sequence Main {{ {ATTEMPT_ROOT} }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -392,7 +388,7 @@ const REFERS_TO_FILL: &str = "function refers using v(): Boolean pure { protocol
 /// between them, so a queue is generated (FR-465).
 pub(super) fn channel_unit() -> String {
     selecting(
-        "protocol Flow using v over (input: M::Gadget) on origin {\n\
+        "protocol Flow using p over (input: M::Gadget) on origin {\n\
          role R on M::Gadget;\nrole S on M::Gadget;\n\
          channel C from R to S carries Boolean ordering unordered \
          delivery at-least-once capacity 4 overflow block;\n\
@@ -504,7 +500,7 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
 #[test]
 fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
     let text = selecting(
-        "protocol Flow using v over (input: M::Gadget) on each (gadget: M::Gadget) {\n\
+        "protocol Flow using p over (input: M::Gadget) on each (gadget: M::Gadget) {\n\
          role R on M::Gadget;\n\
          role W on M::Widget;\n\
          scheduling adversarial;\n\
@@ -601,7 +597,7 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
 fn the_roles_set_does_not_follow_source_order() {
     let source = |first: &str, second: &str| {
         selecting(&format!(
-            "protocol Flow using v over (input: M::Gadget) on origin {{\n\
+            "protocol Flow using p over (input: M::Gadget) on origin {{\n\
              {first}\n{second}\n\
              run sequence Main {{ }}\n\
              finish End as (outcome: Boolean) {{ true }};\n\
@@ -633,7 +629,7 @@ fn constructs_without_a_node_yet_refuse_naming_the_construct() {
     };
     assert_eq!(
         causes(&selecting(
-            "protocol Flow using v over (input: M::Gadget) on origin {\n\
+            "protocol Flow using p over (input: M::Gadget) on origin {\n\
              role W on M;\n\
              run sequence Main { }\n\
              finish End as (outcome: Boolean) { true };\n\
@@ -657,7 +653,7 @@ fn a_sequences_children_follow_the_source_order() {
             .map(|name| format!("sequence {name} {{ }} "))
             .collect();
         let text = selecting(&format!(
-            "protocol Flow using v over (input: M::Gadget) on origin {{\n\
+            "protocol Flow using p over (input: M::Gadget) on origin {{\n\
              role R on M::Gadget;\n\
              run sequence Main {{ {body} }}\n\
              finish End as (outcome: Boolean) {{ true }};\n\
@@ -786,23 +782,20 @@ fn unresolved_non_protocol_and_repeated_references_refuse_by_cause() {
     );
 }
 
-/// FR-092 "The protocol node a reference targets": with no protocol profile
-/// selected there is no `protocol_profile` law to carry, so a reference
-/// refuses `missing_declaration`/`missing-selection` and a protocol nobody
-/// refers to emits as before.
+/// FR-508: a protocol whose `using` alias is absent keeps the existing
+/// `MissingProfile` classification.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
-fn a_reference_without_a_selected_protocol_profile_refuses_missing_selection() {
+fn a_reference_with_a_missing_protocol_profile_alias_refuses_missing_profile() {
     let refused = refusals(&unit("", &format!("{REFERS_TO_FILL}{}", protocol("Fill"))));
     let [refused] = refused.as_slice() else {
         panic!("one refusal: {refused:?}");
     };
-    assert_eq!(
-        refused.cause,
-        CheckCause::MissingSelection {
-            role: LawRole::ProtocolProfile
-        }
-    );
+    assert!(matches!(
+        &refused.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), qsl_semantics::check::ProtocolAnchorCause::MissingProfile { alias, .. } if alias == "p")
+    ));
 }
 
 /// FR-218-AC-9 (TC-1021 step 5): a reference whose bound target is no node

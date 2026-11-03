@@ -46,7 +46,7 @@ fn parallel(name: &str, memory: &str, join: &str, inner: &str) -> String {
 
 fn protocol(run: &str) -> String {
     format!(
-        "protocol Flow using v over (input: Boolean) on origin {{\n\
+        "protocol Flow using p over (input: Boolean) on origin {{\n\
          role Seller on M::Actor;\n\
          run {run}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -445,7 +445,7 @@ fn litmus(
             .join(" ")
     };
     format!(
-        "{SB_CLAUSES}protocol Flow using v over (input: Boolean) on origin {{\n\
+        "{SB_CLAUSES}protocol Flow using p over (input: Boolean) on origin {{\n\
          role X on M::Cell;\n\
          role Y on M::Cell;\n\
          role C1 on M::Core;\n\

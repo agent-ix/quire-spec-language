@@ -63,16 +63,16 @@ fn a_nested_scope_resolves_its_own_name_over_an_outer_one_of_the_same_spelling()
     // reusing a binder name here would make the fixture itself refuse.
     let inner = "sequence Inner {\n\
          effect Applied of Tried as (applied_inner: Boolean) { true };\n\
-         await WaitInner after Applied using v clock \"ticks\" within [0,1] \
+         await WaitInner after Applied using e clock \"ticks\" within [0,1] \
          match event Seen by R for Undo as (seen_inner: Boolean) { true }; \
          then sequence Then { } timeout sequence Timeout { }\n\
          }\n";
     // The two awaits in `Main` follow the outer `Applied` they wait after: an
     // await anchored at a later control closes a causal cycle (FR-218).
-    let outer = "await WaitQualified after Main::Applied using v clock \"ticks\" within [0,1] \
+    let outer = "await WaitQualified after Main::Applied using e clock \"ticks\" within [0,1] \
          match event SeenQ by R for Undo as (seen_qualified: Boolean) { true }; \
          then sequence ThenQ { } timeout sequence TimeoutQ { }\n\
-         await WaitOuter after Applied using v clock \"ticks\" within [0,1] \
+         await WaitOuter after Applied using e clock \"ticks\" within [0,1] \
          match event SeenO by R for Undo as (seen_outer: Boolean) { true }; \
          then sequence ThenO { } timeout sequence TimeoutO { }\n";
     let applied = "effect Applied of Tried as (applied: Boolean) { true };\n";
@@ -400,7 +400,7 @@ fn a_resolved_anchor_of_the_wrong_kind_refuses_naming_the_actual_kind() {
     // await-after admits every event-like kind and a compensate
     // template, but never a structural control: naming `Main` (a
     // `sequence`) is wrong-kind.
-    let awaiting_a_sequence = "await Wait after Main using v clock \"ticks\" within [0,1] \
+    let awaiting_a_sequence = "await Wait after Main using e clock \"ticks\" within [0,1] \
          match event Seen by R for Undo as (seen: Boolean) { true }; \
          then sequence Then { } timeout sequence Timeout { }\n";
     let (_, found) = refusals(&recovery_flow("Main::Committed", awaiting_a_sequence));

@@ -17,7 +17,7 @@ const TICK: &str = "record Tick { ready: Boolean; n: Integer; }\n";
 /// static role, an empty `run` and a `finish` whose constraint is `finish`.
 fn flow(over_type: &str, activation: &str, captures: &str, finish: &str) -> String {
     format!(
-        "{TICK}protocol Flow using v over (input: {over_type}) {activation} {{\n\
+        "{TICK}protocol Flow using p over (input: {over_type}) {activation} {{\n\
          {captures}\n\
          role Buyer on M::Order;\n\
          run sequence Main {{ }}\n\
@@ -149,7 +149,7 @@ fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
 #[test]
 fn each_captures_start_after_the_trigger_and_the_readable_binders_follow_them() {
     let text = format!(
-        "{TICK}protocol Flow using v over (input: M::Order) on each (t: Tick) {{\n\
+        "{TICK}protocol Flow using p over (input: M::Order) on each (t: Tick) {{\n\
          capture a: Option<Reference<M::Order>> = deref(input).trail;\n\
          capture b: Boolean = t.ready;\n\
          role Buyer on M::Order;\n\
@@ -492,7 +492,7 @@ fn model_field_read_form_survives_emission_and_typed_readback() {
 /// A protocol over `M::Order` with one capture `c: declared = initial`.
 fn capture_of(declarations: &str, declared: &str, initial: &str) -> String {
     format!(
-        "{declarations}protocol Flow using v over (input: M::Order) on origin {{\n\
+        "{declarations}protocol Flow using p over (input: M::Order) on origin {{\n\
          capture c: {declared} = {initial};\n\
          role Buyer on M::Order;\n\
          run sequence Main {{ }}\n\
@@ -667,7 +667,7 @@ fn a_fifo_binder_named_like_a_readable_binder_refuses() {
 /// and the one channel `ordering`.
 fn flow_with_channel(activation: &str, captures: &str, ordering: &str) -> String {
     format!(
-        "{TICK}protocol Flow using v over (input: M::Order) {activation} {{\n\
+        "{TICK}protocol Flow using p over (input: M::Order) {activation} {{\n\
          {captures}\n\
          role Buyer on M::Order;\n\
          role Seller on M::Person;\n\
@@ -684,7 +684,7 @@ fn flow_with_channel(activation: &str, captures: &str, ordering: &str) -> String
 #[test]
 fn a_capture_reading_model_state_through_over_is_admitted() {
     let lowered = admitted(
-        "protocol Flow using v over (order: M::Order) on origin {\n\
+        "protocol Flow using p over (order: M::Order) on origin {\n\
          capture trail: Option<Reference<M::Order>> = deref(order).trail;\n\
          role Buyer on M::Order;\n\
          run sequence Main { }\n\

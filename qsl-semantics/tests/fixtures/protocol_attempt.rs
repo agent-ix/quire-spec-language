@@ -25,6 +25,8 @@ use semantics::model::normalize::{normalize, NormalizeOutcome};
 pub const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile t = \"quire.temporal.infinite-trace/v1\";\n\
+    profile e = \"quire.temporal.event-position.false-extension/v1\";\n\
+    profile pp = \"quire.protocol.finite-global/v1\";\n\
     model M = \"example/protocol-fixture\";\n";
 
 /// `M::Actor` and its own `op` and `other` operations (no parameters,
@@ -116,7 +118,7 @@ pub fn m_actor_model() -> SelectedModel {
 /// `finish`, every body the bare literal `true`.
 pub fn attempt_flow(name: &str, contracts: &str) -> String {
     format!(
-        "protocol {name} using v over (input: Boolean) on origin {{\n\
+        "protocol {name} using pp over (input: Boolean) on origin {{\n\
          role R on M::Actor;\n\
          run sequence Main {{\n\
          attempt Tried by R on M::Actor::op contracts [{contracts}] \

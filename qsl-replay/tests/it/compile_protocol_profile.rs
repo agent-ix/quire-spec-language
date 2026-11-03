@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 const PROFILE: &str = "quire.protocol.finite-global/v1";
 
-const PROTOCOL: &str = "protocol Fill using v over (input: M::Gadget) on origin {\n\
+const PROTOCOL: &str = "protocol Fill using p over (input: M::Gadget) on origin {\n\
     role R on M::Gadget;\n\
     run sequence Main { }\n\
     finish End as (outcome: Boolean) { true };\n\
@@ -57,6 +57,19 @@ fn refusal_code(result: Result<Value, ReplayRefusal>) -> Code {
         Err(ReplayRefusal::Recompile(refusal)) => refusal.code(),
         other => panic!("expected a recompile refusal, got {other:?}"),
     }
+}
+
+/// FR-508-AC-1 (TC-1303): a profile may be selected in the header yet still
+/// refuse when a protocol uses its alias for a different kind of site.
+#[trace("FR-508-AC-1", "TC-1303")]
+#[test]
+fn a_protocol_must_use_an_alias_selecting_the_protocol_profile() {
+    let result = compile(&unit(Some("quire.value.complete/v1"), PROTOCOL));
+    let Err(refusal) = result else {
+        panic!("a value profile used by a protocol must refuse");
+    };
+    assert_eq!(refusal.code(), Code::UnknownProfile, "{refusal:?}");
+    assert_eq!(refusal.cause(), Some("wrong-selection-role"), "{refusal:?}");
 }
 
 /// Source to IR: a unit that selects the protocol profile and refers to a

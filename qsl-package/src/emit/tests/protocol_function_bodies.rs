@@ -15,7 +15,7 @@ use qsl_semantics::check::{CheckCause, ProtocolConstruct, ProtocolReferenceCause
 fn flow(activation: &str, captures: &str, terminal: &str, finish: &str) -> String {
     format!(
         "record Tick {{ ready: Boolean; n: Integer; }}\n\
-         protocol Flow using v over (input: M::Order) {activation} {{\n\
+         protocol Flow using p over (input: M::Order) {activation} {{\n\
          {captures}\n\
          role Buyer on M::Order;\n\
          {terminal}\n\
@@ -122,11 +122,11 @@ fn a_control_body_that_calls_a_function_is_admitted() {
 fn a_chain_of_functions_and_protocols_is_keyed_in_dependency_order() {
     let parts = [
         "function leaf using v(): Boolean pure { true }\n",
-        "protocol Inner using v over (input: M::Order) on origin {\n\
+        "protocol Inner using p over (input: M::Order) on origin {\n\
          role Buyer on M::Order;\nrun sequence Main { }\n\
          finish End as (inner: Boolean) { leaf() };\n}\n",
         "function mid using v(): Boolean pure { protocol Inner }\n",
-        "protocol Outer using v over (input: M::Order) on origin {\n\
+        "protocol Outer using p over (input: M::Order) on origin {\n\
          role Buyer on M::Order;\nrun sequence Main { }\n\
          finish End as (outer: Boolean) { mid() };\n}\n",
     ];
@@ -167,7 +167,7 @@ fn a_chain_of_functions_and_protocols_is_keyed_in_dependency_order() {
 
 /// A second protocol, `Other`, whose `finish` binder is named `done` (not
 /// `outcome`, the name of `Flow`'s), so that no binder is shared.
-const OTHER: &str = "protocol Other using v over (input: M::Order) on origin {\n\
+const OTHER: &str = "protocol Other using p over (input: M::Order) on origin {\n\
      role Buyer on M::Order;\nrun sequence Main { }\n\
      finish End as (done: Boolean) { true };\n}\n";
 

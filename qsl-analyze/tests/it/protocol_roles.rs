@@ -61,7 +61,7 @@ pub(crate) fn unit(activation: &str, roles: &str, members: &str, run: &str) -> S
     contracts("self.v = 0")
         + "pre StuckPre using v on M::Cell::bump { false }\n"
         + &format!(
-            "protocol R using v over (k: M::Cell) {activation} {{\n\
+            "protocol R using p over (k: M::Cell) {activation} {{\n\
              role w on M::Cell;\n\
              {roles}\n\
              {members}\n\
@@ -690,7 +690,7 @@ fn pay_by_role(lifetime: &str) -> String {
     contracts("self.v = 0")
         + REFUND
         + &format!(
-            "protocol R using v over (k: M::Cell) on origin {{\n\
+            "protocol R using p over (k: M::Cell) on origin {{\n\
              role w on M::Cell;\n\
              {}\n\
              {}\n\

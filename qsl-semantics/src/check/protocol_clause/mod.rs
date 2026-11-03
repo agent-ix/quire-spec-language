@@ -49,7 +49,7 @@ mod types;
 mod tests;
 
 pub use awaits::Selections;
-pub use coverage::content;
+pub use coverage::{content, profile_uses};
 pub(crate) use graph::{dominates, repeat_body};
 use types::PendingPredicateJoin;
 pub use types::{

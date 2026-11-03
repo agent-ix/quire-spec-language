@@ -16,7 +16,7 @@ use crate::check::{CheckRefusal, CheckedAwait, CheckedDeadline, CheckedGraph};
 fn flow(members: &str, run: &str) -> String {
     format!(
         "record Plain {{ ready: Boolean; done: Boolean; }}\n\
-         protocol Flow using v over (input: Boolean) on origin {{\n\
+         protocol Flow using pp over (input: Boolean) on origin {{\n\
          role R on M::Actor;\n\
          role S on M::Actor;\n\
          {members}\n\
@@ -294,7 +294,7 @@ fn a_receive_before_its_own_send_is_a_causal_cycle() {
 /// `timeout`.
 fn await_control(name: &str, after: &str) -> String {
     format!(
-        "await {name} after {after} using v clock \"c\" within [0,1] \
+        "await {name} after {after} using e clock \"c\" within [0,1] \
          match event Seen{name} by R as (seen{}: Boolean) {{ true }}; \
          then sequence Then{name} {{ }} timeout sequence Timeout{name} {{ }}",
         name.to_lowercase()
@@ -388,7 +388,7 @@ fn awaiting(members: &str, within: &str, matched: &str) -> String {
     flow(
         members,
         &format!(
-            "sequence Main {{ {} await Wait after Start using v clock \"wall\" within {within} \
+            "sequence Main {{ {} await Wait after Start using e clock \"wall\" within {within} \
              match {matched} then sequence Then {{ }} timeout sequence Late {{ }} }}",
             attempt("Start")
         ),
@@ -971,7 +971,7 @@ fn a_record_outside_its_scope_is_an_unresolved_name() {
         (
             "await",
             format!(
-                "sequence Main {{ {} await Wait after Start using v clock \"c\" within [0,1] \
+                "sequence Main {{ {} await Wait after Start using e clock \"c\" within [0,1] \
                  match {} then sequence Then {{ }} timeout sequence Timeout {{ }} {} }}",
                 attempt("Start"),
                 event("Early", "early"),

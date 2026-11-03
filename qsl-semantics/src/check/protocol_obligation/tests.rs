@@ -207,7 +207,7 @@ fn stage_read(cause: &ObligationCause) -> (&str, ObligationStage, &ObligationOwn
 /// the test's.
 fn plain(activation: &str, captures: &str) -> String {
     format!(
-        "protocol Refunds using v over (view: M::Node) {activation} {{\n\
+        "protocol Refunds using p over (view: M::Node) {activation} {{\n\
          {captures}\n\
          role Service on M::Node;\n\
          run sequence Main {{\n\
@@ -223,12 +223,12 @@ const TICK: &str = "on each (opened: M::Tick) when (opened.ready)";
 
 /// TC-1057's base protocol `Refunds`, with the bodies of its run tree the
 /// bare literal `true`.
-const BASE: &str = "protocol Refunds using v over (view: M::Node)\n\
+const BASE: &str = "protocol Refunds using p over (view: M::Node)\n\
     on each (opened: M::Tick) when (opened.ready) {\n\
     capture order: M::Total = view.total;\n\
     role Service on M::Node;\n\
     compensate Refund for Main::Applied as (forward: M::Receipt)\n\
-        by Service on M::Node::step using v clock \"refund-clock\" {\n\
+        by Service on M::Node::step using e clock \"refund-clock\" {\n\
       capture target: M::Total = forward.total;\n\
       activate first (trigger: M::Flag) when { not trigger.ready and target >= 0 } {\n\
         capture activated: Boolean = trigger.ready;\n\
@@ -278,7 +278,7 @@ const RECOVER: &str =
 fn other(registration: &str) -> String {
     format!(
         "compensate Other for Main::Applied as (otherfwd: M::Receipt)\n\
-         by Service on M::Node::step using v clock \"other-clock\" {{\n\
+         by Service on M::Node::step using e clock \"other-clock\" {{\n\
          {registration}\n\
          activate first (otrigger: M::Flag) when {{ true }} {{ }}\n\
          within [0,30]; attempts 3 of M::Attempt;\n\

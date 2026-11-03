@@ -34,7 +34,7 @@ fn unit() -> String {
     profile v = \"quire.value.complete/v1\";\n\
     profile p = \"quire.protocol.finite-global/v1\";\n\
     model M = \"acme/orders\";\n\
-    protocol P using v over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {\n\
+    protocol P using p over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {\n\
       role R on M::Gadget;\n\
       run sequence Main { check Ready using p { true }; }\n\
       finish End as (outcome: Boolean) { true };\n\

@@ -78,7 +78,7 @@ fn protocol_binding() -> qsl_analyze::model_check::AbstractProtocolBinding {
 /// `attempt` yet, QSL-1126) over the compare-and-set counter, and the refinement of the counter by it.
 fn protocol_refinement() -> String {
     "profile pp = \"quire.protocol.finite-global/v1\";\n\
-     protocol Run using v over (k: Impl::Counter) on origin {\n\
+     protocol Run using p over (k: Impl::Counter) on origin {\n\
      role w on Impl::Counter;\n\
      run sequence Main { }\n\
      finish Done as (d: Boolean) { true };\n\

@@ -16,13 +16,11 @@ fn unit_text(declarations: &str, guard: &str, retry: &str) -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         profile t = \"quire.temporal.infinite-trace/v1\";\n\
+         profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
          model M = {package:?};\n\
          {declarations}\n\
-         temporal Due using t over (c: M::Ledger) clock \"steps\" on origin {{ always true }}\n\
-         protocol Flow using v over (input: M::Ledger) on origin {{\n\
+         protocol Flow using p over (input: M::Ledger) on origin {{\n\
          role R on M::Ledger;\n\
-         requires temporal Due;\n\
          compensate Full for Main::Applied as (fwd: M::Money) by R \
            on M::Ledger::pay using t clock \"c\" {{\n\
            capture saved: M::Money = fwd;\n\
@@ -67,7 +65,24 @@ fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("unit assembles")
         .check(CheckingLimits::default())?;
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("unit emits");
+    let selections = graph
+        .protocols()
+        .iter()
+        .flat_map(|protocol| &protocol.obligations.compensations)
+        .filter(|template| template.temporal_profile.is_some())
+        .map(|template| crate::emit::TemporalClockSelection {
+            source: graph.source().clone(),
+            declaration_span: template.span,
+            clock: quire_contract_model::ClockConfiguration::EventPosition {
+                sequence_authority: "compensation-events".into(),
+            },
+        })
+        .collect::<Vec<_>>();
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &CheckedPackage::link(graph),
+        &selections,
+    )
+    .expect("unit emits");
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     let mut evidence = CheckedPackageEvidence::new();
@@ -117,11 +132,7 @@ fn a_compensation_without_a_selected_temporal_profile_is_refused_by_i2() {
     };
     assert_eq!(
         refusal.code,
-        quire_contract_model::CheckedPackageRefusalCode::MissingDeclaration
-    );
-    assert_eq!(
-        refusal.cause,
-        Some(quire_contract_model::CheckedPackageRefusalCause::MissingSelection)
+        quire_contract_model::CheckedPackageRefusalCode::InvalidPackage
     );
     let at = wire["semantic_graph"]["nodes"]
         .as_array()
@@ -220,7 +231,7 @@ fn full_and_partial_compensation_templates_emit_and_read_back() {
 /// binder is called.
 #[test]
 fn a_compensation_body_calls_a_function_but_cannot_refer_to_a_protocol() {
-    let other = "protocol Other using v over (input: M::Ledger) on origin {\n\
+    let other = "protocol Other using p over (input: M::Ledger) on origin {\n\
                  role R on M::Ledger;\nrun sequence Main { }\n\
                  finish End as (done: Boolean) { true };\n}\n";
     let ok = "function ok using v(): Boolean pure { true }\n";

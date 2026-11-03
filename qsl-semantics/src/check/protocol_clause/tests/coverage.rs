@@ -6,6 +6,93 @@ use super::attempt_fixture::attempt_flow;
 use super::{assemble, checks, only_cause, recovery_flow, refusals};
 use crate::check::refusal::ProtocolAnchorCause;
 
+/// FR-508 / TC-1303: each protocol use resolves its own alias to the required
+/// profile kind, and a wrong-kind selection refuses at that alias with the
+/// selected identity and required kind retained.
+#[trace(
+    "FR-508-AC-1",
+    "FR-508-AC-2",
+    "FR-508-AC-3",
+    "FR-508-AC-4",
+    "FR-508-AC-5",
+    "TC-1303"
+)]
+#[test]
+fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
+    let protocol = attempt_flow("Flow", "").replace("using pp", "using v");
+    let await_form = "await Wait after Applied using v clock \"ticks\" within [0,1] \
+        match event Seen by R for Undo as (seen: Boolean) { true }; \
+        then sequence Then { } timeout sequence Timeout { }";
+    let check_form = "check Fine using pp { true };";
+    let cases = [
+        (protocol, "v", "quire.value.complete/v1", "protocol profile"),
+        (
+            recovery_flow("Main::Committed", await_form),
+            "v",
+            "quire.value.complete/v1",
+            "temporal profile",
+        ),
+        (
+            recovery_flow("Main::Committed", check_form),
+            "pp",
+            "quire.protocol.finite-global/v1",
+            "state-bearing layer",
+        ),
+        (
+            recovery_flow("Main::Committed", "").replace(
+                "on M::Actor::op using e clock",
+                "on M::Actor::op using pp clock",
+            ),
+            "pp",
+            "quire.protocol.finite-global/v1",
+            "temporal profile",
+        ),
+    ];
+
+    for (source, alias, selected, required) in cases {
+        let (text, found) = refusals(&source);
+        let matches: Vec<_> = found
+            .iter()
+            .filter(|refusal| refusal.cause.code().as_str() == "unknown_profile")
+            .collect();
+        assert_eq!(matches.len(), 1, "{source}\n{found:?}");
+        assert_eq!(
+            matches[0].cause.cause(),
+            Some("wrong-selection-role"),
+            "{source}"
+        );
+        let ProtocolAnchorCause::WrongProfileKind {
+            alias: actual_alias,
+            selected: actual_selected,
+            required: actual_required,
+            span,
+        } = (match &matches[0].cause {
+            crate::check::CheckCause::ProtocolAnchor(cause) => cause.as_ref(),
+            other => panic!("a protocol anchor refusal, got {other:?}"),
+        })
+        else {
+            panic!("a wrong profile kind, got {:?}", matches[0].cause);
+        };
+        assert_eq!(actual_alias, alias, "{source}");
+        assert_eq!(actual_selected, selected, "{source}");
+        assert_eq!(*actual_required, required, "{source}");
+        assert_eq!(&text[span.start..span.end], alias, "{source}");
+    }
+}
+
+/// FR-508: an absent alias keeps the existing `MissingProfile` refusal.
+#[trace("FR-508-AC-5", "TC-1303")]
+#[test]
+fn a_missing_protocol_profile_alias_keeps_missing_profile() {
+    let source = attempt_flow("Flow", "").replace("using pp", "using absent");
+    let (_, refusals) = refusals(&source);
+    assert!(refusals.iter().any(|refusal| matches!(
+        &refusal.cause,
+        crate::check::CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::MissingProfile { alias, .. } if alias == "absent")
+    )), "{refusals:?}");
+}
+
 /// SR-770 FND-001, now that every node kind and body is checked: a
 /// protocol whose anchors (FR-113) and attempt bindings (FR-114) all resolve
 /// and that holds an `effect`, an `event` and a `commit` checks, and a body

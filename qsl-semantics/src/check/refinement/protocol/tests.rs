@@ -265,7 +265,7 @@ fn only(found: &[Refused]) -> &Refused {
 /// text between the name `Both` and its brace.
 fn fill(memory: &str) -> String {
     format!(
-        "protocol Fill using v over (k: M::Node) on origin {{\n\
+        "protocol Fill using pp over (k: M::Node) on origin {{\n\
          role w on M::Node;\n\
          run sequence Main {{\n\
          parallel Both {memory} {{\n\
@@ -943,12 +943,12 @@ fn a_row_target_gives_its_observation() {
 /// TC-1057's `Refunds`: an attempt `Tried` of `step`, the effect `Applied`,
 /// the commit `Committed`, the `Refund` template (which compensates with
 /// `step`), the `finish` node `Closed` and the `activation on each` trigger.
-const REFUNDS: &str = "protocol Refunds using v over (view: M::Node)\n\
+const REFUNDS: &str = "protocol Refunds using pp over (view: M::Node)\n\
     on each (opened: M::Tick) when (opened.ready) {\n\
     capture order: M::Total = view.total;\n\
     role Service on M::Node;\n\
     compensate Refund for Main::Applied as (forward: M::Receipt)\n\
-        by Service on M::Node::step using v clock \"refund-clock\" {\n\
+        by Service on M::Node::step using e clock \"refund-clock\" {\n\
       capture target: M::Total = forward.total;\n\
       activate first (trigger: M::Flag) when { not trigger.ready and target >= 0 } {\n\
         capture activated: Boolean = trigger.ready;\n\
@@ -1160,7 +1160,7 @@ fn a_channel_needs_a_row_for_each_step_its_delivery_admits() {
 /// and an `event Work by r`.
 fn workers(lifetime: &str) -> String {
     format!(
-        "protocol Workers using v over (k: M::Node) on origin {{\n\
+        "protocol Workers using pp over (k: M::Node) on origin {{\n\
          capture start: M::Total = k.total;\n\
          role w on M::Node;\n\
          role r each M::Node from nodes max 1 lifetime {lifetime};\n\
@@ -1246,7 +1246,7 @@ fn a_weak_memory_model_needs_a_row_for_each_internal_step() {
     checks(&unit(&fill("memory ra"), ROWS));
 
     // Two outermost `parallel` nodes, one `sc` and one `tso`: one row.
-    let two = "protocol Two using v over (k: M::Node) on origin {\n\
+    let two = "protocol Two using pp over (k: M::Node) on origin {\n\
          role w on M::Node;\n\
          run sequence Main {\n\
          parallel First memory sc {\n\
@@ -1389,7 +1389,7 @@ fn a_parallel_needs_one_memory_drain_row_under_every_source_default_model() {
 #[trace("TC-541", "FR-136-AC-6")]
 #[test]
 fn an_unused_operation_row_is_admitted_and_a_repeated_node_name_is_ambiguous() {
-    let solo = "protocol Solo using v over (k: M::Node) on origin {\n\
+    let solo = "protocol Solo using pp over (k: M::Node) on origin {\n\
          role w on M::Node;\n\
          run sequence Main {\n\
          attempt A by w on M::Node::step contracts [] as (a: M::Flag) { true };\n\
@@ -1401,7 +1401,7 @@ fn an_unused_operation_row_is_admitted_and_a_repeated_node_name_is_ambiguous() {
                 step M::Solo::Done -> stutter;";
     assert_eq!(only_refinement(&checks(&unit(solo, rows))).steps().len(), 3);
 
-    let twice = "protocol Twice using v over (k: M::Node) on origin {\n\
+    let twice = "protocol Twice using pp over (k: M::Node) on origin {\n\
          role w on M::Node;\n\
          run sequence Main {\n\
          sequence S1 { attempt A by w on M::Node::step contracts [] as (a1: M::Flag) { true }; }\n\
@@ -1431,7 +1431,7 @@ fn an_unused_operation_row_is_admitted_and_a_repeated_node_name_is_ambiguous() {
 
 /// A sender and a receiver in the two branches of a `parallel`: the nodes
 /// whose steps are ST-3 and ST-4.
-const MESSAGES: &str = "protocol Msg using v over (k: M::Node) on origin {\n\
+const MESSAGES: &str = "protocol Msg using pp over (k: M::Node) on origin {\n\
     role w on M::Node;\n\
     role z on M::Node;\n\
     channel Ch from w to z carries M::Flag ordering unordered \
@@ -1496,7 +1496,7 @@ fn an_await_needs_a_timeout_row_and_its_matched_event_a_row() {
     let waiting = REFUNDS.replace(
         "effect Applied of Main::Tried as (applied: M::Receipt) { true };\n",
         "effect Applied of Main::Tried as (applied: M::Receipt) { true };\n\
-         await Wait after Applied using v clock \"ticks\" within [0,1] \
+         await Wait after Applied using e clock \"ticks\" within [0,1] \
          match event Seen by Service for Refund as (seen: M::Flag) { true }; \
          then sequence Then { } timeout sequence Late { }\n",
     );
@@ -1541,7 +1541,7 @@ fn an_await_needs_a_timeout_row_and_its_matched_event_a_row() {
 #[trace("TC-541", "FR-136-AC-11")]
 #[test]
 fn refinements_keep_ordered_s3_refusals_before_protocol_coverage() {
-    let abstract_protocol = "protocol Twice using v over (c: A::Acc) on origin {\n\
+    let abstract_protocol = "protocol Twice using pp over (c: A::Acc) on origin {\n\
         role w on A::Acc;\n\
         run sequence Main { }\n\
         finish Done as (d: Boolean) { true };\n\
@@ -1866,7 +1866,7 @@ fn a_model_subject_refuses_a_protocol_shaped_row_at_its_name() {
 #[trace("TC-541", "FR-136-AC-6")]
 #[test]
 fn a_refinement_is_covered_against_the_clause_it_selects() {
-    let solo = "protocol Solo using v over (k: M::Node) on origin {\n\
+    let solo = "protocol Solo using pp over (k: M::Node) on origin {\n\
          role w on M::Node;\n\
          run sequence Main {\n\
          attempt A by w on M::Node::step contracts [] as (a: M::Flag) { true };\n\
@@ -1883,7 +1883,7 @@ fn a_refinement_is_covered_against_the_clause_it_selects() {
 
 /// An abstract protocol `Seq` over `A::Acc`: the attempt `x` of `add` and the
 /// `finish` node `F`.
-const SEQ: &str = "protocol Seq using v over (k: A::Acc) on origin {\n\
+const SEQ: &str = "protocol Seq using pp over (k: A::Acc) on origin {\n\
      role r on A::Acc;\n\
      run sequence S {\n\
      attempt x by r on A::Acc::add contracts [] as (p: Boolean) { true };\n\
@@ -2111,7 +2111,7 @@ fn check_written(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
 #[trace("TC-541", "FR-136-AC-1")]
 #[test]
 fn a_refinement_over_an_attempt_protocol_adds_no_attempt_reference_refusal() {
-    let solo = "protocol Solo using v over (k: M::Node) on origin {\n\
+    let solo = "protocol Solo using pp over (k: M::Node) on origin {\n\
         role w on M::Node;\n\
         run sequence Main {\n\
         attempt A by w on M::Node::step contracts [] as (a: M::Flag) { true };\n\

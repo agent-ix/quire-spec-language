@@ -6,6 +6,7 @@
 //! role too, so it needs the same selection.
 
 use qsl_forms::{IntervalUpper, ProtocolDeclarationForm, ProtocolNodeKind};
+use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::Span;
 
 use super::refusal;
@@ -24,6 +25,9 @@ pub struct Selections<'a> {
     /// The temporal profiles the unit's header selects, each with its alias,
     /// in source order. Empty when the header selects none.
     pub temporal: &'a [(&'a str, TemporalProfile)],
+    /// All header profile selections, used to distinguish a missing alias
+    /// from a present alias selecting the wrong kind.
+    pub profiles: &'a [ProfileSelection],
 }
 
 /// Every `await` of `protocol` checked, in source order, with each
@@ -38,7 +42,12 @@ pub(super) fn check(
     for form in &protocol.awaits {
         let name = &form.name.name;
         let at = form.name.span;
-        if selections.temporal.is_empty() {
+        if selections.temporal.is_empty()
+            && !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == form.using.alias)
+        {
             refusals.push((
                 at,
                 refusal(ProtocolAnchorCause::MissingTemporalProfile {
@@ -95,13 +104,17 @@ pub(super) fn check(
                     .temporal
                     .iter()
                     .find(|(alias, _)| *alias == form.using.alias)
-                    .or(selections.temporal.first())
                     .map(|(_, profile)| *profile),
             });
         }
     }
-    if selections.temporal.is_empty() {
-        for template in &protocol.compensations {
+    for template in &protocol.compensations {
+        if selections.temporal.is_empty()
+            && !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == template.using.alias)
+        {
             let at = template.name.span;
             refusals.push((
                 at,

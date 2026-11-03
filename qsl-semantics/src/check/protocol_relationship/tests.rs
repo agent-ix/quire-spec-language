@@ -99,7 +99,7 @@ fn extra() -> Vec<DomainPackageRecord> {
 /// `run` and the `related` clauses on its `receive Got`.
 fn pipeline(members: &str, related: &str) -> String {
     format!(
-        "{HEADER}protocol Pipeline using v over (view: M::Node) on origin {{\n\
+        "{HEADER}protocol Pipeline using p over (view: M::Node) on origin {{\n\
          role Seller on M::Node;\n\
          role Buyer on M::Node;\n\
          {members}\n\
@@ -357,7 +357,7 @@ fn bare(activation: &str, members: &str, finish: &str) -> String {
         .strip_prefix("capture ")
         .map_or(("", members), |_| (members, ""));
     format!(
-        "{HEADER}protocol Bare using v over (view: M::Node) {activation} {{\n\
+        "{HEADER}protocol Bare using p over (view: M::Node) {activation} {{\n\
          {captures}\n\
          role Seller on M::Node;\n\
          {members}\n\
