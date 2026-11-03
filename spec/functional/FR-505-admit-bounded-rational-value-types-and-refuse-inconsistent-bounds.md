@@ -13,9 +13,15 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-106
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-497
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-154
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-322
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-142
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-149
     type: depends_on
 ---
 # FR-505: Admit bounded Rational value types and refuse inconsistent bounds
@@ -33,73 +39,149 @@ whose `typeRef` is ..."). The spine therefore admits no bounded exact rational
 scalar, and the bounds-consistency refusal has no successor. This requirement
 is that successor. It gives the model document a **Rational value type**, the
 counterpart of FR-056's Text value type, so that every site typed by one value
-type shares one bound by construction and a disagreement is a refusal.
+type shares one bound by construction and a disagreement is a refusal. QSpec
+FR-154 "Rational value types", FR-322 "Model-owned members" step 4 and FR-142
+"Carried quantity" own the contract; this requirement states how QSL's intake
+reader, checker and lowering realize it and invents none.
 
 ## Inputs
 
 - A model document value-type definition (meaning
   `quire.meaning.model.value-type/v1`) whose `scalar` is `rational` and whose
-  `constraints` hold `minNumerator`, `maxNumerator`, `minDenominator` and
-  `maxDenominator`, each once, in any order. Each constraint's `appliesTo` is
-  the value type itself and its `operands.value` is a JSON integer.
-- Optionally a `unit` member on the value type, as FR-154 reads it for a
-  quantity: the legacy rational scalar carried an authored unit (dimensionless
-  or one named unit), which this requirement keeps.
-- Fields, parameters, results, aliases and option or sequence items whose
-  `typeRef` or `target` names that value type.
+  `constraints` either is empty or holds `minNumerator`, `maxNumerator`,
+  `minDenominator` and `maxDenominator`, each once, in any order. Each
+  constraint's `appliesTo` is the value type itself and its `operands` is an
+  object whose only member `value` is a JSON integer.
+- Optionally a `unit` member on the value type, a unit reference
+  `ix://quire/unit/<name>` of the form a unit `typeRef` takes (QSpec FR-154):
+  the legacy rational scalar carried an authored unit (dimensionless or one
+  named unit), which this requirement keeps.
+- Fields, parameters, results, aliases, option `inner`, sequence `items`, map
+  `values`, tuple positions and variant payloads whose `typeRef`, `target` or
+  member names that value type.
 
 ## Outputs
 
-- A field, parameter or result typed by the value type has the value type
+- A member typed by a bounded Rational value type with no `unit` has the type
   `Rational[minNumerator, maxNumerator; minDenominator, maxDenominator]`, the
-  form QSL source writes. The legacy `maximum_denominator` of `N` is the
-  constraints `minDenominator` 1 and `maxDenominator` `N`.
+  form QSL source writes (QSpec FR-149 "Bounded rationals"), and lowers to the
+  structural `bounded_domain`/`rational_range` node over the
+  `scalar_type`/`rational` node, with bindings `numerator_min`,
+  `numerator_max`, `denominator_min` and `denominator_max` (QSpec FR-322).
+  The legacy `maximum_denominator` of `N` is the constraints `minDenominator` 1
+  and `maxDenominator` `N`.
+- A member typed by a bounded Rational value type with `unit` `u` has the
+  carried quantity type `Quantity<u, Rational[n1, n2; d1, d2]>` (FR-497, QSpec
+  FR-142 "Carried quantity") and lowers to FR-497's
+  `scalar_type`/`carried_quantity` node over `u`'s unit node and that
+  `rational_range` node, with `rounding` `exact`.
+- A Rational value type with no constraints is the unbounded `Rational`: a
+  member of it has no checked type, as a member typed by the bare native
+  `ix://quire/native/Rational` has none.
 - A refusal at the value type, naming the first defect (below).
 
 ## Behavior
 
-- The intake reader SHALL bind a value type as Rational by its `scalar` and
-  its four constraints, never by a `target` alias. A `target` alias of a
-  Rational value type carries no constraint; an alias that carries one refuses
-  `invalid_model_binding`/`malformed-declaration` at the alias.
-- The Rational reader SHALL refuse the first defect in this order, each at the
-  value type naming what the row names:
+- The intake reader SHALL bind a value type as Rational by its `scalar`,
+  never by a `target` alias.
+- The intake reader SHALL read a Rational value type's bounds from its own
+  `constraints` only.
+- The intake reader SHALL admit a Rational value type whose `constraints` is
+  empty as the unbounded `Rational`, not refuse it.
+- When a Rational value type has a non-empty `constraints`, the Rational
+  reader SHALL refuse its first defect in this order, each at the value type node,
+  so that exactly one refusal is reported. Rows 1 to 3 scan `constraints` in
+  array order; rows 4 and 5 take the keywords in the order `minNumerator`,
+  `maxNumerator`, `minDenominator`, `maxDenominator`:
   1. a constraint whose keyword is none of the four:
-     `unsupported_construct`/`declaration-form`, naming the keyword;
-  2. a keyword given twice, in constraint order:
-     `invalid_model_binding`/`malformed-declaration`, naming the keyword;
-  3. a missing keyword, checked in the order `minNumerator`, `maxNumerator`,
-     `minDenominator`, `maxDenominator`:
-     `invalid_model_binding`/`malformed-declaration`, naming the keyword;
-  4. bounds outside `minNumerator <= maxNumerator` and
+     `unsupported_construct`/`declaration-form` at `Constraint.keyword`,
+     naming the keyword;
+  2. a constraint whose `appliesTo` is not the value type's own identity
+     (another node, an alias of the value type, or a native or unit
+     reference): `invalid_model_binding`/`malformed-declaration` at
+     `Constraint.appliesTo`;
+  3. a keyword given a second time, the later constraint in array order:
+     `invalid_model_binding`/`malformed-declaration` at `Constraint.keyword`,
+     naming the keyword;
+  4. a missing keyword: `invalid_model_binding`/`malformed-declaration` at
+     `TypeDefinition.constraints`, naming the keyword;
+  5. an `operands` that is not an object whose only member is `value`, or
+     whose `value` is absent or is not a JSON integer in the signed 64-bit
+     range (a fraction, an exponent spelling, a string such as `"3/4"`, or
+     9223372036854775808): `invalid_model_binding`/`malformed-declaration` at
+     that constraint's `Constraint.operands`, naming the keyword; no operand is
+     rounded, widened or repaired, and -9223372036854775808 is in range;
+  6. bounds outside `minNumerator <= maxNumerator` and
      `1 <= minDenominator <= maxDenominator`:
-     `unsupported_construct`/`declaration-form`, naming the bounds.
-- The Rational reader SHALL require signed 64-bit numerator bounds and
-  denominator bounds in `1 ..= i64::MAX`; an operand outside its range, a
-  float, an exponent spelling or a fraction spelling refuses at the reader of
-  item 1's row as `invalid_model_binding`/`malformed-declaration` and is never
-  rounded, widened or repaired (FR-041 "Behavior", inherited).
+     `unsupported_construct`/`declaration-form` at
+     `TypeDefinition.constraints`, naming the four bounds.
+- A denominator bound therefore lies in `1 ..= i64::MAX` by row 6: a zero or
+  negative `minDenominator` or `maxDenominator` is an in-range JSON integer
+  that passes row 5 and refuses `unsupported_construct`/`declaration-form`
+  at row 6. Row 5 checks only that an operand is a JSON integer in the signed
+  64-bit range.
+- The intake reader SHALL refuse a constraint carried by any other node whose
+  `appliesTo` names a Rational value type, or an alias whose `target` chain
+  reaches one, `invalid_model_binding`/`malformed-declaration` at the carrying
+  node and its
+  `Constraint.appliesTo`, whatever its keyword; this refusal is the carrying
+  node's and leaves the value type's own report unchanged.
 - The intake reader SHALL keep the value type's `unit`: absent means
-  dimensionless, and a named unit that is not a unit of the unit namespace
-  refuses `missing_declaration`/`missing-name` at the `unit` member. The
-  checked type of a site is `Rational[...]` with that declared unit, and two
-  value types equal in bounds and different in unit are two different types
-  (the legacy rule that equal representations cannot merge different nominal
-  units). Unit arithmetic and conversion over a Rational carrier are FR-497's;
-  see Dependencies.
-- Every site typed by one Rational value type SHALL have exactly that type's
-  bounds. A site cannot restate or narrow them: a field of that type that
-  carries its own `constraints` refuses `invalid_model_binding`/
-  `malformed-declaration` at `Field.constraints` (FR-154's path).
-- FR-106 admission SHALL admit a snapshot or invocation value at a Rational
-  site only if it is a reduced fraction inside the type's domain; an unreduced
-  fraction, a numerator or denominator outside the bounds or a float refuses
-  `invalid_runtime_input`/`invalid-value` naming the member path (FR-106).
-- A site typed by the bare native `ix://quire/native/Rational` keeps FR-056's
-  behavior (admitted with no checked type, every use refuses
-  `ill_typed`/`operator-ineligible`). The legacy refusal of a whole model for
-  a rational site without a role is not carried: an unbounded rational site is
-  exactly the bare native, and FR-056-AC-43 owns it.
+  dimensionless. A `unit` that is not a string `ix://quire/unit/<name>` (a
+  bare name such as `m`, a number, or a native reference such as
+  `ix://quire/native/Rational`), and a `unit` on a value type whose `scalar`
+  is not `rational`, refuse `invalid_model_binding`/`malformed-declaration` at
+  `TypeDefinition.unit`; a well-formed `unit` naming no unit of the unit
+  namespace refuses `missing_declaration`/`missing-name` at the value type
+  node and `TypeDefinition.unit`. A `unit` defect is reported only when no
+  constraint row above fails.
+- The checker SHALL check a member of a unit-bearing Rational value type as
+  the carried quantity `Quantity<u, Rational[..]>` of FR-497, whose mode is
+  `exact`: it is not an operand of `=`, `!=`, `<` or any other quantity
+  operation, which refuse `ill_typed`/`type-mismatch` at the expression as
+  FR-497 "Type identity" states. Two such members are compared, and combined,
+  through the exact conversion `convert<Quantity<u>>(e)` of each. Two Rational
+  value types with equal bounds and different units, or one with a unit and
+  one without, are two types; two with equal bounds and equal units, or equal
+  bounds and no unit, are one type and lower to one node (the legacy rule that
+  equal representations cannot merge different nominal units).
+- The checker SHALL refuse a source `Rational[n1, n2; d1, d2]` with
+  `n1 > n2` or outside `1 <= d1 <= d2` `ill_typed` at the type wherever it is
+  written, the carrier of a `Quantity<u, C>` included (QSpec FR-149 "Bounded
+  rationals"); this is the source-form counterpart of row 6.
+- Every member typed by one Rational value type, directly or through an alias
+  chain, SHALL have exactly that type's bounds and unit. A member cannot
+  restate or narrow them: a field typed by it that carries its own non-empty
+  `constraints` refuses `invalid_model_binding`/`malformed-declaration` at
+  `Field.constraints`, a parameter the same at
+  `Operation.params[i].constraints`, and an alias whose `target` chain reaches
+  it and that carries a non-empty `constraints` refuses the same at the alias
+  node and `TypeDefinition.constraints`. An alias with no constraint admits
+  and denotes its target's type.
+- FR-106 admission SHALL admit a snapshot or invocation value at a member of
+  a bounded Rational value type only if it is a fraction in lowest terms with
+  a positive denominator inside the type's bounds; an unreduced fraction, a
+  numerator or denominator outside the bounds or a float refuses
+  `invalid_runtime_input`/`invalid-value` naming the member path, and no value
+  is reduced, rounded or converted (FR-106). A value at a member of a
+  unit-bearing Rational value type is its magnitude in `u`, decided by the
+  same rule.
+- A field, operation parameter or operation result typed by the bare native
+  `ix://quire/native/Rational`, or by a Rational value type with no
+  constraints, keeps FR-056's behavior (admitted with no checked type, every
+  use refuses `ill_typed`/`operator-ineligible`).
+- The package reader SHALL admit a bounded Rational value type as a tuple
+  position `typeRef` and as a variant case `payloadType`, with the type and
+  `rational_range` node a field of it has. It SHALL refuse a Rational value
+  type with no constraints there as it refuses the native `Rational` there
+  (QSpec FR-322-AC-181 and AC-182), at stage `package_read`: as a tuple
+  position `invalid_model_binding`/`malformed-declaration` at the position,
+  and as a variant payload `unsupported_construct`/`declaration-form` at
+  `Variant.payloadType`. Intake's reference-form check admits both; the
+  position restriction is the checked package's (QSpec FR-322).
+  The legacy refusal of a whole model for a rational site without a role is
+  not carried: an unbounded rational site is exactly the bare native, and
+  FR-056-AC-43 owns it.
 - Adding the Rational value type SHALL change no other declaration's node
   identity, ordering or binding.
 
@@ -107,25 +189,31 @@ type shares one bound by construction and a disagreement is a refusal.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-505-AC-1 | A package with value type `Ratio` (constraints `minNumerator` -3, `maxNumerator` 7, `minDenominator` 1, `maxDenominator` 12) and a field, an operation parameter and an operation result typed `Ratio` admits, and each of the three sites has the type `Rational[-3, 7; 1, 12]`; the checked package carries one `Ratio` type node and the three sites reference it. | Test (TC-1300) |
-| FR-505-AC-2 | Over `Ratio`, a constraint `minLength` refuses `unsupported_construct`/`declaration-form` naming `minLength`; `maxNumerator` given twice refuses `invalid_model_binding`/`malformed-declaration` naming `maxNumerator`; with `minDenominator` removed the refusal is `invalid_model_binding`/`malformed-declaration` naming `minDenominator`; `minNumerator` 8 against `maxNumerator` 7, `minDenominator` 0 and `minDenominator` 13 against `maxDenominator` 12 each refuse `unsupported_construct`/`declaration-form` naming the bounds. When two defects are present the earlier row of the order above is the one reported. | Test (TC-1300) |
-| FR-505-AC-3 | Operands `1.5`, `1e2`, `"3/4"` and 9223372036854775808 for `maxNumerator`, and `0.5` for `maxDenominator`, refuse `invalid_model_binding`/`malformed-declaration` at the value type, with no bound rounded or widened. | Test (TC-1300) |
-| FR-505-AC-4 | A field of type `Ratio` that adds its own `maxDenominator` constraint, and an alias of `Ratio` that carries a constraint, each refuse `invalid_model_binding`/`malformed-declaration` at the field's `Field.constraints` and at the alias; a plain alias of `Ratio` admits and has the type `Rational[-3, 7; 1, 12]`. Two sites typed by two value types that differ only in `maxDenominator` (12 and 13) stay two distinct types. | Test (TC-1300) |
-| FR-505-AC-5 | A snapshot supplying `7/12`, `-3/1` and `0/1` to a `Ratio` field is admitted; `8/1`, `1/13`, `2/4` (unreduced), `-4/1` and the float `0.5` each refuse `invalid_runtime_input`/`invalid-value` naming the member path, and no value is reduced or rounded. | Test (TC-1300) |
-| FR-505-AC-6 | A field typed bare `ix://quire/native/Rational` admits and its use in a clause refuses `ill_typed`/`operator-ineligible` as FR-056-AC-43 states; adding `Ratio` to the package leaves every other declaration's node identity unchanged. | Test (TC-1300) |
-| FR-505-AC-7 | `Ratio` with `unit` `m` (metre) and `Ratio` with no unit give two distinct types for otherwise equal bounds; a field typed by the metre one has declared unit `m`; `unit` `nosuch` refuses `missing_declaration`/`missing-name` at the `unit` member; two value types with equal bounds and equal units are the same checked type. | Test (TC-1300) |
+| FR-505-AC-1 | A package with value type `Ratio` (`scalar` `rational`; constraints `maxDenominator` 12, `minNumerator` -3, `minDenominator` 1 and `maxNumerator` 7, in that order) and a field, an operation parameter and an operation result typed `Ratio` admits; each of the three sites and a plain alias of `Ratio` has the type `Rational[-3, 7; 1, 12]`, the package keeps one original declaration for `Ratio`, and the four sites name one `bounded_domain`/`rational_range` node over the `scalar_type`/`rational` node with bindings `numerator_min` -3, `numerator_max` 7, `denominator_min` 1 and `denominator_max` 12. A second value type of equal bounds names that same node and one with `maxDenominator` 13 names another. `Ratio` with an empty `constraints` admits as the unbounded `Rational`, and a field of it has no checked type; `Ratio` with `minNumerator` -9223372036854775808 admits. | Test (TC-1300) |
+| FR-505-AC-2 | Over `Ratio`, each single defect refuses once at the `Ratio` node: a constraint `minLength` `unsupported_construct`/`declaration-form` at `Constraint.keyword` naming `minLength`; a `maxNumerator` whose `appliesTo` is another value type, or an alias of `Ratio`, `invalid_model_binding`/`malformed-declaration` at `Constraint.appliesTo`; `maxNumerator` given twice the same at the second `Constraint.keyword` naming `maxNumerator`; `minDenominator` removed the same at `TypeDefinition.constraints` naming `minDenominator`; `minNumerator` 8 against `maxNumerator` 7, `minDenominator` 0, `minDenominator` 13 against `maxDenominator` 12, `maxDenominator` 0 and `maxDenominator` -1 each `unsupported_construct`/`declaration-form` at `TypeDefinition.constraints` naming the bounds. | Test (TC-1300) |
+| FR-505-AC-3 | Operands `1.5`, `1e2`, `"3/4"` and 9223372036854775808 for `maxNumerator`, `0.5` for `maxDenominator`, a `maxNumerator` with no `operands.value`, and a `maxNumerator` whose `operands` carries a second member, each refuse `invalid_model_binding`/`malformed-declaration` at that constraint's `Constraint.operands` naming the keyword, with no bound rounded or widened. | Test (TC-1300) |
+| FR-505-AC-4 | A field of type `Ratio` that adds its own `maxDenominator` constraint refuses `invalid_model_binding`/`malformed-declaration` at `Field.constraints`; an operation parameter typed `Ratio` with its own constraint refuses the same at `Operation.params[0].constraints`; an alias of `Ratio` that carries a constraint refuses the same at the alias node and `TypeDefinition.constraints`; a constraint carried by another value type whose `appliesTo` is `Ratio` refuses the same at that value type's node and `Constraint.appliesTo`, while `Ratio` itself admits. Two sites typed by two value types that differ only in `maxDenominator` (12 and 13) stay two distinct types. | Test (TC-1300) |
+| FR-505-AC-5 | A snapshot supplying `7/12`, `-3/1` and `0/1` to a `Ratio` field is admitted; `8/1`, `1/13`, `2/4` (unreduced), `-4/1` and the float `0.5` each refuse `invalid_runtime_input`/`invalid-value` naming the member path, and no value is reduced or rounded. With `Ratio` given `unit` `ix://quire/unit/m`, `1/4` is admitted as `1/4 m` and `1/13` refuses the same. | Test (TC-1300) |
+| FR-505-AC-6 | A field typed bare `ix://quire/native/Rational`, and a field typed a Rational value type with no constraints, each admit and their use in a clause refuses `ill_typed`/`operator-ineligible` as FR-056-AC-43 states; adding `Ratio` to the package leaves every other declaration's node identity unchanged. | Test (TC-1300) |
+| FR-505-AC-7 | With `dimension Length;`, `unit m : Length = rational(1, 1);` and `unit cm : Length = rational(1, 100);`, `Ratio` with `unit` `ix://quire/unit/m` types its members `Quantity<m, Rational[-3, 7; 1, 12]>`, lowered to the `scalar_type`/`carried_quantity` node over `m`'s unit node, AC-1's `rational_range` node and `rounding` `exact`; a second value type of equal bounds and unit `ix://quire/unit/m` names that same node, while `Ratio` with no unit and a value type of equal bounds with unit `ix://quire/unit/cm` name two other nodes. `unit` `ix://quire/unit/nosuch` refuses `missing_declaration`/`missing-name` at the value type node and `TypeDefinition.unit`; `unit` `m`, `unit` `1` and `unit` `ix://quire/native/Rational` on `Ratio`, and `unit` `ix://quire/unit/m` on a value type of `scalar` `string`, each refuse `invalid_model_binding`/`malformed-declaration` at `TypeDefinition.unit`; `Ratio` with `unit` `m` and `minNumerator` 8 reports only the bounds refusal. | Test (TC-1300) |
+| FR-505-AC-8 | When two defects of `Ratio` are present only the earlier row is reported: `minLength` with `maxNumerator` given twice reports `minLength`; a foreign `appliesTo` with `maxNumerator` given twice reports the `appliesTo`; `minLength` with a foreign `appliesTo` reports `minLength`; `maxNumerator` given twice with `minDenominator` removed reports the repeated keyword; `minDenominator` removed with `maxNumerator` `1.5` reports the missing keyword; `maxNumerator` `1.5` with `minNumerator` 8 reports the operand; `maxDenominator` `0.5` (listed first) with `maxNumerator` `1.5` reports `maxNumerator`, in keyword order. | Test (TC-1300) |
+| FR-505-AC-9 | Over AC-7's units, two fields `a` and `b` typed by `Ratio` with `unit` `ix://quire/unit/m`: the invariants `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each refuse `ill_typed`/`type-mismatch` at the expression, while `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` and `convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)` check. The source types `Rational[8, 7; 1, 12]` and `Rational[0, 7; 0, 12]` refuse `ill_typed` at the type as a function parameter type and as the carrier of `Quantity<m, ..>`. | Test (TC-1300) |
+| FR-505-AC-10 | A tuple type `P` with position `p0` typed `Ratio` and a variant type `V` with case `c` whose `payloadType` is `Ratio` admit, and `p0` and `c`'s payload have the type `Rational[-3, 7; 1, 12]` and name AC-1's `rational_range` node; with `Ratio`'s `constraints` empty, `p0` refuses `invalid_model_binding`/`malformed-declaration` at the position and `c` refuses `unsupported_construct`/`declaration-form` at `Variant.payloadType`, each at stage `package_read`, while a field typed the unconstrained `Ratio` admits with no checked type. | Test (TC-1300) |
 
 ## Dependencies
 
-- **Unit carrier:** FR-497 admits only `Int` and `Decimal` carriers in `Quantity<u, C>`; arithmetic and conversion of a Rational with a unit needs FR-497 (and QSpec FR-142) to admit a Rational carrier. Until then a unit-bearing Rational type is declared and compared, and any arithmetic on it refuses `ill_typed`/`operator-ineligible` as for a bare native Rational.
-
+- **Unit carrier:** a unit-bearing Rational value type is the carried quantity
+  `Quantity<u, Rational[..]>` of FR-497, which admits a `Rational[..]` carrier
+  with mode `exact` (QSpec FR-142 "Carried quantity"). Its members are
+  stored, passed, returned and converted as FR-497 states; equality, ordering
+  and arithmetic go through `convert<Quantity<u>>` and refuse
+  `ill_typed`/`type-mismatch` on the carried members directly. A member of a
+  Rational value type with no unit is an ordinary `Rational[..]` operand.
 - **Upstream:** FR-056 (Text value type, intake order), FR-106 (value
-  admission), FR-041-AC-2 (the legacy behavior this succeeds).
-- **Contract change required (QSpec, not QSL):** QSpec FR-154 and the
-  semantic-IR validator must admit a value-type definition with `scalar`
-  `rational` and the four constraint keywords above, as it admits `string`
-  with `minLength`, `maxLength` and `format` today (otherwise the validator
-  refuses `CONSTRAINT_NOT_APPLICABLE`), and QSpec FR-322 "Model-owned members"
-  step 4's declared-type table must name the Rational value type as a
-  `Rational[..]` type. Until it does, the criteria cannot pass; this is
-  the QSpec question filed with this batch.
+  admission), FR-497 (carried quantities), FR-041-AC-2 (the legacy behavior
+  this succeeds).
+- **Contract (QSpec):** QSpec FR-154 "Rational value types" (FR-154-AC-42 to
+  AC-47), FR-322 "Model-owned members" step 4 and FR-322-AC-380 to AC-382,
+  FR-142 "Carried quantity" (FR-142-AC-31) and FR-149 "Bounded rationals"
+  define the value type, its reader order, its node and its carrier; vectors
+  TC-981 `RV-01` to `RV-12`. This requirement cites them by id.
