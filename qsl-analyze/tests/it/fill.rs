@@ -265,6 +265,8 @@ pub(crate) fn unit_text(body: &str) -> String {
 pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
     let (name, profile) = if body.contains(" using tb ") {
         ("tb", "quire.temporal.event-position.false-extension/v1")
+    } else if body.contains(" using t0 clock ") {
+        ("t0", "quire.temporal.timed/v1")
     } else {
         ("t0", "quire.temporal.infinite-trace/v1")
     };
@@ -284,6 +286,9 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
 /// The header line selecting the protocol profile, so each protocol clause
 /// the package writes has its node.
 pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
+
+/// The protocol profile selected by `protocol_roles` fixtures as `p`.
+pub(crate) const PROTOCOL_PROFILE_P: &str = "profile p = \"quire.protocol.finite-global/v1\";\n";
 
 /// TCB-01's independent temporal selection: the checked clause supplies
 /// `model-steps`, while this fixture explicitly selects `order-events` as
@@ -314,7 +319,16 @@ pub(crate) fn tcb_01_event_position_selection(
 
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
-    package_with_name("package", profiles, body)
+    let protocol_profile = if body.contains("protocol R using p ")
+        && !profiles.contains("profile p ")
+    {
+        PROTOCOL_PROFILE_P
+    } else if body.contains("protocol ") && !profiles.contains("profile pp ") {
+        PROTOCOL_PROFILE
+    } else {
+        ""
+    };
+    package_with_name("package", &format!("{profiles}{protocol_profile}"), body)
 }
 
 /// [`package_with`] with a distinct package identity.
