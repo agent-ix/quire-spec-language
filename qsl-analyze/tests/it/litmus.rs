@@ -344,7 +344,7 @@ pub(crate) fn package_without_protocol_profile_selection(body: &str) -> CheckedP
     let text = unit_text_with(PROTOCOL_PROFILE, body);
     let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "litmus", "git", "1"),
+        SourceIdentity::new("agent-ix", "litmus"),
         "litmus.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
