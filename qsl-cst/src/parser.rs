@@ -245,6 +245,29 @@ fn recover_at_protocol_delimiter(
         .filter(|(_, token)| is_protocol(token))
         .map(|(index, _)| index)
         .last()?;
+    if owner >= failure_position {
+        return None;
+    }
+    let mut depth_at_failure = 0_usize;
+    let mut opened_body = false;
+    for token in significant.get(owner..=failure_position)? {
+        match token.kind {
+            Some(Kind::OpenBrace) => {
+                depth_at_failure = depth_at_failure.checked_add(1)?;
+                opened_body = true;
+            }
+            Some(Kind::CloseBrace) => {
+                depth_at_failure = depth_at_failure.checked_sub(1)?;
+                if opened_body && depth_at_failure == 0 {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth_at_failure == 0 {
+        return None;
+    }
     let mut depth = 0_usize;
     for token in significant.get(owner..next)? {
         match token.kind {

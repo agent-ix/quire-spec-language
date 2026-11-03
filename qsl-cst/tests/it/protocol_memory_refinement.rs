@@ -134,6 +134,36 @@ fn a_missing_protocol_close_recovers_before_the_next_protocol() {
     assert!(clauses[2].ends_with(&z[z.find("protocol").unwrap()..]));
 }
 
+/// FR-503-AC-2 (TC-1298 row 2): a non-protocol declaration's unclosed body
+/// cannot be attributed to the previous protocol at the next delimiter.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn an_unterminated_state_clause_is_not_protocol_recovery() {
+    let w = protocol("on origin", "", "sequence Main { }").replace("Flow", "W");
+    let z = protocol("on origin", "", "sequence Main { }").replace("Flow", "Z");
+    let broken_clause = "invariant Bad using Complete on M::Widget at current { true";
+    let text = source(&format!("{w}\n{broken_clause}\n{z}"));
+    let parsed = parse(&text);
+    let z_start = text.find("protocol Z").expect("Z follows the bad clause");
+
+    assert!(!parsed.is_admissible(), "{text}");
+    assert!(!parsed.diagnostics().is_empty(), "{text}");
+    assert!(
+        parsed.cst().recoveries().iter().all(|recovery| {
+            recovery.kind != qsl_cst::RecoveryKind::Insert
+                || recovery.expected != "}"
+                || recovery.span
+                    != Span {
+                        start: z_start,
+                        end: z_start,
+                    }
+        }),
+        "the state clause's unclosed body is not repaired at protocol Z: {:?}; diagnostics: {:?}",
+        parsed.cst().recoveries(),
+        parsed.diagnostics()
+    );
+}
+
 /// Verifies the parse only and claims no criterion.
 /// A `terminal` member without `when`/`any`, and a
 /// `scheduling` member that names no `adversarial`, fail at the token the

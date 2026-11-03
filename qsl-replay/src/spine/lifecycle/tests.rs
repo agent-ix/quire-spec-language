@@ -343,6 +343,32 @@ fn parse_does_not_attach_protocol_results_to_unattributable_syntax_errors() {
     }
 }
 
+/// FR-503-AC-2 (TC-1298 row 2): a non-protocol brace error between two
+/// protocols is unit-level and never marks a protocol as refused.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn non_protocol_unterminated_state_clause_has_no_protocol_results() {
+    let w = protocol_source("W", true);
+    let z = protocol_source("Z", true);
+    let broken_clause = "invariant Bad using Complete on M::Widget at current { true";
+    let unit = format!("{HEADER}\n{w}\n{broken_clause}\n{z}");
+    let failure = parse(
+        &request(unit.as_bytes()),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("a state-clause brace error cannot be attributed to protocol W");
+
+    if let Some(results) = failure.payload() {
+        assert!(
+            results
+                .iter()
+                .all(|result| matches!(result, crate::spine::ProtocolResult::Cleared { .. })),
+            "an unrelated state-clause error cannot refuse a protocol: {results:?}"
+        );
+    }
+}
+
 /// FR-503-AC-1 (TC-1298 row 3): S2's recovery-aware build retains clean
 /// siblings and attributes X to its own declaration in the library source.
 #[trace("TC-1298", "FR-503-AC-1")]
