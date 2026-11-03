@@ -780,7 +780,14 @@ fn the_base_snapshot_admits_a_uuid_and_a_timestamp() {
 /// TC-1029 step 2 (FR-106-AC-18): Nil, Max and a UUID with version nibble 0,
 /// and Timestamps `1`, `-1` and both signed-128 endpoints admit unchanged; a
 /// present `prior` and the elements of `seen` admit by the same rule.
+///
+/// QSpec FR-144-AC-22 is written over FR-181 typed forms
+/// (`{"type":"uuid",..}`); an FR-106 document spells the same values
+/// natively (ADR-034 CS-1..CS-3), so the criterion is read here as the same
+/// UUID and Timestamp grammar and signed-128 domain applied to native
+/// payloads, on a scalar field and on a collection element.
 #[trace("TC-1029", "FR-106-AC-18")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-22")]
 #[test]
 fn edge_uuids_and_timestamps_admit_unchanged() {
     let replay = replay();
@@ -932,7 +939,14 @@ fn a_noncanonical_uuid_text_refuses_invalid_value() {
 /// `noncanonical-payload`, a canonical one outside the signed-128 domain
 /// refuses `payload-out-of-domain`, and a noncanonical and out-of-domain one
 /// refuses `noncanonical-payload`.
+///
+/// QSpec FR-144-AC-22 is written over FR-181 typed forms
+/// (`{"type":"uuid",..}`); an FR-106 document spells the same values
+/// natively (ADR-034 CS-1..CS-3), so the criterion is read here as the same
+/// UUID and Timestamp grammar and signed-128 domain applied to native
+/// payloads, on a scalar field and on a collection element.
 #[trace("TC-1029", "FR-106-AC-19")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-22")]
 #[test]
 fn a_noncanonical_or_out_of_domain_timestamp_refuses_invalid_value() {
     let replay = replay();
@@ -2253,6 +2267,7 @@ fn record_of<T: Debug>(
 /// `peers` elements in another order gives an equal typed observation and a
 /// different document digest; with `order` reversed it gives an unequal one.
 #[trace("TC-1171", "FR-106-AC-50")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-19")]
 #[test]
 fn set_bag_and_ordered_set_fields_admit_with_their_element_order() {
     let replay = collection_replay();
@@ -2400,7 +2415,14 @@ fn defects() -> Vec<Defect> {
             json!({"set": [uuid("00000000-0000-0000-0000-00000000000A")]}),
             vec![PathStep::Index(0)],
         ),
-        // Every element is read before a duplicate is decided.
+        // Every element is read before a duplicate is decided: the invalid
+        // third element, not the duplicate pair, is the refusal (QSpec
+        // FR-144-AC-20).
+        invalid(
+            "order",
+            json!({"ordered-set": [integer("1"), integer("1"), integer("x")]}),
+            vec![PathStep::Index(2)],
+        ),
         invalid(
             "counts",
             json!({"bag": [integer("x"), integer("1"), integer("1")]}),
@@ -2412,7 +2434,15 @@ fn defects() -> Vec<Defect> {
 /// TC-1171 step 2 (FR-106-AC-51): the refusals of a defective collection, as
 /// a field of the snapshot and as a parameter of an invocation, each with its
 /// code, cause and path.
+///
+/// QSpec FR-144-AC-16 is not tagged: its `missing-member` and `unknown-member`
+/// causes name the FR-181 `type` and `elements` members, which FR-106's native
+/// single-tag spelling does not have (ADR-034 CS-1), so only its
+/// `wrong-value-kind` and `invalid-value` clauses are exercised here.
+/// QSpec FR-144-AC-22 is read as in `edge_uuids_and_timestamps_admit_unchanged`.
 #[trace("TC-1171", "FR-106-AC-51")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-17", "QSpec-FR-144-AC-18")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-20", "QSpec-FR-144-AC-22")]
 #[test]
 fn defective_collections_refuse_in_a_field_and_in_a_parameter() {
     let replay = collection_replay();

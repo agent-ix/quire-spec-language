@@ -8,13 +8,8 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
-    evaluate_observed, ClockCover, ContradictedDimension, HoldsStop, LedgerRefusal,
-    PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace, UndefinedCause,
-    UndefinedEvaluation, WindowRefusal,
-};
-pub use qsl_eval::temporal::{
-    LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
-    ProgressContradiction, ProgressLedger, ProgressValue,
+    evaluate_observed, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
+    UndefinedCause, UndefinedEvaluation, WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{FormulaNode, TemporalProfile};
@@ -26,6 +21,10 @@ use qsl_semantics::model::observation::{
 use quire_exact::{Meter, ValueType};
 use quire_semantic_value::catalog::CatalogCode;
 
+use super::progress::{
+    ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressValue, Refusal,
+};
 use super::{
     convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
     CompiledRun, ConsequentEventRefusal, ConsequentSourceEvents, RunRefusal,
@@ -218,7 +217,7 @@ pub struct TimestampedWindow {
     /// The cover the trace declares for its stamps (FR-501 Inputs); `None` is
     /// `Exact`. The checked clause's clock configuration names the timestamp
     /// unit only, so the cover has no other source.
-    pub cover: Option<ClockCover>,
+    pub cover: Option<TimestampedCover>,
     /// Atom valuations absent from an admitted observation (QSpec FR-160):
     /// each is a position, by its index in `observations`, and the zero-based
     /// `holds` formula node of the checked clause.
@@ -289,9 +288,6 @@ pub struct OverObject {
     /// The object's declared key.
     pub key: String,
 }
-
-/// The covered-position ceiling a ledger refusal names (FR-502, FR-255).
-pub use qsl_eval::temporal::CoveredPositionsLimitReached as ProgressLimitReached;
 
 /// A progress contradiction as the spine reports it (FR-330, FR-502 Outputs):
 /// the typed contradiction and the `invalid_runtime_input`/`invalid-value`
@@ -372,10 +368,10 @@ pub fn admit_progress(
     ledger
         .admit(binding, assertion, positions, covered_positions)
         .map_err(|refusal| match refusal {
-            LedgerRefusal::Contradiction(contradiction) => Box::new(
+            Refusal::Contradiction(contradiction) => Box::new(
                 ClauseDisposition::ProgressContradiction(Box::new(contradiction.into())),
             ),
-            LedgerRefusal::LimitReached(reached) => Box::new(ClauseDisposition::Temporal(
+            Refusal::LimitReached(reached) => Box::new(ClauseDisposition::Temporal(
                 TemporalVerdict::ProgressLimitReached(reached),
             )),
         })
@@ -773,7 +769,12 @@ fn run_finite_window(
         clause.name(),
         WindowClock {
             unit: clause.clock().to_owned(),
-            cover: input.window.cover.unwrap_or(ClockCover::Exact),
+            cover: match input.window.cover.unwrap_or(TimestampedCover::Exact) {
+                TimestampedCover::Exact => qsl_eval::temporal::ClockCover::Exact,
+                TimestampedCover::Counter { uncertainty } => {
+                    qsl_eval::temporal::ClockCover::Counter { uncertainty }
+                }
+            },
         },
         ordered
             .iter()
@@ -791,9 +792,9 @@ fn run_finite_window(
             .collect(),
         WindowProgress {
             watermark: Watermark::Inclusive(input.progress.watermark),
-            completeness: input.progress.completeness,
-            scope: input.progress.scope,
-            execution: input.progress.execution,
+            completeness: input.progress.completeness.into(),
+            scope: input.progress.scope.into(),
+            execution: input.progress.execution.into(),
             lower_boundary: if input.window.authoritative_origin {
                 LowerBoundary::AuthoritativeOrigin
             } else {
@@ -872,8 +873,15 @@ fn run_finite_window(
         }
         (None, Ok(evaluation)) => {
             let names = |atom: qsl_semantics::check::FormulaNodeId| atom_name(run, node, atom);
-            let Some(verdict) = window_verdict(evaluation.verdict, &names, guard_location(node))
-            else {
+            let qsl_eval::temporal::WindowEvaluation {
+                verdict,
+                basis,
+                support,
+                premises,
+                identity,
+                visits,
+            } = evaluation;
+            let Some(verdict) = window_verdict(verdict, &names, guard_location(node)) else {
                 return (
                     ClauseDisposition::EvaluateFault(
                         quire_semantic_value::catalog::InternalFault::new(
@@ -887,13 +895,12 @@ fn run_finite_window(
             };
             (
                 ClauseDisposition::Temporal(verdict),
-                evaluation.visits,
-                Some(FiniteWindowReport {
-                    basis: evaluation.basis,
-                    support: evaluation.support,
-                    premises: evaluation.premises,
-                    identity: evaluation.identity,
-                }),
+                visits,
+                Some(finite_window_report(
+                    run,
+                    node,
+                    (basis, support, premises, identity),
+                )),
             )
         }
         (None, Err(TemporalRefusal::Fault(internal))) => {
@@ -936,6 +943,53 @@ fn guard_location(
     node: &qsl_semantics::check::TemporalClauseNode,
 ) -> Option<quire_semantic_value::location::Location> {
     node.guard().map(|(guard, _)| guard.location().clone())
+}
+
+/// The spine's own form of the evaluator's result report (FR-100-AC-8).
+fn finite_window_report(
+    run: &CompiledRun<'_>,
+    node: &qsl_semantics::check::TemporalClauseNode,
+    (basis, support, premises, identity): (
+        qsl_eval::temporal::Basis,
+        Vec<qsl_eval::temporal::SupportPair>,
+        qsl_eval::temporal::Premises,
+        qsl_eval::temporal::ResultIdentity,
+    ),
+) -> FiniteWindowReport {
+    use qsl_eval::temporal::{Assessment, Basis, ClockCover, LowerBoundary};
+    FiniteWindowReport {
+        basis: match basis {
+            Basis::ClosedScope => SettlementBasis::ClosedScope,
+            Basis::DecisiveWitness => SettlementBasis::DecisiveWitness,
+            Basis::DecisiveCounterexample => SettlementBasis::DecisiveCounterexample,
+            Basis::Unsettled => SettlementBasis::Unsettled,
+            Basis::Unavailable => SettlementBasis::Unavailable,
+        },
+        support: support
+            .iter()
+            .map(|pair| FiniteWindowSupport {
+                position: pair.position.index(),
+                atom: atom_name(run, node, pair.atom),
+            })
+            .collect(),
+        premises: FiniteWindowPremises {
+            scope: premises.scope.into(),
+            execution: premises.execution.into(),
+            assessment: match premises.assessment {
+                Assessment::Completed => FiniteWindowAssessment::Completed,
+                Assessment::Failed => FiniteWindowAssessment::Failed,
+            },
+            completeness: premises.completeness.into(),
+            watermark: premises.watermark,
+            authoritative_origin: premises.lower_boundary == LowerBoundary::AuthoritativeOrigin,
+            cover: match premises.cover {
+                ClockCover::Exact => TimestampedCover::Exact,
+                ClockCover::Counter { uncertainty } => TimestampedCover::Counter { uncertainty },
+            },
+            unit: premises.unit,
+        },
+        identity: identity.0,
+    }
 }
 
 /// The name of the `holds` atom `atom`: the source text of its condition, as
@@ -1015,19 +1069,72 @@ fn verdict_of_undefined(undefined: UndefinedEvaluation) -> TemporalVerdict {
     verdict(TemporalOutcome::Undefined(undefined))
 }
 
+/// The declared cover of a trace's stamps (FR-501 Inputs).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TimestampedCover {
+    /// A stamp is the instant itself.
+    Exact,
+    /// A counter reading `k` covers `[k, k+1)` widened by `uncertainty` ticks
+    /// on each side.
+    Counter {
+        /// The widening `u`, in ticks.
+        uncertainty: u64,
+    },
+}
+
+/// Whether the evaluator produced an outcome (FR-501 "Result report").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FiniteWindowAssessment {
+    /// The evaluator produced an outcome.
+    Completed,
+    /// The evaluator returned `Incomplete` or a refusal.
+    Failed,
+}
+
+/// One `(position, atom)` pair of a decision support.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct FiniteWindowSupport {
+    /// The position, in canonical order.
+    pub position: u64,
+    /// The atom: the source text of its `holds` condition.
+    pub atom: String,
+}
+
+/// The four independent dimensions and the inputs that qualify a finite-window
+/// verdict (FR-501 "Result report").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FiniteWindowPremises {
+    /// The decision scope's closure.
+    pub scope: ProgressClosure,
+    /// The surrounding execution's closure.
+    pub execution: ProgressClosure,
+    /// The assessment-execution disposition.
+    pub assessment: FiniteWindowAssessment,
+    /// The input completeness.
+    pub completeness: ProgressCompleteness,
+    /// The watermark as an inclusive tick, `-1` when progress covers none.
+    pub watermark: i128,
+    /// Whether the first position is an authoritative origin (the
+    /// lower-boundary kind).
+    pub authoritative_origin: bool,
+    /// The clock cover.
+    pub cover: TimestampedCover,
+    /// The clock unit.
+    pub unit: String,
+}
+
 /// FR-330, FR-501 "Result report": the basis, decision support, premises and
 /// result identity of a finite-window run, as separate fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FiniteWindowReport {
     /// What the verdict rests on.
-    pub basis: qsl_eval::temporal::Basis,
+    pub basis: SettlementBasis,
     /// The decision support, as `(position, atom)` pairs.
-    pub support: Vec<qsl_eval::temporal::SupportPair>,
-    /// The premises: the four independent dimensions and the inputs that
-    /// qualify the verdict.
-    pub premises: qsl_eval::temporal::Premises,
-    /// The result identity.
-    pub identity: qsl_eval::temporal::ResultIdentity,
+    pub support: Vec<FiniteWindowSupport>,
+    /// The premises.
+    pub premises: FiniteWindowPremises,
+    /// The result identity: a content identity over the inputs.
+    pub identity: String,
 }
 
 /// The spine's own form of the evaluator's outcome (FR-100-AC-8).

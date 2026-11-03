@@ -715,7 +715,13 @@ fn binding_and_type_refusals_remain_dependency_local() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-9")]
+#[trace(
+    "TC-119",
+    "FR-040-AC-1",
+    "FR-040-AC-9",
+    "QSpec-TC-039",
+    "QSpec-FR-039-AC-5"
+)]
 fn exhaustion_preserves_earlier_types_but_never_admits_an_unfinished_forward_dependency() {
     inspect(
         "predicate Caller using S (input: M::Q): Boolean { Fraction(input) }\n\
@@ -951,4 +957,101 @@ fn partially_created_upstream_records_leave_forward_targets_unfinished() {
             assert!(report.declarations()[0].causes().is_empty());
         },
     );
+}
+
+/// The normalized value the typed node for the literal `source` carries in
+/// `body`, where `body` is `input.fraction = <literal>` over the `Q` type
+/// with numerators in [-1, 1] and denominators up to 2.
+fn normalized(literal: &str) -> Option<(i128, i128)> {
+    let body = format!(
+        "predicate Literal using S (input: M::Node): Boolean {{ input.fraction = {literal} }}"
+    );
+    let mut found = None;
+    inspect(&body, |binding, formal| {
+        let report = composed::admit_types(binding, formal, TypeLimits::default());
+        let declaration = id(binding, "Literal");
+        let typed = report.declaration(declaration).unwrap();
+        let unit = binding.namespace().unit(typed.unit()).unwrap();
+        let node = typed
+            .nodes()
+            .iter()
+            .find(|node| unit.source().slice(node.span) == Some(literal))
+            .expect("the literal keeps its original source occurrence");
+        found = Some((report.disposition(declaration), node.normalized_rational));
+    });
+    let (disposition, value) = found.expect("the unit was inspected");
+    assert_eq!(
+        disposition,
+        Some(TypeDisposition::Typed),
+        "{literal} is admitted"
+    );
+    value
+}
+
+/// QSpec FR-039-AC-1 and AC-3: a rational literal normalizes by the gcd with
+/// a positive denominator (a negative denominator moves its sign to the
+/// numerator, a zero numerator becomes `0/1`) before the bounds check, each
+/// literal keeps its original source, and every inclusive boundary of the
+/// authored numerator range [-1, 1] and denominator range [1, 2] admits.
+#[test]
+#[trace("QSpec-TC-039", "QSpec-FR-039-AC-1", "QSpec-FR-039-AC-3")]
+fn rational_literals_normalize_before_the_bounds_and_the_boundaries_admit() {
+    for (literal, expected) in [
+        ("rational(2,4)", (1, 2)),
+        ("rational(-2,-4)", (1, 2)),
+        ("rational(0,-7)", (0, 1)),
+        ("rational(-1,1)", (-1, 1)),
+        ("rational(1,1)", (1, 1)),
+        ("rational(-1,2)", (-1, 2)),
+        ("rational(1,2)", (1, 2)),
+        ("rational(0,1)", (0, 1)),
+        ("rational(4,4)", (1, 1)),
+    ] {
+        assert_eq!(normalized(literal), Some(expected), "{literal}");
+    }
+}
+
+/// QSpec FR-039-AC-2 and AC-3: `rational(1,0)` and `rational(0,0)` refuse
+/// with the zero-denominator cause and the declaration is refused (no
+/// predicate result exists for it), while `rational(2,1)` and `rational(1,3)`
+/// outside the authored ranges refuse with the literal-domain cause.
+#[test]
+#[trace("QSpec-TC-039", "QSpec-FR-039-AC-2", "QSpec-FR-039-AC-3")]
+fn zero_denominators_and_out_of_range_literals_refuse_with_distinct_causes() {
+    for (literal, expected) in [
+        ("rational(1,0)", CauseKind::ZeroDenominator),
+        ("rational(0,0)", CauseKind::ZeroDenominator),
+        ("rational(2,1)", CauseKind::LiteralDomain),
+        ("rational(1,3)", CauseKind::LiteralDomain),
+        ("rational(-3,2)", CauseKind::LiteralDomain),
+        ("rational(-2,-1)", CauseKind::LiteralDomain),
+    ] {
+        let body = format!(
+            "predicate Literal using S (input: M::Node): Boolean {{ input.fraction = {literal} }}"
+        );
+        inspect(&body, |binding, formal| {
+            let report = composed::admit_types(binding, formal, TypeLimits::default());
+            refused(&report, "Literal", expected);
+        });
+    }
+}
+
+/// QSpec FR-039-AC-4: a literal with no expected rational type, with an
+/// ambiguous expected type or with an implicit integer conversion refuses
+/// rather than choosing a domain.
+#[test]
+#[trace("QSpec-TC-039", "QSpec-FR-039-AC-4")]
+fn a_rational_literal_never_picks_its_own_domain() {
+    for (expression, expected) in [
+        ("rational(1,2) = rational(1,2)", CauseKind::AmbiguousType),
+        ("input.fraction = 1", CauseKind::TypeMismatch),
+        ("input.signed = rational(1,1)", CauseKind::TypeMismatch),
+    ] {
+        let body =
+            format!("predicate Literal using S (input: M::Node): Boolean {{ {expression} }}");
+        inspect(&body, |binding, formal| {
+            let report = composed::admit_types(binding, formal, TypeLimits::default());
+            refused(&report, "Literal", expected);
+        });
+    }
 }

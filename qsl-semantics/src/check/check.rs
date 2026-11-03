@@ -2348,7 +2348,7 @@ impl<'a> Typer<'a> {
         .map(|staged| staged.into_value())
         .map_err(|failure| match failure {
             StageFailure::Refused(refusal) => refusal,
-            StageFailure::RefusedWithPayload(refusal, _) => refusal,
+            StageFailure::RefusedWithPayload(refusal, _) => *refusal,
             StageFailure::Limit(limit) => CheckRefusal {
                 location: location.clone(),
                 cause: super::limit_cause(&limit),

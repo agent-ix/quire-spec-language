@@ -211,6 +211,7 @@ fn call_integer(package: &CheckedPackage, a: i128, b: i128) -> Outcome<Value> {
     "QSpec-FR-147-AC-1",
     "QSpec-FR-147-AC-4",
     "QSpec-FR-147-AC-5",
+    "QSpec-FR-147-AC-11",
     "TC-394"
 )]
 #[test]

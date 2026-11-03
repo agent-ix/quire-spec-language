@@ -65,7 +65,7 @@ fn undeclared_member(union: &str, name: &str, payload: Vec<Value>) -> Value {
 
 /// FR-321-AC-1: each malformed `Shape` argument is refused
 /// `invalid_runtime_input`/`wrong-value-kind`, and `Rect(2, 3)` is admitted.
-#[trace("FR-321-AC-1", "TC-829")]
+#[trace("FR-321-AC-1", "TC-829", "QSpec-TC-400", "QSpec-FR-143-AC-15")]
 #[test]
 fn a_supplied_union_value_is_admitted_only_as_a_member_of_its_union() {
     let objects = ObjectEnvironment::default();

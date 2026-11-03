@@ -1587,7 +1587,7 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
             )
             .into_bytes();
         let trace = timestamped_trace_mut(&mut request);
-        trace.window.cover = Some(cover);
+        trace.window.cover = Some(spine_cover(cover));
         request
     }
 
@@ -1716,7 +1716,7 @@ fn timestamped_cover_and_execution_come_from_the_trace_input() {
             "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
         );
         report(timestamped_changed(request, |trace| {
-            trace.window.cover = cover
+            trace.window.cover = cover.map(spine_cover)
         }))
     };
     // AC-22: no cover is `Exact`.
@@ -1977,6 +1977,16 @@ fn program_source_bytes(request: &mut ClauseRunRequest) -> &mut Vec<u8> {
     }
 }
 
+/// The spine's form of an evaluator cover.
+fn spine_cover(cover: qsl_eval::temporal::ClockCover) -> crate::spine::TimestampedCover {
+    match cover {
+        qsl_eval::temporal::ClockCover::Exact => crate::spine::TimestampedCover::Exact,
+        qsl_eval::temporal::ClockCover::Counter { uncertainty } => {
+            crate::spine::TimestampedCover::Counter { uncertainty }
+        }
+    }
+}
+
 /// The parts of a request's timestamped trace a test changes.
 struct TsMut<'a> {
     positions: &'a mut Vec<crate::spine::TimestampedObservation>,
@@ -2050,7 +2060,7 @@ fn timestamped_counter_margin_delays_establishment() {
             )
             .into_bytes();
         report(timestamped_changed(request, |trace| {
-            trace.window.cover = Some(cover)
+            trace.window.cover = Some(spine_cover(cover))
         }))
     }
     let counter = qsl_eval::temporal::ClockCover::Counter { uncertainty: 1 };
@@ -2095,32 +2105,41 @@ fn timestamped_report_gives_basis_and_decision_support() {
     };
     let closed = always(true);
     assert_eq!(outcome(&closed), &TemporalVerdict::Violated { at: 0 });
-    assert_eq!(window_report(&closed).basis, Basis::ClosedScope);
+    assert_eq!(window_report(&closed).basis, SettlementBasis::ClosedScope);
     let support: Vec<u64> = window_report(&closed)
         .support
         .iter()
-        .map(|pair| pair.position.index())
+        .map(|pair| pair.position)
         .collect();
     assert_eq!(support, vec![1]);
     let open = always(false);
     assert_eq!(outcome(&open), &TemporalVerdict::Violated { at: 0 });
-    assert_eq!(window_report(&open).basis, Basis::DecisiveCounterexample);
+    assert_eq!(
+        window_report(&open).basis,
+        SettlementBasis::DecisiveCounterexample
+    );
     assert_eq!(window_report(&open).support, window_report(&closed).support);
 
     let witnessed = report(timestamped(&[0, 2, 5], &[0, 0, 1], 5, Some(5)));
     assert_eq!(outcome(&witnessed), &TemporalVerdict::Holds);
-    assert_eq!(window_report(&witnessed).basis, Basis::ClosedScope);
+    assert_eq!(
+        window_report(&witnessed).basis,
+        SettlementBasis::ClosedScope
+    );
     let support: Vec<u64> = window_report(&witnessed)
         .support
         .iter()
-        .map(|pair| pair.position.index())
+        .map(|pair| pair.position)
         .collect();
     assert_eq!(support, vec![2]);
 
     let pending = report(timestamped(&[0, 1], &[0, 0], 1, Some(1)));
-    assert_eq!(window_report(&pending).basis, Basis::Unsettled);
+    assert_eq!(window_report(&pending).basis, SettlementBasis::Unsettled);
     let incomplete = report(timestamped(&[0, 1], &[0, 0], 5, None));
-    assert_eq!(window_report(&incomplete).basis, Basis::Unavailable);
+    assert_eq!(
+        window_report(&incomplete).basis,
+        SettlementBasis::Unavailable
+    );
 }
 
 /// FR-501-AC-15 (TC-1295 row 29): scope closure, surrounding-execution
@@ -2129,8 +2148,8 @@ fn timestamped_report_gives_basis_and_decision_support() {
 #[trace("TC-1295", "FR-501-AC-15")]
 #[test]
 fn timestamped_report_keeps_four_independent_dimensions() {
+    use crate::spine::FiniteWindowAssessment as Assessment;
     use crate::spine::{ProgressClosure as Closure, ProgressCompleteness as Completeness};
-    use qsl_eval::temporal::Assessment;
     let base = || {
         timestamped_with(
             Unit::TimestampedAlwaysFive,
@@ -2225,7 +2244,7 @@ fn timestamped_result_identity_follows_every_input() {
     record(
         "cover",
         timestamped_changed(base(), |trace| {
-            trace.window.cover = Some(qsl_eval::temporal::ClockCover::Counter { uncertainty: 0 });
+            trace.window.cover = Some(crate::spine::TimestampedCover::Counter { uncertainty: 0 });
         }),
     );
     record(
@@ -2369,7 +2388,7 @@ fn timestamped_positions_are_canonical_indices() {
     let support: Vec<u64> = window_report(&listed)
         .support
         .iter()
-        .map(|pair| pair.position.index())
+        .map(|pair| pair.position)
         .collect();
     assert_eq!(support, vec![1]);
 }

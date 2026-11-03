@@ -52,7 +52,7 @@ pub use lifecycle::{
     parse, preflight_unit_list, refusal_or_fault, select, AdmittedModels, AdmittedUnitList,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
-pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation};
+pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.
@@ -128,12 +128,14 @@ pub use clause::{
     temporal_batch_outcome, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
     ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
     ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents,
-    ConsequentState, FiniteWindowReport, LedgerBinding, ObservedPosition, OperationName,
+    ConsequentState, ContradictedDimension, FiniteWindowAssessment, FiniteWindowPremises,
+    FiniteWindowReport, FiniteWindowSupport, LedgerBinding, ObservedPosition, OperationName,
     OverObject, ProgressAssertion, ProgressClosure, ProgressCompleteness, ProgressContradiction,
-    ProgressLedger, ProgressLimitReached, ProgressRefusal, ProgressValue,
+    ProgressLedger, ProgressLedgerEntry, ProgressLimitReached, ProgressRefusal, ProgressValue,
     TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedMissingValuation,
-    TimestampedObservation, TimestampedOrderKey, TimestampedWindow, TraceBinding, TraceInput,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedCover,
+    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
+    TraceBinding, TraceInput,
 };
 mod refinement;
 pub use refinement::{
@@ -414,6 +416,7 @@ impl CompileRefusal {
                 | Setting::EnvironmentWorkUnits
                 | Setting::IdentityInputBytes => SpineStage::Assembly,
                 Setting::ModelDeclarationRecords
+                | Setting::ModelSequenceMaximum
                 | Setting::ModelDerivationFacts
                 | Setting::ModelEffectiveDeclarations
                 | Setting::ModelDispatchCandidates

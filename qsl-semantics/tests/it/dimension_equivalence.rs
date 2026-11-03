@@ -203,7 +203,7 @@ fn retained(cause: &AssemblyCause) -> Vec<String> {
 /// over the base classes agree, and each defect refuses with one error at
 /// the name or the declaration by FR-142's first matching step, base pairs
 /// before the first dimension turn and every other pair after the last.
-#[trace("TC-483", "FR-091-AC-60")]
+#[trace("TC-483", "FR-091-AC-60", "QSpec-TC-187", "QSpec-FR-142-AC-22")]
 #[test]
 fn dimension_equivalences_are_decided_by_fr_142_steps() {
     for body in [
@@ -496,7 +496,7 @@ fn exact(numerator: i64, denominator: i64) -> quire_exact::Rational {
 /// both `Time` nodes are one class whose root is the least of the two
 /// keys, Q12 relates `Distance` and `Length` in one class, the source
 /// `Time` is in no class, and a unit with no equivalence derives none.
-#[trace("TC-483", "FR-091-AC-62")]
+#[trace("TC-483", "FR-091-AC-62", "QSpec-TC-187", "QSpec-FR-142-AC-24")]
 #[test]
 fn an_equivalence_derives_one_class_with_the_least_key_as_root() {
     let masses = "dimension R::Mass ~ F::Mass by 1 R::kg = 1 F::kg;";
@@ -611,4 +611,25 @@ fn a_package_dimension_node_is_model_owned_with_no_declaration() {
     {
         assert!(matches!(own.owner(), Some(Owner::Source(_))));
     }
+}
+
+/// FR-091-AC-50 (QSpec FR-142-AC-20), the refusal half: with `R`
+/// (`acme/rpc`) and `F` (`acme/flow`) selected and the source's own `Time`, a
+/// source writing `Z::Time` with no model alias `Z`, or `R::Speed` where
+/// `acme/rpc` declares no `Speed`, refuses `missing_declaration`/`missing-name`
+/// at the name, and a second `dimension Time;` refuses
+/// `ambiguous_declaration`/`ambiguous-name`. The admission half (a source unit
+/// typed by `R::Time`, `Quantity<R::s>`) is not implemented: see QSL-1478.
+#[trace("TC-483", "QSpec-TC-187")]
+#[test]
+fn unknown_package_dimensions_and_repeated_source_dimensions_refuse() {
+    let missing = |body: &str, at: &str| {
+        let (_, code, located) = refused(body);
+        assert_eq!(code, "missing_declaration/missing-name", "{body}");
+        assert_eq!(located, at, "{body}");
+    };
+    missing("dimension D = Z::Time;", "Z::Time");
+    missing("dimension D = R::Speed;", "R::Speed");
+    let (_, code, _) = refused("dimension Time;\n");
+    assert_eq!(code, "ambiguous_declaration/ambiguous-name");
 }

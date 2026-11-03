@@ -1454,7 +1454,7 @@ pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
     let refusal = |failure| match failure {
         qsl_foundation::diagnostic::StageFailure::RefusedWithPayload(refusal, protocol_results) => {
             ReplayRefusal::RecompileWithProtocolResults {
-                refusal,
+                refusal: *refusal,
                 protocol_results,
             }
         }
@@ -1485,9 +1485,11 @@ pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
         .into_value();
     let checked = spine::check_for_continuation(
         &parsed,
-        package.as_str().to_owned(),
-        execution_points,
-        temporal_selections,
+        spine::ContinuationInputs {
+            package_name: package.as_str().to_owned(),
+            execution_points,
+            temporal_selections,
+        },
         &models,
         dependencies,
         limits,

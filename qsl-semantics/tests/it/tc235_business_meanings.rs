@@ -680,6 +680,9 @@ fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
     assert_eq!(actual_member, &member("TypeDefinition.steps[1].emits[0]"));
 }
 
+/// FR-506-AC-1: `normalize.record` is charged once per declared type, field,
+/// operation, parameter, result and frame entry, so a package's count is its
+/// intake records plus its parameters, results and frame entries.
 fn assert_record_charge_count(meter: &Meter, expected: usize) {
     assert_eq!(
         meter

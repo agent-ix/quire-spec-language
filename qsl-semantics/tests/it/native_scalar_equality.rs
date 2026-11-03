@@ -197,9 +197,10 @@ fn unlike_operand_types_refuse_type_mismatch_at_the_comparison() {
     }
 }
 
-/// TC-1028 R6, FR-056-AC-36: ordering over two operands of one native type
-/// refuses `ill_typed`/`operator-ineligible`.
-#[trace("FR-056-AC-36", "TC-1028")]
+/// TC-1028 R6, FR-056-AC-36 (QSpec FR-149-AC-16): ordering over two operands
+/// of one native type refuses `ill_typed`/`operator-ineligible` at check time,
+/// so no package exists to evaluate and no charge can precede the refusal.
+#[trace("FR-056-AC-36", "TC-1028", "QSpec-TC-194", "QSpec-FR-149-AC-16")]
 #[test]
 fn ordering_over_native_scalars_refuses_operator_ineligible() {
     for native in ["String", "UUID", "Timestamp"] {
@@ -234,6 +235,34 @@ fn a_uuid_against_a_reference_refuses_type_mismatch() {
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
     );
     assert!(refusals[0].location.path().is_empty());
+}
+
+/// QSpec FR-143-AC-11 (the "no other source" clause): a `String`, `Integer`,
+/// `UUID` or `Timestamp` is no source of a `Reference<T>`, so each against a
+/// reference, on either side, refuses `ill_typed`/`type-mismatch`.
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-11")]
+#[test]
+fn no_other_kind_is_a_source_of_a_reference() {
+    for other in ["String", "Integer", "UUID", "Timestamp"] {
+        for comparison in ["a = b", "b = a"] {
+            let declarations = admit_and_assemble_with_body(
+                &tc465_document(),
+                &format!(
+                    "function bad using v(a: {other}, b: Reference<Config::ConfigVersion>): Boolean pure {{ {comparison} }}"
+                ),
+            )
+            .expect("the unit assembles");
+            let refusals = declarations
+                .check(CheckingLimits::default())
+                .expect_err("the unit does not check");
+            let causes: Vec<_> = refusals.iter().map(|refusal| &refusal.cause).collect();
+            assert_eq!(
+                causes,
+                [&CheckCause::IllTyped(IllTypedCause::TypeMismatch)],
+                "{other}: {comparison}"
+            );
+        }
+    }
 }
 
 /// TC-1028 step 5 F1 to F7: a field read, a call result and a `let` binding

@@ -119,7 +119,7 @@ fn parse_named(identity: &SourceIdentity, bytes: &[u8]) -> ParsedUnitSource {
 fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing() {
     let dependencies = DependencyInput::default();
     assert!(matches!(
-        preflight_unit_list(&[], &dependencies),
+        preflight_unit_list(&[], &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::Empty
         ))
@@ -139,7 +139,7 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
         },
     ];
     assert!(matches!(
-        preflight_unit_list(&duplicate_requests, &dependencies),
+        preflight_unit_list(&duplicate_requests, &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::DuplicateOwner {
                 first: 0,
@@ -162,7 +162,7 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
         bytes: b"not valid",
     }];
     assert!(matches!(
-        preflight_unit_list(&requests, &dependencies),
+        preflight_unit_list(&requests, &dependencies).map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::LibraryOwner { unit: 0, .. }
         ))
@@ -183,7 +183,7 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        duplicate,
+        duplicate.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::DuplicateName { name, first_unit, second_unit, .. })) if name == "shared" && first_unit.identity == "z-unit" && second_unit.identity == "a-unit"
     ));
 
@@ -211,13 +211,13 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        refused,
+        refused.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::SiblingImport { identity, unit, region: Some(region) })) if identity == "a-unit" && unit.identity == "a-unit" && region.source().identity() == "z-unit" && region.start() < region.end()
     ));
 
-    let different_profiles = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"other.profile/v1\";\nfunction local(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let different_profiles =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"other.profile/v1\";\nfunction local(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     let refused = admit_parsed_unit_list(
         vec![
             parse_named(&first, unit_z.as_bytes()),
@@ -226,7 +226,7 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &DependencyInput::default(),
     );
     assert!(matches!(
-        refused,
+        refused.map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::HeaderConflict {
             first_unit,
             second_unit,
@@ -241,12 +241,12 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
             && usize::try_from(region.end()).unwrap() == second_header.end
     ));
 
-    let profile_order_first = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile x = \"p1\";\nprofile y = \"p2\";\nfunction ordered_a(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
-    let profile_order_second = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile y = \"p2\";\nprofile x = \"p1\";\nfunction ordered_b(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let profile_order_first =
+        "language \"ix:native\" edition \"1-draft\";\nprofile x = \"p1\";\nprofile y = \"p2\";\nfunction ordered_a(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
+    let profile_order_second =
+        "language \"ix:native\" edition \"1-draft\";\nprofile y = \"p2\";\nprofile x = \"p1\";\nfunction ordered_b(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     assert!(matches!(
         admit_parsed_unit_list(
             vec![
@@ -254,7 +254,8 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
                 parse_named(&second, profile_order_second.as_bytes()),
             ],
             &DependencyInput::default(),
-        ),
+        )
+        .map_err(|refusal| *refusal),
         Err(CompileRefusal::UnitList(
             crate::spine::UnitListRefusal::HeaderConflict { .. }
         ))
@@ -267,12 +268,12 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
         &["p1"],
     ));
 
-    let alias_first = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
-    let alias_second = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-    );
+    let alias_first =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
+    let alias_second =
+        "language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure { x < 5 }\n"
+            .to_owned();
     assert!(admit_parsed_unit_list(
         vec![
             parse_named(&first, alias_first.as_bytes()),
@@ -625,8 +626,10 @@ fn protocol_check_stage(
     )
     .unwrap_or_else(|failure| panic!("fixture model admits: {failure:?}"))
     .into_value();
-    let mut limits = SpineLimits::default();
-    limits.checking = checking;
+    let limits = SpineLimits {
+        checking,
+        ..SpineLimits::default()
+    };
     super::check(
         &parsed,
         "fixture".to_owned(),
@@ -804,7 +807,7 @@ fn check_retains_the_owning_protocol_locus() {
             && locus.start() == x_start as u64
             && locus.end() == (x_start + 1) as u64
     ));
-    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    let without_payload = crate::ReplayRefusal::Recompile(*refusal);
     assert_eq!(with_payload_category, without_payload.code().category());
     assert_eq!(
         with_payload_exit,
@@ -915,7 +918,7 @@ fn state_clause_refusal_keeps_protocol_result_cleared() {
         [ProtocolResult::Cleared { declaration, stage: SpineStage::Check }]
             if declaration == "W"
     ));
-    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    let without_payload = crate::ReplayRefusal::Recompile(*refusal);
     assert_eq!(with_payload_category, without_payload.code().category());
     assert_eq!(
         with_payload_exit,
@@ -1541,7 +1544,7 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 /// through `select` (FR-255 Behavior 1 and FR-260 item 5: `IntakeLimits` is a
 /// caller budget, not a stage's own limits type), naming that setting,
 /// its bound and the document's size, never a missing package.
-#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
+#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1", "FR-506-AC-5")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
@@ -1555,6 +1558,9 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     )
     .expect("the model fixture parses")
     .into_value();
+    let mut exact = limits.model;
+    exact.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size);
+    assert!(select(&parsed, &packages, exact, &Cancel::new()).is_ok());
     let Err(StageFailure::Refused(refusal)) =
         select(&parsed, &packages, limits.model, &Cancel::new())
     else {
@@ -1570,6 +1576,25 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
             ("actual", size.to_string()),
             ("setting", "intake.input_bytes".to_owned()),
         ]))
+    );
+    let mut zero = limits.model;
+    zero.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(0);
+    let Err(StageFailure::Refused(refusal)) = select(&parsed, &packages, zero, &Cancel::new())
+    else {
+        panic!("a nonempty document exceeds the zero intake limit");
+    };
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("setting").cloned()),
+        Some("intake.input_bytes".to_owned())
+    );
+    assert_eq!(
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("actual").cloned()),
+        Some(size.to_string())
     );
 }
 
@@ -2309,7 +2334,7 @@ fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit.
-#[trace("TC-758", "FR-277-AC-1")]
+#[trace("TC-758", "FR-277-AC-1", "FR-506-AC-5")]
 #[test]
 fn check_names_the_checking_limit_field_it_reached() {
     let chain = fixture_chain();
@@ -2338,6 +2363,16 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+    let zero_nodes = run(|mut limits, _| {
+        limits.checking = CheckingLimits::new(0)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        limits
+    })(0);
+    assert!(matches!(
+        zero_nodes,
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
     assert_field(
         Setting::S3InputBytes,
         FoundationKind::InputBytes,
@@ -2356,6 +2391,53 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+}
+
+/// FR-506-AC-5 (TC-1301 row 11): the model's S3 formal nodes admit at their
+/// exact count and refuse when the named setting is zero.
+#[trace("FR-506-AC-5", "TC-1301")]
+#[test]
+fn selected_model_formal_node_limit_is_exact() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
+    let parsed = parse(
+        &request(spine_model::unit().as_bytes()),
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the selected model unit parses")
+    .into_value();
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the model selects")
+    .into_value();
+    let s3_nodes = |bound: u64| {
+        let mut limits = SpineLimits::default();
+        limits.checking = CheckingLimits::new(bound)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        reached(check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &Cancel::new(),
+        ))
+    };
+    assert_field(
+        Setting::S3Nodes,
+        FoundationKind::NodeCount,
+        100_000,
+        s3_nodes,
+    );
+    assert!(matches!(
+        s3_nodes(0),
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
 }
 
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
