@@ -503,7 +503,7 @@ fn every_capture_fault_names_its_input_and_kind() {
         (capture_named("c2"), FaultKind::Missing)
     );
     assert_eq!(
-        faults(&|d| d.captures.truncate(0), vec![]),
+        faults(&|d| d.captures.clear(), vec![]),
         (capture_named("a"), FaultKind::Missing)
     );
     assert_eq!(
