@@ -3571,8 +3571,29 @@ fn emit_checked_uncached(
 pub fn emit_checked_with_protocol_results(
     package: &CheckedPackage,
 ) -> Result<ProtocolEmission, EmitRefusal> {
+    emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
+        package,
+        &[],
+        &Cancel::new(),
+    )
+}
+
+/// Emit each protocol independently while applying the package's explicit
+/// temporal selections and polling the caller's cancellation handle.
+pub fn emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
+    package: &CheckedPackage,
+    selections: &[TemporalClockSelection],
+    cancel: &Cancel,
+) -> Result<ProtocolEmission, EmitRefusal> {
     let graph = package.graph();
-    let emission = match emit_checked_uncached(package, &Cancel::new()) {
+    let emission = match emit_package_inner(
+        package,
+        graph.memoized_regions(),
+        |_| None,
+        cancel,
+        &ir_decodes,
+        selections,
+    ) {
         Ok(emission) => Some(emission),
         Err(EmitRefusal::NothingToEmit { .. }) if !graph.protocol_refusals().is_empty() => None,
         Err(refusal) => return Err(refusal),

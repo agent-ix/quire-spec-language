@@ -656,7 +656,6 @@ pub struct CheckedUnit {
     /// during S4 for its import view and retained here by library identity.
     library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
     protocol_results: Vec<super::ProtocolResult>,
-    protocol_failure: Option<Box<CompileRefusal>>,
 }
 
 impl CheckedUnit {
@@ -956,6 +955,32 @@ pub fn check_with_temporal_selections_and_execution_points(
     )
 }
 
+/// S3 continuation for the compiler: keep an attributable protocol refusal
+/// in the checked graph so S4 can still emit clean siblings.
+pub(crate) fn check_for_continuation(
+    parsed: &ParsedUnitSource,
+    package_name: String,
+    execution_points: &super::StateClauseExecutionPoints,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    check_with_context_and_temporal_selections(
+        parsed,
+        package_name,
+        execution_points,
+        None,
+        temporal_selections,
+        models,
+        dependencies,
+        limits,
+        cancel,
+        true,
+    )
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "check inputs plus temporal selections and refinement internals"
@@ -1034,7 +1059,6 @@ fn check_with_context_and_temporal_selections(
             library_names,
             library_packages: Arc::new(library_packages),
             protocol_results,
-            protocol_failure: protocol_failure.map(Box::new),
         };
         Ok(checked)
     })
@@ -1082,9 +1106,44 @@ pub fn package_with_temporal_selections(
             }
         }
         let own = temporal_selections_for_source(selections, checked.source.reference());
-        let emission = charged(cancel, &mut work.e4, || {
-            emit_unit(&checked.package, &own, cancel)
-        })?;
+        let protocol_emission = charged(cancel, &mut work.e4, || {
+            qsl_package::emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
+                &checked.package,
+                &own,
+                cancel,
+            )
+        })
+        .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+        let results = lifecycle_emission_results(&protocol_emission);
+        let emission = match protocol_emission.aggregate() {
+            qsl_package::ProtocolEmissionAggregate::Emitted => {
+                protocol_emission.emission().ok_or_else(|| {
+                    Box::new(CompileRefusal::Emit(
+                        qsl_package::EmitRefusal::NothingToEmit {
+                            omitted: Vec::new(),
+                        },
+                    ))
+                })?
+            }
+            qsl_package::ProtocolEmissionAggregate::Refused { primary } => {
+                return Err(StageError::with_protocol_results(
+                    Box::new(CompileRefusal::Check {
+                        refusals: vec![primary.clone()],
+                        region: None,
+                    }),
+                    results,
+                ));
+            }
+            qsl_package::ProtocolEmissionAggregate::Incomplete { primary } => {
+                let limit =
+                    LimitExceeded::new(primary.kind.setting(), primary.limit, primary.actual)
+                        .at(primary.region.clone().map(Locus::Region));
+                return Err(StageError::with_protocol_results(
+                    Box::new(CompileRefusal::Limit(limit)),
+                    results,
+                ));
+            }
+        };
         let sources = std::iter::once(&checked.source)
             .chain(&checked.libraries)
             .cloned()
@@ -1095,6 +1154,50 @@ pub fn package_with_temporal_selections(
             evidence: emission.evidence().clone(),
         })
     })
+}
+
+fn lifecycle_emission_results(
+    emission: &qsl_package::ProtocolEmission,
+) -> Vec<super::ProtocolResult> {
+    emission
+        .results()
+        .iter()
+        .map(|result| match result {
+            qsl_package::ProtocolEmissionResult::Emitted {
+                declaration,
+                clause_key,
+                nodes,
+            } => super::ProtocolResult::Emitted {
+                declaration: declaration.clone(),
+                clause_key: format!("{clause_key:?}"),
+                nodes: nodes.clone(),
+            },
+            qsl_package::ProtocolEmissionResult::Refused {
+                declaration,
+                source_index,
+                declaration_span,
+                refusal,
+            } => super::ProtocolResult::Refused {
+                declaration: declaration.clone(),
+                source_index: *source_index,
+                declaration_span: *declaration_span,
+                code: refusal.cause.code(),
+                cause: refusal
+                    .cause
+                    .catalog_code()
+                    .map(|code| code.cause().to_owned())
+                    .unwrap_or_else(|| "unknown-cause".to_owned()),
+                locus: None,
+            },
+            qsl_package::ProtocolEmissionResult::Incomplete { declaration, limit } => {
+                super::ProtocolResult::Incomplete {
+                    declaration: declaration.clone(),
+                    limit: LimitExceeded::new(limit.kind.setting(), limit.limit, limit.actual)
+                        .at(limit.region.clone().map(Locus::Region)),
+                }
+            }
+        })
+        .collect()
 }
 
 /// The request [`execute`] takes: the function, its admitted argument
