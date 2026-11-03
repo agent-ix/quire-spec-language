@@ -255,6 +255,19 @@ may repair such a disagreement by inventing another evaluation rule.
     otherwise the result is `indeterminate` with reason `MissingHistory`. The
     prefix before the baseline, and the prefix lost by a counter gap or by an
     overflow below, enter as the one value `indeterminate`.
+  - **Oracle of the differential.** For these operators the oracle of the AC-7
+    differential is this requirement's reference evaluator (the `qsl-eval`
+    module of "Declarative semantics") evaluating FR-092's declarative meaning
+    over the tick trace extended before the baseline by an unknown prefix, every
+    atom value `indeterminate` (the `HistoryCutoff` meaning, equal to the
+    accumulator that starts `indeterminate`). It is not QSpec FR-092's
+    bounded-profile evaluator, which refuses an unbounded past interval, and not
+    the infinite-trace evaluator (QSpec FR-367), whose position 0 is the
+    authoritative origin and reads atoms before it as false (FR-092-AC-8); QSpec
+    FR-092 states that the monitor is a separate evaluator. The two are related by
+    refinement, which the differential also checks: wherever the monitor's verdict
+    is definite it equals the infinite-trace verdict, and an `indeterminate`
+    verdict is compared with nothing (AC-41).
   - **Buffer.** The operator keeps a **cover-width buffer**. Its capacity is
     `ceil(rate x R(n)) + 1` with the retention
     `R(n) = L(n) + T(n) + (d(n) + 1) x (1 + 2u)`, where `T(n)` is `a` for
@@ -321,9 +334,7 @@ may repair such a disagreement by inventing another evaluation rule.
     never `true`, and `since` and `triggered` follow the recursion: no wrong
     definite verdict follows from the lost event. The buffer content discarded
     with it is reported by the `Incomplete` result and by the cell's
-    `history_start`; no event is lost silently. (A bounded operator's overflow
-    affects every obligation whose window contains the lost event until the window
-    has passed it.)
+    `history_start`; no event is lost silently.
   - **After a gap.** `on_gap` empties the buffer and resets the summary cell as
     above with `history_start` the faulting reading's tick, for `since` and
     `triggered` as for `once` and `historically`: the accumulator is
@@ -355,7 +366,16 @@ may repair such a disagreement by inventing another evaluation rule.
   raises it (FR-255's setting table does not list it, as it is an exact
   fraction). `EventBuffer` and `monitor.max_event_rate` extend FR-127's
   `limit` and `setting` fields for a monitor run, which has no model-check
-  request. The overflow of an unbounded past operator is sticky ("Unbounded past operators").
+  request. **Overflow raises `history_start`.** An overflow of any buffer, bounded or
+  unbounded, also raises `State.history_start` to the tick of the overflowing
+  event, exactly as `on_gap` sets it and with the existing `State` fields only:
+  the lost event is not in any buffer, so every past-time operator whose window
+  reaches before that tick (`now - b` below it) is `indeterminate`, never a
+  definite verdict, until `now - b` reaches it, when the window no longer holds
+  the lost event. A bounded operator's older entries stay in its buffer, and a
+  bounded `once` can never settle `false`, nor a `historically` `true`, over a
+  window that holds the lost event. The overflow of an unbounded past operator is
+  also sticky for that operator ("Unbounded past operators").
 - **Activation overflow.** A new obligation instance that would exceed the
   activation capacity SHALL never be dropped silently: the obligations it
   affects settle `Incomplete(LimitReached{limit, value, setting})` with
@@ -454,7 +474,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-26 | Under AC-22's premises, three events inside one tick cover settle the affected `once holds(p)` obligations `Incomplete(LimitReached{limit: event_buffer, value: 2, setting: monitor.max_event_rate})`, the sequence never holds more than 2 entries plus the cell, and the operator's buffer is emptied and its cell reset to `indeterminate` with `history_start` at the overflowing event's tick. | Test (TC-706) |
 | FR-251-AC-27 | After the overflow of AC-26, with `p` true at the lost third event and no `p` after it, `once holds(p)` at tick 9000 is `indeterminate`, not `false`; with a later true `p`, `true`. For `historically holds(p)` with `p` false at the lost event and true afterwards, the result at tick 9000 is `indeterminate`, not `true`; with a later false `p`, `false`. | Test (TC-1081) |
 | FR-251-AC-28 | On the 16-bit target of AC-3 after `on_gap`, with `p` true before the gap and never after it, `once holds(p)` is `indeterminate`, with `p` true after it `true`; `historically holds(p)` with `p` true before and after it is `indeterminate`, with `p` false after it `false`. Each result retains the subformula, the cell's `history_start` and the origin, and a replay gives the same results. | Test (TC-1081) |
-| FR-251-AC-29 | `p since q` with `q` at tick 0, `p` true at ticks 100 and 200, and an event at tick 5000 is `true` at tick 5000 through the folded accumulator; with `p` false and `q` false at tick 150 and `q` false at tick 5000 it is `false`. `p triggered q` follows `T := q and (p or T)`: with `q` false at tick 100 it is `false` at tick 5000, and with `q` true at every position and `p` false throughout it is `indeterminate` (the cutoff prefix), not `true`. | Test (TC-1081) |
+| FR-251-AC-29 | `p since q` with `q` at tick 0, `p` true at ticks 100 and 200, and an event at tick 5000 is `true` at tick 5000 through the folded accumulator; with `p` false and `q` false at tick 150 and, at tick 5000, `p` true and `q` false it is `false` (`A := q or (p and A)` with `A` false). `p triggered q` follows `T := q and (p or T)`: with `q` false at tick 100 it is `false` at tick 5000, and with `q` true at every position and `p` false throughout it is `indeterminate` (the cutoff prefix), not `true`. | Test (TC-1081) |
 | FR-251-AC-30 | On the 16-bit target of AC-3 after `on_gap`, `p since q` with `q` before the gap and `p` true after it is `indeterminate`; with `q` after the gap and `p` true since, `true`; with a position after the gap that has `p` false and `q` false, `false`. `p triggered q` is the dual. | Test (TC-1081) |
 | FR-251-AC-31 | Under AC-22's premises, `once[0 ms, 10 ms] once holds(p)`: the inner unbounded operator has retention 10000 + 0 + 2 covers = 10002 ticks and capacity ceil(0.002 x 10002) + 1 = 22; `once` over `once[0 ms, 10 ms] holds(p)` (a bounded operator under an unbounded past one, an enclosing unbounded operator adding 0 to `L`) gives the inner `once[0 ms, 10 ms]` retention 0 + 10000 + 2 covers = 10002 ticks and capacity 22, and the outer unbounded `once` capacity ceil(0.002 x 1) + 1 = 2. | Test (TC-706) |
 | FR-251-AC-32 | Under AC-22's premises, `historically (holds(req) implies eventually[0 ms, 5 ms] holds(ack))` is planned, not refused, with settling delay 5000 ticks, retention 5000 + 0 + 1 cover = 5001 ticks and capacity ceil(0.002 x 5001) + 1 = ceil(10.002) + 1 = 12. With `req` at tick 0 and no `ack`, the tick-0 entry is not folded before its `eventually` window is closed by progress: at tick 4000 the result is `Pending`, and once progress shows the window closed without `ack` the entry folds and `historically` is `false`; with `ack` at tick 2998 it folds with value true and the result stays `indeterminate` (cutoff), not `true`. | Test (TC-1081) |
@@ -465,6 +485,8 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-37 | Two plans of AC-1's clause that differ only in the checked body of one atom, or only in the checked body of the activation guard, have different `PlanId`s. | Test (TC-1081) |
 | FR-251-AC-38 | Two plans of AC-1's clause that differ only in the checked body of a declared helper function that an entry calls, directly or through another helper, have different `PlanId`s and different plan-root keys while the helper's own `node_id` (its declaration path, its call identity) is unchanged and it stays a declared node; the key covers the helper through its body root's node `node_id`, which is content, and not through a graph position or a name alone (QSpec FR-487). | Test (TC-1081) |
 | FR-251-AC-39 | `TimedMonitorPlan` built through its public constructor with one atom body swapped has an unequal `PlanId`, and a plan with equal bodies throughout has an equal `PlanId`. | Test (TC-1081) |
+| FR-251-AC-40 | Under AC-2's premises (`once[0 ms, 10 ms] holds(p)`, capacity 22), 23 events at ticks 0 to 22 with `p` false at ticks 0 to 21 and true at the lost 23rd event settle the affected obligations `Incomplete(LimitReached{limit: event_buffer, value: 22, setting: monitor.max_event_rate})` and raise `history_start` to tick 22; `once[0 ms, 10 ms] holds(p)` read at tick 5000 is `indeterminate`, not `false`, and read at tick 10100 (`now - b` is 100, at least 22) decides from the entries then in the window. For `historically[0 ms, 10 ms] holds(p)` with `p` true at ticks 0 to 21 and false at the lost event, the read at tick 5000 is `indeterminate`, not `true`. | Test (TC-706) |
+| FR-251-AC-41 | For `once`, `historically`, `since` and `triggered` without an upper bound, the differential of AC-7 compares the monitor with the `HistoryCutoff` evaluator of "Unbounded past operators" (every atom before the baseline `indeterminate`) and requires equal verdicts; it also evaluates the same trace under QSpec's infinite-trace evaluator and requires that every definite monitor verdict equals that evaluator's verdict, and an `indeterminate` monitor verdict is not compared. | Test (TC-1081) |
 
 ## Dependencies
 

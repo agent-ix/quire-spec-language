@@ -41,3 +41,36 @@ Verified: `quire validate` exit 0 on all 11 files (only module duplicate-archety
 ## Verdict
 
 Changes requested; not mergeable. FND-001, FND-003 and FND-004 are high. The numeric examples, FR-106 native member causes, FR-390 text, TC-1064 row 9 and the FR-251 PlanId body coverage are otherwise sound. QSL-1481: no ticketed QSL behavior is dropped by the amendments to FR-106/FR-391/FR-084 beyond the cause renaming for unlisted populations (FND-009) and the unreconciled FR-090 mapping (FND-008). QSL-1512: FR-514 drops the Complete-with-obligations behavior (FND-001); needs a planner or Peter ruling (option: Incomplete with requirement rows and a typed unmapped-kind cause rather than total refusal, or an IR member now).
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | UnmappedObligationKind and the total refusal are gone; Ok(unit) is Complete with requirement and obligation rows (FR-514 bullet, AC-3, AC-8, TC-1309 row 13 agree). Interim clauses I-1..I-3 each state the placeholder values and a removal condition. Residual for Peter's ruling, not a defect: I-2 puts the placeholder kind GraphClosure and I-3 prior=bound into IR-bound identities; they are documented as placeholders with QSL's own row carrying the real values. |
+| FND-002 | fixed | The three IR asks are listed precisely (form identity, capability-kind member with a non-Copy payload, stage/setting/observed plus optional prior/requested/site); the interim clauses make the Incomplete path producible. IR ticket ids are still not named; the planner should file them. |
+| FND-003 | fixed | Overflow of an unbounded past operator is sticky: buffer emptied, cell reset to indeterminate with its own history_start; once never false and historically never true from the lost event (AC-26, AC-27, TC-1081 step 17). |
+| FND-004 | fixed | [a,*], bounded under unbounded past (adds 0 to L), past over bounded future (fold after settle, Pending), past over unbounded future (fold on settle, shared activation capacity) are specified with AC-31 to AC-34. Recomputed: 22, 32/22/12, 2, AC-31 22 and 22 and 2, AC-32 12, AC-34 12; all correct. |
+| FND-005 | fixed | Lower boundary is HistoryCutoff, accumulator starts indeterminate (AC-25). AuthoritativeOrigin being not selectable narrows no ticketed behavior (bounded past already read indeterminate before history_start), but see FND-014. |
+| FND-006 | fixed | AC-35 (always eventually) and AC-36 (eventually always) are separate and each correct. |
+| FND-007 | fixed | Re-derived against QSpec FR-092 (p since[a,b] q: some d in [a,b], q at i-d, p at i-e for e in [a,d)): S_i = q_i or (p_i and S_(i-1)) is exact, triggered is the dual, and the [a,*] case is the [0,*] operator shifted by a, so one folded value is sufficient. Post-gap AC-28 and AC-30 cover once, historically, since and triggered. |
+| FND-008 | fixed | FR-090 now states the projection of the undefined record to incomplete_population/unclosed-subtypes (derived, not stored); FR-090-AC-21, TC-227 and TC-1076 rows 7 and 7b follow. |
+| FND-009 | fixed | FR-106 check 7 is scoped to a required population; an unlisted relationship extent keeps incomplete-scope (TC-1048 row 16, TC-1034 row 9 say so); AC-65 amended; AC-67 added. |
+| FND-010 | fixed | FR-251-AC-38 says the key covers the helper through its body root's content-bearing node_id, not a graph position. |
+| FND-011 | fixed | The State row names the summary cell (an accumulator and its own history_start, not counted in the capacity). |
+| FND-012 | fixed | FR-390-AC-64 and TC-1072 row 10 assert Some and None. |
+| FND-013 | fixed | The two-other-tags case is specified; AC-66, AC-68, AC-69 split the claims; FR-251 ACs split to AC-22..39. AC-29 and AC-31 still bundle sub-claims (low, accepted). |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-014 | medium | QSpec FR-092 refuses an unbounded past interval under a bounded profile and, under the infinite-trace profile, reads atoms before position 0 as false (FR-092-AC-8), which is the AuthoritativeOrigin result FR-251 says a monitor cannot select. FR-251 does not say which profile the AC-7 reference evaluator uses for an unbounded past operator, so the differential for AC-23..34 has no stated oracle. Needs a ruling. | FR-251 Lower boundary, AC-7; QSpec FR-092 line 79, AC-8 | missing-requirement |
+| FND-015 | high | Bounded-operator overflow can yield a wrong definite verdict: the lost event is not appended, the buffer keeps older entries, and only the parenthetical "affects every obligation whose window contains the lost event" (not normative, no AC) addresses later obligations. A later once[0,10ms] p can settle false though the lost event had p true; historically can settle true. Not introduced by this PR (pre-existing), but the PR now makes the unbounded case sound and states the bounded one only in a parenthesis. Cheap fix with existing State fields: on overflow raise history_start to the overflowing tick (as on_gap does), so windows reaching before it are indeterminate until refilled; add an AC. | FR-251 Overflow; FR-487 (Incomplete instead of appending) | missing-requirement |
+| FND-016 | low | FR-251-AC-29's first case omits p's value at tick 5000, which the recursion needs (S := q or (p and S)); the result is not computable from the AC as written. | FR-251-AC-29 | ambiguous |
+| FND-017 | low | FR-106-AC-67 names TC-1076 as verifier (row 7b) but TC-1076's Scope line lists only FR-391-AC-1 to AC-9. | FR-106-AC-67; TC-1076 | correct-requirement-no-evidence |
+
+Residual disposition table, new findings: FND-014 open (ruling), FND-015 open, FND-016 open, FND-017 open.
+
+## Verdict (disposition pass 1)
+
+13 of 13 original findings fixed; `quire validate` exits 0 on all touched files; ids FR-251-AC-22..39, FR-106-AC-66..69, FR-390-AC-64, FR-514-AC-7..10 are unused on main and no other open QSL PR (2184, 2192, 2193, 2195, 2196, 2197, 2199) touches spec/. Mergeable except FND-015: close it in this batch (two sentences plus one AC) or the planner records an explicit ticket and accepts the pre-existing gap; FND-014 needs a planner or Peter ruling but does not block.

@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify that `M::P` resolves to a domain-package population inside a state clause or a `holds` atom, types as a population operand or domain only, takes the clause's observation, becomes a domain of the requirement record and evaluates over the snapshot's population. Scope: FR-391-AC-1 to FR-391-AC-9.
+Verify that `M::P` resolves to a domain-package population inside a state clause or a `holds` atom, types as a population operand or domain only, takes the clause's observation, becomes a domain of the requirement record and evaluates over the snapshot's population. Scope: FR-391-AC-1 to FR-391-AC-9 and FR-106-AC-67.
 
 Catches a name resolved as an enum value or left unresolved, a population accepted as a value (compared, bound by `let`, or returned), a population read at `current` inside a precondition, a named population missing from the record's domains, and an incomplete population decided as an empty set.
 
