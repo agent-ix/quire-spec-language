@@ -2040,7 +2040,7 @@ fn timestamped_guarded_on_each_undefined_guard_reports_named_incomplete_activati
     assert_eq!(report.disposition.exit_code(), 22);
     assert_eq!(report.disposition.truth(), None);
     match &report.disposition {
-        TemporalVerdict::ActivationIncomplete { at, guard } => {
+        ClauseDisposition::Temporal(TemporalVerdict::ActivationIncomplete { at, guard }) => {
             assert_eq!(*at, 0);
             assert_eq!(
                 guard.origin,
