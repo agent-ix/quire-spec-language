@@ -3279,6 +3279,7 @@ impl PackageDeclarations {
             cancel,
             execution_points,
         } = run;
+        let model_selection_units = unit.model_selection_units().to_vec();
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -3290,7 +3291,11 @@ impl PackageDeclarations {
             .models
             .iter()
             .filter_map(|selection| {
-                let model = models.iter().find(|model| model.alias == selection.alias)?;
+                let model = models.iter().find(|model| {
+                    model.alias == selection.alias
+                        && model.view.domain_package().model_selection.identity
+                            == selection.identity
+                })?;
                 Some(
                     AdmittedModel::from_view(&model.view)
                         .with_alias(&selection.alias)
@@ -3327,7 +3332,11 @@ impl PackageDeclarations {
                 .models
                 .iter()
                 .filter_map(|selection| {
-                    let model = models.iter().find(|model| model.alias == selection.alias)?;
+                    let model = models.iter().find(|model| {
+                        model.alias == selection.alias
+                            && model.view.domain_package().model_selection.identity
+                                == selection.identity
+                    })?;
                     Some((
                         AdmittedModel::from_view(&model.view).with_alias(&selection.alias),
                         selection.span,
@@ -3363,8 +3372,12 @@ impl PackageDeclarations {
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
         let mut type_invariants = Vec::new();
+        let mut materialized_model_identities = BTreeSet::new();
         for selection in &selections.models {
-            let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
+            let Some(model) = models.iter().find(|model| {
+                model.alias == selection.alias
+                    && model.view.domain_package().model_selection.identity == selection.identity
+            }) else {
                 errors.push(AssemblyError {
                     cause: AssemblyCause::UnadmittedModel {
                         alias: selection.alias.clone(),
@@ -3373,47 +3386,75 @@ impl PackageDeclarations {
                 });
                 continue;
             };
-            match model_object_types(
-                &selection.alias,
-                model,
-                selection.span,
-                &mut operations,
-                &model_units,
-            ) {
-                Ok(types) => {
-                    for declaration in &types.objects {
-                        object_spans.insert(declaration.name().to_owned(), selection.span);
+            if materialized_model_identities.insert(selection.identity.clone()) {
+                match model_object_types(
+                    &selection.alias,
+                    model,
+                    selection.span,
+                    &mut operations,
+                    &model_units,
+                ) {
+                    Ok(types) => {
+                        for declaration in &types.objects {
+                            object_spans.insert(declaration.name().to_owned(), selection.span);
+                        }
+                        object_types.extend(types.objects);
+                        model_composites.extend(types.composites);
+                        model_variant_types.extend(types.variant_types);
+                        model_scalars.extend(types.scalars);
+                        model_records.extend(types.model_records);
+                        model_relationships.extend(types.relationships);
+                        let handles = types.handles;
+                        match operation_clause_declarations(&selection.alias, model, &operations) {
+                            Ok(resolved) => operation_clauses.extend(resolved),
+                            Err(cause) => errors.push(AssemblyError {
+                                cause,
+                                span: selection.span,
+                            }),
+                        }
+                        match type_invariant_declarations(&selection.alias, model, &handles) {
+                            Ok(resolved) => type_invariants.extend(resolved),
+                            Err(cause) => errors.push(AssemblyError {
+                                cause,
+                                span: selection.span,
+                            }),
+                        }
                     }
-                    object_types.extend(types.objects);
-                    model_composites.extend(types.composites);
-                    model_variant_types.extend(types.variant_types);
-                    model_scalars.extend(types.scalars);
-                    model_records.extend(types.model_records);
-                    model_relationships.extend(types.relationships);
-                    let handles = types.handles;
-                    match operation_clause_declarations(&selection.alias, model, &operations) {
-                        Ok(resolved) => operation_clauses.extend(resolved),
-                        Err(cause) => errors.push(AssemblyError {
-                            cause,
-                            span: selection.span,
-                        }),
-                    }
-                    match type_invariant_declarations(&selection.alias, model, &handles) {
-                        Ok(resolved) => type_invariants.extend(resolved),
-                        Err(cause) => errors.push(AssemblyError {
-                            cause,
-                            span: selection.span,
-                        }),
-                    }
+                    Err(refused) => errors.extend(refused),
                 }
-                Err(refused) => errors.extend(refused),
             }
             admitted.push(AdmittedModel::from_view(&model.view).with_alias(&selection.alias));
         }
-        let object_names: BTreeMap<String, EffectiveId> = object_types
+        let mut object_names: BTreeMap<String, EffectiveId> = object_types
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
+        // Keep every source-local alias spelling for a shared model identity
+        // while retaining one structural type declaration in the graph.
+        for selection in &selections.models {
+            let Some(model) = models.iter().find(|model| {
+                model.alias == selection.alias
+                    && model.view.domain_package().model_selection.identity == selection.identity
+            }) else {
+                continue;
+            };
+            let identities = model.view.type_identities();
+            for declaration in &object_types {
+                if !identities
+                    .values()
+                    .any(|identity| identity == &declaration.key())
+                {
+                    continue;
+                }
+                let Some((_, artifact)) = declaration.name().split_once("::") else {
+                    continue;
+                };
+                object_names.insert(
+                    format!("{}::{artifact}", selection.alias),
+                    declaration.key(),
+                );
+            }
+        }
         // A model composite or a variant type is a declared type name; `M::T`
         // is no source declaration of the unit.
         let model_composite_names: BTreeSet<String> = model_composites
@@ -3429,34 +3470,55 @@ impl PackageDeclarations {
 
         // Selection aliases are unique within a unit, and a `using` alias
         // names one of its profile selections.
-        let mut aliases: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
-        for (alias, span) in selections
+        let mut aliases: BTreeMap<&str, Vec<(Span, Option<usize>)>> = BTreeMap::new();
+        for (alias, span, source_unit) in selections
             .profiles
             .iter()
-            .map(|profile| (profile.alias.as_str(), profile.span))
-            .chain(
-                selections
-                    .imports
-                    .iter()
-                    .filter_map(|import| Some((import.alias.as_deref()?, import.span))),
-            )
+            .map(|profile| (profile.alias.as_str(), profile.span, None))
+            .chain(selections.imports.iter().filter_map(|import| {
+                Some((import.alias.as_deref()?, import.span, None))
+            }))
             .chain(
                 selections
                     .models
                     .iter()
-                    .map(|model| (model.alias.as_str(), model.span)),
+                    .zip(&model_selection_units)
+                    .map(|(model, source_unit)| {
+                        (model.alias.as_str(), model.span, Some(*source_unit))
+                    }),
             )
         {
-            aliases.entry(alias).or_default().push(span);
+            aliases.entry(alias).or_default().push((span, source_unit));
         }
-        for (alias, spans) in &aliases {
-            if let [_, second, ..] = spans.as_slice() {
+        for (alias, entries) in &aliases {
+            let model_aliases_only = entries.iter().all(|(_, source_unit)| source_unit.is_some());
+            let duplicate = if model_aliases_only {
+                let mut spans_by_unit = BTreeMap::<usize, Vec<Span>>::new();
+                for (span, source_unit) in entries {
+                    spans_by_unit
+                        .entry(source_unit.expect("model aliases have a source unit"))
+                        .or_default()
+                        .push(*span);
+                }
+                spans_by_unit
+                    .into_values()
+                    .find(|spans| spans.len() > 1)
+                    .map(|spans| (spans.clone(), spans[1]))
+            } else if entries.len() > 1 {
+                Some((
+                    entries.iter().map(|(span, _)| *span).collect(),
+                    entries[1].0,
+                ))
+            } else {
+                None
+            };
+            if let Some((spans, second)) = duplicate {
                 errors.push(AssemblyError {
                     cause: AssemblyCause::DuplicateAlias {
                         alias: (*alias).to_owned(),
-                        spans: spans.clone(),
+                        spans,
                     },
-                    span: *second,
+                    span: second,
                 });
             }
         }
@@ -5270,7 +5332,14 @@ fn operation_key_of(
     declaring: EffectiveId,
     name: &str,
 ) -> Option<DeclarationKey> {
-    let model = models.iter().find(|model| model.alias == alias)?;
+    let model = models.iter().find(|model| {
+        model.alias == alias
+            && model
+                .view
+                .type_identities()
+                .values()
+                .any(|identity| identity == &declaring)
+    })?;
     let owner = model
         .view
         .type_identities()

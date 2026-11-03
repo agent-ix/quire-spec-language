@@ -22,6 +22,7 @@
 use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recovery, TokenClass};
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
+use std::collections::BTreeSet;
 
 use super::abstraction_declaration;
 use super::hybrid_declaration;
@@ -156,6 +157,10 @@ impl ParsedForm {
 pub struct ParsedUnit {
     edition: Option<String>,
     selections: SourceSelections,
+    /// The source-unit index for each model selection after `combine`.
+    /// Single parsed units carry zeroes; aggregate assembly uses this to
+    /// retain unit-local model aliases while checking aggregate conflicts.
+    model_selection_units: Vec<usize>,
     forms: Vec<ParsedForm>,
 }
 
@@ -175,16 +180,20 @@ impl ParsedUnit {
     /// Combine source units for package-level assembly. The caller is
     /// responsible for admitting each source owner and for retaining the
     /// originating owner of every form; this operation retains the shared
-    /// profile selection once while preserving per-unit imports, model
-    /// selections and forms in the supplied canonical order.
+    /// profile selection once while preserving per-unit imports and forms in
+    /// the supplied canonical order. A model alias repeated by two units for
+    /// the same model identity is one package selection; repetitions within
+    /// one unit remain present for the assembler's duplicate-alias refusal.
     pub fn combine(units: impl IntoIterator<Item = Self>) -> Self {
         let mut combined = Self {
             edition: None,
             selections: SourceSelections::default(),
+            model_selection_units: Vec::new(),
             forms: Vec::new(),
         };
         let mut first = true;
-        for unit in units {
+        let mut combined_models = BTreeSet::new();
+        for (source_unit_index, unit) in units.into_iter().enumerate() {
             if first {
                 combined.edition = unit.edition;
                 first = false;
@@ -197,7 +206,17 @@ impl ParsedUnit {
                 }
             }
             combined.selections.imports.extend(unit.selections.imports);
-            combined.selections.models.extend(unit.selections.models);
+            let mut unit_model_aliases = BTreeSet::new();
+            for model in unit.selections.models {
+                let first_alias_in_unit = unit_model_aliases.insert(model.alias.clone());
+                let key = (model.alias.clone(), model.identity.clone());
+                if first_alias_in_unit && combined_models.contains(&key) {
+                    continue;
+                }
+                combined_models.insert(key);
+                combined.selections.models.push(model);
+                combined.model_selection_units.push(source_unit_index);
+            }
             combined.forms.extend(unit.forms);
         }
         combined
@@ -213,6 +232,12 @@ impl ParsedUnit {
     /// none of them.
     pub fn selections(&self) -> &SourceSelections {
         &self.selections
+    }
+
+    /// The source-unit index for each model selection, in the same order as
+    /// [`Self::selections`]`().models` after aggregate combination.
+    pub fn model_selection_units(&self) -> &[usize] {
+        &self.model_selection_units
     }
 
     /// The parsed forms in source order.
@@ -454,6 +479,7 @@ pub fn build_unit(parsed: &ParsedSource) -> Result<ParsedUnit, FormsRefusal> {
     Ok(ParsedUnit {
         edition: declared_edition(parsed.cst()),
         selections: parsed.selections().clone(),
+        model_selection_units: vec![0; parsed.selections().models.len()],
         forms,
     })
 }
@@ -585,6 +611,7 @@ pub fn build_unit_with_protocol_results(
         ParsedUnit {
             edition: declared_edition(cst),
             selections: parsed.selections().clone(),
+            model_selection_units: vec![0; parsed.selections().models.len()],
             forms,
         },
         rejected,

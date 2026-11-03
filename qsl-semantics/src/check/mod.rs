@@ -2306,6 +2306,15 @@ impl PackageDeclarations {
             .map(|(index, function)| (function.name.as_str(), index))
             .collect();
         let mut model_function_bodies = vec![false; self.functions.len()];
+        // Operation bodies and their synthesized precondition functions are
+        // model-family declarations even when no ordinary named function
+        // calls them. They can read model populations just like clauses
+        // reached from a model-context function.
+        for index in self.model_clauses.keys() {
+            if let Some(model_function) = model_function_bodies.get_mut(*index) {
+                *model_function = true;
+            }
+        }
         while let Some(name) = model_context_calls.pop() {
             let Some(index) = function_indices.get(name.as_str()).copied() else {
                 continue;
@@ -2514,25 +2523,25 @@ impl PackageDeclarations {
                     .map(|node| (declaration.clone(), node))
             })
             .collect();
-        let mut model_selections: Vec<_> = models
-            .iter()
-            .map(|model| model.selection().clone())
-            .collect();
-        model_selections.sort_by(|a, b| a.identity.cmp(&b.identity));
-        // FR-094 (ADR-013 O-01): a check selects one version of each domain
-        // package identity, so a model owner names one declaration.
-        let mut selected = std::collections::BTreeSet::new();
-        if let Some(model) = models
-            .iter()
-            .find(|model| !selected.insert(model.selection().identity.as_str()))
-        {
-            return Err(vec![CheckRefusal {
-                location: root(Origin::Expression),
-                cause: CheckCause::InternalFault(Box::new(KeyFault::DuplicateModelSelection(
-                    model.selection().identity.clone(),
-                ))),
-            }]);
+        let mut selections_by_identity = BTreeMap::new();
+        for model in &models {
+            let selection = model.selection();
+            if let Some(existing) = selections_by_identity.get(&selection.identity) {
+                if existing != selection {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(
+                            KeyFault::DuplicateModelSelection(selection.identity.clone()),
+                        )),
+                    }]);
+                }
+            } else {
+                selections_by_identity.insert(selection.identity.clone(), selection.clone());
+            }
         }
+        let model_selections: Vec<_> = selections_by_identity.into_values().collect();
+        // FR-094 (ADR-013 O-01): aliases that select one package version
+        // share one model root; conflicting versions of one identity refuse.
         // QSpec FR-322 `model_root`: one key per selection, from the check's
         // identity limits, shared by the refinement headers and the emitter.
         let mut model_roots = Vec::with_capacity(model_selections.len());
