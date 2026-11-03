@@ -42,7 +42,7 @@ and the earlier result bytes.
 | 13 | `progress.covered_positions` 3; B holds two covered positions; a request under a second binding covering two positions, then one covering one | `Incomplete(LimitReached{limit: node count, value: 3, setting: progress.covered_positions})`, ledger unchanged; accepted |
 | 14 | retain C(100) over identity `p1` stamped 80; a trace with another identity stamped 80; then `p1` stamped 80 | refused `Completeness`; accepted |
 | 15 | any refused request of rows 1, 3, 5, 8 and 12, with and without a supplied ledger | the report returns the supplied ledger, equal to it; none when none was supplied |
-| 16 | two clauses `Fast` and `Slow` with identical bodies and different names (one node, occurrences 0 and 1): W 100 under `Fast`; W 60 under `Slow`; W 60 under `Fast`; rename `Slow` | W 60 under `Slow` accepted with its own entry; W 60 under `Fast` refused `Watermark`, retained 100; `Slow`'s entry holds W 60; the rename changes neither entry's key |
+| 16 | two clauses `Fast` and `Slow` with identical bodies and different names (one node, occurrences 0 and 1; same package, profile and clock binding name, so only the occurrence differs): W 100 under `Fast`; W 60 under `Slow`; W 60 under `Fast`; rename `Slow` | W 60 under `Slow` accepted with its own entry; W 60 under `Fast` refused `Watermark`, retained 100; `Slow`'s entry holds W 60; the rename changes neither entry's key |
 
 ## Expected Results
 

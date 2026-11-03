@@ -51,11 +51,11 @@ pending, because event position does not advance in silence.
 
 `lower_boundary` (`AuthoritativeOrigin` or `HistoryCutoff`) is a member of
 `Progressed` beside `progress`, not a member of the progress assertion. The
-progress assertion is the one value the ledger (FR-502) and a `Timestamped`
-trace share, and a `Timestamped` trace carries its lower boundary in its window
-(FR-501); keeping the boundary out of the assertion lets one assertion type
-serve every shape and keeps the boundary, which describes the trace and not the
-observer's progress, out of the ledger's contradiction rules.
+progress assertion is the one value the ledger (FR-502) retains for both
+`Progressed` and `Timestamped` traces, and the ledger's `ProgressAssertion`
+excludes the boundary: the boundary describes the trace and not the observer's
+progress, so it is not retained and never contradicts. `Timestamped` likewise
+carries `lower_boundary` as its own member (FR-330, FR-501).
 
 `Progressed` also carries a required `binding`, a `TraceBinding` that
 the evaluator compares with the clause's profile and clock rows before it visits
