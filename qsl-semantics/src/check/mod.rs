@@ -1509,24 +1509,53 @@ impl PackageDeclarations {
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        let graph = self.check_with_protocol_results_and_cancel(limits, cancel)?;
-        if graph.protocol_refusals.is_empty() {
-            Ok(graph)
-        } else {
-            Err(graph
-                .protocol_refusals
+        let mut protocol_refusals = Vec::new();
+        let outcome = self.check_retaining_protocols(limits, cancel, false, &mut protocol_refusals);
+        let flatten = |results: &[ProtocolCheckRefusal]| -> Vec<CheckRefusal> {
+            results
                 .iter()
                 .flat_map(|result| result.refusals.iter().cloned())
-                .collect())
+                .collect()
+        };
+        match outcome {
+            Ok(graph) if graph.protocol_refusals.is_empty() => Ok(graph),
+            Ok(graph) => Err(flatten(&graph.protocol_refusals)),
+            // The check stopped after the refinements, so the protocol
+            // refusals lead the list, in the order they were found. A
+            // cancelled check already carries them in its list.
+            Err(refusals) if cancel.tripped().is_some() => Err(refusals),
+            Err(refusals) => {
+                let mut all = flatten(&protocol_refusals);
+                all.extend(refusals);
+                Err(all)
+            }
         }
     }
 
     /// [`Self::check_with_protocol_results`] under a caller-owned
     /// [`Cancel`] handle.
     pub fn check_with_protocol_results_and_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_retaining_protocols(limits, cancel, true, &mut Vec::new())
+    }
+
+    /// The check proper. `protocol_check_refusals` receives every refusal a
+    /// protocol declaration's own checks produced, including when a later
+    /// unit-level refusal prevents a graph from being returned.
+    /// `independent_protocols` lets the stages after the refinements run past
+    /// a refused protocol so the other protocols keep their results (FR-383);
+    /// without it the check ends there and reports the refusals found so far,
+    /// since the later stages would only add consequences of the refusal (an
+    /// unkeyed reference to the protocol, a work budget it already spent).
+    fn check_retaining_protocols(
         mut self,
         limits: CheckingLimits,
         cancel: &Cancel,
+        independent_protocols: bool,
+        protocol_check_refusals: &mut Vec<ProtocolCheckRefusal>,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-230: S2 retains every timed declaration independent of header
         // selection. S3 owns the facet gate and keeps incomplete timed
@@ -3287,7 +3316,6 @@ impl PackageDeclarations {
         // protocol compiles only when every part is checked.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
-        let mut protocol_check_refusals = Vec::new();
         // The selected protocol profile, which the structural refusals of a
         // protocol's control tree name (FR-218, FR-381).
         let protocol_profile_identity = protocol_profile
@@ -3588,7 +3616,7 @@ impl PackageDeclarations {
                 ))
             })
             .collect();
-        for result in &mut protocol_check_refusals {
+        for result in protocol_check_refusals.iter_mut() {
             for refusal in &mut result.refusals {
                 let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
                     continue;
@@ -3788,6 +3816,9 @@ impl PackageDeclarations {
                 .find(|model| model.alias() == Some(checked.concrete_model()));
             checked.concrete_subject_node =
                 concrete_model.and_then(|model| root_of(model.selection()));
+        }
+        if !independent_protocols && !protocol_check_refusals.is_empty() {
+            return Err(refusals);
         }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
@@ -6508,7 +6539,7 @@ impl PackageDeclarations {
                 .iter()
                 .map(|protocol| protocol.name.name.clone())
                 .collect(),
-            protocol_refusals: protocol_check_refusals,
+            protocol_refusals: std::mem::take(protocol_check_refusals),
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
                 .map(|(name, members)| {
