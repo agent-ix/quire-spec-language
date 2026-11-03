@@ -29,8 +29,8 @@ pub const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile pp = \"quire.protocol.finite-global/v1\";\n\
     model M = \"example/protocol-fixture\";\n";
 
-/// `M::Actor` and its own `op` and `other` operations (no parameters,
-/// no result, an empty frame), normalized to a [`SelectedModel`] aliased `M` --
+/// `M::Actor` and its `ready: Boolean` field, `op` and `other` operations
+/// (no parameters, no result, an empty frame), normalized to a [`SelectedModel`] aliased `M` --
 /// the FR-114 fixture, so every `attempt ... on M::Actor::op` this
 /// module's fixtures already write (FR-114's own assembler resolution,
 /// which now runs for every protocol) resolves rather than refusing at
@@ -51,6 +51,21 @@ pub fn m_actor_model() -> SelectedModel {
                 interface_features: None,
                 abstract_type: false,
                 supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: key("Actor/ready"),
+                owner: key("Actor"),
+                value_type: ValueTypeRef::Native(NativeValueType::Boolean),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+                presence: quire_exact::Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+                position: 0,
             }),
             DomainPackageRecord::OperationMember(OperationMemberRecord {
                 key: key("Actor/op"),
