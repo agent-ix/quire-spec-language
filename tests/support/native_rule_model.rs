@@ -133,7 +133,12 @@ pub fn parts() -> Parts {
 
 /// Orchestrate source intake, occurrence-aware decoding and typed lowering.
 pub fn from_text(text: &str, path: &str) -> Result<Parts> {
-    from_source(bind_source(text, path)?)
+    from_text_with_identity(text, path, "test:rule-model")
+}
+
+/// Read QSL's generated model input under a caller-selected native source identity.
+pub fn from_text_with_identity(text: &str, path: &str, identity: &str) -> Result<Parts> {
+    from_source(bind_source(text, path, identity)?)
 }
 
 /// Lower an explicitly identified original source, including multi-model fixtures.
@@ -159,11 +164,11 @@ pub fn from_source(source: FormalSource) -> Result<Parts> {
     })
 }
 
-fn bind_source(text: &str, path: &str) -> Result<FormalSource> {
+fn bind_source(text: &str, path: &str, identity: &str) -> Result<FormalSource> {
     let native = Source::read(
         SourceIdentity {
             authority: "agent-ix".into(),
-            identity: "test:rule-model".into(),
+            identity: identity.into(),
         },
         path,
         text.as_bytes(),

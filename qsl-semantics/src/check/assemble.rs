@@ -3393,6 +3393,9 @@ impl PackageDeclarations {
                 });
                 continue;
             };
+            // Model declarations select package-owned records by identity.
+            // Several aliases may name that same package, but its type and
+            // population declarations contribute to the environment once.
             if materialized_model_identities.insert(selection.identity.clone()) {
                 match model_object_types(
                     &selection.alias,

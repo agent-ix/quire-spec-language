@@ -7348,7 +7348,11 @@ fn checked_model_operation_effects(
     }
     let ids = crate::check::wire_id::StructuralIds::default();
     let mut rows = Vec::new();
+    let mut seen_documents = BTreeSet::new();
     for model in models {
+        if !seen_documents.insert(model.selected_document()) {
+            continue;
+        }
         let document = model.selected_document();
         for (_owner_record, operation) in model.operation_effect_inputs() {
             let declaring_key = model.model_node_key(&operation.owner)?;
