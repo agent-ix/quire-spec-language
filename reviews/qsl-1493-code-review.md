@@ -130,3 +130,13 @@ With `--all-features`, `ClauseRunSource` includes `Extracted`, so these `let` bi
 ## Disposition pass 1 summary
 
 FND-002 through FND-007 are fixed. FND-001 remains open: the new undefined-guard path returns `TemporalOutcome::Undefined`, which the spine maps to `TemporalVerdict::Undefined` and the `Violation` category. FR-044-AC-7 requires an incomplete or refused activation naming the guard. The regression test asserts the `Undefined` result, so it does not establish the required behavior. The PR is not mergeable until this is corrected.
+
+## Dispositions (round 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The spine now returns `ActivationIncomplete` with the checked guard location; it maps to the incomplete category, exit 22 and no truth. The source region resolves to the guard expression. |
+
+## Disposition pass 2 summary
+
+FND-001 is fixed at `fbc65728bdb3c77121307a131930e513ea66d917`: the finite-window evaluator records the unresolved guard position, and the spine reports `TemporalVerdict::ActivationIncomplete` with `guard.location()`. The guard location uses the checked temporal guard site, which resolves to the source guard span. Its category, label, exit code and absent truth match an incomplete activation. No new findings were identified in the fix commits. The focused all-features regression test passed (1 passed).

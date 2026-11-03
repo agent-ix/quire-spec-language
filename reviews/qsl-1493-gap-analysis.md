@@ -78,3 +78,11 @@ FR-501-AC-6 is absent from every code trace tag. The current AC-1/2 test covers 
 | --- | --- | --- |
 | FND-001 | fixed | A dedicated test now asserts incomplete and complete outcomes and carries the FR-501-AC-5 trace tag. |
 | FND-002 | fixed | A dedicated test covers the inclusive deadline, next tick, and half-open watermark and carries the FR-501-AC-6 trace tag. |
+
+## Dispositions (round 2)
+
+No new gap-analysis dispositions were needed. Round-1 FND-001 and FND-002 remain fixed by the dedicated traced tests; the latest fix commits did not modify those bindings. The repository matrix was not rerun.
+
+## Disposition pass 2 summary
+
+No active gap findings remain. FR-501-AC-5 and AC-6 remain covered by dedicated traced tests. The focused all-features regression test passed (1 passed); no aggregate matrix or gate was run.
