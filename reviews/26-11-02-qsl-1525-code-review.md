@@ -9,11 +9,11 @@ review_set: subset
 
 ## Summary
 
-Reviewed the per-use profile admission checker, refusal mapping, fixture migrations, and FR-508 coverage against the Rust conventions. No implementation defect was found in the inspected changes; the remaining gate limitation is the unrelated QSL-1569 test compilation failure.
+Reviewed the per-use profile admission checker, refusal mapping, fixture migrations, and FR-508 coverage against the Rust conventions. The earlier QSL-1569 blocker is resolved on current main; the rebased protocol-role suite passes, while the final workspace gates remain pending.
 
 ## Verdict
 
-**CONDITIONAL** — no implementation defect was found, but the new semantics test matrix and strict traceability matrix could not be completed while QSL-1569 remains red.
+**CONDITIONAL** — no implementation defect was found; final default/all-features Clippy and workspace tests remain to run on the reviewed head.
 
 ## Findings
 
@@ -25,10 +25,11 @@ Reviewed the per-use profile admission checker, refusal mapping, fixture migrati
 
 - Passed: `cargo fmt --all -- --check`, `git diff --check`, and `cargo check -p qsl-semantics --lib` through `locked-build.sh`.
 - Passed: public replay wrong-kind test, public two-alias AC-6 package test, QSL package compensation filter (3 tests), and earlier focused package protocol controls (28), requirements (24), and references (13) filters.
-- Blocked: `cargo test -p qsl-semantics --lib protocol_clause::tests::coverage::` fails before executing tests because `family.rs` does not cover `StageFailure::LimitWithPayload` and `StageFailure::RefusedWithPayload`; these are assigned to QSL-1569 / PR #2182 and were not changed here.
-- Blocked: Clippy stops at the unrelated `qsl-cst/src/parser.rs:241` `double_ended_iterator_last` lint.
-- Unavailable: `cargo deny check` cannot lock its advisory database under the read-only Cargo home.
-- Incomplete: `quire matrix --scope . --strict` did not finish within the available run window; the 90-second TSV retry timed out without producing matrix rows.
+- Prior pre-#2182 run: the focused semantics coverage tests did not compile because `family.rs` lacked `StageFailure::LimitWithPayload` and `StageFailure::RefusedWithPayload`; current main contains the fix.
+- Passed after rebase: `cargo test -p qsl-analyze --test it protocol_roles::` (26 passed).
+- Passed static coverage for the ticket: all FR-508-AC-1..6 are tagged by live tests. The standalone strict matrix exits 1 for repository-wide gaps (1,202 untagged and 8 ignored-only criteria).
+- Quoin matrix: all six FR-508 criteria are tagged; no run evidence is bound for the repository's 4,048 criteria.
+- Pending: final default/all-features Clippy, workspace test targets, and `cargo deny check --disable-fetch` on the reviewed head.
 
 ## Dispositions
 
