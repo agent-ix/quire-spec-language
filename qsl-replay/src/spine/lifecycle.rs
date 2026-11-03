@@ -655,6 +655,8 @@ pub struct CheckedUnit {
     /// The v2 bytes each resolved library was admitted from, emitted once
     /// during S4 for its import view and retained here by library identity.
     library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
+    protocol_results: Vec<super::ProtocolResult>,
+    protocol_failure: Option<Box<CompileRefusal>>,
 }
 
 impl CheckedUnit {
@@ -666,6 +668,11 @@ impl CheckedUnit {
     /// The S4 in-process package.
     pub fn package(&self) -> &pkg::CheckedPackage {
         self.package.as_ref()
+    }
+
+    /// Per-protocol results through S3, retained even when a sibling refused.
+    pub fn protocol_results(&self) -> &[super::ProtocolResult] {
+        &self.protocol_results
     }
 
     /// The unit's own source, exactly as S1 read it (FND-016: a caller
@@ -915,6 +922,7 @@ pub fn check_with_execution_points_and_refinement_internals(
         dependencies,
         limits,
         cancel,
+        false,
     )
 }
 
@@ -944,6 +952,7 @@ pub fn check_with_temporal_selections_and_execution_points(
         dependencies,
         limits,
         cancel,
+        false,
     )
 }
 
@@ -961,6 +970,7 @@ fn check_with_context_and_temporal_selections(
     dependencies: &DependencyInput,
     limits: SpineLimits,
     cancel: &Cancel,
+    continue_protocol_refusals: bool,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     // The byte length of the unit's own source and of each supplied library.
     let source_len = |identity: &SourceIdentity| {
@@ -1008,13 +1018,25 @@ fn check_with_context_and_temporal_selections(
                 (name, library.source.clone())
             })
             .unzip();
-        Ok(CheckedUnit {
+        let (protocol_results, protocol_failure) = protocol_check_outcome(parsed, package.graph());
+        if !continue_protocol_refusals {
+            if let Some(refusal) = protocol_failure {
+                return Err(StageError::with_protocol_results(
+                    Box::new(refusal),
+                    protocol_results,
+                ));
+            }
+        }
+        let checked = CheckedUnit {
             package: Arc::new(package),
             source: parsed.source().clone(),
             libraries,
             library_names,
             library_packages: Arc::new(library_packages),
-        })
+            protocol_results,
+            protocol_failure: protocol_failure.map(Box::new),
+        };
+        Ok(checked)
     })
 }
 
@@ -1207,6 +1229,106 @@ fn forms_protocol_results(
             )
         })
         .collect()
+}
+
+fn protocol_check_outcome(
+    parsed: &ParsedUnitSource,
+    graph: &qsl_semantics::check::CheckedGraph,
+) -> (Vec<super::ProtocolResult>, Option<CompileRefusal>) {
+    use qsl_cst::Production;
+    let declarations: Vec<_> = parsed
+        .syntax
+        .cst()
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProtocolClause)
+        .filter_map(|node| {
+            let span = node.span();
+            let declaration = parsed
+                .source()
+                .text()
+                .get(span.start..span.end)?
+                .strip_prefix("protocol")?
+                .trim_start()
+                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .next()?
+                .to_owned();
+            Some((declaration, span))
+        })
+        .collect();
+    let mut results = Vec::with_capacity(declarations.len());
+    let mut first_failure = None;
+    for (declaration, declaration_span) in declarations {
+        if let Some(existing) = parsed.protocol_results.iter().find(|result| {
+            matches!(result, super::ProtocolResult::Refused { declaration: name, .. } if name == &declaration)
+        }) {
+            results.push(existing.clone());
+            if first_failure.is_none() {
+                first_failure = protocol_failure_from_parsed(parsed);
+            }
+            continue;
+        }
+        if let Some(refused) = graph
+            .protocol_refusals()
+            .iter()
+            .find(|refusal| refusal.declaration == declaration)
+        {
+            let refusal = refused.refusals.first().cloned();
+            if let Some(primary) = refusal.clone() {
+                if first_failure.is_none() {
+                    first_failure = Some(CompileRefusal::Check {
+                        region: region(parsed.source().reference(), declaration_span),
+                        refusals: refused.refusals.clone(),
+                    });
+                }
+                let catalog = primary.cause.catalog_code();
+                results.push(super::ProtocolResult::Refused {
+                    declaration,
+                    source_index: refused.source_index,
+                    declaration_span: refused.declaration_span,
+                    code: primary.cause.code(),
+                    cause: catalog
+                        .map(|code| code.cause().to_owned())
+                        .unwrap_or_else(|| "unknown-cause".to_owned()),
+                    locus: region(parsed.source().reference(), refused.declaration_span)
+                        .map(Locus::Region),
+                });
+            } else {
+                results.push(super::ProtocolResult::Refused {
+                    declaration,
+                    source_index: refused.source_index,
+                    declaration_span: refused.declaration_span,
+                    code: Code::RuntimeInvariant,
+                    cause: "protocol-refusal-without-cause".to_owned(),
+                    locus: None,
+                });
+            }
+        } else {
+            results.push(super::ProtocolResult::Cleared {
+                declaration,
+                stage: super::SpineStage::Check,
+            });
+        }
+    }
+    if first_failure.is_none() {
+        first_failure = protocol_failure_from_parsed(parsed);
+    }
+    (results, first_failure)
+}
+
+fn protocol_failure_from_parsed(parsed: &ParsedUnitSource) -> Option<CompileRefusal> {
+    if let Some(diagnostic) = parsed.syntax.diagnostics().first() {
+        return Some(CompileRefusal::Source(Box::new(diagnostic.clone())));
+    }
+    parsed
+        .protocol_forms_refusal
+        .clone()
+        .map(|failure| CompileRefusal::Forms {
+            region: failure
+                .span
+                .and_then(|span| region(parsed.source().reference(), span)),
+            failure,
+        })
 }
 
 /// The declarations delimited by S1 when one syntax diagnostic belongs to
@@ -1743,7 +1865,7 @@ impl<'a> Resolution<'a> {
         })?;
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
-            declarations.check_with_cancel(limits.checking, cancel)
+            declarations.check_with_protocol_results_and_cancel(limits.checking, cancel)
         })
         .map_err(|refusals| {
             let refusals = pending.report(refusals);
