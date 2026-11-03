@@ -1399,6 +1399,7 @@ pub fn check_units(
                 protocol_failure,
                 static_subject,
                 build_provenance,
+                formal_identity: None,
             });
         }
         *work = resolution.work;
