@@ -89,7 +89,7 @@ dependency; intervals and buffer capacities alone are not an executable plan.
 | Subject | `MonitorSubject`: exact checked package identity, authored clause occurrence, checked formula root, activation and capture bindings, and timestamped-event profile. Existing checked identities are retained; a clause display name is not a selection. |
 | Atoms | Each `AtomId` maps to its checked predicate body, ordered input/capture slots with admitted types and declaration identities, and source occurrence. The activation guard is identified separately from formula atoms. No atom is an unresolved name or caller-supplied Boolean callback. An atom's captured values are the scalar or aggregate values the atom reads, typed per atom capture binding (FR-251-AC-5) and projected from the model value by existing catalog projections; whole model objects are not passed as `State`. Where a model-typed atom has no admitted projection, the monitor reports `Incomplete(LimitReached{limit: atom_projection, value: <AtomId>, setting: monitor.atom_projection})` with replayable evidence, not a refusal and not a dropped atom (QSpec FR-487, "Atoms without an admitted projection", FR-487-AC-12). |
 | Formula topology | Each `SubformulaId` identifies one node with its checked operator tag, ordered operand IDs, optional atom ID and its interval reference. One root is named. All references resolve inside this program; node IDs are scoped to its subject. Operator tags and operand order survive lowering. |
-| State | One typed `State` record whose fields are the persistent state slots, named by subformula: the unwrapped time (an integer tick, kept in state), each buffered subformula's sequence of entries (unwrapped tick and captured bindings), and the active obligation instances with their captured bindings and origin. An obligation's **origin** is the unwrapped tick of the event that activated it (monotone, so time-based windows read it directly); an "on each" activation's position is `State.event_position` read when `on_event` creates the instance and kept as an ordinary capture, which travels as the integer field `position` of the instance's `status` record in `activations` (QSpec FR-487 imposes no type on `status`); there is no `Activation` field and the plan root has no binding for it. The `init` entry's result is the initial value of every slot, so the state initializer is the `init` body. Buffer capacities are premises of the plan root (below), not part of any sequence type; every fold over a buffer is bounded by its capacity. An operator with no finite window (a root `always` or `eventually`, or a future operator nested without a bounding outer window) keeps no history buffer: each live obligation instance carries a constant-size accumulator (its status and origin tick) as a field of `State`, and the number of live instances is bounded by a plan-declared **activation capacity**, the plan root's `activation_capacity` binding (QSpec FR-487, member 16), bounding the `activations` field of `State`. A bounded future operator nested under a bounded outer window is bounded by its own buffer capacity (the retention rule of Buffers); an unbounded future operator nested there is bounded by the activation capacity. A bounded future interval operator keeps its buffer of the Buffers rule even under an unbounded root; the activation capacity bounds live instances of unbounded operators only (a pending instance of an unbounded operator nested under a bounded one counts against the same shared activation capacity), and an overflow reports the limit of whichever capacity was exceeded. `State` has exactly the fields `now`, `history_start` (the unwrapped tick from which buffered history is trusted, initially the baseline), one `buffer_<n>` per buffer, `activations` and `event_position` (QSpec FR-487), the unwrapped monotone count of admitted events (the event position of QSpec FR-091 and FR-092; `init` sets it to 0 and `on_event` adds 1 per admitted event). |
+| State | One typed `State` record whose fields are the persistent state slots, named by subformula: the unwrapped time (an integer tick, kept in state), each buffered subformula's sequence of entries (unwrapped tick and captured bindings), and the active obligation instances with their captured bindings and origin. An obligation's **origin** is the unwrapped tick of the event that activated it (monotone, so time-based windows read it directly); an "on each" activation's position is `State.event_position` read when `on_event` creates the instance and kept as an ordinary capture, which travels as the integer field `position` of the instance's `status` record in `activations` (QSpec FR-487 imposes no type on `status`); there is no `Activation` field and the plan root has no binding for it. The `init` entry's result is the initial value of every slot, so the state initializer is the `init` body. Buffer capacities are premises of the plan root (below), not part of any sequence type; every fold over a buffer is bounded by its capacity, and the `buffer_<n>` of an unbounded past operator also holds one summary cell as its first element (an accumulator and its own `history_start`, not an entry and not counted in the capacity, Behavior "Unbounded past operators"). An operator with no finite window (a root `always` or `eventually`, or a future operator nested without a bounding outer window) keeps no history buffer: each live obligation instance carries a constant-size accumulator (its status and origin tick) as a field of `State`, and the number of live instances is bounded by a plan-declared **activation capacity**, the plan root's `activation_capacity` binding (QSpec FR-487, member 16), bounding the `activations` field of `State`. A bounded future operator nested under a bounded outer window is bounded by its own buffer capacity (the retention rule of Buffers); an unbounded future operator nested there is bounded by the activation capacity. A bounded future interval operator keeps its buffer of the Buffers rule even under an unbounded root; the activation capacity bounds live instances of unbounded operators only (a pending instance of an unbounded operator nested under a bounded one counts against the same shared activation capacity), and an overflow reports the limit of whichever capacity was exceeded. `State` has exactly the fields `now`, `history_start` (the unwrapped tick from which buffered history is trusted, initially the baseline), one `buffer_<n>` per buffer, `activations` and `event_position` (QSpec FR-487), the unwrapped monotone count of admitted events (the event position of QSpec FR-091 and FR-092; `init` sets it to 0 and `on_event` adds 1 per admitted event). |
 | Transitions | Four **entries**, each a checked-expression `function` node of the checked-package v2 wire (the existing expression and function contracts; no statement vocabulary): `init() -> State`, `on_event(State, event inputs) -> (State, Results)`, `on_watermark(State, watermark inputs) -> (State, Results)` and `on_gap(State, gap) -> (State, Results)`, where `gap` is the checked gap RT passes on a counter fault. An entry is a state-passing total function: "assignment" is constructing the next state record, "branch" is `if`/`case`, "loop over a buffer" is a fold bounded by the buffer's capacity, "push" and "expire" construct and filter the buffer sequence, and "emit" is a field of `Results`. A checked atom or guard body embeds as an operand of the entry's expression. The entries explicitly compute atoms, activate obligations, update state and buffers, expire windows and emit typed obligation results; every read, call target and branch is resolved, and calling an unspecified temporal operator is not an entry body. |
 | Entry bindings | Each entry's parameters are its input slots and `State`, and its result is the next `State` and `Results`. An event's inputs are the **gap-checked tick delta** that RT supplies (below), the clause's admitted snapshot/invocation values and the binding identity; a watermark's inputs are the **unwrapped history-boundary tick** (a non-negative integer in the plan's tick unit, covering every tick up to and including the boundary, QSpec FR-487 and FR-094) and the admitted scope identities of QSpec FR-094/FR-160, which RT supplies. Neither entry receives a raw, possibly wrapping counter reading. An ordinary clock poll is not a watermark and creates no event position. |
 
@@ -236,63 +236,117 @@ may repair such a disagreement by inventing another evaluation rule.
   A single operator is the case `L = 0`, `d = 0`, giving
   `ceil(rate x (b + 1 + 2u)) + 1`. The rate SHALL be an ADR-014 B-2 run limit of
   the monitor.
-- **Unbounded past operators.** `once`, `historically`, `since` and
-  `triggered` written without an interval (and so with no upper bound) are
-  decided with **sound but incomplete** semantics: never a wrong definite
-  verdict, and a typed unknown outcome where the finite memory cannot decide.
-  Plan derivation SHALL NOT refuse these clauses, nor an unbounded operator over
-  an unbounded one (below); no operator is typed "unsupported" for want of an
-  interval.
-  - **Buffer.** The operator keeps a **cover-width buffer**: its capacity is
-    `ceil(rate x R(n)) + 1` with `b` taken as 0, that is
-    `ceil(rate x (L(n) + (d(n) + 1) x (1 + 2u))) + 1`, so an unnested operator has
-    capacity `ceil(rate x (1 + 2u)) + 1`. The buffer holds the entries of the
-    last tick cover, plus the lookahead of any enclosing operator.
-  - **Summary cell.** The `buffer_<n>` sequence of such an operator holds one
-    additional **summary cell**, its first element, in `State`'s own field (the
-    fields of `State` do not change). The summary cell is not counted in the
-    capacity: the capacity formula's `+ 1` is its own slack and the sequence
-    holds at most the capacity of entries and the one summary cell, so the cell
-    can never overflow the buffer. An entry **ages out** when its age, the newest admitted reading's tick minus the entry's tick, is at least `L(n) + (d(n) + 1) x (1 + 2u)` ticks: its widened tick cover then lies wholly before the widened cover of the newest reading and no enclosing operator can still consult it (for an unnested operator, `1 + 2u` ticks). As an entry ages out it is folded into the
-    summary cell and removed from the sequence, in tick order, and the folded
-    accumulator is stored in the cell: the three-valued disjunction of the
-    operand's value at the folded entries for `once`, the conjunction for
-    `historically`, and for `since` and `triggered` the left fold, in tick
-    order, of the declarative definition of QSpec FR-092 over the folded entries
-    (the value of the operator restricted to the folded prefix). An entry that has aged out
-    is ordered definitely before every instant the operator is later evaluated
-    at (no interval bound can make it undecided), so the fold loses no
-    information: the operator's value is the declarative one over the folded
-    prefix and the buffered entries together.
-  - **Unknown outcomes.** Two things make the result less than definite, both
-    typed and replayable. (1) An event that would exceed the buffer settles
+- **Unbounded past operators.** `once`, `historically`, `since` and `triggered`
+  written without an interval (`[0, *]`), or with a lower bound and no upper bound
+  (`[a, *]`, `a` > 0), are decided with **sound but incomplete** semantics:
+  never a wrong definite verdict, a typed unknown outcome where finite memory
+  cannot decide, and never a refusal. Plan derivation SHALL NOT refuse these
+  clauses, nor an unbounded operator over an unbounded one, nor one over a
+  future operator; no operator is typed "unsupported" for want of an interval.
+  - **Lower boundary.** The monitor's lower-boundary kind is FR-501's
+    `HistoryCutoff`, which is what `history_start`, initially the baseline,
+    already means for a bounded past operator: the monitor starts at a counter
+    baseline and does not observe the system's origin, so `AuthoritativeOrigin`
+    is not selectable for a monitor, and a reference-evaluator trace given
+    `AuthoritativeOrigin` is outside the AC-7 differential for an operator that
+    reaches before the baseline. An unbounded past operator therefore always
+    reaches before `history_start`, and its result is the Kleene evaluation over
+    the history present with an unknown prefix: a witness decides, and
+    otherwise the result is `indeterminate` with reason `MissingHistory`. The
+    prefix before the baseline, and the prefix lost by a counter gap or by an
+    overflow below, enter as the one value `indeterminate`.
+  - **Buffer.** The operator keeps a **cover-width buffer**. Its capacity is
+    `ceil(rate x R(n)) + 1` with the retention
+    `R(n) = L(n) + T(n) + (d(n) + 1) x (1 + 2u)`, where `T(n)` is `a` for
+    `[a, *]` (0 for no interval) plus `S(n)`, the **settling delay** of the
+    operand: the largest, over the paths through the operand, of the sum of the
+    upper bounds of the future operators on the path (0 for an atom or a past
+    operand). `L(n)` is the lookahead term of Buffers with one difference: an
+    enclosing unbounded past operator adds 0 to `L` for its operand, because it
+    consults an operand value only once that value has settled (below), so a
+    bounded operator under an unbounded past one has `L` from its bounded
+    enclosing operators only, and `d` still counts the unbounded one. An
+    unnested `once` over an atom has capacity `ceil(rate x (1 + 2u)) + 1`.
+  - **Summary cell.** The `buffer_<n>` sequence of such an operator has one
+    **summary cell**, its first element, holding the folded accumulator and the
+    cell's own `history_start` (the tick from which the accumulator is
+    trusted). The fields of `State` do not change. The cell is not counted in the
+    capacity: the sequence holds at most the capacity of entries and the cell, and
+    the formula's `+ 1` is separate slack, so the cell never overflows the buffer.
+  - **Folding.** An entry **ages out** and is folded into the cell, in tick
+    order and as a prefix, when (i) its age (the newest admitted reading's tick
+    minus the entry's tick) is at least `T(n) + L(n) + (d(n) + 1) x (1 + 2u)`,
+    so its widened cover lies wholly before the newest reading's and no enclosing
+    operator can still consult it, and (ii) its operand value has **settled**
+    (below). The fold is the Kleene recursion of FR-092's table at `a` = 0:
+    `once`: `A := A or v`; `historically`: `A := A and v`;
+    `p since q`: `A := q or (p and A)`; `p triggered q`: `A := q and (p or A)`,
+    with `v`, `p` and `q` the operand values of the folded entry. The initial and
+    the reset `A` is `indeterminate`. One folded value is sufficient state: for
+    `a` = 0 and no upper bound, FR-092 gives `p since q` at `i` as some `d` >= 0
+    with `q` at `i - d` and `p` at every `i - e`, `e` in `[0, d)`; splitting
+    `d = 0` from `d >= 1` gives `S_i = q_i or (p_i and S_(i-1))` with `S_(i-1)`
+    the same operator at the previous position, which holds in three-valued
+    logic because `and` distributes over `or` there and quantifiers are lattice
+    meets and joins; `triggered` is `not (not p since not q)`, which gives
+    `T_i = q_i and (p_i or T_(i-1))`; `once` and `historically` are the cases
+    `p` true and `q` false. For `[a, *]`, `a` > 0, the operator at `i` is the
+    `[0, *]` operator at `i - a` (the witness at `i - d`, `d >= a`, and `p` over
+    `[a, d)`, shift by `a`), so an entry feeds the fold only once its age is at
+    least `a` plus the above, which is why `a` is in `T(n)`. An entry that has
+    aged out is ordered definitely before every instant the operator is later
+    evaluated at, so no ordering is lost by folding it.
+  - **Settled operand.** A folded entry's operand value must have settled. A
+    past or atomic operand settles at its own position. A bounded future operand
+    (`historically (req implies eventually[0 ms, 5 ms] ack)`) settles when its
+    window is closed by progress, `S(n)` ticks later: the entry stays in the
+    buffer, is not folded early, and the result is `Pending` where the unsettled
+    entry could change it and definite where it could not (a witness already
+    decides `once`). An unbounded future operand holds one `activations` element
+    per live instance, counted against the shared activation capacity, and the
+    entry is folded when its instance settles; while it does not, the entry stays
+    in the buffer, so on an open trace the buffer can overflow, which is the
+    overflow rule below, never a silent loss, and the operator is `Pending`.
+  - **Overflow is sticky.** An event that would exceed the buffer of an
+    unbounded past operator settles the affected obligations
     `Incomplete(LimitReached{limit: event_buffer, value: <capacity>,
-    setting: monitor.max_event_rate})` for the affected obligations as in
-    "Overflow", with no event dropped and the summary cell unchanged. (2) After a
-    counter gap `on_gap` drops every history buffer and its summary cell is
-    reset to the empty accumulator with `history_start` at the faulting reading:
-    the unbounded window reaches before `history_start` for ever, so `once`
-    is `true` once an operand true is seen after `history_start` and otherwise
-    `indeterminate`, never `false`; `historically` is `false` once an operand
-    false is seen after it and otherwise `indeterminate`, never `true`; `since`
-    and `triggered` follow their own definite witnesses the same way. Before any
-    gap the history begins at the monitor's baseline and the operators are
-    decided without that cap. Each such result retains the subformula, origin,
-    `history_start` and, for the first case, `value` and `setting`, as every
+    setting: monitor.max_event_rate})` as in "Overflow", and the loss does not
+    end there: the event's contribution to the operator is unknown from then on.
+    Exactly as `on_gap` does for every buffer, the operator's buffer is emptied,
+    its summary cell is reset to the accumulator `indeterminate` and the cell's own
+    `history_start` is the overflowing event's tick. Every later result of the
+    operator is then the Kleene evaluation over events after that tick with the
+    `indeterminate` prefix, so `once` can be `true` from a later witness and
+    never `false`, `historically` can be `false` from a later counterexample and
+    never `true`, and `since` and `triggered` follow the recursion: no wrong
+    definite verdict follows from the lost event. The buffer content discarded
+    with it is reported by the `Incomplete` result and by the cell's
+    `history_start`; no event is lost silently. (A bounded operator's overflow
+    affects every obligation whose window contains the lost event until the window
+    has passed it.)
+  - **After a gap.** `on_gap` empties the buffer and resets the summary cell as
+    above with `history_start` the faulting reading's tick, for `since` and
+    `triggered` as for `once` and `historically`: the accumulator is
+    `indeterminate`, so `p since q` is `true` only after a later `q` followed by
+    `p` at every position since, `false` as soon as a position has neither `q`
+    nor `p` after the gap, and otherwise `indeterminate`; `triggered` is the dual.
+  - **Replayable evidence.** Each result retains the subformula, origin, the
+    cell's `history_start` and, for overflow, `value` and `setting`, as every
     result retains its subject and premises, so a replay of the same admitted
     inputs gives the same outcome.
   - **Unbounded over unbounded.** `always eventually p`, `eventually always p`
     and any unbounded future operator whose operand holds an unbounded future
     operator keep no history buffer: each live instance of the inner operator
-    holds its constant-size accumulator in `activations` and counts against
-    the one shared activation capacity (the same rule as an unbounded operator
-    nested under a bounded one). The outer unbounded operator folds the settled
-    results of its inner instances into its one outcome per activation; an inner
-    instance beyond the capacity is not started and settles
-    `Incomplete(LimitReached{limit: activation, value: <capacity>,
-    setting: monitor.max_activations})`, never a silent drop. On an open trace
-    such an operator stays `Pending` until a witness decides it and is never
-    decided `true` by the absence of a counterexample alone.
+    holds its constant-size accumulator in `activations` and counts against the
+    one shared activation capacity (the same rule as an unbounded operator nested
+    under a bounded one). The outer operator folds the settled results of its
+    inner instances into one outcome per activation; an inner instance beyond the
+    capacity is not started and settles `Incomplete(LimitReached{limit:
+    activation, value: <capacity>, setting: monitor.max_activations})`, never
+    silently dropped. On an open trace such an operator stays `Pending` until a
+    witness decides it and is never decided `true` by the absence of a
+    counterexample alone. An unbounded past operator over an unbounded future
+    one is the "Settled operand" case above.
 - **Overflow.** An event that would exceed a buffer SHALL never be dropped:
   the obligations it affects SHALL settle `Incomplete(LimitReached{limit, value, setting})`
   with `limit` the monitor limit kind `EventBuffer`, written `event_buffer`,
@@ -301,7 +355,7 @@ may repair such a disagreement by inventing another evaluation rule.
   raises it (FR-255's setting table does not list it, as it is an exact
   fraction). `EventBuffer` and `monitor.max_event_rate` extend FR-127's
   `limit` and `setting` fields for a monitor run, which has no model-check
-  request.
+  request. The overflow of an unbounded past operator is sticky ("Unbounded past operators").
 - **Activation overflow.** A new obligation instance that would exceed the
   activation capacity SHALL never be dropped silently: the obligations it
   affects settle `Incomplete(LimitReached{limit, value, setting})` with
@@ -393,11 +447,24 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-19 | For `once[0 ms, 10 ms] eventually holds(ack)` (the `eventually` unbounded, nested under a bounded `once`) with `activation_capacity` 2, when `ack` has not occurred and events at ticks 0, 1000 and 2000 (a 1 MHz counter) each start an `eventually` instance under the `once`, the third start finds two live instances, is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`, counted against the same capacity as an unbounded root's instances, with no new plan-root binding. | Test (TC-1081) |
 | FR-251-AC-20 | Two sibling operators `once[0 ms, 10 ms] holds(p)` (lower `subformula` id) and `once[0 ms, 10 ms] holds(q)`, each capacity 22 under the AC-2 premises, both overflow at the 23rd event: that position yields two `Incomplete(LimitReached{limit: event_buffer, value: 22, setting: monitor.max_event_rate})` results, the lower-id operator's first, each with its own `instance.subformula`, and neither is dropped; the order is the same under any evaluation order of the entry. | Test (TC-706) |
 | FR-251-AC-21 | The retention rule holds for mixed-direction nesting (sum of upper bounds plus one cover per level; no direction-specific tightening). On a 1 MHz counter, uncertainty 0, rate 2 events per ms (0.002 per tick): `once[0 ms, 10 ms] eventually[0 ms, 5 ms] holds(p)` and `eventually[0 ms, 5 ms] once[0 ms, 10 ms] holds(p)` each give the inner operator retention 10000 + 5000 + 2 covers = 15002 ticks and capacity ceil(0.002 x 15002) + 1 = 32; the outer operator of the first is the `once` with capacity 22, of the second the `eventually` with capacity ceil(0.002 x 5001) + 1 = 12. With `p` at tick 0 and 30 events at the rate across ticks 0 to 14999, the inner buffer still holds the tick-0 entry at tick 14999 and every operator reads it for the decision that needs it, no `Incomplete` is produced, and the tick-0 entry expires only after tick 15002. | Test (TC-1081) |
-| FR-251-AC-22 | On a 1 MHz counter with uncertainty 0 and rate 2 events per ms (0.002 per tick), `once holds(p)` (no interval) is planned, not refused, with capacity ceil(0.002 x (0 + 1 x (1 + 0))) + 1 = 1 + 1 = 2 and a `buffer_<n>` holding at most 2 entries and its summary cell (3 elements); with uncertainty 2 ticks the capacity is ceil(0.002 x 5) + 1 = 2. With `p` true at tick 0 and an event at tick 5000, the tick-0 entry has aged out and is folded into the summary cell, the buffer holds only the tick-5000 entry and the cell, and `once holds(p)` at tick 5000 is `true`, as the declarative semantics of QSpec FR-092 gives; `historically holds(p)` with `p` true at tick 0 and false at tick 100 is `false` at tick 5000 through the folded accumulator, and the same operators over the entries still inside the cover decide as the reference evaluator does (AC-7). The summary cell is not counted in the capacity. | Test (TC-1081) |
-| FR-251-AC-23 | Under the premises of AC-22, three events inside one tick cover (the third at the same tick) settle the affected `once holds(p)` obligations `Incomplete(LimitReached{limit: event_buffer, value: 2, setting: monitor.max_event_rate})`, with no event dropped and the summary cell unchanged; the sequence never holds more than 2 entries plus the cell. Nested as `once[0 ms, 10 ms] once holds(p)` the inner operator has capacity ceil(0.002 x (10000 + 1 x 1 + 1 x 1)) + 1 = 21 + 1 = 22 (lookahead term 10000, two covers). | Test (TC-706) |
-| FR-251-AC-24 | On the 16-bit target of AC-3 after `on_gap` the summary cell of `once holds(p)` and of `historically holds(p)` is the empty accumulator and `history_start` is the faulting reading's tick: with `p` true before the gap and never after it, `once holds(p)` is `indeterminate`, not `false` and not `true`; with `p` true after it, `true`; `historically holds(p)` with `p` true before and after it is `indeterminate`, never `true`, and `false` as soon as `p` is false after it. Each result retains the subformula, `history_start` and origin, and a replay of the same inputs gives the same results. | Test (TC-1081) |
-| FR-251-AC-25 | `always eventually holds(p)` and `eventually always holds(p)` are planned, not refused, keep no history buffer, and hold one constant-size accumulator per live inner instance in `activations`; with `activation_capacity` 2 and three positions before any `p`, the third inner instance is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`, none dropped silently, and the first `p` settles the two live instances `true`; on an open trace `always eventually holds(p)` is `Pending`, never decided `true` by the absence of a counterexample. | Test (TC-1081) |
-| FR-251-AC-26 | Two plans for AC-1's clause that differ only in the checked body of one atom, of the activation guard, or of a declared helper function that an entry calls (directly or through another helper) have different `PlanId`s and different plan-root keys, while the helper keeps its declaration path as its call identity and stays a declared node; building `TimedMonitorPlan` through its public constructor with one atom body swapped gives an unequal `PlanId`, and an equal-bodied plan gives an equal one. | Test (TC-1081) |
+| FR-251-AC-22 | On a 1 MHz counter with uncertainty 0 and rate 2 events per ms (0.002 per tick), `once holds(p)` (no interval) is planned, not refused, with capacity ceil(0.002 x (0 + 0 + 1 x (1 + 0))) + 1 = 1 + 1 = 2, and with uncertainty 2 ticks capacity ceil(0.002 x 5) + 1 = 2; its `buffer_<n>` holds at most 2 entries and the summary cell (3 elements), the cell not counted in the capacity. | Test (TC-706) |
+| FR-251-AC-23 | Under AC-22's premises with `p` true at tick 0 and an event at tick 5000, the tick-0 entry has aged out and is folded into the summary cell, the buffer holds the tick-5000 entry and the cell only, and `once holds(p)` at tick 5000 is `true`. | Test (TC-1081) |
+| FR-251-AC-24 | Under AC-22's premises with `p` true at tick 0 and false at tick 100, `historically holds(p)` at tick 5000 is `false` through the folded accumulator. | Test (TC-1081) |
+| FR-251-AC-25 | The monitor's lower boundary is `HistoryCutoff` (FR-501): at the start, `once holds(p)` over trace with `p` never true is `indeterminate` with reason `MissingHistory`, not `false`; `historically holds(p)` over a trace with `p` always true is `indeterminate`, not `true`; one witness (a true `p`, a false `p`) decides `once` true and `historically` false. | Test (TC-1081) |
+| FR-251-AC-26 | Under AC-22's premises, three events inside one tick cover settle the affected `once holds(p)` obligations `Incomplete(LimitReached{limit: event_buffer, value: 2, setting: monitor.max_event_rate})`, the sequence never holds more than 2 entries plus the cell, and the operator's buffer is emptied and its cell reset to `indeterminate` with `history_start` at the overflowing event's tick. | Test (TC-706) |
+| FR-251-AC-27 | After the overflow of AC-26, with `p` true at the lost third event and no `p` after it, `once holds(p)` at tick 9000 is `indeterminate`, not `false`; with a later true `p`, `true`. For `historically holds(p)` with `p` false at the lost event and true afterwards, the result at tick 9000 is `indeterminate`, not `true`; with a later false `p`, `false`. | Test (TC-1081) |
+| FR-251-AC-28 | On the 16-bit target of AC-3 after `on_gap`, with `p` true before the gap and never after it, `once holds(p)` is `indeterminate`, with `p` true after it `true`; `historically holds(p)` with `p` true before and after it is `indeterminate`, with `p` false after it `false`. Each result retains the subformula, the cell's `history_start` and the origin, and a replay gives the same results. | Test (TC-1081) |
+| FR-251-AC-29 | `p since q` with `q` at tick 0, `p` true at ticks 100 and 200, and an event at tick 5000 is `true` at tick 5000 through the folded accumulator; with `p` false and `q` false at tick 150 and `q` false at tick 5000 it is `false`. `p triggered q` follows `T := q and (p or T)`: with `q` false at tick 100 it is `false` at tick 5000, and with `q` true at every position and `p` false throughout it is `indeterminate` (the cutoff prefix), not `true`. | Test (TC-1081) |
+| FR-251-AC-30 | On the 16-bit target of AC-3 after `on_gap`, `p since q` with `q` before the gap and `p` true after it is `indeterminate`; with `q` after the gap and `p` true since, `true`; with a position after the gap that has `p` false and `q` false, `false`. `p triggered q` is the dual. | Test (TC-1081) |
+| FR-251-AC-31 | Under AC-22's premises, `once[0 ms, 10 ms] once holds(p)`: the inner unbounded operator has retention 10000 + 0 + 2 covers = 10002 ticks and capacity ceil(0.002 x 10002) + 1 = 22; `once` over `once[0 ms, 10 ms] holds(p)` (a bounded operator under an unbounded past one, an enclosing unbounded operator adding 0 to `L`) gives the inner `once[0 ms, 10 ms]` retention 0 + 10000 + 2 covers = 10002 ticks and capacity 22, and the outer unbounded `once` capacity ceil(0.002 x 1) + 1 = 2. | Test (TC-706) |
+| FR-251-AC-32 | Under AC-22's premises, `historically (holds(req) implies eventually[0 ms, 5 ms] holds(ack))` is planned, not refused, with settling delay 5000 ticks, retention 5000 + 0 + 1 cover = 5001 ticks and capacity ceil(0.002 x 5001) + 1 = ceil(10.002) + 1 = 12. With `req` at tick 0 and no `ack`, the tick-0 entry is not folded before its `eventually` window is closed by progress: at tick 4000 the result is `Pending`, and once progress shows the window closed without `ack` the entry folds and `historically` is `false`; with `ack` at tick 2998 it folds with value true and the result stays `indeterminate` (cutoff), not `true`. | Test (TC-1081) |
+| FR-251-AC-33 | Under AC-22's premises with `activation_capacity` 1, `historically (holds(req) implies eventually holds(ack))` is planned, not refused; two `req` events before any `ack` start one `eventually` instance, and the second is not started and settles `Incomplete(LimitReached{limit: activation, value: 1, setting: monitor.max_activations})`; the first entry stays in the buffer unfolded while its instance is pending, and the operator is `Pending`, never `true`. | Test (TC-1081) |
+| FR-251-AC-34 | Under AC-22's premises, `once[5 ms, *] holds(p)` is planned, not refused, with retention 5000 + 0 + 1 = 5001 ticks and capacity ceil(0.002 x 5001) + 1 = 12; with `p` true at tick 0, the result at tick 4000 is `indeterminate` (the window reaches before the baseline) and at tick 6000 `true`, as `once[0 ms, *]` at tick 1000. | Test (TC-1081) |
+| FR-251-AC-35 | `always eventually holds(p)` is planned, not refused, keeps no history buffer and holds one constant-size accumulator per live inner instance in `activations`; with `activation_capacity` 2 and three positions before any `p`, the third inner instance is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`, none dropped silently, and the first `p` settles the two live `eventually` instances `true`; on an open trace the operator is `Pending`, never decided `true` by the absence of a counterexample. | Test (TC-1081) |
+| FR-251-AC-36 | `eventually always holds(p)` is planned, not refused; with `activation_capacity` 2 and `p` true at positions 1, 2 and 3, positions 1 and 2 start two pending `always p` instances and position 3 settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`; the first `p` settles no `always p` instance true; a `p` false at position 4 settles the two live instances `false` and leaves the outer `eventually` `Pending`. | Test (TC-1081) |
+| FR-251-AC-37 | Two plans of AC-1's clause that differ only in the checked body of one atom, or only in the checked body of the activation guard, have different `PlanId`s. | Test (TC-1081) |
+| FR-251-AC-38 | Two plans of AC-1's clause that differ only in the checked body of a declared helper function that an entry calls, directly or through another helper, have different `PlanId`s and different plan-root keys while the helper's own `node_id` (its declaration path, its call identity) is unchanged and it stays a declared node; the key covers the helper through its body root's node `node_id`, which is content, and not through a graph position or a name alone (QSpec FR-487). | Test (TC-1081) |
+| FR-251-AC-39 | `TimedMonitorPlan` built through its public constructor with one atom body swapped has an unequal `PlanId`, and a plan with equal bodies throughout has an equal `PlanId`. | Test (TC-1081) |
 
 ## Dependencies
 

@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-22, FR-251-AC-24, FR-251-AC-25 and FR-251-AC-26.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30 and FR-251-AC-32 to FR-251-AC-39.
 
 ## Test Procedure
 
@@ -32,10 +32,16 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 12. Run an "on each" clause over a model-typed value with three admitted events (two in one tick); read each instance's activation position and captures from `State`; add an atom over a model value with no admitted projection.
 13. Build `once[0 ms, 10 ms] eventually holds(ack)` with `activation_capacity` 2; present events at ticks 0, 1000 and 2000 with no `ack`; read each instance's `subformula` (the `eventually` node's id).
 14. On a 1 MHz counter at rate 2 per ms, build `once[0 ms, 10 ms] eventually[0 ms, 5 ms] holds(p)` and `eventually[0 ms, 5 ms] once[0 ms, 10 ms] holds(p)`; read each operator's capacity; feed `p` at tick 0 and 30 events at the rate across ticks 0 to 14999; read the inner buffer at tick 14999 and the decisions that need the tick-0 entry.
-15. Plan `once holds(p)` and `historically holds(p)` at rate 2 per ms on a 1 MHz counter with uncertainty 0; feed `p` true at tick 0, an event at tick 5000, and `p` false at tick 100 for `historically`; read each buffer and the results (AC-22).
-16. On the 16-bit target, feed `p` true before a gap fault and read `once holds(p)` and `historically holds(p)` after it, then feed `p` after it (AC-24).
-17. Plan `always eventually holds(p)` and `eventually always holds(p)` with `activation_capacity` 2; start three positions before any `p`, then feed `p` (AC-25).
-18. Derive the plan of AC-1 and variants that differ only in an atom body, the guard body or a called helper's body; build `TimedMonitorPlan` through its public constructor with an atom body swapped (AC-26).
+15. At rate 2 per ms on a 1 MHz counter with uncertainty 0: `once holds(p)` with `p` true at tick 0 and an event at tick 5000, `historically holds(p)` with `p` true at 0 and false at 100; read each buffer and result (AC-23, AC-24).
+16. At the start of a trace: `once holds(p)` with `p` never true, `historically holds(p)` with `p` always true, then one witness each (AC-25).
+17. After the overflow of TC-706 step 5: `once holds(p)` with `p` true at the lost event and no later `p`, then with a later `p`; `historically holds(p)` with `p` false at the lost event and true afterwards, then with a later false (AC-27).
+18. On the 16-bit target: `once` and `historically` with `p` true before a gap and never after, and with `p` true or false after it (AC-28).
+19. `p since q` and `p triggered q` over the traces of AC-29, and over the gap traces of AC-30 (AC-29, AC-30).
+20. `historically (holds(req) implies eventually[0 ms, 5 ms] holds(ack))` read its capacity; feed `req` at tick 0 with no `ack`, then with `ack` at 2998 (AC-32).
+21. `historically (holds(req) implies eventually holds(ack))` with `activation_capacity` 1; two `req` events before any `ack` (AC-33).
+22. `once[5 ms, *] holds(p)` read its capacity; `p` true at tick 0; read the result at ticks 4000 and 6000 (AC-34).
+23. `always eventually holds(p)` and `eventually always holds(p)` with `activation_capacity` 2 over the traces of AC-35 and AC-36.
+24. Derive the plan of AC-1 and variants differing only in an atom body, the guard body, or a called helper's body; build `TimedMonitorPlan` through its public constructor with an atom body swapped (AC-37, AC-38, AC-39).
 
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
@@ -55,7 +61,13 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 12: activation positions 1, 2, 3 from `State.event_position`, read back as `status.position` of the three `activations` records, no `Activation` field; captures are typed projections; the unprojectable atom yields `Incomplete(LimitReached{limit: atom_projection, value: <its AtomId>, setting: monitor.atom_projection})` with replayable evidence.
 - Step 13: the third instance is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`; the plan root has no additional binding.
 - Step 14: inner capacity 32 in both plans (retention 15002 ticks), outer capacity 22 for the `once` and 12 for the `eventually`; the tick-0 entry is present at tick 14999 and read, no `Incomplete`, and it expires only after tick 15002.
-- Step 15: capacity 2, buffer at most 2 entries and the summary cell; the tick-0 entry is folded at tick 5000, `once holds(p)` is `true`, `historically holds(p)` is `false`.
-- Step 16: `once` `indeterminate` with `p` only before the gap and `true` after `p`; `historically` `indeterminate`, never `true`, then `false` on a false after the gap; each result retains the subformula and `history_start`.
-- Step 17: planned, no history buffer; the third instance settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`; the first `p` settles the two live instances `true`; the root stays `Pending` on the open trace.
-- Step 18: each variant has a different `PlanId` and plan-root key; the equal-bodied plan an equal one; the helper's call identity is unchanged.
+- Step 15: the tick-0 entry folds at tick 5000; `once holds(p)` is `true`; `historically holds(p)` is `false`; the buffer holds the tick-5000 entry and the cell.
+- Step 16: `indeterminate` (`MissingHistory`), `indeterminate`; then `true` and `false`.
+- Step 17: `indeterminate`, then `true`; `indeterminate`, then `false`; never a wrong definite verdict.
+- Step 18: `indeterminate` and `indeterminate`; then `true`, `false` as stated; each result retains the subformula and `history_start`.
+- Step 19: `since` true and false as AC-29 states, `triggered` `false` and `indeterminate`; after a gap `indeterminate`, `true`, `false` as AC-30 states.
+- Step 20: capacity 12; `Pending` at tick 4000 and `false` once progress closes the window; with `ack` the entry folds true and the result stays `indeterminate`.
+- Step 21: the second instance settles `Incomplete(LimitReached{limit: activation, value: 1, setting: monitor.max_activations})`; the operator stays `Pending`, never `true`.
+- Step 22: capacity 12; `indeterminate` at tick 4000, `true` at tick 6000.
+- Step 23: the third instance of each settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`; the first `p` settles the two `eventually` instances `true`; for `eventually always` no instance settles true on a `p` and a false `p` settles both `false`, the outer staying `Pending`.
+- Step 24: each variant has a different `PlanId`, the helper variant also a different plan-root key with the helper's `node_id` unchanged; equal bodies give an equal `PlanId`.

@@ -831,6 +831,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-61 | In fixture E-C, the handle of the `let` node of `Composed.let` reads the `Location` of its own admitted node, equal to the checked package's, and no row names it. | Test (TC-1070) |
 | FR-390-AC-62 | In fixture E-C, the handle of the conditional node of `Composed.if` reads the `Location` of its own admitted node, equal to the checked package's, and no row names it. | Test (TC-1070) |
 | FR-390-AC-63 | In fixture E-C, the handle of the case node of `Composed.case` reads the `Location` of its own admitted node, equal to the checked package's, and no row names it. | Test (TC-1070) |
+| FR-390-AC-64 | The `Unavailable` result's read location is `Some(location)` for a view backed by the in-process checked package, and for a reader-backed view `Some(location)` when the read's leaf node carries a location of its own (QSpec FR-322-AC-310) and `None` when the admitted wire carries none for it; QSL supplies no location the wire did not. Over TC-1072 row 1 read through each backing, the first two give the read of `activated` located and the third gives `Unavailable` naming the binder and the cause with `None`. | Test (TC-1072) |
 ## Dependencies
 
 - [FR-107](FR-107-evaluate-state-clauses-at-s6a.md): the `ProtocolClause` arm,

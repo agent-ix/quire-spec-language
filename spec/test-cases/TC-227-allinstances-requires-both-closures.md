@@ -55,7 +55,8 @@ instead of the typed incomplete result.
 
 Step 2/3 returns `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`;
 `cause.undefined_record()` has reason `incomplete-closure`, queried type
-`T`, and subtype marker `T`, with no collection. It does not return a
+`T`, and subtype marker `T`, with no collection, and its boundary projection is
+`incomplete_population`/`unclosed-subtypes`. It does not return a
 refusal or a partial set. Step 4 returns the complete set in the same
 canonical reference-key order regardless of input member order. A mutant
 that returns a set in an incomplete case fails the result-type assertion.
@@ -64,5 +65,5 @@ The subtype-incomplete result is evaluated through the public
 `CheckedPackage::evaluate` adapter. Its outcome is
 `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, whose
 `undefined_record()` has reason `incomplete-closure`, `closure` `subtype`,
-queried `type` `T`, and subtype marker `T`; it exposes no member collection.
+queried `type` `T`, and subtype marker `T`, and projects to `incomplete_population`/`unclosed-subtypes`; it exposes no member collection.
 The query and marker are retained structurally at that boundary.
