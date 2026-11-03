@@ -199,10 +199,10 @@ fn failure_of(
         protocol_results,
     } = error;
     if let Some(limit) = limit_of(&refusal, source_len) {
-        return protocol_results.map_or_else(
-            || StageFailure::Limit(limit.clone()),
-            |results| StageFailure::LimitWithPayload(limit, results),
-        );
+        return match protocol_results {
+            Some(results) => StageFailure::LimitWithPayload(limit, results),
+            None => StageFailure::Limit(limit),
+        };
     }
     if let Some(fault) = fault_of(&refusal) {
         return StageFailure::Fault(fault);
