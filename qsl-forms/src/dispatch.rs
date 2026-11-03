@@ -95,6 +95,49 @@ impl ParsedForm {
         self.declared_extent.as_deref()
     }
 
+    /// The form's top-level syntactic declaration name, when it declares one.
+    /// This is source spelling only; it is not a check-time key. Forms whose
+    /// grammar has no single top-level name return `None`.
+    pub fn declared_name(&self) -> Option<&str> {
+        use DeclarationForm as F;
+        match &self.form {
+            F::Union(form) => Some(&form.name.name),
+            F::Abstraction(form) => Some(&form.name.name),
+            F::Function(form) => Some(form.name.as_str()),
+            F::Alias(form) => Some(&form.name.name),
+            F::Record(form) => Some(&form.name.name),
+            F::Tuple(form) => Some(&form.name.name),
+            F::Enum(form) => Some(&form.name.name),
+            F::Dimension(form) => Some(&form.name.name),
+            F::DimensionEquivalence(_) => None,
+            F::Unit(form) => Some(&form.name.name),
+            F::StateClause(form) => Some(&form.name.name),
+            F::OperationBody(form) => Some(&form.label.name),
+            F::PopulationBound(form) => Some(&form.label.name),
+            F::Protocol(form) => Some(&form.name.name),
+            F::Temporal(form) => Some(&form.name.name),
+            F::Terminal(form) => Some(&form.name.name),
+            F::Refinement(form) => Some(&form.name.name),
+            F::HyperBehaviours(form) => Some(&form.name.name),
+            F::HyperFinite(form) => Some(&form.name.name),
+            F::ModelRelation(form) => Some(&form.name.name),
+            F::Random(_) => None,
+            F::Reward(form) => Some(&form.name.name),
+            F::Delay(_) => None,
+            F::Workload(form) => Some(&form.name.name),
+            F::Probabilistic(form) => Some(&form.name.name),
+            F::StateGraphClaim(form) => Some(&form.name.name),
+            F::TimeSource(_) => None,
+            F::TimeInvariant(form) => Some(&form.name.name),
+            F::Urgent(form) => Some(&form.name.name),
+            F::Taskset(form) => Some(&form.name.name),
+            F::Schedulable(form) => Some(&form.name.name),
+            F::Response(form) => Some(&form.name.name),
+            F::Release(_) => None,
+            F::Hybrid(form) => Some(&form.name.name),
+        }
+    }
+
     /// The family-produced declaration form.
     pub fn form(&self) -> &DeclarationForm {
         &self.form

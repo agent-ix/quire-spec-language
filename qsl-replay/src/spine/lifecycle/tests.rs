@@ -28,9 +28,10 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
-    check, check_with_refinement_internals, execute, failure_of, package, parse, refusal_or_fault,
-    select, temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit,
-    ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
+    admit_parsed_unit_list, check, check_with_refinement_internals, execute, failure_of, package,
+    parse, preflight_unit_list, refusal_or_fault, select, temporal_selections_for_source,
+    AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits,
+    ParseRequest, ParsedUnitSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -96,6 +97,142 @@ fn request(bytes: &[u8]) -> ParseRequest<'_> {
         path: "unit.native",
         bytes,
     }
+}
+
+fn parse_named(identity: &SourceIdentity, bytes: &[u8]) -> ParsedUnitSource {
+    parse(
+        &ParseRequest {
+            source: identity,
+            path: "unit.native",
+            bytes,
+        },
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("source unit parses")
+    .into_value()
+}
+
+#[trace("FR-480-AC-4")]
+#[test]
+fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing() {
+    let dependencies = DependencyInput::default();
+    assert!(matches!(
+        preflight_unit_list(&[], &dependencies),
+        Err(CompileRefusal::UnitList(
+            crate::spine::UnitListRefusal::Empty
+        ))
+    ));
+
+    let owner = SourceIdentity::new("test", "unit", "git", "1");
+    let duplicate_requests = [
+        ParseRequest {
+            source: &owner,
+            path: "bad-a",
+            bytes: b"not valid",
+        },
+        ParseRequest {
+            source: &owner,
+            path: "bad-b",
+            bytes: b"also not valid",
+        },
+    ];
+    assert!(matches!(
+        preflight_unit_list(&duplicate_requests, &dependencies),
+        Err(CompileRefusal::UnitList(
+            crate::spine::UnitListRefusal::DuplicateOwner {
+                first: 0,
+                second: 1,
+                ..
+            }
+        ))
+    ));
+
+    let library = SuppliedLibrary {
+        identity: "library".into(),
+        source: owner.clone(),
+        path: "library.native".into(),
+        bytes: Vec::new(),
+    };
+    let dependencies = DependencyInput::new([library]).expect("one library is valid");
+    let requests = [ParseRequest {
+        source: &owner,
+        path: "bad",
+        bytes: b"not valid",
+    }];
+    assert!(matches!(
+        preflight_unit_list(&requests, &dependencies),
+        Err(CompileRefusal::UnitList(
+            crate::spine::UnitListRefusal::LibraryOwner { unit: 0, .. }
+        ))
+    ));
+}
+
+#[trace("FR-480-AC-2", "FR-480-AC-4")]
+#[test]
+fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonically() {
+    let first = SourceIdentity::new("test", "z-unit", "git", "1");
+    let second = SourceIdentity::new("test", "a-unit", "git", "1");
+    let declaration = format!("{HEADER}function shared(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n");
+    let duplicate = admit_parsed_unit_list(
+        vec![
+            parse_named(&first, declaration.as_bytes()),
+            parse_named(&second, declaration.as_bytes()),
+        ],
+        &DependencyInput::default(),
+    );
+    assert!(matches!(
+        duplicate,
+        Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::DuplicateName { name, first_unit, second_unit, .. })) if name == "shared" && first_unit.identity == "z-unit" && second_unit.identity == "a-unit"
+    ));
+
+    let unit_a = format!("{HEADER}function left(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n");
+    let unit_z = format!("{HEADER}function right(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n");
+    let admitted = admit_parsed_unit_list(
+        vec![
+            parse_named(&first, unit_z.as_bytes()),
+            parse_named(&second, unit_a.as_bytes()),
+        ],
+        &DependencyInput::default(),
+    )
+    .expect("distinct empty units share compatible headers");
+    assert_eq!(admitted.units()[0].source().identity().identity, "a-unit");
+    assert_eq!(admitted.units()[1].source().identity().identity, "z-unit");
+
+    let sibling_import = format!(
+        "{HEADER}import \"a-unit\";\nfunction local(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    );
+    let refused = admit_parsed_unit_list(
+        vec![
+            parse_named(&first, sibling_import.as_bytes()),
+            parse_named(&second, unit_a.as_bytes()),
+        ],
+        &DependencyInput::default(),
+    );
+    assert!(matches!(
+        refused,
+        Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::SiblingImport { identity, unit: 1 })) if identity == "a-unit"
+    ));
+
+    let different_profiles = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"other.profile/v1\";\nfunction local(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    );
+    let refused = admit_parsed_unit_list(
+        vec![
+            parse_named(&first, unit_z.as_bytes()),
+            parse_named(&second, different_profiles.as_bytes()),
+        ],
+        &DependencyInput::default(),
+    );
+    assert!(matches!(
+        refused,
+        Err(CompileRefusal::UnitList(
+            crate::spine::UnitListRefusal::HeaderConflict {
+                first: 0,
+                second: 1
+            }
+        ))
+    ));
 }
 
 /// The one library the import tests supply: `x < 5` over a digit.

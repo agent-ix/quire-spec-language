@@ -111,7 +111,10 @@ use quire_exact::{Cancel, Meter, ScalarLimits, Value};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
-use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary};
+use super::{
+    region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary,
+    UnitListRefusal,
+};
 
 /// What a front-end operation returns when it produces no output: the
 /// stage's refusal, a reached limit, a cancellation or a fault.
@@ -258,7 +261,8 @@ fn limit_of(
             _ => None,
         },
         CompileRefusal::Limit(limit) => Some(limit.clone()),
-        CompileRefusal::Forms { .. }
+        CompileRefusal::UnitList(_)
+        | CompileRefusal::Forms { .. }
         | CompileRefusal::OperationClause { .. }
         | CompileRefusal::TypeInvariant { .. }
         | CompileRefusal::Profile { .. }
@@ -354,6 +358,171 @@ pub struct ParseRequest<'a> {
 pub struct ParsedUnitSource {
     syntax: qsl_cst::ParsedSource,
     unit: ParsedUnit,
+}
+
+/// S3-ready admitted source units. Units are held in FR-480 canonical owner
+/// order; assembly and emission are deliberately left to the later stage.
+#[derive(Clone, Debug)]
+pub struct AdmittedUnitList {
+    units: Vec<ParsedUnitSource>,
+}
+
+impl AdmittedUnitList {
+    /// Parsed source units in ascending UTF-8 (`authority`, `identity`) order.
+    pub fn units(&self) -> &[ParsedUnitSource] {
+        &self.units
+    }
+}
+
+/// FR-480 pre-parse checks. Call before parsing any request so empty lists,
+/// repeated source owners and source/library owner collisions win over S1/S2
+/// failures in the units.
+pub fn preflight_unit_list(
+    requests: &[ParseRequest<'_>],
+    dependencies: &DependencyInput,
+) -> Result<(), CompileRefusal> {
+    if requests.is_empty() {
+        return Err(CompileRefusal::UnitList(UnitListRefusal::Empty));
+    }
+    for (second, request) in requests.iter().enumerate() {
+        if let Some(first) = requests[..second]
+            .iter()
+            .position(|earlier| same_owner(earlier.source, request.source))
+        {
+            return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateOwner {
+                first,
+                second,
+                authority: request.source.authority.clone(),
+                identity: request.source.identity.clone(),
+            }));
+        }
+        for (library, supplied) in &dependencies.libraries {
+            if same_owner(&supplied.source, request.source) {
+                return Err(CompileRefusal::UnitList(UnitListRefusal::LibraryOwner {
+                    unit: second,
+                    library: library.to_string(),
+                    authority: request.source.authority.clone(),
+                    identity: request.source.identity.clone(),
+                }));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// FR-480 post-parse unit-list checks and canonical ordering. Parsing remains
+/// the caller's responsibility and must be performed once per request in
+/// request order after [`preflight_unit_list`].
+pub fn admit_parsed_unit_list(
+    mut units: Vec<ParsedUnitSource>,
+    dependencies: &DependencyInput,
+) -> Result<AdmittedUnitList, CompileRefusal> {
+    if units.is_empty() {
+        return Err(CompileRefusal::UnitList(UnitListRefusal::Empty));
+    }
+    let requests: Vec<_> = units
+        .iter()
+        .map(|unit| unit.source().identity().clone())
+        .collect();
+    // Keep the same source/library admission rule for callers that compose
+    // this helper without first calling preflight_unit_list.
+    for (unit, identity) in requests.iter().enumerate() {
+        for (library, supplied) in &dependencies.libraries {
+            if same_owner(&supplied.source, identity) {
+                return Err(CompileRefusal::UnitList(UnitListRefusal::LibraryOwner {
+                    unit,
+                    library: library.to_string(),
+                    authority: identity.authority.clone(),
+                    identity: identity.identity.clone(),
+                }));
+            }
+        }
+    }
+    for second in 0..units.len() {
+        if let Some(first) =
+            (0..second).find(|first| same_owner(&requests[*first], &requests[second]))
+        {
+            return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateOwner {
+                first,
+                second,
+                authority: requests[second].authority.clone(),
+                identity: requests[second].identity.clone(),
+            }));
+        }
+    }
+    let first_profiles: Vec<_> = units[0]
+        .unit()
+        .selections()
+        .profiles
+        .iter()
+        .map(|selection| selection.identity.as_str())
+        .collect();
+    for (index, unit) in units.iter().enumerate().skip(1) {
+        let profiles: Vec<_> = unit
+            .unit()
+            .selections()
+            .profiles
+            .iter()
+            .map(|selection| selection.identity.as_str())
+            .collect();
+        if unit.unit().edition() != units[0].unit().edition() || profiles != first_profiles {
+            return Err(CompileRefusal::UnitList(UnitListRefusal::HeaderConflict {
+                first: 0,
+                second: index,
+            }));
+        }
+    }
+    for (unit_index, unit) in units.iter().enumerate() {
+        for import in &unit.unit().selections().imports {
+            if let Some(sibling) = requests.iter().enumerate().find_map(|(index, source)| {
+                (index != unit_index && source.identity == import.identity).then_some(index)
+            }) {
+                if !dependencies.libraries.contains_key(
+                    &LibraryName::new(&import.identity)
+                        .unwrap_or_else(|_| unreachable!("parsed import identities are validated")),
+                ) {
+                    return Err(CompileRefusal::UnitList(UnitListRefusal::SiblingImport {
+                        identity: import.identity.clone(),
+                        unit: sibling,
+                    }));
+                }
+            }
+        }
+    }
+    let mut names: BTreeMap<&str, (usize, qsl_foundation::Span)> = BTreeMap::new();
+    for (unit_index, unit) in units.iter().enumerate() {
+        for form in unit.unit().forms() {
+            let Some(name) = form.declared_name() else {
+                continue;
+            };
+            let span = form.span();
+            if let Some((first, first_span)) = names.insert(name, (unit_index, span)) {
+                if first != unit_index {
+                    return Err(CompileRefusal::UnitList(UnitListRefusal::DuplicateName {
+                        name: name.to_owned(),
+                        first_unit: Box::new(requests[first].clone()),
+                        first_span,
+                        second_unit: Box::new(requests[unit_index].clone()),
+                        second_span: span,
+                    }));
+                }
+            }
+        }
+    }
+    let mut paired: Vec<_> = requests.into_iter().zip(units.drain(..)).collect();
+    paired.sort_by(|(left, _), (right, _)| {
+        left.authority
+            .as_bytes()
+            .cmp(right.authority.as_bytes())
+            .then_with(|| left.identity.as_bytes().cmp(right.identity.as_bytes()))
+    });
+    Ok(AdmittedUnitList {
+        units: paired.into_iter().map(|(_, unit)| unit).collect(),
+    })
+}
+
+fn same_owner(first: &SourceIdentity, second: &SourceIdentity) -> bool {
+    first.authority == second.authority && first.identity == second.identity
 }
 
 impl ParsedUnitSource {

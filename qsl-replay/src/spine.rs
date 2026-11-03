@@ -46,10 +46,11 @@ use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 pub use lifecycle::{
-    check, check_with_execution_points, check_with_execution_points_and_refinement_internals,
-    check_with_refinement_internals, check_with_temporal_selections_and_execution_points, package,
-    package_with_temporal_selections, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit,
-    EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
+    admit_parsed_unit_list, check, check_with_execution_points,
+    check_with_execution_points_and_refinement_internals, check_with_refinement_internals,
+    check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
+    parse, preflight_unit_list, refusal_or_fault, select, AdmittedModels, AdmittedUnitList,
+    CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
 
 /// Accepted execution points keyed by the exact authored state-clause name
@@ -116,6 +117,9 @@ pub(crate) use call::{convert_outcome, kernel_undefined_reason};
 /// stage records one, the region of the unit it concerns.
 #[derive(Debug, thiserror::Error)]
 pub enum CompileRefusal {
+    /// FR-480: unit-list admission refused before the package is assembled.
+    #[error("{0}")]
+    UnitList(UnitListRefusal),
     /// E1: S1 refused the bytes, or the CST carries a diagnostic or a
     /// recovery, which E2 does not admit. Holds the first diagnostic.
     #[error("{}", .0.message)]
@@ -231,6 +235,7 @@ impl CompileRefusal {
     /// The catalog code of this refusal: the stage cause's own.
     pub fn code(&self) -> Code {
         match self {
+            Self::UnitList(refusal) => refusal.code(),
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
@@ -266,6 +271,7 @@ impl CompileRefusal {
     /// names one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::UnitList(refusal) => refusal.cause(),
             Self::Check { refusals, .. } => refusals.first()?.cause.cause(),
             Self::Profile { refusals, .. } => refusals.first().map(ProfileRefusal::cause),
             Self::DependencyInput(refusal) => refusal.cause(),
@@ -327,6 +333,7 @@ impl CompileRefusal {
     /// The stage that refused.
     pub fn stage(&self) -> SpineStage {
         match self {
+            Self::UnitList(_) => SpineStage::Intake,
             Self::Source(_) => SpineStage::Source,
             Self::Forms { .. } => SpineStage::Forms,
             Self::Intake { .. }
@@ -411,6 +418,7 @@ impl CompileRefusal {
     /// one.
     pub fn region(&self) -> Option<&SourceRegion> {
         match self {
+            Self::UnitList(_) => None,
             Self::Source(diagnostic) => diagnostic.region.as_ref(),
             Self::Forms { region, .. }
             | Self::Intake { region, .. }
@@ -443,6 +451,94 @@ impl CompileRefusal {
                     ..
                 }
         )
+    }
+}
+
+/// FR-480's pre-S3 refusal from validating a supplied source-unit list.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum UnitListRefusal {
+    /// The package supplied no source units.
+    #[error("invalid_package/invalid-value: a source-unit list must not be empty")]
+    Empty,
+    /// Two request positions name the same source owner.
+    #[error("invalid_package/conflicting-definition: source units at positions {first} and {second} share owner {authority}/{identity}")]
+    DuplicateOwner {
+        /// Earlier request position.
+        first: usize,
+        /// Later request position.
+        second: usize,
+        /// Shared authority.
+        authority: String,
+        /// Shared identity.
+        identity: String,
+    },
+    /// A supplied library source has the owner of a source unit.
+    #[error("invalid_package/conflicting-definition: library {library} shares source owner {authority}/{identity} with unit {unit}")]
+    LibraryOwner {
+        /// Request position of the unit.
+        unit: usize,
+        /// Supplied library identity.
+        library: String,
+        /// Shared authority.
+        authority: String,
+        /// Shared identity.
+        identity: String,
+    },
+    /// Unit headers disagree on language, edition, or ordered profile identities.
+    #[error("invalid_package/conflicting-definition: unit headers at positions {first} and {second} differ")]
+    HeaderConflict {
+        /// Position of the first header.
+        first: usize,
+        /// Position of the conflicting header.
+        second: usize,
+    },
+    /// A native declaration name is repeated across distinct units.
+    #[error("ambiguous_declaration/ambiguous-name: `{name}` is declared at unit {first_unit:?} ({first_span:?}) and unit {second_unit:?} ({second_span:?})")]
+    DuplicateName {
+        /// The repeated declared spelling.
+        name: String,
+        /// Identity of the unit holding the first declaration.
+        first_unit: Box<SourceIdentity>,
+        /// Span of the first declaration in its source.
+        first_span: Span,
+        /// Identity of the unit holding the later declaration.
+        second_unit: Box<SourceIdentity>,
+        /// Span of the later declaration in its source.
+        second_span: Span,
+    },
+    /// An import names another supplied unit instead of a library.
+    #[error("missing_import/missing-selection: import `{identity}` names sibling unit {unit} but no library is supplied")]
+    SiblingImport {
+        /// The import identity that matches a sibling unit.
+        identity: String,
+        /// Position of the sibling unit.
+        unit: usize,
+    },
+}
+
+impl UnitListRefusal {
+    /// Catalog code for the refusal.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Empty
+            | Self::DuplicateOwner { .. }
+            | Self::LibraryOwner { .. }
+            | Self::HeaderConflict { .. } => Code::InvalidPackage,
+            Self::DuplicateName { .. } => Code::AmbiguousDeclaration,
+            Self::SiblingImport { .. } => Code::MissingImport,
+        }
+    }
+
+    /// Catalog cause for the refusal.
+    pub fn cause(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::Empty => "invalid-value",
+            Self::DuplicateOwner { .. }
+            | Self::LibraryOwner { .. }
+            | Self::HeaderConflict { .. } => "conflicting-definition",
+            Self::DuplicateName { .. } => "ambiguous-name",
+            Self::SiblingImport { .. } => "missing-selection",
+        })
     }
 }
 
