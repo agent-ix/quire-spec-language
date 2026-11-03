@@ -59,6 +59,10 @@ FR-109's `ClauseRunRequest`, with the selection
   timestamped-event finite-window profile, with an optional `ledger`
   (`ProgressLedger`, FR-502) on the selection; each `DocumentRef` names a
   snapshot in the request's snapshot provision by identity (FR-106);
+- `binding`: a `TraceBinding` (FR-522), a required member of `Timestamped` and
+  `Progressed`, which the entry compares with the clause's profile and clock rows
+  before it evaluates; a `Timestamped` or `Progressed` request without it is
+  refused at stage `admit`, `invalid_runtime_input`/`invalid-value`;
 - `over`: `{"reference": {"population": ..., "key": ...}}`, resolved in the
   observation at position 0, when the clause has an `over` parameter.
 
@@ -154,6 +158,7 @@ FR-267 writer writes these as the report holds them and derives none.
 | FR-330-AC-8 | From source, FR-327-AC-7's `always[0,2] A` `on origin` over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, category `undefined`, exit 10, position 2, `count` 0 and `min_count` 1, and no `truth`, no counterexample and no `UndefinedEvaluation`. | Test (TC-847) |
 | FR-330-AC-9 | From source, a clause under the finite-window profile run over `TraceInput::Timestamped` reports the outcomes of FR-501-AC-11 and never `unsupported_profile` or `ProfileNotEvaluated`; the same clause over `Finite` reports stage `admit`, `invalid_runtime_input`/`invalid-value`, and `Bounded` (event-position) over `Timestamped` reports the same. A `ledger` holding binding B at watermark 100 and a second request under B with watermark 60 reports stage `evaluate`, category `refusal`, `contradicted_dimension` `Watermark`. | Test (TC-1295, TC-1296) |
 | FR-330-AC-10 | From source, an event-position clause and a fixed-sample clause run over `TraceInput::Progressed` report the outcomes of FR-504-AC-1 and AC-2, and return the updated `ledger`; a `Progressed` request for an infinite-trace clause, or over a `Lasso`, reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1299) |
+| FR-330-AC-11 | From source, a `Timestamped` request whose `binding` asserts another clock name reports stage `admit`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Clock`, a `Progressed` request whose `binding` asserts another profile reports `Profile`, and a `Timestamped` request with no `binding` reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1317) |
 
 ## Dependencies
 

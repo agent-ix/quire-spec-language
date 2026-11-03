@@ -38,7 +38,9 @@ progress and leaves every earlier result as it was.
 
 ## Inputs
 
-- An optional `ProgressLedger` in FR-330's `Temporal` selection.
+- An optional `ProgressLedger` in FR-330's `Temporal` selection, or in an
+  `EvidenceRequest` (FR-516), whose call applies this requirement to its
+  progress assertion and returns the updated ledger.
 - A **binding**: the checked package identity, the checked clause identity, the
   clock binding name and the selected profile identity.
 - A progress assertion in a `TraceInput::Timestamped` trace (FR-330, FR-501): a
