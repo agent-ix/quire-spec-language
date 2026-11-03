@@ -948,6 +948,93 @@ fn aggregate_model_selection_admits_selections_from_every_unit() {
     );
 }
 
+/// FR-480-AC-8: E4 accepts a clock selection whose source is a non-first
+/// root unit in the checked package and routes it to emission.
+#[trace("FR-480-AC-8")]
+#[test]
+fn aggregate_package_accepts_temporal_selection_from_later_source() {
+    use qsl_forms::DeclarationForm;
+    use qsl_package::{ClockConfiguration, TemporalClockSelection};
+
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:temporal-a",
+            "temporal-a",
+            "temporal-a:1",
+        )
+    });
+    let source_b = SOURCE_B.get_or_init(|| {
+        SourceIdentity::new(
+            "agent-ix",
+            "test:lifecycle:temporal-b",
+            "temporal-b",
+            "temporal-b:1",
+        )
+    });
+    let header =
+        format!("{HEADER}profile ev = \"quire.temporal.event-position.false-extension/v1\";\n");
+    let a = parse_named(
+        source_a,
+        format!("{header}record Point {{ x: Int[0, 9]; }}").as_bytes(),
+    );
+    let b_text = format!(
+        "{header}model M = \"acme/orders\";\n\
+         temporal Due using ev over (input: M::Widget) clock \"events\" on origin {{ eventually[0,1] holds(true) }}"
+    );
+    let b = parse_named(source_b, b_text.as_bytes());
+    let temporal_span = b
+        .unit()
+        .forms()
+        .iter()
+        .find(|form| matches!(form.form(), DeclarationForm::Temporal(_)))
+        .expect("the later source contains Due")
+        .span();
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("the distinct source units are admitted");
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select_units(
+        &admitted,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the later source's model is admitted")
+    .into_value();
+    let checked = check_units(
+        &admitted,
+        "aggregate-temporal-package".to_owned(),
+        &models,
+        &dependencies,
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the aggregate temporal clause checks")
+    .into_value();
+    assert_eq!(checked[0].source().identity(), source_a);
+    let selection = TemporalClockSelection {
+        source: checked[1].source().reference().clone(),
+        declaration_span: temporal_span,
+        clock: ClockConfiguration::EventPosition {
+            sequence_authority: "aggregate-events".to_owned(),
+        },
+    };
+    let emitted = package_with_temporal_selections(
+        &checked[0],
+        &[selection],
+        PackageLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("a selection for a later root source is not surplus")
+    .into_value();
+    assert!(!emitted.package().bytes().is_empty());
+}
+
 /// FR-503-AC-3 (TC-1298 row 4): the compile continuation emits clean
 /// siblings byte-for-byte and returns the ordered refusal payload without a
 /// package.

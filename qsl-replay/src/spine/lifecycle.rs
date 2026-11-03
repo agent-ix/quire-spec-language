@@ -1548,7 +1548,10 @@ pub fn package_with_temporal_selections(
         &|_| None,
         |work| -> Result<EmittedUnit, StageError> {
             for selection in selections {
-                let source_is_compiled = selection.source == *checked.source.reference()
+                let source_is_compiled = checked
+                    .sources
+                    .iter()
+                    .any(|source| selection.source == *source.reference())
                     || checked
                         .libraries
                         .iter()
