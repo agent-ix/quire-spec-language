@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use ix_trace_rs::trace;
 use quire_contract_model::{
     read_checked_package, CheckedNodeKind, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    ClockConfiguration, ClockExactNumber, ProtocolForm, TemporalForm,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCause,
+    CheckedPackageRefusalCode, CheckedPackageV2, ClockConfiguration, ClockExactNumber, JsonPointer,
+    ProtocolForm, TemporalForm,
 };
 use quire_spec_language::checked_handoff::{
     evidence, write, write_with, CheckedHandoffRequest, Corpus, Environment, Error, ErrorCode,
@@ -1450,30 +1451,151 @@ fn a_differing_declared_clause_name_is_refused_on_clause_name() {
 }
 
 /// FR-517-AC-13: with the model admitting a unit on a bounded scalar, the
-/// `Amount` and `Total` scalars of R carry the unit `U`.
+/// `Amount` and `Total` scalars of R carry the unit `U`: each is an alias of
+/// `ix://quire/unit/U` whose `min` and `max` name the alias (QSpec FR-154
+/// "Unit bounds"), the form [`unit_model`] writes.
 #[trace("FR-517-AC-13", "TC-1312")]
 #[test]
-#[ignore = "gated on QSL-1558 (FR-497): the recipe model carries no unit on Amount and Total"]
+#[ignore = "gated on QSL-1558: R refuses a unit on Amount and Total (FR-517-AC-15)"]
 fn amount_and_total_carry_the_unit_u() {
     let model: Value =
         serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
             .unwrap();
     for scalar in ["Amount", "Total"] {
-        let declared = model["types"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|t| {
-                t["displayName"]
-                    .as_str()
-                    .unwrap()
-                    .ends_with(&format!("/{scalar}"))
-            })
+        let declared = declared_type(&model, scalar);
+        assert_eq!(declared["kind"], "alias", "{scalar}");
+        assert_eq!(declared["target"], "ix://quire/unit/U", "{scalar}");
+    }
+}
+
+/// The type of R's model whose identity ends in `/name`.
+fn declared_type<'m>(model: &'m Value, name: &str) -> &'m Value {
+    model["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|declared| {
+            declared["identity"]
+                .as_str()
+                .unwrap()
+                .ends_with(&format!("/{name}"))
+        })
+        .unwrap()
+}
+
+/// R's model with `Amount` and `Total` as aliases of the unit `U`, their
+/// bounds kept and naming the alias, written into `dir`.
+fn unit_model(dir: &Path) -> PathBuf {
+    let mut model: Value =
+        serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
             .unwrap();
-        for constraint in declared["constraints"].as_array().unwrap() {
-            assert_eq!(constraint["appliesTo"], "ix://quire/unit/U", "{scalar}");
+    for name in ["Amount", "Total"] {
+        let identity = declared_type(&model, name)["identity"].clone();
+        let declared = model["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|declared| declared["identity"] == identity)
+            .unwrap();
+        let object = declared.as_object_mut().unwrap();
+        object.remove("scalar");
+        object.insert("kind".into(), "alias".into());
+        object.insert("target".into(), "ix://quire/unit/U".into());
+        for constraint in object["constraints"].as_array_mut().unwrap() {
+            constraint["appliesTo"] = identity.clone();
         }
     }
+    let path = dir.join("model.semantic-ir.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&model).unwrap()).unwrap();
+    path
+}
+
+/// A handoff request for one unit over [`unit_model`] that declares the
+/// unit `U` and then `body`; no library, no temporal clause.
+fn unit_request(dir: &Path, body: &str) -> CheckedHandoffRequest {
+    let source = dir.join("unit.native");
+    std::fs::write(
+        &source,
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
+             model M = \"agent-ix/checked-handoff\";\n\
+             dimension Money;\nunit U : Money = rational(1, 1);\n{body}\n"
+        ),
+    )
+    .unwrap();
+    CheckedHandoffRequest {
+        emit: Request {
+            source,
+            package_name: "r".into(),
+            models: vec![unit_model(dir)],
+            libraries: Vec::new(),
+            execution_points: None,
+            temporal_selections: Vec::new(),
+            out: None,
+        },
+        corpus: Corpus::None,
+    }
+}
+
+/// [`unit_request`] written into a new directory beside its inputs.
+fn write_unit(body: &str) -> Result<(), Error> {
+    let dir = tempfile::tempdir().unwrap();
+    write(&unit_request(dir.path(), body), &dir.path().join("handoff"))
+}
+
+/// FR-517-AC-15 (QSL-1558): the refusals that keep the unit `U` off R's
+/// `Amount` and `Total`. A unit-typed operation parameter compared with a
+/// unit literal is written and admitted; a unit that no expression of the
+/// unit reaches is not emitted, though the selected model's types name it,
+/// so Contract IR's reader refuses the model `typeRef` that reaches it (R's
+/// library and its fixed-sample and timestamped-event units read no
+/// unit-typed member); the model alias is not a source type name; and `sum`
+/// refuses a quantity summand.
+#[trace("FR-517-AC-15", "TC-1312")]
+#[test]
+fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
+    write_unit("pre BeforeApply using v on M::Workflow::apply { amount >= 1 U }")
+        .expect("a unit-typed parameter against a unit literal is written");
+
+    let error =
+        write_unit("invariant Ready using v on M::Workflow at current { self.ready }").unwrap_err();
+    let Error::ReaderRefused(refusal) = &error else {
+        panic!("the reader refuses a unit no expression reaches: {error:?}");
+    };
+    assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
+    assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
+    // `Recovery.receipts`, typed `Amount`, the first `typeRef` to reach `U`.
+    assert_eq!(
+        refusal.document_pointer,
+        JsonPointer::parse("/types/7/fields/0/typeRef")
+    );
+
+    let error = write_unit(
+        "invariant Bounded using v on M::Workflow at current {\n    \
+         sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n}",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Compile);
+    let detail = format!("{error:?}");
+    assert!(
+        detail.contains("UnresolvedTypeName { name: \"M::Total\" }"),
+        "{detail}"
+    );
+
+    let error = write_unit(
+        "type Cash = Quantity<U>;\n\
+         invariant Bounded using v on M::Workflow at current {\n    \
+         sum<Cash>(receipt in self.receipts: receipt) <= self.total\n}",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Compile);
+    let detail = format!("{error:?}");
+    assert!(
+        detail.contains("StateClause { clause: \"Bounded\"")
+            && detail.contains("IllTyped(TypeMismatch)"),
+        "{detail}"
+    );
 }
 
 /// FR-517-AC-14: the `recover` condition of `Full` compares the receipt sum

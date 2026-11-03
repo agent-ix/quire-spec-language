@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the checked-package handoff writer on the ported IT-001 recipe **R**.
-Scope: FR-517-AC-1 to FR-517-AC-14.
+Scope: FR-517-AC-1 to FR-517-AC-15.
 
 ## Test Procedure
 
@@ -31,8 +31,9 @@ Scope: FR-517-AC-1 to FR-517-AC-14.
 | 12 | 12 | with the spine admitting a bounded rational value type, read the `Exact` values of **R**; gated on QSL-1522 | the two extreme rationals present |
 | 13 | 13 | with the model admitting a unit on a bounded scalar, read `Amount` and `Total` of **R**; gated on QSL-1558 | both carry unit `U` |
 | 14 | 14 | with a `sum` query binder admitted inside `recover`, read the `recover` conditions of `Full` and `Partial`; gated on QSL-1555 | `Full`: receipt sum equals the captured target; `Partial`: receipt sum positive and below it |
+| 15 | 15 | write a source over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, declaring `U`, whose body is in turn `amount >= 1 U` in a `pre` of `apply`; an invariant reading only `self.ready`; `sum<M::Total>` over the receipts; `sum<Cash>` with `type Cash = Quantity<U>;` | written and admitted; `ReaderRefused` with `missing_declaration`/`missing-name` at `/types/7/fields/0/typeRef`; `UnresolvedTypeName` for `M::Total`; `IllTyped(TypeMismatch)` at the state clause |
 
-Tag the test `#[trace("FR-517-AC-1", ..., "FR-517-AC-14", "TC-1312")]`; row 3 and 4 also carry FR-042-AC-10.
+Tag the test `#[trace("FR-517-AC-1", ..., "FR-517-AC-15", "TC-1312")]`; row 3 and 4 also carry FR-042-AC-10.
 
 ## Expected Results
 
