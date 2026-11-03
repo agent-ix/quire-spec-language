@@ -118,7 +118,8 @@ impl TickShape {
         let width = int(1).add(&int(2).mul(uncertainty));
         let arena = formula.nodes();
         let operands = |index: usize| -> Vec<usize> {
-            let (_, _, left, right) = operator_parts(&arena[index]).unwrap_or((false, false, None, 0));
+            let (_, _, left, right) =
+                operator_parts(&arena[index]).unwrap_or((false, false, None, 0));
             left.into_iter()
                 .chain([right])
                 .flat_map(|operand| temporal_leaves(formula, operand))
@@ -131,7 +132,8 @@ impl TickShape {
         // arena, so descending index order visits operands before operators.
         let mut lookahead: BTreeMap<usize, Option<Rational>> = BTreeMap::new();
         for &index in temporal.iter().rev() {
-            let (future, _, _, _) = operator_parts(&arena[index]).unwrap_or((false, false, None, 0));
+            let (future, _, _, _) =
+                operator_parts(&arena[index]).unwrap_or((false, false, None, 0));
             let mut below = Some(int(0));
             for child in operands(index) {
                 below = match (below, lookahead.get(&child).cloned().flatten()) {
@@ -185,7 +187,8 @@ impl TickShape {
                     candidates.push(join(&operands(parent)));
                     continue;
                 };
-                let (future, ..) = operator_parts(&arena[parent]).unwrap_or((false, false, None, 0));
+                let (future, ..) =
+                    operator_parts(&arena[parent]).unwrap_or((false, false, None, 0));
                 let offset = if future {
                     int(0)
                 } else {
@@ -195,10 +198,7 @@ impl TickShape {
                 candidates.push(offset.add(&parent_reach));
             }
             rooted.insert(index, is_rooted);
-            reach.insert(
-                index,
-                candidates.into_iter().fold(int(0), larger),
-            );
+            reach.insert(index, candidates.into_iter().fold(int(0), larger));
         }
         let mut nodes = BTreeMap::new();
         for &index in &temporal {

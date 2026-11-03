@@ -453,11 +453,17 @@ impl<'a> Gen<'a> {
     }
 
     fn unbounded(&self) -> impl Iterator<Item = &NodeSpec> {
-        self.spec.nodes.iter().filter(|node| node.interval.is_none())
+        self.spec
+            .nodes
+            .iter()
+            .filter(|node| node.interval.is_none())
     }
 
     fn intervals(&self) -> impl Iterator<Item = &NodeSpec> {
-        self.spec.nodes.iter().filter(|node| node.interval.is_some())
+        self.spec
+            .nodes
+            .iter()
+            .filter(|node| node.interval.is_some())
     }
 
     fn cap(&self, node: &NodeSpec) -> u64 {
@@ -595,7 +601,6 @@ impl<'a> Gen<'a> {
         }
         out
     }
-
 
     fn interval_functions(&self, node: &NodeSpec, interval: &IntervalSpec, binary: bool) -> String {
         let id = node.id;
@@ -844,7 +849,12 @@ impl<'a> Gen<'a> {
         text
     }
 
-    fn sequential(&self, ids: &[usize], f: impl Fn(usize, &str, &str) -> String, last: &str) -> String {
+    fn sequential(
+        &self,
+        ids: &[usize],
+        f: impl Fn(usize, &str, &str) -> String,
+        last: &str,
+    ) -> String {
         let mut text = String::new();
         let mut prev = "s0".to_owned();
         for (n, id) in ids.iter().enumerate() {
@@ -921,7 +931,11 @@ impl<'a> Gen<'a> {
                 .collect();
             let body = Self::chain(
                 &carried,
-                |u| format!("(if x.pl >= e.status.position then foldCellAct_{u}(s, e, x, hz) else e)"),
+                |u| {
+                    format!(
+                        "(if x.pl >= e.status.position then foldCellAct_{u}(s, e, x, hz) else e)"
+                    )
+                },
                 "e",
             );
             let _ = writeln!(
@@ -949,7 +963,10 @@ impl<'a> Gen<'a> {
             for (n, id) in asc.iter().enumerate() {
                 let name = format!("t{}", n + 1);
                 let b = self.buffer_of(*id);
-                let _ = write!(text, "let {name} = with_buffer_{b}({prev}, kept_{id}(s, hz)) in ");
+                let _ = write!(
+                    text,
+                    "let {name} = with_buffer_{b}({prev}, kept_{id}(s, hz)) in "
+                );
                 prev = name;
             }
             let _ = write!(text, "{prev}");
@@ -1071,7 +1088,10 @@ impl<'a> Gen<'a> {
             text
         };
         let fin_cond = if spec.root_expr.is_some() {
-            format!("isFinal(v) or (e.subformula = {} and rootSettled(s, e.status.position))", spec.root)
+            format!(
+                "isFinal(v) or (e.subformula = {} and rootSettled(s, e.status.position))",
+                spec.root
+            )
         } else {
             "isFinal(v)".to_owned()
         };

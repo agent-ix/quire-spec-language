@@ -398,10 +398,7 @@ fn the_entries_agree_with_the_reference_on_a_deadline_trace() {
         Input::Reading(2998, vec![(atom, true)]),
         Input::Watermark(4000),
     ];
-    assert_eq!(
-        run_entries(&plan, &inputs),
-        run_reference(&plan, &inputs)
-    );
+    assert_eq!(run_entries(&plan, &inputs), run_reference(&plan, &inputs));
 }
 
 /// A deterministic generator of traces (a fixed linear congruential stream,
@@ -732,8 +729,7 @@ fn root_wire_with(
     let plan = premise_plan(formula, target);
     let mut spec = spec_from_plan(&plan).unwrap();
     edit_spec(&mut spec);
-    let (package, _) =
-        crate::monitor_plan::checked_clause_in(formula, &tweak(render(&spec)), true);
+    let (package, _) = crate::monitor_plan::checked_clause_in(formula, &tweak(render(&spec)), true);
     let emission = emit_checked(&package).expect("the unit emits");
     let name = qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap();
     let domain = crate::units::Domain::config_version();
@@ -1110,7 +1106,10 @@ fn evenly(count: u64, spacing: u64, atom: usize, truth: impl Fn(u64) -> bool) ->
 #[trace("TC-706", "FR-251-AC-18")]
 #[test]
 fn a_nested_once_is_retained_for_the_sum_of_the_bounds_plus_a_cover_per_level() {
-    let plan = premise_plan(&format!("once[0 ms, 10 ms] once[0 ms, 5 ms] {P}"), &tick_target(2, 8));
+    let plan = premise_plan(
+        &format!("once[0 ms, 10 ms] once[0 ms, 5 ms] {P}"),
+        &tick_target(2, 8),
+    );
     assert_eq!(capacities(&plan), [22, 32]);
     let spec = spec_from_plan(&plan).unwrap();
     let inner = i128::try_from(plan.intervals()[1].0.index()).unwrap();
@@ -1173,8 +1172,11 @@ fn mixed_direction_nesting_keeps_the_inner_entry_until_every_reader_settled() {
             .map(|n| Input::Reading(n * 517, vec![(atom, n == 0)]))
             .collect();
         inputs.push(Input::Reading(14_999, vec![(atom, false)]));
-        inputs.push(Input::Reading(15_001, vec![(atom, false)]));
-        inputs.push(Input::Reading(15_003, vec![(atom, false)]));
+        // Declared progress, not events: more readings here would exceed the
+        // stated maximum event rate inside the outer window.
+        // Boundary 15_000 reads at horizon 15_001, boundary 15_002 at 15_003.
+        inputs.push(Input::Watermark(15_000));
+        inputs.push(Input::Watermark(15_002));
         let probe = "map(x in s.buffer_1: x.tf)";
         let (entries, buffer) = run_entries_probe(&plan, &spec, &inputs, probe);
         assert_eq!(entries, run_reference(&plan, &inputs), "{formula}");
@@ -1188,10 +1190,25 @@ fn mixed_direction_nesting_keeps_the_inner_entry_until_every_reader_settled() {
                     .map(move |result| (step, *result))
             })
             .collect();
-        assert!(incomplete.is_empty(), "{formula}: Incomplete {incomplete:?}");
-        assert_eq!(buffer[30].first(), Some(&0), "tick 14999 still holds tick 0");
-        assert_eq!(buffer[31].first(), Some(&0), "tick 15001 still holds tick 0");
-        assert_ne!(buffer[32].first(), Some(&0), "tick 15003 has dropped tick 0");
+        assert!(
+            incomplete.is_empty(),
+            "{formula}: Incomplete {incomplete:?}"
+        );
+        assert_eq!(
+            buffer[30].first(),
+            Some(&0),
+            "tick 14999 still holds tick 0"
+        );
+        assert_eq!(
+            buffer[31].first(),
+            Some(&0),
+            "tick 15001 still holds tick 0"
+        );
+        assert_ne!(
+            buffer[32].first(),
+            Some(&0),
+            "tick 15003 has dropped tick 0"
+        );
         // The decision that needs the tick-0 entry: some reading inside the
         // outer window of tick 0 decides true on it.
         assert!(entries.iter().flatten().any(|(_, code)| *code == 1));
@@ -1203,7 +1220,10 @@ fn mixed_direction_nesting_keeps_the_inner_entry_until_every_reader_settled() {
 #[trace("TC-1081", "FR-251-AC-19")]
 #[test]
 fn a_nested_unbounded_operator_shares_the_activation_capacity() {
-    let plan = premise_plan(&format!("once[0 ms, 10 ms] eventually {P}"), &tick_target(2, 2));
+    let plan = premise_plan(
+        &format!("once[0 ms, 10 ms] eventually {P}"),
+        &tick_target(2, 2),
+    );
     let spec = spec_from_plan(&plan).unwrap();
     let eventually = spec.nodes.iter().find(|n| n.interval.is_none()).unwrap().id;
     let inputs: Vec<Input> = [0, 1000, 2000]
@@ -1213,9 +1233,9 @@ fn a_nested_unbounded_operator_shares_the_activation_capacity() {
     let entries = run_entries(&plan, &inputs);
     assert_eq!(entries, run_reference(&plan, &inputs));
     let refused = |step: usize| {
-        entries[step].iter().filter(|(key, code)| {
-            key % 1000 == i128::try_from(eventually).unwrap() && *code == 7
-        })
+        entries[step]
+            .iter()
+            .filter(|(key, code)| key % 1000 == i128::try_from(eventually).unwrap() && *code == 7)
     };
     assert_eq!(refused(0).count() + refused(1).count(), 0);
     assert_eq!(
@@ -1291,8 +1311,15 @@ fn the_third_live_instance_is_refused_by_the_activation_capacity() {
         Input::Watermark(300),
     ];
     let entries = run_entries(&plan, &inputs);
-    assert_eq!(sorted(entries.clone()), sorted(run_reference(&plan, &inputs)));
-    assert!(entries[2].contains(&(200 * 1000 + root, 7)), "{:?}", entries[2]);
+    assert_eq!(
+        sorted(entries.clone()),
+        sorted(run_reference(&plan, &inputs))
+    );
+    assert!(
+        entries[2].contains(&(200 * 1000 + root, 7)),
+        "{:?}",
+        entries[2]
+    );
     assert!(!entries[1].iter().any(|(_, code)| *code == 7));
     // The live ones stay pending and are reported at the watermark.
     let pending: Vec<_> = entries[3]
@@ -1353,7 +1380,11 @@ fn a_past_window_is_indeterminate_until_it_has_refilled_past_the_marker() {
     }
     let (entries, probes) = run_entries_probe(&plan, &spec, &inputs, "ints1(s.history_start)");
     assert_eq!(entries, run_reference(&plan, &inputs));
-    assert_eq!(probes[1], [65_506], "the marker is the faulting reading's tick");
+    assert_eq!(
+        probes[1],
+        [65_506],
+        "the marker is the faulting reading's tick"
+    );
     let codes: Vec<i64> = entries[3..]
         .iter()
         .map(|step| step.iter().find(|(key, _)| key % 1000 == node).unwrap().1)
@@ -1414,13 +1445,35 @@ fn two_monitors_from_one_plan_share_no_state() {
 fn changing_any_one_entry_body_changes_the_function_it_names() {
     let formula = ROOT_SHAPES[0];
     let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    // The function node's own body names its operands by id, so the body of
+    // an entry is the closure of the nodes it depends on.
+    let closure = |wire: &serde_json::Value, start: &serde_json::Value| -> String {
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let mut seen: Vec<&serde_json::Value> = Vec::new();
+        let mut stack = vec![start.clone()];
+        while let Some(id) = stack.pop() {
+            let Some(node) = nodes.iter().find(|n| n["node_id"] == id) else {
+                continue;
+            };
+            if seen.contains(&node) {
+                continue;
+            }
+            seen.push(node);
+            for dependency in node["dependencies"].as_array().into_iter().flatten() {
+                stack.push(dependency.clone());
+            }
+        }
+        let mut parts: Vec<String> = seen.iter().map(|node| node.to_string()).collect();
+        parts.sort();
+        parts.join("\n")
+    };
     let body_of = |wire: &serde_json::Value, name: &str| -> String {
         let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
         let node = nodes
             .iter()
             .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
             .unwrap_or_else(|| panic!("{name}"));
-        node["body"].to_string()
+        closure(wire, &node["node_id"])
     };
     let init_body = |wire: &serde_json::Value| -> String {
         let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
@@ -1438,7 +1491,7 @@ fn changing_any_one_entry_body_changes_the_function_it_names() {
             .iter()
             .find(|n| n["node_id"] == member["value"]["target"])
             .unwrap();
-        entry["body"].to_string()
+        closure(wire, &entry["node_id"])
     };
     let base = root_wire(formula, &target, |_| {});
     for (from, to, helper) in [
@@ -1459,10 +1512,16 @@ fn changing_any_one_entry_body_changes_the_function_it_names() {
             Some("onGapR"),
         ),
     ] {
-        let variant = root_wire_with(formula, &target, |_| {}, |_| {}, |source| {
-            assert!(source.contains(from), "{from}");
-            source.replacen(from, to, 1)
-        });
+        let variant = root_wire_with(
+            formula,
+            &target,
+            |_| {},
+            |_| {},
+            |source| {
+                assert!(source.contains(from), "{from}");
+                source.replacen(from, to, 1)
+            },
+        );
         let (before, after) = match helper {
             Some(name) => (body_of(&base, name), body_of(&variant, name)),
             None => (init_body(&base), init_body(&variant)),
@@ -1507,7 +1566,9 @@ fn the_emitted_program_holds_the_atom_bodies_the_entries_and_the_state_type() {
     for wanted in ["State", "Inputs", "Scope", "Result", "Outcome"] {
         assert!(names.iter().any(|n| n == wanted), "{wanted}");
     }
-    let atoms = spec_from_plan(&premise_plan(formula, &target)).unwrap().atoms;
+    let atoms = spec_from_plan(&premise_plan(formula, &target))
+        .unwrap()
+        .atoms;
     for atom in atoms {
         assert!(names.contains(&format!("atom{atom}")), "atom{atom}");
     }

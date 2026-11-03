@@ -6,8 +6,8 @@ use num_integer::Integer as _;
 use num_traits::{One, ToPrimitive};
 use quire_exact::{Integer as ExactInteger, Rational};
 
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_eval::temporal::{TickBound, TickShape};
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,

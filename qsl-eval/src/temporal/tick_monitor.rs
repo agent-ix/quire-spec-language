@@ -427,12 +427,11 @@ impl<'f> TickMonitorReference<'f> {
             FormulaNode::Not(operand) => self.expr(operand.index(), pos).not(),
             FormulaNode::And(a, b) => self.expr(a.index(), pos).and(self.expr(b.index(), pos)),
             FormulaNode::Or(a, b) => self.expr(a.index(), pos).or(self.expr(b.index(), pos)),
-            FormulaNode::Implies(a, b) => {
-                self.expr(a.index(), pos).not().or(self.expr(b.index(), pos))
-            }
-            FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => {
-                self.temporal_val(index, pos)
-            }
+            FormulaNode::Implies(a, b) => self
+                .expr(a.index(), pos)
+                .not()
+                .or(self.expr(b.index(), pos)),
+            FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => self.temporal_val(index, pos),
         }
     }
 
@@ -536,13 +535,23 @@ impl<'f> TickMonitorReference<'f> {
             .find(|leaf| self.cells.contains_key(leaf))
     }
 
-    fn fold_cell(&self, node: usize, cell: &Cell, acc: Val, pfx: Val, carrier: usize) -> (Val, Val) {
+    fn fold_cell(
+        &self,
+        node: usize,
+        cell: &Cell,
+        acc: Val,
+        pfx: Val,
+        carrier: usize,
+    ) -> (Val, Val) {
         let Some(info) = self.shape.node(node) else {
             return (acc, pfx);
         };
         let polar = |value: Val| if info.dual { value.not() } else { value };
         let (psi, phi) = if cell.lost {
-            (Val::lost_by(Lost::Buffer(carrier)), Val::lost_by(Lost::Buffer(carrier)))
+            (
+                Val::lost_by(Lost::Buffer(carrier)),
+                Val::lost_by(Lost::Buffer(carrier)),
+            )
         } else {
             (
                 polar(self.expr(info.right, cell.first)),
@@ -722,12 +731,20 @@ impl<'f> TickMonitorReference<'f> {
             }
             if future {
                 other < index
-                    && self.member(node, cell.t_first - open.t_first, cell.t_last - open.t_first, false)
-                        != Member::No
+                    && self.member(
+                        node,
+                        cell.t_first - open.t_first,
+                        cell.t_last - open.t_first,
+                        false,
+                    ) != Member::No
             } else {
                 other > index
-                    && self.member(node, open.t_first - cell.t_last, open.t_first - cell.t_first, false)
-                        != Member::No
+                    && self.member(
+                        node,
+                        open.t_first - cell.t_last,
+                        open.t_first - cell.t_first,
+                        false,
+                    ) != Member::No
             }
         })
     }
@@ -749,10 +766,7 @@ impl<'f> TickMonitorReference<'f> {
                     (Some(value), Some(rep)) => self.outcome_of(value) == rep,
                     _ => false,
                 };
-                if reported
-                    && q(self.hz - cell.t_last) >= retention
-                    && !self.needed(*node, index)
-                {
+                if reported && q(self.hz - cell.t_last) >= retention && !self.needed(*node, index) {
                     gone.push(index);
                 }
             }
@@ -892,7 +906,8 @@ impl<'f> TickMonitorReference<'f> {
             .collect();
         let mut results = Vec::new();
         for node in starting {
-            if u64::try_from(self.elems.len()).unwrap_or(u64::MAX) >= self.spec.activation_capacity {
+            if u64::try_from(self.elems.len()).unwrap_or(u64::MAX) >= self.spec.activation_capacity
+            {
                 self.ufinal
                     .insert((node, position), Val::lost_by(Lost::Activation));
                 let outcome = self.outcome_of(Val::lost_by(Lost::Activation));
@@ -937,15 +952,15 @@ impl<'f> TickMonitorReference<'f> {
     }
 
     fn leaves_settled(&self, node: usize, pos: usize) -> bool {
-        temporal_leaves(self.spec.formula, node).into_iter().all(|leaf| {
-            match self.cells.get(&leaf) {
+        temporal_leaves(self.spec.formula, node)
+            .into_iter()
+            .all(|leaf| match self.cells.get(&leaf) {
                 Some(cells) => cells
                     .iter()
                     .find(|c| c.first <= pos && pos <= c.last)
                     .is_none_or(|c| c.lost || c.set.is_some()),
                 None => self.ufinal.contains_key(&(leaf, pos)),
-            }
-        })
+            })
     }
 
     /// Report what changed. An instance is reported once when its outcome
