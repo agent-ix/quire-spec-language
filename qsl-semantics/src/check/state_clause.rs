@@ -203,7 +203,7 @@ pub struct StateClauseDeclaration {
     /// The declared clause name.
     pub name: String,
     /// The source declaring this clause, for FR-480 source-local imports.
-    pub source_owner: qsl_foundation::source::provenance::RawSourceRef,
+    pub source_owner: Option<qsl_foundation::source::provenance::RawSourceRef>,
     /// The span of the authored clause name, used for binding refusals.
     pub name_span: qsl_foundation::Span,
     /// The operation name exactly as authored in `on M::T::op`; it is
@@ -247,7 +247,7 @@ impl StateClauseDeclaration {
     /// What the `ProtocolClause` family's check reads of this clause.
     fn view(&self) -> ClauseView<'_> {
         ClauseView {
-            source_owner: Some(&self.source_owner),
+            source_owner: self.source_owner.as_ref(),
             kind: self.kind,
             complete_value: is_complete_value(&self.selection),
             context: Some(self.context.clone()),

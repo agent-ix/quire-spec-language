@@ -4844,7 +4844,7 @@ fn state_clauses(
                 .as_ref()
                 .map(|operation| operation.name.clone()),
             name,
-            source_owner,
+            source_owner: Some(source_owner),
             name_span: form.name.span,
             selection,
             context,
