@@ -37,7 +37,10 @@ pub use progress::{
 };
 use temporal::TemporalRun;
 pub use temporal::{
-    admit_progress, OverObject, ProgressRefusal, TimestampedObservation, TraceInput,
+    admit_progress, FiniteWindowAssessment, FiniteWindowPremises, FiniteWindowReport,
+    FiniteWindowSupport, OverObject, ProgressRefusal, TimestampedCover,
+    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
+    TraceBinding, TraceInput,
 };
 
 use super::call::{convert_call_failure, convert_outcome, select};
@@ -332,7 +335,10 @@ impl ClauseDisposition {
     /// `Incomplete` is incomplete and a `Fault` an internal failure. The
     /// run's exit code is this category's
     /// [`Category::exit_code`](quire_semantic_value::catalog::Category::exit_code)
-    /// (FR-285).
+    /// (FR-285), except for a finite-window `Temporal` verdict: the shared
+    /// catalog has no `pending` or `indeterminate` (IR-1281), so for those
+    /// this value is not the verdict's FR-285 category or exit; read
+    /// [`Self::category_label`] and [`Self::exit_code`].
     pub fn category(&self) -> quire_semantic_value::catalog::Category {
         use quire_semantic_value::catalog::Category;
         match self {
@@ -350,7 +356,7 @@ impl ClauseDisposition {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
-            Self::Temporal(outcome) => outcome.category(),
+            Self::Temporal(outcome) => outcome.shared_category(),
             // The refusal's own catalog code decides: a malformed trace is a
             // refusal, a profile the evaluator does not read is unsupported.
             Self::TemporalRefusal(refusal) => {
@@ -381,6 +387,52 @@ impl ClauseDisposition {
             _ => None,
         }
     }
+
+    /// The category label for callers that need the complete QSL temporal
+    /// outcome set, including `pending` and `indeterminate`.
+    pub fn category_label(&self) -> &'static str {
+        match self {
+            Self::Temporal(outcome) => outcome.category_label(),
+            _ => self.category().as_str(),
+        }
+    }
+
+    /// FR-285's exit code, preserving finite-window temporal outcomes that
+    /// the shared category enum cannot distinguish.
+    pub fn exit_code(&self) -> u8 {
+        if let Self::Temporal(outcome) = self {
+            outcome.exit_code()
+        } else {
+            self.category().trace_exit_code()
+        }
+    }
+}
+
+/// The FR-285 multi-item ranking of temporal outcomes: the label and exit of
+/// the most severe one under the order 30, 20, 21, 22, 10, 11, 0, each read
+/// from [`TemporalVerdict::label_and_exit`], the mapping the single-report run
+/// path reads; `None` for no outcome.
+pub fn temporal_batch_outcome<'a>(
+    outcomes: impl IntoIterator<Item = &'a TemporalVerdict>,
+) -> Option<(&'static str, u8)> {
+    let severity = |exit: u8| match exit {
+        30 => 6,
+        20 => 5,
+        21 => 4,
+        22 => 3,
+        10 => 2,
+        11 => 1,
+        _ => 0,
+    };
+    outcomes
+        .into_iter()
+        .map(TemporalVerdict::label_and_exit)
+        .max_by_key(|(_, exit)| severity(*exit))
+}
+
+/// The exit of [`temporal_batch_outcome`]: 0 for no outcome.
+pub fn temporal_batch_exit_code<'a>(outcomes: impl IntoIterator<Item = &'a TemporalVerdict>) -> u8 {
+    temporal_batch_outcome(outcomes).map_or(0, |(_, exit)| exit)
 }
 
 /// The settlement of a temporal clause on one trace (FR-327 "Outputs"), as
@@ -409,6 +461,20 @@ pub enum TemporalVerdict {
     /// A finite prefix that neither shows a bad prefix nor can show more
     /// (FR-328): O-16 inconclusive.
     Pending,
+    /// A finite-window activation whose inclusive deadline is still ahead.
+    PendingWindow {
+        /// The activation position.
+        at: u64,
+        /// The first watermark tick that can establish the activation.
+        deadline: u64,
+    },
+    /// A closed finite window whose evidence leaves the truth unresolved.
+    Indeterminate {
+        /// The activation position.
+        at: u64,
+        /// The unresolved evidence reason.
+        reason: TemporalIndeterminateReason,
+    },
     /// The clause has a fairness set and the trace carries no enabledness
     /// to check it against (FR-328, FR-329): O-16 unsupported.
     MissingFairnessPremise {
@@ -417,6 +483,15 @@ pub enum TemporalVerdict {
     },
     /// The work budget ran out; no truth value (ADR-014 TR-5).
     Incomplete(quire_exact::Incomplete),
+    /// An `on each` activation guard could not be established, so no
+    /// temporal instance was evaluated (FR-044-AC-7); no truth value.
+    ActivationIncomplete {
+        /// The trace position whose activation guard was unresolved.
+        at: u64,
+        /// The checked source identity of the guard that could not be
+        /// established.
+        guard: quire_semantic_value::location::Location,
+    },
     /// A window aggregate outgrew `max_window_values` (FR-194; ADR-018
     /// V-7); no truth value.
     WindowLimitReached {
@@ -433,23 +508,107 @@ pub enum TemporalVerdict {
 }
 
 impl TemporalVerdict {
-    /// The ADR-013 O-16 category of this verdict (FR-327 "Results").
-    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+    /// FR-285's category of this verdict, as the temporal run path names it:
+    /// the one mapping that [`Self::category`], [`Self::category_label`] and
+    /// [`Self::exit_code`] all read.
+    fn temporal_category(&self) -> TemporalCategory {
         use quire_semantic_value::catalog::Category;
         match self {
-            Self::Holds => Category::Success,
+            Self::Holds => TemporalCategory::Shared(Category::Success),
             Self::Undefined {
                 cause: TemporalUndefinedCause::InsufficientData { .. },
                 ..
-            } => Category::Undefined,
-            Self::Violated { .. } | Self::Undefined { .. } => Category::Violation,
-            Self::Pending => Category::Inconclusive,
-            Self::MissingFairnessPremise { .. } => Category::Unsupported,
+            } => TemporalCategory::Shared(Category::Undefined),
+            Self::Violated { .. } | Self::Undefined { .. } => {
+                TemporalCategory::Shared(Category::Violation)
+            }
+            Self::Pending | Self::PendingWindow { .. } => TemporalCategory::Pending,
+            Self::Indeterminate { .. } => TemporalCategory::Indeterminate,
+            Self::MissingFairnessPremise { .. } => TemporalCategory::Shared(Category::Unsupported),
             Self::Incomplete(_)
+            | Self::ActivationIncomplete { .. }
             | Self::WindowLimitReached { .. }
-            | Self::ProgressLimitReached(_) => Category::Incomplete,
+            | Self::ProgressLimitReached(_) => TemporalCategory::Shared(Category::Incomplete),
         }
     }
+
+    /// The shared catalog's category of this verdict, for the spine's own
+    /// stage and acceptance decisions. It is NOT the verdict's FR-285
+    /// category or exit: the catalog has no `pending` and no `indeterminate`
+    /// (IR-1281), so a pending result reads `inconclusive` and an
+    /// indeterminate one `undefined`, whose exit (10) FR-285-AC-7 forbids.
+    /// The authoritative label and exit are [`Self::label_and_exit`].
+    pub(crate) fn shared_category(&self) -> quire_semantic_value::catalog::Category {
+        use quire_semantic_value::catalog::Category;
+        match self.temporal_category() {
+            TemporalCategory::Shared(category) => category,
+            TemporalCategory::Pending => Category::Inconclusive,
+            TemporalCategory::Indeterminate => Category::Undefined,
+        }
+    }
+
+    /// FR-285's category label and exit for this verdict, including `pending`
+    /// (exit 0) and `indeterminate` (exit 11): the one interim mapping
+    /// (FR-285 "Interim mapping until Contract IR IR-1281") that the
+    /// single-report run path and the multi-item ranking both read.
+    pub fn label_and_exit(&self) -> (&'static str, u8) {
+        match self.temporal_category() {
+            TemporalCategory::Shared(category) => (category.as_str(), category.trace_exit_code()),
+            TemporalCategory::Pending => ("pending", 0),
+            TemporalCategory::Indeterminate => ("indeterminate", 11),
+        }
+    }
+
+    /// FR-285's category spelling, including `pending` and `indeterminate`.
+    pub fn category_label(&self) -> &'static str {
+        self.label_and_exit().0
+    }
+
+    /// FR-285's process exit: 0 for pending, 11 for indeterminate and the
+    /// shared category's exit otherwise (a supplied-trace clause still
+    /// pending exits 0).
+    pub fn exit_code(&self) -> u8 {
+        self.label_and_exit().1
+    }
+}
+
+/// FR-285's categories of a temporal verdict: the shared catalog's, and the
+/// two it lacks (IR-1281).
+enum TemporalCategory {
+    Shared(quire_semantic_value::catalog::Category),
+    Pending,
+    Indeterminate,
+}
+
+/// Why closed finite-window evidence cannot determine a Boolean result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemporalIndeterminateReason {
+    /// A required atom valuation is absent.
+    MissingValuation {
+        /// Position containing the absent valuation.
+        position: u64,
+        /// Atom whose valuation is absent.
+        atom: String,
+        /// The assessed instance, set only for an instance-bound atom of an
+        /// evidence call (FR-524); `None` otherwise.
+        instance: Option<String>,
+        /// The other instances that hold a valuation of the atom at the
+        /// position; empty unless `instance` is set.
+        also_held_by: Vec<String>,
+    },
+    /// Conflicting atom valuations were admitted at one position.
+    ConflictingValuation {
+        /// Position containing conflicting values.
+        position: u64,
+        /// Atom with conflicting values.
+        atom: String,
+    },
+    /// The completeness assertion does not cover the established window.
+    IncompleteInput,
+    /// A past operator reaches before a non-authoritative history cutoff.
+    MissingHistory,
+    /// A counter cover straddles an interval boundary.
+    StraddlesBound,
 }
 
 /// Why an atom has no value at a position (ADR-018 UE-2).
@@ -497,6 +656,13 @@ pub enum TemporalTraceRefusal {
     /// A lasso with an empty loop (FR-329 "Lasso shape").
     #[error("a lasso holds at least one loop position")]
     EmptyLoop,
+    /// Two equal-stamp positions used by an order-sensitive operator lack
+    /// comparable keys from one authority.
+    #[error("timestamped position {position} has no comparable same-stamp order key")]
+    SameStampOrderUnavailable {
+        /// Later admitted position where ordering became ambiguous.
+        position: u64,
+    },
     /// A lasso's prefix and loop together exceed `u64` positions.
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
@@ -538,6 +704,7 @@ impl TemporalTraceRefusal {
         match self {
             Self::EmptyTrace
             | Self::EmptyLoop
+            | Self::SameStampOrderUnavailable { .. }
             | Self::TraceTooLong
             | Self::TupleArity { .. }
             | Self::Position(_)
@@ -620,6 +787,8 @@ pub struct ClauseRunUsage {
     pub admission_consumed: qsl_semantics::model::observation::AdmissionUsage,
     /// How many charges the evaluation meter admitted in total.
     pub evaluation_admissions: u64,
+    /// `temporal.visit` charges made by finite-window temporal evaluation.
+    pub temporal_visits: u64,
     /// The evaluation meter's consumed total, one pair per `LimitKind::ALL`.
     pub evaluation_consumed: Vec<(quire_exact::LimitKind, u64)>,
 }
@@ -711,6 +880,7 @@ impl ClauseRunUsage {
         Self {
             admission_consumed,
             evaluation_admissions: meter.admission_count(),
+            temporal_visits: 0,
             evaluation_consumed: quire_exact::LimitKind::ALL
                 .iter()
                 .map(|kind| (*kind, meter.consumed(*kind)))
@@ -740,6 +910,17 @@ pub struct ClauseRunReport {
     /// supplied ledger unchanged when it was refused. `None` when the request
     /// carried none.
     pub ledger: Option<ProgressLedger>,
+    /// FR-330, FR-501 "Result report": the basis, decision support, premises
+    /// and result identity of a finite-window run; `None` for every other run.
+    pub finite_window: Option<FiniteWindowReport>,
+}
+
+impl ClauseRunReport {
+    /// Stable outcome category label. For temporal dispositions this returns
+    /// the full temporal category set, including `pending` and `indeterminate`.
+    pub fn category_label(&self) -> &'static str {
+        self.disposition.category_label()
+    }
 }
 
 /// FR-266: the basis of a report that derives no witness: `closed-scope`
@@ -855,6 +1036,7 @@ pub fn run_clause_with_temporal_selections(
         disposition,
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
+        finite_window: None,
         ledger: None,
     };
 
@@ -998,6 +1180,7 @@ impl CompiledRun<'_> {
             disposition,
             usage: ClauseRunUsage::default(),
             consequent_source_events: ConsequentSourceEvents::Unavailable,
+            finite_window: None,
             ledger: None,
         }
     }
@@ -1414,6 +1597,7 @@ fn run_function(
         disposition,
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
+        finite_window: None,
         ledger: None,
     };
 

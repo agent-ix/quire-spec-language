@@ -35,6 +35,7 @@
 //! the one clause evaluator (FR-107).
 
 mod engine;
+mod finite_window;
 mod input;
 mod ledger;
 mod letters;
@@ -49,6 +50,12 @@ mod tuple;
 mod window;
 
 pub use engine::{unrolling, Unrolling};
+pub use finite_window::{
+    evaluate_finite_window, Assessment, Basis, ClockCover, Containment, IndeterminateReason,
+    LowerBoundary, OrderKey, Premises, ResultIdentity, SupportPair, TimestampedObservation,
+    TimestampedTrace, Valuation, Watermark, WindowClock, WindowEvaluation, WindowProgress,
+    WindowVerdict,
+};
 pub use input::TemporalTrace;
 pub use ledger::{
     ContradictedDimension, CoveredPositionsLimitReached, LedgerBinding, LedgerEntry, LedgerRefusal,
@@ -57,7 +64,10 @@ pub use ledger::{
     DEFAULT_COVERED_POSITIONS,
 };
 pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
-pub use observed::{evaluate_observed, evaluate_observed_at, HoldsStop, ObservedRun};
+pub use observed::{
+    evaluate_observed, evaluate_observed_at, evaluate_observed_finite_window, HoldsStop,
+    ObservedRun, ObservedWindowRun, WindowValuations,
+};
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};
 pub use outcome::{
     InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,

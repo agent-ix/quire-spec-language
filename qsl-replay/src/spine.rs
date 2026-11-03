@@ -132,15 +132,18 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    admit_progress, run_clause, run_clause_with_temporal_selections, ClauseArgument,
-    ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
-    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
-    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, ContradictedDimension,
-    LedgerBinding, ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
-    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
-    ProgressLimitReached, ProgressRefusal, ProgressValue, TemporalPositionRefusal,
-    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
-    TimestampedObservation, TraceInput,
+    admit_progress, run_clause, run_clause_with_temporal_selections, temporal_batch_exit_code,
+    temporal_batch_outcome, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
+    ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
+    ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents,
+    ConsequentState, ContradictedDimension, FiniteWindowAssessment, FiniteWindowPremises,
+    FiniteWindowReport, FiniteWindowSupport, LedgerBinding, ObservedPosition, OperationName,
+    OverObject, ProgressAssertion, ProgressClosure, ProgressCompleteness, ProgressContradiction,
+    ProgressLedger, ProgressLedgerEntry, ProgressLimitReached, ProgressRefusal, ProgressValue,
+    TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedCover,
+    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
+    TraceBinding, TraceInput,
 };
 mod refinement;
 pub use refinement::{

@@ -31,6 +31,7 @@ mod equality_matrix;
 mod evaluation_ignores_display_strings;
 mod fairness_kernels;
 mod finite_simulation;
+mod finite_window;
 mod float_callables;
 mod float_rounding;
 mod footprints;
