@@ -12,7 +12,7 @@ relationships:
 
 Verify the abstract protocol side: resolution of the protocol, node targets,
 the refinement's internal list (its shape, spellings, resolution, locus and refusal), the
-`refinement` requirement record and the unsupported liveness half.
+single `temporal-satisfaction` requirement record (FR-144's) and the unsupported liveness half.
 
 Scope: FR-147-AC-1 to FR-147-AC-16. Builds: **built** is a build whose
 support set holds `protocol-abstract-side` and `refinement-internal-list`;
