@@ -6,7 +6,8 @@ use qsl_semantics::check::FormulaNodeId;
 use quire_exact::Incomplete;
 
 use super::cover::ClockCover;
-use super::trace::{Closure, Completeness, LowerBoundary};
+use super::trace::LowerBoundary;
+use crate::temporal::ledger::{ProgressClosure, ProgressCompleteness};
 use crate::temporal::letters::{AtomReading, UndefinedCause};
 use crate::temporal::outcome::UndefinedEvaluation;
 use crate::temporal::position::TemporalPosition;
@@ -90,6 +91,12 @@ pub enum WindowVerdict {
     Undefined(UndefinedEvaluation),
     /// The work budget ran out; no truth value (FR-327 "Work").
     Incomplete(Incomplete),
+    /// An `on each` guard cannot be established at `at`: an incomplete
+    /// activation, not a false guard (FR-044-AC-7); no truth value.
+    ActivationIncomplete {
+        /// The position whose guard is unresolved.
+        at: TemporalPosition,
+    },
 }
 
 /// What a verdict rests on (FR-501 "Result report").
@@ -130,13 +137,13 @@ pub struct SupportPair {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Premises {
     /// The decision scope's closure.
-    pub scope: Closure,
+    pub scope: ProgressClosure,
     /// The surrounding execution's closure.
-    pub execution: Closure,
+    pub execution: ProgressClosure,
     /// The assessment-execution disposition.
     pub assessment: Assessment,
     /// The input completeness.
-    pub completeness: Completeness,
+    pub completeness: ProgressCompleteness,
     /// The watermark as an inclusive tick, `-1` when progress covers none.
     pub watermark: i128,
     /// The lower-boundary kind.

@@ -15,7 +15,8 @@ use super::outcome::{
     Assessment, Basis, IndeterminateReason, Premises, SupportPair, Valuation, WindowEvaluation,
     WindowVerdict,
 };
-use super::trace::{LowerBoundary, TimestampedTrace};
+use super::trace::{covers, LowerBoundary, TimestampedTrace};
+use crate::temporal::ledger::ProgressClosure;
 use crate::temporal::letters::{
     AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause,
 };
@@ -28,6 +29,8 @@ const VISIT: ChargePoint = ChargePoint::TemporalVisit;
 /// Why a run stopped before it finished every activation.
 enum Stop {
     Incomplete(Incomplete),
+    /// An `on each` guard that cannot be established at a position.
+    GuardUnresolved(TemporalPosition),
     Undefined(UndefinedEvaluation),
     Refused(TemporalRefusal),
 }
@@ -77,6 +80,7 @@ struct Finished {
 /// What ended the activations early, if anything did.
 enum Tail {
     Done,
+    GuardUnresolved(TemporalPosition),
     Undefined(UndefinedEvaluation),
     Incomplete(Incomplete),
 }
@@ -168,6 +172,7 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
     let tail = match run.activations(&mut done) {
         Ok(()) => Tail::Done,
         Err(Stop::Incomplete(incomplete)) => Tail::Incomplete(incomplete),
+        Err(Stop::GuardUnresolved(at)) => Tail::GuardUnresolved(at),
         Err(Stop::Undefined(undefined)) => Tail::Undefined(undefined),
         Err(Stop::Refused(refusal)) => return Err(refusal),
     };
@@ -245,7 +250,7 @@ impl<L: TemporalLetters> Run<'_, L> {
     /// window").
     fn established(&self, tick: i128, reach: i128) -> bool {
         let need = tick.saturating_add(reach).saturating_add(self.margin);
-        self.trace.progress.completeness.covers(need) && self.watermark >= need
+        covers(self.trace.progress.completeness, need) && self.watermark >= need
     }
 
     /// Every activation in position order. `done` receives each activation
@@ -261,9 +266,9 @@ impl<L: TemporalLetters> Run<'_, L> {
                 match self.letters.activation(at, &mut *self.meter)? {
                     AtomReading::True => {}
                     AtomReading::False => continue,
-                    AtomReading::Undefined(cause) => {
-                        return Err(Stop::Undefined(UndefinedEvaluation { at, cause }))
-                    }
+                    // A guard that cannot be established is an incomplete
+                    // activation, never a false guard (FR-044-AC-7).
+                    AtomReading::Undefined(_) => return Err(Stop::GuardUnresolved(at)),
                 }
             }
             let captured = match self.clause.capture_site() {
@@ -459,11 +464,10 @@ impl<L: TemporalLetters> Run<'_, L> {
         } else {
             (
                 candidates.is_empty()
-                    && !self
-                        .trace
-                        .progress
-                        .completeness
-                        .covers(anchor - i128::from(lower) + self.margin),
+                    && !covers(
+                        self.trace.progress.completeness,
+                        anchor - i128::from(lower) + self.margin,
+                    ),
                 self.trace.progress.lower_boundary == LowerBoundary::HistoryCutoff
                     && anchor - i128::from(upper) - self.margin < first,
             )
@@ -734,7 +738,7 @@ impl<L: TemporalLetters> Run<'_, L> {
         let first_open = done
             .iter()
             .find(|a| matches!(a.result, Ending::Pending { .. } | Ending::Indeterminate(_)));
-        let scope_closed = self.trace.progress.scope == super::trace::Closure::Closed;
+        let scope_closed = self.trace.progress.scope == ProgressClosure::Closed;
         let (verdict, basis, support) = if let Some(activation) = first_false {
             let basis = if activation.established && scope_closed {
                 Basis::ClosedScope
@@ -750,6 +754,11 @@ impl<L: TemporalLetters> Run<'_, L> {
             )
         } else {
             match tail {
+                Tail::GuardUnresolved(at) => (
+                    WindowVerdict::ActivationIncomplete { at },
+                    Basis::Unavailable,
+                    Vec::new(),
+                ),
                 Tail::Undefined(undefined) => (
                     WindowVerdict::Undefined(undefined),
                     Basis::Unavailable,
@@ -803,7 +812,9 @@ impl<L: TemporalLetters> Run<'_, L> {
             }
         };
         let assessment = match verdict {
-            WindowVerdict::Incomplete(_) => Assessment::Failed,
+            WindowVerdict::Incomplete(_) | WindowVerdict::ActivationIncomplete { .. } => {
+                Assessment::Failed
+            }
             WindowVerdict::Holds
             | WindowVerdict::Violated { .. }
             | WindowVerdict::Pending { .. }

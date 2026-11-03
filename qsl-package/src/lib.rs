@@ -23,6 +23,8 @@ mod checked;
 #[cfg(feature = "std")]
 mod checked_v2;
 #[cfg(feature = "std")]
+pub mod checked_views;
+#[cfg(feature = "std")]
 mod emit;
 pub mod evaluation_view;
 mod export;

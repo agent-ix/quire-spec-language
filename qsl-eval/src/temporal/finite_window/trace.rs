@@ -2,38 +2,16 @@
 //! The timestamped trace and its progress (FR-501 Inputs).
 
 use super::cover::ClockCover;
+use crate::temporal::ledger::{ProgressClosure, ProgressCompleteness};
 use crate::temporal::outcome::TemporalRefusal;
 use crate::temporal::position::TemporalPosition;
 
-/// The completeness assertion of a trace (FR-501 Inputs).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Completeness {
-    /// Every observation stamped at or before `through` has been supplied.
-    Complete {
-        /// The last tick the assertion covers. It MAY exceed the watermark.
-        through: u64,
-    },
-    /// No completeness is asserted.
-    Incomplete,
-}
-
-impl Completeness {
-    /// Whether the assertion covers every tick up to `tick`.
-    pub(super) fn covers(self, tick: i128) -> bool {
-        match self {
-            Self::Complete { through } => i128::from(through) >= tick,
-            Self::Incomplete => false,
-        }
+/// Whether the completeness assertion covers every tick up to `tick`.
+pub(super) fn covers(completeness: ProgressCompleteness, tick: i128) -> bool {
+    match completeness {
+        ProgressCompleteness::Complete { through } => i128::from(through) >= tick,
+        ProgressCompleteness::Incomplete => false,
     }
-}
-
-/// The closure of a decision scope or of the surrounding execution.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Closure {
-    /// Nothing more will be added.
-    Closed,
-    /// More may still be added.
-    Open,
 }
 
 /// Whether the trace's lower boundary is the origin of the history or only a
@@ -95,16 +73,16 @@ pub struct TimestampedObservation {
 }
 
 /// The progress a timestamped trace asserts (FR-501 Inputs).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WindowProgress {
     /// The watermark `W`.
     pub watermark: Watermark,
     /// The completeness assertion.
-    pub completeness: Completeness,
+    pub completeness: ProgressCompleteness,
     /// The decision scope's closure.
-    pub scope: Closure,
+    pub scope: ProgressClosure,
     /// The surrounding execution's closure.
-    pub execution: Closure,
+    pub execution: ProgressClosure,
     /// The lower-boundary kind.
     pub lower_boundary: LowerBoundary,
 }

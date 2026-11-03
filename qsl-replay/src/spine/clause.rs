@@ -29,9 +29,13 @@ use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
 mod temporal;
+use temporal::TemporalRun;
 pub use temporal::{
-    FiniteWindowReport, OverObject, TimestampedMissingValuation, TimestampedObservation,
-    TimestampedOrderKey, TimestampedTraceInput, TraceBinding, TraceInput,
+    admit_progress, FiniteWindowReport, LedgerBinding, ObservedPosition, OverObject,
+    ProgressAssertion, ProgressClosure, ProgressCompleteness, ProgressContradiction,
+    ProgressLedger, ProgressLimitReached, ProgressRefusal, ProgressValue,
+    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
+    TraceBinding, TraceInput,
 };
 
 use super::call::{convert_call_failure, convert_outcome, select};
@@ -104,6 +108,9 @@ pub enum ClauseRunSelection {
         /// The object the clause's `over` parameter names, resolved in the
         /// observation at position 0.
         over: OverObject,
+        /// FR-502: the progress ledger the caller carries from its earlier
+        /// requests of this clause; `None` evaluates the trace alone.
+        ledger: Option<ProgressLedger>,
     },
 }
 
@@ -290,6 +297,9 @@ pub enum ClauseDisposition {
     /// Stage `evaluate`, category `refusal` (FR-330): the evaluator refused
     /// the supplied trace (a lasso with an empty loop, for one).
     TemporalRefusal(TemporalTraceRefusal),
+    /// Stage `evaluate`, category `refusal` (FR-502): the supplied progress
+    /// contradicts what the request's ledger retains for the binding.
+    ProgressContradiction(Box<ProgressRefusal>),
     /// Stage `evaluate`, category `internal-failure`: a broken S6a
     /// invariant reached outside the outcome mapping (FR-100's own
     /// internal-failure exit status).
@@ -306,6 +316,7 @@ impl ClauseDisposition {
             Self::Evaluate(_)
             | Self::Temporal(_)
             | Self::TemporalRefusal(_)
+            | Self::ProgressContradiction(_)
             | Self::FrameViolation(_)
             | Self::EvaluateFault(_) => ClauseRunStage::Evaluate,
         }
@@ -319,7 +330,10 @@ impl ClauseDisposition {
     /// `Incomplete` is incomplete and a `Fault` an internal failure. The
     /// run's exit code is this category's
     /// [`Category::exit_code`](quire_semantic_value::catalog::Category::exit_code)
-    /// (FR-285).
+    /// (FR-285), except for a finite-window `Temporal` verdict: the shared
+    /// catalog has no `pending` or `indeterminate` (IR-1281), so for those
+    /// this value is not the verdict's FR-285 category or exit; read
+    /// [`Self::category_label`] and [`Self::exit_code`].
     pub fn category(&self) -> quire_semantic_value::catalog::Category {
         use quire_semantic_value::catalog::Category;
         match self {
@@ -337,11 +351,15 @@ impl ClauseDisposition {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
-            Self::Temporal(outcome) => outcome.category(),
+            Self::Temporal(outcome) => outcome.shared_category(),
             // The refusal's own catalog code decides: a malformed trace is a
             // refusal, a profile the evaluator does not read is unsupported.
             Self::TemporalRefusal(refusal) => {
                 qsl_foundation::diagnostic::Code::from_code(refusal.catalog_code().code())
+                    .map_or(Category::InternalFailure, |code| code.category())
+            }
+            Self::ProgressContradiction(refusal) => {
+                qsl_foundation::diagnostic::Code::from_code(refusal.record.catalog.code())
                     .map_or(Category::InternalFailure, |code| code.category())
             }
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(false))) => {
@@ -460,6 +478,15 @@ pub enum TemporalVerdict {
     },
     /// The work budget ran out; no truth value (ADR-014 TR-5).
     Incomplete(quire_exact::Incomplete),
+    /// An `on each` activation guard could not be established, so no
+    /// temporal instance was evaluated (FR-044-AC-7); no truth value.
+    ActivationIncomplete {
+        /// The trace position whose activation guard was unresolved.
+        at: u64,
+        /// The checked source identity of the guard that could not be
+        /// established.
+        guard: quire_semantic_value::location::Location,
+    },
     /// A window aggregate outgrew `max_window_values` (FR-194; ADR-018
     /// V-7); no truth value.
     WindowLimitReached {
@@ -470,6 +497,9 @@ pub enum TemporalVerdict {
         /// The setting that raises it, `monitor.max_window_values`.
         setting: &'static str,
     },
+    /// The progress ledger's covered positions outgrew `progress.
+    /// covered_positions` (FR-502); no truth value, ledger unchanged.
+    ProgressLimitReached(ProgressLimitReached),
 }
 
 impl TemporalVerdict {
@@ -490,20 +520,20 @@ impl TemporalVerdict {
             Self::Pending | Self::PendingWindow { .. } => TemporalCategory::Pending,
             Self::Indeterminate { .. } => TemporalCategory::Indeterminate,
             Self::MissingFairnessPremise { .. } => TemporalCategory::Shared(Category::Unsupported),
-            Self::Incomplete(_) | Self::WindowLimitReached { .. } => {
-                TemporalCategory::Shared(Category::Incomplete)
-            }
+            Self::Incomplete(_)
+            | Self::ActivationIncomplete { .. }
+            | Self::WindowLimitReached { .. }
+            | Self::ProgressLimitReached(_) => TemporalCategory::Shared(Category::Incomplete),
         }
     }
 
-    /// The ADR-013 O-16 category of this verdict (FR-327 "Results"), in the
-    /// shared catalog's eight values. The catalog has no `pending` and no
-    /// `indeterminate` (IR-1281): until it does, a pending result is
-    /// `inconclusive` (its trace exit is 0) and an indeterminate one
-    /// `undefined`, the nearest value that ranks below a violation. Callers
-    /// that need FR-285's categories and exits read
-    /// [`Self::category_label`] and [`Self::exit_code`].
-    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+    /// The shared catalog's category of this verdict, for the spine's own
+    /// stage and acceptance decisions. It is NOT the verdict's FR-285
+    /// category or exit: the catalog has no `pending` and no `indeterminate`
+    /// (IR-1281), so a pending result reads `inconclusive` and an
+    /// indeterminate one `undefined`, whose exit (10) FR-285-AC-7 forbids.
+    /// The authoritative label and exit are [`Self::label_and_exit`].
+    pub(crate) fn shared_category(&self) -> quire_semantic_value::catalog::Category {
         use quire_semantic_value::catalog::Category;
         match self.temporal_category() {
             TemporalCategory::Shared(category) => category,
@@ -870,6 +900,11 @@ pub struct ClauseRunReport {
     /// Per-implication consequent observations from a completed native
     /// Boolean clause evaluation, in checked expression order.
     pub consequent_source_events: ConsequentSourceEvents,
+    /// FR-502, FR-330: the progress ledger of a `Temporal` request that
+    /// carried one: the updated ledger when the request was accepted, the
+    /// supplied ledger unchanged when it was refused. `None` when the request
+    /// carried none.
+    pub ledger: Option<ProgressLedger>,
     /// FR-330, FR-501 "Result report": the basis, decision support, premises
     /// and result identity of a finite-window run; `None` for every other run.
     pub finite_window: Option<FiniteWindowReport>,
@@ -997,6 +1032,7 @@ pub fn run_clause_with_temporal_selections(
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
+        ledger: None,
     };
 
     if let Some(language) = unit.language {
@@ -1070,6 +1106,7 @@ pub fn run_clause_with_temporal_selections(
         accounting: request.accounting,
         package,
         sources: &sources,
+        progress_capacity: request.limits.progress.covered_positions,
     };
     match request.selection {
         ClauseRunSelection::Clause(ref selection) => {
@@ -1093,7 +1130,16 @@ pub fn run_clause_with_temporal_selections(
             ref name,
             ref trace,
             ref over,
-        } => Ok(temporal::run_temporal(&run, name, trace, over)),
+            ref ledger,
+        } => Ok(temporal::run_temporal(
+            &run,
+            &TemporalRun {
+                name,
+                trace,
+                over,
+                ledger: ledger.as_ref(),
+            },
+        )),
     }
 }
 
@@ -1117,6 +1163,8 @@ pub(crate) struct CompiledRun<'a> {
     pub(crate) package: &'a qsl_package::CheckedPackage,
     /// The unit's and every resolved library's source, for loci.
     pub(crate) sources: &'a [Source],
+    /// The covered-position capacity for temporal progress admission.
+    pub(crate) progress_capacity: u64,
 }
 
 impl CompiledRun<'_> {
@@ -1128,6 +1176,7 @@ impl CompiledRun<'_> {
             usage: ClauseRunUsage::default(),
             consequent_source_events: ConsequentSourceEvents::Unavailable,
             finite_window: None,
+            ledger: None,
         }
     }
 }
@@ -1544,6 +1593,7 @@ fn run_function(
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
+        ledger: None,
     };
 
     let selected = match select(package, name) {

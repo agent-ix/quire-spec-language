@@ -37,6 +37,7 @@
 mod engine;
 mod finite_window;
 mod input;
+mod ledger;
 mod letters;
 mod observed;
 mod observed_window;
@@ -50,12 +51,18 @@ mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use finite_window::{
-    evaluate_finite_window, Assessment, Basis, ClockCover, Closure, Completeness, Containment,
-    IndeterminateReason, LowerBoundary, OrderKey, Premises, ResultIdentity, SupportPair,
-    TimestampedObservation, TimestampedTrace, Valuation, Watermark, WindowClock, WindowEvaluation,
-    WindowProgress, WindowVerdict,
+    evaluate_finite_window, Assessment, Basis, ClockCover, Containment, IndeterminateReason,
+    LowerBoundary, OrderKey, Premises, ResultIdentity, SupportPair, TimestampedObservation,
+    TimestampedTrace, Valuation, Watermark, WindowClock, WindowEvaluation, WindowProgress,
+    WindowVerdict,
 };
 pub use input::TemporalTrace;
+pub use ledger::{
+    ContradictedDimension, CoveredPositionsLimitReached, LedgerBinding, LedgerEntry, LedgerRefusal,
+    ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
+    ProgressContradiction, ProgressLedger, ProgressValue, COVERED_POSITIONS_SETTING,
+    DEFAULT_COVERED_POSITIONS,
+};
 pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{
     evaluate_observed, evaluate_observed_at, evaluate_observed_finite_window, HoldsStop,

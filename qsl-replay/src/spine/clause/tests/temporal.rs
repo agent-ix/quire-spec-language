@@ -192,26 +192,34 @@ fn timestamped_with(
         unit,
         |labels| ClauseRunSelection::Temporal {
             name: "Window".to_owned(),
-            trace: TraceInput::Timestamped(Box::new(crate::spine::TimestampedTraceInput {
-                positions: labels
+            trace: TraceInput::Timestamped {
+                observations: labels
                     .iter()
                     .zip(stamps)
                     .map(|(document, stamp)| crate::spine::TimestampedObservation {
                         document: document.clone(),
                         stamp: *stamp,
-                        order: None,
+                        order_key: None,
                     })
                     .collect(),
-                watermark,
-                complete_through,
-                binding: Some(finite_window_binding()),
-                scope_closed: true,
-                execution_closed: true,
-                cover: None,
-                missing_valuations: Vec::new(),
-                authoritative_origin: true,
-            })),
+                progress: crate::spine::ProgressAssertion {
+                    watermark,
+                    completeness: complete_through
+                        .map_or(crate::spine::ProgressCompleteness::Incomplete, |through| {
+                            crate::spine::ProgressCompleteness::Complete { through }
+                        }),
+                    scope: crate::spine::ProgressClosure::Closed,
+                    execution: crate::spine::ProgressClosure::Closed,
+                },
+                window: Box::new(crate::spine::TimestampedWindow {
+                    binding: Some(finite_window_binding()),
+                    authoritative_origin: true,
+                    cover: None,
+                    missing_valuations: Vec::new(),
+                }),
+            },
             over: over("c1"),
+            ledger: None,
         },
         values,
     )
@@ -267,6 +275,7 @@ fn finite(unit: Unit, name: &str, values: &[i64]) -> ClauseRunRequest {
             name: name.to_owned(),
             trace: TraceInput::Finite(labels.to_vec()),
             over: over("c1"),
+            ledger: None,
         },
         values,
     )
@@ -280,6 +289,7 @@ fn ghost() -> ClauseRunRequest {
             name: "Reaches".to_owned(),
             trace: TraceInput::Finite(labels.to_vec()),
             over: over("ghost"),
+            ledger: None,
         },
         &[0, 1, 2],
     )
@@ -297,6 +307,7 @@ fn lasso(unit: Unit, name: &str, prefix: usize, values: &[i64]) -> ClauseRunRequ
                 repeat: labels[prefix..].to_vec(),
             },
             over: over("c1"),
+            ledger: None,
         },
         values,
     )
@@ -1406,6 +1417,7 @@ fn timestamped_profile_and_trace_shape_must_match() {
             name: "Window".to_owned(),
             trace: TraceInput::Finite(labels.to_vec()),
             over: over("c1"),
+            ledger: None,
         },
         &[1],
     );
@@ -1427,25 +1439,33 @@ fn timestamped_profile_and_trace_shape_must_match() {
         Unit::Bounded,
         |labels| ClauseRunSelection::Temporal {
             name: "Bounded".to_owned(),
-            trace: TraceInput::Timestamped(Box::new(crate::spine::TimestampedTraceInput {
-                positions: labels
+            trace: TraceInput::Timestamped {
+                observations: labels
                     .iter()
                     .map(|document| crate::spine::TimestampedObservation {
                         document: document.clone(),
                         stamp: 0,
-                        order: None,
+                        order_key: None,
                     })
                     .collect(),
-                watermark: 0,
-                complete_through: Some(0),
-                binding: Some(finite_window_binding()),
-                scope_closed: true,
-                execution_closed: true,
-                cover: None,
-                missing_valuations: Vec::new(),
-                authoritative_origin: true,
-            })),
+                progress: crate::spine::ProgressAssertion {
+                    watermark: 0,
+                    completeness: Some(0)
+                        .map_or(crate::spine::ProgressCompleteness::Incomplete, |through| {
+                            crate::spine::ProgressCompleteness::Complete { through }
+                        }),
+                    scope: crate::spine::ProgressClosure::Closed,
+                    execution: crate::spine::ProgressClosure::Closed,
+                },
+                window: Box::new(crate::spine::TimestampedWindow {
+                    binding: Some(finite_window_binding()),
+                    authoritative_origin: true,
+                    cover: None,
+                    missing_valuations: Vec::new(),
+                }),
+            },
             over: over("c1"),
+            ledger: None,
         },
         &[1],
     );
@@ -1513,49 +1533,52 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
     let counter1 = ClockCover::Counter { uncertainty: 1 };
     // Every vector of QSpec's tick-cover file, read at test time: the
     // expected value of each is the file's.
-    if let Some(qspec) = std::env::var_os("QSPEC_DIR") {
-        let path = std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/tick-cover-vectors.json");
-        let document: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(path).expect("the vectors read"))
-                .expect("the vectors parse");
-        let cases = document["cases"].as_array().expect("cases");
-        assert_eq!(cases.len(), 15);
-        for case in cases {
-            let id = case["id"].as_str().expect("id");
-            let cover = ClockCover::Counter {
-                uncertainty: case["uncertainty"].as_u64().expect("uncertainty"),
-            };
-            match case["kind"].as_str().expect("kind") {
-                "within_bound" => {
-                    let got = cover.within_bound(
-                        case["bound"].as_i64().expect("bound"),
-                        case["request_tick"].as_u64().expect("request"),
-                        case["ack_tick"].as_u64().expect("ack"),
-                    );
-                    let want = match case["expected"].as_str().expect("expected") {
-                        "true" => Containment::True,
-                        "false" => Containment::False,
-                        _ => Containment::Indeterminate,
-                    };
-                    assert_eq!(got, want, "{id}");
-                }
-                _ => assert_eq!(
-                    cover.definitely_before(
-                        case["a_tick"].as_u64().expect("a"),
-                        case["b_tick"].as_u64().expect("b"),
-                    ),
-                    case["expected"].as_bool().expect("expected"),
-                    "{id}"
-                ),
+    // A required input: the conformance vectors are QSpec's, and a run
+    // without them proves nothing.
+    let qspec = std::env::var_os("QSPEC_DIR")
+        .expect("QSPEC_DIR names the quire-specification checkout the tick-cover vectors live in");
+    let path =
+        std::path::Path::new(&qspec).join("proposals/checked-package-v2/tick-cover-vectors.json");
+    let document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("the vectors read"))
+            .expect("the vectors parse");
+    let cases = document["cases"].as_array().expect("cases");
+    assert_eq!(cases.len(), 15);
+    for case in cases {
+        let id = case["id"].as_str().expect("id");
+        let cover = ClockCover::Counter {
+            uncertainty: case["uncertainty"].as_u64().expect("uncertainty"),
+        };
+        match case["kind"].as_str().expect("kind") {
+            "within_bound" => {
+                let got = cover.within_bound(
+                    case["bound"].as_i64().expect("bound"),
+                    case["request_tick"].as_u64().expect("request"),
+                    case["ack_tick"].as_u64().expect("ack"),
+                );
+                let want = match case["expected"].as_str().expect("expected") {
+                    "true" => Containment::True,
+                    "false" => Containment::False,
+                    _ => Containment::Indeterminate,
+                };
+                assert_eq!(got, want, "{id}");
             }
+            _ => assert_eq!(
+                cover.definitely_before(
+                    case["a_tick"].as_u64().expect("a"),
+                    case["b_tick"].as_u64().expect("b"),
+                ),
+                case["expected"].as_bool().expect("expected"),
+                "{id}"
+            ),
         }
     }
+
     assert_eq!(exact.within_bound(0, 3000, 3000), Containment::True);
 
     fn request(ack_tick: u64, cover: ClockCover) -> ClauseRunRequest {
         let mut request = timestamped(&[0, ack_tick], &[1, 2], ack_tick.max(3_010), Some(3_010));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -1563,14 +1586,8 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
                 "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
             )
             .into_bytes();
-        let ClauseRunSelection::Temporal {
-            trace: TraceInput::Timestamped(trace),
-            ..
-        } = &mut request.selection
-        else {
-            unreachable!()
-        };
-        trace.cover = Some(cover);
+        let trace = timestamped_trace_mut(&mut request);
+        trace.window.cover = Some(cover);
         request
     }
 
@@ -1618,14 +1635,9 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
 fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
     fn missing(values: &[i64], watermark: u64) -> ClauseRunReport {
         let mut request = timestamped(&[0, 2, 5], values, watermark, Some(5));
-        let ClauseRunSelection::Temporal {
-            trace: TraceInput::Timestamped(trace),
-            ..
-        } = &mut request.selection
-        else {
-            unreachable!()
-        };
+        let trace = timestamped_trace_mut(&mut request);
         trace
+            .window
             .missing_valuations
             .push(crate::spine::TimestampedMissingValuation {
                 position: 1,
@@ -1696,13 +1708,16 @@ fn timestamped_equal_readings_at_one_stamp_are_not_a_conflict() {
 #[trace("TC-1295", "FR-501-AC-25")]
 #[test]
 fn timestamped_cover_and_execution_come_from_the_trace_input() {
-    use qsl_eval::temporal::{ClockCover, Closure};
+    use crate::spine::ProgressClosure as Closure;
+    use qsl_eval::temporal::ClockCover;
     let handshake = |ack: u64, watermark: u64, through: u64, cover: Option<ClockCover>| {
         let request = with_clause_body(
             timestamped(&[0, ack], &[1, 2], watermark, Some(through)),
             "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
         );
-        report(timestamped_changed(request, |trace| trace.cover = cover))
+        report(timestamped_changed(request, |trace| {
+            trace.window.cover = cover
+        }))
     };
     // AC-22: no cover is `Exact`.
     assert_eq!(
@@ -1737,7 +1752,7 @@ fn timestamped_cover_and_execution_come_from_the_trace_input() {
     let closed = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
     let open = report(timestamped_changed(
         timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)),
-        |trace| trace.execution_closed = false,
+        |trace| trace.progress.execution = crate::spine::ProgressClosure::Open,
     ));
     assert_eq!(outcome(&open), outcome(&closed));
     assert_eq!(window_report(&closed).premises.execution, Closure::Closed);
@@ -1828,7 +1843,7 @@ fn timestamped_window_charges_exact_visits_and_stops_on_the_denied_visit() {
 fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
     fn until_request(values: &[i64]) -> ClauseRunRequest {
         let mut request = timestamped(&[0, 1, 1], values, 1, Some(1));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -1839,15 +1854,9 @@ fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
         request
     }
     fn set_keys(request: &mut ClauseRunRequest, keys: &[(&str, i64)]) {
-        let ClauseRunSelection::Temporal {
-            trace: TraceInput::Timestamped(trace),
-            ..
-        } = &mut request.selection
-        else {
-            unreachable!()
-        };
+        let trace = timestamped_trace_mut(request);
         for (position, (authority, key)) in trace.positions.iter_mut().zip(keys) {
-            position.order = Some(crate::spine::TimestampedOrderKey {
+            position.order_key = Some(crate::spine::TimestampedOrderKey {
                 authority: (*authority).to_owned(),
                 key: *key,
             });
@@ -1871,13 +1880,7 @@ fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
         &mut reversed,
         &[("ledger", 0), ("ledger", 1), ("ledger", 2)],
     );
-    let ClauseRunSelection::Temporal {
-        trace: TraceInput::Timestamped(trace),
-        ..
-    } = &mut reversed.selection
-    else {
-        unreachable!()
-    };
+    let trace = timestamped_trace_mut(&mut reversed);
     trace.positions.swap(1, 2);
     let reversed = report(reversed);
     assert_eq!(outcome(&ordered), outcome(&reversed));
@@ -1902,14 +1905,8 @@ fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
 fn timestamped_past_windows_respect_history_cutoff() {
     fn once(values: &[i64], authoritative_origin: bool) -> ClauseRunReport {
         let mut request = timestamped_with(Unit::TimestampedOnce, &[3, 4], values, 4, Some(4));
-        let ClauseRunSelection::Temporal {
-            trace: TraceInput::Timestamped(trace),
-            ..
-        } = &mut request.selection
-        else {
-            unreachable!()
-        };
-        trace.authoritative_origin = authoritative_origin;
+        let trace = timestamped_trace_mut(&mut request);
+        trace.window.authoritative_origin = authoritative_origin;
         report(request)
     }
 
@@ -1935,7 +1932,7 @@ fn timestamped_past_windows_respect_history_cutoff() {
 fn timestamped_guarded_on_each_activations_are_evaluated() {
     fn guarded(values: &[i64]) -> ClauseRunReport {
         let mut request = timestamped_with(Unit::TimestampedEach, &[0, 10], values, 12, Some(12));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -1971,19 +1968,57 @@ fn a_guarded_on_each_clause_over_a_finite_trace_is_evaluated_at_its_guard() {
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 1 });
 }
 
-/// `request` with its timestamped trace changed by `change`.
-fn timestamped_changed(
-    mut request: ClauseRunRequest,
-    change: impl FnOnce(&mut crate::spine::TimestampedTraceInput),
-) -> ClauseRunRequest {
+/// The program source bytes of `request`, which these tests rewrite.
+fn program_source_bytes(request: &mut ClauseRunRequest) -> &mut Vec<u8> {
+    let ClauseRunSource::Program { bytes, .. } = &mut request.source else {
+        panic!("a program source");
+    };
+    bytes
+}
+
+/// The parts of a request's timestamped trace a test changes.
+struct TsMut<'a> {
+    positions: &'a mut Vec<crate::spine::TimestampedObservation>,
+    progress: &'a mut crate::spine::ProgressAssertion,
+    window: &'a mut crate::spine::TimestampedWindow,
+}
+
+/// The timestamped trace of `request`, by part.
+fn timestamped_trace_mut(request: &mut ClauseRunRequest) -> TsMut<'_> {
     let ClauseRunSelection::Temporal {
-        trace: TraceInput::Timestamped(trace),
+        trace:
+            TraceInput::Timestamped {
+                observations,
+                progress,
+                window,
+            },
         ..
     } = &mut request.selection
     else {
         panic!("a timestamped selection");
     };
-    change(trace);
+    TsMut {
+        positions: observations,
+        progress,
+        window,
+    }
+}
+
+fn closure(closed: bool) -> crate::spine::ProgressClosure {
+    if closed {
+        crate::spine::ProgressClosure::Closed
+    } else {
+        crate::spine::ProgressClosure::Open
+    }
+}
+
+/// `request` with its timestamped trace changed by `change`.
+fn timestamped_changed(
+    mut request: ClauseRunRequest,
+    change: impl FnOnce(&mut TsMut<'_>),
+) -> ClauseRunRequest {
+    let mut trace = timestamped_trace_mut(&mut request);
+    change(&mut trace);
     request
 }
 
@@ -2005,7 +2040,7 @@ fn timestamped_counter_margin_delays_establishment() {
         cover: qsl_eval::temporal::ClockCover,
     ) -> ClauseRunReport {
         let mut request = timestamped(&[0], &[1], watermark, Some(through));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -2014,7 +2049,7 @@ fn timestamped_counter_margin_delays_establishment() {
             )
             .into_bytes();
         report(timestamped_changed(request, |trace| {
-            trace.cover = Some(cover)
+            trace.window.cover = Some(cover)
         }))
     }
     let counter = qsl_eval::temporal::ClockCover::Counter { uncertainty: 1 };
@@ -2054,7 +2089,7 @@ fn timestamped_report_gives_basis_and_decision_support() {
                 5,
                 Some(5),
             ),
-            |trace| trace.scope_closed = scope_closed,
+            |trace| trace.progress.scope = closure(scope_closed),
         ))
     };
     let closed = always(true);
@@ -2093,7 +2128,8 @@ fn timestamped_report_gives_basis_and_decision_support() {
 #[trace("TC-1295", "FR-501-AC-15")]
 #[test]
 fn timestamped_report_keeps_four_independent_dimensions() {
-    use qsl_eval::temporal::{Assessment, Closure, Completeness};
+    use crate::spine::{ProgressClosure as Closure, ProgressCompleteness as Completeness};
+    use qsl_eval::temporal::Assessment;
     let base = || {
         timestamped_with(
             Unit::TimestampedAlwaysFive,
@@ -2105,7 +2141,7 @@ fn timestamped_report_keeps_four_independent_dimensions() {
     };
     let closed = report(base());
     let open = report(timestamped_changed(base(), |trace| {
-        trace.scope_closed = false
+        trace.progress.scope = crate::spine::ProgressClosure::Open
     }));
     assert_eq!(outcome(&open), outcome(&closed));
     assert_eq!(window_report(&open).support, window_report(&closed).support);
@@ -2121,7 +2157,7 @@ fn timestamped_report_keeps_four_independent_dimensions() {
     );
 
     let moved = report(timestamped_changed(base(), |trace| {
-        trace.execution_closed = false;
+        trace.progress.execution = crate::spine::ProgressClosure::Open;
     }));
     assert_eq!(window_report(&moved).premises.execution, Closure::Open);
     assert_eq!(window_report(&moved).premises.scope, Closure::Closed);
@@ -2188,7 +2224,7 @@ fn timestamped_result_identity_follows_every_input() {
     record(
         "cover",
         timestamped_changed(base(), |trace| {
-            trace.cover = Some(qsl_eval::temporal::ClockCover::Counter { uncertainty: 0 });
+            trace.window.cover = Some(qsl_eval::temporal::ClockCover::Counter { uncertainty: 0 });
         }),
     );
     record(
@@ -2214,7 +2250,7 @@ fn timestamped_result_identity_follows_every_input() {
     record(
         "order key",
         timestamped_changed(base(), |trace| {
-            trace.positions[2].order = Some(crate::spine::TimestampedOrderKey {
+            trace.positions[2].order_key = Some(crate::spine::TimestampedOrderKey {
                 authority: "A".to_owned(),
                 key: 1,
             });
@@ -2242,7 +2278,7 @@ fn timestamped_result_identity_follows_every_input() {
     );
     record(
         "lower boundary",
-        timestamped_changed(base(), |trace| trace.authoritative_origin = false),
+        timestamped_changed(base(), |trace| trace.window.authoritative_origin = false),
     );
     let mut ceiling = base();
     ceiling.accounting.work_units = 1_000;
@@ -2283,7 +2319,7 @@ fn timestamped_completeness_may_run_ahead_and_an_empty_trace_is_refused() {
 fn listed_in(request: ClauseRunRequest, order: &[usize]) -> ClauseRunRequest {
     timestamped_changed(request, |trace| {
         let listed = trace.positions.clone();
-        trace.positions = order.iter().map(|index| listed[*index].clone()).collect();
+        *trace.positions = order.iter().map(|index| listed[*index].clone()).collect();
     })
 }
 
@@ -2344,7 +2380,7 @@ fn timestamped_positions_are_canonical_indices() {
 fn timestamped_until_over_one_authority_is_the_same_reversed() {
     let until = || {
         let mut request = timestamped_with(Unit::Timestamped, &[0, 1, 1], &[1, 0, 2], 1, Some(1));
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let bytes = program_source_bytes(&mut request);
         let source = String::from_utf8(bytes.clone()).unwrap();
         *bytes = source
             .replace(
@@ -2354,7 +2390,7 @@ fn timestamped_until_over_one_authority_is_the_same_reversed() {
             .into_bytes();
         timestamped_changed(request, |trace| {
             for (index, position) in trace.positions.iter_mut().enumerate() {
-                position.order = Some(crate::spine::TimestampedOrderKey {
+                position.order_key = Some(crate::spine::TimestampedOrderKey {
                     authority: "ledger".to_owned(),
                     key: i64::try_from(index).unwrap(),
                 });
@@ -2382,7 +2418,7 @@ fn timestamped_mixed_authorities_have_one_canonical_order() {
             |trace| {
                 let keys = [Some(("A", 1)), Some(("A", 2)), Some(("B", 1)), None];
                 for (position, key) in trace.positions.iter_mut().zip(keys) {
-                    position.order =
+                    position.order_key =
                         key.map(|(authority, key)| crate::spine::TimestampedOrderKey {
                             authority: authority.to_owned(),
                             key,
@@ -2398,12 +2434,13 @@ fn timestamped_mixed_authorities_have_one_canonical_order() {
                 .iter()
                 .position(|position| {
                     position
-                        .order
+                        .order_key
                         .as_ref()
                         .is_some_and(|key| key.authority == "B")
                 })
                 .unwrap();
             trace
+                .window
                 .missing_valuations
                 .push(crate::spine::TimestampedMissingValuation {
                     position: u64::try_from(b1).unwrap(),
@@ -2459,9 +2496,9 @@ fn timestamped_binding_is_required_and_authenticated() {
         record.fields
     };
     let base = || timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
-    assert!(refusal(timestamped_changed(base(), |trace| trace.binding = None)).is_empty());
+    assert!(refusal(timestamped_changed(base(), |trace| trace.window.binding = None)).is_empty());
     let clock = refusal(timestamped_changed(base(), |trace| {
-        trace.binding.as_mut().unwrap().clock_name = "us".to_owned();
+        trace.window.binding.as_mut().unwrap().clock_name = "us".to_owned();
     }));
     assert_eq!(
         clock.get("mismatched_dimension").map(String::as_str),
@@ -2474,7 +2511,7 @@ fn timestamped_binding_is_required_and_authenticated() {
     let profile = refusal(timestamped_changed(
         timestamped(&[], &[], 5, Some(5)),
         |trace| {
-            let binding = trace.binding.as_mut().unwrap();
+            let binding = trace.window.binding.as_mut().unwrap();
             binding.clock_name = "us".to_owned();
             binding.profile = "quire.temporal.infinite-trace/v1".to_owned();
         },
@@ -2489,7 +2526,7 @@ fn timestamped_binding_is_required_and_authenticated() {
 
 /// `request` with its `Window` clause body replaced by `body`.
 fn with_clause_body(mut request: ClauseRunRequest, body: &str) -> ClauseRunRequest {
-    let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+    let bytes = program_source_bytes(&mut request);
     let source = String::from_utf8(bytes.clone()).unwrap();
     let source = [
         "eventually[0,5] holds(c.value > 0)",
@@ -2518,6 +2555,7 @@ fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
         // The atom's valuation is absent at position 0: both nodes of the one
         // atom lose it.
         trace
+            .window
             .missing_valuations
             .push(crate::spine::TimestampedMissingValuation {
                 position: 0,
@@ -2532,7 +2570,7 @@ fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
                 timestamped_with(Unit::TimestampedOnce, &[3, 4], values, 6, Some(6)),
                 "historically[0,4] holds(c.value > 0)",
             ),
-            |trace| trace.authoritative_origin = false,
+            |trace| trace.window.authoritative_origin = false,
         )
     };
     assert_eq!(
@@ -2645,4 +2683,284 @@ fn timestamped_watermark_at_the_deadline_settles() {
             reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
         }
     );
+}
+
+fn with_progress(
+    mut request: ClauseRunRequest,
+    watermark: u64,
+    completeness: crate::spine::ProgressCompleteness,
+    carried: &crate::spine::ProgressLedger,
+) -> ClauseRunRequest {
+    let ClauseRunSelection::Temporal { trace, ledger, .. } = &mut request.selection else {
+        panic!("a temporal selection");
+    };
+    let documents = match trace {
+        TraceInput::Finite(documents) => documents.clone(),
+        _ => panic!("a finite source trace"),
+    };
+    *trace = TraceInput::Progressed {
+        trace: documents,
+        progress: crate::spine::ProgressAssertion {
+            watermark,
+            completeness,
+            scope: crate::spine::ProgressClosure::Open,
+            execution: crate::spine::ProgressClosure::Open,
+        },
+    };
+    *ledger = Some(carried.clone());
+    request
+}
+
+/// A ledger returned by an accepted `run_clause` progress request.
+fn retained_ledger() -> (crate::spine::LedgerBinding, crate::spine::ProgressLedger) {
+    let report = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &crate::spine::ProgressLedger::new(),
+    ));
+    let ledger = report
+        .ledger
+        .expect("an accepted request returns its updated ledger");
+    let binding = ledger
+        .bindings()
+        .next()
+        .expect("the request retained one binding")
+        .clone();
+    (binding, ledger)
+}
+
+fn with_ledger(
+    mut request: ClauseRunRequest,
+    carried: &crate::spine::ProgressLedger,
+) -> ClauseRunRequest {
+    let ClauseRunSelection::Temporal { ledger, .. } = &mut request.selection else {
+        panic!("a temporal selection");
+    };
+    *ledger = Some(carried.clone());
+    request
+}
+
+fn assert_admit_invalid_value(report: &ClauseRunReport) {
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &report.disposition else {
+        panic!(
+            "expected an admission refusal, got {:?}",
+            report.disposition
+        );
+    };
+    assert_eq!(record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.catalog.cause(), "invalid-value");
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    assert_eq!(report.disposition.category(), Category::Refusal);
+}
+
+#[trace("FR-502-AC-5", "TC-1296")]
+#[test]
+fn a_ledger_with_a_finite_trace_without_progress_is_refused_at_admit_and_returned_unchanged() {
+    let (_, ledger) = retained_ledger();
+    let report = report(with_ledger(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        &ledger,
+    ));
+    assert_admit_invalid_value(&report);
+    assert_eq!(report.ledger, Some(ledger));
+}
+
+#[trace("FR-502-AC-5", "TC-1296")]
+#[test]
+fn a_ledger_with_a_lasso_is_refused_at_admit_and_returned_unchanged() {
+    let (_, ledger) = retained_ledger();
+    let report = report(with_ledger(
+        lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]),
+        &ledger,
+    ));
+    assert_admit_invalid_value(&report);
+    assert_eq!(report.ledger, Some(ledger));
+}
+
+#[trace("FR-502-AC-5", "TC-1296")]
+#[test]
+fn a_ledger_with_an_infinite_trace_clause_is_refused_at_admit_and_returned_unchanged() {
+    let (_, ledger) = retained_ledger();
+    let report = report(with_ledger(
+        finite(Unit::Infinite, "Reaches", &[0, 1, 2]),
+        &ledger,
+    ));
+    assert_admit_invalid_value(&report);
+    assert_eq!(report.ledger, Some(ledger));
+}
+
+#[trace("FR-502-AC-6", "TC-1296")]
+#[test]
+fn a_request_without_a_ledger_evaluates_its_trace_and_returns_none() {
+    let report = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
+    assert_eq!(report.ledger, None);
+    assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
+}
+
+#[trace("FR-502-AC-1", "FR-502-AC-6", "FR-330-AC-9", "TC-1296")]
+#[test]
+fn run_clause_returns_the_updated_ledger_and_preserves_it_on_regression() {
+    let first = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &crate::spine::ProgressLedger::new(),
+    ));
+    assert_eq!(first.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(first.disposition.category(), Category::Unsupported);
+    assert!(matches!(
+        &first.disposition,
+        ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::ProfileNotEvaluated { .. })
+    ));
+    let ledger = first
+        .ledger
+        .expect("the accepted run returns its updated ledger");
+    let binding = ledger
+        .bindings()
+        .next()
+        .expect("the accepted run retained its binding");
+    assert_eq!(
+        ledger.entry(binding).map(|entry| entry.watermark()),
+        Some(100)
+    );
+
+    let second = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        60,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &ledger,
+    ));
+    assert_eq!(second.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(second.disposition.category(), Category::Refusal);
+    assert_eq!(second.ledger, Some(ledger));
+    let ClauseDisposition::ProgressContradiction(refusal) = &second.disposition else {
+        panic!(
+            "expected a progress contradiction, got {:?}",
+            second.disposition
+        );
+    };
+    assert_eq!(refusal.record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(refusal.record.catalog.cause(), "invalid-value");
+    assert_eq!(
+        refusal.record.fields.clone(),
+        std::collections::BTreeMap::from([
+            ("contradicted_dimension", "Watermark".to_owned()),
+            ("clock", "model-steps".to_owned()),
+            ("retained", "100".to_owned()),
+            ("asserted", "60".to_owned()),
+        ])
+    );
+}
+
+#[trace("FR-502-AC-8", "TC-1296")]
+#[test]
+fn covered_positions_over_the_setting_report_incomplete_with_the_limit_fields() {
+    let binding = retained_ledger().0;
+    let positions: Vec<crate::spine::ObservedPosition> = (0..4)
+        .map(|stamp| crate::spine::ObservedPosition {
+            identity: format!("p{stamp}"),
+            stamp,
+        })
+        .collect();
+    let assertion = crate::spine::ProgressAssertion {
+        watermark: 3,
+        completeness: crate::spine::ProgressCompleteness::Incomplete,
+        scope: crate::spine::ProgressClosure::Open,
+        execution: crate::spine::ProgressClosure::Open,
+    };
+    let disposition = crate::spine::admit_progress(
+        &crate::spine::ProgressLedger::new(),
+        &binding,
+        assertion,
+        &positions,
+        3,
+    )
+    .expect_err("four positions over a capacity of three");
+    assert_eq!(disposition.category(), Category::Incomplete);
+    let ClauseDisposition::Temporal(TemporalVerdict::ProgressLimitReached(reached)) = *disposition
+    else {
+        panic!("expected a progress limit outcome");
+    };
+    assert_eq!(
+        (reached.limit, reached.value, reached.setting),
+        ("node count", 3, "progress.covered_positions")
+    );
+}
+
+/// FR-044-AC-7, FR-501-AC-10 (TC-1295): an `on each` guard that cannot be
+/// established is an incomplete activation naming that guard, not a false
+/// guard and not a violation.
+#[trace("TC-1295", "FR-501-AC-10")]
+#[test]
+fn timestamped_undefined_guard_reports_a_named_incomplete_activation() {
+    let mut request = timestamped_with(Unit::TimestampedEach, &[0, 10], &[2, 2], 12, Some(12));
+    let bytes = program_source_bytes(&mut request);
+    let source = String::from_utf8(bytes.clone()).unwrap();
+    *bytes = source
+        .replace(
+            "on each (q: Counters::Counter) { eventually[0,2] holds(c.value > 0) }",
+            "on each (q: Counters::Counter) when (3 mod (2 - q.value) >= 0) { eventually[0,2] holds(c.value > 0) }",
+        )
+        .into_bytes();
+    let report = report(request);
+    assert_eq!(report.category_label(), "incomplete");
+    assert_eq!(report.disposition.exit_code(), 22);
+    assert_eq!(report.disposition.truth(), None);
+    let ClauseDisposition::Temporal(TemporalVerdict::ActivationIncomplete { at, guard }) =
+        &report.disposition
+    else {
+        panic!(
+            "expected a named incomplete activation, got {:?}",
+            report.disposition
+        );
+    };
+    assert_eq!(*at, 0);
+    assert!(guard.path().is_empty());
+}
+
+/// FR-330-AC-9, FR-502 (TC-1295, TC-1296): a finite-window request that
+/// carries a ledger retains its progress; a later request under the same
+/// binding with a lower watermark is refused for `Watermark`, stage
+/// `evaluate`, category `refusal`.
+#[trace("TC-1295", "FR-330-AC-9")]
+#[test]
+fn timestamped_progress_is_admitted_into_the_ledger() {
+    let with_ledger_and_watermark = |watermark: u64, carried: &crate::spine::ProgressLedger| {
+        let mut request = timestamped(&[0, 2, 5], &[0, 1, 0], 100, Some(100));
+        let mut trace = timestamped_trace_mut(&mut request);
+        trace.progress.watermark = watermark;
+        let ClauseRunSelection::Temporal { ledger, .. } = &mut request.selection else {
+            panic!("a temporal selection");
+        };
+        *ledger = Some(carried.clone());
+        request
+    };
+    let first = report(with_ledger_and_watermark(
+        100,
+        &crate::spine::ProgressLedger::new(),
+    ));
+    assert_eq!(outcome(&first), &TemporalVerdict::Holds);
+    let retained = first
+        .ledger
+        .expect("an accepted request returns its updated ledger");
+    assert_eq!(retained.len(), 1);
+    let refused = report(with_ledger_and_watermark(60, &retained));
+    assert_eq!(refused.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(refused.disposition.category(), Category::Refusal);
+    let ClauseDisposition::ProgressContradiction(refusal) = &refused.disposition else {
+        panic!(
+            "expected a progress contradiction, got {:?}",
+            refused.disposition
+        );
+    };
+    assert_eq!(
+        refusal
+            .record
+            .fields
+            .get("contradicted_dimension")
+            .map(String::as_str),
+        Some("Watermark")
+    );
+    assert_eq!(refused.ledger.as_ref(), Some(&retained));
 }

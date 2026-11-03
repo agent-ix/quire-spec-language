@@ -29,6 +29,6 @@ pub use outcome::{
 };
 pub use run::evaluate_finite_window;
 pub use trace::{
-    Closure, Completeness, LowerBoundary, OrderKey, TimestampedObservation, TimestampedTrace,
-    Watermark, WindowClock, WindowProgress,
+    LowerBoundary, OrderKey, TimestampedObservation, TimestampedTrace, Watermark, WindowClock,
+    WindowProgress,
 };

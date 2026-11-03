@@ -236,6 +236,30 @@ fn a_requirement_binds_a_clause_with_an_activation_and_a_capture() {
     );
 }
 
+/// FR-383, FR-218-AC-25: the one-list check of a unit whose protocol is
+/// refused leads with the protocol's own refusals and adds nothing a later
+/// stage derives from the refusal (the clause naming the refused protocol is
+/// not lowered into an `unsupported_feature`).
+#[trace("TC-1065", "FR-218-AC-25")]
+#[test]
+fn a_refused_protocol_is_followed_by_no_later_stage_consequence() {
+    let unit = format!(
+        "{}{}",
+        temporal("Due", "protocol Fill"),
+        protocol("Fill", "requires temporal Due;")
+    );
+    let (_, assembled) = assemble(&unit);
+    let refusals = assembled
+        .check(CheckingLimits::default())
+        .expect_err("the cycle refuses the unit");
+    assert!(
+        refusals
+            .iter()
+            .all(|refusal| matches!(refusal.cause, CheckCause::ProtocolAnchor(_))),
+        "only the protocol's own refusals: {refusals:?}"
+    );
+}
+
 /// FR-218-AC-25: `requires temporal Due;` where `Due` holds `protocol
 /// Fill` and the requiring protocol is `Fill`, and the same through a
 /// second clause that a protocol `Fill` names requires, each refuse

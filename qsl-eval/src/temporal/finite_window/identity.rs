@@ -9,7 +9,8 @@ use quire_semantic_value::catalog::InternalFault;
 use super::cover::ClockCover;
 use super::lift::Cell;
 use super::outcome::ResultIdentity;
-use super::trace::{Closure, Completeness, LowerBoundary, TimestampedTrace};
+use super::trace::{LowerBoundary, TimestampedTrace};
+use crate::temporal::ledger::{ProgressClosure, ProgressCompleteness};
 use crate::temporal::plan::fault;
 
 /// What one evaluation read, in a fixed order.
@@ -26,10 +27,10 @@ fn count<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, value: u128) -> Result<()
     writer.string(&value.to_string())
 }
 
-fn closure(value: Closure) -> &'static str {
+fn closure(value: ProgressClosure) -> &'static str {
     match value {
-        Closure::Closed => "closed",
-        Closure::Open => "open",
+        ProgressClosure::Closed => "closed",
+        ProgressClosure::Open => "open",
     }
 }
 
@@ -84,11 +85,11 @@ impl Encode for Preimage<'_> {
         let progress = &trace.progress;
         writer.integer(progress.watermark.inclusive())?;
         match progress.completeness {
-            Completeness::Complete { through } => {
+            ProgressCompleteness::Complete { through } => {
                 writer.string("complete")?;
                 count(writer, u128::from(through))?;
             }
-            Completeness::Incomplete => writer.string("incomplete")?,
+            ProgressCompleteness::Incomplete => writer.string("incomplete")?,
         }
         writer.string(closure(progress.scope))?;
         writer.string(closure(progress.execution))?;

@@ -39,6 +39,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod abstraction;
 mod admission_corpus;
+mod checked_views;
 mod child_composite;
 mod clock_places;
 mod control_node;

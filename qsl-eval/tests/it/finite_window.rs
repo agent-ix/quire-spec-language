@@ -12,11 +12,11 @@ use std::collections::HashMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, evaluate_finite_window, Assessment, AtomReading, Basis, ClockCover, Closure,
-    Completeness, Containment, IndeterminateReason, LetterStop, LowerBoundary, OrderKey,
-    TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace,
-    TimestampedObservation, TimestampedTrace, Valuation, Watermark, WindowClock, WindowProgress,
-    WindowVerdict,
+    evaluate, evaluate_finite_window, Assessment, AtomReading, Basis, ClockCover, Containment,
+    IndeterminateReason, LetterStop, LowerBoundary, OrderKey, ProgressClosure,
+    ProgressCompleteness, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal,
+    TemporalTrace, TimestampedObservation, TimestampedTrace, Valuation, Watermark, WindowClock,
+    WindowProgress, WindowVerdict,
 };
 use qsl_semantics::check::{FormulaNode, FormulaNodeId, SCALAR_LIMITS_UNLIMITED};
 use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits};
@@ -65,9 +65,9 @@ fn p(stamp: u64, value: &'static str) -> Row {
 struct Request {
     rows: Vec<Row>,
     watermark: Watermark,
-    complete: Completeness,
-    scope: Closure,
-    execution: Closure,
+    complete: ProgressCompleteness,
+    scope: ProgressClosure,
+    execution: ProgressClosure,
     lower: LowerBoundary,
     cover: ClockCover,
     unit: &'static str,
@@ -77,11 +77,11 @@ fn request(rows: Vec<Row>, watermark: u64, complete: Option<u64>) -> Request {
     Request {
         rows,
         watermark: Watermark::Inclusive(watermark),
-        complete: complete.map_or(Completeness::Incomplete, |through| Completeness::Complete {
-            through,
+        complete: complete.map_or(ProgressCompleteness::Incomplete, |through| {
+            ProgressCompleteness::Complete { through }
         }),
-        scope: Closure::Closed,
-        execution: Closure::Closed,
+        scope: ProgressClosure::Closed,
+        execution: ProgressClosure::Closed,
         lower: LowerBoundary::AuthoritativeOrigin,
         cover: ClockCover::Exact,
         unit: "ms",
@@ -90,7 +90,7 @@ fn request(rows: Vec<Row>, watermark: u64, complete: Option<u64>) -> Request {
 
 impl Request {
     fn open(mut self) -> Self {
-        self.scope = Closure::Open;
+        self.scope = ProgressClosure::Open;
         self
     }
 
@@ -699,10 +699,10 @@ fn a_counter_cover_straddling_the_bound_is_indeterminate() {
 #[trace("TC-1295", "FR-501-AC-9")]
 #[test]
 fn the_comparison_functions_agree_with_the_tick_cover_vectors() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    // A required input: the conformance vectors are QSpec's, and a run
+    // without them proves nothing.
+    let qspec = std::env::var_os("QSPEC_DIR")
+        .expect("QSPEC_DIR names the quire-specification checkout the tick-cover vectors live in");
     let path =
         std::path::Path::new(&qspec).join("proposals/checked-package-v2/tick-cover-vectors.json");
     let text = std::fs::read_to_string(&path).expect("the vectors file reads");
@@ -915,17 +915,17 @@ fn the_four_dimensions_stay_independent() {
     assert_eq!(open.verdict, closed.verdict);
     assert_eq!(open.support, closed.support);
     assert_ne!(open.basis, closed.basis);
-    assert_eq!(open.premises.scope, Closure::Open);
+    assert_eq!(open.premises.scope, ProgressClosure::Open);
     assert_eq!(
         (open.premises.execution, open.premises.completeness),
         (closed.premises.execution, closed.premises.completeness)
     );
     let mut surrounding = base.clone();
-    surrounding.execution = Closure::Open;
+    surrounding.execution = ProgressClosure::Open;
     let moved = run_with(&always, &surrounding, SCALAR_LIMITS_UNLIMITED)
         .0
         .expect("r");
-    assert_eq!(moved.premises.execution, Closure::Open);
+    assert_eq!(moved.premises.execution, ProgressClosure::Open);
     assert_eq!(moved.premises.scope, closed.premises.scope);
     assert_eq!(
         (moved.verdict.clone(), moved.basis, moved.support.clone()),
@@ -945,8 +945,8 @@ fn the_four_dimensions_stay_independent() {
         incomplete.verdict,
         indeterminate(0, IndeterminateReason::IncompleteInput)
     );
-    assert_eq!(incomplete.premises.scope, Closure::Closed);
-    assert_eq!(incomplete.premises.execution, Closure::Closed);
+    assert_eq!(incomplete.premises.scope, ProgressClosure::Closed);
+    assert_eq!(incomplete.premises.execution, ProgressClosure::Closed);
 }
 
 /// FR-501-AC-16 (row 30): one result identity per input; each input changed
@@ -979,7 +979,7 @@ fn the_result_identity_follows_every_input() {
     watermark.watermark = Watermark::Inclusive(6);
     changes.push(("watermark", watermark, SCALAR_LIMITS_UNLIMITED));
     let mut through = base.clone();
-    through.complete = Completeness::Complete { through: 6 };
+    through.complete = ProgressCompleteness::Complete { through: 6 };
     changes.push(("through", through, SCALAR_LIMITS_UNLIMITED));
     changes.push((
         "lower boundary",
@@ -1364,4 +1364,35 @@ fn a_window_settles_at_exactly_the_deadline() {
             other => panic!("expected indeterminate, not {other:?}"),
         }
     }
+}
+
+/// FR-501 "Canonical order" (FND-013): two observations of one stamp from one
+/// order authority with the same key are comparable (the observation identity
+/// breaks the tie), so an order-sensitive operator evaluates over them and the
+/// listing order decides nothing. FR-501 does not say whether a repeated key
+/// is a usable key; this pins what the total order does.
+#[trace("TC-1295", "FR-501-AC-20")]
+#[test]
+fn a_repeated_key_of_one_authority_is_ordered_by_identity() {
+    let until = clause("on origin", "holds(p) until[0,1] holds(q)");
+    let row = |tag: &'static str| Row {
+        stamp: 1,
+        atoms: vec![("p", "T"), ("q", "F"), (tag, "")],
+        key: Some(("A", 1)),
+    };
+    let start = Row {
+        stamp: 0,
+        atoms: vec![("p", "T"), ("q", "F")],
+        key: None,
+    };
+    let forward = request(vec![start.clone(), row("x"), row("y")], 1, Some(1));
+    let backward = request(vec![start, row("y"), row("x")], 1, Some(1));
+    let first = run_with(&until, &forward, SCALAR_LIMITS_UNLIMITED)
+        .0
+        .expect("evaluates");
+    let second = run_with(&until, &backward, SCALAR_LIMITS_UNLIMITED)
+        .0
+        .expect("evaluates");
+    assert_eq!(first.verdict, second.verdict);
+    assert_eq!(first.identity, second.identity);
 }
