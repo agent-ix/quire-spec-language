@@ -638,7 +638,7 @@ fn a_requirement_with_a_protocol_profile_emits_a_protocol_node() {
     );
     let lowered = lower_with(
         model(),
-        &format!("profile p = \"quire.protocol.finite-global/v1\";\nprofile t = \"quire.temporal.infinite-trace/v1\";\n"),
+        "profile p = \"quire.protocol.finite-global/v1\";\nprofile t = \"quire.temporal.infinite-trace/v1\";\n",
         &unit,
     );
     assert!(lowered.verified, "{}", lowered.text);
