@@ -28,12 +28,16 @@ use qsl_semantics::model::observation::{
 use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
+mod progress;
 mod temporal;
+pub use progress::{
+    ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
+    ProgressLimitReached, ProgressValue,
+};
 use temporal::TemporalRun;
 pub use temporal::{
-    admit_progress, LedgerBinding, ObservedPosition, OverObject, ProgressAssertion,
-    ProgressClosure, ProgressCompleteness, ProgressContradiction, ProgressLedger,
-    ProgressLimitReached, ProgressRefusal, ProgressValue, TimestampedObservation, TraceInput,
+    admit_progress, OverObject, ProgressRefusal, TimestampedObservation, TraceInput,
 };
 
 use super::call::{convert_call_failure, convert_outcome, select};

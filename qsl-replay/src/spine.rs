@@ -127,12 +127,12 @@ pub use clause::{
     admit_progress, run_clause, run_clause_with_temporal_selections, ClauseArgument,
     ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
     ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
-    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, LedgerBinding,
-    ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
-    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLimitReached,
-    ProgressRefusal, ProgressValue, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedObservation,
-    TraceInput,
+    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, ContradictedDimension,
+    LedgerBinding, ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
+    ProgressLimitReached, ProgressRefusal, ProgressValue, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TimestampedObservation, TraceInput,
 };
 mod refinement;
 pub use refinement::{
