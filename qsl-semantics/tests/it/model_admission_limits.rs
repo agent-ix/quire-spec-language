@@ -169,11 +169,50 @@ fn documents_with_maximum(upper: u64) -> Vec<(&'static str, Vec<u8>)> {
         .as_array_mut()
         .expect("types")
         .push(unused_type);
+    let mut nested = document_of(framed_operation());
+    let sequence_identity = format!("ix://{PACKAGE_IDENTITY}/BooleanSequence");
+    let option_identity = format!("ix://{PACKAGE_IDENTITY}/OptionalBooleanSequence");
+    nested["types"].as_array_mut().expect("types").extend([
+        json!({
+            "identity": sequence_identity,
+            "displayName": sequence_identity,
+            "kind": "sequence",
+            "items": "ix://quire/native/Boolean",
+            "roles": [],
+            "origin": {"generated": {
+                "generatorIdentity": sequence_identity,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [sequence_identity],
+            }},
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+        }),
+        json!({
+            "identity": option_identity,
+            "displayName": option_identity,
+            "kind": "option",
+            "inner": sequence_identity,
+            "roles": [],
+            "origin": {"generated": {
+                "generatorIdentity": option_identity,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [option_identity],
+            }},
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+        }),
+    ]);
+    let nested_field = &mut config_version_mut(&mut nested)["fields"][0];
+    nested_field["typeRef"] = json!(option_identity);
+    nested_field["multiplicity"] = multiplicity;
     vec![
         ("a field", bytes(&field)),
         ("a parameter", bytes(&parameter)),
         ("a result", bytes(&result)),
         ("an unused type's field", bytes(&unused)),
+        ("a nested option of a sequence", bytes(&nested)),
     ]
 }
 

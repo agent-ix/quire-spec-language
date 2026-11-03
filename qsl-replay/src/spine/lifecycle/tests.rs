@@ -1576,18 +1576,21 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     );
     let mut zero = limits.model;
     zero.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(0);
-    let Err(StageFailure::Refused(refusal)) =
-        select(&parsed, &packages, zero, &Cancel::new())
+    let Err(StageFailure::Refused(refusal)) = select(&parsed, &packages, zero, &Cancel::new())
     else {
         panic!("a nonempty document exceeds the zero intake limit");
     };
     assert_eq!(refusal.code(), Code::ResourceExhausted);
     assert_eq!(
-        refusal.fields().and_then(|fields| fields.get("setting").cloned()),
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("setting").cloned()),
         Some("intake.input_bytes".to_owned())
     );
     assert_eq!(
-        refusal.fields().and_then(|fields| fields.get("actual").cloned()),
+        refusal
+            .fields()
+            .and_then(|fields| fields.get("actual").cloned()),
         Some(size.to_string())
     );
 }
