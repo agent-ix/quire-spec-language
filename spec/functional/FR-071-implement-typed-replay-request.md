@@ -79,9 +79,7 @@ key or request `over` member on that arm.
   entry is keyed by its FR-001 labels (authority, identity); a domain package
   entry by its package identity. An observed-trace or object-environment
   snapshot document entry is keyed by the document's `identity` label set. No
-  byte-provision entry carries or is keyed by a content digest: the digest claim
-  of a source is carried by the package-reference source entry that names it
-  (Behavior, "Source integrity").
+  entry carries or is keyed by a content digest.
 - For observed temporal replay, the common `WitnessEnvelope` and QSpec
   FR-364 `TemporalCounterexample` observed arm, including its `{document}`
   trace steps, fairness, interval and `trace_position`; its `ReplaySource`
@@ -103,7 +101,7 @@ key or request `over` member on that arm.
   packet plus the FR-070 envelope members) and SHALL invent no additional
   member; a construct → serialize → read round trip SHALL preserve the
   package reference (`package_id`, every source
-  (authority, identity, `source_integrity`) triple), the replay members (`ReplaySource`, `QualifiedName`, a `function`
+  (authority, identity) pair), the replay members (`ReplaySource`, `QualifiedName`, a `function`
   request's occurrence key, arguments
   keyed by parameter node id, profile selections, proof bounds and declared
   domains, trace position, `backend`), the byte provision, and the limits
@@ -122,73 +120,19 @@ key or request `over` member on that arm.
   `{identity, package_id, sources}` (ADR-015 D-4). `identity` is a
   `LibraryName`, and the entry names the dependency package by that identity
   and QSpec FR-323's `package_id` member; an empty identity refuses at decode. Every source of every entry
-  is a source reference (authority, identity, `source_integrity`) whose pair the
-  byte provision covers and whose claim it matches, as the proved package's
-  do ("Source integrity" below).
+  is a source reference (authority, identity) the byte provision SHALL cover,
+  as the proved package's are.
 - The package reference and each `dependencies` entry SHALL carry an
   optional `refinement_internals` member (QSpec FR-323), a JSON value kept
   exactly as decoded. The decoder SHALL NOT validate it; an absent member is
   the empty list, and its defects surface from the recompile (FR-098,
   FR-147).
-### Source integrity
-
-The check lives in the decoder, not the executor, for three reasons. QSpec
-FR-323's order is total over claim syntax, absent bytes and digest mismatch,
-and the completeness rule that decides absent bytes already runs at decode, so a
-check in the executor could not interleave with it in one order. A request the
-decoder returns then holds only verified claims, and the executor never meets
-an unverified one. And the decoder already holds the whole byte provision and
-the package reference. The executor-time alternative was rejected for those
-reasons. The revision namespace and revision labels leave the entry because
-QSpec's `SourceRef` has none, FR-001 admits a source by authority and identity,
-and the wire is an in-process shape no byte reader decodes, so no compatibility
-shape needs keeping; a fifth member beside `source_integrity` would be a request
-the QSpec corpus cannot express. The same entry shape serves the package's own
-`sources` and each `dependencies` entry's `sources`, as FR-323 gives both one
-`SourceRef` shape.
-
-- Each package-reference source entry, of the package and of every
-  `dependencies` entry, SHALL carry QSpec FR-323's `SourceRef`: FR-001's two
-  source labels (authority and identity) and `source_integrity`, the lowercase
-  hexadecimal SHA-256 of the entry's bytes (QSpec FR-322 "Source-byte
-  integrity"). It carries no revision namespace or revision: FR-001 admits a
-  source by authority and identity alone, and the executor (FR-098) recompiles
-  a source under exactly those two labels (ADR-013 §7 S-4b). The wire shape of
-  an entry is `(authority, identity, claim)`, where the claim is absent, of
-  another JSON kind than a string, or a string; the typed request keeps the
-  claim only as a verified digest, so the typed request cannot hold an
-  unverified claim.
-- The decoder SHALL check every entry's claim against the byte provision in
-  one total order (QSpec FR-323). The entry order is the package's `sources` in
-  array order, then each `dependencies` entry in array order with its `sources`
-  in array order. Phase 1 checks the claim syntax of every entry before any
-  entry's bytes are looked up: a claim that is absent, of another JSON kind than
-  a string, or a string that is not 64 lowercase hexadecimal characters
-  refuses `invalid_package`/`source-integrity` at the entry's pointer,
-  `/package/sources/{i}` or `/package/dependencies/{d}/sources/{i}`, never at
-  its `source_integrity` member, and the first such entry decides. Phase 2
-  visits the entries in the same order and checks, for each, its bytes and then
-  its digest: an entry whose (authority, identity) pair the byte provision does
-  not carry refuses `missing_import`/`missing-selection` (the completeness rule
-  below), and an entry whose provision bytes have a SHA-256 other than its claim
-  refuses `invalid_package`/`source-integrity`; the first failing entry decides,
-  whatever its kind. The digest is the plain SHA-256 of the raw bytes, with no
-  prefix and no normalisation.
-- The check is a byte-provision rule: it runs after the rules that precede every
-  byte-provision rule (the replay target rule, the semantic profile rule, the
-  backend and dependency-identity rules and the duplicate-key rule), it contains
-  the completeness rule as its phase 2, and it runs before any recompile. It
-  charges no stage or evaluation counter, hashes only the bytes of the entries
-  it names (a domain-package or document entry carries no claim) and so does no
-  work beyond one pass over bytes already within the reader bound.
-- `refusal.cause` `source-integrity` retains the pointer of the failing entry and
-  the entry's authority and identity, and the refusal is
-  `ReplayRequestRefusal::SourceIntegrity`; the request type reads the same
-  entries as the check, so the wire has no second place a claim is read.
-
-- The request decoder SHALL NOT interpret the bytes of any byte-provision entry:
-  every entry is keyed by labels or an identity, and the only read of an entry's
-  bytes is the digest of a source entry that a package-reference entry names. A domain package document is
+- Each package-reference source entry SHALL carry FR-001's two source labels
+  (authority and identity) and no digest, so the executor (FR-098) recompiles
+  a source under exactly the labels the proving run used (ADR-013 §7 S-4b).
+  This requirement checks no source byte.
+- The request decoder SHALL NOT read the bytes of any byte-provision entry:
+  every entry is keyed by labels or an identity. A domain package document is
   read by intake (FR-056) when the executor recompiles, and a refusal of that
   read is a `ReplayRefusal::Recompile`, never a decode refusal.
 - A present `object_environment` member SHALL be a closed object with exactly
@@ -206,8 +150,7 @@ the QSpec corpus cannot express. The same entry shape serves the package's own
   `wrong-value-kind` for a member that is not an object, or an `identity` of
   the wrong JSON kind; `missing-member` for a missing `identity`; and
   `unknown-member` for any other member, naming the first in document order.
-- The byte provision SHALL be complete at construction, as phase 2 of the
-  source-integrity check orders it: every source
+- The byte provision SHALL be complete at construction: every source
   (authority, identity) the package reference names SHALL have a matching
   byte-provision entry; a request whose package reference names a source
   with no corresponding entry SHALL refuse at construction rather than
@@ -295,7 +238,7 @@ the QSpec corpus cannot express. The same entry shape serves the package's own
 | FR-071-AC-1 | A function, frame or state-clause request carries exactly its O-26 members; an observed temporal request additionally carries its typed counterexample arm. Construct → encode → decode preserves the applicable package reference, replay members, byte provision and limits. | Test (TC-185) |
 | FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry keyed by anything other than a source label pair, a package identity or a document `identity` label set refuses at decode, and two entries under one source label pair or package identity refuse `invalid_package`/`conflicting-definition`. | Test (TC-186) |
 | FR-071-AC-3 | No public constructor or decoder of the request accepts a bare `&str` or `String` for function selection, and no implicit conversion from a string to `QualifiedName` exists; an attempted call site passing a string literal in that position fails to compile. | Test (TC-187) |
-| FR-071-AC-5 | A request whose package reference names a source (authority, identity) with no matching byte-provision entry, every claim of the request well-formed and every earlier entry's digest holding, refuses at construction with `missing_import`/`missing-selection`, naming the source labels and where the package reference names it; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
+| FR-071-AC-5 | A request whose package reference names a source (authority, identity) with no matching byte-provision entry refuses at construction with `missing_import`/`missing-selection`, naming the source labels and where the package reference names it; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
 | FR-071-AC-6 | **RETIRED (source digest removed).** A byte-provision entry carries no digest, so decode checks no entry's bytes. | Test (TC-186), retired |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-8 | An observed temporal request round trip preserves the shared `WitnessEnvelope<TemporalCounterexample>` and its observed payload, including `ReplaySource::Witness`, clause identity, document identities, fairness, interval and trace position; a missing document entry refuses `missing_import`/`missing-selection` naming its document identity, a trace-position mismatch refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace_position`, `ReplaySource::Input` refuses `invalid_runtime_input`/`invalid-value` at `/replay/source`, a model variant refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace`, and a non-state-clause target refuses `invalid_runtime_input`/`unknown-member` at `/replay/observed_counterexample`; each refusal occurs before document admission and returns no partial request. | Test (TC-847) |
@@ -308,21 +251,21 @@ the QSpec corpus cannot express. The same entry shape serves the package's own
 | FR-071-AC-15 | A `function` request carrying the `declaration` occurrence key of its function, and one carrying an `expression` occurrence key at ordinal 1, each round-trip with the key unchanged; the same request without `occurrence_key` refuses `invalid_runtime_input`/`missing-member` at `/replay/occurrence_key`, and refuses so with a byte-provision entry removed. | Test (TC-185) |
 | FR-071-AC-16 | A `ModelGraph` request with no target members decodes with no replay target and uses its envelope identity; the same source with a function target, arguments, occurrence key or request `over` refuses `invalid_runtime_input`/`unknown-member`; a non-`ModelGraph` request with no target still refuses `missing-member` at `/replay`. | Test (TC-595) |
 | FR-071-AC-17 | A `ProtocolAssumption` request round-trips its checked refinement identity, exact assumption identities, typed reason and paired lasso or finite paired prefixes, and carries only byte-provision inputs for recompilation. A malformed source/payload pairing refuses at decode with `invalid_runtime_input`/`invalid-value` and returns no partial request; the existing `Witness`, `Input` and observed-temporal request arms retain their prior shapes. | Test (TC-553) |
-| FR-071-AC-18 | A request whose package-reference source entries are `(authority, identity, source_integrity)` triples round-trips them exactly, the typed request has no revision namespace or revision accessor on a source entry, and an entry whose `source_integrity` is the SHA-256 of its provision bytes (an empty source's included, `e3b0c442...b855`) decodes (QSpec FR-323-AC-33). | Test (TC-1324) |
-| FR-071-AC-19 | A request whose `sources` entry has a `source_integrity` that differs from the SHA-256 of its `byte_provision` bytes refuses `invalid_package`/`source-integrity` at `/package/sources/{i}`, before any recompile and with no counter charged (QSpec FR-323-AC-29, vector RP-R1). | Test (TC-1324) |
-| FR-071-AC-20 | A request whose `dependencies` entry `sources` entry differs likewise refuses `invalid_package`/`source-integrity` at `/package/dependencies/{d}/sources/{i}` (QSpec FR-323-AC-30, vector RP-R2). | Test (TC-1324) |
-| FR-071-AC-21 | A request whose `sources` entry carries no claim refuses `invalid_package`/`source-integrity` at that entry's pointer (QSpec FR-323-AC-31, vector RP-R3). | Test (TC-1324) |
-| FR-071-AC-22 | A request whose `sources` entry carries a claim of another JSON kind than a string refuses `invalid_package`/`source-integrity` at that entry's pointer. | Test (TC-1324) |
-| FR-071-AC-23 | A request whose claim is a string with an uppercase digit, 63 characters, 65 characters or a non-hexadecimal character refuses `invalid_package`/`source-integrity` at the entry's pointer, each of the four alone. | Test (TC-1324) |
-| FR-071-AC-24 | A request whose `sources` entry names a pair the `byte_provision` does not carry, every claim well-formed, refuses `missing_import`/`missing-selection` naming that pair and not `source-integrity` (QSpec FR-323-AC-32, vector RP-R4). | Test (TC-1324) |
-| FR-071-AC-25 | A request whose first entry has no bytes in the provision and whose later dependency entry has a malformed claim refuses `invalid_package`/`source-integrity` at the dependency entry's pointer (QSpec FR-323-AC-34, vector RP-R7). | Test (TC-1324) |
-| FR-071-AC-26 | A digest mismatch at `/package/sources/0` ahead of absent bytes at a dependency entry refuses `source-integrity` at `/package/sources/0` (QSpec FR-323-AC-35, vector RP-R5). | Test (TC-1324) |
-| FR-071-AC-27 | Absent bytes at `/package/sources/0` ahead of a digest mismatch at a dependency entry refuses `missing_import`/`missing-selection` (QSpec FR-323-AC-35, vector RP-R6). | Test (TC-1324) |
-| FR-071-AC-28 | Of two failing entries, the one first in the order `package` `sources` then each `dependencies` entry with its `sources` in array order decides the pointer, and a failing `dependencies` entry `[0]` is reported before a failing `dependencies` entry `[1]`. | Test (TC-1324) |
-| FR-071-AC-29 | A request carrying a replay target refusal of FR-071-AC-14, a profile refusal of FR-071-AC-10 or an empty dependency identity, together with a mismatching claim, refuses by that earlier rule and not by `source-integrity`. | Test (TC-1324) |
-| FR-071-AC-30 | A domain-package entry or observed-document entry of the byte provision carries no claim, and a request whose only mismatch is that such an entry's bytes differ from any digest refuses nothing for source integrity. | Test (TC-1324) |
-| FR-071-AC-31 | A request whose `object_environment` identity carries a `source_integrity` member refuses at decode as FR-071-AC-12's `unknown-member` (QSpec FR-336-AC-10). | Test (TC-1324) |
-| FR-071-AC-32 | The `ReplayRequestRefusal` for a failed claim reports code `invalid_package`, cause `source-integrity`, the entry's pointer and its authority and identity. | Test (TC-1324) |
+| FR-071-AC-18 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-19 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-20 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-21 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-22 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-23 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-24 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-25 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-26 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-27 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-28 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-29 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-30 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-31 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
+| FR-071-AC-32 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: a package-reference source entry is `{authority, identity}` and no entry's bytes are digested. | Test (TC-1324), retired |
 
 ## Dependencies
 

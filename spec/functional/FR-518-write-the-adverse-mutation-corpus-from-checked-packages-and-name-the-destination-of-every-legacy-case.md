@@ -63,7 +63,7 @@ writer's source; the writer never copies them from the reader's output.
 
 Verification status: rows 1 to 4, 8 to 13, 16 to 21, 29 and 30 restate codes
 and axes the current Contract IR reader and `Selection::check` give. Rows 5 to 7,
-the renamed-member rows 23, 25 and 27, row 31 and the moved row 28m are
+the renamed-member rows 23, 25 and 27 and row 31 are
 written from Contract IR's rules and are not yet given by the reader. The writer
 self-check below verifies them; where it shows a code or pointer differs, the
 author confirms the reason in Contract IR's reader source and amends this table
@@ -100,8 +100,7 @@ in the same change.
 | 25 | `clock-renamed-period` (`clock.period`) | `json` | reader: rename it `sample_period` | `malformed_wire` at the row's `clock` |
 | 26 | `clock-missing-timestamp-unit` (`clock.timestamp_unit`) | `json` | reader: remove the member | `malformed_wire` at the row's `clock` |
 | 27 | `clock-renamed-timestamp-unit` (`clock.timestamp_unit`) | `json` | reader: rename it `timestampUnit` | `malformed_wire` at the row's `clock` |
-| 28 | `definition-original-bytes` (`definition.original_bytes`) | `invalid.seal` | moved to 28m, which depends on Contract IR IR-1273 (below) | see 28m |
-| 28m | the concept of 28: the original source bytes of a definition differ from the bytes the package vouches for | none | reader: change one byte of the source a `CheckedSourceRef` names, leaving the package bytes unchanged | `invalid_package`/`source-integrity` at the JSON pointer of that `CheckedSourceRef`; this requirement fixes the code and the Contract IR requirement below must produce exactly it |
+| 28 | `definition-original-bytes` (`definition.original_bytes`) | `invalid.seal` | dropped: the checked package vouches for no source bytes, so the case has no successor | none |
 | 29 | `definition-artifact-wire-identity` (QSL main only) | `v2.definition.*` | selection: the lock definition authority differs | `definition.authority` |
 | 30 | `clock-name` (`temporal_bindings.clock_name`, QSL main only) | `v2.clock.*` | reader: a row's `clock_name` differs from the clause's clock literal | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/clock_name` |
 | 31 | by absence of a default: an empty `clock_name` (new) | none | reader: set `clock_name` to the empty text | `malformed_wire` at `/temporal_bindings/{i}/clock_name` |
@@ -109,8 +108,8 @@ in the same change.
 Rows 1 to 28 are the legacy identities. Rows 29 and 30 are cases QSL main has
 that the legacy list does not, and rows 14, 15 and 28 are legacy identities main
 no longer has. The manifest holds a case for every row that names a mutation:
-rows 1 to 13, 14b, 15b, 16 to 27, 28m, 29, 30 and 31 (31 cases). Of
-these, 21 are stage `reader` (rows 1 to 8, 13, 14b, 15b, 16, 22 to 27, 28m, 30,
+rows 1 to 13, 14b, 15b, 16 to 27, 29, 30 and 31 (30 cases). Of
+these, 20 are stage `reader` (rows 1 to 8, 13, 14b, 15b, 16, 22 to 27, 30,
 31) and 10 are stage `selection` (rows 9 to 12, 17 to 21, 29).
 
 A `temporal_clause` node carries no declaration, so the checked package holds
@@ -138,10 +137,10 @@ case is not removed.
 ### Moved cases for rows 14, 15 and 28
 
 Rows 14, 15 and 28 tested a digest, a digest domain and a source-byte seal. The
-checked package carries no content digest (QSL-1270), but the behavior each
-tested, refusing a definition whose content claim is not bound to its identity
-and refusing source bytes that differ from the vouched bytes, is not dropped.
-Rows 14 and 15 move onto rows 12 and 29, whose selection axes `definition.identity`
+checked package carries no content digest (QSL-1270) and no source-byte claim.
+The behavior of rows 14 and 15, refusing a definition whose content claim is not
+bound to its identity, is not dropped; row 28 tested a source-byte seal that no
+longer exists, so it is dropped with no successor. Rows 14 and 15 move onto rows 12 and 29, whose selection axes `definition.identity`
 and `definition.authority` (FR-517's `Selection::check`, FR-513-AC-9) refuse a
 definition whose identity or authority is not the one the sidecar declares; a
 separate case would repeat them, so none is added. Row 8 moves to the
@@ -149,20 +148,13 @@ reader refusal of its row and, for a differing clause name, to FR-518-AC-11,
 which is gated on IR-1278; row 13 moves to the reader refusal of its row and to
 FR-518-AC-12. Until IR-1278 lands the legacy property of row 8 (a clause name
 that differs) has no passing test.
-Rows 14b and 15b keep the closed-shape assertion. Row 28m needs a Contract IR
-requirement that `CheckedSourceRef` carries source-byte integrity that the reader
-verifies (today it is "named by the producer, with no byte authentication"); that
-requirement (IR-1273, Contract IR: `CheckedSourceRef` carries reader-verified source-byte integrity; related QSL-1501) is a dependency of this one.
-**Ordering:** the implementation of this requirement is gated on that
-requirement landing first. The acceptance criteria below describe the writer
-paired with a reader that implements it; against a reader that admits 28m the
-self-check returns `CaseMismatch`, so no corpus ships that the reader admits. The identity of the moved case 28m is `definition-original-bytes-moved`.
+Rows 14b and 15b keep the closed-shape assertion.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-518-AC-1 | With a reader that implements the Contract IR source-byte-integrity requirement (IR-1273), `write(R, dir)` with `corpus = Standard` writes `mutations/manifest.json` of format `quire.checked-handoff.mutations/1` whose cases are in table order, each with a unique identity, a stage of `reader` or `selection`, and a non-empty case file; the cases include 14b, 15b and 28m. | Test (TC-1313) |
+| FR-518-AC-1 | `write(R, dir)` with `corpus = Standard` writes `mutations/manifest.json` of format `quire.checked-handoff.mutations/1` whose cases are in table order, each with a unique identity, a stage of `reader` or `selection`, and a non-empty case file; the cases include 14b and 15b. | Test (TC-1313) |
 | FR-518-AC-2 | Every case with stage `reader` is refused by `read_checked_package` with the code, cause and pointer of its table row, and no such case is admitted. | Test (TC-1313) |
 | FR-518-AC-3 | Every case with stage `selection` is admitted by `read_checked_package` and refused by `Selection::check` with the `SelectionAxis` of its row, and the unmutated **R** passes both. | Test (TC-1313) |
 | FR-518-AC-4 | Over **R**, the cases of rows 12 and 29 are admitted by `read_checked_package` and refused by `Selection::check` with `definition.identity` and `definition.authority` respectively (the destinations of legacy rows 14 and 15). | Test (TC-1313) |
@@ -170,8 +162,8 @@ self-check returns `CaseMismatch`, so no corpus ships that the reader admits. Th
 | FR-518-AC-6 | Two `write` calls with `Standard` give byte-identical manifests and case files, and the manifest lists the cases in table order. | Test (TC-1313) |
 | FR-518-AC-7 | No case's `expected` field names a digest, a seal or a `v2.*` refusal string, and `mutations/` of a `None` corpus does not exist. | Test (TC-1313) |
 | FR-518-AC-8 | Every `mutations/<identity>.json` is named by exactly one manifest case and every case names one existing file; the crate exports no case-count or identity-list constant, so a consumer reads the case list from the manifest. | Test (TC-1313) |
-| FR-518-AC-9 | With a reader that implements IR-1273, case 28m is refused with `invalid_package`/`source-integrity` at the pointer of the changed `CheckedSourceRef`. | Test (TC-1313) |
-| FR-518-AC-10 | With a reader that admits 28m, `write` returns `Error::CaseMismatch` naming `definition-original-bytes-moved` and writes nothing. | Test (TC-1313) |
+| FR-518-AC-9 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement: no case mutates source bytes. | Test (TC-1313), retired |
+| FR-518-AC-10 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement. | Test (TC-1313), retired |
 | FR-518-AC-11 | With a reader that implements IR-1278, a package whose temporal clause declares a name that differs from the sidecar's is admitted by `read_checked_package` and refused by `Selection::check` with `clause.name`. | Test (TC-1313) |
 | FR-518-AC-12 | Over **R**, a sidecar whose profile law revision differs from the revision of the admitted package is refused by `Selection::check` with `definition.revision`. | Test (TC-1313) |
 
@@ -180,6 +172,5 @@ self-check returns `CaseMismatch`, so no corpus ships that the reader admits. Th
 - **Upstream:** FR-517, FR-513-AC-9 (emission-time selection refusals: the
   emission side of rows 9 to 12 and 17 to 21 is covered there), Contract IR
   FR-038 (temporal binding rows), QSL-1270.
-- **Successors:** rows 14 and 15 are carried by rows 12 and 29 and by rows 14b and 15b; row 28 is carried by row 28m, gated on IR-1273.
-- **Source claims:** [FR-528](FR-528-write-a-source-integrity-claim-on-every-source-reference-of-an-emitted-checked-package.md): the emitter writes the `source_integrity` claim of every source reference of the packages this writer emits, and case 28m changes one byte of the bytes the reader is handed.
-- **Contract IR:** IR-1273, source-byte integrity on `CheckedSourceRef` (row 28m); IR-1278, the checked package carries no temporal clause name (FR-518-AC-11).
+- **Successors:** rows 14 and 15 are carried by rows 12 and 29 and by rows 14b and 15b; row 28 has no successor.
+- **Contract IR:** IR-1278, the checked package carries no temporal clause name (FR-518-AC-11).
