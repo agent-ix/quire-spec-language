@@ -39,8 +39,6 @@ fn named_source(text: &str, native: &str, formal: &str) -> FormalSource {
             SourceIdentity {
                 authority: "test".into(),
                 identity: native.into(),
-                revision_namespace: "test".into(),
-                revision: "1".into(),
             },
             "model.json",
             text.as_bytes(),
@@ -704,8 +702,6 @@ fn historical(model: &NativeModel) -> quire_spec_language::ParsedUnit {
         SourceIdentity {
             authority: "test".into(),
             identity: "native:historical".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "historical.native",
         text.as_bytes(),
@@ -771,8 +767,6 @@ fn with_namespace(text: &str, inspect: impl FnOnce(&SyntaxNamespace)) {
         SourceIdentity {
             authority: "test".into(),
             identity: "native:composed".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "composed.native",
         text.as_bytes(),
@@ -1076,7 +1070,7 @@ fn rational_output_limits_use_independently_assembled_artifact_content() {
     // for its output length or serializes NativeRoles through the producer.
     let expected = json!({
         "profile":"native-state-model/2", "declarations": declarations,
-        "source": {"identity":"test:rule-model", "revision":"1", "formal":input.source.identity()},
+        "source": {"identity":"test:rule-model", "formal":input.source.identity()},
         "loci":[{"key":{"kind":"value","name":"amount"},"source":input.environment.values()[0].source()}],
         "roles":{"scalars":[{"name":"Ratio","source":input.roles.scalars[0].source,"kind":{"kind":"rational","unit":"dimensionless"},"sites":[{"kind":"value","name":"amount"}]}],"objects":[],"operations":[]}
     });

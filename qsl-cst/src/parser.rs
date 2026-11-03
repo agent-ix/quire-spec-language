@@ -1831,8 +1831,6 @@ mod tests {
             SourceIdentity {
                 authority: "test".into(),
                 identity: "test:engine".into(),
-                revision_namespace: "test".into(),
-                revision: "1".into(),
             },
             "engine.native",
             text.as_bytes(),
@@ -1878,7 +1876,7 @@ mod tests {
             function(&format!("{}x", "let v = x in ".repeat(DEPTH))),
         ] {
             let source = Source::read(
-                SourceIdentity::new("test", "test:engine", "test", "1"),
+                SourceIdentity::new("test", "test:engine"),
                 "engine.native",
                 text.as_bytes(),
                 usize::MAX,

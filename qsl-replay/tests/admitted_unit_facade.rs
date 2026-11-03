@@ -49,7 +49,7 @@ const LIBRARY: &str = "dimension Mass;\nunit kg : Mass = rational(1, 1);\n\
      function g using v(): Boolean pure { true }\n";
 
 fn unit_identity() -> SourceIdentity {
-    SourceIdentity::new("a", "u", "git", "1")
+    SourceIdentity::new("a", "u")
 }
 
 fn limits() -> StageLimits {
@@ -79,7 +79,7 @@ fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
 fn library(identity: &str, name: &str, body: &str) -> SuppliedLibrary {
     SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new("a", name, "git", "1"),
+        source: SourceIdentity::new("a", name),
         path: format!("{name}.native"),
         bytes: format!("{HEADER}{body}").into_bytes(),
     }

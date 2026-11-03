@@ -2933,8 +2933,6 @@ mod tests {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: "test:compound-authority".into(),
-                    revision_namespace: "test".into(),
-                    revision: compound.into(),
                 },
                 "compound.native",
                 compound.as_bytes(),
@@ -2951,8 +2949,6 @@ mod tests {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: "test:compound-authority".into(),
-                    revision_namespace: "test".into(),
-                    revision: format!("{compound}:below"),
                 },
                 "compound.native",
                 compound.as_bytes(),
@@ -2982,8 +2978,6 @@ mod tests {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: "test:reserved-word-authority".into(),
-                    revision_namespace: "test".into(),
-                    revision: word.into(),
                 },
                 "reserved.native",
                 text.as_bytes(),

@@ -11,8 +11,6 @@ fn source(text: &str) -> Source {
         SourceIdentity {
             authority: "test".into(),
             identity: "ix://example/source".into(),
-            revision_namespace: "test".into(),
-            revision: "draft:alpha".into(),
         },
         "native/source",
         text.as_bytes(),
@@ -59,7 +57,6 @@ fn tc_035_retains_explicit_source_assignment() {
         let binding = FormalSource::new(source, expected.clone());
         assert_eq!(binding.identity(), &expected);
         assert_eq!(binding.source().identity().identity, "ix://example/source");
-        assert_eq!(binding.source().identity().revision, "draft:alpha");
         assert_eq!(binding.source().text(), "invariant");
         assert_eq!(binding.source().path(), "native/source");
     }
@@ -140,13 +137,12 @@ fn tc_037_refuses_foreign_native_labels_and_paths() {
     let binding = binding(&source);
     let span = Span { start: 1, end: 2 };
     let expected = binding.to_ir(&source, span).unwrap();
-    for changed in 0..3 {
+    for changed in 0..2 {
         let mut labels = source.identity().clone();
         let mut path = source.path();
         match changed {
             0 => labels.identity.push('x'),
-            1 => labels.revision.push('x'),
-            2 => path = "foreign/path",
+            1 => path = "foreign/path",
             _ => unreachable!(),
         }
         let foreign =

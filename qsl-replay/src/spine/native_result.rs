@@ -618,8 +618,6 @@ struct FrameWitnessRead {
 struct DocumentRefRead {
     authority: String,
     identity: String,
-    revision_namespace: String,
-    revision: String,
 }
 
 impl DocumentRefRead {
@@ -628,8 +626,6 @@ impl DocumentRefRead {
         DocumentRef {
             authority: self.authority.clone(),
             identity: self.identity.clone(),
-            revision_namespace: self.revision_namespace.clone(),
-            revision: self.revision.clone(),
         }
     }
 }
@@ -1839,8 +1835,6 @@ impl From<&FrameWitness> for FrameWitnessWire {
 struct DocumentRefWire {
     authority: String,
     identity: String,
-    revision_namespace: String,
-    revision: String,
 }
 
 impl From<&DocumentRef> for DocumentRefWire {
@@ -1848,8 +1842,6 @@ impl From<&DocumentRef> for DocumentRefWire {
         Self {
             authority: value.authority.clone(),
             identity: value.identity.clone(),
-            revision_namespace: value.revision_namespace.clone(),
-            revision: value.revision.clone(),
         }
     }
 }

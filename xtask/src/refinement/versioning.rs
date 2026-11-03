@@ -46,15 +46,8 @@ use super::report::{
 /// The file a pair is read from, inside the pair's directory.
 const PAIR_FILE: &str = "pair.json";
 
-/// FR-001 reduced a source's labels to authority and identity; the spine
-/// still names a source by four non-blank labels. The gate compares nothing
-/// about the revision labels (FR-340 "Reading a pair"), so both sides carry
-/// these two fixed values.
 /// The prefix of a path relative to the repository root.
 const REPOSITORY_PREFIX: &str = "repo:";
-
-const REVISION_NAMESPACE: &str = "refinement-gate";
-const REVISION: &str = "pair";
 
 /// `pair.json`: exactly these members.
 #[derive(Deserialize)]
@@ -465,12 +458,7 @@ fn read_in(roots: &Roots, path: &str) -> Result<Vec<u8>, PairDefect> {
 
 fn revision(roots: &Roots, file: &SourceFile) -> Result<Revision, PairDefect> {
     let bytes = read_in(roots, &file.path)?;
-    let identity = SourceIdentity::new(
-        file.authority.clone(),
-        file.identity.clone(),
-        REVISION_NAMESPACE,
-        REVISION,
-    );
+    let identity = SourceIdentity::new(file.authority.clone(), file.identity.clone());
     let source = Source::read_typed(identity.clone(), file.path.clone(), &bytes, usize::MAX)
         .map_err(|refusal| PairDefect::Source {
             path: file.path.clone(),
@@ -490,12 +478,7 @@ fn dependencies(roots: &Roots, files: &[DependencyFile]) -> Result<DependencyInp
         .map(|file| {
             Ok(SuppliedLibrary {
                 identity: file.library.clone(),
-                source: SourceIdentity::new(
-                    file.authority.clone(),
-                    file.identity.clone(),
-                    REVISION_NAMESPACE,
-                    REVISION,
-                ),
+                source: SourceIdentity::new(file.authority.clone(), file.identity.clone()),
                 path: file.path.clone(),
                 bytes: read_in(roots, &file.path)?,
             })

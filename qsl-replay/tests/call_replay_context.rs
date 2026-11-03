@@ -45,7 +45,7 @@ fn unit(extra: &str) -> String {
 }
 
 fn identity() -> SourceIdentity {
-    SourceIdentity::new("a", "u", "git", "1")
+    SourceIdentity::new("a", "u")
 }
 
 fn plugin() -> BackendId {

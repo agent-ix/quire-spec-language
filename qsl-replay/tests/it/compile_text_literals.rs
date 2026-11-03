@@ -14,7 +14,7 @@ const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
 
 fn compile(source: &str) -> spine::CheckedUnit {
-    let identity = SourceIdentity::new("a", "text-literals", "git", "1");
+    let identity = SourceIdentity::new("a", "text-literals");
     let limits = SpineLimits::default();
     let cancel = quire_exact::Cancel::new();
     let parsed = spine::parse(

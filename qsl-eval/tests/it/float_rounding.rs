@@ -42,7 +42,7 @@ fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
          function add using v(f: {float}, g: {float}): {float} pure {{ f + g }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -91,7 +91,7 @@ fn sqrt(float: &str, operand: u64) -> Outcome<Value> {
          function root using v(a: {float}): {float} pure {{ quire::value::ieee::sqrt(a) }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -136,7 +136,7 @@ fn equal(left: u64, right: u64, operator: &str) -> Outcome<Value> {
          function compare using v(a: Float64[nearest-even], b: Float64[nearest-even]): Boolean pure {{ a {operator} b }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -268,7 +268,7 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
          function add using v(f: Float64[toward-zero], g: Float64[nearest-even]): \
          Float64[toward-zero] pure { f + g }\n";
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

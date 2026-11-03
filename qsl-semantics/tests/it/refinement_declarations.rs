@@ -533,7 +533,7 @@ pub(crate) fn assemble(
 ) -> (String, Result<PackageDeclarations, AssemblyRefusal>) {
     let (text, packages) = unit_text(profiles, models, body);
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-540", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-540"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

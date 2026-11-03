@@ -907,8 +907,6 @@ struct RootWire {
 struct ObservationWire {
     authority: String,
     identity: String,
-    revision_namespace: String,
-    revision: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -984,12 +982,6 @@ impl PathWire {
                 if invocation.identity.is_empty() {
                     return Err(CauseCodecError::Empty("identity"));
                 }
-                if invocation.revision_namespace.is_empty() {
-                    return Err(CauseCodecError::Empty("revision_namespace"));
-                }
-                if invocation.revision.is_empty() {
-                    return Err(CauseCodecError::Empty("revision"));
-                }
                 match (binding, parameter) {
                     (InvocationBindingWire::Parameter, Some(parameter))
                         if !parameter.is_empty() => {}
@@ -1031,8 +1023,6 @@ impl PathWire {
                 observation: ObservationWire {
                     authority: observation.authority.clone(),
                     identity: observation.identity.clone(),
-                    revision_namespace: observation.revision_namespace.clone(),
-                    revision: observation.revision.clone(),
                 },
                 subject: match &path.subject {
                     ValuePathSubject::Object(object) => SubjectWire::Object {
@@ -1057,8 +1047,6 @@ impl PathWire {
                             invocation: ObservationWire {
                                 authority: invocation.authority.clone(),
                                 identity: invocation.identity.clone(),
-                                revision_namespace: invocation.revision_namespace.clone(),
-                                revision: invocation.revision.clone(),
                             },
                             binding,
                             parameter,
@@ -1098,8 +1086,6 @@ impl PathWire {
             observation: ObservationIdentity {
                 authority: observation.authority,
                 identity: observation.identity,
-                revision_namespace: observation.revision_namespace,
-                revision: observation.revision,
             },
             subject: match self.root.subject {
                 SubjectWire::Object {
@@ -1120,8 +1106,6 @@ impl PathWire {
                     invocation: ObservationIdentity {
                         authority: invocation.authority,
                         identity: invocation.identity,
-                        revision_namespace: invocation.revision_namespace,
-                        revision: invocation.revision,
                     },
                     binding: match (binding, parameter) {
                         (InvocationBindingWire::Parameter, Some(parameter)) => {
@@ -1447,8 +1431,6 @@ mod tc235_path_tests {
         let identity = |name: &str| ObservationIdentity {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "tc235".to_owned(),
-            revision: "1".to_owned(),
         };
         let path = |binding| RuntimeValuePath {
             observation: identity("q1"),
@@ -1534,8 +1516,6 @@ mod tc235_path_tests {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "q1".to_owned(),
-                revision_namespace: "tc235".to_owned(),
-                revision: "1".to_owned(),
             },
             subject: ValuePathSubject::Object(object("child")),
             steps: vec![

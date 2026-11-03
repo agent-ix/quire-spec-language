@@ -249,11 +249,9 @@ fn tc_052_reachability_requires_one_exact_target_universe_and_observation() {
             _ => unreachable!(),
         }
         let text = serde_json::to_string_pretty(&data).unwrap();
-        let required = [
-            native_rule_model::from_text(&text, "runtime-inputs.json", "draft:1")
-                .unwrap()
-                .model(),
-        ];
+        let required = [native_rule_model::from_text(&text, "runtime-inputs.json")
+            .unwrap()
+            .model()];
         let checked = request(&required, "true", kind).unwrap();
         let universe = checked.clauses()[0]
             .runtime_requirements()

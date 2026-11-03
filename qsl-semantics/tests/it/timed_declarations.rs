@@ -798,7 +798,7 @@ fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
          profile v = \"quire.value.complete/v1\";\n{clocks}"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "fr-230-ac-7", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "fr-230-ac-7"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -1379,7 +1379,7 @@ pub(crate) fn assemble_selected_as(
     )
     .unwrap_or_else(|refusal| panic!("I1 admits the packages: {refusal:?}"));
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new(authority, identity, "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new(authority, identity),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

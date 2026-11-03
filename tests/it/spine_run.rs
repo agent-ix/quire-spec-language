@@ -26,7 +26,6 @@ const RUN_FIXTURE: &str = "tests/fixtures/spine-run.native";
 
 fn program_source() -> Value {
     json!({"file":"program.native","authority":"agent-ix","identity":"test:spine-run",
-        "revision_namespace":"fixture","revision":"fixture:1",
         "document":"SpineRun","formal_revision":1})
 }
 
@@ -43,12 +42,7 @@ fn front_end_package_is_independent_of_provider_registry() {
     };
 
     let program = std::fs::read(SEVEN_FIXTURE).unwrap();
-    let source = qsl_foundation::SourceIdentity::new(
-        "agent-ix",
-        "test:fr-289-front-end",
-        "fixture",
-        "fixture:1",
-    );
+    let source = qsl_foundation::SourceIdentity::new("agent-ix", "test:fr-289-front-end");
     let empty = Registry::new();
     let mut populated = Registry::new();
     for (identity, capability, mode, origin) in [
@@ -261,8 +255,8 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
     assert_eq!(document["format"], "spine-run-result/1");
     assert_eq!(document["source"]["authority"], "agent-ix");
     assert_eq!(document["source"]["identity"], "test:spine-run");
-    assert_eq!(document["source"]["revision_namespace"], "fixture");
-    assert_eq!(document["source"]["revision"], "fixture:1");
+    assert!(document["source"].get("revision_namespace").is_none());
+    assert!(document["source"].get("revision").is_none());
     assert_eq!(document["source"]["path"], "program.native");
     assert_eq!(document["function"], "seven");
     assert_eq!(
@@ -279,8 +273,6 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
             "source": {
                 "authority": "agent-ix",
                 "identity": "test:spine-run",
-                "revision_namespace": "fixture",
-                "revision": "fixture:1",
                 "path": "program.native",
             },
             "function": "seven",
@@ -336,7 +328,6 @@ fn tc_450_step_4_native_only_members_refuse_before_any_model_is_read() {
         json!({"format":"native-run/1","request":{
             "models":[{"format":"native-rule-model/1","source":{
                 "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
-                "revision_namespace":"fixture","revision":"fixture:1",
                 "document":"M","formal_revision":1}}],
             "program":{"source":program_source()},
             "call":call("seven", json!([])),
@@ -421,7 +412,6 @@ fn tc_450_step_4_native_model_refuses_alone() {
     let job = json!({"format":"native-run/1","request":{
         "models":[{"format":"native-rule-model/1","source":{
             "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
-            "revision_namespace":"fixture","revision":"fixture:1",
             "document":"M","formal_revision":1}}],
         "program":{"source":program_source()},
         "call":call("seven", json!([])),
@@ -837,11 +827,9 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
     let request = json!({"format":"native-run/1","request":{
         "models":[{"format":"semantic-ir/2.0.0","source":{
             "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
-            "revision_namespace":"fixture","revision":"fixture:1",
             "document":"Orders","formal_revision":1}}],
         "libraries":[{"identity":"test/geometry","source":{
             "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
-            "revision_namespace":"fixture","revision":"fixture:1",
             "document":"Geometry","formal_revision":1}}],
         "program":{"source":program_source()},
         "call":call("seven", json!([])),
@@ -904,12 +892,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
         assert_eq!(output.status.code(), Some(expected), "{function}");
 
         let direct = qsl_replay::spine::run(
-            qsl_foundation::SourceIdentity::new(
-                "agent-ix",
-                "test:spine-run",
-                "fixture",
-                "fixture:1",
-            ),
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-run"),
             crate::TEST_PACKAGE_NAME.to_owned(),
             "program.native",
             &program,

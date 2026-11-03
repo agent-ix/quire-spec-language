@@ -303,7 +303,7 @@ pub(crate) fn world_built_in(
     let packages = package_input([document]).unwrap();
     let unit = unit_text(package, profiles, body);
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "fr-239", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "fr-239"),
         "fr-239.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -340,8 +340,7 @@ pub(crate) fn world_built_in(
     }
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": "s0"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": format!("ix://{package}/calls"), "complete": true,
@@ -363,8 +362,6 @@ pub(crate) fn world_built_in(
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         },
         keys: keys.iter().map(|key| (*key).to_owned()).collect(),
         identity: package.to_owned(),
@@ -472,7 +469,7 @@ pub(crate) fn refining_from(
          model M = \"{PACKAGE}\";\n{body}",
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "fr-430", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "fr-430"),
         "fr-430.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -556,8 +553,7 @@ fn snapshot(
     let identity = |suffix: &str| format!("ix://{package}/{suffix}");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": name},
         "observation": "current",
         "model": {"identity": package},
         "anchor": {"kind": "initialization", "name": "start"},
@@ -575,8 +571,6 @@ fn snapshot(
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     }
 }
 

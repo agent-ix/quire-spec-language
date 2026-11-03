@@ -38,7 +38,7 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
 fn assemble_with(header: &str, declarations: &str) -> (String, PackageDeclarations) {
     let text = format!("{header}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -133,7 +133,7 @@ fn checks(declarations: &str) -> CheckedGraph {
 fn assembly_errors(declarations: &str) -> Vec<crate::check::AssemblyError> {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

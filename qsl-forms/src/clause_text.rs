@@ -35,7 +35,7 @@ pub fn parse_clause_text(text: &str, limits: Limits) -> Result<Expression, Claus
         "language \"ix:native\" edition \"1-draft\";\nprofile p = \"quire.value.complete/v1\";\npre Clause using p on M::T::op {{ {text} }}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("clause-text", "operation-clause", "fixture", "1"),
+        SourceIdentity::new("clause-text", "operation-clause"),
         "clause.native",
         unit.as_bytes(),
         limits,

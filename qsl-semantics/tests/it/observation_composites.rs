@@ -35,15 +35,12 @@ fn label(name: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     }
 }
 
 fn identity(reference: &DocumentRef) -> serde_json::Value {
     json!({
-        "authority": reference.authority, "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    "authority": reference.authority, "identity": reference.identity,
     })
 }
 

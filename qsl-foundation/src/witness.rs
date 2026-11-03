@@ -9,17 +9,13 @@ use alloc::{string::String, vec::Vec};
 use quire_exact::ObjectReference;
 
 /// QSpec FR-207's selected observation identity: the authority-qualified
-/// identity and revision of the snapshot a value is read under.
+/// identity of the snapshot a value is read under.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObservationIdentity {
     /// The `authority` label.
     pub authority: String,
     /// The `identity` label.
     pub identity: String,
-    /// The `revision_namespace` label.
-    pub revision_namespace: String,
-    /// The `revision` label.
-    pub revision: String,
 }
 
 /// One binding of a declared invocation that can root a runtime value path.

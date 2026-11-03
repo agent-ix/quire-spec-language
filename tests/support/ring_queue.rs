@@ -401,7 +401,7 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
          {selections}{body}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-544", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-544"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

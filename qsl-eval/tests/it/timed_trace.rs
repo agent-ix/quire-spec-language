@@ -59,7 +59,7 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
          temporal C using t0 over (c: M::Counter) clock \"model-time\" {activation} {{ {body} }}\n",
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

@@ -172,7 +172,6 @@ fn tc_040_all_sites_wrappers_and_operation_roles_match_authored_model() {
         model.source().source().identity().identity,
         "test:rule-model"
     );
-    assert_eq!(model.source().source().identity().revision, "draft:1");
 }
 
 #[test]

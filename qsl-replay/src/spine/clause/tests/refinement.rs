@@ -830,7 +830,6 @@ fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> Cl
         "format": "quire.state.snapshot/v1",
         "identity": {
             "authority": label.authority, "identity": label.identity,
-            "revision_namespace": label.revision_namespace, "revision": label.revision,
         },
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},

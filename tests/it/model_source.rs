@@ -13,14 +13,12 @@ use quire_spec_language::model_source::{
 use quire_spec_language::native_model::ModelLimits;
 use serde_json::{json, Value};
 
-fn source(text: &str, revision: &str) -> FormalSource {
+fn source(text: &str) -> FormalSource {
     FormalSource::new(
         Source::read(
             SourceIdentity {
                 authority: "test".into(),
                 identity: "test:rule-model".into(),
-                revision_namespace: "test".into(),
-                revision: revision.into(),
             },
             "model.json",
             text.as_bytes(),
@@ -38,7 +36,7 @@ fn source(text: &str, revision: &str) -> FormalSource {
 #[trace("TC-101", "FR-025-AC-1")]
 fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
     let text = include_str!("../fixtures/native-package/model-source.json");
-    let source = source(text, "1");
+    let source = source(text);
     let draft = read(source.clone(), FORMAT, ModelSourceLimits::default()).unwrap();
     assert_eq!(draft.declared_license, "AGPL-3.0-only");
     assert_eq!(draft.source_limits, ModelSourceLimits::default());
@@ -73,7 +71,7 @@ fn source_sequence_maxima_are_checked_at_native_admission() {
                 field["type"]["maximum"] = json!(maximum);
             }
             let text = serde_json::to_string(&input).unwrap();
-            let binding = source(&text, "sequence-boundary");
+            let binding = source(&text);
             let draft = read(binding.clone(), FORMAT, ModelSourceLimits::default())
                 .expect("valid IR declarations must reach the native admission boundary");
             let result = draft.admit(ModelLimits::default());
@@ -114,12 +112,7 @@ fn source_forms_and_repeated_names_keep_exact_original_occurrences() {
     let text = serde_json::to_string_pretty(&input)
         .unwrap()
         .replace("NodeRef", "Node\\u0052ef");
-    let draft = read(
-        source(&text, "draft:1"),
-        FORMAT,
-        ModelSourceLimits::default(),
-    )
-    .unwrap();
+    let draft = read(source(&text), FORMAT, ModelSourceLimits::default()).unwrap();
     assert_eq!(draft.declared_license, "Declared metadata Ω");
     let fields: Vec<_> = draft
         .environment
@@ -172,7 +165,7 @@ fn source_forms_and_repeated_names_keep_exact_original_occurrences() {
 #[trace("TC-102", "FR-025-AC-3")]
 fn profile_decode_formal_and_admission_failures_retain_the_original_source() {
     let original = native_rule_model::fixture();
-    let binding = source(original, "draft:1");
+    let binding = source(original);
     let failure = read(binding.clone(), "unknown", ModelSourceLimits::default()).unwrap_err();
     assert_eq!(failure.code(), Code::UnknownWire);
     assert_eq!(failure.source().source().text(), original);
@@ -183,12 +176,7 @@ fn profile_decode_formal_and_admission_failures_retain_the_original_source() {
         original.replace("\"kind\": \"boolean\"", "\"kind\":\"boolean\",\"extra\":0"),
         "[]".to_owned(),
     ] {
-        let failure = read(
-            source(&text, "draft:1"),
-            FORMAT,
-            ModelSourceLimits::default(),
-        )
-        .unwrap_err();
+        let failure = read(source(&text), FORMAT, ModelSourceLimits::default()).unwrap_err();
         assert_eq!(failure.source().source().text(), text);
         assert_eq!(failure.code(), Code::InvalidModelBinding);
         assert!(matches!(failure.cause, ModelSourceCause::Decode(_)));
@@ -196,25 +184,16 @@ fn profile_decode_formal_and_admission_failures_retain_the_original_source() {
     let mut value: Value = serde_json::from_str(original).unwrap();
     value["scalars"][0]["minimum"] = json!(1001);
     let text = value.to_string();
-    let failure = read(
-        source(&text, "draft:1"),
-        FORMAT,
-        ModelSourceLimits::default(),
-    )
-    .unwrap_err();
+    let failure = read(source(&text), FORMAT, ModelSourceLimits::default()).unwrap_err();
     assert!(matches!(failure.cause, ModelSourceCause::Formal(ref errors) if !errors.is_empty()));
     assert_eq!(failure.source().source().text(), text);
     value["scalars"][0]["minimum"] = json!(0);
     value["objects"][0]["identity_field"] = json!("missing");
     let text = value.to_string();
-    let failure = read(
-        source(&text, "draft:1"),
-        FORMAT,
-        ModelSourceLimits::default(),
-    )
-    .unwrap()
-    .admit(ModelLimits::default())
-    .unwrap_err();
+    let failure = read(source(&text), FORMAT, ModelSourceLimits::default())
+        .unwrap()
+        .admit(ModelLimits::default())
+        .unwrap_err();
     assert!(matches!(failure.cause, ModelSourceCause::Admission(_)));
     assert_eq!(failure.source().source().text(), text);
     assert_eq!(failure.code(), Code::InvalidModelBinding);
@@ -237,12 +216,7 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
         entries: usize::MAX,
         type_depth: usize::MAX,
     };
-    let draft = read(
-        source(native_rule_model::fixture(), "effective"),
-        FORMAT,
-        overlarge,
-    )
-    .unwrap();
+    let draft = read(source(native_rule_model::fixture()), FORMAT, overlarge).unwrap();
     assert_eq!(draft.source_limits, effective);
     let failure = draft
         .admit(ModelLimits {
@@ -251,7 +225,7 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
         })
         .unwrap_err();
     assert_eq!(failure.source_limits(), effective);
-    let binding = source(native_rule_model::fixture(), "draft:1");
+    let binding = source(native_rule_model::fixture());
     for limits in [
         ModelSourceLimits {
             source_bytes: 0,
@@ -323,12 +297,7 @@ fn duplicate_scalar_retains_the_exact_declared_name() {
     let name = scalar["name"].as_str().unwrap().to_owned();
     input["scalars"].as_array_mut().unwrap().push(scalar);
     let text = input.to_string();
-    let failure = read(
-        source(&text, "duplicate"),
-        FORMAT,
-        ModelSourceLimits::default(),
-    )
-    .unwrap_err();
+    let failure = read(source(&text), FORMAT, ModelSourceLimits::default()).unwrap_err();
     assert_eq!(failure.code(), Code::InvalidModelBinding);
     assert_eq!(failure.source().source().text(), text);
     assert!(
@@ -342,12 +311,7 @@ fn unknown_scalar_retains_the_exact_referenced_name() {
     let mut input: Value = serde_json::from_str(native_rule_model::fixture()).unwrap();
     input["records"][0]["fields"][0]["type"] = json!({"kind":"scalar","name":"MissingScalar"});
     let text = input.to_string();
-    let failure = read(
-        source(&text, "unknown"),
-        FORMAT,
-        ModelSourceLimits::default(),
-    )
-    .unwrap_err();
+    let failure = read(source(&text), FORMAT, ModelSourceLimits::default()).unwrap_err();
     assert_eq!(failure.code(), Code::InvalidModelBinding);
     assert_eq!(failure.source().source().text(), text);
     assert!(
@@ -394,7 +358,7 @@ fn entry_budgets_precede_value_decoding_and_later_operations() {
             entries: declarations,
             ..ModelSourceLimits::default()
         };
-        let failure = read(source(&text, "budget"), FORMAT, limits).unwrap_err();
+        let failure = read(source(&text), FORMAT, limits).unwrap_err();
         assert_eq!(failure.code(), Code::ResourceExhausted, "{kind:?}");
         assert!(
             matches!(failure.cause,
@@ -405,7 +369,7 @@ fn entry_budgets_precede_value_decoding_and_later_operations() {
         );
         // Admit the one entry: the exact same bytes now reach its JSON decoder.
         let failure = read(
-            source(&text, "budget-retry"),
+            source(&text),
             FORMAT,
             ModelSourceLimits {
                 entries: declarations + 1,

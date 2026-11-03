@@ -270,8 +270,6 @@ pub(super) fn lower(
             native: w::NativeSource {
                 authority: text(&source.identity().authority, work)?,
                 identity: text(&source.identity().identity, work)?,
-                revision_namespace: text(&source.identity().revision_namespace, work)?,
-                revision: text(&source.identity().revision, work)?,
             },
             path: text(source.path(), work)?,
             formal: w::Formal {

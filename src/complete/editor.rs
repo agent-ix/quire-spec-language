@@ -220,10 +220,7 @@ pub fn format_document(
     let formatted = qsl_cst::format::format_with_limit(parsed, limits.source_bytes)
         .map_err(qsl_cst::format::FormatRefusal::into_diagnostic)?;
     let candidate = super::parse_with_catalog(
-        SourceIdentity {
-            revision: format!("{}:format-candidate", binding.source.revision),
-            ..binding.source.clone()
-        },
+        binding.source.clone(),
         parsed.source().path(),
         formatted.as_bytes(),
         catalog,

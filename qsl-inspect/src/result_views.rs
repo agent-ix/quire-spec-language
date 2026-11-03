@@ -327,9 +327,7 @@ mod tests {
     fn snapshot(digest: u8) -> DocumentRef {
         DocumentRef {
             authority: String::from("tests"),
-            identity: String::from("snapshot"),
-            revision_namespace: String::from("test"),
-            revision: digest.to_string(),
+            identity: format!("snapshot-{digest}"),
         }
     }
 
@@ -390,7 +388,7 @@ mod tests {
             profile v = \"quire.value.complete/v1\";\n\
             function seven using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure { x < y }\n";
         let site = qsl_replay::call_site(
-            qsl_foundation::SourceIdentity::new("tests", "inspect", "fixture", "current"),
+            qsl_foundation::SourceIdentity::new("tests", "inspect"),
             String::from("fixture"),
             "inspect.native",
             source,

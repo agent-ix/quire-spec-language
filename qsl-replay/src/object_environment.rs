@@ -2,7 +2,7 @@
 //! FR-071: the request's optional `object_environment` member.
 //!
 //! The member names one `quire.state.snapshot/v1` document of the request's
-//! documents by its four identity labels, in the form FR-106's invocation
+//! documents by its two identity labels, in the form FR-106's invocation
 //! uses for its `pre` and `post` members. The
 //! reader reads the member alone. It reads no document and requires no
 //! provided document: the executor admits the document by FR-106
@@ -23,7 +23,7 @@ use quire_checked::key::DeclarationKey;
 use serde_json::{Map, Value};
 
 const MEMBER: &str = "object_environment";
-const LABELS: [&str; 4] = ["authority", "identity", "revision_namespace", "revision"];
+const LABELS: [&str; 2] = ["authority", "identity"];
 
 /// The `object_environment` member of a replay request.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,12 +96,10 @@ impl ObjectEnvironmentRef {
     pub fn to_value(&self) -> Value {
         let labels = &self.identity;
         let mut identity = Map::new();
-        for (name, label) in LABELS.into_iter().zip([
-            &labels.authority,
-            &labels.identity,
-            &labels.revision_namespace,
-            &labels.revision,
-        ]) {
+        for (name, label) in LABELS
+            .into_iter()
+            .zip([&labels.authority, &labels.identity])
+        {
             identity.insert(name.to_owned(), Value::String(label.clone()));
         }
         let mut member = Map::new();
@@ -137,13 +135,11 @@ fn labels(identity: &Value) -> Result<EnvironmentLabels, ObjectEnvironmentRefusa
     Ok(EnvironmentLabels {
         authority: label("authority")?,
         identity: label("identity")?,
-        revision_namespace: label("revision_namespace")?,
-        revision: label("revision")?,
     })
 }
 
 /// Read a wire `object_environment` member (FR-071): a closed object with
-/// exactly `identity`, the four identity labels.
+/// exactly `identity`, the two identity labels.
 ///
 /// # Errors
 ///
@@ -232,8 +228,6 @@ impl ObjectEnvironmentDocument {
 ///     EnvironmentLabels {
 ///         authority: "agent-ix".to_owned(),
 ///         identity: "ix://test/graph/environment".to_owned(),
-///         revision_namespace: "git".to_owned(),
-///         revision: "1".to_owned(),
 ///     },
 ///     &EnvironmentModel {
 ///         identity: "test/graph".to_owned(),

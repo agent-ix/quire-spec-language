@@ -30,7 +30,7 @@ fn unit() -> String {
 
 fn site(source: &str, function: &str) -> crate::CallSite<crate::FunctionSite> {
     crate::call_site(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         "fixture".to_owned(),
         IDENTITY,
         source.as_bytes(),

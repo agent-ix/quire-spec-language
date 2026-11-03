@@ -133,15 +133,10 @@ pub(crate) fn case(body: &str, values: &[i64]) -> Case {
 }
 
 /// A source reference as the request spells it.
-type SourceWire = (String, String, String, String);
+type SourceWire = (String, String);
 
 pub(crate) fn source_wire() -> SourceWire {
-    (
-        AUTHORITY.to_owned(),
-        IDENTITY.to_owned(),
-        "git".to_owned(),
-        "1".to_owned(),
-    )
+    (AUTHORITY.to_owned(), IDENTITY.to_owned())
 }
 
 fn witness_source() -> ReplaySource {

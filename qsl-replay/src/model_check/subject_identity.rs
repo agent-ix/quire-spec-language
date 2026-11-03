@@ -11,7 +11,7 @@ use quire_exact::Integer;
 
 /// An initial state's document, as the identity reads it: the four source
 /// labels.
-type InitialState = (String, String, String, String);
+type InitialState = (String, String);
 
 /// The identity projection of a [`ModelSubject`] (ADR-013 O-09, FR-336): what
 /// a verdict over the subject holds for.
@@ -71,14 +71,7 @@ impl SubjectIdentity {
             initial: simulation
                 .initial
                 .iter()
-                .map(|document| {
-                    (
-                        document.authority.clone(),
-                        document.identity.clone(),
-                        document.revision_namespace.clone(),
-                        document.revision.clone(),
-                    )
-                })
+                .map(|document| (document.authority.clone(), document.identity.clone()))
                 .collect(),
             universes,
             packages: simulation

@@ -399,7 +399,7 @@ mod tests {
 
     fn source() -> Source {
         Source::read(
-            SourceIdentity::new("agent-ix", "test:diagnostic", "git", "1"),
+            SourceIdentity::new("agent-ix", "test:diagnostic"),
             "diagnostic.native",
             b"x",
             qsl_foundation::source::MAX_SOURCE_BYTES,

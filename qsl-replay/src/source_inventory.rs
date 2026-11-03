@@ -286,7 +286,7 @@ mod tests {
     }
 
     fn native(identity: &str) -> NativeIdentity {
-        NativeIdentity::new("test", identity, "test", "authored")
+        NativeIdentity::new("test", identity)
     }
 
     fn parse_text(identity: &NativeIdentity, text: &str, limits: SpineLimits) -> ParsedUnitSource {

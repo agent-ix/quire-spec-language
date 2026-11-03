@@ -62,7 +62,6 @@ pub(super) fn check_string_content(
         remaining: maximum,
     };
     budget.text(&source.source().identity().identity)?;
-    budget.text(&source.source().identity().revision)?;
     budget.text(source.identity().document().as_str())?;
     budget.text(environment.owner().package().as_str())?;
     budget.text(environment.owner().requirement().as_str())?;
@@ -211,7 +210,6 @@ fn loci(environment: &ir::DeclarationEnvironment) -> Vec<Locus<'_>> {
 #[derive(Serialize)]
 struct ModelSource<'a> {
     identity: &'a str,
-    revision: &'a str,
     formal: &'a ir::SourceIdentity,
 }
 
@@ -286,7 +284,6 @@ pub(super) fn encode(
         declarations,
         source: ModelSource {
             identity: &source.source().identity().identity,
-            revision: &source.source().identity().revision,
             formal: source.identity(),
         },
         loci: loci(environment),

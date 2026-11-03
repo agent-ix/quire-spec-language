@@ -1419,7 +1419,7 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         .unwrap(),
         Vec::new(),
     );
-    let w = admitted_source(SourceIdentity::new("a", "w", "git", "1"), b"");
+    let w = admitted_source(SourceIdentity::new("a", "w"), b"");
     let types = [ValueType::Composite(point), int(0, 9)];
     let u = SourceOwner::from(&fixture_source());
     let (under_u, u_keys) = type_nodes(&scope, &u, &types);

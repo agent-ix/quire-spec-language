@@ -418,8 +418,6 @@ impl SeparatingWitnessRecord {
             } => {
                 invocation.authority.len()
                     + invocation.identity.len()
-                    + invocation.revision_namespace.len()
-                    + invocation.revision.len()
                     + match binding {
                         InvocationBinding::Parameter(parameter) => 1 + parameter.len(),
                         InvocationBinding::Result | InvocationBinding::Receiver => 1,
@@ -446,8 +444,6 @@ impl SeparatingWitnessRecord {
             + 8
             + observation.authority.len()
             + observation.identity.len()
-            + observation.revision_namespace.len()
-            + observation.revision.len()
             + subject
             + steps
             + self
@@ -1180,8 +1176,6 @@ mod tests {
                 observation: ObservationIdentity {
                     authority: "test".to_owned(),
                     identity: "high".to_owned(),
-                    revision_namespace: "ns".to_owned(),
-                    revision: "1".to_owned(),
                 },
                 subject: ValuePathSubject::Built(OccurrenceKey::new(
                     crate::fixture_node(8),

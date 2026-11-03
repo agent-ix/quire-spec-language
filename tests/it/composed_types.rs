@@ -561,7 +561,6 @@ fn aggregate_domain_checks_are_distinct_from_pending_prefix_proofs() {
     );
     assert_eq!(cause.diagnostic.phase, qsl_foundation::Phase::Link);
     assert_eq!(cause.diagnostic.source.identity, "model:ExcessTypeMaximum");
-    assert_eq!(cause.diagnostic.source.revision, "authored");
     assert_eq!(cause.diagnostic.path, "ExcessTypeMaximum.json");
     assert_eq!(
         &cause.diagnostic.source,

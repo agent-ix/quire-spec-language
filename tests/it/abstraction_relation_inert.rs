@@ -37,7 +37,7 @@ fn graph_of(text: &str) -> CheckedGraph {
     let packages =
         qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap();
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "test:abstraction-inert", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:abstraction-inert"),
         "program.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

@@ -202,17 +202,13 @@ fn tc_042_set_inventories_are_permutation_invariant_but_parameters_are_ordered()
 #[trace("TC-042", "FR-015-AC-3")]
 fn tc_042_native_source_labels_and_formal_owner_participate_in_identity() {
     let baseline = parts().model();
-    for (identity, revision) in [
-        ("test:other-model", "draft:1"),
-        ("test:rule-model", "draft:2"),
-    ] {
+    const IDENTITY: &str = "test:other-model";
+    {
         let mut input = parts();
         let native = Source::read(
             SourceIdentity {
                 authority: "test".into(),
-                identity: identity.into(),
-                revision_namespace: "test".into(),
-                revision: revision.into(),
+                identity: IDENTITY.into(),
             },
             "native-rule-model.json",
             native_rule_model::fixture().as_bytes(),
@@ -223,8 +219,8 @@ fn tc_042_native_source_labels_and_formal_owner_participate_in_identity() {
         let model = input.model();
         assert_ne!(model.artifact_bytes(), baseline.artifact_bytes());
         let artifact: Value = serde_json::from_slice(model.artifact_bytes()).unwrap();
-        assert_eq!(artifact["source"]["identity"], identity);
-        assert_eq!(artifact["source"]["revision"], revision);
+        assert_eq!(artifact["source"]["identity"], IDENTITY);
+        assert!(artifact["source"].get("revision").is_none());
     }
     let mut input = parts();
     let owner = ir::RequirementRef::new(

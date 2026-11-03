@@ -708,8 +708,7 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
         .find(|(input, _)| input.path == source.path)
         .map(|(_, bytes)| bytes.as_slice())
         .expect("source input was read before execution");
-    let identity =
-        qsl_foundation::SourceIdentity::new("agent-ix", &source.path, "qualification", "1");
+    let identity = qsl_foundation::SourceIdentity::new("agent-ix", &source.path);
     let result = match (vector.subject.consumer_type, vector.subject.operation) {
         (ConsumerType::Language, Operation::Compile) => {
             let stage_limits = qsl_replay::StageLimits::from_iter(limits.spine.bounds());

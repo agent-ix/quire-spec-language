@@ -66,14 +66,11 @@ fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
 fn identity(reference: &DocumentRef) -> Json {
-    json!({"authority": reference.authority, "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace, "revision": reference.revision})
+    json!({"authority": reference.authority, "identity": reference.identity})
 }
 
 impl Unit {
@@ -97,8 +94,7 @@ impl Unit {
         let reference = |reference: &DocumentRef| json!({"identity": identity(reference)});
         let bytes = serde_json::to_vec(&json!({
             "format": "quire.state.invocation/v1",
-            "identity": {"authority": "test", "identity": label,
-                "revision_namespace": "fixture", "revision": "1"},
+            "identity": {"authority": "test", "identity": label},
             "model": self.model(),
             "context": ident("Counter"),
             "operation": "bump",
@@ -175,8 +171,7 @@ impl Unit {
             .collect();
         let mut document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": label,
-                "revision_namespace": "fixture", "revision": "1"},
+            "identity": {"authority": "test", "identity": label},
             "observation": observation,
             "model": self.model(),
             "populations": [

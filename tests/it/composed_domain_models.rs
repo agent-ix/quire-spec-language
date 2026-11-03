@@ -321,8 +321,6 @@ fn with_namespace(text: &str, test: impl FnOnce(&SyntaxNamespace)) {
         SourceIdentity {
             authority: "test".into(),
             identity: "plumbing".into(),
-            revision_namespace: "test".into(),
-            revision: "selected".into(),
         },
         "plumbing.native".to_owned(),
         text.as_bytes(),
@@ -686,8 +684,6 @@ fn domain_typed_declarations_type_check() {
         SourceIdentity {
             authority: "test".into(),
             identity: "pumps".into(),
-            revision_namespace: "test".into(),
-            revision: "selected".into(),
         },
         "pumps.native".to_owned(),
         text.as_bytes(),
@@ -852,8 +848,6 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
         SourceIdentity {
             authority: "test".into(),
             identity: "gauges".into(),
-            revision_namespace: "test".into(),
-            revision: "selected".into(),
         },
         "gauges.native".to_owned(),
         text.as_bytes(),
@@ -1041,8 +1035,6 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
         SourceIdentity {
             authority: "test".into(),
             identity: "fills".into(),
-            revision_namespace: "test".into(),
-            revision: "selected".into(),
         },
         "fills.native".to_owned(),
         text.as_bytes(),

@@ -39,8 +39,6 @@ fn two_objects(owner: &str) -> NativeModel {
         SourceIdentity {
             authority: "test".into(),
             identity: format!("model:{owner}"),
-            revision_namespace: "test".into(),
-            revision: "authored".into(),
         },
         format!("{owner}.json"),
         &text,

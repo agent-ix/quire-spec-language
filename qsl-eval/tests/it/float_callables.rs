@@ -37,7 +37,7 @@ fn run(result: &str, body: &str) -> (Outcome<Value>, Vec<ValueLoss>) {
          function f using v(): {result} pure {{ {body} }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -401,7 +401,7 @@ fn spend(result: &str, body: &str, p: u64, q: u64, limits: ScalarLimits) -> (Out
          function f using v(p: Float64[nearest-even], q: Float64[nearest-even]): {result} pure {{ {body} }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

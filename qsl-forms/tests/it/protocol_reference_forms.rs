@@ -14,7 +14,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 fn functions(declarations: &str) -> (String, Vec<FunctionDeclaration>) {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -114,7 +114,7 @@ fn a_protocol_declaration_and_a_reference_build_side_by_side() {
          }}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -142,7 +142,7 @@ fn a_target_that_is_no_qualified_name_is_not_admissible() {
     for body in ["protocol", "protocol 3", "protocol (Fill)"] {
         let text = format!("{HEADER}function a using v(): Boolean pure {{ {body} }}\n");
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -168,7 +168,7 @@ fn a_protocol_reference_formats_and_reparses_to_the_same_bytes() {
     let text = format!("{HEADER}function a using v(): Boolean pure {{ protocol M::Fill }}\n");
     let parse = |text: &str| {
         qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),

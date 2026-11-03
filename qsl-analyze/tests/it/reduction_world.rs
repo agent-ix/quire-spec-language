@@ -248,7 +248,7 @@ impl World {
              function Noop using v(): Boolean pure {{ true }}\n{body}{declared}"
         );
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("agent-ix", "reduction", "git", "1"),
+            SourceIdentity::new("agent-ix", "reduction"),
             "reduction.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -308,8 +308,7 @@ impl World {
         let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": name},
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": ident("counters"), "complete": true,
@@ -324,8 +323,6 @@ impl World {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 
@@ -433,15 +430,10 @@ const AUTHORITY: &str = "agent-ix";
 /// The fixture package manifest's top-level name.
 const PACKAGE_NAME: &str = "package";
 
-type SourceWire = (String, String, String, String);
+type SourceWire = (String, String);
 
 fn source_wire(identity: &str) -> SourceWire {
-    (
-        AUTHORITY.to_owned(),
-        identity.to_owned(),
-        "git".to_owned(),
-        "1".to_owned(),
-    )
+    (AUTHORITY.to_owned(), identity.to_owned())
 }
 
 fn witness_source() -> ReplaySource {

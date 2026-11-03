@@ -42,7 +42,7 @@ pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
 /// authority and identity are the declared nodes' owner (FR-001, FR-092).
 pub(crate) fn source() -> RawSourceRef {
     qsl_foundation::Source::read(
-        qsl_foundation::SourceIdentity::new("agent-ix", "qsl-bench", "bench", "1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "qsl-bench"),
         "qsl-bench",
         b"",
         0,

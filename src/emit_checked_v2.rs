@@ -251,7 +251,7 @@ fn read(path: &Path, refuse_over_cap: bool) -> Result<Vec<u8>, Error> {
 /// The labels a file is compiled under: its own path names it, so a caller
 /// supplies no identity of its own.
 fn identity(kind: &str, path: &Path) -> SourceIdentity {
-    SourceIdentity::new("local", format!("{kind}:{}", path.display()), "file", "1")
+    SourceIdentity::new("local", format!("{kind}:{}", path.display()))
 }
 
 /// The points file's object, read so a repeated clause name is detected

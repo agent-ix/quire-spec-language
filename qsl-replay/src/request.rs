@@ -393,8 +393,7 @@ pub struct ReplayRequestWire {
     pub package_name: String,
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
-    /// `(authority, identity, revision namespace, revision)` per declared
-    /// source reference.
+    /// `(authority, identity)` per declared source reference.
     pub sources: Vec<SourceRefWire>,
     /// The package reference's `dependencies`, one per entry of the proved
     /// package's `dependency_selections`.
@@ -699,10 +698,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
         + wire.source.measured_bytes()
         + wire.object_environment.as_ref().map_or(0, |environment| {
             let labels = environment.identity();
-            labels.authority.len()
-                + labels.identity.len()
-                + labels.revision_namespace.len()
-                + labels.revision.len()
+            labels.authority.len() + labels.identity.len()
         })
 }
 
@@ -935,12 +931,7 @@ mod tests {
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
             )],
-            sources: vec![(
-                "registry".to_owned(),
-                "pkg-a".to_owned(),
-                "git".to_owned(),
-                "rev-1".to_owned(),
-            )],
+            sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::function(
                 QualifiedName::new(vec![
@@ -1030,12 +1021,7 @@ mod tests {
         (
             DependencyEntryWire {
                 identity: identity.to_owned(),
-                sources: vec![(
-                    "registry".to_owned(),
-                    format!("lib-{fill}"),
-                    "git".to_owned(),
-                    "rev-1".to_owned(),
-                )],
+                sources: vec![("registry".to_owned(), format!("lib-{fill}"))],
             },
             bytes,
         )

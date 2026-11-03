@@ -37,7 +37,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 #[test]
 fn a_function_compiled_from_source_is_called_by_name() {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         UNIT.as_bytes(),
         qsl_cst::Limits::default(),
@@ -96,7 +96,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
          {declarations}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -143,7 +143,7 @@ fn operator_declarations(body: &str, parameters: &str, result: &str) -> PackageD
          function op using v({parameters}): {result} pure {{ {body} }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "division", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "division"),
         "division.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

@@ -39,7 +39,7 @@ fn members(function: &str) -> Vec<(OccurrenceKey, usize)> {
         supplied: SuppliedLimits::default(),
     };
     let result = run_with_requirements(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "fixture".to_owned(),
         "unit.native",
         K.as_bytes(),
@@ -61,7 +61,7 @@ fn members(function: &str) -> Vec<(OccurrenceKey, usize)> {
 
 fn check(text: &str, packages: &qsl_semantics::model::intake::PackageInput) -> CheckedGraph {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "test:call-requirements", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:call-requirements"),
         "program.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

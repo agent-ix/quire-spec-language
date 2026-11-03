@@ -260,7 +260,7 @@ mod tests {
         function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }\n";
 
     fn checked(test: impl FnOnce(&CheckedGraph)) {
-        let source = SourceIdentity::new("a", "u", "git", "1");
+        let source = SourceIdentity::new("a", "u");
         let limits = SpineLimits::default();
         let cancel = Cancel::new();
         let parsed = spine::parse(

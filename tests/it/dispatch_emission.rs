@@ -112,7 +112,7 @@ fn compile(declarations: &str) -> CheckedUnit {
          model Config = {PACKAGE:?};\n\
          {declarations}\n"
     );
-    let source = SourceIdentity::new("test", "dispatch", "file", "1");
+    let source = SourceIdentity::new("test", "dispatch");
     let cancel = Cancel::new();
     let limits = SpineLimits::default();
     let failure = |failure| spine::refusal_or_fault(failure).expect("no internal front-end fault");

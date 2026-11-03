@@ -60,7 +60,7 @@ fn package() -> CheckedPackage {
 
 fn package_from_source(source: &str) -> CheckedPackage {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -122,7 +122,7 @@ fn compensation_package() -> CheckedPackage {
         compensation_model::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("protocol-slots", "unit.native", "git", "1"),
+        qsl_foundation::SourceIdentity::new("protocol-slots", "unit.native"),
         "unit.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -983,17 +983,13 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
         let selected = qsl_semantics::model::observation::DocumentRef {
             authority: "test".to_owned(),
             identity: "now".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "1".to_owned(),
         };
         let snapshot = serde_json::json!({
             "format": "quire.state.snapshot/v1",
             "identity": {
                 "authority": selected.authority.clone(),
                 "identity": selected.identity.clone(),
-                "revision_namespace": selected.revision_namespace.clone(),
-                "revision": selected.revision.clone(),
-            },
+                },
             "observation": "current",
             "model": {"identity": "test/orders", "version": "1.0.0", "digest": "set at admission"},
             "populations": [{

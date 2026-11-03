@@ -2297,10 +2297,7 @@ pub mod fixtures {
     /// `git`, `1`): its owner `(a, u)` is the one FR-092's golden vectors
     /// are keyed under.
     pub fn fixture_source() -> qsl_foundation::source::provenance::RawSourceRef {
-        admitted_source(
-            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-            b"",
-        )
+        admitted_source(qsl_foundation::SourceIdentity::new("a", "u"), b"")
     }
 
     /// The `RawSourceRef` S0 mints for `bytes` admitted under `labels`.
@@ -3878,7 +3875,7 @@ mod locus_tests {
     /// [`UNIT`] through S1, S2 and the assembler.
     fn unit() -> PackageDeclarations {
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             UNIT.as_bytes(),
             qsl_cst::Limits::default(),
@@ -4013,7 +4010,7 @@ mod locus_tests {
              function f using v(): Integer pure {{ {terms} }}\n"
         );
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),

@@ -32,8 +32,6 @@ fn with_namespace(texts: &[String], test: impl FnOnce(&SyntaxNamespace)) {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: format!("scope:{index}"),
-                    revision_namespace: "test".into(),
-                    revision: "authored".into(),
                 },
                 format!("scope-{index}.native"),
                 text.as_bytes(),
@@ -496,7 +494,6 @@ fn actual_model_operation_inputs_result_and_pre_self_seed_the_state_scope() {
     let model = native_rule_model::from_text(
         &serde_json::to_string(&document).unwrap(),
         "scope-model.json",
-        "draft:1",
     )
     .unwrap()
     .model();

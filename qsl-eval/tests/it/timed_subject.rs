@@ -255,7 +255,7 @@ fn try_world_of(
          model M = \"{PACKAGE}\";\n{unit_body}",
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "fr-231", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "fr-231"),
         "fr-231.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -286,8 +286,7 @@ fn try_world_of(
     let header = json!({"identity": PACKAGE});
     let document = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": "s0"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident("calls"), "complete": true, "objects": objects}],
@@ -304,8 +303,6 @@ fn try_world_of(
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         },
     })
 }

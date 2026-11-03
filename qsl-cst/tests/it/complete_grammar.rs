@@ -231,8 +231,6 @@ fn parse(id: &str, text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: format!("test:{id}"),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         format!("{id}.native"),
         text.as_bytes(),
@@ -738,8 +736,6 @@ fn first_diagnostic(id: &str, bytes: &[u8]) -> (CompleteCode, CompleteCause) {
     let identity = SourceIdentity {
         authority: "test".into(),
         identity: format!("test:{id}"),
-        revision_namespace: "test".into(),
-        revision: "1".into(),
     };
     match qsl_cst::parse(identity, format!("{id}.native"), bytes, Limits::default()) {
         Ok(parsed) => {
@@ -828,8 +824,6 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: String::new(),
-                    revision_namespace: "test".into(),
-                    revision: "1".into(),
                 },
                 "unnamed.native",
                 &bytes,
@@ -859,8 +853,6 @@ fn the_reader_reports_blank_label_before_empty_path() {
     let labels = |authority: &str, identity: &str| SourceIdentity {
         authority: authority.into(),
         identity: identity.into(),
-        revision_namespace: "git".into(),
-        revision: "1".into(),
     };
     let blank = read(labels("a", "\u{3000}"), "");
     assert_eq!(

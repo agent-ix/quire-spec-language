@@ -88,7 +88,7 @@ pub(super) fn compile(declarations: &str) -> (Emission, Value) {
 fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
     let unit = format!("{HEADER}{declarations}");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "example", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "example"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

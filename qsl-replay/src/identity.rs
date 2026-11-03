@@ -150,67 +150,51 @@ impl fmt::Display for QualifiedName {
     }
 }
 
-/// The wire shape a [`DefinitionSourceRef`] decodes from: `(authority, identity,
-/// revision namespace, revision)` -- FR-001's four source labels. Named once
-/// here and reused by every envelope's wire struct
-/// (`replay::request::ReplayRequestWire`) that carries a list of these, and
-/// read and written only by [`DefinitionSourceRef::from_wire`] and
-/// [`DefinitionSourceRef::to_wire`].
-pub type SourceRefWire = (String, String, String, String);
+/// The wire shape a [`DefinitionSourceRef`] decodes from: `(authority,
+/// identity)` -- FR-001's two source labels. Named once here and reused by
+/// every envelope's wire struct (`replay::request::ReplayRequestWire`) that
+/// carries a list of these, and read and written only by
+/// [`DefinitionSourceRef::from_wire`] and [`DefinitionSourceRef::to_wire`].
+pub type SourceRefWire = (String, String);
 
-/// One entry of a replay request's `sources` list: FR-001's four labels
-/// (authority, identity, revision namespace, revision). The replay executor
-/// recompiles a source under exactly these labels (ADR-013 §7 S-4b: "The
-/// replay executor's recompilation under the reference's labels (FR-001) is
-/// TK-01's"). It is not the O-07
-/// `qsl_foundation::source::provenance::RawSourceRef`, which names a source
-/// by authority and identity alone.
+/// One entry of a replay request's `sources` list: FR-001's two labels
+/// (authority, identity). The replay executor recompiles a source under
+/// exactly these labels (ADR-013 §7 S-4b: "The replay executor's
+/// recompilation under the reference's labels (FR-001) is TK-01's"). It is
+/// not the O-07 `qsl_foundation::source::provenance::RawSourceRef`, which
+/// is minted by admission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DefinitionSourceRef {
     authority: String,
     identity: String,
-    revision_namespace: String,
-    revision: String,
 }
 
 impl DefinitionSourceRef {
-    /// Name a source document by its four labels.
-    pub fn new(
-        authority: String,
-        identity: String,
-        revision_namespace: String,
-        revision: String,
-    ) -> Self {
+    /// Name a source document by its two labels.
+    pub fn new(authority: String, identity: String) -> Self {
         Self {
             authority,
             identity,
-            revision_namespace,
-            revision,
         }
     }
 
     /// Read one wire entry. The labels are carried as given, and a blank one
     /// refuses where the source is admitted.
     pub fn from_wire(wire: SourceRefWire) -> Self {
-        let (authority, identity, revision_namespace, revision) = wire;
-        Self::new(authority, identity, revision_namespace, revision)
+        let (authority, identity) = wire;
+        Self::new(authority, identity)
     }
 
     /// This reference as one wire entry, the inverse of [`Self::from_wire`].
     pub fn to_wire(&self) -> SourceRefWire {
-        (
-            self.authority.clone(),
-            self.identity.clone(),
-            self.revision_namespace.clone(),
-            self.revision.clone(),
-        )
+        (self.authority.clone(), self.identity.clone())
     }
 
-    /// A wire entry's variable-length bytes: its four labels, as the #231
+    /// A wire entry's variable-length bytes: its two labels, as the #231
     /// readers measure them against the reader bound.
     pub(crate) fn wire_len(wire: &SourceRefWire) -> usize {
-        let (authority, identity, revision_namespace, revision) = wire;
-        authority.len() + identity.len() + revision_namespace.len() + revision.len()
+        let (authority, identity) = wire;
+        authority.len() + identity.len()
     }
 
     /// The source's authority (e.g. a registry or repository host).
@@ -221,16 +205,6 @@ impl DefinitionSourceRef {
     /// The source's identity within that authority.
     pub fn identity(&self) -> &str {
         &self.identity
-    }
-
-    /// The revision system the revision belongs to, such as `git`.
-    pub fn revision_namespace(&self) -> &str {
-        &self.revision_namespace
-    }
-
-    /// The selected revision of that identity, within its namespace.
-    pub fn revision(&self) -> &str {
-        &self.revision
     }
 }
 

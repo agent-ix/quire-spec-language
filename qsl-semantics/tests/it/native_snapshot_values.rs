@@ -74,15 +74,12 @@ fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
 fn identity_json(reference: &DocumentRef) -> Value {
     json!({
-        "authority": reference.authority, "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    "authority": reference.authority, "identity": reference.identity,
     })
 }
 
@@ -143,7 +140,7 @@ fn replay_with(document: Value, base: Vec<(String, Value)>, declarations: &str) 
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "native-values", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "native-values"),
         "native-values.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -287,8 +284,7 @@ fn snapshot_text(
         "format": "quire.state.snapshot/v1",
         "identity": {
             "authority": "test", "identity": label,
-            "revision_namespace": "fixture", "revision": "1",
-        },
+            },
         "observation": observation,
         "model": replay.model,
         "populations": populations,
@@ -474,8 +470,6 @@ impl Replay {
         let call = DocumentRef {
             authority: "test".to_owned(),
             identity: "call".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "1".to_owned(),
         };
         let reference = |document: &DocumentRef| {
             json!({

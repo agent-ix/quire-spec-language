@@ -41,8 +41,6 @@ fn identity() -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: "test:composed-syntax".into(),
-        revision_namespace: "test".into(),
-        revision: "test:authored".into(),
     }
 }
 

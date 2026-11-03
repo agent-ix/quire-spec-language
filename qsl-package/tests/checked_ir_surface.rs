@@ -12,7 +12,7 @@ use quire_semantic_value::checking::CheckingLimits;
 
 fn empty_graph() -> CheckedGraph {
     let source = qsl_foundation::Source::read(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "u".to_owned(),
         b"",
         0,

@@ -570,7 +570,7 @@ pub fn check_with_internals(
     let documents = packages(variant);
     let text = unit_text(&documents, refinement, variant);
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "refinement", "git", "1"),
+        SourceIdentity::new("agent-ix", "refinement"),
         "refinement.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -620,8 +620,7 @@ fn snapshot(
     let name = format!("{package}/start/{fields}/{}", keys.join(","));
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": name},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident(package, "counters"), "complete": true,
@@ -636,8 +635,6 @@ fn snapshot(
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     }
 }
 

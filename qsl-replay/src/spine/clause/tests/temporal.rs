@@ -890,8 +890,7 @@ fn observed_replay_request(
     let mut text = base.replacen(header, &format!("{header}{}", unit.profile()), 1);
     text.push_str(unit.clauses());
     let source_bytes = text.into_bytes();
-    let source_identity =
-        qsl_foundation::SourceIdentity::new("agent-ix", "clause-run-fixture", "git", "1");
+    let source_identity = qsl_foundation::SourceIdentity::new("agent-ix", "clause-run-fixture");
     let path = "counter-temporal.native";
     let temporal_selections = temporal_clock_selections(&source_identity, path, &source_bytes);
     let package_name = qsl_semantics::library::LibraryName::new("fixture").expect("a library name");

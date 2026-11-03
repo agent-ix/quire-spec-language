@@ -42,7 +42,7 @@ fn a_members_item_bounds_build_a_request_that_replays() {
         supplied: SuppliedLimits::default(),
     };
     let result = run_with_replay_context(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
@@ -56,7 +56,7 @@ fn a_members_item_bounds_build_a_request_that_replays() {
     .expect("the call runs");
 
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         SOURCE.as_bytes(),
         qsl_cst::Limits::default(),

@@ -14,7 +14,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 fn parse(declaration: &str) -> (String, ParsedSource) {
     let source = format!("{HEADER}{declaration}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "model-source", "test", "1"),
+        SourceIdentity::new("test", "model-source"),
         "model-source.native",
         source.as_bytes(),
         Limits::default(),

@@ -37,8 +37,6 @@ fn document_model(document: serde_json::Value, formal: &str, native: &str) -> Na
         SourceIdentity {
             authority: "test".into(),
             identity: native.into(),
-            revision_namespace: "test".into(),
-            revision: "selected".into(),
         },
         format!("{native}.json"),
         text.as_bytes(),
@@ -138,8 +136,6 @@ fn with_namespace(texts: &[String], test: impl FnOnce(&SyntaxNamespace)) {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: format!("unit-{index}"),
-                    revision_namespace: "test".into(),
-                    revision: "selected".into(),
                 },
                 format!("unit-{index}.native"),
                 text.as_bytes(),

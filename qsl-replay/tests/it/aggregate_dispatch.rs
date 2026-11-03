@@ -116,8 +116,8 @@ fn parse_unit_for_package(
 }
 
 fn linked(body_b: &str) -> Result<Vec<spine::CheckedUnit>, String> {
-    let source_a = SourceIdentity::new("test", "ac3:a", "a", "1");
-    let source_b = SourceIdentity::new("test", "ac3:b", "b", "1");
+    let source_a = SourceIdentity::new("test", "ac3:a");
+    let source_b = SourceIdentity::new("test", "ac3:b");
     let a = parse_unit(
         &source_a,
         "M",
@@ -151,8 +151,8 @@ fn linked(body_b: &str) -> Result<Vec<spine::CheckedUnit>, String> {
 }
 
 fn linked_clauses(reverse: bool) -> Vec<spine::CheckedUnit> {
-    let source_a = SourceIdentity::new("test", "ac1:a", "u1", "1");
-    let source_b = SourceIdentity::new("test", "ac1:b", "u2", "1");
+    let source_a = SourceIdentity::new("test", "ac1:a");
+    let source_b = SourceIdentity::new("test", "ac1:b");
     let a = parse_unit(
         &source_a,
         "M",
@@ -191,8 +191,8 @@ fn linked_clauses(reverse: bool) -> Vec<spine::CheckedUnit> {
 }
 
 fn d10(swapped: bool, split_pb1: bool, reverse: bool) -> Vec<spine::CheckedUnit> {
-    let source_a = SourceIdentity::new("test", "d10:u1", "u1", "1");
-    let source_b = SourceIdentity::new("test", "d10:u2", "u2", "1");
+    let source_a = SourceIdentity::new("test", "d10:u1");
+    let source_b = SourceIdentity::new("test", "d10:u2");
     let header = |body: &str| {
         format!(
             "body sizeA using m on M::ConfigVersion::size() {{ 1 }}\n\
@@ -257,7 +257,7 @@ fn d10(swapped: bool, split_pb1: bool, reverse: bool) -> Vec<spine::CheckedUnit>
 }
 
 fn d10_single(swapped: bool) -> spine::CheckedUnit {
-    let source = SourceIdentity::new("test", "d10:single", "single", "1");
+    let source = SourceIdentity::new("test", "d10:single");
     let lookup = "(lookup<M::ConfigVersion>(M::config_history, self) absent undefined) = self";
     let (pb1, pb2) = if swapped {
         ("false", lookup)
@@ -377,8 +377,6 @@ fn run_d10(checked: &spine::CheckedUnit) -> (String, u64) {
             identity: DocumentRef {
                 authority: "test".into(),
                 identity: "d10".into(),
-                revision_namespace: "ns".into(),
-                revision: "1".into(),
             },
             environment,
             populations: std::collections::BTreeMap::from([(HISTORY.to_owned(), true)]),
@@ -584,8 +582,8 @@ fn aggregate_resolves_a_reused_model_alias_per_source_unit() {
         .into_bytes();
     let packages = package_input([first_document.as_slice(), second_document.as_slice()])
         .expect("both model packages admit");
-    let source_a = SourceIdentity::new("test", "alias-a", "a", "1");
-    let source_b = SourceIdentity::new("test", "alias-b", "b", "1");
+    let source_a = SourceIdentity::new("test", "alias-a");
+    let source_b = SourceIdentity::new("test", "alias-b");
     let a = parse_unit_for_package(
         &source_a,
         "M",
@@ -650,8 +648,8 @@ fn aggregate_resolves_a_reused_model_alias_per_source_unit() {
     .expect_err("a same-unit duplicate model alias refuses");
     assert!(format!("{refusal:?}").contains("DuplicateAlias"));
 
-    let prior_source = SourceIdentity::new("test", "alias-prior", "prior", "1");
-    let repeated_source = SourceIdentity::new("test", "alias-repeated", "repeated", "1");
+    let prior_source = SourceIdentity::new("test", "alias-prior");
+    let repeated_source = SourceIdentity::new("test", "alias-repeated");
     let prior = parse_unit_for_package(&prior_source, "M", PACKAGE, "type Prior = Integer;\n");
     let repeated = parse_unit_for_package(
         &repeated_source,
@@ -692,7 +690,7 @@ fn aggregate_resolves_a_reused_import_alias_per_source_unit() {
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
     let library = |identity: &str, name: &str, declaration: &str| SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new("test-library", name, "git", "1"),
+        source: SourceIdentity::new("test-library", name),
         path: format!("{name}.native"),
         bytes: format!("{header}{declaration}").into_bytes(),
     };
@@ -709,8 +707,8 @@ fn aggregate_resolves_a_reused_import_alias_per_source_unit() {
         ),
     ])
     .expect("distinct library identities admit");
-    let source_a = SourceIdentity::new("test", "import-a", "a", "1");
-    let source_b = SourceIdentity::new("test", "import-b", "b", "1");
+    let source_a = SourceIdentity::new("test", "import-a");
+    let source_b = SourceIdentity::new("test", "import-b");
     let parse = |source: &SourceIdentity, library: &str, body: &str| {
         let text = format!("{header}import \"{library}\" as m;\n{body}");
         spine::parse(
@@ -759,7 +757,7 @@ fn aggregate_resolves_a_reused_import_alias_per_source_unit() {
     .into_value();
     assert_eq!(checked.len(), 2);
 
-    let source_without_import = SourceIdentity::new("test", "import-none", "none", "1");
+    let source_without_import = SourceIdentity::new("test", "import-none");
     let no_import = spine::parse(
         &ParseRequest {
             source: &source_without_import,

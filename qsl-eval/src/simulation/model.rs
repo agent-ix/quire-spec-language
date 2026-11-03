@@ -1854,8 +1854,6 @@ fn state_document() -> DocumentRef {
     DocumentRef {
         authority: "quire".to_owned(),
         identity: "quire.simulation.state".to_owned(),
-        revision_namespace: "quire.simulation.state-key".to_owned(),
-        revision: "runtime".to_owned(),
     }
 }
 

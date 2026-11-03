@@ -45,7 +45,7 @@ fn run(source: &str, cancel: &Cancel) -> Result<qsl_replay::RunWithRequirements,
         supplied: SuppliedLimits::default(),
     };
     run_with_requirements(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),

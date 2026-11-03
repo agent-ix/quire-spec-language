@@ -2633,8 +2633,6 @@ mod tests {
                             ObservationIdentity {
                                 authority: String::new(),
                                 identity: String::new(),
-                                revision_namespace: String::new(),
-                                revision: String::new(),
                             },
                             None,
                         ),

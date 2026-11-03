@@ -19,8 +19,6 @@ fn parse(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:probabilistic".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "probabilistic.native",
         text.as_bytes(),

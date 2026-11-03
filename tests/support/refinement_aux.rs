@@ -520,7 +520,7 @@ impl Unit {
         let packages = self.packages();
         let text = self.text(&packages, body);
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("agent-ix", "refinement-aux", "git", "1"),
+            SourceIdentity::new("agent-ix", "refinement-aux"),
             "aux.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -599,8 +599,7 @@ fn snapshot(
     let identity = format!("{package}/{name}");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": identity, "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": identity},
         "observation": "current",
         "model": {"identity": package},
         "anchor": {"kind": "initialization", "name": "start"},
@@ -618,8 +617,6 @@ fn snapshot(
     DocumentRef {
         authority: "test".to_owned(),
         identity,
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     }
 }
 

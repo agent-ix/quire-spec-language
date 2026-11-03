@@ -41,7 +41,7 @@ impl Body for GeneratedCall {
 
 /// Exercise the complete public facade path as an external consumer.
 pub fn run() {
-    let source = SourceIdentity::new("a", "consumer", "git", "1");
+    let source = SourceIdentity::new("a", "consumer");
     let name = QualifiedName::new(vec![Identifier::new("f").expect("identifier")]).expect("name");
     let site = call_site(
         source.clone(),

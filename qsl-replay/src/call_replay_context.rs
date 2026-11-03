@@ -222,7 +222,7 @@ mod tests {
             supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
         };
         run_with_replay_context(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
@@ -239,7 +239,7 @@ mod tests {
     /// `p`'s declaration occurrence and its parameter's node, read through
     /// a separate compile of `source`.
     fn declaration(source: &str, function: &str) -> (OccurrenceKey, NodeKey) {
-        let identity = SourceIdentity::new("a", "u", "git", "1");
+        let identity = SourceIdentity::new("a", "u");
         let limits = CallerLimits::default().spine;
         let cancel = Cancel::new();
         let parsed = spine::parse(
@@ -367,7 +367,7 @@ mod tests {
             supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
         };
         let result = run_with_replay_context(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),

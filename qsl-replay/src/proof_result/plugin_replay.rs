@@ -72,14 +72,13 @@ pub struct PluginReplayContext {
     accounting_limits: ScalarLimits,
 }
 
-/// The reference a replay request names `source` by: its four FR-001 labels.
+/// The reference a replay request names `source` by: its two FR-001 labels
+/// and the SHA-256 of its bytes.
 fn source_reference(source: &Source) -> DefinitionSourceRef {
     let identity = source.identity();
     DefinitionSourceRef::new(
         identity.label(SourceLabel::Authority).to_owned(),
         identity.label(SourceLabel::Identity).to_owned(),
-        identity.label(SourceLabel::RevisionNamespace).to_owned(),
-        identity.label(SourceLabel::Revision).to_owned(),
     )
 }
 

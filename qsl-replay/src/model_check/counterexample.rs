@@ -359,8 +359,6 @@ impl FamilyPayload for ObservedTemporalCounterexample {
                 bytes
                     .saturating_add(step.document.authority.len())
                     .saturating_add(step.document.identity.len())
-                    .saturating_add(step.document.revision_namespace.len())
-                    .saturating_add(step.document.revision.len())
             }))
             .saturating_add(self.fairness.iter().fold(0_usize, |bytes, constraint| {
                 bytes.saturating_add(constraint.operation().name().len())

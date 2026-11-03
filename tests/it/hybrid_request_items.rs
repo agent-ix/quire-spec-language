@@ -39,7 +39,7 @@ fn graph() -> CheckedGraph {
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let text = SOURCE.to_owned();
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "test:hybrid", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:hybrid"),
         "program.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

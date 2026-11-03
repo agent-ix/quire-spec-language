@@ -51,7 +51,7 @@ fn a_long_admitted_record_chain_compiles() {
         .expect("the s1 limits are named");
     let admitted = compile_admitted(
         CompileUnit {
-            source: SourceIdentity::new("test", "chain.native", "git", "fixture"),
+            source: SourceIdentity::new("test", "chain.native"),
             package_name: "chain".to_owned(),
             path: "chain.native",
             bytes: source.as_bytes(),

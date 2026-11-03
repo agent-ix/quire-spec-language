@@ -1154,7 +1154,7 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
         .expect("actual private normalization owner");
         let built = parse_and_build(&unit);
         let raw = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("test", "tc-911", "fixture", "1"),
+            qsl_foundation::SourceIdentity::new("test", "tc-911"),
             "unit.native",
             unit.as_bytes(),
             qsl_cst::Limits::default(),

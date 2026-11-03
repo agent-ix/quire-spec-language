@@ -193,7 +193,7 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
     )
     .expect("the model admits");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-1048", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-1048"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -384,8 +384,6 @@ impl Orders {
             identity: DocumentRef {
                 authority: "test".to_owned(),
                 identity: label.to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "1".to_owned(),
             },
             environment: environment.clone(),
             populations: BTreeMap::new(),

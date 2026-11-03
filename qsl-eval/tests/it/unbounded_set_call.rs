@@ -34,7 +34,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 
 fn package() -> CheckedPackage {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         UNIT.as_bytes(),
         qsl_cst::Limits::default(),

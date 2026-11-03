@@ -18,8 +18,6 @@ fn parse(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:hyper-clause".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "hyper.native",
         text.as_bytes(),

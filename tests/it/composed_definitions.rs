@@ -55,8 +55,6 @@ fn source(name: &str, body: &str) -> Source {
         SourceIdentity {
             authority: "test".into(),
             identity: name.into(),
-            revision_namespace: "test".into(),
-            revision: "test:original".into(),
         },
         format!("{name}.native"),
         format!("language \"ix:native\" edition \"1-draft\";\n{body}").as_bytes(),

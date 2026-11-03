@@ -19,8 +19,6 @@ fn identity(authority: &str) -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: authority.into(),
-        revision_namespace: "test".into(),
-        revision: "test:revision".into(),
     }
 }
 

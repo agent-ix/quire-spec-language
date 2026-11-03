@@ -165,7 +165,7 @@ fn orders_package(shape: Shape) -> CheckedPackage {
     )
     .expect("the model admits");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-1034", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-1034"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

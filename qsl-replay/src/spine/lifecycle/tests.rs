@@ -52,7 +52,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile Complete = \"quire.protocol.finite-global/v1\";\n";
 
 fn identity() -> SourceIdentity {
-    SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1")
+    SourceIdentity::new("agent-ix", "test:lifecycle")
 }
 
 #[trace("FR-050-AC-6")]
@@ -126,7 +126,7 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
         ))
     ));
 
-    let owner = SourceIdentity::new("test", "unit", "git", "1");
+    let owner = SourceIdentity::new("test", "unit");
     let duplicate_requests = [
         ParseRequest {
             source: &owner,
@@ -173,8 +173,8 @@ fn unit_list_preflight_refuses_empty_duplicate_and_library_owner_before_parsing(
 #[trace("FR-480-AC-2", "FR-480-AC-4")]
 #[test]
 fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonically() {
-    let first = SourceIdentity::new("test", "z-unit", "git", "1");
-    let second = SourceIdentity::new("test", "a-unit", "git", "1");
+    let first = SourceIdentity::new("test", "z-unit");
+    let second = SourceIdentity::new("test", "a-unit");
     let declaration = format!("{HEADER}function shared(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n");
     let duplicate = admit_parsed_unit_list(
         vec![
@@ -478,7 +478,7 @@ fn forms_refusal_is_attributed_to_its_declaration_and_source() {
     );
     let cancel = Cancel::new();
     let parse_source = |location: &str, bytes: &str| {
-        let source = SourceIdentity::new("agent-ix", location, "fixture", location);
+        let source = SourceIdentity::new("agent-ix", location);
         super::parse_unit(
             source,
             "unit.native",
@@ -684,9 +684,7 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     use qsl_semantics::check::NodeTag;
 
     static SOURCE: OnceLock<SourceIdentity> = OnceLock::new();
-    let source = SOURCE.get_or_init(|| {
-        SourceIdentity::new("agent-ix", "test:lifecycle", "type-report", "type-report:1")
-    });
+    let source = SOURCE.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle"));
     let text = format!(
         "{HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model M = \"acme/orders\";\n\
@@ -879,12 +877,10 @@ fn aggregate_check_returns_source_bound_units_and_reports() {
 
     static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
     static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
-    let source_a = SOURCE_A.get_or_init(|| {
-        SourceIdentity::new("agent-ix", "test:lifecycle:unit-a", "unit-a", "unit-a:1")
-    });
-    let source_b = SOURCE_B.get_or_init(|| {
-        SourceIdentity::new("agent-ix", "test:lifecycle:unit-b", "unit-b", "unit-b:1")
-    });
+    let source_a =
+        SOURCE_A.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:unit-a"));
+    let source_b =
+        SOURCE_B.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:unit-b"));
     let a = parse_named(
         source_a,
         format!("{HEADER}record Point {{ x: Integer; }}").as_bytes(),
@@ -937,22 +933,10 @@ fn aggregate_check_returns_source_bound_units_and_reports() {
 fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
     static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
     static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
-    let source_a = SOURCE_A.get_or_init(|| {
-        SourceIdentity::new(
-            "agent-ix",
-            "test:lifecycle:profile-a",
-            "profile-a",
-            "profile-a:1",
-        )
-    });
-    let source_b = SOURCE_B.get_or_init(|| {
-        SourceIdentity::new(
-            "agent-ix",
-            "test:lifecycle:profile-b",
-            "profile-b",
-            "profile-b:1",
-        )
-    });
+    let source_a =
+        SOURCE_A.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:profile-a"));
+    let source_b =
+        SOURCE_B.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:profile-b"));
     let a = parse_named(
         source_a,
         b"language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure { x < 5 }",
@@ -988,12 +972,10 @@ fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
 fn aggregate_model_selection_admits_selections_from_every_unit() {
     static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
     static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
-    let source_a = SOURCE_A.get_or_init(|| {
-        SourceIdentity::new("agent-ix", "test:lifecycle:model-a", "model-a", "model-a:1")
-    });
-    let source_b = SOURCE_B.get_or_init(|| {
-        SourceIdentity::new("agent-ix", "test:lifecycle:model-b", "model-b", "model-b:1")
-    });
+    let source_a =
+        SOURCE_A.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:model-a"));
+    let source_b =
+        SOURCE_B.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:model-b"));
     let a = parse_named(
         source_a,
         format!(
@@ -1045,22 +1027,10 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
 
     static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
     static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
-    let source_a = SOURCE_A.get_or_init(|| {
-        SourceIdentity::new(
-            "agent-ix",
-            "test:lifecycle:temporal-a",
-            "temporal-a",
-            "temporal-a:1",
-        )
-    });
-    let source_b = SOURCE_B.get_or_init(|| {
-        SourceIdentity::new(
-            "agent-ix",
-            "test:lifecycle:temporal-b",
-            "temporal-b",
-            "temporal-b:1",
-        )
-    });
+    let source_a =
+        SOURCE_A.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:temporal-a"));
+    let source_b =
+        SOURCE_B.get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle:temporal-b"));
     let header =
         format!("{HEADER}profile ev = \"quire.temporal.event-position.false-extension/v1\";\n");
     let a_text = format!(
@@ -1487,7 +1457,7 @@ fn state_clause_refusal_keeps_protocol_result_cleared() {
 fn geometry() -> SuppliedLibrary {
     SuppliedLibrary {
         identity: "test/geometry".to_owned(),
-        source: SourceIdentity::new("a", "geometry", "git", "1"),
+        source: SourceIdentity::new("a", "geometry"),
         path: "geometry.native".to_owned(),
         bytes: format!("{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n")
             .into_bytes(),

@@ -93,9 +93,7 @@ fn snapshot(model: &Model, name: &str, rows: &[(&str, i64, Option<&str>)]) -> Va
         "identity": {
             "authority": AUTHORITY,
             "identity": format!("ix://example/config-version/spine/current/{name}"),
-            "revision_namespace": "example",
-            "revision": "1",
-        },
+            },
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {

@@ -427,8 +427,6 @@ fn link_witness(difference: qsl_semantics::model::observation::LinkDifference) -
     let [invocation, pre, post] = ["invocation", "pre", "post"].map(|name| DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     });
     let end = |key: &str| SelectedObject {
         population: "Q".to_owned(),

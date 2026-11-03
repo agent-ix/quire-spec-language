@@ -853,8 +853,6 @@ impl LosslessCst {
             qsl_foundation::SourceIdentity {
                 authority: "test".into(),
                 identity: "forms-fixture".into(),
-                revision_namespace: "test".into(),
-                revision: "0".into(),
             },
             "forms-fixture",
             text.as_bytes(),
@@ -896,13 +894,11 @@ mod tests {
         text
     }
 
-    fn cst(revision: &str, text: &str) -> LosslessCst {
+    fn cst(text: &str) -> LosslessCst {
         let parsed = parse(
             SourceIdentity {
                 authority: "test".into(),
                 identity: "test:cst-unit".into(),
-                revision_namespace: "test".into(),
-                revision: revision.into(),
             },
             "unit.native",
             text.as_bytes(),
@@ -921,9 +917,9 @@ mod tests {
     #[test]
     fn reuse_decisions_depend_on_production_identity_alone() {
         let text = functions(3, "if x > 0 then x + 1 else x + 1");
-        let before = cst("r1", &text);
+        let before = cst(&text);
         let at = text.find("x > 0").expect("edit site");
-        let after = cst("r2", &text.replacen("x > 0", "x >= 10", 1));
+        let after = cst(&text.replacen("x > 0", "x >= 10", 1));
         let change = SourceChange {
             range: Span {
                 start: at,

@@ -307,7 +307,7 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
          {declarations}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "tc235-assembly", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "tc235-assembly"),
         "tc235-assembly.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

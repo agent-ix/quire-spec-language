@@ -690,8 +690,6 @@ mod profile_tests {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: "catalog-model".into(),
-                    revision_namespace: "test".into(),
-                    revision: "1".into(),
                 },
                 "catalog.json",
                 text.as_bytes(),

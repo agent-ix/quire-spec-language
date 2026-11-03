@@ -181,7 +181,7 @@ struct Fixture {
 }
 
 fn fixture() -> Fixture {
-    let source = SourceIdentity::new("a", "body-failure", "git", "1");
+    let source = SourceIdentity::new("a", "body-failure");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let parsed = spine::parse(

@@ -604,7 +604,7 @@ fn a_profile_outside_the_admitted_identities_is_refused_at_check() {
             &declared("Due", "always holds(c.versionNumber = 1)"),
         );
         let parsed = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("agent-ix", "test:profile", "fixture", "fixture:1"),
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:profile"),
             "program.native",
             source.as_bytes(),
             qsl_cst::Limits::default(),
@@ -625,7 +625,7 @@ fn a_profile_outside_the_admitted_identities_is_refused_at_check() {
             &declared("Due", "always holds(c.versionNumber = 1)"),
         );
         let parsed = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("agent-ix", "test:profile", "fixture", "fixture:1"),
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:profile"),
             "program.native",
             source.as_bytes(),
             qsl_cst::Limits::default(),

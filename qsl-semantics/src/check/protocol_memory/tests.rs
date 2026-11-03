@@ -57,7 +57,7 @@ fn protocol(run: &str) -> String {
 fn assemble(declarations: &str) -> (String, PackageDeclarations) {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -481,7 +481,7 @@ fn classes(source: &str) -> Vec<(String, Option<AccessClass>, Option<AccessOrder
 fn assemble_model(declarations: &str, model: SelectedModel) -> (String, PackageDeclarations) {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

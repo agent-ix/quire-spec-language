@@ -243,10 +243,8 @@ fn located_dependency() -> CheckedPackage {
         measure: None,
     })
     .expect("the spans fit g");
-    let source = qsl_semantics::check::admitted_source(
-        SourceIdentity::new("a", "u", "git", "1"),
-        DEPENDENCY_TEXT,
-    );
+    let source =
+        qsl_semantics::check::admitted_source(SourceIdentity::new("a", "u"), DEPENDENCY_TEXT);
     CheckedPackage::link(
         {
             let mut declarations = PackageDeclarations::new(

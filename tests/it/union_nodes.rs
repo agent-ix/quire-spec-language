@@ -25,8 +25,8 @@ const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     { case s { Empty: 0; Circle(r): r; Rect(w, h): w * h; } }\n\
     function rect using v(): Shape pure { Shape::Rect(2, 3) }\n";
 
-fn identity(revision: &str) -> SourceIdentity {
-    SourceIdentity::new("test", "union-nodes", "fixture", revision)
+fn identity() -> SourceIdentity {
+    SourceIdentity::new("test", "union-nodes")
 }
 
 /// The package's `semantic_graph` nodes.
@@ -42,7 +42,7 @@ fn nodes(wire: &Value) -> &[Value] {
 #[test]
 fn a_union_unit_recompiles_to_its_emitted_package() {
     let original = emitted(
-        identity("1"),
+        identity(),
         "unit.native",
         UNIT.as_bytes(),
         &BTreeMap::new(),
@@ -61,7 +61,7 @@ fn a_union_unit_recompiles_to_its_emitted_package() {
     let stages: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();
     let recompiled = compile_package(
         qsl_replay::CompileUnit {
-            source: identity("2"),
+            source: identity(),
             package_name: "union-nodes".to_owned(),
             path: "unit.native",
             bytes: original.sources()[0].text().as_bytes(),
@@ -84,7 +84,7 @@ fn a_union_unit_recompiles_to_its_emitted_package() {
 #[test]
 fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let original = emitted(
-        identity("1"),
+        identity(),
         "unit.native",
         UNIT.as_bytes(),
         &BTreeMap::new(),
@@ -106,7 +106,7 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
 
     // The checked package the emission was written from.
     let parsed = qsl_cst::parse(
-        identity("1"),
+        identity(),
         "unit.native",
         UNIT.as_bytes(),
         qsl_cst::Limits::default(),

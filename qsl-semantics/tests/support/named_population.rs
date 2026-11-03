@@ -199,7 +199,7 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
          {declarations}\n",
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-1076", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-1076"),
         "tc-1076.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

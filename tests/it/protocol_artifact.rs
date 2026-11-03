@@ -54,7 +54,6 @@ fn complete_wire_candidate_binds_real_model_and_independent_original_inventory()
             end: span.end as u32
         }
     );
-    assert_eq!(package.sources[0].native.revision, "editable:7");
     assert_eq!(package.sources[0].formal.document, "ProtocolReaderSource");
     assert_eq!(
         package.declarations[0].requirement.package,
@@ -122,13 +121,12 @@ fn fixed_member_order_and_serde_escaping_have_one_selected_byte_spelling() {
 #[trace("TC-121", "FR-042-AC-3")]
 fn independent_header_and_source_selections_refuse_single_axis_substitution() {
     let fixture = Fixture::new();
-    let mutations: [fn(&mut w::Package); 9] = [
+    let mutations: [fn(&mut w::Package); 8] = [
         |p| p.producer.implementation.push_str("-other"),
         |p| p.producer.revision.namespace.push_str("-other"),
         |p| p.contract.identity.push_str("-other"),
         |p| p.language.edition.push_str("-other"),
         |p| p.sources[0].native.identity.push_str("-other"),
-        |p| p.sources[0].native.revision.push_str("-other"),
         |p| p.sources[0].formal.revision.namespace.push_str("-other"),
         |p| p.sources[0].path.push_str("-other"),
         |p| p.declarations[0].requirement.identity.push_str("-other"),

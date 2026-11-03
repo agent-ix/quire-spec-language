@@ -275,9 +275,7 @@ impl Graph {
             "identity": {
                 "authority": "agent-ix",
                 "identity": "ix://test/graph/environment",
-                "revision_namespace": "git",
-                "revision": "1",
-            },
+                },
             "observation": variant.observation.unwrap_or("current"),
             "model": {
                 "identity": variant.model_identity.unwrap_or(PACKAGE),
@@ -348,8 +346,6 @@ fn environment(
     wire.object_environment = Some(ObjectEnvironmentRef::new(EnvironmentLabels {
         authority: "agent-ix".to_owned(),
         identity: "ix://test/graph/environment".to_owned(),
-        revision_namespace: "git".to_owned(),
-        revision: "1".to_owned(),
     }));
     wire
 }
@@ -483,8 +479,6 @@ fn labels() -> EnvironmentLabels {
     EnvironmentLabels {
         authority: "agent-ix".to_owned(),
         identity: "ix://test/graph/environment".to_owned(),
-        revision_namespace: "git".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
@@ -493,9 +487,7 @@ fn member() -> Value {
         "identity": {
             "authority": "agent-ix",
             "identity": "ix://test/graph/environment",
-            "revision_namespace": "git",
-            "revision": "1",
-        },
+            },
     })
 }
 

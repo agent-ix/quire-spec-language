@@ -41,7 +41,7 @@ fn source(extra: &str, parameters: &str, body: &str) -> String {
 /// The assembled declarations of `text`.
 fn assemble(text: &str) -> PackageDeclarations {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

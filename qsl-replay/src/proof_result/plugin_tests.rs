@@ -745,7 +745,7 @@ fn fixture_of(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
 ) -> Fixture {
-    let identity = SourceIdentity::new("agent-ix", "test:plugin", "fixture", "fixture:1");
+    let identity = SourceIdentity::new("agent-ix", "test:plugin");
     let limits = CallerLimits::default();
     let cancel = Cancel::new();
     let parsed = parse(
@@ -1206,12 +1206,7 @@ fn tc_774_a_transitive_dependency_replays() {
     );
     let library = |identity: &str, bytes: &String| crate::spine::SuppliedLibrary {
         identity: format!("test/{identity}"),
-        source: SourceIdentity::new(
-            "agent-ix",
-            format!("test:{identity}"),
-            "fixture",
-            "fixture:1",
-        ),
+        source: SourceIdentity::new("agent-ix", format!("test:{identity}")),
         path: format!("{identity}.native"),
         bytes: bytes.as_bytes().to_vec(),
     };
