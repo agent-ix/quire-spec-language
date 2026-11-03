@@ -1036,7 +1036,7 @@ fn every_case_gets_the_refusal_of_its_row() {
             }
         }
     }
-    // Rows 1 to 31 without 28, which has no successor: 30 cases.
+    // 30 cases: 20 stage `reader` and 10 stage `selection`.
     assert_eq!((reader_cases, selection_cases), (20, 10));
 }
 
