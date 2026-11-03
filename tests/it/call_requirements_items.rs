@@ -147,7 +147,7 @@ fn only_value_validity_records_have_an_owner() {
 /// TC-1308 row 5: the one checked predicate is called from a function, a
 /// state invariant, a protocol check and a temporal clause; every emitted
 /// call keeps its own source-map occurrence and names that same callee node.
-#[trace("TC-1308", "FR-046-AC-1", "FR-046-AC-8", "FR-513-AC-3", "FR-513-AC-7")]
+#[trace("TC-1308", "FR-046-AC-1", "FR-513-AC-3")]
 #[test]
 fn predicate_calls_from_each_clause_family_share_one_checked_callee() {
     let packages = qsl_semantics::model::intake::package_input([
@@ -403,6 +403,37 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
         );
     }
 
+    let (unit, wrong_unit) = compile(
+        "test:tc-1308-wrong-unit",
+        "dimension Time;\n\
+         unit s: Time = rational(1, 1);\n\
+         unit ms: Time = rational(1, 1000) * s;\n\
+         predicate Milliseconds using v(x: Quantity<ms>): Boolean { true }\n\
+         function Caller using v(): Boolean pure { Milliseconds(3 s) }\n",
+    );
+    let refusal = wrong_unit.expect_err("a call with the wrong quantity unit refuses");
+    assert!(
+        refusal
+            .causes()
+            .iter()
+            .any(|cause| cause.code.as_str() == "ill_typed"),
+        "the unit mismatch remains ill_typed: {refusal:?}"
+    );
+    let qsl_replay::spine::CompileRefusal::Check {
+        region: Some(region),
+        ..
+    } = refusal.as_ref()
+    else {
+        panic!("the unit mismatch identifies its source span: {refusal:?}");
+    };
+    let start = usize::try_from(region.start()).unwrap();
+    let end = usize::try_from(region.end()).unwrap();
+    assert_eq!(
+        unit.get(start..end),
+        Some("3 s"),
+        "unit mismatch points at the original call argument"
+    );
+
     let (unit, result) = compile(
         "test:tc-1308-unguarded-division",
         "predicate D using v(x: Rational[-10, 10; 1, 5]): Boolean { rational(10, 1) / x > rational(1, 1) }\n\
@@ -430,6 +461,16 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
     assert!(
         span.contains("rational(10, 1) / x"),
         "refusal span is {span:?}"
+    );
+
+    let (_, non_boolean) = compile(
+        "test:tc-1308-non-boolean-predicate",
+        "predicate NonBoolean using v(): Int[0, 9] { 1 }\n",
+    );
+    let refusal = non_boolean.expect_err("a predicate with a non-Boolean result refuses");
+    assert!(
+        !refusal.causes().is_empty(),
+        "the non-Boolean predicate refusal should retain its assembly cause: {refusal:?}"
     );
 }
 
