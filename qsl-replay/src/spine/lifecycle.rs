@@ -120,6 +120,32 @@ use super::{
 /// stage's refusal, a reached limit, a cancellation or a fault.
 pub type FrontEndFailure = StageFailure<Box<CompileRefusal>, Vec<super::ProtocolResult>>;
 
+struct StageError {
+    refusal: Box<CompileRefusal>,
+    protocol_results: Option<Vec<super::ProtocolResult>>,
+}
+
+impl From<Box<CompileRefusal>> for StageError {
+    fn from(refusal: Box<CompileRefusal>) -> Self {
+        Self {
+            refusal,
+            protocol_results: None,
+        }
+    }
+}
+
+impl StageError {
+    fn with_protocol_results(
+        refusal: Box<CompileRefusal>,
+        protocol_results: Vec<super::ProtocolResult>,
+    ) -> Self {
+        Self {
+            refusal,
+            protocol_results: Some(protocol_results),
+        }
+    }
+}
+
 /// The charges `run` made against `cancel`, added to `counter`: the work of
 /// one stage (FR-275-AC-5).
 fn charged<T>(cancel: &Cancel, counter: &mut u64, run: impl FnOnce() -> T) -> T {
@@ -136,11 +162,14 @@ fn charged<T>(cancel: &Cancel, counter: &mut u64, run: impl FnOnce() -> T) -> T 
 /// operation that was cancelled returns no output. A refusal that is a
 /// reached limit is returned as the limit, naming its setting
 /// (FR-255), and one that is a broken invariant as the fault (FR-275).
-fn stage<T>(
+fn stage<T, E>(
     cancel: &Cancel,
     source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
-    run: impl FnOnce(&mut StageWork) -> Result<T, Box<CompileRefusal>>,
-) -> Result<Staged<T>, FrontEndFailure> {
+    run: impl FnOnce(&mut StageWork) -> Result<T, E>,
+) -> Result<Staged<T>, FrontEndFailure>
+where
+    E: Into<StageError>,
+{
     if let Some(cause) = cancel.cause() {
         return Err(StageFailure::Cancelled(cause));
     }
@@ -154,7 +183,7 @@ fn stage<T>(
     }
     match result {
         Ok(value) => Ok(Staged::new(value).with_work(work)),
-        Err(refusal) => Err(failure_of(refusal, source_len)),
+        Err(refusal) => Err(failure_of(refusal.into(), source_len)),
     }
 }
 
@@ -162,16 +191,26 @@ fn stage<T>(
 /// `source_len` gives the byte length of the source an identity labels, for
 /// the byte ceiling's counter.
 fn failure_of(
-    refusal: Box<CompileRefusal>,
+    error: StageError,
     source_len: &dyn Fn(&SourceIdentity) -> Option<usize>,
 ) -> FrontEndFailure {
+    let StageError {
+        refusal,
+        protocol_results,
+    } = error;
     if let Some(limit) = limit_of(&refusal, source_len) {
-        return StageFailure::Limit(limit);
+        return protocol_results.map_or_else(
+            || StageFailure::Limit(limit.clone()),
+            |results| StageFailure::LimitWithPayload(limit, results),
+        );
     }
     if let Some(fault) = fault_of(&refusal) {
         return StageFailure::Fault(fault);
     }
-    StageFailure::Refused(refusal)
+    protocol_results.map_or_else(
+        || StageFailure::Refused(refusal.clone()),
+        |results| StageFailure::RefusedWithPayload(refusal, results),
+    )
 }
 
 /// The reached limit `refusal` reports, with the setting that raises it
