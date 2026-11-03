@@ -127,6 +127,21 @@ pub enum TemporalRefusal {
         /// The clause's profile.
         profile: TemporalProfile,
     },
+    /// A clause handed to the finite-window evaluator that was not checked
+    /// under the timestamped-event finite-window profile (FR-501).
+    #[error("the finite-window evaluator reads a clause under the timestamped-event finite-window profile, not {profile:?}")]
+    NotFiniteWindowProfile {
+        /// The clause's profile.
+        profile: TemporalProfile,
+    },
+    /// Two positions of equal stamp that take part in an order-sensitive
+    /// operator lack comparable order keys; the later position (QSpec
+    /// FR-090-AC-4).
+    #[error("the positions of equal stamp at {position:?} have no comparable order key")]
+    UnorderedTie {
+        /// The later of the two positions.
+        position: TemporalPosition,
+    },
     /// A clause handed to the timed evaluator that was not checked under the
     /// timed profile (FR-234).
     #[error("the timed evaluator reads a clause under the timed profile, not {profile:?}")]
@@ -183,6 +198,8 @@ impl TemporalRefusal {
             | Self::DecreasingStamp { .. }
             | Self::NonPositiveLoopDelay
             | Self::LoopReentersBeforeLastStamp
+            | Self::NotFiniteWindowProfile { .. }
+            | Self::UnorderedTie { .. }
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
             Self::AlignSkipNotLockstep
             | Self::NotProjectionAligned

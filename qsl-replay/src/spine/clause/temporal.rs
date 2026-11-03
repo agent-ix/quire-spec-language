@@ -62,6 +62,9 @@ pub struct TimestampedTraceInput {
     pub complete_through: Option<u64>,
     /// Whether the decision scope has closed.
     pub scope_closed: bool,
+    /// Whether the surrounding execution has closed. It changes only the
+    /// reported premise, never the verdict (FR-501 "Verdicts").
+    pub execution_closed: bool,
     /// The clock binding's point or counter cover for each stamp.
     pub cover: TimestampedCover,
     /// Atom readings absent from an admitted observation. Atom identifies
@@ -308,6 +311,7 @@ pub(super) fn run_temporal(
         },
         disposition,
         usage,
+        finite_window: None,
     };
     let early = |disposition| report(disposition, ClauseRunUsage::default());
 
@@ -548,7 +552,145 @@ pub(super) fn run_temporal(
     };
     let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
     usage.temporal_visits = temporal_visits;
-    report(disposition, usage)
+    // FR-501 "Result report": a completed finite-window verdict carries its
+    // basis, decision support, premises and result identity.
+    let window = match (trace, &disposition) {
+        (TraceInput::Timestamped(input), ClauseDisposition::Temporal(_)) => {
+            match finite_window_report(run, node, input, &environments, reference) {
+                Ok(window) => Some(window),
+                Err(fault) => {
+                    let mut failed = report(ClauseDisposition::EvaluateFault(fault), usage);
+                    failed.finite_window = None;
+                    return failed;
+                }
+            }
+        }
+        _ => None,
+    };
+    let mut finished = report(disposition, usage);
+    finished.finite_window = window;
+    finished
+}
+
+/// FR-501 "Result report": the basis, decision support, premises and result
+/// identity of a finite-window run, from the possibility-set evaluator over
+/// the same admitted observations and progress the verdict was read from.
+fn finite_window_report(
+    run: &CompiledRun<'_>,
+    node: &qsl_semantics::check::TemporalClauseNode,
+    input: &TimestampedTraceInput,
+    environments: &[ObjectEnvironment],
+    over: &quire_exact::ObjectReference,
+) -> Result<FiniteWindowReport, quire_semantic_value::catalog::InternalFault> {
+    use qsl_eval::temporal::{
+        evaluate_observed_finite_window_report, ClockCover, Closure, Completeness, LowerBoundary,
+        TimestampedObservation as WindowObservation, TimestampedTrace, Watermark, WindowClock,
+        WindowProgress,
+    };
+    let fault = |invariant: &'static str| {
+        quire_semantic_value::catalog::InternalFault::new("temporal", invariant)
+    };
+    let closure = |closed: bool| {
+        if closed {
+            Closure::Closed
+        } else {
+            Closure::Open
+        }
+    };
+    // The supplied positions in the order admission read them: the same
+    // stamp-then-key order the verdict was read in.
+    let ordered = ordered_timestamped_positions(input);
+    let trace = TimestampedTrace::admit(
+        node.clause().name(),
+        WindowClock {
+            unit: node.clause().clock().to_owned(),
+            cover: match input.cover {
+                TimestampedCover::Exact => ClockCover::Exact,
+                TimestampedCover::Counter { uncertainty } => ClockCover::Counter { uncertainty },
+            },
+        },
+        ordered
+            .iter()
+            .map(|position| WindowObservation {
+                stamp: position.stamp,
+                order_key: position.order.as_ref().and_then(|order| {
+                    u64::try_from(order.key)
+                        .ok()
+                        .map(|key| qsl_eval::temporal::OrderKey {
+                            authority: order.authority.clone(),
+                            key,
+                        })
+                }),
+                observation: format!("{:?}", position.document),
+            })
+            .collect(),
+        WindowProgress {
+            watermark: Watermark::Inclusive(input.watermark),
+            completeness: input
+                .complete_through
+                .map_or(Completeness::Incomplete, |through| Completeness::Complete {
+                    through,
+                }),
+            scope: closure(input.scope_closed),
+            execution: closure(input.execution_closed),
+            lower_boundary: if input.authoritative_origin {
+                LowerBoundary::AuthoritativeOrigin
+            } else {
+                LowerBoundary::HistoryCutoff
+            },
+        },
+    )
+    .map_err(|_| fault("finite-window-trace-admits"))?;
+    // The evaluator reads the same positions the verdict did: its positions
+    // are the admitted order, and the missing valuations were rewritten to it.
+    let missing: Vec<(u64, u64)> = input
+        .missing_valuations
+        .iter()
+        .filter_map(|missing| {
+            let original = input
+                .positions
+                .get(usize::try_from(missing.position).ok()?)?;
+            let position = ordered
+                .iter()
+                .position(|candidate| std::ptr::eq(*candidate, original))?;
+            Some((u64::try_from(position).ok()?, missing.atom))
+        })
+        .collect();
+    let mut meter = Meter::new(run.accounting);
+    let observed = evaluate_observed_finite_window_report(
+        run.package,
+        node,
+        environments,
+        &trace,
+        over,
+        &missing,
+        &mut meter,
+    );
+    match observed.result {
+        Ok(evaluation) => Ok(FiniteWindowReport {
+            basis: evaluation.basis,
+            support: evaluation.support,
+            premises: evaluation.premises,
+            identity: evaluation.identity,
+        }),
+        Err(TemporalRefusal::Fault(fault)) => Err(fault),
+        Err(_) => Err(fault("finite-window-report-reads-the-trace")),
+    }
+}
+
+/// FR-330, FR-501 "Result report": the basis, decision support, premises and
+/// result identity of a finite-window run, as separate fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FiniteWindowReport {
+    /// What the verdict rests on.
+    pub basis: qsl_eval::temporal::Basis,
+    /// The decision support, as `(position, atom)` pairs.
+    pub support: Vec<qsl_eval::temporal::SupportPair>,
+    /// The premises: the four independent dimensions and the inputs that
+    /// qualify the verdict.
+    pub premises: qsl_eval::temporal::Premises,
+    /// The result identity.
+    pub identity: qsl_eval::temporal::ResultIdentity,
 }
 
 fn finite_window_verdict(
@@ -908,6 +1050,8 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
         // The timed evaluator's refusals: the spine reads a clause through
         // the step evaluator only, which never returns them.
         TemporalRefusal::NotTimedProfile { .. }
+        | TemporalRefusal::NotFiniteWindowProfile { .. }
+        | TemporalRefusal::UnorderedTie { .. }
         | TemporalRefusal::NegativeStamp { .. }
         | TemporalRefusal::DecreasingStamp { .. }
         | TemporalRefusal::NonPositiveLoopDelay

@@ -193,6 +193,7 @@ fn timestamped_with(
                 watermark,
                 complete_through,
                 scope_closed: true,
+                execution_closed: true,
                 cover: crate::spine::TimestampedCover::Exact,
                 missing_valuations: Vec::new(),
                 authoritative_origin: true,
@@ -1425,6 +1426,7 @@ fn timestamped_profile_and_trace_shape_must_match() {
                 watermark: 0,
                 complete_through: Some(0),
                 scope_closed: true,
+                execution_closed: true,
                 cover: crate::spine::TimestampedCover::Exact,
                 missing_valuations: Vec::new(),
                 authoritative_origin: true,
@@ -1851,4 +1853,310 @@ fn a_guarded_on_each_clause_over_a_finite_trace_is_evaluated_at_its_guard() {
     );
     let report = self::report(finite(Unit::Guarded, "Guarded", &[0, 1, 1]));
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 1 });
+}
+
+/// `request` with its timestamped trace changed by `change`.
+fn timestamped_changed(
+    mut request: ClauseRunRequest,
+    change: impl FnOnce(&mut crate::spine::TimestampedTraceInput),
+) -> ClauseRunRequest {
+    let ClauseRunSelection::Temporal {
+        trace: TraceInput::Timestamped(trace),
+        ..
+    } = &mut request.selection
+    else {
+        panic!("a timestamped selection");
+    };
+    change(trace);
+    request
+}
+
+fn window_report(report: &ClauseRunReport) -> &crate::spine::FiniteWindowReport {
+    report
+        .finite_window
+        .as_ref()
+        .expect("a finite-window run carries its result report")
+}
+
+/// FR-501-AC-13 (TC-1295 row 27): the counter margin `2u` holds an
+/// activation pending until `t0 + H + 2u`; the exact cover has no margin.
+#[trace("TC-1295", "FR-501-AC-13")]
+#[test]
+fn timestamped_counter_margin_delays_establishment() {
+    fn handshake(
+        watermark: u64,
+        through: u64,
+        cover: crate::spine::TimestampedCover,
+    ) -> ClauseRunReport {
+        let mut request = timestamped(&[0], &[1], watermark, Some(through));
+        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let source = String::from_utf8(bytes.clone()).unwrap();
+        *bytes = source
+            .replace(
+                "eventually[0,5] holds(c.value > 0)",
+                "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
+            )
+            .into_bytes();
+        report(timestamped_changed(request, |trace| trace.cover = cover))
+    }
+    let counter = crate::spine::TimestampedCover::Counter { uncertainty: 1 };
+    assert_eq!(
+        outcome(&handshake(3_001, 3_002, counter)),
+        &TemporalVerdict::PendingWindow {
+            at: 0,
+            deadline: 3_002
+        }
+    );
+    assert_eq!(
+        outcome(&handshake(3_002, 3_002, counter)),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    assert_eq!(
+        outcome(&handshake(
+            3_000,
+            3_000,
+            crate::spine::TimestampedCover::Exact
+        )),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+}
+
+/// FR-501-AC-14 (TC-1295 row 28): the basis, verdict and decision support
+/// are separate fields of the report.
+#[trace("TC-1295", "FR-501-AC-14")]
+#[test]
+fn timestamped_report_gives_basis_and_decision_support() {
+    use qsl_eval::temporal::Basis;
+    let always = |scope_closed: bool| {
+        report(timestamped_changed(
+            timestamped_with(
+                Unit::TimestampedAlwaysFive,
+                &[0, 2, 5],
+                &[1, 0, 1],
+                5,
+                Some(5),
+            ),
+            |trace| trace.scope_closed = scope_closed,
+        ))
+    };
+    let closed = always(true);
+    assert_eq!(outcome(&closed), &TemporalVerdict::Violated { at: 0 });
+    assert_eq!(window_report(&closed).basis, Basis::ClosedScope);
+    let support: Vec<u64> = window_report(&closed)
+        .support
+        .iter()
+        .map(|pair| pair.position.index())
+        .collect();
+    assert_eq!(support, vec![1]);
+    let open = always(false);
+    assert_eq!(outcome(&open), &TemporalVerdict::Violated { at: 0 });
+    assert_eq!(window_report(&open).basis, Basis::DecisiveCounterexample);
+    assert_eq!(window_report(&open).support, window_report(&closed).support);
+
+    let witnessed = report(timestamped(&[0, 2, 5], &[0, 0, 1], 5, Some(5)));
+    assert_eq!(outcome(&witnessed), &TemporalVerdict::Holds);
+    assert_eq!(window_report(&witnessed).basis, Basis::ClosedScope);
+    let support: Vec<u64> = window_report(&witnessed)
+        .support
+        .iter()
+        .map(|pair| pair.position.index())
+        .collect();
+    assert_eq!(support, vec![2]);
+
+    let pending = report(timestamped(&[0, 1], &[0, 0], 1, Some(1)));
+    assert_eq!(window_report(&pending).basis, Basis::Unsettled);
+    let incomplete = report(timestamped(&[0, 1], &[0, 0], 5, None));
+    assert_eq!(window_report(&incomplete).basis, Basis::Unavailable);
+}
+
+/// FR-501-AC-15 (TC-1295 row 29): scope closure, surrounding-execution
+/// closure, assessment disposition and input completeness stay four
+/// independent fields.
+#[trace("TC-1295", "FR-501-AC-15")]
+#[test]
+fn timestamped_report_keeps_four_independent_dimensions() {
+    use qsl_eval::temporal::{Assessment, Closure, Completeness};
+    let base = || {
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 2, 5],
+            &[1, 0, 1],
+            5,
+            Some(5),
+        )
+    };
+    let closed = report(base());
+    let open = report(timestamped_changed(base(), |trace| {
+        trace.scope_closed = false
+    }));
+    assert_eq!(outcome(&open), outcome(&closed));
+    assert_eq!(window_report(&open).support, window_report(&closed).support);
+    assert_ne!(window_report(&open).basis, window_report(&closed).basis);
+    assert_eq!(window_report(&open).premises.scope, Closure::Open);
+    assert_eq!(
+        window_report(&open).premises.execution,
+        window_report(&closed).premises.execution
+    );
+    assert_eq!(
+        window_report(&open).premises.completeness,
+        window_report(&closed).premises.completeness
+    );
+
+    let moved = report(timestamped_changed(base(), |trace| {
+        trace.execution_closed = false;
+    }));
+    assert_eq!(window_report(&moved).premises.execution, Closure::Open);
+    assert_eq!(window_report(&moved).premises.scope, Closure::Closed);
+    assert_eq!(outcome(&moved), outcome(&closed));
+    assert_eq!(window_report(&moved).basis, window_report(&closed).basis);
+
+    assert_eq!(
+        window_report(&closed).premises.assessment,
+        Assessment::Completed
+    );
+    let mut starved = base();
+    starved.accounting.work_units = 1;
+    let failed = report(starved);
+    assert!(matches!(outcome(&failed), TemporalVerdict::Incomplete(_)));
+    assert_eq!(
+        window_report(&failed).premises.assessment,
+        Assessment::Failed
+    );
+
+    let incomplete = report(timestamped_changed(
+        timestamped_with(Unit::TimestampedAlwaysFive, &[0, 2, 5], &[1, 1, 1], 5, None),
+        |_| {},
+    ));
+    assert_eq!(
+        outcome(&incomplete),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
+    assert_eq!(
+        window_report(&incomplete).premises.completeness,
+        Completeness::Incomplete
+    );
+    assert_eq!(window_report(&incomplete).premises.scope, Closure::Closed);
+}
+
+/// FR-501-AC-16 (TC-1295 row 30): one result identity per input; each input
+/// changed alone gives a distinct identity.
+#[trace("TC-1295", "FR-501-AC-16")]
+#[test]
+fn timestamped_result_identity_follows_every_input() {
+    let base = || {
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 2, 5],
+            &[1, 0, 1],
+            5,
+            Some(5),
+        )
+    };
+    let identity = |request: ClauseRunRequest| window_report(&report(request)).identity.clone();
+    let original = identity(base());
+    assert_eq!(original, identity(base()));
+    let mut seen = vec![original.clone()];
+    let mut record = |name: &str, request: ClauseRunRequest| {
+        let changed = identity(request);
+        assert!(
+            !seen.contains(&changed),
+            "{name} did not change the identity"
+        );
+        seen.push(changed);
+    };
+    record(
+        "cover",
+        timestamped_changed(base(), |trace| {
+            trace.cover = crate::spine::TimestampedCover::Counter { uncertainty: 0 };
+        }),
+    );
+    record(
+        "stamp",
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 3, 5],
+            &[1, 0, 1],
+            5,
+            Some(5),
+        ),
+    );
+    record(
+        "valuation",
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 2, 5],
+            &[1, 1, 1],
+            5,
+            Some(5),
+        ),
+    );
+    record(
+        "order key",
+        timestamped_changed(base(), |trace| {
+            trace.positions[2].order = Some(crate::spine::TimestampedOrderKey {
+                authority: "A".to_owned(),
+                key: 1,
+            });
+        }),
+    );
+    record(
+        "watermark",
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 2, 5],
+            &[1, 0, 1],
+            6,
+            Some(5),
+        ),
+    );
+    record(
+        "through",
+        timestamped_with(
+            Unit::TimestampedAlwaysFive,
+            &[0, 2, 5],
+            &[1, 0, 1],
+            5,
+            Some(6),
+        ),
+    );
+    record(
+        "lower boundary",
+        timestamped_changed(base(), |trace| trace.authoritative_origin = false),
+    );
+    let mut ceiling = base();
+    ceiling.accounting.work_units = 1_000;
+    record("ceiling", ceiling);
+    assert_eq!(original, identity(base()));
+}
+
+/// FR-501-AC-17 (TC-1295 row 31): completeness may run ahead of the
+/// watermark; an empty trace and a trace whose stamps decrease are refused at
+/// stage `admit`, `invalid_runtime_input`/`invalid-value`.
+#[trace("TC-1295", "FR-501-AC-17")]
+#[test]
+fn timestamped_completeness_may_run_ahead_and_malformed_traces_are_refused() {
+    let ahead = report(timestamped(&[0, 2, 5], &[0, 0, 0], 5, Some(9)));
+    assert_eq!(outcome(&ahead), &TemporalVerdict::Violated { at: 0 });
+    let short = report(timestamped(&[0, 2, 5], &[0, 0, 0], 3, Some(9)));
+    assert_eq!(
+        outcome(&short),
+        &TemporalVerdict::PendingWindow { at: 0, deadline: 5 }
+    );
+    for (stamps, values) in [(&[][..], &[][..]), (&[0, 5, 2][..], &[0, 0, 0][..])] {
+        let refused = report(timestamped(stamps, values, 5, Some(5)));
+        assert_eq!(refused.disposition.stage(), ClauseRunStage::Admit);
+        let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &refused.disposition
+        else {
+            panic!(
+                "expected an admission refusal, got {:?}",
+                refused.disposition
+            );
+        };
+        assert_eq!(record.catalog.code(), "invalid_runtime_input");
+        assert_eq!(record.catalog.cause(), "invalid-value");
+        assert_eq!(refused.usage.temporal_visits, 0);
+    }
 }

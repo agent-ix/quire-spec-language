@@ -7,6 +7,7 @@ use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Incomplete, Meter};
 use quire_semantic_value::catalog::{InternalFault, UndefinedRecord};
 
+use super::finite_window::Valuation;
 use super::position::TemporalPosition;
 use super::window::{InsufficientData, WindowLimitReached, WindowRefusal};
 
@@ -96,6 +97,21 @@ pub trait TemporalLetters {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop>;
+
+    /// The valuation of the `holds` atom `atom` at the represented
+    /// `position` under the finite-window profile (FR-501 "Verdicts"), which
+    /// distinguishes a valuation absent from the observation and two
+    /// differing admitted valuations from a defined one. The default reads
+    /// [`Self::atom`], so letters that never miss a valuation need not
+    /// override it.
+    fn valuation(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<Valuation, LetterStop> {
+        self.atom(atom, position, meter).map(Valuation::from)
+    }
 
     /// The `when` condition of an `on each` activation at the represented
     /// `position`. Called only for a clause whose activation has one.

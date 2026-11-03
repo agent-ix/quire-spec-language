@@ -18,6 +18,7 @@ use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
 
+use super::finite_window::{evaluate_finite_window, TimestampedTrace, Valuation, WindowEvaluation};
 use super::{
     AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
     TemporalRefusal, TemporalTrace, UndefinedCause,
@@ -312,6 +313,51 @@ fn evaluate_observed_goal(
     }
 }
 
+/// What [`evaluate_observed_finite_window_report`] returns: the evaluator's
+/// result and, when a condition stopped the run, why (the result is then the
+/// stop's fault).
+#[derive(Debug)]
+pub struct ObservedWindowRun {
+    /// The evaluator's result.
+    pub result: Result<WindowEvaluation, TemporalRefusal>,
+    /// The condition stop that ended the run, if one did.
+    pub stopped: Option<HoldsStop>,
+}
+
+/// Evaluate `clause` under the finite-window profile (FR-501) over the object
+/// environment of each admitted position of `trace`, reading the possibility
+/// sets of its atoms, and return the full result report: verdict, basis,
+/// decision support, premises and result identity. `missing` names the
+/// `(position, atom node)` valuations absent from the admitted observations.
+pub fn evaluate_observed_finite_window_report(
+    package: &CheckedPackage,
+    clause: &TemporalClauseNode,
+    environments: &[ObjectEnvironment],
+    trace: &TimestampedTrace,
+    over: &ObjectReference,
+    missing: &[(u64, u64)],
+    meter: &mut Meter,
+) -> ObservedWindowRun {
+    let mut letters = ObservedLetters {
+        package,
+        clause,
+        environments,
+        trace: TemporalTrace::Finite {
+            len: u64::try_from(trace.len()).unwrap_or(u64::MAX),
+        },
+        over,
+        stopped: None,
+        undefined: None,
+        atom_readings: Vec::new(),
+        missing_valuations: missing,
+    };
+    let result = evaluate_finite_window(clause.clause(), trace, &mut letters, meter);
+    ObservedWindowRun {
+        result,
+        stopped: letters.stopped,
+    }
+}
+
 /// The fault codes of a `holds` condition: a failed call, a refusal and a
 /// non-Boolean completion.
 const HOLDS_CODES: [&str; 3] = [
@@ -455,6 +501,22 @@ impl TemporalLetters for ObservedLetters<'_> {
         }
         self.atom_readings.push((atom, position, reading.clone()));
         Ok(reading)
+    }
+
+    /// A valuation the finite-window input names as absent is
+    /// [`Valuation::Missing`] (QSpec FR-160), not an undefined atom.
+    fn valuation(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<Valuation, LetterStop> {
+        let absent = u64::try_from(atom.index())
+            .is_ok_and(|atom| self.missing_valuations.contains(&(position.index(), atom)));
+        if absent {
+            return Ok(Valuation::Missing);
+        }
+        self.atom(atom, position, meter).map(Valuation::from)
     }
 
     fn activation(

@@ -35,6 +35,7 @@
 //! the one clause evaluator (FR-107).
 
 mod engine;
+mod finite_window;
 mod input;
 mod letters;
 mod observed;
@@ -48,11 +49,17 @@ mod tuple;
 mod window;
 
 pub use engine::{unrolling, Unrolling};
+pub use finite_window::{
+    evaluate_finite_window, Assessment, Basis, ClockCover, Closure, Completeness, Containment,
+    IndeterminateReason, LowerBoundary, OrderKey, Premises, ResultIdentity, SupportPair,
+    TimestampedObservation, TimestampedTrace, Valuation, Watermark, WindowClock, WindowEvaluation,
+    WindowProgress, WindowVerdict,
+};
 pub use input::TemporalTrace;
 pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{
-    evaluate_observed, evaluate_observed_at, evaluate_observed_finite_window, HoldsStop,
-    ObservedRun,
+    evaluate_observed, evaluate_observed_at, evaluate_observed_finite_window,
+    evaluate_observed_finite_window_report, HoldsStop, ObservedRun, ObservedWindowRun,
 };
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};
 pub use outcome::{

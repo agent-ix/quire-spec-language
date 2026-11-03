@@ -30,7 +30,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 mod temporal;
 pub use temporal::{
-    CoverComparison, OverObject, TimestampedCover, TimestampedMissingValuation,
+    CoverComparison, FiniteWindowReport, OverObject, TimestampedCover, TimestampedMissingValuation,
     TimestampedObservation, TimestampedOrderKey, TimestampedTraceInput, TraceInput,
 };
 
@@ -834,6 +834,9 @@ pub struct ClauseRunReport {
     /// Per-implication consequent observations from a completed native
     /// Boolean clause evaluation, in checked expression order.
     pub consequent_source_events: ConsequentSourceEvents,
+    /// FR-330, FR-501 "Result report": the basis, decision support, premises
+    /// and result identity of a finite-window run; `None` for every other run.
+    pub finite_window: Option<FiniteWindowReport>,
 }
 
 impl ClauseRunReport {
@@ -957,6 +960,7 @@ pub fn run_clause_with_temporal_selections(
         disposition,
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
+        finite_window: None,
     };
 
     if let Some(language) = unit.language {
@@ -1087,6 +1091,7 @@ impl CompiledRun<'_> {
             disposition,
             usage: ClauseRunUsage::default(),
             consequent_source_events: ConsequentSourceEvents::Unavailable,
+            finite_window: None,
         }
     }
 }
@@ -1502,6 +1507,7 @@ fn run_function(
         disposition,
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
+        finite_window: None,
     };
 
     let selected = match select(package, name) {
