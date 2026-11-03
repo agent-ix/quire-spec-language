@@ -1277,6 +1277,32 @@ pub fn check_units(
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<Vec<CheckedUnit>>, FrontEndFailure> {
+    check_units_with_options(
+        admitted,
+        package_name,
+        models,
+        dependencies,
+        UnitCheckOptions::default(),
+        limits,
+        cancel,
+    )
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct UnitCheckOptions<'a> {
+    pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
+    pub(crate) continue_protocol_refusals: bool,
+}
+
+pub(crate) fn check_units_with_options(
+    admitted: &AdmittedUnitList,
+    package_name: String,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    options: UnitCheckOptions<'_>,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<Vec<CheckedUnit>>, FrontEndFailure> {
     let source_len = |identity: &SourceIdentity| {
         admitted
             .units()
@@ -1308,7 +1334,7 @@ pub fn check_units(
             continuation_source: first.source().reference().clone(),
             limits,
             cancel,
-            temporal_selections: &[],
+            temporal_selections: options.temporal_selections,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
@@ -1346,19 +1372,22 @@ pub fn check_units(
         {
             let (protocol_results, protocol_failure) =
                 protocol_check_outcome(parsed, package.graph());
-            if let Some(refusal) = protocol_failure.as_ref() {
-                return Err(StageError::with_protocol_results(
-                    Box::new(refusal.to_refusal()),
-                    protocol_results,
-                ));
+            if !options.continue_protocol_refusals {
+                if let Some(refusal) = protocol_failure.as_ref() {
+                    return Err(StageError::with_protocol_results(
+                        Box::new(refusal.to_refusal()),
+                        protocol_results,
+                    ));
+                }
             }
-            let has_protocol_refusal = protocol_results.iter().any(|result| {
-                matches!(
-                    result,
-                    super::ProtocolResult::Refused { .. }
-                        | super::ProtocolResult::Incomplete { .. }
-                )
-            });
+            let has_protocol_refusal = protocol_failure.is_some()
+                || protocol_results.iter().any(|result| {
+                    matches!(
+                        result,
+                        super::ProtocolResult::Refused { .. }
+                            | super::ProtocolResult::Incomplete { .. }
+                    )
+                });
             let static_subject =
                 if has_protocol_refusal || !package.graph().unit_refusals().is_empty() {
                     Err(SubjectUnavailable::RefusedCheck)
@@ -2861,7 +2890,7 @@ enum Selected<'a> {
     /// A library compiled earlier in this closure, reused.
     Reused(LibraryName, Arc<ResolvedLibrary>),
     /// The supplied library to compile.
-    Compile(LibraryName, &'a [SuppliedLibrary]),
+    Compile(LibraryName, &'a [Arc<SuppliedLibrary>]),
 }
 
 /// The frame the walk is in: the innermost library, or the unit itself when
@@ -2934,7 +2963,7 @@ impl<'a> Resolution<'a> {
     fn begin_library(
         &mut self,
         identity: LibraryName,
-        supplied: &[SuppliedLibrary],
+        supplied: &[Arc<SuppliedLibrary>],
     ) -> Result<Library, Box<CompileRefusal>> {
         let (limits, cancel, packages) = (self.limits, self.cancel, self.packages);
         if supplied.is_empty() {

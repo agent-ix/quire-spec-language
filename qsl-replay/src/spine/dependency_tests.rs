@@ -184,6 +184,63 @@ fn selection_and_dependency_input_refusals() {
     assert_eq!(empty.host_cause(), Some(HostCause::SelectionIdentity));
 }
 
+#[test]
+fn multi_source_library_identity_mismatch_has_a_typed_refusal() {
+    let refusal = input(vec![library("test/a", "a", H)])
+        .with_library_units("test/a", vec![library("test/b", "b", H)])
+        .expect_err("a source's declared library identity must match its list");
+    assert!(matches!(
+        refusal,
+        DependencyInputRefusal::LibraryIdentityMismatch { .. }
+    ));
+    assert_eq!(refusal.code(), Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("conflicting-definition"));
+}
+
+#[test]
+fn multi_source_dependency_exclusion_shares_source_bytes() {
+    let dependencies = input(vec![library("test/a", "a0", H), library("test/b", "b0", H)])
+        .with_library_units(
+            "test/a",
+            vec![library("test/a", "a1", H), library("test/a", "a2", H)],
+        )
+        .expect("both source units belong to one library");
+    let library = lib("test/a");
+    assert!(std::sync::Arc::ptr_eq(
+        &dependencies.libraries[&library],
+        &dependencies.library_units[&library][0]
+    ));
+    let without = dependencies.without_library(&library);
+    let other = lib("test/b");
+    assert!(std::sync::Arc::ptr_eq(
+        &dependencies.library_units[&other][0],
+        &without.library_units[&other][0]
+    ));
+}
+
+#[test]
+fn multi_source_owner_conflicts_scan_every_other_library() {
+    let dependencies = input(vec![
+        library("test/a", "a0", H),
+        library("test/b", "shared", H),
+        library("test/c", "c0", H),
+    ]);
+    let refusal = dependencies
+        .with_library_units(
+            "test/c",
+            vec![library("test/c", "c0", H), library("test/c", "shared", H)],
+        )
+        .expect_err("a later source may not reuse another library's owner");
+    assert!(matches!(
+        refusal,
+        DependencyInputRefusal::SharedOwner {
+            first: SourceHolder::Library(ref first),
+            second,
+            ..
+        } if first == &lib("test/b") && second == lib("test/c")
+    ));
+}
+
 /// FR-099-AC-3 (TC-446 step 3), closure-level and wrapped refusals: a cycle
 /// is reported unwrapped at the import that closes it, in the source that
 /// declares it; a library's own refusal is wrapped with its

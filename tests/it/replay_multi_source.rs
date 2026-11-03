@@ -593,3 +593,73 @@ fn definition_document_source_refuses_before_recompile() {
     assert_eq!(refusal.cause(), Some("invalid-value"));
     assert_eq!(refusal.pointer().as_deref(), Some("/package/sources"));
 }
+
+fn supplied(identity: &str, source: &str, text: &str) -> SuppliedLibrary {
+    SuppliedLibrary {
+        identity: identity.to_owned(),
+        source: SourceIdentity::new("test", source),
+        path: format!("{source}.native"),
+        bytes: text.as_bytes().to_vec(),
+    }
+}
+
+/// FR-098: a unit shared by two libraries other than the first one refuses
+/// whichever library was searched first (A=[a1], B=[b1,s], C=[c1,s]).
+#[trace("FR-098-AC-7")]
+#[test]
+fn shared_unit_owner_is_found_in_any_other_library() {
+    let a1 = supplied("test/a", "a1", LIBRARY_FIRST);
+    let b1 = supplied("test/b", "b1", LIBRARY_FIRST);
+    let c1 = supplied("test/c", "c1", LIBRARY_FIRST);
+    let dependencies = DependencyInput::new([a1, b1.clone(), c1.clone()])
+        .expect("three library identities admit")
+        .with_library_units("test/b", vec![b1, supplied("test/b", "s", LIBRARY_SECOND)])
+        .expect("B holds s alone");
+    let refused = dependencies
+        .with_library_units("test/c", vec![c1, supplied("test/c", "s", LIBRARY_SECOND)])
+        .expect_err("s is already B's");
+    assert!(
+        matches!(
+            refused,
+            qsl_replay::spine::DependencyInputRefusal::SharedOwner { .. }
+        ),
+        "{refused:?}"
+    );
+}
+
+/// FR-098: the request's temporal selections reach a library source's
+/// emission; a selection naming no declaration there is surplus and refuses.
+#[trace("FR-098-AC-7")]
+#[test]
+fn temporal_selection_on_a_library_source_reaches_its_emission() {
+    let sources = vec![
+        dependency_reference("library-u1"),
+        dependency_reference("library-u2"),
+    ];
+    let (wire, _) = multi_source_dependency_request(sources, Vec::new(), None);
+    let library = spine::parse(
+        &ParseRequest {
+            source: &SourceIdentity::new("test", "library-u1"),
+            path: "library-u1.native",
+            bytes: LIBRARY_FIRST.as_bytes(),
+        },
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the library unit parses")
+    .into_value();
+    let selection = qsl_package::TemporalClockSelection {
+        source: library.source().reference().clone(),
+        declaration_span: qsl_foundation::source::Span { start: 0, end: 1 },
+        clock: qsl_package::ClockConfiguration::EventPosition {
+            sequence_authority: "none".into(),
+        },
+    };
+    let refused =
+        qsl_replay::replay_with_temporal_selections(wire, &[selection], ReplayLimits::default())
+            .expect_err("a selection naming no temporal declaration is surplus");
+    assert!(
+        matches!(refused, ReplayRefusal::Recompile(_)),
+        "{refused:?}"
+    );
+}

@@ -1600,12 +1600,15 @@ pub(crate) fn recompile_with_temporal_selections(
     }
     // Rule 2: the proved package's and each dependency's sources name
     // non-empty sets of unique source units, independent of request order.
-    let sources = package_sources(request)?;
+    let definition_documents = DefinitionDocumentOwners::from_request(request);
+    let sources = package_sources(request, &definition_documents)?;
     let library_sources = request
         .dependencies()
         .iter()
         .enumerate()
-        .map(|(index, entry)| canonical_dependency_sources(request, index, entry.sources()))
+        .map(|(index, entry)| {
+            canonical_dependency_sources(index, entry.sources(), &definition_documents)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let provided = |reference: &DefinitionSourceRef| {
         request.byte_provision().get(reference).ok_or_else(|| {
@@ -1650,6 +1653,11 @@ pub(crate) fn recompile_with_temporal_selections(
                 .map_err(ReplayRefusal::DependencyInput)
         },
     )?;
+    for source in &sources {
+        dependencies
+            .check_unit_owner(&labels(source))
+            .map_err(ReplayRefusal::DependencyInput)?;
+    }
     let packages = domain_packages(request)?;
     // Rule 4: the recompile.
     let package_name =
@@ -1695,41 +1703,36 @@ fn domain_packages(
         .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))
 }
 
-/// The one source `references` names (ADR-015 D-4 rule 2), else
-/// [`ReplayRefusal::SourceCount`].
-fn one_source(references: &[DefinitionSourceRef]) -> Result<&DefinitionSourceRef, ReplayRefusal> {
-    match references {
-        [source] => Ok(source),
-        _ => Err(ReplayRefusal::SourceCount(references.len())),
-    }
-}
-
-/// A source reference's two FR-001 labels.
+/// A dependency entry's source references in canonical owner order, else
+/// the entry's [`ReplayRefusal::DependencySources`].
 fn canonical_dependency_sources<'a>(
-    request: &ReplayRequest,
     index: usize,
     references: &'a [DefinitionSourceRef],
+    definition_documents: &DefinitionDocumentOwners,
+) -> Result<Vec<&'a DefinitionSourceRef>, ReplayRefusal> {
+    canonical_sources(references, definition_documents, |reason| {
+        ReplayRefusal::DependencySources { index, reason }
+    })
+}
+
+/// Validate a non-empty list of unique, non-definition-document source
+/// references and return it in canonical authority and identity order.
+fn canonical_sources<'a>(
+    references: &'a [DefinitionSourceRef],
+    definition_documents: &DefinitionDocumentOwners,
+    refuse: impl Fn(&'static str) -> ReplayRefusal,
 ) -> Result<Vec<&'a DefinitionSourceRef>, ReplayRefusal> {
     if references.is_empty() {
-        return Err(ReplayRefusal::DependencySources {
-            index,
-            reason: "the list is empty",
-        });
+        return Err(refuse("the list is empty"));
     }
     for (second, source) in references.iter().enumerate() {
         if references[..second].iter().any(|earlier| {
             earlier.authority() == source.authority() && earlier.identity() == source.identity()
         }) {
-            return Err(ReplayRefusal::DependencySources {
-                index,
-                reason: "an owner is repeated",
-            });
+            return Err(refuse("an owner is repeated"));
         }
-        if source_names_definition_document(request, source) {
-            return Err(ReplayRefusal::DependencySources {
-                index,
-                reason: "a source reference names a definition document",
-            });
+        if definition_documents.contains(source) {
+            return Err(refuse("a source reference names a definition document"));
         }
     }
     let mut canonical = references.iter().collect::<Vec<_>>();
@@ -1741,39 +1744,45 @@ fn canonical_dependency_sources<'a>(
     });
     Ok(canonical)
 }
-fn source_names_definition_document(request: &ReplayRequest, source: &DefinitionSourceRef) -> bool {
-    request.byte_provision().documents().any(|bytes| {
-        qsl_semantics::model::observation::document_reference(bytes).is_some_and(|document| {
-            document.authority == source.authority() && document.identity == source.identity()
-        })
-    }) || qsl_semantics::model::intake::package_input(request.byte_provision().package_documents())
-        .is_ok_and(|packages| packages.contains_key(source.identity()))
+struct DefinitionDocumentOwners {
+    source_owners: BTreeSet<(String, String)>,
+    package_identities: BTreeSet<String>,
 }
-fn package_sources(request: &ReplayRequest) -> Result<Vec<&DefinitionSourceRef>, ReplayRefusal> {
-    let references = request.sources();
-    if references.is_empty() {
-        return Err(ReplayRefusal::PackageSources("the list is empty"));
-    }
-    for (second, source) in references.iter().enumerate() {
-        if references[..second].iter().any(|earlier| {
-            earlier.authority() == source.authority() && earlier.identity() == source.identity()
-        }) {
-            return Err(ReplayRefusal::PackageSources("an owner is repeated"));
+impl DefinitionDocumentOwners {
+    fn from_request(request: &ReplayRequest) -> Self {
+        let source_owners = request
+            .byte_provision()
+            .documents()
+            .filter_map(qsl_semantics::model::observation::document_reference)
+            .map(|document| (document.authority, document.identity))
+            .collect();
+        let package_identities = qsl_semantics::model::intake::package_input(
+            request.byte_provision().package_documents(),
+        )
+        .map(|packages| packages.keys().cloned().collect())
+        .unwrap_or_default();
+        Self {
+            source_owners,
+            package_identities,
         }
-        if source_names_definition_document(request, source) {
-            return Err(ReplayRefusal::PackageSources(
-                "a source reference names a definition document",
-            ));
-        }
     }
-    let mut canonical = references.iter().collect::<Vec<_>>();
-    canonical.sort_by(|left, right| {
-        left.authority()
-            .as_bytes()
-            .cmp(right.authority().as_bytes())
-            .then_with(|| left.identity().as_bytes().cmp(right.identity().as_bytes()))
-    });
-    Ok(canonical)
+
+    fn contains(&self, source: &DefinitionSourceRef) -> bool {
+        self.source_owners
+            .contains(&(source.authority().to_owned(), source.identity().to_owned()))
+            || self.package_identities.contains(source.identity())
+    }
+}
+/// The proved package's source references in canonical owner order.
+fn package_sources<'a>(
+    request: &'a ReplayRequest,
+    definition_documents: &DefinitionDocumentOwners,
+) -> Result<Vec<&'a DefinitionSourceRef>, ReplayRefusal> {
+    canonical_sources(
+        request.sources(),
+        definition_documents,
+        ReplayRefusal::PackageSources,
+    )
 }
 
 fn run_spine_units(
@@ -1827,11 +1836,15 @@ fn run_spine_units(
     let models = spine::select_units(&admitted, packages, limits.model, limits.source, &cancel)
         .map_err(&refusal)?
         .into_value();
-    let checked = spine::check_units(
+    let checked = spine::check_units_with_options(
         &admitted,
         package.as_str().to_owned(),
         &models,
         dependencies,
+        spine::UnitCheckOptions {
+            temporal_selections,
+            continue_protocol_refusals: true,
+        },
         limits,
         &cancel,
     )
@@ -1860,6 +1873,7 @@ fn run_spine_units(
     })
 }
 
+/// A source reference's two FR-001 labels.
 fn labels(reference: &DefinitionSourceRef) -> SourceIdentity {
     SourceIdentity::new(reference.authority(), reference.identity())
 }

@@ -1570,7 +1570,8 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         "{refused:?}"
     );
 
-    // An entry that reuses the proved unit's source identity is invalid.
+    // An entry whose source has the proved unit's authority and identity:
+    // refused as the dependency input (rule 3), not as the recompile.
     let mut unit_owner = units.clone();
     unit_owner.sources = vec![source_ref(IDENTITY)];
     let refused = replay(
@@ -1579,6 +1580,13 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     )
     .expect_err("the unit's owner is not a library's");
     assert_eq!(refused.code(), Code::InvalidPackage);
+    assert!(matches!(
+        &refused,
+        ReplayRefusal::DependencyInput(crate::spine::DependencyInputRefusal::SharedOwner {
+            first: crate::spine::SourceHolder::Unit,
+            ..
+        })
+    ));
 
     // The entry removed: the import has no supplied library.
     let refused = replay(importing.request(Vec::new(), &[]), ReplayLimits::default())
