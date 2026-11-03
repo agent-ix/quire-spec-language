@@ -575,8 +575,29 @@ fn the_clock_selections_flag_emits_the_requests_bytes_and_bad_files_refuse() {
         assert_eq!(stdout, emit_checked_v2::emit(&expected).unwrap(), "{kind}");
     }
 
+    // File order is kept: keys written out of sorted order are parsed in it.
+    let ordered = request("event_position", Corpus::None).emit;
+    let clock = r#"{"kind": "event_position", "sequence_authority": "events-authority"}"#;
+    let clocks = directory.path().join("out-of-order.json");
+    std::fs::write(
+        &clocks,
+        format!(r#"{{"Partial": {clock}, "Due": {clock}, "Full": {clock}, "DueLate": {clock}}}"#),
+    )
+    .unwrap();
+    let parsed = Request::parse(&command_line(&ordered, &clocks)).unwrap();
+    let names: Vec<&str> = parsed
+        .temporal_selections
+        .iter()
+        .map(|selection| selection.clause.as_str())
+        .collect();
+    assert_eq!(names, ["Partial", "Due", "Full", "DueLate"]);
+
     let base = request("timestamped_event", Corpus::None).emit;
     for (name, text) in [
+        (
+            "missing",
+            r#"{"DueTimestamp": {"kind": "timestamped_event"}}"#,
+        ),
         ("empty", "{}"),
         (
             "repeated",
@@ -600,6 +621,22 @@ fn the_clock_selections_flag_emits_the_requests_bytes_and_bad_files_refuse() {
         assert_eq!(refusal.exit_code(), 20, "{name}");
         assert!(stdout.is_empty(), "{name}");
     }
+
+    // A well-formed file naming no clause or template is refused before any
+    // bytes are emitted.
+    let clocks = directory.path().join("unknown-clause.json");
+    std::fs::write(
+        &clocks,
+        r#"{"NoSuchClause": {"kind": "timestamped_event", "timestamp_unit": "rfc3339"}}"#,
+    )
+    .unwrap();
+    let mut stdout = Vec::new();
+    let refusal = emit_checked_v2::run(&command_line(&base, &clocks), &mut stdout).unwrap_err();
+    assert!(
+        matches!(&refusal, emit_checked_v2::Error::UnknownClause { clause } if clause == "NoSuchClause"),
+        "{refusal:?}"
+    );
+    assert!(stdout.is_empty());
 }
 
 /// The names beside `holder`'s handoff directory.

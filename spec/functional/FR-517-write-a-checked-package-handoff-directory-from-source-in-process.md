@@ -195,7 +195,7 @@ the three directories. The packages hold:
 | FR-517-AC-12 | With the spine admitting a bounded rational value type (QSL-1522, FR-505), **R** carries the rationals `9223372036854775807/9223372036854775806` and `-9223372036854775808/9223372036854775807` as `Exact` values of the emitted package. | Test (TC-1312) |
 | FR-517-AC-13 | With the model admitting a unit on a bounded scalar (QSL-1558, FR-497), the `Amount` and `Total` scalars of **R** carry the unit `U`. | Test (TC-1312) |
 | FR-517-AC-14 | With a `sum` query binder admitted inside `recover` (QSL-1555), the `recover` condition of `Full` is that the receipt sum equals the captured target, and that of `Partial` is that the receipt sum is positive and below the captured target. | Test (TC-1312) |
-| FR-517-AC-15 | `emit_checked_v2` run with `--clock-selections` naming a file that holds the clock configuration of each temporal clause and compensation template of an **R** package emits the bytes `emit_checked_v2::emit` returns for the equal `Request`; an empty object, a repeated name, an unknown `kind` and a member the configuration does not define are each a refusal naming the file that writes no bytes. | Test (TC-1312) |
+| FR-517-AC-15 | `emit_checked_v2` run with `--clock-selections` naming a file that holds the clock configuration of each temporal clause and compensation template of an **R** package emits the bytes `emit_checked_v2::emit` returns for the equal `Request`; an empty object, a repeated name, an unknown `kind`, a member the configuration does not define and a member it requires that is missing are each a refusal naming the file that writes no bytes, and a name matching no clause or template is the `UnknownClause` refusal that writes no bytes. | Test (TC-1312) |
 
 ## Dependencies
 
