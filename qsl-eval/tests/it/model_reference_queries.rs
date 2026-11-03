@@ -911,7 +911,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
 /// FR-084-AC-2 / FR-090-AC-21 / TC-227: successful object admission does not
 /// let an incomplete subtype set become a partial collection at S6a.
 #[test]
-#[trace("TC-227", "FR-084-AC-2", "FR-090-AC-21")]
+#[trace("TC-1308", "TC-227", "FR-084-AC-2", "FR-090-AC-21", "FR-513-AC-14")]
 fn tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate() {
     let scenario = subtype_incomplete_scenario();
     let package = package(&scenario);
@@ -1087,11 +1087,13 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
 /// expression layer.
 #[test]
 #[trace(
+    "TC-1308",
     "QSpec-TC-198",
     "TC-408",
     "QSpec-FR-153-AC-2",
     "QSpec-FR-153-AC-4",
-    "FR-090-AC-12"
+    "FR-090-AC-12",
+    "FR-513-AC-14"
 )]
 fn l14_lookup_expression_undefined_mode() {
     let scenario = scenario();

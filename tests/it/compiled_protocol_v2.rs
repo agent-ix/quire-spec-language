@@ -2920,7 +2920,15 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
     });
 }
 
-#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
+#[trace(
+    "TC-138",
+    "TC-150",
+    "TC-1308",
+    "FR-050-AC-2",
+    "FR-050-AC-3",
+    "FR-050-AC-4",
+    "FR-513-AC-9"
+)]
 #[test]
 fn strict_reader_rejects_structural_and_identity_substitutions() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
@@ -2940,14 +2948,44 @@ fn strict_reader_rejects_structural_and_identity_substitutions() {
             let mut wrong_definition = base.clone();
             wrong_definition.temporal_bindings[0].definition =
                 wrong_definition.temporal_bindings[1].definition;
+            let mut out_of_range_declaration = base.clone();
+            out_of_range_declaration.temporal_bindings[2].declaration = 9_999;
             let mut wrong_clock = base.clone();
             wrong_clock.temporal_bindings[0].clock =
                 v2::wire::ClockConfiguration::TimestampedEvent {
                     timestamp_unit: "millisecond".into(),
                 };
+            let mut foreign_source = base.clone();
+            let source_index = foreign_source.inherited.declarations
+                [foreign_source.temporal_bindings[0].declaration as usize]
+                .locus
+                .source as usize;
+            foreign_source.inherited.sources[source_index]
+                .artifact
+                .identity
+                .push_str("-foreign");
+            let mut unnamed_clock = base.clone();
+            unnamed_clock.temporal_bindings[0].clock =
+                v2::wire::ClockConfiguration::EventPosition {
+                    sequence_authority: String::new(),
+                };
             let mut changed_definition = base.clone();
             let index = changed_definition.temporal_bindings[0].definition as usize;
             changed_definition.inherited.definitions[index]
+                .identity
+                .push_str("-other");
+            let mut changed_definition_revision = base.clone();
+            let index = changed_definition_revision.temporal_bindings[0].definition as usize;
+            changed_definition_revision.inherited.definitions[index]
+                .revision
+                .value
+                .push_str("-other");
+            let mut changed_definition_artifact = base.clone();
+            let index = changed_definition_artifact.temporal_bindings[0].definition as usize;
+            let artifact =
+                changed_definition_artifact.inherited.definitions[index].artifact as usize;
+            changed_definition_artifact.inherited.dependencies[artifact]
+                .artifact
                 .identity
                 .push_str("-other");
             let declaration = base.temporal_bindings[0].declaration as usize;
@@ -2988,12 +3026,34 @@ fn strict_reader_rejects_structural_and_identity_substitutions() {
                     v2_refusal(v2::Refusal::OfferIndex(v2::BindingIndex::Definition)),
                 ),
                 (
+                    out_of_range_declaration,
+                    v2_refusal(v2::Refusal::OfferIndex(v2::BindingIndex::Declaration)),
+                ),
+                (
                     wrong_clock,
                     v2_refusal(v2::Refusal::Clock(v2::ClockField::Alternative)),
                 ),
                 (
+                    foreign_source,
+                    v2_refusal(v2::Refusal::ForeignOwner(v2::SelectionSide::Expected)),
+                ),
+                (
+                    unnamed_clock,
+                    v2_refusal(v2::Refusal::Clock(v2::ClockField::SequenceAuthority)),
+                ),
+                (
                     changed_definition,
                     v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Identity)),
+                ),
+                (
+                    changed_definition_revision,
+                    v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Revision)),
+                ),
+                (
+                    changed_definition_artifact,
+                    v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Artifact(
+                        v2::ArtifactField::Identity,
+                    ))),
                 ),
                 (
                     changed_name,

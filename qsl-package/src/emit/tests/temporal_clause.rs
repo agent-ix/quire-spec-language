@@ -233,6 +233,51 @@ fn names_follow_clauses_and_never_enter_node_identity() {
     assert!(none.wire.get("temporal_clause_names").is_none());
 }
 
+/// TC-1308 row 20's I2 half: the reader admits three-binding package bytes at
+/// their exact size, refuses one byte below it naming `i2.input_bytes`, then
+/// returns an equal admitted read on retry. The temporal declaration path
+/// does not itself exercise `identity.input_bytes`.
+#[test]
+fn three_temporal_bindings_observe_i2_input_byte_bounds() {
+    let declarations = [
+        declared("BoundA", "eventually[0,1] holds(c.versionNumber = 1)"),
+        declared("BoundB", "eventually[0,1] holds(c.versionNumber = 2)"),
+        declared("BoundC", "eventually[0,1] holds(c.versionNumber = 3)"),
+    ]
+    .join("\n");
+    let source = unit(EVENT, &declarations);
+    let compiled = compile(&source);
+    let bytes = compiled.emission.package.bytes();
+    let wire = &compiled.wire;
+    assert_eq!(wire["temporal_bindings"].as_array().unwrap().len(), 3);
+    let retried = compile(&source);
+    assert_eq!(retried.emission.package.bytes(), bytes);
+
+    let evidence = evidence(wire);
+    let exact = V2ReadLimits {
+        artifact_bytes: bytes.len(),
+        ..V2ReadLimits::default()
+    };
+    let read = |limits| read_v2(bytes, library(), limits, &evidence);
+    let one_short = read(V2ReadLimits {
+        artifact_bytes: bytes.len() - 1,
+        ..exact
+    });
+    let Read::Limit(limit) = one_short else {
+        panic!("one byte under i2.input_bytes refuses at I2: {one_short:?}");
+    };
+    assert_eq!(limit.setting(), qsl_foundation::Setting::I2InputBytes);
+    assert_eq!(
+        limit.configured_bound(),
+        u64::try_from(bytes.len() - 1).unwrap()
+    );
+    assert_eq!(limit.actual(), u128::try_from(bytes.len()).unwrap());
+    let first = read(exact);
+    let second = read(exact);
+    assert!(matches!(&first, Read::Verified { .. }));
+    assert_eq!(second, first, "retry reproduces the admitted read");
+}
+
 /// FR-322-AC-294: the compatibility entry point cannot invent a selection
 /// for a profile whose checked declarations require clock configuration.
 #[trace("TC-134", "FR-322-AC-294")]

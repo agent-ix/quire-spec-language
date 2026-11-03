@@ -1364,7 +1364,7 @@ fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
 /// match), so the conflicting second `a1` record was admitted instead of
 /// refused — the `AdmissionOutcome::Refused` assertion went red as expected,
 /// reverted.
-#[trace("TC-229", "FR-084-AC-4")]
+#[trace("TC-1308", "TC-229", "FR-084-AC-4", "FR-513-AC-14")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
@@ -1417,7 +1417,7 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
 /// duplicate fall into the conflicting-identity check (it shares an object
 /// with an already-admitted entry) and wrongly refuse — the
 /// `AdmissionOutcome::Admitted` assertion went red as expected, reverted.
-#[trace("TC-229", "FR-084-AC-4")]
+#[trace("TC-1308", "TC-229", "FR-084-AC-4", "FR-513-AC-14")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn l05_duplicate_collapses_and_recovers_l01() {
@@ -1463,7 +1463,7 @@ fn l05_duplicate_collapses_and_recovers_l01() {
 /// (always matching the first type-level entry found), so the foreign
 /// `model.Z` member no longer refused — the `AdmissionOutcome::Refused`
 /// assertion went red as expected, reverted.
-#[trace("TC-226", "FR-084-AC-1")]
+#[trace("TC-1308", "TC-226", "FR-084-AC-1", "FR-513-AC-14")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05_foreign_type_refuses() {
