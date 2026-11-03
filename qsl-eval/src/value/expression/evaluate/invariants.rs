@@ -1173,7 +1173,7 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
         quire_exact::Presence::Required,
     );
     probe_package!(
-        "edge-slot-unresolved",
+        "attribute-slot-unresolved",
         m,
         package,
         ObjectEnvironment::default(),
@@ -1228,18 +1228,29 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
             &[],
         )
         .unwrap();
+        // The stored slot is read past admission (a mismatched slot is caller
+        // input that `edge_targets` refuses), so the shape sites are probed
+        // on the slot itself.
         let package = object_package(expected, quire_exact::Presence::Required);
-        probe_package!(
-            identifier,
-            m,
-            package,
-            ObjectEnvironment::new(closure),
-            [],
-            {
-                m.edge_targets(literal.root(), &reference(), &field)
-                    .map(|_| ())
-            }
-        );
+        let declared = package
+            .graph()
+            .scope()
+            .types()
+            .attributes(reference().object_type().clone())
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let slot = closure
+            .attribute(storage.graph().scope().types(), &reference(), &field)
+            .unwrap()
+            .clone();
+        let fault = match Machine::slot_edge_targets(declared.field(), &slot) {
+            Err(Halt::Fault(fault)) => fault,
+            _ => panic!("producer was not reached: {identifier}"),
+        };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), identifier);
     }
     for stored in [FieldValue::Absent, FieldValue::Null] {
         let package = object_package(reference_type.clone(), quire_exact::Presence::Optional);
@@ -1404,9 +1415,9 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
 
 #[test]
 #[trace(
-    "TC-918",
-    "FR-096-AC-19",
-    "FR-090-AC-17",
+    "TC-136",
+    "FR-049-AC-2",
+    "FR-049-AC-3",
     "FR-401-AC-9",
     "FR-401-AC-10",
     "TC-1191"

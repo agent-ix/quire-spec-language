@@ -2531,6 +2531,170 @@ fn an_object_environment_typed_under_another_unit_is_refused_not_faulted_or_misr
     }
 }
 
+/// QSL-1470 (FR-049-AC-2/AC-3): a witness the caller built does not exempt a
+/// slot from its type and unit; only the integer range is relaxed.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn a_forged_range_witness_does_not_admit_a_foreign_unit() {
+    use quire_eval::FamilyResult;
+    let units = units();
+    let (kilogram, foreign_table) = foreign_unit();
+    let object = |unit: &UnitId| {
+        ObjectTypeDeclaration::new(
+            object_type("E"),
+            "E",
+            vec![FieldDeclaration::new(
+                "q",
+                ValueType::Quantity(unit.clone()),
+                Presence::Required,
+            )],
+        )
+    };
+    let package = expression_package(
+        TypeEnvironment::new([], [object(&units.m)])
+            .unwrap()
+            .with_units(units.table.clone()),
+        false,
+    );
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let caller = TypeEnvironment::new([], [object(&kilogram)])
+        .unwrap()
+        .with_units(foreign_table);
+    let held = Quantity::new(Rational::from_integer(integer(1)), kilogram);
+    let closure = ObjectClosure::new(
+        &caller,
+        [(
+            reference.clone(),
+            vec![("q", FieldValue::Present(Value::Quantity(held)))],
+        )],
+        &[],
+    )
+    .unwrap();
+    let forged = qsl_semantics::model::observation::OutOfRange {
+        object: reference.clone(),
+        field: FieldRef::new(object_type("E"), "q"),
+        index: None,
+        range: IntegerInterval::new(integer(0), integer(1)).unwrap(),
+        observed: integer(9),
+        steps: Vec::new(),
+    };
+    let objects = ObjectEnvironment::new(closure).with_out_of_range(vec![forged]);
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let read = || Expression::field(Expression::deref(operand("r")), "q".to_owned());
+    for expression in [
+        read(),
+        Expression::binary(BinaryOperator::Add, read(), read()),
+    ] {
+        let checked =
+            check_in(&package, &parameters, &expression, None, CheckMode::Kernel).unwrap();
+        let evaluation = package
+            .evaluate(
+                &checked,
+                vec![Value::Reference(reference.clone())],
+                &objects,
+                &mut Meter::new(UNLIMITED),
+            )
+            .unwrap();
+        assert!(matches!(
+            evaluation.outcome,
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
+        ));
+    }
+}
+
+/// QSL-1470 (FR-049-AC-2/AC-3): the closure stores slots by position in the
+/// type environment it was admitted under. A caller layout that cannot hold
+/// the package's attributes (a missing one, or another type at the position)
+/// refuses; a surplus trailing attribute is harmless and the read completes.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn a_caller_attribute_layout_that_cannot_hold_the_package_attributes_is_refused() {
+    use quire_eval::FamilyResult;
+    let field =
+        |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
+    let object =
+        |fields: Vec<FieldDeclaration>| ObjectTypeDeclaration::new(object_type("E"), "E", fields);
+    let package = expression_package(
+        TypeEnvironment::new(
+            [],
+            [object(vec![
+                field("a", ValueType::Integer),
+                field("b", ValueType::Boolean),
+            ])],
+        )
+        .unwrap(),
+        false,
+    );
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let one = || FieldValue::Present(Value::Integer(integer(1)));
+    let truth = || FieldValue::Present(Value::Boolean(true));
+    let environment = |fields: Vec<FieldDeclaration>, values: Vec<(&str, FieldValue)>| {
+        let caller = TypeEnvironment::new([], [object(fields)]).unwrap();
+        ObjectEnvironment::new(
+            ObjectClosure::new(&caller, [(reference.clone(), values)], &[]).unwrap(),
+        )
+    };
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let read = |name: &str| Expression::field(Expression::deref(operand("r")), name.to_owned());
+    let evaluate = |objects: &ObjectEnvironment, name: &str| {
+        let checked =
+            check_in(&package, &parameters, &read(name), None, CheckMode::Kernel).unwrap();
+        package
+            .evaluate(
+                &checked,
+                vec![Value::Reference(reference.clone())],
+                objects,
+                &mut Meter::new(UNLIMITED),
+            )
+            .unwrap()
+            .outcome
+    };
+    let refused = |outcome: FamilyOutcome<Value>| {
+        assert!(
+            matches!(
+                outcome,
+                FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
+            ),
+            "{outcome:?}"
+        );
+    };
+
+    let swapped = environment(
+        vec![
+            field("b", ValueType::Boolean),
+            field("a", ValueType::Integer),
+        ],
+        vec![("a", one()), ("b", truth())],
+    );
+    refused(evaluate(&swapped, "a"));
+    refused(evaluate(&swapped, "b"));
+
+    let missing = environment(vec![field("a", ValueType::Integer)], vec![("a", one())]);
+    refused(evaluate(&missing, "a"));
+    refused(evaluate(&missing, "b"));
+
+    let surplus = environment(
+        vec![
+            field("a", ValueType::Integer),
+            field("b", ValueType::Boolean),
+            field("c", ValueType::Integer),
+        ],
+        vec![("a", one()), ("b", truth()), ("c", one())],
+    );
+    assert!(matches!(
+        evaluate(&surplus, "a"),
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(_)))
+    ));
+}
+
 /// A product or quotient's unit is a compound unit no package declares:
 /// checking forms it as the node's static type, and evaluation forms it again
 /// when the value exists, so a further operation reads it by its `UnitId`.

@@ -1612,7 +1612,7 @@ fn every_received_kernel_cause_survives_both_replay_fault_adapters() {
 }
 
 #[test]
-#[trace("TC-918", "FR-096-AC-19")]
+#[trace("TC-136", "FR-049-AC-2")]
 fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_replay() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};

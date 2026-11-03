@@ -65,7 +65,7 @@ use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::catalog::{render_identity, InternalFault};
 use quire_semantic_value::declaration::{
     operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
-    EqualityOperator, FieldRef, TypeEnvironment,
+    EqualityOperator, FieldDeclaration, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -1746,11 +1746,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
                 let objects = self.objects;
-                let slot = objects
-                    .objects()
-                    .attribute(self.scope.types(), &reference, &field)
-                    .ok_or_else(|| invariant("reader-attribute-slot-is-admitted"))?;
-                let witnessed = objects.is_witnessed(self.scope.types(), &reference, &field);
+                let (slot, witnessed) = self.admitted_slot(objects, &reference, &field)?;
                 let value = Self::project(
                     self.scope.types(),
                     slot,
@@ -2377,20 +2373,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         ReferenceUnresolved,
                     ))));
                 }
-                let slot = objects
-                    .objects()
-                    .attribute(self.scope.types(), &reference, field)
-                    .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+                let (slot, witnessed) = self.admitted_slot(objects, &reference, field)?;
                 self.log_field_read(node, objects, &reference, field)?;
-                let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
-                // FR-049-AC-2/AC-3: the environment is caller input; the slot
-                // must hold a value of the attribute's declared type under
-                // this package's types before it is projected. A witnessed
-                // out-of-range integer (FR-106 check 6.5) is the one
-                // admitted exception.
-                if !witnessed {
-                    self.admit_object_field(&reference, field, slot)?;
-                }
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
                 } else {
@@ -3538,11 +3522,15 @@ impl<'a, 'm> Machine<'a, 'm> {
             .find(|attribute| attribute.stands_for(edge))
             .ok_or_else(|| invariant("edge-attribute-unresolved"))?;
         let field = attribute.field();
-        let slot = self
-            .objects_for(node)?
-            .objects()
-            .attribute(self.scope.types(), current, edge)
-            .ok_or_else(|| invariant("edge-slot-unresolved"))?;
+        let (slot, _) = self.admitted_slot(self.objects_for(node)?, current, edge)?;
+        Self::slot_edge_targets(field, slot)
+    }
+
+    /// The references an admitted `slot` of the edge field `field` holds.
+    fn slot_edge_targets(
+        field: &FieldDeclaration,
+        slot: &FieldValue,
+    ) -> Result<Vec<ObjectReference>, Halt> {
         match field.value_type() {
             ValueType::Reference(_) => match (slot, field.presence()) {
                 (FieldValue::Present(Value::Reference(reference)), _) => {
@@ -3570,48 +3558,78 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
+    /// The caller-supplied slot of `reference` for `field`, admitted against
+    /// the evaluating package's own types (FR-049-AC-2/AC-3), and whether it
+    /// holds a witnessed out-of-range integer.
+    ///
+    /// The closure stores slots in the order of the type environment it was
+    /// admitted under and records no names, so the package's attribute
+    /// positions are the only way to find one. Every attribute the package
+    /// declares must have a slot, and the slot read must be of the declared
+    /// type: anything else is caller input that refuses
+    /// `invalid_runtime_input`/`wrong-value-kind`, never a fault or a misread.
+    /// A same-typed reordering is not detectable here.
+    fn admitted_slot<'o>(
+        &self,
+        objects: &'o ObjectEnvironment,
+        reference: &ObjectReference,
+        field: &FieldRef,
+    ) -> Result<(&'o FieldValue, bool), Halt> {
+        let types = self.scope.types();
+        let refuse = || {
+            Halt::Family(FamilyResult::Refused(Box::new(ObjectFieldIllTyped {
+                field: field.name.clone(),
+            })))
+        };
+        // An object the closure does not hold is not a layout defect: the
+        // read has nothing to project (a reference a current state tolerates
+        // dangling) and keeps its own fault.
+        if !objects.objects().contains(reference) {
+            return Err(invariant("attribute-slot-unresolved"));
+        }
+        let declared = types
+            .attributes(reference.object_type().clone())
+            .ok_or_else(refuse)?;
+        let mut read = None;
+        for attribute in declared {
+            let slot = objects
+                .objects()
+                .attribute(types, reference, &attribute.identity())
+                .ok_or_else(refuse)?;
+            if attribute.stands_for(field) {
+                read = Some((slot, attribute.field().value_type().clone()));
+            }
+        }
+        let (slot, value_type) = read.ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+        let witnessed = objects.is_witnessed(types, reference, field);
+        if let FieldValue::Present(value) = slot {
+            // A witnessed slot (FR-106 check 6.5) relaxes only the integer
+            // range; its type and unit are still admitted.
+            let declared = if witnessed {
+                widen_integer_ranges(&value_type)
+            } else {
+                value_type
+            };
+            match types.admits(&declared, value) {
+                Ok(true) => {}
+                Ok(false) => return Err(refuse()),
+                Err(EnvironmentFailure::Allocation(_)) => {
+                    return Err(invariant("object-field-admission-allocation-denied"))
+                }
+                Err(EnvironmentFailure::Capacity(_)) => {
+                    return Err(invariant("object-field-admission-capacity-overflow"))
+                }
+                Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
+                    return Err(invariant("object-field-admission-contract-broken"))
+                }
+            }
+        }
+        Ok((slot, witnessed))
+    }
+
     /// `witnessed`: the slot holds a value FR-106 check 6.5 admitted
     /// outside its declared range, which an optional slot's checked
     /// construction would refuse. Every other slot is checked as before.
-    /// Refuse a present attribute value that is not of the attribute's
-    /// declared type under the evaluating package's types.
-    fn admit_object_field(
-        &self,
-        reference: &ObjectReference,
-        field: &FieldRef,
-        slot: &FieldValue,
-    ) -> Result<(), Halt> {
-        let FieldValue::Present(value) = slot else {
-            return Ok(());
-        };
-        let types = self.scope.types();
-        let declared = types
-            .attributes(reference.object_type().clone())
-            .and_then(|attributes| {
-                attributes
-                    .iter()
-                    .find(|attribute| attribute.stands_for(field))
-            })
-            .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
-        match types.admits(declared.field().value_type(), value) {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(Halt::Family(FamilyResult::Refused(Box::new(
-                ObjectFieldIllTyped {
-                    field: field.name.clone(),
-                },
-            )))),
-            Err(EnvironmentFailure::Allocation(_)) => {
-                Err(invariant("object-field-admission-allocation-denied"))
-            }
-            Err(EnvironmentFailure::Capacity(_)) => {
-                Err(invariant("object-field-admission-capacity-overflow"))
-            }
-            Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
-                Err(invariant("object-field-admission-contract-broken"))
-            }
-        }
-    }
-
     fn project(
         types: &TypeEnvironment,
         slot: &FieldValue,
@@ -4410,6 +4428,24 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         self.push_value(value, false);
         Ok(())
+    }
+}
+
+/// `value_type` with every `Int[lo, hi]` range replaced by `Integer`, through
+/// options and collection elements: the declared type a witnessed
+/// out-of-range slot is admitted against.
+fn widen_integer_ranges(value_type: &ValueType) -> ValueType {
+    match value_type {
+        ValueType::Int(_) => ValueType::Integer,
+        ValueType::Option(payload) => ValueType::option(widen_integer_ranges(payload)),
+        ValueType::Collection(collection) => {
+            ValueType::Collection(std::sync::Arc::new(quire_exact::CollectionType::new(
+                collection.kind(),
+                widen_integer_ranges(collection.element()),
+                collection.bound(),
+            )))
+        }
+        other => other.clone(),
     }
 }
 
