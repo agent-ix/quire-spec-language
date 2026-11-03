@@ -64,6 +64,7 @@ fn clock(value: Value) -> ClockConfiguration {
 fn binding_row(declaration: &str, name: &str, configuration: Value) -> TemporalBinding {
     serde_json::from_value(json!({
         "declaration": {"package": "recipe", "path": [declaration], "ordinal": 0},
+        "occurrence": 0,
         "clock_name": name,
         "clock": configuration,
     }))
