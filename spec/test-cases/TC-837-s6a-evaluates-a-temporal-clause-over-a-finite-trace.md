@@ -13,7 +13,7 @@ relationships:
 Verify bounded-profile evaluation over a closed trace, activation,
 `TemporalPosition` decoding and encoding, and work metering.
 
-Scope: FR-327-AC-1 to FR-327-AC-4, AC-8 and AC-9.
+Scope: FR-327-AC-1 to FR-327-AC-4, AC-8 to AC-13.
 
 ## Test Procedure
 
@@ -28,6 +28,7 @@ false-extension.
    of 3 work units, then with a meter of 4, counting visits.
 5. Evaluate `always[0,3] true`, `always[0,3] (true)` and `always[0,3] holds(c.value <= 2)`.
 6. Evaluate the `until` and `release` clauses of FR-327-AC-9.
+7. Evaluate the `once[1,1]`, `once`, `historically`, dual-agreement and pointwise-negation clauses of FR-327-AC-10 to AC-13.
 
 Tag the tests `#[trace("TC-837", "FR-327-AC-n")]`.
 
@@ -43,3 +44,4 @@ Tag the tests `#[trace("TC-837", "FR-327-AC-n")]`.
   `Completed(true)` charging 4.
 - Step 5: `true`; `true`; `false`.
 - Step 6: `true`; `false`; `true`; `false`.
+- Step 7: `true`; `false` at position 1; `true`; `false` at position 0; each dual form equals its operator's outcome; `true`; `false` at position 0.

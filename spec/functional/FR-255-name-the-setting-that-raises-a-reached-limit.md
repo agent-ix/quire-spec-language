@@ -111,7 +111,7 @@ engine limits and the typed inspection operation's limit have their own table
 | `model.family_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` family_steps | 16777216 edges |
 | `progress.covered_positions` | progress ledger | node count | the `ProgressLedger` capacity for covered positions (FR-502) | 1000000 positions |
 | `temporal_evidence.formula_nodes` | temporal evidence call | node count | `TemporalEvidenceLimits` formula nodes | 100000 nodes |
-| `temporal_evidence.formula_depth` | temporal evidence call | node count | `TemporalEvidenceLimits` formula depth | 100000 nodes |
+| `temporal_evidence.instances` | temporal evidence call | node count | `TemporalEvidenceLimits` instances | 10000 instances |
 | `temporal_evidence.positions` | temporal evidence call | node count | `TemporalEvidenceLimits` positions inspected | 1000000 positions |
 | `temporal_evidence.valuations` | temporal evidence call | node count | `TemporalEvidenceLimits` valuation lookups | 1000000 lookups |
 | `temporal_evidence.captures` | temporal evidence call | node count | `TemporalEvidenceLimits` retained captures | 100000 captures |
@@ -314,6 +314,7 @@ these names through the same operand grammar as the stage settings
    | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes`, `inspect.max_view_entries`, `render.output_bytes` |
    | the supplied-value limits type (pre-call phase budgets) | no catalog code: the phase-marked pre-call limit record of FR-277 (replay: `inconclusive`/`NoValue`), never a kernel charge point | FR-277's `supplied.admission_work_units` and `supplied.conversion_work_units`, which are not setting-table rows |
    | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
+   | `TemporalEvidenceLimits` and the progress ledger capacity (FR-523, FR-502) | no catalog code: the call returns `Incomplete(LimitReached{limit, value, setting})` with `limit` one of `node count`, `work budget`, `input bytes` or `tick count` (the kind of `temporal_evidence.history_span`) and the call's stop scope as FR-523 states | `temporal_evidence.*`, `progress.covered_positions` |
    | an engine's limits type | no catalog code: the engine stops and the item settles `incomplete`, `LimitReached{limit, value, setting}` (FR-127 V-7, QSpec FR-461 Behavior 5) | the engine table's names |
    | `PrepareLimits`, an execution backend's prepare limits (FR-294) | `stage_limit_exceeded`, carried as `PrepareFailure::Limit` and, from `execute`, as `CallFailure::Limit(PrepareLimitReached)` | `prepare.compile_work_units`, `prepare.code_bytes` |
 

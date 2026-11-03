@@ -32,10 +32,9 @@ outstanding premises are FR-045's and are not restated here. This requirement
 states the input, the surface, the reachability rule and the authenticated
 selection on the checked node.
 
-The legacy surface `temporal::{mapping_support_v2, Classification,
-AuthenticatedSelection}` is kept until Contract IR repoints (IR-1005, FR-499
-ruling 2). This requirement is its successor: Contract IR FR-350 consumes the
-successor's classification when it repoints.
+This requirement is the successor of the legacy surface `temporal::{mapping_support_v2,
+Classification, AuthenticatedSelection}`, which FR-499 keeps until Contract IR
+FR-350 consumes the successor's classification (IR-1005).
 
 ## Use case
 
@@ -49,12 +48,10 @@ compiled-protocol package to ask.
 
 QSpec FR-095 owns the correspondence contract, FR-045 owns the table, FR-050 the
 binding, FR-515 the view. The legacy classifier read an admitted `/2` package;
-this one reads the FR-337 node through the view, so the classification keeps no
-`/1` form.
-
-The function's crate and names are an inference: it sits beside FR-515's views
-because it needs nothing but the view, and keeps the legacy type names so that
-the Contract IR repoint changes imports, not meaning.
+this one reads the FR-337 node through the view, so the classification has no
+`/1` form. The function sits beside FR-515's views because it needs nothing but
+the view, and it keeps the legacy type names so that the Contract IR repoint
+changes imports and not meaning.
 
 ## Inputs
 
@@ -90,9 +87,11 @@ row whose definition equals the clause's `temporal_profile` law, FR-515).
   the operator kinds in `formula()` and `surrounding` alone, as FR-045 states.
 - The classifier SHALL NOT consult a backend capability report, an installed TL
   version, a syntax match or a historical result.
-- The classifier SHALL read `formula()` as the operators reachable from the
-  clause root, and a connective (`not`, `and`, `or`, `implies`) SHALL carry the
-  direction of the operators beneath it and be neither past nor future itself.
+- The classifier SHALL read every operator in `formula()` as reachable from the
+  clause root, since FR-515 lists only the operators of the clause.
+- The classifier SHALL NOT treat `not`, `and`, `or` and `implies` as past or
+  future operators, since `formula()` lists the `quire.op.temporal.*` applications
+  only.
 - The classifier SHALL treat `eventually`, `always`, `until` and `release` as
   bounded future operators, and `once`, `historically`, `since` and `triggered`
   as bounded past operators (QSpec FR-092), `once[1,1]` being strong previous.
@@ -107,8 +106,8 @@ row whose definition equals the clause's `temporal_profile` law, FR-515).
 - The classifier SHALL NOT substitute a profile, clock or reduced form.
 - The classifier SHALL NOT report a clause as supported because its formula bytes
   match a TL formula.
-- The classifier SHALL retain `selection` on every result, supported or not, and
-  `selection` SHALL be constructible only by the classifier.
+- The classifier SHALL retain `selection` on every result, supported or not.
+- `selection` SHALL be constructible only by the classifier.
 - The classifier SHALL give the same disposition to the same clause whatever the
   package's route: the in-process package and the package read back with the
   reader.
@@ -124,20 +123,25 @@ row whose definition equals the clause's `temporal_profile` law, FR-515).
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-527-AC-1 | For one clause per row of FR-045's table, each matching that row and no other, `mapping_support` returns that row's disposition and TL target. | Test (TC-1322) |
-| FR-527-AC-2 | A finite-window clause and a clause with a past and a future operator return `Unsupported`, and each of the four past operators alone under each false-extension profile returns `Supported` with `mltl.origin-complete-history/v1`. | Test (TC-1322) |
-| FR-527-AC-3 | A finite-window clause that also mixes a past and a future operator returns `Unsupported` naming `FiniteWindow` and `MixedDirection`, and an infinite-trace clause returns `Unsupported` naming `InfiniteTrace`. | Test (TC-1322) |
-| FR-527-AC-4 | `not once[0,1] holds(p)` classifies as past-only, `holds(p) implies eventually[0,2] holds(q)` as future-only, and `once[0,1] holds(p) implies eventually[0,2] holds(q)` as mixed-direction. | Test (TC-1322) |
-| FR-527-AC-5 | A clause `holds(p)` with no bounded operator, under each false-extension profile, returns `Supported` with the closed-trace target for `Complete` and the online-prefix target for `Open`. | Test (TC-1322) |
-| FR-527-AC-6 | The fixed-sample future clause returns `total_sample_valuation` true under both `surrounding` values, and the event-position future clause returns it false. | Test (TC-1322) |
-| FR-527-AC-7 | An unsupported result holds the clause's `CheckedNodeId`, name, profile identity and activation equal to the values read from the view, and the checked package is unchanged by classification. | Test (TC-1322) |
-| FR-527-AC-8 | A supported result names the exact TL target and the eight outstanding premises of FR-045, and no field of it claims a correspondence record. | Test (TC-1322) |
-| FR-527-AC-9 | Two clauses with equal formula bytes under different profiles receive different classifications. | Test (TC-1322) |
-| FR-527-AC-10 | `mapping_support` takes no decision-scope closure: a compile-fail test passing one fails to compile, and changing `surrounding` changes the target of FR-045's future rows and nothing else. | Test (TC-1322) |
-| FR-527-AC-11 | Every result's `selection` holds the package identity, the clause, and the definition identity, revision and artifact identity equal to the values the test reads from the lock's `profile_selections` row, and holds no clock parameter map. | Test (TC-1322) |
-| FR-527-AC-12 | A compile-fail test that constructs `AuthenticatedSelection` outside the classifier fails to compile. | Test (TC-1322) |
-| FR-527-AC-13 | The classification of each of **R**'s three clauses from the in-process package equals the classification from the package read back, and classifying twice gives equal results. | Test (TC-1322) |
-| FR-527-AC-14 | A view of a clause whose lock has no `profile_selections` row for its `temporal_profile` law returns `NoProfileSelection`, and a node that is not a temporal clause is refused by `temporal_subject` with `UnresolvedClause`. | Test (TC-1322) |
-| FR-527-AC-15 | The classification code reads no value except the view and `surrounding`: no backend capability report, TL version or formula bytes. | Inspection |
+| FR-527-AC-2 | A finite-window clause returns `Unsupported` naming `FiniteWindow`, and a clause with a past and a future operator returns `Unsupported` naming `MixedDirection`. | Test (TC-1322) |
+| FR-527-AC-3 | Each of the four past operators alone, under each false-extension profile, returns `Supported` with `mltl.origin-complete-history/v1`. | Test (TC-1322) |
+| FR-527-AC-4 | A finite-window clause that also mixes a past and a future operator returns `Unsupported` naming `FiniteWindow` and `MixedDirection`, and an infinite-trace clause returns `Unsupported` naming `InfiniteTrace`. | Test (TC-1322) |
+| FR-527-AC-5 | `once[0,1] holds(p)` classifies as past-only, `eventually[0,2] holds(q)` as future-only, and a formula holding both `once[0,1]` and `eventually[0,2]` as mixed-direction; the connectives `not`, `and`, `or` and `implies` change none of the three. | Test (TC-1322) |
+| FR-527-AC-6 | A clause `holds(p)` with no bounded operator, under each false-extension profile, returns `Supported` with the closed-trace target for `Complete` and the online-prefix target for `Open`. | Test (TC-1322) |
+| FR-527-AC-7 | The fixed-sample future clause returns `total_sample_valuation` true under both `surrounding` values, and the event-position future clause returns it false. | Test (TC-1322) |
+| FR-527-AC-8 | An unsupported result holds the clause's `CheckedNodeId`, name, profile identity and activation equal to the values read from the view, and the checked package is unchanged by classification. | Test (TC-1322) |
+| FR-527-AC-9 | A supported result names the exact TL target and the eight outstanding premises of FR-045, and no field of it claims a correspondence record. | Test (TC-1322) |
+| FR-527-AC-10 | Two clauses with equal formula bytes under different profiles receive different classifications. | Test (TC-1322) |
+| FR-527-AC-11 | A compile-fail test that passes a decision-scope closure to `mapping_support` fails to compile. | Test (TC-1322) |
+| FR-527-AC-12 | Changing `surrounding` changes the target of FR-045's future rows and nothing else. | Test (TC-1322) |
+| FR-527-AC-13 | Every result's `selection` holds the package identity, the clause, and the definition identity, revision and artifact identity equal to the values the test reads from the lock's `profile_selections` row, and holds no clock parameter map. | Test (TC-1322) |
+| FR-527-AC-14 | A compile-fail test that constructs `AuthenticatedSelection` outside the classifier fails to compile. | Test (TC-1322) |
+| FR-527-AC-15 | The classification of each of **R**'s three clauses from the in-process package equals the classification from the package read back with the reader. | Test (TC-1322) |
+| FR-527-AC-16 | A view of a clause whose lock has no `profile_selections` row for its `temporal_profile` law returns `NoProfileSelection`. | Test (TC-1322) |
+| FR-527-AC-17 | A node that is not a temporal clause is refused by `temporal_subject` with `UnresolvedClause`. | Test (TC-1322) |
+| FR-527-AC-18 | A unit that selects a temporal profile outside the four admitted identities is refused at check with FR-110's `UnsupportedSelection`, so no clause node exists for `mapping_support` to classify. | Test (TC-1322) |
+| FR-527-AC-19 | Classifying one clause twice gives equal results. | Test (TC-1322) |
+| FR-527-AC-20 | The classification code reads no value except the view and `surrounding`: no backend capability report, TL version or formula bytes. | Inspection |
 
 ## Dependencies
 

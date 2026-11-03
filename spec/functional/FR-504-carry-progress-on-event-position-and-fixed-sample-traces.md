@@ -50,6 +50,10 @@ pending, because event position does not advance in silence.
 - `execution`: `Closed` or `Open`, the surrounding execution's closure; and
 - `lower_boundary`: `AuthoritativeOrigin` or `HistoryCutoff`.
 
+`TraceInput::Progressed` also carries a required `binding`, a `TraceBinding` that
+the evaluator compares with the clause's profile and clock rows before it visits
+any position (FR-522).
+
 Position `i` of `trace` has coordinate `i`: under event-position the sequence
 index, under fixed-sample the sample index. `Finite` without `progress` is
 unchanged: FR-327 reads it as a closed complete trace from an authoritative

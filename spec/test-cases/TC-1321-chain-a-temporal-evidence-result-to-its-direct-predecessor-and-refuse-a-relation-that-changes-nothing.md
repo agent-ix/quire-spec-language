@@ -10,24 +10,33 @@ relationships:
 
 ## Description
 
-Verify FR-526-AC-1 to FR-526-AC-10. Results `r1`, `r2`, `r3` are evaluated from **R**'s event-position clause with one delivery `t1`.
+Verify FR-526-AC-1 to FR-526-AC-19. Results `r1`, `r2`, `r3` are evaluated from **R**'s event-position clause with trigger `t1`, passing the ledger from call to call.
 
 ## Test Procedure
 
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
-| 1 | 1 | an `Original` request | `lineage` 0, relation `Original` |
-| 2 | 2 | `Superseding(r1)` with changed inputs, same package, clause, trigger, correspondence | `lineage` 1, relation `Superseding` naming `r1.result_identity`; `r1` byte-equal |
-| 3 | 3 | `Invalidating(r1)` under row 2's conditions | relation `Invalidating`, same `lineage`, truth, settlement and support equal to row 2's |
-| 4 | 4 | a request with `r1`'s `input_identity`, under both relations | `Err(CallFailure::Admission)`, empty charge log |
-| 5 | 5 | a predecessor of another clause; of the same clause in another package | `Err(CallFailure::Admission)`, empty charge log |
-| 6 | 6 | a predecessor whose trigger differs in one byte; whose correspondence differs | `Err(CallFailure::Admission)` |
-| 7 | 7 | a predecessor at the `lineage` ceiling; one below; at `u64::MAX` | `Incomplete` naming `lineage`; completes; `Incomplete` naming `lineage`, no wrap |
-| 8 | 8 | three corrections `r1`, `r2`, `r3` | `lineage` 1, 2, 3 naming direct predecessors; `r1`, `r2` unchanged |
-| 9 | 9 | one request and relation twice | equal results, charge log included |
-| 10 | 10 | an empty trigger identity; a non-empty identity through a chain | refused at construction; byte-for-byte echoed |
+| 1 | 1 | an `Original` request | `lineage` 0, relation `Original`; the ledger holds its entry |
+| 2 | 2 | `Superseding(r1)` with changed inputs, `r1`'s ledger, same package, clause, trigger, correspondence | `lineage` 1, relation `Superseding` naming `r1.result_identity` |
+| 3 | 3 | `r1` after row 2; the returned ledger | `r1` byte-equal; the new entry is the latest |
+| 4 | 4 | `Invalidating(r1)` under row 2's conditions | relation `Invalidating`, same `lineage` |
+| 5 | 5 | row 4's inputs under `Superseding(r1)` | equal truth, settlement and support |
+| 6 | 6 | a request with `r1`'s `input_identity`, under both relations | `Err(CallFailure::Admission)`, cause `unchanged-input`, empty charge log |
+| 7 | 7 | `Superseding` with no `ledger` | `Err(CallFailure::Admission)`, cause `no-ledger` |
+| 8 | 8 | a ledger holding `r1` and `r2`; `Superseding(r1)`; `Superseding(r2)` | `predecessor-not-latest`; accepted |
+| 9 | 9 | another clause naming `r1`; another package naming `r1` | `predecessor-unknown` each |
+| 10 | 10 | trigger differing in one byte, naming `r1` | `predecessor-unknown` |
+| 11 | 11 | `correspondence` differing, naming `r1` | `correspondence-changed` |
+| 12 | 12 | predecessor at the `lineage` ceiling; one below | `Incomplete` naming `lineage`, no truth; completes |
+| 13 | 13 | predecessor entry at lineage `u64::MAX` | `Incomplete` naming `lineage`; no wrap |
+| 14 | 14 | three corrections `r1`, `r2`, `r3` | `lineage` 1, 2, 3 naming direct predecessors; `r1`, `r2` unchanged |
+| 15 | 15 | an `Original` request over a ledger holding its key | `lineage` 0; entry replaced |
+| 16 | 16 | one request, relation and ledger twice | equal results and ledgers, charge log included |
+| 17 | 17 | constructing an `EvidenceLedger` entry outside the evaluator (compile-fail) | does not compile |
+| 18 | 18 | an empty trigger identity | refused at construction |
+| 19 | 19 | a non-empty identity through a three-correction chain | echoed byte for byte by every result |
 
-Tag the test `#[trace("FR-526-AC-1", ..., "FR-526-AC-10", "TC-1321")]`; rows 4 to 6 also carry FR-052-AC-12 and FR-516-AC-6 where they are the same vectors.
+Tag the test `#[trace("FR-526-AC-1", ..., "FR-526-AC-19", "TC-1321")]`; rows 6 to 11 also carry FR-052-AC-12 and FR-516-AC-13.
 
 ## Expected Results
 

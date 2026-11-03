@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-501-AC-1 to AC-17 and FR-330-AC-9 (the finite-window part): the
+Verify FR-501-AC-1 to AC-19 and FR-330-AC-9 (the finite-window part): the
 spine evaluator returns a definite verdict on a closed complete window, pending
 or indeterminate only for a genuinely unresolved obligation, and never refuses
 the profile.
@@ -51,8 +51,8 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 14 | `eventually[0,3] holds(q)` | stamps 0,3; q at 3; W 3; C(3) | `Completed(true)` |
 | 15 | same | stamps 0,4; q at 4; W 4; C(4) | `Completed(false)` |
 | 16 | `eventually[0,3] holds(p)` | stamp 0; p F; W 3; C(3); no later event | `Completed(false)` |
-| 17 | `holds(p) until[0,1] holds(q)` and its `release` dual `on origin`; `holds(p) since[0,1] holds(q)` and its `triggered` dual `on each` (the anchor at position 2, where positions 1 and 2 participate) | stamps 0,1,1; no order keys | stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2 each; `eventually[0,1] holds(p)` evaluates |
-| 18 | row 17 `until` | order keys, one authority; then two authorities; then trace reversed in insertion order, keys unchanged | evaluates; refuses; same result as the first |
+| 17 | `holds(p) until[0,1] holds(q)` and its `release` dual `on origin`; `holds(p) since[0,1] holds(q)` and its `triggered` dual `on each` (the anchor at position 2, where positions 1 and 2 participate) | stamps 0,1,1; no order keys; then a key on position 1 only | stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2 each; `eventually[0,1] holds(p)` evaluates; the one-key case refuses at position 2 |
+| 18 | row 17 `until` | order keys, one authority; then two authorities; then trace listed in reverse, keys unchanged | evaluates; refuses; same result as the first |
 | 19 | `once[0,4] holds(p)` `on each`, activations at positions 0 and 1 (future reach 0, established at W 4) | stamps 3,4; p F,F; W 4; C(4) | `HistoryCutoff`: `Indeterminate {MissingHistory}` with `where` 0 (the first activation in position order); `AuthoritativeOrigin`: `Completed(false)`; p T at 3: `Completed(true)` for both |
 | 20 | `holds(req) implies eventually[0,3000] holds(ack)`, cover `Counter{u=0}` | req at 0; ack at 2998, 3000, 3001; W, C beyond 3001 | `Completed(true)`; `Indeterminate {StraddlesBound}`; `Completed(false)`; with `Exact` cover true, true, false |
 | 21 | `holds(req) implies eventually[0,3000] holds(ack)`, `Counter{u=1}`, req at 0, ack at 2997, 2998, 3003; W and C beyond 3003 (`TCV-06` to `TCV-08`); and the comparison functions `within_bound` and `definitely_before` called directly on QSpec `tick-cover-vectors.json` `TCV-09` to `TCV-15` (the bounds 0, 1 and -1 of `TCV-13` to `TCV-15` and the `definitely_before` pairs are not clause intervals) | per the vectors | true, indeterminate (`StraddlesBound`), false for `TCV-06` to `TCV-08`; the file's expected value for each of `TCV-09` to `TCV-15` |
@@ -65,7 +65,9 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 28 | `always[0,5] holds(p)`, scope `Closed` then `Open`; `eventually[0,5] holds(p)` | stamps 0,2,5; p T,F,T; W 5; C(5); and p F,F,T | basis `closed-scope` / `decisive-counterexample`, verdict false both, support {(1,p)}; second clause basis `closed-scope`, true, support {(2,p)}; `Pending` basis `unsettled`; `Indeterminate` basis `unavailable` |
 | 29 | row 28 with scope, surrounding execution, completeness and a work stop varied one at a time | as row 28 | only the named field (and the basis for scope, the verdict class for completeness as rows 12 and 13 state) changes; a work stop reports assessment `Failed` |
 | 30 | row 1's request varied one input at a time: unit, cover, one stamp, one valuation, one order key, W, through, lower-boundary kind, a meter ceiling | each alone | a distinct result identity each time; the original identity is unchanged |
-| 31 | `eventually[0,5] holds(p)`; then the same clause with an empty trace; then stamps 0,5,2 | stamps 0,2,5; p F,F,F; W 5, C(9); W 3, C(9) | `Completed(false)`; `Pending {deadline 5}`; stage `admit` `invalid_runtime_input`/`invalid-value` for the empty trace and for 0,5,2 |
+| 31 | `eventually[0,5] holds(p)`; then the same clause with an empty trace | stamps 0,2,5; p F,F,F; W 5, C(9); W 3, C(9) | `Completed(false)`; `Pending {deadline 5}`; stage `admit` `invalid_runtime_input`/`invalid-value` for the empty trace |
+| 32 | row 1's first clause, observations listed as stamps 5,0,2 then 0,2,5 | p T at 0 and 5, F at 2 | equal outcome, support and `result_identity` for both listings (FR-501-AC-18) |
+| 33 | row 32's listing 5,0,2 | p T at 0 and 5, F at 2 | `Completed(false)` at position 0; support {(1,p)} (FR-501-AC-19) |
 
 ## Expected Results
 

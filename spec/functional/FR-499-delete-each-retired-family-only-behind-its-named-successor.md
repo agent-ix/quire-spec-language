@@ -107,7 +107,7 @@ them at its pinned revision.
 | Lasso and fair lasso incl. `Lasso::Model` (FR-329) | FR-329 | PARTIAL: green `Lasso::Model` test required before deletion (QSL-858 criterion); QSL-1516 |
 | `on origin` / `on each` activation (FR-044-AC-8) | FR-327 | COVERED |
 | Profile and clock selected by identity (FR-043-AC-2) | FR-110, FR-326 | PARTIAL: header selection only; wrong-clock assertion is PORT QSL-1502 (FR-522) |
-| Trace clock/profile mismatch refusal (FR-043-AC-3), OrderKey tie refusal (AC-5), result identity (AC-13), authenticated clock report, whole-declaration vs per-instance stop | none (`TraceInput` carries documents only); successors FR-522, FR-523 | PORT QSL-1502 |
+| Trace clock/profile mismatch refusal (FR-043-AC-3), result identity (AC-13), authenticated clock report, whole-declaration vs per-instance stop | none (`TraceInput` carries documents only); successors FR-522, FR-523 | PORT QSL-1502 |
 | Open input applies neither false extension nor empty truth (AC-8), history cutoff (AC-9), four progress axes (AC-10), watermark settlement (AC-11), regressing watermark and conflicting completeness (AC-12) | FR-502 (watermark and completeness), FR-504 (event-position and fixed-sample progress), FR-501; map in FR-525 | PORT QSL-1503 (AC-12 also FR-502) |
 | `timestamped-event.finite-window/v1` (FR-043-AC-2, AC-11) | FR-501 (spec PR #2131); today `qsl-eval/src/temporal/engine.rs:184` returns `ProfileNotEvaluated` | PORT (FR-501; implementation under the QSL-858 train) |
 | Trigger-keyed instances, duplicate delivery, conflicting payload, capture faults, four-way trigger-scope disposition, `ProtocolLedger`, opaque trigger identity (FR-044-AC-1 to AC-7, AC-9; FR-052-AC-9 to AC-12; FR-053-AC-7 to AC-9; TC-122, TC-123, TC-125, TC-144, TC-149, TC-1277 to TC-1279) | FR-524 (instances, captures, dispositions), FR-526 (lineage); open rows OPEN-5 to OPEN-7 in FR-525; the existing `checked_temporal_successors.rs`, `checked_temporal_limits_v2.rs` and the TC-144/149 test exercise `src/temporal` itself and are not successors | PORT QSL-1503 |
@@ -198,13 +198,14 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-499-AC-1 | For every path a deleting change removes, each row of that path's table is COVERED with a passing tagged test, or its PORT ticket is closed, or the file is KEPT; no row reads retired without a named COVERED test. | Test (TC-1293) |
+| FR-499-AC-1 | For every path a deleting change removes, each row of that path's table is COVERED with a passing tagged test, or its PORT ticket is closed, or the file is KEPT; no row reads retired without a named COVERED test or a cited planner or owner ruling. | Test (TC-1293) |
 | FR-499-AC-2 | After QSL-841, a downstream crate cannot name `DeclarationKind::Protocol` (`src/syntax/composed.rs`), `Family::Protocol` or `RegisteredDefinition::Protocol`, and a `protocol` unit through the spine behaves as FR-383 and FR-218 state. | Test (TC-1293) |
 | FR-499-AC-3 | After QSL-838 and QSL-858 land together, no import of `crate::temporal`, `protocol_artifact::wire` or `ProtocolNumber` (unless `number.rs` is KEPT) remains, and a green `Lasso::Model` test exists on the spine. | Test (TC-1293) |
 | FR-499-AC-4 | After QSL-499, `src/native_model` is absent and TC-469 passes. | Test (TC-1293) |
 | FR-499-AC-5 | After QSL-868 and QSL-830, TC-1027 steps 2 and 3 pass, the CLI `parse` runs on `qsl_cst::parse` with its flags and exits unchanged, and the interim FR-362 items 8 and 9 wording is gone. | Test (TC-1027, TC-1293) |
 | FR-499-AC-6 | `quire matrix` after each deleting change lists no criterion of a retained requirement untagged because its test went with a retired path. | Test (TC-1276 step 5) |
 | FR-499-AC-7 | The handoff writer, its examples, snapshots and feature remain until FR-521 row 2 is green. | Inspection |
+| FR-499-AC-8 | No file of `src/temporal` is deleted while a PORT row of FR-525 names a successor criterion that no passing spine test carries. | Inspection |
 
 ## Dependencies
 
