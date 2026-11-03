@@ -649,7 +649,7 @@ pub struct CheckedDependencyReference {
     pub library: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PendingDependencyTarget {
     LocalFunction(usize),
     Imported {
@@ -658,7 +658,7 @@ pub(crate) enum PendingDependencyTarget {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PendingDependencyReference {
     pub(crate) name: String,
     pub(crate) site: Location,
@@ -2523,11 +2523,15 @@ impl PackageDeclarations {
                     .map(|node| (declaration.clone(), node))
             })
             .collect();
+        // FR-094 (ADR-013 O-01): a selection is the identity alone, so aliases
+        // that admit one package share its selection; two different admitted
+        // packages under one identity refuse.
+        let mut admitted_by_identity: BTreeMap<String, &AdmittedModel> = BTreeMap::new();
         let mut selections_by_identity = BTreeMap::new();
         for model in &models {
             let selection = model.selection();
-            if let Some(existing) = selections_by_identity.get(&selection.identity) {
-                if existing != selection {
+            if let Some(existing) = admitted_by_identity.get(&selection.identity) {
+                if !existing.same_package(model) {
                     return Err(vec![CheckRefusal {
                         location: root(Origin::Expression),
                         cause: CheckCause::InternalFault(Box::new(
@@ -2536,6 +2540,7 @@ impl PackageDeclarations {
                     }]);
                 }
             } else {
+                admitted_by_identity.insert(selection.identity.clone(), model);
                 selections_by_identity.insert(selection.identity.clone(), selection.clone());
             }
         }
@@ -6712,7 +6717,7 @@ impl PackageDeclarations {
             })
             .collect();
         let mut dependency_references = Vec::new();
-        for pending in scope.take_dependency_references() {
+        for pending in contract_diagnostics.take_dependency_references() {
             let referring_declaration = match &pending.site.origin {
                 Origin::Body { function, .. } | Origin::Measure { function, .. } => {
                     function.clone()

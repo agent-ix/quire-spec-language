@@ -201,7 +201,10 @@ struct Acme {
 }
 
 fn admitted(version: &str) -> Acme {
-    let package = acme();
+    admitted_package(version, acme())
+}
+
+fn admitted_package(version: &str, package: DomainPackage) -> Acme {
     let NormalizeOutcome::Completed(view) =
         normalize(&package, ModelNormalizationLimits::UNLIMITED)
     else {
@@ -883,19 +886,30 @@ fn the_model_matches_have_no_catch_all_arm() {
 // TC-418: clause functions.
 // ---------------------------------------------------------------------
 
-/// FR-094: a check selects one version of each domain package identity;
-/// two admitted versions of `acme/orders` refuse as a broken invariant
-/// instead of resolving declarations against whichever admitted view comes
-/// first.
+/// FR-094: a check selects one package for each domain package identity. A
+/// selection is the identity alone (FR-321), so two aliases that admit the
+/// same `acme/orders` package share one selection and check, while a
+/// different package admitted under that identity refuses as a broken
+/// invariant instead of resolving declarations against whichever admitted
+/// view comes first.
 #[trace("FR-094-AC-5", "TC-418")]
 #[test]
 fn two_admitted_versions_of_one_model_identity_refuse() {
-    let (first, second) = (admitted("1.0.0"), admitted("2.0.0"));
+    let first = admitted("1.0.0");
+    let mut aliased = dispatch(&first, "Order/size");
+    aliased.models.push(admitted("1.0.0").model.clone());
+    aliased
+        .check(CheckingLimits::default())
+        .expect("two aliases of one package share its selection");
+
+    let mut extended = acme();
+    extended.records.push(object("Extra", &[]));
+    let second = admitted_package("2.0.0", extended);
     let mut declarations = dispatch(&first, "Order/size");
     declarations.models.push(second.model.clone());
     let refusals = declarations
         .check(CheckingLimits::default())
-        .expect_err("two versions of one identity refuse");
+        .expect_err("two packages of one identity refuse");
     assert!(
         matches!(
             &refusals[0].cause,
