@@ -486,7 +486,7 @@ fn encode_expression(
             }
             ExprNode::String(text) => {
                 out.write_str("string");
-                out.write_str(text);
+                out.write_str(text.text());
             }
             ExprNode::Name(name) => {
                 out.write_str("name");

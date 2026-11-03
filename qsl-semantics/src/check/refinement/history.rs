@@ -235,7 +235,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 Ok(OptionValue::none((**payload).clone()))
             }
             (HistoryLiteralForm::Text(text), ValueType::Text(text_type)) => {
-                let payload = TextPayload::from_source_literal(text.as_str(), format!("{text:?}"));
+                let payload = TextPayload::from_source_literal(text.text(), text.spelling());
                 match admit_text(
                     &payload,
                     text_type,

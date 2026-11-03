@@ -138,7 +138,7 @@ fn show(expression: ExprRef<'_>) -> String {
                 quantity.magnitude.first, quantity.unit.name
             )
         }
-        ExprNode::String(text) => format!("string({text:?})"),
+        ExprNode::String(literal) => format!("string({:?})", literal.text()),
         ExprNode::Name(spelling) => spelling.name.clone(),
         ExprNode::Let { name, .. } => format!("Let[{name}]"),
         ExprNode::If { .. } => "If".into(),
@@ -1245,7 +1245,9 @@ fn body_root(text: &str) -> ExprNode {
 #[trace("FR-091-AC-41", "TC-1052")]
 #[test]
 fn a_quoted_literal_builds_one_string_form_with_the_decoded_scalars() {
-    let scalars = |text: &str| ExprNode::String(text.to_owned());
+    let scalars = |text: &str, spelling: &str| {
+        ExprNode::String(qsl_forms::StringLiteral::new(text, spelling))
+    };
     for (source, expected) in [
         (r#""abc""#, "abc"),
         (r#""""#, ""),
@@ -1257,7 +1259,7 @@ fn a_quoted_literal_builds_one_string_form_with_the_decoded_scalars() {
         (r#""\u0000""#, "\u{0}"),
         (r#""a\"b\\c\/d""#, "a\"b\\c/d"),
     ] {
-        assert_eq!(body_root(source), scalars(expected), "{source}");
+        assert_eq!(body_root(source), scalars(expected, source), "{source}");
     }
     assert_ne!(body_root(r#""é""#), body_root(r#""é""#), "no normalization");
 }
@@ -1274,7 +1276,10 @@ fn uuid_and_timestamp_literals_build_ordinary_calls() {
     assert_eq!(name.name, "UUID");
     assert_eq!(
         function.body.at(arguments[0]).node(),
-        &ExprNode::String("00112233-4455-6677-8899-aabbccddeeff".to_owned())
+        &ExprNode::String(qsl_forms::StringLiteral::new(
+            "00112233-4455-6677-8899-aabbccddeeff",
+            "\"00112233-4455-6677-8899-aabbccddeeff\""
+        ))
     );
     let (_, function) = body("Timestamp(-1)");
     let ExprNode::Call { name, arguments } = function.body.root_node() else {
@@ -1297,9 +1302,11 @@ fn uuid_and_timestamp_literals_build_ordinary_calls() {
 #[trace("FR-091-AC-69", "TC-1052")]
 #[test]
 fn text_calls_build_ordinary_calls_with_one_string_argument() {
-    for (source, expected) in [
-        (r#"Text("abc")"#, "abc"),
-        (r#"Text("e\u0301")"#, "e\u{301}"),
+    for (source, expected, spelling) in [
+        (r#"Text("abc")"#, "abc", r#""abc""#),
+        (r#"Text("e\u0301")"#, "e\u{301}", r#""e\u0301""#),
+        (r#"Text("é")"#, "\u{e9}", "\"\u{e9}\""),
+        (r#"Text("\u00e9")"#, "\u{e9}", r#""\u00e9""#),
     ] {
         let (_, function) = body(source);
         let ExprNode::Call { name, arguments } = function.body.root_node() else {
@@ -1310,7 +1317,7 @@ fn text_calls_build_ordinary_calls_with_one_string_argument() {
         assert_eq!(arguments.len(), 1, "{source}");
         assert_eq!(
             function.body.at(arguments[0]).node(),
-            &ExprNode::String(expected.to_owned()),
+            &ExprNode::String(qsl_forms::StringLiteral::new(expected, spelling)),
             "{source}"
         );
     }

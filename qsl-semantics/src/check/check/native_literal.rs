@@ -64,13 +64,14 @@ impl Typer<'_> {
         let argument_location = location.child(0);
         match constructor {
             NativeConstructor::Uuid => {
-                let ExprNode::String(text) = argument.node() else {
+                let ExprNode::String(literal) = argument.node() else {
                     return Err(mismatch(&argument_location));
                 };
+                let text = literal.text();
                 let uuid = Uuid::from_canonical_text(text).map_err(|_| CheckRefusal {
                     location: location.clone(),
                     cause: CheckCause::MalformedUuidLiteral {
-                        argument: text.clone(),
+                        argument: text.to_owned(),
                     },
                 })?;
                 Ok(node(
@@ -114,19 +115,20 @@ impl Typer<'_> {
                 let Some(ValueType::Text(text_type)) = hint else {
                     return Err(mismatch(location));
                 };
-                let ExprNode::String(text) = argument.node() else {
+                let ExprNode::String(literal) = argument.node() else {
                     return Err(mismatch(&argument_location));
                 };
+                let text = literal.text();
                 let profile = text_type.profile();
                 let retained = profile
                     .normalization()
-                    .map_or_else(|| text.clone(), |form| form.apply(text).collect());
+                    .map_or_else(|| text.to_owned(), |form| form.apply(text).collect());
                 let retained_length = profile.length(&retained);
                 if !(text_type.min()..=text_type.max()).contains(&retained_length) {
                     return Err(CheckRefusal {
                         location: location.clone(),
                         cause: CheckCause::TextLiteralOutsideBounds {
-                            argument: text.clone(),
+                            argument: text.to_owned(),
                             min: text_type.min(),
                             max: text_type.max(),
                             profile,
@@ -135,7 +137,7 @@ impl Typer<'_> {
                     });
                 }
                 let text_type = *text_type;
-                let payload = TextPayload::from_source_literal(text.as_str(), format!("{text:?}"));
+                let payload = TextPayload::from_source_literal(text, literal.spelling());
                 let Outcome::Completed(text) = admit_text(
                     &payload,
                     &text_type,

@@ -21,8 +21,8 @@ use super::syntax::{
     DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind,
     ExactValueForm, ExactValueKind, ExprId, ExprNode, Expression, ExpressionBuilder,
     FieldInitializer, FunctionDeclaration, NameForm, PopulationForm, QuantityForm, RatioNumberForm,
-    RatioNumberKind, RatioTermForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator,
-    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    RatioNumberKind, RatioTermForm, RecordFieldForm, RecordForm, StepLabelForm, StringLiteral,
+    TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
 use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
 use qsl_foundation::Span;
@@ -748,7 +748,7 @@ enum Shape {
     Float64(u64),
     Rational(Integer, Integer),
     Quantity(QuantityForm),
-    String(String),
+    String(StringLiteral),
     Name(NameForm),
     Let(String),
     If,
@@ -1748,9 +1748,10 @@ impl<'c> Mapping<'c> {
                 TokenKind::Text => {
                     // The lexer admitted the token, so its JSON decoding
                     // cannot fail; a refusal here is an unexpected shape.
-                    let decoded = qsl_cst::token::decode_quoted(&text(token, node)?)
-                        .ok_or_else(|| unexpected(node))?;
-                    self.leaf(Shape::String(decoded), &task)
+                    let spelling = text(token, node)?;
+                    let decoded =
+                        qsl_cst::token::decode_quoted(&spelling).ok_or_else(|| unexpected(node))?;
+                    self.leaf(Shape::String(StringLiteral::new(decoded, spelling)), &task)
                 }
                 TokenKind::Identifier
                     if node.production() == Production::HyperPrimary

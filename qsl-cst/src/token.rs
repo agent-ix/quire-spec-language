@@ -38,6 +38,13 @@ pub fn decode_quoted(spelling: &str) -> Option<String> {
     serde_json::from_str(spelling).ok()
 }
 
+/// The canonical quoted spelling of `text`: the JSON quoted text that
+/// [`decode_quoted`] decodes back to `text`.
+pub fn encode_quoted(text: &str) -> String {
+    // Serializing a `str` cannot fail; the empty spelling is unreachable.
+    serde_json::to_string(text).unwrap_or_default()
+}
+
 /// Whether `value` is entirely lexer-skipped whitespace (spaces, tabs,
 /// newlines and `\r\n`), so it can be inserted between tokens without
 /// reparsing.

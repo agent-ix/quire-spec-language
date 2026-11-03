@@ -9,7 +9,9 @@ use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
-use quire_exact::{FieldValue, Meter, Outcome, ScalarLimits, Timestamp, Uuid, Value, ValueType};
+use quire_exact::{
+    FieldValue, Meter, Outcome, ScalarLimits, TextProvenance, Timestamp, Uuid, Value, ValueType,
+};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::TypeEnvironment;
 
@@ -46,6 +48,8 @@ const FUNCTIONS: &str = "\
     function t using v(t: Timestamp): Boolean pure { t = Timestamp(5) }\n\
     function zero using v(): Boolean pure { Timestamp(0) = Timestamp(-0) }\n\
     function one using v(): Boolean pure { Timestamp(0) = Timestamp(1) }\n\
+    function rawText using v(): Text[0, 8; binary-utf8] pure { Text(\"é\") }\n\
+    function escapedText using v(): Text[0, 8; binary-utf8] pure { Text(\"\\u00e9\") }\n\
     function ends using v(): Boolean pure { Timestamp(-170141183460469231731687303715884105728) = Timestamp(170141183460469231731687303715884105727) }\n";
 
 struct Fixture {
@@ -185,4 +189,41 @@ fn uuid_and_timestamp_literals_compare_by_value() {
     assert!(truth(&fixture, "zero", vec![]));
     assert!(!truth(&fixture, "one", vec![]));
     assert!(!truth(&fixture, "ends", vec![]));
+}
+
+/// The completed value of the zero-argument function `name`.
+fn completed(fixture: &Fixture, name: &str) -> Value {
+    let evaluation = fixture
+        .package
+        .call(
+            &QualifiedName::unqualified(name).expect("an identifier"),
+            vec![],
+            &ObjectEnvironment::default(),
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("the call runs");
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(value)) => value,
+        other => panic!("a completed value, not {other:?}"),
+    }
+}
+
+/// FR-091-AC-69, QSpec TC-186 T06b: a raw `é` and the escaped `\u00e9` in
+/// `Text("...")` hold the same payload bytes `c3 a9` and keep their different
+/// source spellings as provenance.
+#[trace("FR-091-AC-69", "TC-1052", "QSpec-TC-186", "QSpec-FR-141-AC-4")]
+#[test]
+fn text_literals_keep_their_source_spelling_as_provenance() {
+    let fixture = fixture();
+    for (name, spelling) in [("rawText", "\"\u{e9}\""), ("escapedText", "\"\\u00e9\"")] {
+        let Value::Text(text) = completed(&fixture, name) else {
+            panic!("{name}: a Text value");
+        };
+        assert_eq!(text.payload().bytes(), [0xc3, 0xa9], "{name}");
+        assert_eq!(
+            text.payload().provenance(),
+            &TextProvenance::SourceLiteral(spelling.into()),
+            "{name}"
+        );
+    }
 }

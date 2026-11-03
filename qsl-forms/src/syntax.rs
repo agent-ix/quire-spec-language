@@ -520,6 +520,36 @@ pub enum StepLabelForm {
     },
 }
 
+/// A quoted text literal: the decoded Unicode scalar sequence and the exact
+/// quoted spelling it was decoded from. Two spellings of one sequence, such as
+/// a raw `é` and `\u00e9`, are distinct literals that decode to one value
+/// (QSpec FR-141: the source spelling stays provenance).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StringLiteral {
+    text: String,
+    spelling: String,
+}
+
+impl StringLiteral {
+    /// The literal that decodes from `spelling` to `text`.
+    pub fn new(text: impl Into<String>, spelling: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            spelling: spelling.into(),
+        }
+    }
+
+    /// The decoded Unicode scalar sequence.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// The quoted source spelling, escapes undecoded.
+    pub fn spelling(&self) -> &str {
+        &self.spelling
+    }
+}
+
 /// One node of a value expression: its payload, with each subexpression
 /// named by its [`ExprId`] in the same [`Expression`] arena.
 ///
@@ -548,8 +578,9 @@ pub enum ExprNode {
     /// spelled unit. S2 resolves neither.
     Quantity(QuantityForm),
     /// A quoted text literal (FR-091 "Native scalar literals"): the decoded
-    /// Unicode scalar sequence, kept exactly. It is always a `String`.
-    String(String),
+    /// Unicode scalar sequence, kept exactly, with the source spelling it was
+    /// decoded from. It is always a `String`.
+    String(StringLiteral),
     /// A parameter, `let` or binder name, or a qualified enum member.
     Name(NameForm),
     /// `let name = value in body`.
@@ -1328,9 +1359,12 @@ impl Expression {
         Self::single(ExprNode::Float64(bits))
     }
 
-    /// A quoted text literal holding the decoded scalar sequence `text`.
+    /// A quoted text literal holding the decoded scalar sequence `text`,
+    /// spelled as the canonical quoted text of `text`.
     pub fn string(text: impl Into<String>) -> Self {
-        Self::single(ExprNode::String(text.into()))
+        let text = text.into();
+        let spelling = qsl_cst::token::encode_quoted(&text);
+        Self::single(ExprNode::String(StringLiteral::new(text, spelling)))
     }
 
     /// `rational(numerator, denominator)`.

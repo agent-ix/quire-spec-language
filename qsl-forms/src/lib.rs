@@ -95,7 +95,7 @@ pub use syntax::{
     RoleForm, RoleLifetime, SchedulableForm, SchedulerForm, ScopeEntry, ScopeId, ScopeName,
     ScopedAnchorForm, ShapeChanged, SignedQuantityForm, Spellings, StateClauseForm,
     StateClauseKind, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
-    StepLabelForm, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
+    StepLabelForm, StringLiteral, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
     TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TemporalOperatorUse,
     TermOperator, TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantBoundForm,
     TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedIntervalForm, TimedUpper,

@@ -1024,7 +1024,7 @@ impl<'a> Typer<'a> {
                 self.ieee_literal(IeeeWidth::Binary64, *bits, hint.as_deref(), &location)?
             }
             ExprNode::String(text) => node(
-                NodeKind::Literal(CheckedLiteral(Value::String(text.clone()))),
+                NodeKind::Literal(CheckedLiteral(Value::String(text.text().to_owned()))),
                 ValueType::String,
                 &location,
             ),
