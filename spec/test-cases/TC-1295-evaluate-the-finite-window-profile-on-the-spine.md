@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-501-AC-1 to AC-25 and FR-330-AC-9 (the finite-window part): the
+Verify FR-501-AC-1 to AC-26 and FR-330-AC-9 (the finite-window part): the
 spine evaluator returns a definite verdict on a closed complete window, pending
 or indeterminate only for a genuinely unresolved obligation, and never refuses
 the profile.
@@ -20,8 +20,9 @@ the profile.
 Catches a `ProfileNotEvaluated` refusal, false extension applied to a sparse
 window, an empty window left unknown, a missing valuation read as false, an
 incomplete input read as closed, an event at the inclusive deadline dropped, a
-watermark that fails to settle a silent window, and a result that depends on
-ingestion order.
+watermark that fails to settle a silent window, a result that depends on
+ingestion order, and a repeated order key of one authority ordered by
+observation identity for an order-sensitive operator.
 
 ## Test Procedure
 
@@ -74,6 +75,7 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 37 | row 8's clause | stamps 0,2,2,5; p = F,T,T,F; W 5; C(5) | `Completed(true)` (FR-501-AC-23) |
 | 38 | row 27's request with the supplied cover `Counter{u=1}`, W 3001, C(3002); then the same input with cover `Exact` | req at 0; no ack | `Pending {deadline 3002}`; `Completed(false)` and a different result identity (FR-501-AC-24) |
 | 39 | row 1's request with `execution` `Open`, then `Closed` | as row 1 | the same verdict; the premises report `Open`, then `Closed` (FR-501-AC-25) |
+| 40 | row 17's `until` and `release` `on origin`; then `eventually[0,1] holds(p)` | stamps 0,1,1; positions 1 and 2 both keyed `(A, 1)`, distinct identities (a third atom differs); listed as given, then the two keyed observations reversed | stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2 for both operators and both listings; `eventually` evaluates with one outcome and one `result_identity` for both listings (FR-501-AC-26) |
 
 ## Expected Results
 

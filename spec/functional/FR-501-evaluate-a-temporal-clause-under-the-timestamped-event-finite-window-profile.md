@@ -187,9 +187,17 @@ ranks below 10.
   pointwise at each eligible position (FR-043 "Operators").
 - When two positions that both participate in an order-sensitive operator share
   a stamp and either lacks an order key, or their keys come from different
-  order authorities, the evaluator SHALL refuse at stage `evaluate`
+  order authorities, or their keys come from one order authority and are
+  equal, the evaluator SHALL refuse at stage `evaluate`
   `invalid_runtime_input`/`invalid-value` at the later position, and SHALL NOT
-  substitute trace index or ingestion order (QSpec FR-090-AC-4).
+  substitute trace index, ingestion order or observation identity (QSpec
+  FR-090-AC-4).
+- Two positions of one stamp have a **usable order** exactly when both carry an
+  order key, the keys come from one order authority and the keys differ. A key
+  that repeats another key of its authority at the same stamp is not usable:
+  the authority places both observations at one point of its sequence and so
+  admits no order between them, and observation identity is a content
+  identity, not a causal or sequence order (QSpec FR-090).
 
 ### Canonical order
 
@@ -203,9 +211,12 @@ ranks below 10.
 - The outcome and the result identity SHALL NOT depend on the listed order.
 - The `TemporalPosition` of an outcome (`where`, a failing position, the support)
   SHALL be the index of the observation in canonical order.
-- The order of observations that share a stamp and lack a usable order key SHALL
-  NOT decide a verdict, because an order-sensitive operator refuses over such a
-  pair (above).
+- The order of observations that share a stamp and lack a usable order (above),
+  repeated keys of one authority included, SHALL NOT decide a verdict, because
+  an order-sensitive operator refuses over such a pair. The observation-identity
+  step of the canonical order fixes only the positions' indices, so that the
+  outcome and the result identity do not depend on the listed order; it never
+  orders a pair for an order-sensitive operator.
 
 ### Established window
 
@@ -353,6 +364,7 @@ as its own ticket, referenced from QSL-1493; it is not part of this repository.
 | FR-501-AC-23 | Over stamps 0, 2, 2, 5 with `eventually[0,5] holds(p)`, `W` 5 and `Complete { through: 5 }`, `p` true at both observations stamped 2 and false at the others is `Completed(true)` and not `Indeterminate`. | Test (TC-1295) |
 | FR-501-AC-24 | A `Timestamped` input that supplies `Counter { uncertainty: 1 }` gives AC-13's outcomes, and the same input with the cover `Exact` gives a different verdict for `W` 3001 and `Complete { through: 3002 }` and a different result identity. | Test (TC-1295) |
 | FR-501-AC-25 | A `Timestamped` input whose `execution` is `Open` and one whose `execution` is `Closed` report the surrounding-execution closure they carry and give the same verdict. | Test (TC-1295) |
+| FR-501-AC-26 | Stamps 0, 1, 1 with positions 1 and 2 both keyed `(A, 1)` (one order authority, one key) and valuations that differ in a third atom, so that the two observations have distinct identities: `holds(p) until[0,1] holds(q)` and its `release` dual `on origin` refuse at stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2, for the listed order and for the two keyed observations listed in reverse, and do not evaluate with the identity order as the tie-break; `eventually[0,1] holds(p)` over the same trace evaluates and gives one outcome and one `result_identity` for both listings. | Test (TC-1295) |
 
 ## Dependencies
 
