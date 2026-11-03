@@ -68,6 +68,7 @@ pub(super) fn parse(
     let compounds = grammar::complete_compound_spellings(&grammar);
     let (tokens, significant, mut diagnostics, mut recoveries) =
         scan(&source, limits, &compounds, cancel)?;
+    let mut parse_significant = significant.clone();
     let prelude_nodes = selection_prelude_nodes(&source, &grammar, &significant, limits, cancel);
     let matched = if diagnostics.is_empty() {
         let mut engine = Engine::new(&grammar, &significant, limits, cancel);
@@ -99,52 +100,78 @@ pub(super) fn parse(
         match matched {
             Ok(forest) => Some(forest),
             Err(failure) => {
-                let span = significant.get(failure.position).map_or(
-                    Span {
-                        start: source.text().len(),
-                        end: source.text().len(),
-                    },
-                    |token| token.span,
-                );
-                let (code, cause) = selection_code(&significant, failure.position).map_or(
-                    (
-                        CompleteCode::InvalidSyntax,
-                        if failure.position == significant.len() {
-                            CompleteCause::UnexpectedEnd
-                        } else {
-                            CompleteCause::UnexpectedToken
-                        },
-                    ),
-                    |code| (code, CompleteCause::UnsupportedSelection),
-                );
-                let expected = failure
-                    .expected
-                    .into_iter()
-                    .collect::<Vec<_>>()
-                    .join(" or ");
-                diagnostics.push(*super::diagnostic::error(
+                if let Some((forest, recovered, span)) = recover_at_protocol_delimiter(
                     &source,
-                    code,
-                    cause,
-                    if code == CompleteCode::InvalidSyntax {
-                        Phase::Parse
-                    } else {
-                        Phase::Profile
-                    },
-                    span.start,
-                    span.end,
-                    format!("expected {expected}"),
-                ));
-                recoveries.push(Recovery {
-                    kind: if failure.position == significant.len() {
-                        RecoveryKind::Insert
-                    } else {
-                        RecoveryKind::Delete
-                    },
-                    span,
-                    expected,
-                });
-                None
+                    &grammar,
+                    &significant,
+                    limits,
+                    cancel,
+                    failure.position,
+                ) {
+                    parse_significant = recovered;
+                    diagnostics.push(*super::diagnostic::error(
+                        &source,
+                        CompleteCode::InvalidSyntax,
+                        CompleteCause::UnexpectedToken,
+                        Phase::Parse,
+                        span.start,
+                        span.end,
+                        "expected `}` before the next protocol declaration",
+                    ));
+                    recoveries.push(Recovery {
+                        kind: RecoveryKind::Insert,
+                        span,
+                        expected: "}".into(),
+                    });
+                    Some(forest)
+                } else {
+                    let span = significant.get(failure.position).map_or(
+                        Span {
+                            start: source.text().len(),
+                            end: source.text().len(),
+                        },
+                        |token| token.span,
+                    );
+                    let (code, cause) = selection_code(&significant, failure.position).map_or(
+                        (
+                            CompleteCode::InvalidSyntax,
+                            if failure.position == significant.len() {
+                                CompleteCause::UnexpectedEnd
+                            } else {
+                                CompleteCause::UnexpectedToken
+                            },
+                        ),
+                        |code| (code, CompleteCause::UnsupportedSelection),
+                    );
+                    let expected = failure
+                        .expected
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                        .join(" or ");
+                    diagnostics.push(*super::diagnostic::error(
+                        &source,
+                        code,
+                        cause,
+                        if code == CompleteCode::InvalidSyntax {
+                            Phase::Parse
+                        } else {
+                            Phase::Profile
+                        },
+                        span.start,
+                        span.end,
+                        format!("expected {expected}"),
+                    ));
+                    recoveries.push(Recovery {
+                        kind: if failure.position == significant.len() {
+                            RecoveryKind::Insert
+                        } else {
+                            RecoveryKind::Delete
+                        },
+                        span,
+                        expected,
+                    });
+                    None
+                }
             }
         }
     } else {
@@ -152,7 +179,7 @@ pub(super) fn parse(
     };
 
     let (nodes, root) = if let Some(forest) = matched {
-        lower_tree(&source, &significant, &forest)
+        lower_tree(&source, &parse_significant, &forest)
     } else {
         (
             vec![RawNode {
@@ -176,7 +203,12 @@ pub(super) fn parse(
     } else {
         &prelude_nodes
     };
-    let selections = extract_selections(&source, &significant, selection_nodes, &mut diagnostics);
+    let selections = extract_selections(
+        &source,
+        &parse_significant,
+        selection_nodes,
+        &mut diagnostics,
+    );
     let cst = LosslessCst::new(source.clone(), tokens, nodes, root, recoveries);
     diagnostics.extend(interval_bounds(&source, &cst));
     Ok(ParsedSource::from_parts(
@@ -187,6 +219,66 @@ pub(super) fn parse(
         false,
         limits,
     ))
+}
+
+/// Recover a missing protocol-body close immediately before the next
+/// protocol keyword. Only a delimiter attributable to the preceding
+/// declaration is recoverable; header, selection and EOF errors stay at the
+/// unit boundary.
+fn recover_at_protocol_delimiter(
+    source: &Source,
+    grammar: &Grammar,
+    significant: &[Significant],
+    limits: Limits,
+    cancel: &Cancel,
+    failure_position: usize,
+) -> Option<(Forest, Vec<Significant>, Span)> {
+    let is_protocol = |token: &Significant| token.kind == Some(Kind::Protocol);
+    let owner = significant
+        .iter()
+        .enumerate()
+        .take(failure_position.saturating_add(1))
+        .filter(|(_, token)| is_protocol(token))
+        .map(|(index, _)| index)
+        .last()?;
+    let next = significant
+        .iter()
+        .enumerate()
+        .skip(failure_position.saturating_add(1))
+        .find(|(_, token)| is_protocol(token))
+        .map(|(index, _)| index)?;
+    let mut depth = 0_usize;
+    for token in significant.get(owner..next)? {
+        match token.kind {
+            Some(Kind::OpenBrace) => depth = depth.checked_add(1)?,
+            Some(Kind::CloseBrace) => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+    }
+    if depth == 0 {
+        return None;
+    }
+    let position = significant.get(next)?.span.start;
+    let span = Span {
+        start: position,
+        end: position,
+    };
+    let mut recovered = significant.to_vec();
+    for _ in 0..depth {
+        recovered.insert(
+            next,
+            Significant {
+                kind: Some(Kind::CloseBrace),
+                span,
+                spelling: "}".into(),
+            },
+        );
+    }
+    let mut engine = Engine::new(grammar, &recovered, limits, cancel);
+    let Outcome::Match(_) = engine.production(Production::CompleteUnit, 0) else {
+        return None;
+    };
+    Some((engine.into_forest()?, recovered, span))
 }
 
 fn selection_prelude_nodes(

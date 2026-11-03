@@ -1315,7 +1315,22 @@ impl OutcomeDocument {
                 refusal.code().category(),
             )
             .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(refusal)]),
+            StageFailure::RefusedWithPayload(refusal, _) => Self::new(
+                operation,
+                Some(refusal.stage().into()),
+                refusal.code().category(),
+            )
+            .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(refusal)]),
             StageFailure::Limit(limit) => {
+                let refusal = CompileRefusal::Limit(limit.clone());
+                Self::new(
+                    operation,
+                    Some(refusal.stage().into()),
+                    Category::Incomplete,
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(&refusal)])
+            }
+            StageFailure::LimitWithPayload(limit, _) => {
                 let refusal = CompileRefusal::Limit(limit.clone());
                 Self::new(
                     operation,

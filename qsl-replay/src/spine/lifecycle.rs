@@ -331,7 +331,9 @@ fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
 pub fn refusal_or_fault(failure: FrontEndFailure) -> Result<Box<CompileRefusal>, InternalFault> {
     match failure {
         StageFailure::Refused(refusal) => Ok(refusal),
+        StageFailure::RefusedWithPayload(refusal, _) => Ok(refusal),
         StageFailure::Limit(limit) => Ok(Box::new(CompileRefusal::Limit(limit))),
+        StageFailure::LimitWithPayload(limit, _) => Ok(Box::new(CompileRefusal::Limit(limit))),
         StageFailure::Fault(fault) => Err(fault),
         StageFailure::Cancelled(_) => Err(InternalFault::new(
             "spine",

@@ -111,6 +111,29 @@ fn a_protocol_parses_terminal_scheduling_and_on_each_activation() {
     assert!(texts(&text, &parsed, Production::ProtocolScheduling).is_empty());
 }
 
+/// FR-503-AC-1 (TC-1298 row 1): a missing closing protocol brace is inserted
+/// at the next declaration boundary, retaining the following protocol CST.
+#[trace("TC-1298", "FR-503-AC-1")]
+#[test]
+fn a_missing_protocol_close_recovers_before_the_next_protocol() {
+    let w = protocol("on origin", "", "sequence Main { }");
+    let x = protocol("on origin", "", "sequence Main { }");
+    let z = protocol("on origin", "", "sequence Main { }");
+    let broken_x = x.trim_end_matches('}');
+    let combined = source(&format!("{w}\n{broken_x}\n{z}"));
+    let parsed = parse(&combined);
+    assert_eq!(parsed.diagnostics().len(), 1, "{:#?}", parsed.diagnostics());
+    assert_eq!(parsed.diagnostics()[0].code, CompleteCode::InvalidSyntax);
+    assert_eq!(parsed.cst().recoveries().len(), 1);
+    assert_eq!(parsed.cst().recoveries()[0].expected, "}");
+
+    let clauses = texts(&combined, &parsed, Production::ProtocolClause);
+    assert_eq!(clauses.len(), 3);
+    assert_eq!(clauses[0], w);
+    assert!(clauses[1].starts_with("protocol Flow"));
+    assert!(clauses[2].ends_with(&z[z.find("protocol").unwrap()..]));
+}
+
 /// Verifies the parse only and claims no criterion.
 /// A `terminal` member without `when`/`any`, and a
 /// `scheduling` member that names no `adversarial`, fail at the token the

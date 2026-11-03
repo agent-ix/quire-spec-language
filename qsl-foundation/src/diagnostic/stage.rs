@@ -269,7 +269,10 @@ mod tests {
         let with_payload: StageFailure<Cause, Vec<&str>> =
             StageFailure::RefusedWithPayload(Cause("ill_typed"), vec!["emitted", "refused"]);
         assert_eq!(plain.category(), with_payload.category());
-        assert_eq!(plain.category().exit_code(), with_payload.category().exit_code());
+        assert_eq!(
+            plain.category().exit_code(),
+            with_payload.category().exit_code()
+        );
         assert_eq!(with_payload.payload(), Some(&vec!["emitted", "refused"]));
 
         let limit = LimitExceeded::new(Setting::S3WorkUnits, 10, 11);
@@ -277,7 +280,10 @@ mod tests {
         let with_payload: StageFailure<Cause, Vec<&str>> =
             StageFailure::LimitWithPayload(limit, vec!["emitted", "incomplete"]);
         assert_eq!(plain.category(), with_payload.category());
-        assert_eq!(plain.category().exit_code(), with_payload.category().exit_code());
+        assert_eq!(
+            plain.category().exit_code(),
+            with_payload.category().exit_code()
+        );
     }
 
     /// FR-275: an internal fault is an internal failure, whatever the stage.
