@@ -1073,11 +1073,15 @@ fn parse_unit(
     bytes: &[u8],
     limits: SourceLimits,
     cancel: &Cancel,
-) -> Result<ParsedUnitSource, Box<CompileRefusal>> {
+) -> Result<ParsedUnitSource, StageError> {
     let parsed = qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
         .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
     if let Some(first) = parsed.diagnostics().first() {
-        return Err(Box::new(CompileRefusal::Source(Box::new(first.clone()))));
+        let refusal = Box::new(CompileRefusal::Source(Box::new(first.clone())));
+        if let Some(results) = syntax_protocol_results(&parsed, first) {
+            return Err(StageError::with_protocol_results(refusal, results));
+        }
+        return Err(refusal.into());
     }
     let raw = parsed.source().reference().clone();
     let unit = build_unit(&parsed).map_err(|failure| {
@@ -1090,6 +1094,54 @@ fn parse_unit(
         syntax: parsed,
         unit,
     })
+}
+
+/// The declarations delimited by S1 when one syntax diagnostic belongs to
+/// exactly one protocol. Returns `None` for a unit-level error.
+fn syntax_protocol_results(
+    parsed: &qsl_cst::ParsedSource,
+    diagnostic: &qsl_cst::CompleteDiagnostic,
+) -> Option<Vec<super::ProtocolResult>> {
+    use qsl_cst::Production;
+    let diagnostic_span = diagnostic.byte_span()?;
+    let clauses: Vec<_> = parsed
+        .cst()
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProtocolClause)
+        .collect();
+    let owner = clauses.iter().position(|node| {
+        let span = node.span();
+        span.start < diagnostic_span.start && diagnostic_span.start <= span.end
+    })?;
+    let source_text = parsed.source().text();
+    let mut results = Vec::with_capacity(clauses.len());
+    for (source_index, node) in clauses.iter().enumerate() {
+        let span = node.span();
+        let declaration = source_text
+            .get(span.start..span.end)?
+            .strip_prefix("protocol")?
+            .trim_start()
+            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .next()?
+            .to_owned();
+        if source_index == owner {
+            results.push(super::ProtocolResult::Refused {
+                declaration,
+                source_index,
+                declaration_span: span,
+                code: diagnostic.code,
+                cause: format!("{:?}", diagnostic.cause),
+                locus: None,
+            });
+        } else {
+            results.push(super::ProtocolResult::Cleared {
+                declaration,
+                stage: super::SpineStage::Forms,
+            });
+        }
+    }
+    Some(results)
 }
 
 /// I1 over one unit's `model` declarations.

@@ -282,6 +282,66 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
     .is_ok());
 }
 
+fn protocol_source(name: &str, close: bool) -> String {
+    format!(
+        "protocol {name} using Complete over (input: M::Input) on origin {{\n\
+         role R on M::Actor;\n\
+         run sequence Main {{ }}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         {}}}",
+        if close { "}" } else { "" }
+    )
+}
+
+/// FR-503-AC-2 (TC-1298 rows 1-2): S1's attributable refusal retains every
+/// delimited protocol result in declaration order.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn parse_carries_protocol_results_for_a_confined_syntax_refusal() {
+    let w = protocol_source("W", true);
+    let x = protocol_source("X", false);
+    let z = protocol_source("Z", true);
+    let unit = format!("{HEADER}{w}\n{x}\n{z}");
+    let failure = parse(
+        &request(unit.as_bytes()),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("X has an attributable syntax refusal");
+    let StageFailure::RefusedWithPayload(refusal, results) = failure else {
+        panic!("expected a refusal with protocol results, got {failure:?}");
+    };
+    assert_eq!(refusal.code(), Code::InvalidSyntax);
+    assert!(matches!(
+        results.as_slice(),
+        [
+            crate::spine::ProtocolResult::Cleared { declaration: w, stage: SpineStage::Forms },
+            crate::spine::ProtocolResult::Refused { declaration: x, source_index: 1, .. },
+            crate::spine::ProtocolResult::Cleared { declaration: z, stage: SpineStage::Forms },
+        ] if w == "W" && x == "X" && z == "Z"
+    ));
+}
+
+/// FR-503-AC-2 (TC-1298 row 2): header and EOF syntax errors are
+/// unattributable and carry no protocol result payload.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn parse_does_not_attach_protocol_results_to_unattributable_syntax_errors() {
+    let complete = protocol_source("W", true);
+    for unit in [
+        format!("language broken;\n{HEADER}{complete}"),
+        format!("{HEADER}{}", protocol_source("X", false)),
+    ] {
+        let failure = parse(
+            &request(unit.as_bytes()),
+            SourceLimits::default(),
+            &Cancel::new(),
+        )
+        .expect_err("the unit syntax is invalid");
+        assert!(failure.payload().is_none(), "{failure:?}");
+    }
+}
+
 /// The one library the import tests supply: `x < 5` over a digit.
 fn geometry() -> SuppliedLibrary {
     SuppliedLibrary {
