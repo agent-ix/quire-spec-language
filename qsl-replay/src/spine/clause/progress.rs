@@ -29,6 +29,16 @@ pub enum ProgressClosure {
     Open,
 }
 
+/// Whether the first position of a progressed trace is the origin of the
+/// history or only a cutoff within it (FR-504 Inputs).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProgressLowerBoundary {
+    /// History before the first position is empty.
+    AuthoritativeOrigin,
+    /// History before the first position exists but was not supplied.
+    HistoryCutoff,
+}
+
 /// One position of an admitted trace, by identity and stamp.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ObservedPosition {

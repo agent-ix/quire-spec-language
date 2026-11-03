@@ -104,6 +104,13 @@ pub struct TimestampedTrace {
     pub(super) positions: Vec<TimestampedObservation>,
     origin: Vec<usize>,
     pub(super) progress: WindowProgress,
+    /// The progress the request asserted, which the report and the result
+    /// identity name. It is `progress` itself for a timestamped trace; a
+    /// progressed trace (FR-504) reads an effective `progress` of its own.
+    pub(super) asserted: WindowProgress,
+    /// How many leading positions are observations: the positions after them
+    /// are silent samples (FR-504), which no activation anchors on.
+    pub(super) observed: usize,
     pub(super) clock: WindowClock,
     pub(super) clause_identity: String,
 }
@@ -141,17 +148,25 @@ impl TimestampedTrace {
                 })
                 .then_with(|| left.observation.cmp(&right.observation))
         });
-        let admitted = order
+        let admitted: Vec<TimestampedObservation> = order
             .iter()
             .filter_map(|index| positions.get(*index).cloned())
             .collect();
         Ok(Self {
+            observed: admitted.len(),
             positions: admitted,
             origin: order,
             progress,
+            asserted: progress,
             clock,
             clause_identity: clause_identity.into(),
         })
+    }
+
+    /// The number of positions that are observations; the rest are silent
+    /// samples.
+    pub fn observed(&self) -> usize {
+        self.observed
     }
 
     /// The number of positions.
