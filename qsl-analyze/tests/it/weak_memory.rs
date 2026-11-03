@@ -237,7 +237,7 @@ impl Case {
     ) {
         let outcome = check_protocol(
             ProtocolCheckRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject_within(selection, max_candidates, absent),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: None,
@@ -254,7 +254,7 @@ impl Case {
             &outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject_within(selection, max_candidates, absent),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer: None,
@@ -296,7 +296,7 @@ impl Case {
     ) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(selection),
                 item,
                 max_depth: None,
@@ -354,7 +354,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject,
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer,
@@ -386,7 +386,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(selection),
                 item,
                 max_store_buffer,
@@ -409,7 +409,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(selection),
                 item: ModelCheckItem::RaceFreedom,
                 max_store_buffer: None,

@@ -32,14 +32,14 @@ use qsl_replay::{
     TemporalCounterexample, TerminalValue,
 };
 use qsl_route::deadlock::{
-    ItemObligation, ModelTemporalItem, NoAnchor, ObligationKind, ProtocolTemporalItem,
+    ItemObligation, ModelTemporalItem, ObligationKind, ProtocolTemporalItem,
 };
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::request::{DerivedLimits, ItemKind, RequestItem};
 use qsl_semantics::check::Capability;
 use qsl_semantics::family::{ClaimExtent, Requirements};
 use quire_exact::Cancel;
-use quire_semantic_value::catalog::{CatalogCode, Category};
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::PropertyForm;
 use serde_json::{json, Value as Json};
 
@@ -1701,75 +1701,38 @@ fn one_clause_under_two_sets_of_resolved_models_is_two_items() {
     );
 }
 
-/// QSpec FR-368-AC-24 and AC-25: a protocol subject of a unit that selects
-/// no protocol profile, whose checked clause has no node (FR-322
-/// "Properties"), has no anchor. Its deadlock-freedom item, and its
-/// race-freedom item exactly where FR-438 derives it (a weak resolved model
-/// with a non-atomic access), are written as no request item and settled
-/// `unsupported` with `unsupported_projection`/
-/// `unsupported-requested-capability`, each detail naming the item kind and
-/// that the unit selects no protocol profile. Under `sc`, or with every
-/// access atomic, there is no race-freedom item at all, and in no case is
-/// there a time-lock-freedom item, written or settled.
+/// QSpec FR-368-AC-24 and AC-25: a protocol subject with a selected protocol
+/// profile receives its deadlock-freedom item but never a time-lock-freedom
+/// item. The protocol profile is required for the declaration to pass checking.
 #[trace("QSpec-TC-431", "QSpec-FR-368-AC-24")]
 #[trace("QSpec-TC-431", "QSpec-FR-368-AC-25")]
 #[test]
-fn a_protocol_subject_of_a_unit_with_no_protocol_profile_is_settled_unsupported() {
-    let case = Case::with_letters(
+fn a_protocol_subject_with_its_profile_gains_no_time_lock_freedom_item() {
+    let case = Case::protocol_profiled(
         &(contracts() + &protocol("SB", &message_passing("", "release", "acquire")) + NO_BOTH_ZERO),
         &MP,
     );
     let graph = case.checked().graph();
     let protocol = graph.protocol("SB").expect("SB");
-    assert_eq!(protocol.node(), None);
+    assert!(protocol.node().is_some());
     let clause = node_occurrence(&graph.temporal_clauses()[0]);
-    let code = CatalogCode::new("unsupported_projection", "unsupported-requested-capability");
-    let sc = [select("SB::Main::Both", MemoryModelName::Sc)];
-    let cases: [(&[MemorySelection], bool, &[ItemKind]); 3] = [
-        (
-            &ra(),
-            true,
-            &[ItemKind::DeadlockFreedom, ItemKind::RaceFreedom],
-        ),
-        (&sc, true, &[ItemKind::DeadlockFreedom]),
-        (&ra(), false, &[ItemKind::DeadlockFreedom]),
-    ];
-    for (selection, non_atomic_access, expected) in cases {
-        let subject = case.subject(selection);
-        let models = models_of(&subject);
-        let written = protocol_request(&[ProtocolTemporalItem {
-            occurrence: &clause,
-            subject: &subject.protocol,
-            protocol,
-            models: &models,
-            non_atomic_access,
-        }]);
-        let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
-        assert_eq!(kinds, [Some(ItemKind::Formula)], "{selection:?}");
-        let unanchored: Vec<_> = written
-            .unanchored()
-            .iter()
-            .map(|item| {
-                assert_eq!(item.subject, "SB");
-                assert_eq!(item.cause, NoAnchor::NoProtocolProfile);
-                assert_eq!(item.catalog_code(), code);
-                let detail = match item.kind {
-                    ItemKind::DeadlockFreedom => {
-                        "the deadlock-freedom item's protocol subject has no anchor: \
-                         the unit selects no protocol profile"
-                    }
-                    ItemKind::RaceFreedom => {
-                        "the race-freedom item's protocol subject has no anchor: \
-                         the unit selects no protocol profile"
-                    }
-                    other => panic!("no {other:?} item is derived here"),
-                };
-                assert_eq!(item.detail(), detail);
-                item.kind
-            })
-            .collect();
-        assert_eq!(unanchored, expected, "{selection:?} {non_atomic_access}");
-    }
+    let subject = case.subject(&ra());
+    let models = models_of(&subject);
+    let written = protocol_request(&[ProtocolTemporalItem {
+        occurrence: &clause,
+        subject: &subject.protocol,
+        protocol,
+        models: &models,
+        non_atomic_access: true,
+    }]);
+    assert!(written
+        .items()
+        .iter()
+        .any(|item| { item.item_kind() == Some(ItemKind::DeadlockFreedom) }));
+    assert!(!written
+        .items()
+        .iter()
+        .any(|item| { item.item_kind() == Some(ItemKind::TimeLockFreedom) }));
 }
 
 /// The EN-1 run over `case`'s `SB` under `selection` deciding `item`, its

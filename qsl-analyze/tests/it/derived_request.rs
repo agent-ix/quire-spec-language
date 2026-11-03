@@ -1054,8 +1054,8 @@ fn a_subject_reading_no_model_selection_has_no_derived_request_item() {
 }
 
 /// QSpec FR-368-AC-25 over a timed model: in the dense `Rpc` unit, which
-/// selects no protocol profile, the protocol `P` over `M::Call` is a protocol
-/// subject whose checked clause has no node. A request with an item over the
+/// selects the protocol profile, the protocol `P` over `M::Call` has its
+/// checked node. A request with an item over the
 /// model subject and one over `P` gives the model subject its
 /// deadlock-freedom and time-lock-freedom items, and `P` only its
 /// deadlock-freedom item, settled `unsupported` with no anchor
@@ -1065,10 +1065,10 @@ fn a_subject_reading_no_model_selection_has_no_derived_request_item() {
 fn a_protocol_subject_over_a_timed_model_gains_no_time_lock_freedom_item() {
     let world = rpc_claim(
         4,
-        INFINITE,
+        &format!("{INFINITE}{}", crate::litmus::PROTOCOL_PROFILE),
         "temporal NoLateReply using inf over (c: M::Call) clock \"model-steps\" on origin \
          { always holds(not c.late) }\n\
-         protocol P using v over (c: M::Call) on origin {\n\
+         protocol P using pp over (c: M::Call) on origin {\n\
          role w on M::Call;\n\
          run sequence Main { }\n\
          finish Done as (d: Boolean) { true };\n\
@@ -1076,7 +1076,7 @@ fn a_protocol_subject_over_a_timed_model_gains_no_time_lock_freedom_item() {
     );
     let graph = world.package.graph();
     let protocol = graph.protocol("P").expect("P");
-    assert_eq!(protocol.node(), None);
+    assert!(protocol.node().is_some());
     let clause = node_occurrence(&graph.temporal_clauses()[0]);
     let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
     let selections: BTreeSet<&str> = [PACKAGE].into_iter().collect();
@@ -1116,6 +1116,7 @@ fn a_protocol_subject_over_a_timed_model_gains_no_time_lock_freedom_item() {
             ("P", Some(ItemKind::Formula)),
             ("Rpc", Some(ItemKind::DeadlockFreedom)),
             ("Rpc", Some(ItemKind::TimeLockFreedom)),
+            ("P", Some(ItemKind::DeadlockFreedom)),
         ]
     );
     let unanchored: Vec<_> = written
@@ -1123,8 +1124,5 @@ fn a_protocol_subject_over_a_timed_model_gains_no_time_lock_freedom_item() {
         .iter()
         .map(|item| (item.subject, item.kind, item.cause))
         .collect();
-    assert_eq!(
-        unanchored,
-        [("P", ItemKind::DeadlockFreedom, NoAnchor::NoProtocolProfile)]
-    );
+    assert_eq!(unanchored, []);
 }

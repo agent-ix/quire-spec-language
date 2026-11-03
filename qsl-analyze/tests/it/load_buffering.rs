@@ -11,7 +11,7 @@ use qsl_replay::{
     RecordWarning, ResultLabel, SettlementBasis, TerminalValue, Truth,
 };
 
-use crate::litmus::{attempt, contracts, protocol, NO_BOTH_ZERO};
+use crate::litmus::{attempt, contracts, protocol, NO_BOTH_ZERO, NO_BOTH_ZERO_BOUNDED};
 use crate::weak_memory::{select, Case};
 
 /// The unit whose branch `t` is `t_body` and whose branch `s` stores `y`
@@ -23,7 +23,12 @@ fn unit(t_body: &str) -> String {
         attempt("Sy2", "w", "Cell::set", "relaxed", "IsY, StoreTwo"),
         attempt("Sx2", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
     );
-    contracts() + &protocol("SB", &run) + NO_BOTH_ZERO
+    let temporal = if t_body.contains("await ") {
+        NO_BOTH_ZERO_BOUNDED
+    } else {
+        NO_BOTH_ZERO
+    };
+    contracts() + &protocol("SB", &run) + temporal
 }
 
 fn load(node: &str, cell: &str, ordering: &str) -> String {
@@ -187,7 +192,7 @@ fn the_shapes_follow_every_path_through_a_branch() {
     );
     let awaiting = |after: &str, then: &str, timeout: &str| {
         format!(
-            "await Wait after {after} using v clock \"model-steps\" within [0,1] \
+            "await Wait after {after} using t0 clock \"model-steps\" within [0,1] \
              match event Seen by w as (seen: Boolean) {{ true }}; \
              then sequence T2 {{ {then} }} timeout sequence T3 {{ {timeout} }}"
         )

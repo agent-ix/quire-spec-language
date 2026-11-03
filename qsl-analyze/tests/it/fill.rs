@@ -263,18 +263,63 @@ pub(crate) fn unit_text(body: &str) -> String {
 
 /// [`unit_text`] with the further header `profiles` lines.
 pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
-    let (name, profile) = if body.contains(" using tb ") {
-        ("tb", "quire.temporal.event-position.false-extension/v1")
-    } else if body.contains(" using t0 clock ") {
-        ("t0", "quire.temporal.timed/v1")
+    let protocol_profile_p = body.contains(" using p ") && !profiles.contains("profile p ");
+    let protocol_profile_pp = body.contains(" using pp ") && !profiles.contains("profile pp ");
+    let protocol_profiles = match (protocol_profile_p, protocol_profile_pp) {
+        (true, true) => concat!(
+            "profile p = \"quire.protocol.finite-global/v1\";\n",
+            "profile pp = \"quire.protocol.finite-global/v1\";\n"
+        ),
+        (true, false) => PROTOCOL_PROFILE_P,
+        (false, true) => PROTOCOL_PROFILE,
+        (false, false) => "",
+    };
+    let has_bounded = body.contains(" using tb ");
+    let has_timed = body.contains(" using t0 clock ");
+    let (temporal_profiles, body) = if profiles.contains("profile t0 = ") {
+        ("", body.to_owned())
+    } else if has_bounded {
+        (
+            "profile tb = \"quire.temporal.event-position.false-extension/v1\";\n",
+            body.replace(" using t0 clock ", " using tb clock "),
+        )
+    } else if body.contains("clock \"model-time\"") {
+        (
+            "profile t0 = \"quire.temporal.complete/v1\";\n",
+            body.to_owned(),
+        )
+    } else if has_timed && body.contains("await ") {
+        (
+            "profile t0 = \"quire.temporal.event-position.false-extension/v1\";\n",
+            body.to_owned(),
+        )
+    } else if has_timed {
+        (
+            "profile t0 = \"quire.temporal.timed/v1\";\n",
+            body.to_owned(),
+        )
     } else {
-        ("t0", "quire.temporal.infinite-trace/v1")
+        (
+            "profile t0 = \"quire.temporal.infinite-trace/v1\";\n",
+            body.to_owned(),
+        )
+    };
+    let time_units = if body.contains("clock \"model-time\"") {
+        "dimension Time;\nunit ms : Time = rational(1, 1);\ntime M dense unit ms;\n"
+    } else {
+        ""
+    };
+    let model_profile = if time_units.is_empty() {
+        "profile v = \"quire.value.complete/v1\";\n"
+    } else {
+        "profile v = \"quire.model.complete/v1\";\n"
     };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
-         profile {name} = \"{profile}\";\n{profiles}\
-         model M = \"{PACKAGE}\";\n{body}"
+         {model_profile}\
+         {temporal_profiles}{profiles}{protocol_profiles}\
+         model M = \"{PACKAGE}\";\n\
+         {time_units}{body}"
     )
 }
 
@@ -319,15 +364,7 @@ pub(crate) fn tcb_01_event_position_selection(
 
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
-    let protocol_profile =
-        if body.contains("protocol R using p ") && !profiles.contains("profile p ") {
-            PROTOCOL_PROFILE_P
-        } else if body.contains("protocol ") && !profiles.contains("profile pp ") {
-            PROTOCOL_PROFILE
-        } else {
-            ""
-        };
-    package_with_name("package", &format!("{profiles}{protocol_profile}"), body)
+    package_with_name("package", profiles, body)
 }
 
 /// [`package_with`] with a distinct package identity.
@@ -358,16 +395,17 @@ pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) 
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the operation clauses parse");
-    let graph = PackageDeclarations::assemble(
+    let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         package_name.to_owned(),
         built,
         models,
         Vec::new(),
     )
-    .expect("the unit assembles")
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    .expect("the unit assembles");
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
 
@@ -375,7 +413,7 @@ pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) 
 /// `run`, the run control `run` and the finish constraint `finish`.
 pub(crate) fn protocol(name: &str, members: &str, run: &str, finish: &str) -> String {
     format!(
-        "protocol {name} using v over (k: M::Cell) on origin {{\n\
+        "protocol {name} using pp over (k: M::Cell) on origin {{\n\
          role w on M::Cell;\n\
          {members}\n\
          run {run}\n\
@@ -575,7 +613,7 @@ pub(crate) fn compiled(
 }
 
 /// [`compiled`] with the further header `profiles` lines.
-fn compiled_with(
+pub(crate) fn compiled_with(
     profiles: &str,
     body: &str,
 ) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {

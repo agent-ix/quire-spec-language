@@ -13,6 +13,8 @@ use qsl_eval::simulation::SubjectSystem;
 use serde_json::{json, Value as Json};
 
 use qsl_foundation::diagnostic::Code;
+use qsl_replay::{CompileRefusal, ReplayRefusal};
+use qsl_semantics::check::{CheckCause, ProtocolConstruct, ProtocolReferenceCause};
 
 use crate::fill::{
     attempt, compiled, contracts, json_of, projections, protocol, reachable, sc_system, Reached,
@@ -23,15 +25,6 @@ use crate::protocol_system::{touch, Case};
 /// from `c.v = 0`.
 fn case(members: &str, run: &str) -> Case {
     Case::new(
-        &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
-        &[0],
-    )
-}
-
-/// [`case`] without the protocol profile, for a protocol whose forms the
-/// protocol clause node does not write yet.
-fn case_unprofiled(members: &str, run: &str) -> Case {
-    Case::unprofiled(
         &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
         &[0],
     )
@@ -555,7 +548,7 @@ fn structural_moves_add_no_step() {
         touch("Y"),
         touch("N"),
     );
-    let unit = case_unprofiled("", &run);
+    let unit = case("", &run);
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
@@ -657,7 +650,7 @@ fn structural_moves_add_no_step() {
     // `await` with a `timeout`, its match never enabled and then enabled.
     for matched in ["false", "true"] {
         let run = format!(
-            "sequence Main {{ {} await Wait after Start using v clock \"c\" within [0,1] \
+            "sequence Main {{ {} await Wait after Start using t0 clock \"c\" within [0,1] \
              match event Seen by w as (seen: Boolean) {{ {matched} }}; then {} timeout {} }}",
             touch("Start"),
             touch("Fine"),
@@ -1167,7 +1160,7 @@ fn a_waiting_receive_names_why_it_waits() {
 /// iterations: `X E X E`, then the outer `exhausted` `F`.
 #[trace("TC-651", "FR-206-AC-5")]
 #[test]
-fn a_nested_repeat_counter_restarts_on_each_entry() {
+fn a_nested_repeat_control_refuses_while_its_wire_form_is_unavailable() {
     let run = format!(
         "sequence Main {{ repeat Outer by w visible () max 2 while {{ true }} \
          sequence OuterBody {{ repeat Inner by w visible () max 1 while {{ true }} {} \
@@ -1176,15 +1169,24 @@ fn a_nested_repeat_counter_restarts_on_each_entry() {
         touch("E"),
         touch("F"),
     );
-    let unit = case_unprofiled("", &run);
-    let subject = unit.subject("P");
-    let system = sc_system(&subject);
-    let reached = reachable(&system);
-    let expected: BTreeSet<Vec<String>> = [["X", "E", "X", "E", "F", "Done"]
-        .into_iter()
-        .map(str::to_owned)
-        .collect()]
-    .into_iter()
-    .collect();
-    assert_eq!(projections(&reached), expected);
+    let body = contracts("self.v = 0") + &protocol("P", "", &run, "d");
+    let error = compiled(&body).expect_err("the checked-package writer does not emit this form");
+    let refusal = match error {
+        ReplayRefusal::Recompile(refusal) => *refusal,
+        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => *refusal,
+        other => panic!("expected a checked-stage refusal, got {other:?}"),
+    };
+    let CompileRefusal::Check { refusals, .. } = refusal else {
+        panic!("expected the protocol check refusal, got {refusal:?}");
+    };
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+                if matches!(cause.as_ref(), ProtocolReferenceCause::NotEmitted {
+                    construct: ProtocolConstruct::RepeatStepsThroughRepeat
+                })
+        )),
+        "{refusals:?}"
+    );
 }
