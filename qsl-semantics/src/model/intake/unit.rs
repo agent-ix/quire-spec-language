@@ -737,6 +737,82 @@ pub fn admit_unit_with_cancel(
     })
 }
 
+/// Admit model selections from several source units together. An identity is
+/// normalized once across the unit list, while each unit-local alias and
+/// declaration span remains available in the aggregate `SelectedModels`.
+/// Repeating one identity inside a single unit retains the single-unit
+/// duplicate-selection refusal.
+pub fn admit_units_with_cancel(
+    selections_by_unit: &[&[ModelSelection]],
+    packages: &PackageInput,
+    limits: ModelNormalizationLimits,
+    cancel: &Cancel,
+) -> Result<SelectedModels, UnitIntakeRefusal> {
+    let mut selections = Vec::new();
+    let mut unique = BTreeMap::<String, ModelSelection>::new();
+    for unit in selections_by_unit {
+        let mut seen = BTreeMap::<&str, &ModelSelection>::new();
+        for selection in *unit {
+            if let Some(first) = seen.get(selection.identity.as_str()) {
+                let pair = [*first, selection];
+                let duplicate = admit_located(
+                    &pair,
+                    |candidate| candidate.identity.as_str(),
+                    packages,
+                    limits.intake,
+                );
+                let refusal = match duplicate {
+                    Err((selection, refusal)) => UnitIntakeRefusal {
+                        alias: selection.alias.clone(),
+                        identity: selection.identity.clone(),
+                        span: selection.span,
+                        cause: UnitIntakeCause::Refused(Refusals::new(refusal, Vec::new())),
+                    },
+                    Ok(_) => UnitIntakeRefusal {
+                        alias: selection.alias.clone(),
+                        identity: selection.identity.clone(),
+                        span: selection.span,
+                        cause: UnitIntakeCause::Invariant,
+                    },
+                };
+                return Err(refusal);
+            }
+            seen.insert(&selection.identity, selection);
+            unique
+                .entry(selection.identity.clone())
+                .or_insert_with(|| selection.clone());
+            selections.push(selection.clone());
+        }
+    }
+
+    let unique: Vec<_> = unique.into_values().collect();
+    let admitted = admit_unit_with_cancel(&unique, packages, limits, cancel)?;
+    let mut by_identity: BTreeMap<_, _> = unique
+        .into_iter()
+        .zip(admitted.entries)
+        .map(|(selection, model)| (selection.identity, model))
+        .collect();
+    let entries = selections
+        .into_iter()
+        .map(|selection| {
+            let mut model = by_identity
+                .get(&selection.identity)
+                .cloned()
+                .expect("each source model selection has one admitted identity");
+            model.alias = selection.alias;
+            model.span = selection.span;
+            model
+        })
+        .collect();
+    Ok(SelectedModels {
+        entries,
+        meter: admitted.meter,
+        exact_declarations: admitted.exact_declarations,
+        exact_fields: admitted.exact_fields,
+        tuple_declarations: admitted.tuple_declarations,
+    })
+}
+
 #[cfg(test)]
 mod selected_exact_identity_tests {
     use super::*;

@@ -102,7 +102,7 @@ use qsl_semantics::check::{
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{
-    admit_unit_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause,
+    admit_unit_with_cancel, admit_units_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause,
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
@@ -1131,10 +1131,10 @@ pub fn select_units(
         let selections: Vec<_> = admitted
             .units()
             .iter()
-            .flat_map(|unit| unit.unit().selections().models.iter().cloned())
+            .map(|unit| unit.unit().selections().models.as_slice())
             .collect();
         let models = charged(cancel, &mut work.i1, || {
-            admit_unit_with_cancel(&selections, packages, limits, cancel).map_err(|refusal| {
+            admit_units_with_cancel(&selections, packages, limits, cancel).map_err(|refusal| {
                 let source = admitted
                     .units()
                     .iter()
