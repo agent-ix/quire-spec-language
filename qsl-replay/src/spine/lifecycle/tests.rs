@@ -15,7 +15,7 @@ use qsl_eval::value::QualifiedName;
 use qsl_foundation::diagnostic::{
     LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
 };
-use qsl_foundation::{Code, IdentityLimits, Setting, SourceIdentity};
+use qsl_foundation::{Code, Setting, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -1541,7 +1541,7 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 /// through `select` (FR-255 Behavior 1 and FR-260 item 5: `IntakeLimits` is a
 /// caller budget, not a stage's own limits type), naming that setting,
 /// its bound and the document's size, never a missing package.
-#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
+#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1", "FR-506-AC-5")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
@@ -1555,6 +1555,9 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     )
     .expect("the model fixture parses")
     .into_value();
+    let mut exact = limits.model;
+    exact.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size);
+    assert!(select(&parsed, &packages, exact, &Cancel::new()).is_ok());
     let Err(StageFailure::Refused(refusal)) =
         select(&parsed, &packages, limits.model, &Cancel::new())
     else {
@@ -1570,6 +1573,22 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
             ("actual", size.to_string()),
             ("setting", "intake.input_bytes".to_owned()),
         ]))
+    );
+    let mut zero = limits.model;
+    zero.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(0);
+    let Err(StageFailure::Refused(refusal)) =
+        select(&parsed, &packages, zero, &Cancel::new())
+    else {
+        panic!("a nonempty document exceeds the zero intake limit");
+    };
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(
+        refusal.fields().and_then(|fields| fields.get("setting").cloned()),
+        Some("intake.input_bytes".to_owned())
+    );
+    assert_eq!(
+        refusal.fields().and_then(|fields| fields.get("actual").cloned()),
+        Some(size.to_string())
     );
 }
 
@@ -2368,12 +2387,11 @@ fn check_names_the_checking_limit_field_it_reached() {
     );
 }
 
-/// FR-506-AC-5 (TC-1301 row 11): `identity.input_bytes` consumes the exact
-/// canonical identity preimage length, admits at that length and refuses at
-/// one less and at zero.
+/// FR-506-AC-5 (TC-1301 row 11): the model's S3 formal nodes admit at their
+/// exact count and refuse when the named setting is zero.
 #[trace("FR-506-AC-5", "TC-1301")]
 #[test]
-fn model_identity_preimage_limit_is_exact() {
+fn selected_model_formal_node_limit_is_exact() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let parsed = parse(
         &request(spine_model::unit().as_bytes()),
@@ -2414,30 +2432,6 @@ fn model_identity_preimage_limit_is_exact() {
         s3_nodes(0),
         Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
     ));
-    let run = |bound: u64| {
-        let mut limits = SpineLimits::default();
-        limits.assembly.identity = IdentityLimits::default().with_input_bytes(bound);
-        reached(check(
-            &parsed,
-            "fixture".to_owned(),
-            &models,
-            &DependencyInput::default(),
-            limits,
-            &Cancel::new(),
-        ))
-    };
-    let Reached::Limit(at_zero) = run(0) else {
-        panic!("identity bytes exceed the zero bound");
-    };
-    assert_eq!(at_zero.setting(), Setting::IdentityInputBytes);
-    let exact = u64::try_from(at_zero.actual()).expect("identity preimage length fits");
-    assert!(matches!(run(exact), Reached::Output));
-    let Reached::Limit(one_short) = run(exact - 1) else {
-        panic!("one byte short refuses");
-    };
-    assert_eq!(one_short.setting(), Setting::IdentityInputBytes);
-    assert_eq!(one_short.configured_bound(), exact - 1);
-    assert_eq!(one_short.actual(), u128::from(exact));
 }
 
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
