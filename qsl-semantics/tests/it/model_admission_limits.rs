@@ -273,7 +273,7 @@ fn text_document(max_length: u64) -> Vec<u8> {
 fn a_text_max_length_above_the_contract_ir_ceiling_is_refused() {
     let at_ceiling = run(
         &text_document(1_048_576),
-        ModelNormalizationLimits::UNLIMITED,
+        ModelNormalizationLimits::default(),
     );
     if let Err(refusal) = &at_ceiling {
         let detail = format!("{refusal:?}");
@@ -284,7 +284,7 @@ fn a_text_max_length_above_the_contract_ir_ceiling_is_refused() {
     }
     let refusal = run(
         &text_document(1_048_577),
-        ModelNormalizationLimits::UNLIMITED,
+        ModelNormalizationLimits::default(),
     )
     .expect_err("1,048,577 exceeds the ceiling");
     let cause = refused_cause(&refusal);
