@@ -41,6 +41,9 @@ use quire_semantic_value::location::{Location, Origin};
 struct SpanMemo {
     reached: RefCell<HashMap<(usize, usize), Option<SpanId>>>,
     held: RefCell<Vec<Location>>,
+    /// The ancestry links `reach` has visited, so a test can bound the work.
+    #[cfg(test)]
+    visited: std::cell::Cell<usize>,
 }
 
 impl SpanMemo {
@@ -52,6 +55,8 @@ impl SpanMemo {
         let mut pending: Vec<(usize, usize)> = Vec::new();
         let mut node = spans.root();
         for (address, index) in location.ancestry() {
+            #[cfg(test)]
+            self.visited.set(self.visited.get() + 1);
             if let Some(known) = reached.get(&(address, tree)) {
                 node = (*known)?;
                 break;
@@ -950,6 +955,42 @@ mod tests {
         assert_eq!(checked.declaration_region(0), Some(form));
         // A location the unit does not read still resolves to none.
         assert_eq!(declarations.region(&body(&[3])), None);
+    }
+
+    /// FR-096-AC-1: one memo resolves every location of a deep body in
+    /// work linear in the body's size. Walking each location's ancestry
+    /// afresh would visit about `DEPTH * DEPTH / 2` links.
+    #[trace("FR-096-AC-1")]
+    #[test]
+    fn a_shared_memo_visits_each_ancestry_link_once_across_a_deep_body() {
+        const DEPTH: usize = 2_000;
+        let mut spans = ExpressionSpans::new(Span { start: 0, end: 1 }).unwrap();
+        let mut node = spans.root();
+        let mut location = body(&[]);
+        let mut locations = Vec::new();
+        for _ in 0..DEPTH {
+            node = spans.push_child(node, Span { start: 0, end: 1 }).unwrap();
+            location = location.child(0);
+            locations.push(location.clone());
+        }
+        let memo = crate::check::region::SpanMemo::default();
+        for location in &locations {
+            assert_eq!(memo.at(&spans, location), Some(Span { start: 0, end: 1 }));
+        }
+        assert!(
+            memo.visited.get() <= 2 * DEPTH,
+            "{} links visited for {DEPTH} nested locations",
+            memo.visited.get()
+        );
+        let separately: usize = locations
+            .iter()
+            .map(|location| {
+                let each = crate::check::region::SpanMemo::default();
+                each.at(&spans, location);
+                each.visited.get()
+            })
+            .sum();
+        assert!(separately > 100 * DEPTH, "{separately}");
     }
 
     /// SR-742 FND-001: a `SourceMap` embedding whose own body is a

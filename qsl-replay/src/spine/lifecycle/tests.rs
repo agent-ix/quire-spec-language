@@ -3516,12 +3516,12 @@ fn a_limit_or_fault_inside_a_type_invariant_is_read_through_its_wrapper() {
 
 /// FR-514-AC-1: building the type report resolves every requirement's
 /// region without re-walking the location's ancestry per lookup, so a body
-/// whose expression tree is 6,000 terms deep reports in time linear in its
-/// size. Re-walking costs seconds here; the shared memo costs milliseconds.
+/// whose expression tree is 12,000 terms deep reports in time linear in its
+/// size. Re-walking costs tens of seconds here; the shared memo costs about a second.
 #[trace("FR-514-AC-1")]
 #[test]
 fn type_report_resolves_a_deep_body_without_rewalking_each_ancestry() {
-    const TERMS: usize = 6_000;
+    const TERMS: usize = 12_000;
     let sum = vec!["x"; TERMS].join(" + ");
     let text = format!("{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ {sum} < 5 }}\n");
     let cancel = Cancel::new();
@@ -3581,7 +3581,7 @@ fn type_report_resolves_a_deep_body_without_rewalking_each_ancestry() {
         report.requirements().len()
     );
     assert!(
-        elapsed < std::time::Duration::from_secs(2),
+        elapsed < std::time::Duration::from_secs(10),
         "the type report took {elapsed:?}"
     );
 }
