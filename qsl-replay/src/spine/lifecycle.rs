@@ -714,25 +714,9 @@ pub struct CheckedUnit {
     protocol_failure: Option<ProtocolFailure>,
     static_subject: Result<StaticSubject, SubjectUnavailable>,
     build_provenance: BuildProvenance,
-    /// The formal source identity the caller selected for this unit
-    /// (FR-362 item 3), when it selected one.
-    formal_identity: Option<quire_contract_model::SourceIdentity>,
 }
 
 impl CheckedUnit {
-    /// This unit with the formal source identity the caller selected for it
-    /// (FR-362 item 3). The source inventory is issued under this identity.
-    #[must_use]
-    pub fn with_formal_identity(mut self, identity: quire_contract_model::SourceIdentity) -> Self {
-        self.formal_identity = Some(identity);
-        self
-    }
-
-    /// The formal source identity the caller selected, if it selected one.
-    pub fn formal_identity(&self) -> Option<&quire_contract_model::SourceIdentity> {
-        self.formal_identity.as_ref()
-    }
-
     /// The shared checked package used by the evaluator's retained closure.
     pub(crate) fn shared_package(&self) -> &Arc<pkg::CheckedPackage> {
         &self.package
@@ -1399,7 +1383,6 @@ pub fn check_units(
                 protocol_failure,
                 static_subject,
                 build_provenance,
-                formal_identity: None,
             });
         }
         *work = resolution.work;
@@ -1674,7 +1657,6 @@ fn check_with_context_and_temporal_selections(
             protocol_failure,
             static_subject,
             build_provenance,
-            formal_identity: None,
         };
         Ok(checked)
     })
