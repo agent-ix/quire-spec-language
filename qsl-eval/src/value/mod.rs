@@ -16,6 +16,8 @@ mod expression;
 // over the foreign-to-`value` `CheckedPackage` typestate, since an inherent
 // impl here is E0116: `CheckedPackage` is `qsl-package`'s own type (X-7).
 pub use expression::collection_write::{Provenance, WrittenCollection};
+pub(crate) use expression::evaluate_over_admitted_environment;
+pub use expression::object_environment_refusal;
 pub use expression::{
     admit_arguments, evaluate_activation_guard, evaluate_activation_guard_at_absent_key,
     evaluate_capture, evaluate_closed, evaluate_history_update, evaluate_protocol_slot,

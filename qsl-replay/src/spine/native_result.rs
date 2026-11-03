@@ -2085,6 +2085,7 @@ impl Disposition {
                     | super::RunRefusal::UnsupportedHelper(_)
                     | super::RunRefusal::Cancelled(_) => None,
                     super::RunRefusal::Supplied(stop) => qsl_eval::value::supplied_stop_cause(stop),
+                    super::RunRefusal::ObjectEnvironment(record) => Some(record.catalog.cause()),
                     super::RunRefusal::Storage { failure, .. } => membership_failure_cause(failure),
                 };
                 let mut record = RefusalWire::new(refusal.code().as_str(), cause);
@@ -2152,6 +2153,9 @@ impl Disposition {
                     | super::RunRefusal::Storage { position, .. } => {
                         record =
                             record.fields(BTreeMap::from([("position", position.to_string())]));
+                    }
+                    super::RunRefusal::ObjectEnvironment(admission) => {
+                        record = record.fields(admission.fields.clone());
                     }
                     super::RunRefusal::Fault(_)
                     | super::RunRefusal::Cancelled(_)

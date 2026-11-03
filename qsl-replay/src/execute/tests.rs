@@ -1801,7 +1801,7 @@ fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_rep
     for call in [false, true] {
         let mut meter = Meter::new(UNLIMITED);
         let arguments = vec![Value::Reference(reference.clone())];
-        let failure = if call {
+        let result = if call {
             package.call(
                 &QualifiedName::unqualified("Compare").unwrap(),
                 arguments,
@@ -1810,27 +1810,33 @@ fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_rep
             )
         } else {
             package.evaluate(&expression, arguments, &objects, &mut meter)
-        }
-        .expect("an out-of-type stored value is a refusal, not a call failure");
-        // QSL-1470 (FR-049-AC-2/AC-3): the stored -1 is caller input outside
-        // the declared `Int[0, 9]`; the read refuses it, so no equality-source
-        // fault reaches replay from caller input.
-        let quire_eval::FamilyOutcome::FamilyEvaluated(quire_eval::FamilyResult::Refused(cause)) =
-            failure.outcome
-        else {
-            panic!("an out-of-type stored value refuses");
         };
-        let code = cause.catalog_code();
+        // QSL-1565 (FR-049-AC-2/AC-3): the stored -1 is caller input outside
+        // the declared `Int[0, 9]`; the entry refuses the object environment
+        // before any charge, so no equality-source fault reaches replay from
+        // caller input.
+        let failure = result.expect_err("an out-of-type stored value refuses at entry");
+        assert_eq!(admitted_charge_points(&meter), &[] as &[ChargePoint]);
+        // Replay reports it as the typed object-environment refusal, not an
+        // internal fault (FR-049-AC-2).
+        let refusal = call_failure_to_replay_refusal(failure);
+        let ReplayRefusal::ObjectEnvironment(
+            super::object_environment::ObjectEnvironmentFailure::Admission(
+                qsl_semantics::model::observation::AdmissionFailure::Refused(record),
+            ),
+        ) = &refusal
+        else {
+            panic!("a typed object-environment refusal, not {refusal:?}");
+        };
         assert_eq!(
-            (code.code(), code.cause()),
+            (record.catalog.code(), record.catalog.cause()),
             ("invalid_runtime_input", "wrong-value-kind")
         );
-        let expected: &[ChargePoint] = if call {
-            &[ChargePoint::FunctionCall]
-        } else {
-            &[]
-        };
-        assert_eq!(admitted_charge_points(&meter), expected);
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some("number")
+        );
+        assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
     }
 }
 

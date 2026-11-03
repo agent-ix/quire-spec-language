@@ -384,6 +384,12 @@ impl ObjectEnvironment {
         self.witnesses(types, reference, field).next().is_some()
     }
 
+    /// Whether this environment holds any FR-106 check 6.5 out-of-range
+    /// witness, so its options and collections carry range-widened types.
+    pub fn holds_out_of_range(&self) -> bool {
+        !self.out_of_range.is_empty()
+    }
+
     /// The out-of-range witnesses recorded for `reference`'s slot for
     /// `field`.
     pub fn witnesses<'a>(
