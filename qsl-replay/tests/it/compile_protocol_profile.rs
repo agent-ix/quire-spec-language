@@ -136,8 +136,8 @@ fn a_selected_protocol_profile_reaches_the_emitted_lock() {
     );
 }
 
-/// A header profile in no catalog refuses, and dropping the selection leaves the reference with
-/// no `protocol_profile` law (no default is supplied).
+/// A header profile in no catalog refuses, and dropping the selection leaves the protocol use
+/// without its required profile (no default is supplied).
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
 fn an_unknown_or_missing_profile_binding_refuses() {
@@ -151,7 +151,7 @@ fn an_unknown_or_missing_profile_binding_refuses() {
     );
     assert_eq!(
         refusal_code(compile(&unit(None, &declarations))),
-        Code::MissingDeclaration
+        Code::UnknownRequiredFeature
     );
 }
 
