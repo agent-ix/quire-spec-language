@@ -28,10 +28,10 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
-    admit_parsed_unit_list, check, check_with_refinement_internals, execute, failure_of, package,
-    parse, preflight_unit_list, refusal_or_fault, select, temporal_selections_for_source,
-    AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits,
-    ParseRequest, ParsedUnitSource,
+    admit_parsed_unit_list, check, check_units, check_with_refinement_internals, execute,
+    failure_of, package, parse, preflight_unit_list, refusal_or_fault, select,
+    temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest,
+    FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -706,6 +706,57 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     };
     assert_eq!(declaration.kind(), NodeTag::Function);
     assert!(declaration.value_type().is_some());
+}
+
+/// FR-480-AC-2/AC-8 and FR-514-AC-2: aggregate type resolution returns two
+/// checked units sharing the package graph, each with only its own report.
+#[trace("FR-480-AC-2", "FR-480-AC-8", "FR-514-AC-2")]
+#[test]
+fn aggregate_check_returns_source_bound_units_and_reports() {
+    use qsl_semantics::check::NodeTag;
+
+    static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
+    static SOURCE_B: OnceLock<SourceIdentity> = OnceLock::new();
+    let source_a = SOURCE_A
+        .get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle", "unit-a", "unit-a:1"));
+    let source_b = SOURCE_B
+        .get_or_init(|| SourceIdentity::new("agent-ix", "test:lifecycle", "unit-b", "unit-b:1"));
+    let a = parse_named(
+        source_a,
+        format!("{HEADER}record Point {{ x: Integer; }}").as_bytes(),
+    );
+    let b = parse_named(
+        source_b,
+        format!("{HEADER}function px using v(p: Point): Integer pure {{ p.x }}").as_bytes(),
+    );
+    let dependencies = DependencyInput::default();
+    let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
+        .expect("the distinct source units are admitted");
+    let checked = check_units(
+        &admitted,
+        "aggregate-package".to_owned(),
+        &AdmittedModels::default(),
+        &dependencies,
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("cross-unit type references check")
+    .into_value();
+    let [checked_a, checked_b] = checked.as_slice() else {
+        panic!("one checked unit per canonical source is returned");
+    };
+    assert_eq!(checked_a.source().identity(), source_a);
+    assert_eq!(checked_b.source().identity(), source_b);
+    assert!(Arc::ptr_eq(
+        checked_a.shared_package(),
+        checked_b.shared_package()
+    ));
+    assert_eq!(checked_a.type_report().declarations().len(), 1);
+    assert_eq!(checked_b.type_report().declarations().len(), 1);
+    assert_eq!(
+        checked_b.type_report().declarations()[0].kind(),
+        NodeTag::Function
+    );
 }
 
 /// FR-503-AC-3 (TC-1298 row 4): the compile continuation emits clean

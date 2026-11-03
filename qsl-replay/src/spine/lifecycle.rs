@@ -700,6 +700,7 @@ impl AdmittedModels {
 pub struct CheckedUnit {
     package: Arc<pkg::CheckedPackage>,
     source: Source,
+    sources: Vec<Source>,
     type_report: TypeReport,
     libraries: Vec<Source>,
     /// The library identity of each entry of `libraries`, in the same order.
@@ -821,6 +822,7 @@ impl TypeDeclaration {
 pub struct TypeRequirement {
     occurrence: qsl_foundation::source::provenance::OccurrenceKey,
     record: qsl_semantics::check::RequirementRecord,
+    span: Option<qsl_foundation::Span>,
 }
 
 impl TypeRequirement {
@@ -832,6 +834,11 @@ impl TypeRequirement {
     /// The package's checked requirement record.
     pub fn record(&self) -> &qsl_semantics::check::RequirementRecord {
         &self.record
+    }
+
+    /// The requirement's source span, resolved through its CheckedUnit.
+    pub fn span(&self) -> Option<qsl_foundation::Span> {
+        self.span
     }
 }
 
@@ -898,9 +905,21 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
                 .node(occurrence.node().clone())
                 .is_some_and(owns)
         })
-        .map(|(occurrence, record)| TypeRequirement {
-            occurrence: occurrence.clone(),
-            record: record.clone(),
+        .map(|(occurrence, record)| {
+            let span = graph
+                .occurrence(occurrence.node().clone(), occurrence.origin())
+                .and_then(|location| graph.region(location))
+                .and_then(|region| {
+                    Some(qsl_foundation::Span {
+                        start: usize::try_from(region.start()).ok()?,
+                        end: usize::try_from(region.end()).ok()?,
+                    })
+                });
+            TypeRequirement {
+                occurrence: occurrence.clone(),
+                record: record.clone(),
+                span,
+            }
         })
         .collect();
     let obligations = graph
@@ -1077,6 +1096,100 @@ pub fn check(
         limits,
         cancel,
     )
+}
+
+/// S3 and S4: assemble an admitted source-unit list as one package and
+/// return one source-bound checked unit per canonical source. Every returned
+/// unit shares the same checked package; its report and `source()` are bound
+/// to its own parse. Imports are resolved over the combined list.
+pub fn check_units(
+    admitted: &AdmittedUnitList,
+    package_name: String,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<Vec<CheckedUnit>>, FrontEndFailure> {
+    let source_len = |identity: &SourceIdentity| {
+        admitted
+            .units()
+            .iter()
+            .find(|unit| unit.source().identity() == identity)
+            .map(|unit| unit.source().text().len())
+            .or_else(|| {
+                dependencies
+                    .libraries
+                    .values()
+                    .find(|library| &library.source == identity)
+                    .map(|library| library.bytes.len())
+            })
+    };
+    stage(cancel, &source_len, |work| {
+        for unit in admitted.units() {
+            dependencies
+                .check_unit_owner(unit.source().identity())
+                .map_err(|refusal| Box::new(CompileRefusal::DependencyInput(refusal)))?;
+        }
+        let first = admitted
+            .units()
+            .first()
+            .expect("an AdmittedUnitList is non-empty");
+        let mut resolution = Resolution {
+            dependencies,
+            packages: &models.packages,
+            continuation_source: first.source().reference().clone(),
+            limits,
+            cancel,
+            temporal_selections: &[],
+            active: Vec::new(),
+            compiled: BTreeMap::new(),
+            import_edges: 0,
+            source_bytes: 0,
+            admitted: AdmittedPackages::default(),
+            work: StageWork::default(),
+        };
+        let package = resolution.check_unit_list(admitted, package_name, models.models.clone())?;
+        resolution.check_unimported_refinement_values()?;
+        let package = Arc::new(package);
+        let sources: Vec<_> = admitted
+            .units()
+            .iter()
+            .map(|unit| unit.source().clone())
+            .collect();
+        let mut library_packages = BTreeMap::new();
+        let (library_names, libraries): (Vec<_>, Vec<_>) = resolution
+            .compiled
+            .into_iter()
+            .map(|(name, library)| {
+                library_packages.insert(name.clone(), library.emitted.clone());
+                (name, library.source.clone())
+            })
+            .unzip();
+        let mut checked_units = Vec::with_capacity(sources.len());
+        for (parsed, source) in admitted.units().iter().zip(sources) {
+            let (protocol_results, protocol_failure) =
+                protocol_check_outcome(parsed, package.graph());
+            if let Some(refusal) = protocol_failure.as_ref() {
+                return Err(StageError::with_protocol_results(
+                    Box::new(refusal.to_refusal()),
+                    protocol_results,
+                ));
+            }
+            checked_units.push(CheckedUnit {
+                package: Arc::clone(&package),
+                type_report: type_report(package.graph(), source.reference()),
+                source,
+                sources: sources.clone(),
+                libraries: libraries.clone(),
+                library_names: library_names.clone(),
+                library_packages: Arc::new(library_packages.clone()),
+                protocol_results,
+                protocol_failure,
+            });
+        }
+        *work = resolution.work;
+        Ok(checked_units)
+    })
 }
 
 /// S3 and S4 with the unit's unchecked internal-list value and each
@@ -1304,6 +1417,7 @@ fn check_with_context_and_temporal_selections(
         let checked = CheckedUnit {
             package,
             source: parsed.source().clone(),
+            sources: vec![parsed.source().clone()],
             type_report,
             libraries,
             library_names,
@@ -1360,7 +1474,16 @@ pub fn package_with_temporal_selections(
                     .into());
                 }
             }
-            let own = temporal_selections_for_source(selections, checked.source.reference());
+            let own: Vec<_> = selections
+                .iter()
+                .filter(|selection| {
+                    checked
+                        .sources
+                        .iter()
+                        .any(|source| source.reference() == &selection.source)
+                })
+                .cloned()
+                .collect();
             let protocol_emission = charged(cancel, &mut work.e4, || {
                 qsl_package::emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
                     &checked.package,
@@ -1421,7 +1544,9 @@ pub fn package_with_temporal_selections(
                     ));
                 }
             };
-            let sources = std::iter::once(&checked.source)
+            let sources = checked
+                .sources
+                .iter()
                 .chain(&checked.libraries)
                 .cloned()
                 .collect();
@@ -2368,6 +2493,7 @@ struct Frame {
     package_name: String,
     raw: RawSourceRef,
     unit: ParsedUnit,
+    source_units: Vec<ParsedUnitSource>,
     models: SelectedModels,
     /// Accepted points supplied for the root unit. Library frames always
     /// carry an empty map because they compile independently.
@@ -2393,9 +2519,32 @@ impl Frame {
             package_name,
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
+            source_units: vec![parsed.clone()],
             models,
             execution_points,
             refinement_internals,
+            next: 0,
+            admitted: Vec::with_capacity(imports),
+            links: Vec::with_capacity(imports),
+        }
+    }
+
+    fn new_units(
+        admitted: &AdmittedUnitList,
+        package_name: String,
+        models: SelectedModels,
+    ) -> Self {
+        let source_units = admitted.units.clone();
+        let unit = ParsedUnit::combine(source_units.iter().map(|source| source.unit.clone()));
+        let imports = unit.selections().imports.len();
+        Self {
+            package_name,
+            raw: source_units[0].source().reference().clone(),
+            unit,
+            source_units,
+            models,
+            execution_points: super::StateClauseExecutionPoints::new(),
+            refinement_internals: None,
             next: 0,
             admitted: Vec::with_capacity(imports),
             links: Vec::with_capacity(imports),
@@ -2544,6 +2693,7 @@ impl<'a> Resolution<'a> {
         let limits = self.limits;
         let raw = frame.raw.clone();
         let unit = frame.unit.clone();
+        let source_units = frame.source_units.clone();
         let package_name = frame.package_name.clone();
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
@@ -2559,18 +2709,32 @@ impl<'a> Resolution<'a> {
         let cancel = self.cancel;
         let execution_points = frame.execution_points.clone();
         let mut declarations = charged(cancel, &mut self.work.s3, || {
-            PackageDeclarations::assemble_with_execution_points_and_cancel(
-                raw.clone(),
-                package_name,
-                unit,
-                models,
-                admitted,
-                limits.assembly,
-                qsl_semantics::check::AssemblyRun {
+            if source_units.len() > 1 {
+                PackageDeclarations::assemble_units(
+                    package_name,
+                    source_units
+                        .iter()
+                        .map(|source| (source.source().reference().clone(), source.unit().clone()))
+                        .collect(),
+                    models,
+                    admitted,
+                    limits.assembly,
                     cancel,
-                    execution_points,
-                },
-            )
+                )
+            } else {
+                PackageDeclarations::assemble_with_execution_points_and_cancel(
+                    raw.clone(),
+                    package_name,
+                    unit,
+                    models,
+                    admitted,
+                    limits.assembly,
+                    qsl_semantics::check::AssemblyRun {
+                        cancel,
+                        execution_points,
+                    },
+                )
+            }
         })
         .map_err(|refusal| {
             Box::new(CompileRefusal::Assembly {
@@ -2651,13 +2815,27 @@ impl<'a> Resolution<'a> {
         execution_points: super::StateClauseExecutionPoints,
         refinement_internals: Option<serde_json::Value>,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(
+        let root = Frame::new(
             parsed,
             package_name,
             models,
             execution_points,
             refinement_internals,
         );
+        self.check_frame(root)
+    }
+
+    fn check_unit_list(
+        &mut self,
+        admitted: &AdmittedUnitList,
+        package_name: String,
+        models: SelectedModels,
+    ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
+        let root = Frame::new_units(admitted, package_name, models);
+        self.check_frame(root)
+    }
+
+    fn check_frame(&mut self, mut root: Frame) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

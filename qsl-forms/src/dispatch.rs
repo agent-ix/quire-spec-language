@@ -174,22 +174,22 @@ pub struct ProtocolFormsRefusal {
 impl ParsedUnit {
     /// Combine source units for package-level assembly. The caller is
     /// responsible for admitting each source owner and for retaining the
-    /// originating owner of every form; this operation only preserves the
-    /// forms and selections in the supplied canonical order.
+    /// originating owner of every form; this operation retains the shared
+    /// profile selection once while preserving per-unit imports, model
+    /// selections and forms in the supplied canonical order.
     pub fn combine(units: impl IntoIterator<Item = Self>) -> Self {
         let mut combined = Self {
             edition: None,
             selections: SourceSelections::default(),
             forms: Vec::new(),
         };
+        let mut first = true;
         for unit in units {
-            if combined.edition.is_none() {
+            if first {
                 combined.edition = unit.edition;
+                combined.selections.profiles = unit.selections.profiles;
+                first = false;
             }
-            combined
-                .selections
-                .profiles
-                .extend(unit.selections.profiles);
             combined.selections.imports.extend(unit.selections.imports);
             combined.selections.models.extend(unit.selections.models);
             combined.forms.extend(unit.forms);
