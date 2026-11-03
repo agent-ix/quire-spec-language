@@ -42,7 +42,7 @@ use serde_json::Value as Json;
 
 use crate::fill::{
     attempt, class_of, contracts, document, instance, json_of, model_subject, package_with,
-    reachable, sc_system, source_memory, unit_text, universe, v, Documents, Reached, PACKAGE,
+    reachable, sc_system, source_memory, universe, v, Documents, Reached, PACKAGE,
 };
 use crate::model_settle::{envelope_at, request};
 use crate::protocol_compensation::{pay_run, refund, REFUND};
@@ -58,17 +58,18 @@ pub(crate) const EACH: &str = "on each (x: M::Level) when (true)";
 /// the role declarations `roles`, the members `members` and the control
 /// `run`. `bump` has a precondition that is false in every state.
 pub(crate) fn unit(activation: &str, roles: &str, members: &str, run: &str) -> String {
-    contracts("self.v = 0")
+    let body = contracts("self.v = 0")
         + "pre StuckPre using v on M::Cell::bump { false }\n"
         + &format!(
-            "protocol R using v over (k: M::Cell) {activation} {{\n\
+            "protocol R using p over (k: M::Cell) {activation} {{\n\
              role w on M::Cell;\n\
              {roles}\n\
              {members}\n\
              run {run}\n\
              finish Done as (d: Boolean) {{ true }};\n\
              }}\n"
-        )
+        );
+    body
 }
 
 /// A role `r` with `max` live instances and `lifetime`.
@@ -203,7 +204,8 @@ impl World {
         letters: &dyn ModelLetters,
         max_live_instances: Option<u64>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-        let unit = unit_text(&self.body).into_bytes();
+        let unit =
+            crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE_P, &self.body).into_bytes();
         let node = &self.checked.graph().temporal_clauses()[0];
         let clause_node = node.identity().clone();
         let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
@@ -687,10 +689,10 @@ fn a_receive_with_nothing_queued_owned_by_a_role_with_no_instance_gives_no_role_
 /// ADR-027 §7.1's `Pay` with its template `Refund` taken `by r` and the
 /// replicated role `r` of `lifetime`.
 fn pay_by_role(lifetime: &str) -> String {
-    contracts("self.v = 0")
+    let body = contracts("self.v = 0")
         + REFUND
         + &format!(
-            "protocol R using v over (k: M::Cell) on origin {{\n\
+            "protocol R using p over (k: M::Cell) on origin {{\n\
              role w on M::Cell;\n\
              {}\n\
              {}\n\
@@ -698,9 +700,12 @@ fn pay_by_role(lifetime: &str) -> String {
              finish Done as (d: Boolean) {{ d }};\n\
              }}\n",
             role(1, lifetime),
-            refund("Main::Paid", "dec", 1, "false", "never", "true").replace("by w on", "by r on"),
+            refund("Main::Paid", "dec", 1, "false", "never", "true")
+                .replace("by w on", "by r on")
+                .replace(" using v clock", " using t0 clock"),
             pay_run("")
-        )
+        );
+    body
 }
 
 /// The compensation thread of `R::Refund` with ordinal 0.
@@ -1375,7 +1380,7 @@ fn an_each_fairness_member_over_a_role_owned_node_emits_as_over_any_node() {
     let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
                  on origin { fair weak each R::Work; eventually holds(k.v = 1) }\n";
     let body = unit(ORIGIN, &role(1, "workflow"), "", run) + claim;
-    let checked = package_with(crate::fill::PROTOCOL_PROFILE, &body);
+    let checked = package_with(crate::fill::PROTOCOL_PROFILE_P, &body);
     let clause = checked.graph().temporal_clauses()[0].clause();
     assert!(matches!(
         clause

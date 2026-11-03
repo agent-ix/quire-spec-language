@@ -799,14 +799,12 @@ fn bounds(interval: &w::Nullable<w::Interval>, work: &mut Work) -> Result<(i64, 
 /// caller can repair by supplying a different trace.
 fn integer(value: &w::Integer, work: &mut Work) -> Result<i64, Error> {
     match value.checked() {
-        Ok(crate::protocol_artifact::ProtocolNumber::Integer(value)) => Ok(value.value()),
-        Ok(crate::protocol_artifact::ProtocolNumber::Rational(_)) | Err(_) => {
-            Err(Refusal::Binding {
-                dimension: Dimension::Interval,
-                subject: work.subject,
-            }
-            .into())
+        Ok(crate::number::ProtocolNumber::Integer(value)) => Ok(value.value()),
+        Ok(crate::number::ProtocolNumber::Rational(_)) | Err(_) => Err(Refusal::Binding {
+            dimension: Dimension::Interval,
+            subject: work.subject,
         }
+        .into()),
     }
 }
 

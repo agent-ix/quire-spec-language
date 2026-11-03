@@ -13,6 +13,8 @@ use qsl_eval::simulation::SubjectSystem;
 use serde_json::{json, Value as Json};
 
 use qsl_foundation::diagnostic::Code;
+use qsl_replay::{CompileRefusal, ReplayRefusal};
+use qsl_semantics::check::{CheckCause, ProtocolConstruct, ProtocolReferenceCause};
 
 use crate::fill::{
     attempt, compiled, contracts, json_of, projections, protocol, reachable, sc_system, Reached,
@@ -28,10 +30,9 @@ fn case(members: &str, run: &str) -> Case {
     )
 }
 
-/// [`case`] without the protocol profile, for a protocol whose forms the
-/// protocol clause node does not write yet.
-fn case_unprofiled(members: &str, run: &str) -> Case {
-    Case::unprofiled(
+/// A runtime-only case for constructs the selected wire profile cannot emit.
+fn case_without_protocol_profile_selection(members: &str, run: &str) -> Case {
+    Case::new_without_protocol_profile_selection(
         &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
         &[0],
     )
@@ -555,7 +556,7 @@ fn structural_moves_add_no_step() {
         touch("Y"),
         touch("N"),
     );
-    let unit = case_unprofiled("", &run);
+    let unit = case("", &run);
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
@@ -657,7 +658,7 @@ fn structural_moves_add_no_step() {
     // `await` with a `timeout`, its match never enabled and then enabled.
     for matched in ["false", "true"] {
         let run = format!(
-            "sequence Main {{ {} await Wait after Start using v clock \"c\" within [0,1] \
+            "sequence Main {{ {} await Wait after Start using t0 clock \"c\" within [0,1] \
              match event Seen by w as (seen: Boolean) {{ {matched} }}; then {} timeout {} }}",
             touch("Start"),
             touch("Fine"),
@@ -1176,15 +1177,47 @@ fn a_nested_repeat_counter_restarts_on_each_entry() {
         touch("E"),
         touch("F"),
     );
-    let unit = case_unprofiled("", &run);
+    let unit = case_without_protocol_profile_selection("", &run);
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
-    let expected: BTreeSet<Vec<String>> = [["X", "E", "X", "E", "F", "Done"]
+    let expected: BTreeSet<Vec<String>> = [["X", "E", "X", "E", "F", "Done"]]
         .into_iter()
-        .map(str::to_owned)
-        .collect()]
-    .into_iter()
-    .collect();
+        .map(|steps| steps.into_iter().map(str::to_owned).collect())
+        .collect();
     assert_eq!(projections(&reached), expected);
+}
+
+/// The package emitter still reports its separate nested-repeat wire gap.
+/// This does not replace TC-651's direct in-memory runtime coverage above.
+#[test]
+fn nested_repeat_emission_reports_its_unavailable_wire_form() {
+    let run = format!(
+        "sequence Main {{ repeat Outer by w visible () max 2 while {{ true }} \
+         sequence OuterBody {{ repeat Inner by w visible () max 1 while {{ true }} {} \
+         exhausted {} }} exhausted {} }}",
+        touch("X"),
+        touch("E"),
+        touch("F"),
+    );
+    let body = contracts("self.v = 0") + &protocol("P", "", &run, "d");
+    let error = compiled(&body).expect_err("the checked-package writer does not emit this form");
+    let refusal = match error {
+        ReplayRefusal::Recompile(refusal) => *refusal,
+        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => *refusal,
+        other => panic!("expected a checked-stage refusal, got {other:?}"),
+    };
+    let CompileRefusal::Check { refusals, .. } = refusal else {
+        panic!("expected the protocol check refusal, got {refusal:?}");
+    };
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+                if matches!(cause.as_ref(), ProtocolReferenceCause::NotEmitted {
+                    construct: ProtocolConstruct::RepeatStepsThroughRepeat
+                })
+        )),
+        "{refusals:?}"
+    );
 }

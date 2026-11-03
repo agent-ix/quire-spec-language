@@ -15,9 +15,8 @@ use crate::support::native_protocol as setup;
 use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::protocol_artifact::{
-    native, v2, wire as w, AdmittedPackage, Limits, NumberWire,
-};
+use quire_spec_language::number::NumberWire;
+use quire_spec_language::protocol_artifact::{native, v2, wire as w, AdmittedPackage, Limits};
 use quire_spec_language::temporal::{
     self, Closure, Dimension, Error, Refusal, Subject, Support, Unmatched,
 };

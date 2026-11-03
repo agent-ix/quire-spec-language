@@ -4,7 +4,7 @@
 //! These records carry untrusted claims. Deserializing or constructing one does
 //! not establish source correspondence, family admission or an accepted artifact.
 
-use super::{NumberError, NumberWire, ProtocolNumber};
+use crate::number::{NumberError, NumberWire, ProtocolNumber};
 use qsl_foundation::serde_object::from_object;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 

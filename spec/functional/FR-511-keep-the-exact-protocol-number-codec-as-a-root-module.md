@@ -72,10 +72,9 @@ Evidence:
   `protocol_artifact` is deleted.
 - The module SHALL live at `src/number.rs` with no dependency on
   `protocol_artifact`, and every consumer listed above that stays SHALL import
-  `crate::number`. The re-export `protocol_artifact::ProtocolNumber` that
-  quire-protocol imports stays only until QSL-1501 repoints quire-protocol, and
-  is deleted, with `protocol_artifact::number`, by the change that deletes
-  `protocol_artifact`; no other alias is kept.
+  `crate::number`. `protocol_artifact` re-exports nothing of the codec and has
+  no `number` path; quire-protocol imports `quire_spec_language::number` when it
+  next bumps its pinned revision (QSL-1501).
 - The codec SHALL NOT be used by the spine's checked-package writers or
   readers.
 - The change that removes the module SHALL wait until the successor QSL-1506 ports is
@@ -89,7 +88,7 @@ Evidence:
 | FR-511-AC-1 | After `protocol_artifact` is deleted, `quire_spec_language::number::{ProtocolNumber, ExactInteger, ExactRational, NumberComponent, NumberError, NumberWire, NUMERIC_PROFILE}` resolve; `NUMERIC_PROFILE` equals `quire.protocol.numeric/1`; the path `protocol_artifact::number` does not resolve, and the kept consumers import `crate::number`. | Test (TC-1306) |
 | FR-511-AC-2 | The TC-117 vector groups (FR-038-AC-1 to AC-5) pass at the new path with their expected strings, kinds and refusals unchanged. | Test (TC-1306) |
 | FR-511-AC-3 | No `qsl-*` crate's source and no checked-package v2 writer or reader refers to the module or to `quire.protocol.numeric/1`. | Test (TC-1306) |
-| FR-511-AC-4 | FR-038-AC-1 to AC-5 each have a tagged test after the deletion (`quire matrix` lists none untagged). | Test (TC-1306) |
+| FR-511-AC-4 | FR-038-AC-1 to AC-5 each have a tagged test after the deletion (every one is tagged by `tests/it/protocol_number.rs`). | Test (TC-1306) |
 
 ## Dependencies
 

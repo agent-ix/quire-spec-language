@@ -7,8 +7,7 @@ use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode
 
 pub(in crate::emit::tests) const PROFILES_W: &str =
     "profile P = \"quire.protocol.finite-global/v1\";\n\
-                         profile T = \"quire.temporal.infinite-trace/v1\";\n";
-
+                        profile T = \"quire.temporal.event-position.false-extension/v1\";\n";
 /// W's order, payment, shipment and refund domain, using the test domain's
 /// existing semantic-IR envelope and object declaration shape.
 pub(in crate::emit::tests) fn document() -> Vec<u8> {
@@ -105,7 +104,7 @@ pub(in crate::emit::tests) const W: &str = r#"
 pre CanCharge using v on M::Payment::charge { true }
 post ChargePost using v on M::Payment::charge { true }
 temporal OrderClosureBounded using T over (view: M::OrderView) clock "model-steps"
-  on origin { always true }
+  on origin { always[0,3] true }
 protocol OrderFlow using P over (view: M::OrderView)
 on each (opened: M::OrderStarted) {
   capture order: Integer = opened.order;
@@ -159,7 +158,10 @@ on each (opened: M::OrderStarted) {
 /// inside a bounded repeat, while two refund obligations refer to that exact
 /// successful effect.
 pub(in crate::emit::tests) fn tc134_source() -> String {
-    let source = W.to_owned();
+    let source = W.replace(
+        "using E clock \\\"refund-clock\\\"",
+        "using T clock \\\"refund-clock\\\"",
+    );
     let source = source.replace(
         "  terminal any;",
         "  compensate PartialRefund for Main::Applied as (partial: M::ChargeResult)\n\
@@ -667,8 +669,8 @@ fn complete_w_activation_map_matches_read_back() {
     }
     for text in [W.to_owned(), format!("// reformatted W\n{}", W.replace(';', ";\n\n")),
         W.replace("requires temporal OrderClosureBounded;", "requires temporal OrderClosureBounded;\nrequires temporal OrderClosureBounded;"),
-        format!("temporal RefundBounded using T over (view: M::OrderView) clock \"refund-clock\" on origin {{ eventually false }}\n{W}"),
-        format!("temporal Unrequired using T over (view: M::OrderView) clock \"model-steps\" on origin {{ eventually false }}\n{W}"),
+        format!("temporal RefundBounded using T over (view: M::OrderView) clock \"refund-clock\" on origin {{ eventually[0,1] holds(false) }}\n{W}"),
+        format!("temporal Unrequired using T over (view: M::OrderView) clock \"model-steps\" on origin {{ eventually[0,1] holds(false) }}\n{W}"),
     ] {
         let variant = lower_with(document(), PROFILES_W, &text);
         assert!(variant.verified, "{}", variant.text);
@@ -681,7 +683,7 @@ fn complete_w_activation_map_matches_read_back() {
     );
     assert!(empty.verified, "{}", empty.text);
     assert!(activation_rows(&empty).is_empty());
-    let two = lower_with(document(), PROFILES_W, &format!("temporal OrderPaidBounded using T over (view: M::OrderView) clock \"model-steps\" on origin {{ eventually false }}\n{}", W.replace("requires temporal OrderClosureBounded;", "requires temporal OrderClosureBounded;\nrequires temporal OrderPaidBounded;")));
+    let two = lower_with(document(), PROFILES_W, &format!("temporal OrderPaidBounded using T over (view: M::OrderView) clock \"model-steps\" on origin {{ eventually[0,1] holds(false) }}\n{}", W.replace("requires temporal OrderClosureBounded;", "requires temporal OrderClosureBounded;\nrequires temporal OrderPaidBounded;")));
     assert!(two.verified, "{}", two.text);
     let rows = activation_rows(&two);
     assert_eq!(rows.len(), 2);
@@ -850,8 +852,9 @@ fn a_canonical_relationship_binds_through_real_model_intake() {
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = "language \"ix:native\" edition \"1-draft\";\n\
                 profile P = \"quire.model.complete/v1\";\n\
+                profile p = \"quire.protocol.finite-global/v1\";\n\
                 model M = \"acme/orders\";\n\
-                protocol OrderFlow using P over (view: M::OrderView) on origin {\n\
+                protocol OrderFlow using p over (view: M::OrderView) on origin {\n\
                 role Orders on M::OrderView;\n\
                 relationship ShipmentOwner = M::OrderShipment;\n\
                 run sequence Main {}\n\
@@ -917,7 +920,6 @@ fn a_canonical_relationship_binds_through_real_model_intake() {
 pub(in crate::emit::tests) const TIMED_PROFILES_W: &str =
     "profile P = \"quire.protocol.finite-global/v1\";\n\
                          profile T = \"quire.temporal.event-position.false-extension/v1\";\n";
-
 /// The v2 checked-package event-position clock the timed TC-134 fixture
 /// selects for its temporal declarations.
 pub(in crate::emit::tests) fn tc134_clock() -> quire_contract_model::ClockConfiguration {
@@ -964,6 +966,16 @@ pub(in crate::emit::tests) fn tc134_selections(
             .obligations
             .compensations
             .iter()
+            .filter(|template| {
+                matches!(
+                    template.temporal_profile,
+                    Some(
+                        qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
+                            | qsl_semantics::check::TemporalProfile::FixedSampleFalseExtension
+                            | qsl_semantics::check::TemporalProfile::TimestampedEventFiniteWindow
+                    )
+                )
+            })
             .map(|template| template.span)
     });
     temporal
@@ -1286,48 +1298,31 @@ fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
     );
 }
 
-/// FR-322-AC-305: a `compensate` template whose profile selects no clock
-/// writes no row, so a selection naming its window is surplus rather than
-/// consumed, while the other window still binds.
-#[trace("FR-322-AC-305", "TC-134")]
+/// FR-508: a protocol profile is not an admissible compensation profile.
+#[trace("FR-508-AC-4", "TC-1303")]
 #[test]
-fn tc134_template_without_a_clock_profile_writes_no_row() {
-    use crate::emit::EmitRefusal as R;
-    let graph = tc134_timed_graph_with(|source| {
-        source.replacen(
-            "using T clock \"refund-clock\" {\ncapture partialSaved",
-            "using P clock \"refund-clock\" {\ncapture partialSaved",
-            1,
+fn tc134_compensation_rejects_a_protocol_profile_alias() {
+    let domain = document();
+    let packages =
+        qsl_semantics::model::intake::package_input([domain.as_slice()]).expect("model intake");
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{TIMED_PROFILES_W}\
+         model M = \"acme/orders\";\n{}\n",
+        tc134_source().replace(
+            "using T clock \"refund-clock\"",
+            "using P clock \"refund-clock\"",
         )
-    });
-    let unprofiled = graph.protocols()[0]
-        .obligations
-        .compensations
-        .iter()
-        .find(|template| template.name == "PartialRefund")
-        .expect("the partial window");
-    assert_eq!(unprofiled.temporal_profile, None);
-    let span = unprofiled.span;
-    let selections = tc134_selections(&graph);
-    let package = CheckedPackage::link(graph);
-    assert!(matches!(
-        crate::emit::emit_checked_with_temporal_selections(&package, &selections),
-        Err(R::SurplusTemporalClockSelection { span: surplus, .. }) if surplus == span
-    ));
-    let without: Vec<_> = selections
-        .into_iter()
-        .filter(|selection| selection.declaration_span != span)
-        .collect();
-    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &without)
-        .expect("the unprofiled window needs no selection");
-    let wire = wire(&emission);
-    let rows = wire["temporal_bindings"].as_array().expect("bindings");
-    assert_eq!(
-        rows.iter()
-            .filter(|row| row["clock_name"] == "refund-clock")
-            .count(),
-        1
     );
+    let refusals = assemble_with_models(source.as_bytes(), &packages)
+        .expect("unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("a protocol profile cannot select a compensation clock role");
+    assert!(refusals.iter().any(|refusal| matches!(
+        &refusal.cause,
+        qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), qsl_semantics::check::ProtocolAnchorCause::WrongProfileKind { alias, required, .. } if alias == "P" && *required == "temporal profile")
+    )), "{refusals:?}");
 }
 
 /// FR-322-AC-305: a template with a clock profile but no written node has

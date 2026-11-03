@@ -17,6 +17,8 @@ use semantics::model::normalize::{normalize, NormalizeOutcome};
 pub const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile t = \"quire.temporal.infinite-trace/v1\";\n\
+    profile e = \"quire.temporal.timed/v1\";\n\
+    profile p = \"quire.protocol.finite-global/v1\";\n\
     model M = \"example/protocol-obligations\";\n";
 
 fn key(name: &str) -> DeclarationKey {

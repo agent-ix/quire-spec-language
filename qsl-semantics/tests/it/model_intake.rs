@@ -45,13 +45,13 @@ use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use qsl_foundation::selection::ModelSelection;
-use qsl_foundation::Span;
+use qsl_foundation::{Code, Span};
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{
-    admit, admit_unit, lift_document, meaning, read_domain_package, read_records, PackageDocument,
-    PackageInput,
+    admit, admit_unit, lift_document, meaning, package_input, read_domain_package, read_records,
+    PackageDocument, PackageInput,
 };
 use qsl_semantics::model::normalize::{normalize, normalize_with_meter, NormalizeOutcome};
 use qsl_semantics::model::systems::{
@@ -735,6 +735,75 @@ fn unit_selection(package_identity: &str) -> ModelSelection {
         span: Span { start: 0, end: 0 },
         identity_span: Span { start: 0, end: 0 },
     }
+}
+
+#[trace("TC-1308", "FR-513-AC-2")]
+#[test]
+fn duplicate_package_documents_refuse_and_one_identity_can_have_two_aliases() {
+    let bytes = include_bytes!("../../../examples/config-version/model.semantic-ir.json");
+    let assert_conflict = |refusal: qsl_semantics::model::normalize::ModelRefusal| {
+        assert_eq!(refusal.code, Code::InvalidPackage);
+        assert_eq!(refusal.cause.as_str(), "conflicting-definition");
+        assert!(matches!(
+            refusal.cause,
+            qsl_semantics::model::refusal::ModelRefusalCause::ConflictingPackage { identity }
+                if identity == "example/config-version"
+        ));
+    };
+    let equal = package_input([bytes.as_slice(), bytes.as_slice()])
+        .expect_err("one package identity cannot be supplied twice, even with equal documents");
+    assert_conflict(equal);
+
+    let same_version_different_content = format!("{}\n", std::str::from_utf8(bytes).unwrap());
+    let changed_content =
+        package_input([bytes.as_slice(), same_version_different_content.as_bytes()])
+            .expect_err("different contents under one identity conflict even when versions agree");
+    assert_conflict(changed_content);
+
+    let different = std::str::from_utf8(bytes)
+        .expect("fixture is UTF-8")
+        .replacen(
+            "\"identity\": \"example/config-version\",\n    \"version\": \"1.0.0\"",
+            "\"identity\": \"example/config-version\",\n    \"version\": \"2.0.0\"",
+            1,
+        );
+    let changed = package_input([bytes.as_slice(), different.as_bytes()])
+        .expect_err("different versions and contents for one package identity conflict");
+    assert_conflict(changed);
+
+    // A refused package input is all-or-nothing: callers cannot select the
+    // first document as a partial binding after the duplicate is found.
+    assert!(package_input([bytes.as_slice(), bytes.as_slice()]).is_err());
+
+    let packages = package_input([bytes.as_slice()]).expect("the single document is keyed");
+    let selection = |alias: &str, start: usize| ModelSelection {
+        alias: alias.to_owned(),
+        identity: "example/config-version".to_owned(),
+        span: Span {
+            start,
+            end: start + 1,
+        },
+        identity_span: Span {
+            start: start + 1,
+            end: start + 2,
+        },
+    };
+    let admitted = admit_unit(
+        &[selection("Config", 0), selection("History", 2)],
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the same admitted identity binds under two aliases");
+    assert_eq!(admitted.len(), 2);
+    assert_eq!(admitted[0].alias, "Config");
+    assert_eq!(admitted[1].alias, "History");
+    assert_eq!(admitted[0].span.start, 0);
+    assert_eq!(admitted[1].span.start, 2);
+    assert_eq!(admitted[0].view, admitted[1].view);
+    assert_eq!(
+        admitted.version_for_identity("example/config-version"),
+        Some("1.0.0")
+    );
 }
 
 #[trace("NFR-012", "TC-434")]

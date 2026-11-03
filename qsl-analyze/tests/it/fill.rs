@@ -263,16 +263,63 @@ pub(crate) fn unit_text(body: &str) -> String {
 
 /// [`unit_text`] with the further header `profiles` lines.
 pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
-    let (name, profile) = if body.contains(" using tb ") {
-        ("tb", "quire.temporal.event-position.false-extension/v1")
+    let protocol_profile_p = body.contains(" using p ") && !profiles.contains("profile p ");
+    let protocol_profile_pp = body.contains(" using pp ") && !profiles.contains("profile pp ");
+    let protocol_profiles = match (protocol_profile_p, protocol_profile_pp) {
+        (true, true) => concat!(
+            "profile p = \"quire.protocol.finite-global/v1\";\n",
+            "profile pp = \"quire.protocol.finite-global/v1\";\n"
+        ),
+        (true, false) => PROTOCOL_PROFILE_P,
+        (false, true) => PROTOCOL_PROFILE,
+        (false, false) => "",
+    };
+    let has_bounded = body.contains(" using tb ");
+    let has_timed = body.contains(" using t0 clock ");
+    let (temporal_profiles, body) = if profiles.contains("profile t0 = ") {
+        ("", body.to_owned())
+    } else if has_bounded {
+        (
+            "profile tb = \"quire.temporal.event-position.false-extension/v1\";\n",
+            body.replace(" using t0 clock ", " using tb clock "),
+        )
+    } else if body.contains("clock \"model-time\"") {
+        (
+            "profile t0 = \"quire.temporal.complete/v1\";\n",
+            body.to_owned(),
+        )
+    } else if has_timed && body.contains("await ") {
+        (
+            "profile t0 = \"quire.temporal.event-position.false-extension/v1\";\n",
+            body.to_owned(),
+        )
+    } else if has_timed {
+        (
+            "profile t0 = \"quire.temporal.timed/v1\";\n",
+            body.to_owned(),
+        )
     } else {
-        ("t0", "quire.temporal.infinite-trace/v1")
+        (
+            "profile t0 = \"quire.temporal.infinite-trace/v1\";\n",
+            body.to_owned(),
+        )
+    };
+    let time_units = if body.contains("clock \"model-time\"") {
+        "dimension Time;\nunit ms : Time = rational(1, 1);\ntime M dense unit ms;\n"
+    } else {
+        ""
+    };
+    let model_profile = if time_units.is_empty() {
+        "profile v = \"quire.value.complete/v1\";\n"
+    } else {
+        "profile v = \"quire.model.complete/v1\";\n"
     };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
-         profile {name} = \"{profile}\";\n{profiles}\
-         model M = \"{PACKAGE}\";\n{body}"
+         {model_profile}\
+         {temporal_profiles}{profiles}{protocol_profiles}\
+         model M = \"{PACKAGE}\";\n\
+         {time_units}{body}"
     )
 }
 
@@ -284,6 +331,9 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
 /// The header line selecting the protocol profile, so each protocol clause
 /// the package writes has its node.
 pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
+
+/// The protocol profile selected by `protocol_roles` fixtures as `p`.
+pub(crate) const PROTOCOL_PROFILE_P: &str = "profile p = \"quire.protocol.finite-global/v1\";\n";
 
 /// TCB-01's independent temporal selection: the checked clause supplies
 /// `model-steps`, while this fixture explicitly selects `order-events` as
@@ -345,16 +395,66 @@ pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) 
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the operation clauses parse");
-    let graph = PackageDeclarations::assemble(
+    let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         package_name.to_owned(),
         built,
         models,
         Vec::new(),
     )
-    .expect("the unit assembles")
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    .expect("the unit assembles");
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
+/// A package that declares the protocol profile but does not select it.
+/// Runtime fixtures use this when they exercise interpreter behavior that
+/// the finite-global wire profile does not emit.
+pub(crate) fn package_without_protocol_profile_selection(body: &str) -> CheckedPackage {
+    let document = document();
+    let text = unit_text_with(PROTOCOL_PROFILE, body);
+    let packages = package_input([document.as_slice()]).unwrap();
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("agent-ix", "counter"),
+        "counter.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(
+        parsed.is_admissible(),
+        "S1: {text}: {:?}",
+        parsed.diagnostics()
+    );
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the operation clauses parse");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "package".to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles");
+    declarations
+        .profile_selections
+        .retain(|selection| selection.alias != "pp");
+    declarations.protocol_profile = None;
+    let graph = declarations
+        .with_unwritten_refinements()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
 
@@ -362,7 +462,7 @@ pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) 
 /// `run`, the run control `run` and the finish constraint `finish`.
 pub(crate) fn protocol(name: &str, members: &str, run: &str, finish: &str) -> String {
     format!(
-        "protocol {name} using v over (k: M::Cell) on origin {{\n\
+        "protocol {name} using pp over (k: M::Cell) on origin {{\n\
          role w on M::Cell;\n\
          {members}\n\
          run {run}\n\
@@ -562,7 +662,7 @@ pub(crate) fn compiled(
 }
 
 /// [`compiled`] with the further header `profiles` lines.
-fn compiled_with(
+pub(crate) fn compiled_with(
     profiles: &str,
     body: &str,
 ) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {

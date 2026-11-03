@@ -100,6 +100,23 @@ impl Case {
         }
     }
 
+    /// [`Self::with_letters`] with the protocol profile alias retained as a
+    /// declaration but removed from the selected profiles, for FR-368's
+    /// no-protocol-profile route case.
+    pub(crate) fn without_protocol_profile(body: &str, letters: &'static dyn ModelLetters) -> Self {
+        let checked = crate::litmus::package_without_protocol_profile_selection(body);
+        let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&checked);
+        Self {
+            body: body.to_owned(),
+            documents: Documents::new(),
+            checked,
+            temporal_clock_selections,
+            letters,
+            over: None,
+            profiles: "",
+        }
+    }
+
     /// [`Self::with_letters`] with the protocol profile selected, so `SB`'s
     /// clause has its node.
     pub(crate) fn protocol_profiled(body: &str, letters: &'static dyn ModelLetters) -> Self {
@@ -237,7 +254,7 @@ impl Case {
     ) {
         let outcome = check_protocol(
             ProtocolCheckRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject_within(selection, max_candidates, absent),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: None,
@@ -254,7 +271,7 @@ impl Case {
             &outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject_within(selection, max_candidates, absent),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer: None,
@@ -296,7 +313,7 @@ impl Case {
     ) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(selection),
                 item,
                 max_depth: None,
@@ -354,7 +371,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject,
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer,
@@ -386,7 +403,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(selection),
                 item,
                 max_store_buffer,
@@ -409,7 +426,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
-                temporal_clock_selections: &[],
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(selection),
                 item: ModelCheckItem::RaceFreedom,
                 max_store_buffer: None,

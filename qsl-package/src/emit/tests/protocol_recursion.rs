@@ -43,7 +43,7 @@ fn protocol_declarations_with_predicate(cyclic: bool, predicate: &str) -> String
     } else {
         "join all [west, east];".to_owned()
     };
-    let flow = "protocol Flow using v over (input: M::Gadget) on origin {\n\
+    let flow = "protocol Flow using p over (input: M::Gadget) on origin {\n\
         role R on M::Gadget;\n\
         run parallel Main {\n\
           branch west sequence West { }\n\
@@ -52,7 +52,7 @@ fn protocol_declarations_with_predicate(cyclic: bool, predicate: &str) -> String
         finish End as (outcome: Boolean) { true };\n\
         }\n";
     format!(
-        "{}protocol Idle using v over (input: M::Gadget) on origin {{\n\
+        "{}protocol Idle using p over (input: M::Gadget) on origin {{\n\
          role R on M::Gadget;\n\
          run sequence Main {{ }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -246,7 +246,7 @@ fn an_attempt_bearing_protocol_in_a_predicate_cycle_is_grouped_and_reads_back() 
          profile p = \"{PROTOCOL_PROFILE}\";\n\
          model Config = \"example/config-version\";\n\
          function refers(left: Boolean, right: Boolean): Boolean pure {{ protocol Flow }}\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         protocol Flow using p over (input: Config::ConfigVersion) on origin {{\n\
            role R on Config::ConfigVersion;\n\
            run sequence Main {{\n\
              attempt Update by R on Config::ConfigVersion::attemptUpdate contracts [] \
@@ -301,7 +301,7 @@ fn mixed_cycle_text(checks: usize, protocol_first: bool) -> String {
     );
     let function = "function refers using v(): Boolean pure { protocol Flow }\n";
     let mut protocol = String::from(
-        "protocol Flow using v over (input: M::Gadget) on origin {\n\
+        "protocol Flow using p over (input: M::Gadget) on origin {\n\
          role R on M::Gadget;\n\
          run sequence Main {\n",
     );

@@ -262,7 +262,7 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
 }
 
 #[test]
-#[trace("TC-042", "FR-015-AC-3")]
+#[trace("TC-042", "FR-015-AC-3", "TC-1308", "FR-513-AC-1")]
 fn tc_042_native_selection_requires_its_declared_package_identity() {
     let models = [parts().model()];
     let own = models[0]
@@ -359,7 +359,7 @@ fn tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped()
 }
 
 #[test]
-#[trace("TC-043", "FR-015-AC-4")]
+#[trace("TC-043", "FR-015-AC-4", "TC-1308", "FR-513-AC-2")]
 fn tc_043_inventory_conflicts_refuse_before_import_selection() {
     let original = parts().model();
     for mutation in 0..2 {

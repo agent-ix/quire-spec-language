@@ -102,6 +102,11 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 
 [dev-dependencies]
 serde_json_canonicalizer = "0.3.2"
+# TC-1308 evaluates collection results from the S3/S4 checked package through
+# the evaluator trait without routing them through FR-100's scalar-only run
+# result carrier.
+qsl-eval = { path = "qsl-eval" }
+quire-eval = { workspace = true }
 # `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
 # `DeclarationKey::fixture`, `check::family::fixtures`, ...) for this crate's
 # unit and integration tests. Only this dev-dependency may enable

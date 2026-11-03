@@ -49,9 +49,10 @@ impl Watermark {
     }
 }
 
-/// An order key: an order-authority identity and a key within it. Keys of
-/// one authority compare; keys of different authorities do not (QSpec
-/// FR-090-AC-4).
+/// An order key: an order-authority identity and a key within it. Distinct
+/// keys of one authority order two observations; keys of different
+/// authorities, and a key repeated within one authority, do not (QSpec
+/// FR-090-AC-4, FR-501 "usable order").
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OrderKey {
     /// The order authority.

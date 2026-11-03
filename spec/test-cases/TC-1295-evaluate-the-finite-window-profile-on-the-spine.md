@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-501-AC-1 to AC-25 and FR-330-AC-9 (the finite-window part): the
+Verify FR-501-AC-1 to AC-26 and FR-330-AC-9 (the finite-window part): the
 spine evaluator returns a definite verdict on a closed complete window, pending
 or indeterminate only for a genuinely unresolved obligation, and never refuses
 the profile.
@@ -20,8 +20,9 @@ the profile.
 Catches a `ProfileNotEvaluated` refusal, false extension applied to a sparse
 window, an empty window left unknown, a missing valuation read as false, an
 incomplete input read as closed, an event at the inclusive deadline dropped, a
-watermark that fails to settle a silent window, and a result that depends on
-ingestion order.
+watermark that fails to settle a silent window, a result that depends on
+ingestion order, and a repeated order key of one authority ordered by
+observation identity for an order-sensitive operator.
 
 ## Test Procedure
 
@@ -52,7 +53,7 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 15 | same | stamps 0,4; q at 4; W 4; C(4) | `Completed(false)` |
 | 16 | `eventually[0,3] holds(p)` | stamp 0; p F; W 3; C(3); no later event | `Completed(false)` |
 | 17 | `holds(p) until[0,1] holds(q)` and its `release` dual `on origin`; `holds(p) since[0,1] holds(q)` and its `triggered` dual `on each` (the anchor at position 2, where positions 1 and 2 participate) | stamps 0,1,1; no order keys; then a key on position 1 only | stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2 each; `eventually[0,1] holds(p)` evaluates; the one-key case refuses at position 2 |
-| 18 | row 17 `until` | order keys, one authority; then two authorities; then trace listed in reverse, keys unchanged | evaluates; refuses; same result as the first |
+| 18 | row 17 `until` | distinct order keys, one authority; then two authorities; then trace listed in reverse, keys unchanged | evaluates; refuses; same result as the first |
 | 19 | `once[0,4] holds(p)` `on each`, activations at positions 0 and 1 (future reach 0, established at W 4) | stamps 3,4; p F,F; W 4; C(4) | `HistoryCutoff`: `Indeterminate {MissingHistory}` with `where` 0 (the first activation in position order); `AuthoritativeOrigin`: `Completed(false)`; p T at 3: `Completed(true)` for both |
 | 20 | `holds(req) implies eventually[0,3000] holds(ack)`, cover `Counter{u=0}` | req at 0; ack at 2998, 3000, 3001; W, C beyond 3001 | `Completed(true)`; `Indeterminate {StraddlesBound}`; `Completed(false)`; with `Exact` cover true, true, false |
 | 21 | `holds(req) implies eventually[0,3000] holds(ack)`, `Counter{u=1}`, req at 0, ack at 2997, 2998, 3003; W and C beyond 3003 (`TCV-06` to `TCV-08`); and the comparison functions `within_bound` and `definitely_before` called directly on QSpec `tick-cover-vectors.json` `TCV-09` to `TCV-15` (the bounds 0, 1 and -1 of `TCV-13` to `TCV-15` and the `definitely_before` pairs are not clause intervals) | per the vectors | true, indeterminate (`StraddlesBound`), false for `TCV-06` to `TCV-08`; the file's expected value for each of `TCV-09` to `TCV-15` |
@@ -74,6 +75,7 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 37 | row 8's clause | stamps 0,2,2,5; p = F,T,T,F; W 5; C(5) | `Completed(true)` (FR-501-AC-23) |
 | 38 | row 27's request with the supplied cover `Counter{u=1}`, W 3001, C(3002); then the same input with cover `Exact` | req at 0; no ack | `Pending {deadline 3002}`; `Completed(false)` and a different result identity (FR-501-AC-24) |
 | 39 | row 1's request with `execution` `Open`, then `Closed` | as row 1 | the same verdict; the premises report `Open`, then `Closed` (FR-501-AC-25) |
+| 40 | row 17's `until` and `release` `on origin`, and its `since` and `triggered` `on each` (the anchor at position 2); then `eventually[0,1] holds(p)` | stamps 0,1,1; positions 1 and 2 both keyed `(A, 1)`, distinct identities (a third atom differs); listed as given, then the two keyed observations reversed | stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2 for each of the four operators and both listings; `eventually` evaluates with one outcome and one `result_identity` for both listings (FR-501-AC-26) |
 
 ## Expected Results
 

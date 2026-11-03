@@ -2179,6 +2179,13 @@ impl PackageDeclarations {
                 .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
                 .collect(),
         )
+        .with_model_ports(
+            self.models
+                .iter()
+                .flat_map(AdmittedModel::port_roles)
+                .map(|(alias, artifact, key, owner)| ((alias, artifact), (key, owner)))
+                .collect(),
+        )
         .with_declared_units(&self.units)
         .with_protocols(
             self.protocols
@@ -3590,6 +3597,11 @@ impl PackageDeclarations {
             .collect();
         for (index, protocol) in self.protocols.iter().enumerate() {
             let refusals_before = refusals.len();
+            let profile_refusals = protocol_clause::profile_uses(
+                protocol,
+                &self.alias_names,
+                &self.profile_selections,
+            );
             let attempts = self
                 .protocol_attempts
                 .get(index)
@@ -3606,6 +3618,7 @@ impl PackageDeclarations {
                 protocol_clause::Selections {
                     protocol: protocol_profile_identity.as_deref(),
                     temporal: &temporal_aliases,
+                    profiles: &self.profile_selections,
                 },
             );
             // FR-381: the protocol's activation, captures and compensation
@@ -3640,6 +3653,7 @@ impl PackageDeclarations {
             );
             match anchored {
                 Ok((mut checked, bound)) => {
+                    refusals.extend(profile_refusals.into_iter().map(|(_, refusal)| refusal));
                     let content = protocol_clause::content(protocol, &self.alias_names, &scope);
                     let content_refused = !content.is_empty();
                     refusals.extend(content);
@@ -3777,7 +3791,11 @@ impl PackageDeclarations {
                 }
                 Err(protocol_refusals) => {
                     protocol_places.push(None);
-                    let mut owned_refusals = protocol_refusals;
+                    let mut owned_refusals: Vec<CheckRefusal> = profile_refusals
+                        .into_iter()
+                        .map(|(_, refusal)| refusal)
+                        .collect();
+                    owned_refusals.extend(protocol_refusals);
                     if let protocol_obligation::Obligations::Refused(obligation_refusals) =
                         obligations
                     {
@@ -7373,7 +7391,11 @@ fn checked_model_operation_effects(
     }
     let ids = crate::check::wire_id::StructuralIds::default();
     let mut rows = Vec::new();
+    let mut seen_documents = BTreeSet::new();
     for model in models {
+        if !seen_documents.insert(model.selected_document()) {
+            continue;
+        }
         let document = model.selected_document();
         for (_owner_record, operation) in model.operation_effect_inputs() {
             let declaring_key = model.model_node_key(&operation.owner)?;

@@ -6,6 +6,7 @@ use super::{
     DeclarationField, DefinitionField, Expected, ExpectedTemporal, HeaderField, InventorySide,
     Refusal, SelectionSide, MEDIA, SCHEMA, WIRE,
 };
+use crate::number::{NumberWire, ProtocolNumber, NUMERIC_PROFILE};
 use crate::protocol_artifact::{self as artifact, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report, Unsupported};
 
@@ -28,10 +29,7 @@ fn headers(
             inherited.encoding == artifact::ENCODING,
             HeaderField::Encoding,
         ),
-        (
-            inherited.numeric == artifact::NUMERIC_PROFILE,
-            HeaderField::Numeric,
-        ),
+        (inherited.numeric == NUMERIC_PROFILE, HeaderField::Numeric),
     ] {
         if !matches {
             return Err(Error::V2(Refusal::Header(field)));
@@ -78,11 +76,11 @@ fn headers(
     Ok(())
 }
 
-fn numeric_bytes(number: &artifact::NumberWire, work: &mut Work) -> Result<(), Error> {
+fn numeric_bytes(number: &NumberWire, work: &mut Work) -> Result<(), Error> {
     work.visit()?;
     match number {
-        artifact::NumberWire::Integer { decimal } => work.bytes(decimal.len()),
-        artifact::NumberWire::Rational {
+        NumberWire::Integer { decimal } => work.bytes(decimal.len()),
+        NumberWire::Rational {
             numerator,
             denominator,
         } => {
@@ -137,8 +135,8 @@ fn execution_bytes(execution: &artifact::wire::Execution) -> usize {
 fn positive(number: &artifact::wire::Number, work: &mut Work) -> Result<(), Error> {
     numeric_bytes(&number.0, work)?;
     let positive = match number.checked()? {
-        artifact::ProtocolNumber::Integer(value) => value.value() > 0,
-        artifact::ProtocolNumber::Rational(value) => value.numerator() > 0,
+        ProtocolNumber::Integer(value) => value.value() > 0,
+        ProtocolNumber::Rational(value) => value.numerator() > 0,
     };
     if positive {
         Ok(())

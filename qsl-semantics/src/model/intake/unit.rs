@@ -662,8 +662,10 @@ fn checked_model_node(package: &str, form: &str, node: &str) -> CheckedNodeId {
 
 /// Admit each of a unit's `model` declarations, in source order, against
 /// `packages` (a [`PackageInput`]): FR-154 admission (one version of
-/// each identity), [`crate::model::intake::read_records`], then normalization under `limits`. It
-/// stops at the first declaration that does not admit.
+/// each identity), [`crate::model::intake::read_records`], then normalization under `limits`. A
+/// package identity is normalized once and may be selected under more than
+/// one unit-local alias; every alias still receives its own declaration span.
+/// It stops at the first identity that does not admit.
 pub fn admit_unit(
     selections: &[ModelSelection],
     packages: &PackageInput,
@@ -686,10 +688,13 @@ pub fn admit_unit_with_cancel(
         span: selection.span,
         cause,
     };
-    // Selections are admitted and normalized in canonical order (identity
-    // bytes), never in source or alias order.
+    // Normalize each package identity once, in canonical order (identity
+    // bytes), never in source or alias order. A source unit may bind one
+    // package identity under several aliases; package_input has already
+    // established that each identity names exactly one supplied document.
     let mut offered: Vec<&ModelSelection> = selections.iter().collect();
     offered.sort_by(|left, right| left.identity.as_bytes().cmp(right.identity.as_bytes()));
+    offered.dedup_by(|left, right| left.identity == right.identity);
     let admitted = admit_located(
         &offered,
         |selection| selection.identity.as_str(),
@@ -703,7 +708,7 @@ pub fn admit_unit_with_cancel(
         )
     })?;
     let mut meter = Meter::new(limits).with_cancel(cancel.clone());
-    let mut entries = Vec::with_capacity(admitted.len());
+    let mut normalized = BTreeMap::new();
     let mut versions = BTreeMap::new();
     let mut exact_declarations = Vec::new();
     let mut exact_fields = Vec::new();
@@ -745,14 +750,29 @@ pub fn admit_unit_with_cancel(
         {
             versions.insert(selection.identity.clone(), version.to_owned());
         }
-        entries.push(SelectedModel {
-            alias: selection.alias.clone(),
-            span: selection.span,
-            view,
-            operation_clauses: Vec::new(),
-            type_invariants: Vec::new(),
-        });
+        normalized.insert(
+            selection.identity.clone(),
+            SelectedModel {
+                alias: selection.alias.clone(),
+                span: selection.span,
+                view,
+                operation_clauses: Vec::new(),
+                type_invariants: Vec::new(),
+            },
+        );
     }
+    let entries = selections
+        .iter()
+        .map(|selection| {
+            let mut model = normalized
+                .get(&selection.identity)
+                .cloned()
+                .expect("each model declaration's identity was normalized");
+            model.alias = selection.alias.clone();
+            model.span = selection.span;
+            model
+        })
+        .collect();
     Ok(SelectedModels {
         entries,
         versions,
@@ -766,8 +786,8 @@ pub fn admit_unit_with_cancel(
 /// Admit model selections from several source units together. An identity is
 /// normalized once across the unit list, while each unit-local alias and
 /// declaration span remains available in the aggregate `SelectedModels`.
-/// Repeating one identity inside a single unit retains the single-unit
-/// duplicate-selection refusal.
+/// Repeating one identity within a unit is admitted under each unit-local
+/// alias, while each identity is normalized once.
 pub fn admit_units_with_cancel(
     selections_by_unit: &[&[ModelSelection]],
     packages: &PackageInput,
@@ -777,33 +797,7 @@ pub fn admit_units_with_cancel(
     let mut selections = Vec::new();
     let mut unique = BTreeMap::<String, ModelSelection>::new();
     for unit in selections_by_unit {
-        let mut seen = BTreeMap::<&str, &ModelSelection>::new();
         for selection in *unit {
-            if let Some(first) = seen.get(selection.identity.as_str()) {
-                let pair = [*first, selection];
-                let duplicate = admit_located(
-                    &pair,
-                    |candidate| candidate.identity.as_str(),
-                    packages,
-                    limits.intake,
-                );
-                let refusal = match duplicate {
-                    Err((selection, refusal)) => UnitIntakeRefusal {
-                        alias: selection.alias.clone(),
-                        identity: selection.identity.clone(),
-                        span: selection.span,
-                        cause: UnitIntakeCause::Refused(Refusals::new(refusal, Vec::new())),
-                    },
-                    Ok(_) => UnitIntakeRefusal {
-                        alias: selection.alias.clone(),
-                        identity: selection.identity.clone(),
-                        span: selection.span,
-                        cause: UnitIntakeCause::Invariant,
-                    },
-                };
-                return Err(refusal);
-            }
-            seen.insert(&selection.identity, selection);
             unique
                 .entry(selection.identity.clone())
                 .or_insert_with(|| selection.clone());

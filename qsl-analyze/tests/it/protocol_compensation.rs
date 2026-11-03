@@ -72,7 +72,7 @@ fn refund_of(
     let attempt_type = attempts.rsplit(' ').next().expect("an attempt type");
     format!(
         "compensate Refund for {effect} as (fwd: M::Cell)\n\
-         by w on M::Cell::{operation} using v clock \"c\" {{\n\
+         by w on M::Cell::{operation} using t0 clock \"c\" {{\n\
          activate first (f: Boolean) when {{ f }} {{ }}\n\
          within [0, 10];\n\
          attempts {attempts};\n\
@@ -935,7 +935,7 @@ fn captures_are_evaluated_at_registration_and_activation() {
 /// registrations crosswise depending on the order of activation.
 pub(crate) fn crosswise() -> String {
     let template = "compensate Refund for Main::Loop::Body::Paid as (fwd: Boolean)\n\
-         by w on M::Cell::touch using v clock \"c\" {\n\
+         by w on M::Cell::touch using t0 clock \"c\" {\n\
          capture b: Boolean = fwd;\n\
          activate first (f: Boolean) when { f = b } { }\n\
          within [0, 10];\n\
@@ -1625,7 +1625,7 @@ fn a_string_attempt_field_requires_a_bound_and_an_enum_one_is_named() {
 /// compares `id` with the trigger record.
 fn registrations_by_trigger() -> String {
     let template = "compensate Refund for Main::Loop::Body::Paid as (fwd: M::Level)\n\
-         by w on M::Cell::touch using v clock \"c\" {\n\
+         by w on M::Cell::touch using t0 clock \"c\" {\n\
          capture id: Boolean = fwd = 1;\n\
          activate first (f: Boolean) when { f = id } { }\n\
          within [0, 10];\n\

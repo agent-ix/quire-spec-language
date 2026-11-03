@@ -27,7 +27,7 @@ use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{FormulaNode, FormulaNodeId};
 use quire_exact::{Cancel, Integer, Meter, Rational, Undefined};
 
-use crate::timed_world::{document, world, World, DENSE};
+use crate::timed_world::{document, world, World, DENSE, PACKAGE};
 
 pub(crate) const INFINITE: &str = "profile inf = \"quire.temporal.infinite-trace/v1\";\n";
 pub(crate) const TIMED: &str = "profile tt = \"quire.temporal.timed/v1\";\n";
@@ -63,6 +63,46 @@ pub(crate) fn rpc(t: u32) -> World {
 /// lines `profiles`, with `claim` as its one temporal clause.
 pub(crate) fn rpc_claim(t: u32, profiles: &str, claim: &str) -> World {
     rpc_variant(t, ">= 1", ">=", profiles, claim)
+}
+
+/// [`rpc_claim`] with a declared `pp` alias absent from selected profiles,
+/// for FR-368's no-protocol-profile route case.
+pub(crate) fn rpc_claim_without_protocol_profile(
+    t: u32,
+    temporal_profiles: &str,
+    claim: &str,
+) -> World {
+    let profiles =
+        format!("{temporal_profiles}profile pp = \"quire.protocol.finite-global/v1\";\n");
+    let document = rpc_document();
+    let body = format!(
+        "{DENSE}\
+         pre SendIdle using v on M::Call::send {{ self.phase = 0 }}\n\
+         post Send using v on M::Call::send {{ \
+             self.phase = 1 and self.inflight and not self.late and self.x = 0 ms }}\n\
+         pre Reply using v on M::Call::reply {{ self.inflight and self.x >= 1 ms }}\n\
+         post Replied using v on M::Call::reply {{ not self.inflight and \
+             self.late = (pre(self.phase) = 3) and \
+             (pre(self.phase) = 1 implies self.phase = 2) and \
+             (pre(self.phase) != 1 implies self.phase = pre(self.phase)) }}\n\
+         pre Timeout using v on M::Call::timeout {{ self.phase = 1 and self.x >= {t} ms }}\n\
+         post TimedOut using v on M::Call::timeout {{ self.phase = 3 }}\n\
+         pre Reset using v on M::Call::reset {{ \
+             not self.inflight and (self.phase = 2 or self.phase = 3) }}\n\
+         post ResetIdle using v on M::Call::reset {{ self.phase = 0 }}\n\
+         time invariant ServerDeadline when {{ self.inflight }} {{ self.x <= 3 ms }}\n\
+         time invariant ClientDeadline when {{ self.phase = 1 }} {{ self.x <= {t} ms }}\n\
+         {claim}"
+    );
+    crate::timed_world::world_built_in_without_protocol_profile(
+        PACKAGE,
+        &document,
+        &profiles,
+        &body,
+        &["c"],
+        &[],
+        &serde_json::json!({}),
+    )
 }
 
 /// [`rpc_claim`] with `reply` guarded by `self.x {reply} ms` and `timeout`

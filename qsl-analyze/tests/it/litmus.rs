@@ -306,10 +306,26 @@ pub(crate) fn unit_text(body: &str) -> String {
 
 /// [`unit_text`] with the further `profiles` lines in its header.
 pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
+    let temporal_profile = if body.contains(" await ") && body.contains(" using t0 clock ") {
+        "quire.temporal.event-position.false-extension/v1"
+    } else {
+        "quire.temporal.infinite-trace/v1"
+    };
+    let protocol_profile_p = body.contains(" using p ") && !profiles.contains("profile p ");
+    let protocol_profile_pp = body.contains(" using pp ") && !profiles.contains("profile pp ");
+    let protocol_profiles = match (protocol_profile_p, protocol_profile_pp) {
+        (true, true) => {
+            "profile p = \"quire.protocol.finite-global/v1\";\n\
+             profile pp = \"quire.protocol.finite-global/v1\";\n"
+        }
+        (true, false) => "profile p = \"quire.protocol.finite-global/v1\";\n",
+        (false, true) => PROTOCOL_PROFILE,
+        (false, false) => "",
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"quire.temporal.infinite-trace/v1\";\n{profiles}\
+         profile t0 = \"{temporal_profile}\";\n{profiles}{protocol_profiles}\
          model M = \"{PACKAGE}\";\n{body}"
     )
 }
@@ -317,6 +333,56 @@ pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
 /// The checked package of `body`.
 pub(crate) fn package(body: &str) -> CheckedPackage {
     package_with("", body)
+}
+
+/// A checked litmus package whose protocol alias is declared but not selected.
+/// The fixture removes only the protocol profile selection before checking,
+/// while preserving temporal profiles and the alias's profile kind. This
+/// models the FR-368 no-profile route case without changing the source vector.
+pub(crate) fn package_without_protocol_profile_selection(body: &str) -> CheckedPackage {
+    let document = document();
+    let text = unit_text_with(PROTOCOL_PROFILE, body);
+    let packages = package_input([document.as_slice()]).unwrap();
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("agent-ix", "litmus"),
+        "litmus.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(
+        parsed.is_admissible(),
+        "S1: {text}: {:?}",
+        parsed.diagnostics()
+    );
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the operation clauses parse");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "package".to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles");
+    declarations
+        .profile_selections
+        .retain(|selection| selection.alias != "pp");
+    declarations.protocol_profile = None;
+    let graph = declarations
+        .with_unwritten_refinements()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
 }
 
 /// The checked package of `body` that also selects the protocol profile,
@@ -350,7 +416,12 @@ fn package_with_internals(
     internals: Option<serde_json::Value>,
 ) -> CheckedPackage {
     let document = document();
-    let text = unit_text_with(profiles, body);
+    let protocol_profile = if body.contains("protocol ") && !profiles.contains("profile pp ") {
+        PROTOCOL_PROFILE
+    } else {
+        ""
+    };
+    let text = unit_text_with(&format!("{profiles}{protocol_profile}"), body);
     let packages = package_input([document.as_slice()]).unwrap();
     package_with_provisions(&text, body, packages, internals)
 }
@@ -431,7 +502,7 @@ pub(crate) fn protocol(name: &str, run: &str) -> String {
 /// [`protocol`] with the further members `members`, such as a channel.
 pub(crate) fn protocol_with(name: &str, members: &str, run: &str) -> String {
     format!(
-        "protocol {name} using v over (k: M::Core) on origin {{\n\
+        "protocol {name} using pp over (k: M::Core) on origin {{\n\
          role w on M::Cell;\n\
          role c on M::Core;\n\
          {members}\n\
@@ -458,6 +529,11 @@ pub(crate) fn sb_run(memory: &str, store: &str, load: &str) -> String {
 /// ADR-025 §10's claim: the two loads never both read 0.
 pub(crate) const NO_BOTH_ZERO: &str = "temporal NoBothZero using t0 over (k: M::Core) clock \
      \"model-steps\" on origin { always holds(not (k.r1 = 0 and k.r2 = 0)) }\n";
+
+/// The bounded event-position form used by fixtures that also await.
+pub(crate) const NO_BOTH_ZERO_BOUNDED: &str =
+    "temporal NoBothZero using t0 over (k: M::Core) clock \
+     \"model-steps\" on origin { always[0,1] holds(not (k.r1 = 0 and k.r2 = 0)) }\n";
 
 /// The `SB` unit over `run`, with the claim.
 pub(crate) fn sb_unit(run: &str) -> String {

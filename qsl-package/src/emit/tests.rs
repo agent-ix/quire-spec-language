@@ -3543,7 +3543,7 @@ fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> S
          profile v = \"quire.model.complete/v1\";\n\
          model Config = \"example/config-version\";\n\
          {declarations}\n\
-         protocol Flow using v over (input: Boolean) on origin {{\n\
+         protocol Flow using p over (input: Boolean) on origin {{\n\
          role R on Config::ConfigVersion;\n\
          run sequence Main {{\n\
          attempt Update by R on {operation} contracts [{contracts}] \
@@ -3824,7 +3824,7 @@ fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
         profile v = \"quire.model.complete/v1\";\n\
         model Config = \"example/config-version\";\n\
         function f using v (): Boolean pure { true }\n\
-        protocol Flow using v over (input: Nope::Input) on origin {\n\
+        protocol Flow using p over (input: Nope::Input) on origin {\n\
         role R on Nope::Actor;\n\
         run sequence Main {\n\
         send S via Nope as (x: Undeclared) { 1 + true };\n\
@@ -3873,7 +3873,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
             "missing_declaration",
         ),
         (
-            "protocol Flow using v",
+            "protocol Flow using p",
             "protocol Flow using Config",
             "missing_declaration",
         ),

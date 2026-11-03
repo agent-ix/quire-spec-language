@@ -63,6 +63,19 @@ const CHANNEL: &str = "channel ch from w to w carries Boolean \
 const EVENTUALLY: &str = "temporal Eventually using t0 over (k: M::Cell) clock \"model-steps\" \
                           on origin { eventually holds(k.v = 1) }\n";
 
+fn finite_profile_compensation_template() -> String {
+    crate::protocol_compensation::refund("Main::Paid", "dec", 1, "false", "never", "true")
+        .replace("using t0 clock", "using tb clock")
+}
+
+fn compensation_fairness_profiles() -> String {
+    format!(
+        "{}profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
+         profile tb = \"quire.temporal.event-position.false-extension/v1\";\n",
+        crate::fill::PROTOCOL_PROFILE
+    )
+}
+
 /// The TP-1 claim `always holds(k.v <= 1)`.
 const BOUNDED: &str = "temporal Bounded using t0 over (k: M::Cell) clock \"model-steps\" \
                        on origin { always holds(k.v <= 1) }\n";
@@ -792,8 +805,7 @@ fn interleaved_operation_and_protocol_fairness_preserves_source_order() {
 #[trace("TC-657", "FR-212")]
 #[test]
 fn compensation_fairness_target_emits_and_covers_transitions() {
-    let template =
-        crate::protocol_compensation::refund("Main::Paid", "dec", 1, "false", "never", "true");
+    let template = finite_profile_compensation_template();
     let run = crate::protocol_compensation::pay_run("");
     let claim = eventually_with("fair weak each Pay::Refund;");
     let body = contracts("self.v = 0")
@@ -802,7 +814,8 @@ fn compensation_fairness_target_emits_and_covers_transitions() {
         + &claim;
     let mut documents = Documents::new();
     let initial = vec![documents.start("s0", &[("c", 0)])];
-    let checked = package_with(crate::fill::PROTOCOL_PROFILE, &body);
+    let profiles = compensation_fairness_profiles();
+    let checked = package_with(&profiles, &body);
     let pay_subject = subject(&checked, &documents, initial.clone(), "Pay", "c");
     let clause = checked.graph().temporal_clauses()[0].clause();
     let targets: Vec<_> = clause
@@ -872,8 +885,7 @@ fn compensation_fairness_target_emits_and_covers_transitions() {
 #[trace("TC-657", "FR-212", "FR-217-AC-4")]
 #[test]
 fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
-    let template =
-        crate::protocol_compensation::refund("Main::Paid", "dec", 1, "false", "never", "true");
+    let template = finite_profile_compensation_template();
     let name = "counter";
     let channel = "channel ch from w to w carries Boolean ordering unordered \
                    delivery unknown capacity 2 overflow block;";
@@ -894,7 +906,8 @@ fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
         + liveness;
     let mut documents = Documents::new();
     let initial = vec![documents.start("s0", &[("c", 0)])];
-    let checked = package_with_name(name, crate::fill::PROTOCOL_PROFILE, &body);
+    let profiles = compensation_fairness_profiles();
+    let checked = package_with_name(name, &profiles, &body);
     let clauses = checked.graph().temporal_clauses();
     assert_eq!(clauses.len(), 2);
     let unfair_clause = clauses[0].clause();
@@ -952,7 +965,7 @@ fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
     replay_payload.fairness = replay_fairness;
     let occurrence = OccurrenceKey::new(fair_node.identity().clone(), fair_node.claim().clone());
     let envelope = envelope_at(replay_payload, fair_node.identity().clone(), occurrence);
-    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body).into_bytes();
+    let unit = crate::fill::unit_text_with(&profiles, &body).into_bytes();
     let replayed = replay_protocol_trace(
         request_named(name, &document(), documents.snapshots.iter(), &unit),
         &ProtocolTraceSubject {

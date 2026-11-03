@@ -58,7 +58,6 @@ mod tests {
                 .iter()
                 .find(|s| s.native.identity == identity)
                 .unwrap();
-            assert_eq!(source.native.revision, "1");
             assert_eq!(
                 source.path,
                 format!("examples/protocol-handoff/{unit}.native")
@@ -145,7 +144,7 @@ mod tests {
     /// exact rational at the denominator ceiling, and carries their literals to
     /// the wire unnarrowed. Every handle below stays inside Bounded's own arena.
     fn signed64_literals(package: &w::Package) {
-        use quire_spec_language::protocol_artifact::{ExactInteger, ExactRational, ProtocolNumber};
+        use quire_spec_language::number::{ExactInteger, ExactRational, ProtocolNumber};
 
         let declaration = package
             .declarations

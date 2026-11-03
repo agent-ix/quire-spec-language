@@ -6,8 +6,9 @@ mod control;
 use std::collections::BTreeSet;
 
 use super::value_graph::ValueGraph;
-use super::{intake, wire::*, work::Work, Dimension, Error, Invalid, ProtocolNumber, Unsupported};
+use super::{intake, wire::*, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
+use crate::number::{NumberWire, ProtocolNumber};
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -19,11 +20,11 @@ pub(super) fn integer(value: &Integer, work: &mut Work) -> Result<i64> {
     }
 }
 
-fn numeric_bytes(value: &super::NumberWire, work: &mut Work) -> Result {
+fn numeric_bytes(value: &NumberWire, work: &mut Work) -> Result {
     work.visit()?;
     match value {
-        super::NumberWire::Integer { decimal } => work.bytes(decimal.len()),
-        super::NumberWire::Rational {
+        NumberWire::Integer { decimal } => work.bytes(decimal.len()),
+        NumberWire::Rational {
             numerator,
             denominator,
         } => work.bytes(numerator.len().saturating_add(denominator.len())),

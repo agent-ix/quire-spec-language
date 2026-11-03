@@ -9,9 +9,8 @@ use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
-use quire_spec_language::protocol_artifact::{
-    self as artifact, native, wire as w, Error, Limits, Unsupported,
-};
+use quire_spec_language::number::ProtocolNumber;
+use quire_spec_language::protocol_artifact::{native, wire as w, Error, Limits, Unsupported};
 use setup::{Inputs, Unit};
 
 /// One owned attempt by the deciding role; its record is the only Boolean atom.
@@ -246,7 +245,7 @@ fn a_continuing_repeat_admits_when_every_feasible_attempt_branch_progresses() {
         let w::ControlOperation::Repeat { maximum, body, .. } = &controls[index].operation else {
             panic!("bounded repetition")
         };
-        let artifact::ProtocolNumber::Integer(bound) = maximum.checked().unwrap() else {
+        let ProtocolNumber::Integer(bound) = maximum.checked().unwrap() else {
             panic!("authored integer bound")
         };
         assert_eq!(bound.value(), 2);
@@ -258,7 +257,7 @@ fn a_continuing_repeat_admits_when_every_feasible_attempt_branch_progresses() {
             .iter()
             .find(|edge| edge.kind == w::EdgeKind::RepeatProgress && edge.owner == owner)
             .expect("continuing progress edge");
-        let artifact::ProtocolNumber::Integer(edge_bound) =
+        let ProtocolNumber::Integer(edge_bound) =
             progress.maximum.0.as_ref().unwrap().checked().unwrap()
         else {
             panic!("authored integer bound")

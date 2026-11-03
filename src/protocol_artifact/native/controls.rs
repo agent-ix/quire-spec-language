@@ -741,7 +741,7 @@ pub(super) fn edges(
             work.visit()?;
             let maximum = maximum
                 .map(|value| -> Result<w::Integer, Error> {
-                    let crate::protocol_artifact::NumberWire::Integer { decimal } = &value.0 else {
+                    let crate::number::NumberWire::Integer { decimal } = &value.0 else {
                         return Err(Error::Invalid(Invalid::WrongNumericKind));
                     };
                     work.bytes(decimal.len())?;

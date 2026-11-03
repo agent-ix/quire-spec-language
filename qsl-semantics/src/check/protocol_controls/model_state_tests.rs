@@ -22,7 +22,7 @@ use fixture::{obligation_model, HEADER};
 /// A protocol whose one channel `Q` carries `carries`, ordered `ordering`.
 fn with_channel(carries: &str, ordering: &str) -> String {
     format!(
-        "{HEADER}protocol Queue using v over (view: M::Node) on origin {{\n\
+        "{HEADER}protocol Queue using p over (view: M::Node) on origin {{\n\
          role Service on M::Node;\n\
          channel Q from Service to Service carries {carries} ordering {ordering} \
          delivery unknown capacity 1 overflow reject;\n\
@@ -168,7 +168,7 @@ fn a_fifo_key_admits_equality() {
 /// A protocol `Decide` whose run tree is `run`, over `view: M::Node`.
 fn decide(members: &str, run: &str) -> String {
     format!(
-        "{HEADER}protocol Decide using v over (view: M::Node) on origin {{\n\
+        "{HEADER}protocol Decide using p over (view: M::Node) on origin {{\n\
          role Service on M::Node;\n\
          {members}\n\
          run {run}\n\

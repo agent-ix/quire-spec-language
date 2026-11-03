@@ -28,7 +28,7 @@ use super::refinement_declarations::{assemble, counters, mutated, CAS, SPEC};
 /// both classes), a static role `w` and `finish`.
 pub(crate) fn twice(alias: &str) -> String {
     format!(
-        "protocol Twice using v over (c: {alias}::Counter) on origin {{\n\
+        "protocol Twice using p over (c: {alias}::Counter) on origin {{\n\
          role w on {alias}::Counter;\n\
          channel ch from w to w carries Boolean ordering unordered delivery unknown \
          capacity 2 overflow block;\n\
@@ -200,7 +200,7 @@ fn the_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
 #[trace("TC-1065", "FR-218-AC-24")]
 #[test]
 fn a_static_role_can_bind_to_a_whole_model_alias() {
-    let body = "protocol Whole using v over (x: Spec::Counter) on origin {\n\
+    let body = "protocol Whole using p over (x: Spec::Counter) on origin {\n\
          role w on Spec;\n\
          role u on Impl;\n\
          run sequence Main { }\n\
@@ -229,7 +229,7 @@ fn a_static_role_can_bind_to_a_whole_model_alias() {
 #[trace("TC-1065", "FR-218-AC-24")]
 #[test]
 fn a_replicated_role_on_a_model_alias_refuses_at_the_alias_only() {
-    let body = "protocol Whole using v over (x: Boolean) on origin {\n\
+    let body = "protocol Whole using p over (x: Boolean) on origin {\n\
          role w each Spec from counters max 2 lifetime until (true);\n\
          run sequence Main { }\n\
          finish Done as (d: Boolean) { true };\n\
@@ -911,7 +911,7 @@ impl Found {
 /// The protocol `Full`: one node or channel or role of the classes an
 /// internal list can name over the counter model.
 fn full() -> String {
-    "protocol Full using v over (c: Spec::Counter) on origin {\n\
+    "protocol Full using p over (c: Spec::Counter) on origin {\n\
      role w on Spec::Counter;\n\
      role pool each Spec::Counter from counters max 2 lifetime until (true);\n\
      channel ch from w to w carries Boolean ordering unordered delivery unknown \
@@ -931,7 +931,7 @@ fn full() -> String {
 }
 
 fn impl_protocol() -> String {
-    "protocol Local using v over (i: Impl::Counter) on origin {\n\
+    "protocol Local using p over (i: Impl::Counter) on origin {\n\
      role worker on Impl::Counter;\n\
      run sequence Main { event E by worker as (e: Boolean) { true }; }\n\
      finish Done as (d: Boolean) { true };\n\
@@ -940,7 +940,7 @@ fn impl_protocol() -> String {
 }
 
 fn impl_parallel_protocol() -> String {
-    "protocol ParallelLocal using v over (i: Impl::Counter) on origin {\n\
+    "protocol ParallelLocal using p over (i: Impl::Counter) on origin {\n\
      role worker on Impl::Counter;\n\
      run sequence Main {\n\
      parallel par memory tso {\n\
@@ -1036,7 +1036,7 @@ fn a_memory_drain_entry_makes_the_drain_class_internal_under_every_model() {
 /// `cattempt` and `cend` classes) over the counter model, whose record
 /// `Try` is the template's attempt type.
 fn rich() -> String {
-    "protocol Rich using v over (c: Spec::Counter) on each (trg0: Boolean) {\n\
+    "protocol Rich using p over (c: Spec::Counter) on each (trg0: Boolean) {\n\
      role w on Spec::Counter;\n\
      compensate Undo for Main::Applied as (failure: Boolean) by w \
      on Spec::Counter::inc using v clock \"ticks\" {\n\
@@ -1048,7 +1048,7 @@ fn rich() -> String {
      attempt Tried by w on Spec::Counter::inc contracts [] as (tried: Boolean) { true };\n\
      effect Applied of Tried as (applied: Boolean) { true };\n\
      commit Committed by w as (committed: Boolean) { true };\n\
-     await Wait after Tried using v clock \"wall\" within [0,1] \
+     await Wait after Tried using e clock \"wall\" within [0,1] \
      match event Seen by w as (seen: Boolean) { true }; \
      then sequence Then { } timeout sequence Late { }\n\
      }\n\
@@ -1478,7 +1478,7 @@ fn a_node_row_argument_of_the_wrong_type_is_refused_at_the_argument() {
 /// `ev` is an event of the two-field record `Spec::Evt`, `eb` of a Boolean,
 /// `ch` carries a Boolean and `Done` finishes with one.
 fn rec() -> String {
-    "protocol Rec using v over (c: Spec::Counter) on origin {\n\
+    "protocol Rec using p over (c: Spec::Counter) on origin {\n\
      role w on Spec::Counter;\n\
      channel ch from w to w carries Boolean ordering unordered delivery unknown \
      capacity 2 overflow block;\n\
@@ -1651,7 +1651,7 @@ fn memory_protocol(models: &[&str]) -> String {
         })
         .collect();
     format!(
-        "protocol Mem using v over (i: Impl::Counter) on origin {{\n\
+        "protocol Mem using p over (i: Impl::Counter) on origin {{\n\
          role worker on Impl::Counter;\n\
          run sequence Main {{\n{controls}}}\n\
          finish Done as (d: Boolean) {{ true }};\n\

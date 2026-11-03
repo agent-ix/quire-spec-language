@@ -922,7 +922,7 @@ fn assembler_capacity_cause_preserves_native_request_unit() {
 #[test]
 fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
     let (_, assembled) = assemble(
-        "protocol Flow using v over (input: M::Input) on origin {\n\
+        "protocol Flow using p over (input: M::Input) on origin {\n\
          role R on M::Actor;\n\
          run sequence Main {\n\
          effect Applied of Missing as (applied: M::Effect) { true };\n\
@@ -945,7 +945,7 @@ fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
 #[test]
 fn an_attempt_naming_an_unadmitted_model_refuses_at_assembly() {
     let (_, errors) = errors(
-        "protocol Flow using v over (input: M::Input) on origin {\n\
+        "protocol Flow using p over (input: M::Input) on origin {\n\
          role R on M::Actor;\n\
          run sequence Main {\n\
          attempt Tried by R on M::Actor::act contracts [] as (tried: Boolean) { true };\n\
@@ -3715,6 +3715,96 @@ fn parsed_unit_as(
         source,
         build_unit(&parsed).expect("S2 builds the source unit"),
     )
+}
+
+fn admitted_config_version_aliases(
+    text: &str,
+) -> (
+    RawSourceRef,
+    qsl_forms::ParsedUnit,
+    crate::model::intake::SelectedModels,
+) {
+    use crate::model::intake::{admit_unit, package_input};
+
+    let document = include_bytes!("../../../../examples/config-version/model.semantic-ir.json");
+    let packages = package_input([document.as_slice()]).expect("one package document admits");
+    let (source, unit) = parsed_unit_as("repo", "two-model-aliases", text);
+    let selected = admit_unit(
+        &unit.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the same package identity, content and version admit under both aliases");
+    (source, unit, selected)
+}
+
+/// FR-513-AC-2: equal identity, version and content selected under two
+/// aliases is admitted once by intake and assembled while retaining both
+/// model-alias records. This does not assert member-qualified type lookup.
+#[trace("TC-1308", "FR-513-AC-2")]
+#[test]
+fn one_package_identity_with_matching_content_assembles_under_two_aliases() {
+    let source_text = text(
+        "profile v = \"quire.value.complete/v1\";\n",
+        "model Config = \"example/config-version\";\n\
+         model History = \"example/config-version\";\n\
+         predicate Ready using v(): Boolean { true }",
+    );
+    let (source, unit, selected) = admitted_config_version_aliases(&source_text);
+    assert_eq!(selected.len(), 2);
+    assert_eq!(selected[0].alias, "Config");
+    assert_eq!(selected[1].alias, "History");
+    assert_eq!(selected[0].view, selected[1].view);
+    assert_eq!(
+        selected.version_for_identity("example/config-version"),
+        Some("1.0.0")
+    );
+
+    let declarations = PackageDeclarations::assemble(
+        source,
+        "test/two-model-aliases".to_owned(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .expect("the shared package root contributes once");
+    let models = &declarations
+        .model_inputs
+        .as_ref()
+        .expect("admitted models")
+        .0;
+    assert_eq!(models.len(), 2);
+    assert_eq!(models[0].alias, "Config");
+    assert_eq!(models[1].alias, "History");
+    declarations
+        .check(CheckingLimits::default())
+        .expect("the unit with two aliases checks");
+}
+
+/// Repeated aliases do not project the same package population twice when a
+/// state invariant resolves its model type.
+#[trace("TC-1308", "FR-513-AC-2")]
+#[test]
+fn model_population_projection_is_unique_across_package_aliases() {
+    let source_text = text(
+        "profile s = \"quire.state.graph/v1\";\n",
+        "model Config = \"example/config-version\";\n\
+         model History = \"example/config-version\";\n\
+         invariant ConfigNonNegative using s on Config::ConfigVersion at current { self.versionNumber >= 0 }",
+    );
+    let (source, unit, selected) = admitted_config_version_aliases(&source_text);
+    let checked = PackageDeclarations::assemble(
+        source,
+        "test/two-model-aliases".to_owned(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .expect("the population is projected once for this package identity")
+    .check(CheckingLimits::default())
+    .expect("the Config alias invariant checks");
+    assert_eq!(checked.state_clauses().len(), 1);
+    assert_eq!(checked.state_clauses()[0].name(), "ConfigNonNegative");
 }
 
 /// FR-480-AC-2, AC-5, AC-8: the aggregate assembler resolves a function
