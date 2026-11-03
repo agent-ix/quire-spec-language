@@ -1705,7 +1705,6 @@ fn one_source(references: &[DefinitionSourceRef]) -> Result<&DefinitionSourceRef
 }
 
 /// A source reference's two FR-001 labels.
-
 fn canonical_dependency_sources<'a>(
     request: &ReplayRequest,
     index: usize,
@@ -1745,10 +1744,7 @@ fn canonical_dependency_sources<'a>(
 fn source_names_definition_document(request: &ReplayRequest, source: &DefinitionSourceRef) -> bool {
     request.byte_provision().documents().any(|bytes| {
         qsl_semantics::model::observation::document_reference(bytes).is_some_and(|document| {
-            document.authority == source.authority()
-                && document.identity == source.identity()
-                && document.revision_namespace == source.revision_namespace()
-                && document.revision == source.revision()
+            document.authority == source.authority() && document.identity == source.identity()
         })
     }) || qsl_semantics::model::intake::package_input(request.byte_provision().package_documents())
         .is_ok_and(|packages| packages.contains_key(source.identity()))

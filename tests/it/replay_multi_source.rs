@@ -44,8 +44,6 @@ const SECOND: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     function h using v(): Boolean pure { true }\n";
 const AUTHORITY: &str = "agent-ix";
-const NAMESPACE: &str = "git";
-const REVISION: &str = "r1";
 const FIRST_ID: &str = "test:replay-first";
 const SECOND_ID: &str = "test:replay-second";
 const PACKAGE: &str = "example/config-version";
@@ -65,17 +63,12 @@ fn selected() -> QualifiedName {
     QualifiedName::new(vec![quire_exact::Identifier::new("p").unwrap()]).unwrap()
 }
 
-fn reference(identity: &str) -> (String, String, String, String) {
-    (
-        AUTHORITY.to_owned(),
-        identity.to_owned(),
-        NAMESPACE.to_owned(),
-        REVISION.to_owned(),
-    )
+fn reference(identity: &str) -> (String, String) {
+    (AUTHORITY.to_owned(), identity.to_owned())
 }
 
 fn request(source_order: Vec<&str>, documents: Vec<Vec<u8>>) -> ReplayRequestWire {
-    let first_identity = SourceIdentity::new(AUTHORITY, FIRST_ID, NAMESPACE, REVISION);
+    let first_identity = SourceIdentity::new(AUTHORITY, FIRST_ID);
     let selection = call_site(
         first_identity,
         "fixture".to_owned(),
@@ -173,15 +166,15 @@ fn d10_model_document() -> Vec<u8> {
     serde_json::to_vec(&envelope).expect("model document serializes")
 }
 
-fn d10_units(
-    reverse: bool,
-) -> (
-    Vec<(&'static str, &'static str, String)>,
-    Vec<u8>,
-    qsl_foundation::source::provenance::OccurrenceKey,
-    quire_exact::NodeKey,
-    Vec<u8>,
-) {
+struct D10Units {
+    sources: Vec<(&'static str, String)>,
+    model_document: Vec<u8>,
+    occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
+    clause_node: quire_exact::NodeKey,
+    package_bytes: Vec<u8>,
+}
+
+fn d10_units(reverse: bool) -> D10Units {
     let lookup = "(lookup<M::ConfigVersion>(M::config_history, self) absent undefined) = self";
     let first = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -202,8 +195,8 @@ fn d10_units(
          pre PB2 using m on M::Sub::size { false }\n",
     );
     let identities = [
-        SourceIdentity::new("test", "d10:u1", "u1", "1"),
-        SourceIdentity::new("test", "d10:u2", "u2", "1"),
+        SourceIdentity::new("test", "d10:u1"),
+        SourceIdentity::new("test", "d10:u2"),
     ];
     let texts = [first, second];
     let order = if reverse { [1, 0] } else { [0, 1] };
@@ -266,30 +259,37 @@ fn d10_units(
         .map(|index| {
             (
                 if *index == 0 { "d10:u1" } else { "d10:u2" },
-                if *index == 0 { "u1" } else { "u2" },
                 texts[*index].clone(),
             )
         })
         .collect();
-    (sources, model, occurrence_key, clause_node, package_bytes)
+    D10Units {
+        sources,
+        model_document: model,
+        occurrence_key,
+        clause_node,
+        package_bytes,
+    }
 }
 
 fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
-    let (units, model, occurrence_key, clause_node, package_bytes) = d10_units(reverse);
+    let D10Units {
+        sources: units,
+        model_document: model,
+        occurrence_key,
+        clause_node,
+        package_bytes,
+    } = d10_units(reverse);
     let target = QualifiedName::new(vec![quire_exact::Identifier::new("I").unwrap()]).unwrap();
     let snapshot_ref = DocumentRef {
         authority: "test".to_owned(),
         identity: "d10:observation".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     };
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {
             "authority": snapshot_ref.authority,
             "identity": snapshot_ref.identity,
-            "revision_namespace": snapshot_ref.revision_namespace,
-            "revision": snapshot_ref.revision,
         },
         "observation": "pre",
         "model": {"identity": PACKAGE, "version": "1.0.0"},
@@ -341,18 +341,11 @@ fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
         .expect("D10 replay envelope reconstructs");
     let references = units
         .iter()
-        .map(|(identity, namespace, _)| {
-            (
-                "test".to_owned(),
-                (*identity).to_owned(),
-                (*namespace).to_owned(),
-                "1".to_owned(),
-            )
-        })
+        .map(|(identity, _)| ("test".to_owned(), (*identity).to_owned()))
         .collect::<Vec<_>>();
     let mut byte_provision = units
         .iter()
-        .map(|(identity, _, text)| {
+        .map(|(identity, text)| {
             (
                 "test".to_owned(),
                 (*identity).to_owned(),
@@ -389,29 +382,24 @@ fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
     (replayed, package_bytes)
 }
 
-fn dependency_reference(identity: &str) -> (String, String, String, String) {
-    (
-        "test".to_owned(),
-        identity.to_owned(),
-        "unit".to_owned(),
-        "1".to_owned(),
-    )
+fn dependency_reference(identity: &str) -> (String, String) {
+    ("test".to_owned(), identity.to_owned())
 }
 
 fn multi_source_dependency_request(
-    sources: Vec<(String, String, String, String)>,
+    sources: Vec<(String, String)>,
     documents: Vec<Vec<u8>>,
     extra_source: Option<(String, String, Vec<u8>)>,
 ) -> (ReplayRequestWire, Vec<u8>) {
     let first = SuppliedLibrary {
         identity: "test/library".to_owned(),
-        source: SourceIdentity::new("test", "library-u1", "unit", "1"),
+        source: SourceIdentity::new("test", "library-u1"),
         path: "library-u1.native".to_owned(),
         bytes: LIBRARY_FIRST.as_bytes().to_vec(),
     };
     let second = SuppliedLibrary {
         identity: "test/library".to_owned(),
-        source: SourceIdentity::new("test", "library-u2", "unit", "1"),
+        source: SourceIdentity::new("test", "library-u2"),
         path: "library-u2.native".to_owned(),
         bytes: LIBRARY_SECOND.as_bytes().to_vec(),
     };
@@ -421,7 +409,7 @@ fn multi_source_dependency_request(
         .with_library_units("test/library", units)
         .expect("both units belong to one library");
     let selection = call_site(
-        SourceIdentity::new(AUTHORITY, FIRST_ID, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, FIRST_ID),
         "fixture".to_owned(),
         FIRST_ID,
         LIBRARY_CALLER.as_bytes(),
