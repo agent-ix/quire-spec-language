@@ -16,6 +16,7 @@ use crate::checking::{Catalog, DomainField, NativeType};
 use crate::native_model::{
     NativeModel, ObjectRole, OperationRole, ScalarKind, ScalarRole, ScalarSite, Unit,
 };
+use crate::number::{NumberWire, ProtocolNumber};
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
 
 type RefKey<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
@@ -848,8 +849,8 @@ fn target<'a, 'v>(
 fn integer(value: &w::Integer, work: &mut Work) -> Result<i64, Error> {
     work.visit()?;
     match &value.0 {
-        super::NumberWire::Integer { decimal } => work.bytes(decimal.len())?,
-        super::NumberWire::Rational {
+        NumberWire::Integer { decimal } => work.bytes(decimal.len())?,
+        NumberWire::Rational {
             numerator,
             denominator,
         } => {
@@ -858,8 +859,8 @@ fn integer(value: &w::Integer, work: &mut Work) -> Result<i64, Error> {
         }
     }
     match value.checked()? {
-        super::ProtocolNumber::Integer(value) => Ok(value.value()),
-        super::ProtocolNumber::Rational(_) => Err(Error::Invalid(Invalid::WrongNumericKind)),
+        ProtocolNumber::Integer(value) => Ok(value.value()),
+        ProtocolNumber::Rational(_) => Err(Error::Invalid(Invalid::WrongNumericKind)),
     }
 }
 

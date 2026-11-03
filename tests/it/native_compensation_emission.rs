@@ -14,8 +14,9 @@ use quire_spec_language::linking::composed::{
     scopes::{Anchor, ScopeIssue, StructuralKind},
     DeclarationId,
 };
+use quire_spec_language::number::{NumberComponent, NumberError, ProtocolNumber};
 use quire_spec_language::protocol_artifact::{
-    self as artifact, native, v2, wire as w, Error, Invalid, Limits, ProtocolNumber, Unsupported,
+    self as artifact, native, v2, wire as w, Error, Invalid, Limits, Unsupported,
 };
 use quire_spec_language::syntax::composed as c;
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};
@@ -1886,8 +1887,8 @@ fn compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond(
             let offered = text.replacen(from, to, 1);
             failure(
                 &inputs.read_bytes(proofs, offered.as_bytes()),
-                Error::Numeric(artifact::NumberError::ComponentOutOfRange {
-                    component: artifact::NumberComponent::Decimal,
+                Error::Numeric(NumberError::ComponentOutOfRange {
+                    component: NumberComponent::Decimal,
                 }),
             );
         },

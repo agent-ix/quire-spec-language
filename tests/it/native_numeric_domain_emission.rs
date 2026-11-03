@@ -7,9 +7,8 @@ use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, CauseKind, TypeDisposition, TypeLimits};
-use quire_spec_language::protocol_artifact::{
-    native, wire as w, ExactInteger, ExactRational, Limits, ProtocolNumber,
-};
+use quire_spec_language::number::{ExactInteger, ExactRational, ProtocolNumber};
+use quire_spec_language::protocol_artifact::{native, wire as w, Limits};
 use setup::{Inputs, Unit};
 
 /// Adjacent magnitudes are coprime. These pairs exercise both numerator

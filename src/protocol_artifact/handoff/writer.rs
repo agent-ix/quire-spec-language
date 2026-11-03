@@ -37,6 +37,7 @@ use crate::{
     },
     model_source::{self, ModelSourceLimits},
     native_model::{ModelLimits, NativeModel},
+    number::NumberWire,
     protocol_artifact::{
         self as artifact,
         handoff::{
@@ -2196,7 +2197,7 @@ fn mutation_fixtures(
     else {
         return Err(Error::MutationFixture("clock-epoch"));
     };
-    *epoch = w::Number(artifact::NumberWire::Integer {
+    *epoch = w::Number(NumberWire::Integer {
         decimal: "1".into(),
     });
     offer(
@@ -2214,7 +2215,7 @@ fn mutation_fixtures(
     else {
         return Err(Error::MutationFixture("clock-period"));
     };
-    *period = w::Number(artifact::NumberWire::Integer {
+    *period = w::Number(NumberWire::Integer {
         decimal: "1".into(),
     });
     offer(

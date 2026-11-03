@@ -5,6 +5,7 @@ use super::{
     wire, AdmittedPackage, Expected, ExpectedActivation, InventorySide, MappingCause, MappingField,
     Refusal, MEDIA, SCHEMA, WIRE,
 };
+use crate::number::NUMERIC_PROFILE;
 use crate::protocol_artifact::{self as artifact, v2, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
 
@@ -21,7 +22,7 @@ fn headers(
         inherited.schema == SCHEMA,
         inherited.package_type == artifact::PACKAGE_TYPE,
         inherited.encoding == artifact::ENCODING,
-        inherited.numeric == artifact::NUMERIC_PROFILE,
+        inherited.numeric == NUMERIC_PROFILE,
         expected.artifact.kind == artifact::wire::ArtifactKind::LinkedPackage,
         expected.artifact.wire.identity == "quire.compiled-protocol",
         expected.artifact.wire.version == "3",

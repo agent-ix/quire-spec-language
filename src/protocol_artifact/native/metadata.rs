@@ -9,6 +9,7 @@ use crate::checking::composed::proofs::ProofReport;
 use crate::linking::composed::models::ModelTarget;
 use crate::linking::composed::{definition_source::RegisteredDefinition as R, DeclarationId};
 use crate::native_model::NativeModel;
+use crate::number::NUMERIC_PROFILE;
 use crate::protocol_artifact::{
     self as artifact, wire as w, work::Work, Dimension, Error, Invalid, Unsupported,
 };
@@ -547,7 +548,7 @@ pub(super) fn lower(
         schema: text(artifact::SCHEMA, work)?,
         package_type: text(artifact::PACKAGE_TYPE, work)?,
         encoding: text(artifact::ENCODING, work)?,
-        numeric: text(artifact::NUMERIC_PROFILE, work)?,
+        numeric: text(NUMERIC_PROFILE, work)?,
         contract: copy_reference(selections.contract, work)?,
         producer: w::Producer {
             implementation: text(&selections.producer.implementation, work)?,

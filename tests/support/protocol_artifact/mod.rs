@@ -10,6 +10,7 @@ use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
+use quire_spec_language::number::{NumberWire, NUMERIC_PROFILE};
 use quire_spec_language::protocol_artifact::{self as artifact, wire as w};
 use serde_json::json;
 
@@ -385,7 +386,7 @@ impl Fixture {
             schema: artifact::SCHEMA.into(),
             package_type: artifact::PACKAGE_TYPE.into(),
             encoding: artifact::ENCODING.into(),
-            numeric: artifact::NUMERIC_PROFILE.into(),
+            numeric: NUMERIC_PROFILE.into(),
             contract,
             baseline,
             producer: w::Producer {
@@ -1660,12 +1661,12 @@ pub fn owned(declaration: u32, index: u32) -> w::Handle {
     w::Handle { declaration, index }
 }
 pub fn integer(value: i64) -> w::Integer {
-    w::Integer(artifact::NumberWire::Integer {
+    w::Integer(NumberWire::Integer {
         decimal: value.to_string(),
     })
 }
 fn number(value: i64) -> w::Number {
-    w::Number(artifact::NumberWire::Integer {
+    w::Number(NumberWire::Integer {
         decimal: value.to_string(),
     })
 }

@@ -1288,10 +1288,10 @@ fn checked_interval(
                     .into())
                 }
             };
-            let lower = w::Integer(crate::protocol_artifact::NumberWire::Integer {
+            let lower = w::Integer(crate::number::NumberWire::Integer {
                 decimal: interval.lower().to_string(),
             });
-            let upper = w::Integer(crate::protocol_artifact::NumberWire::Integer {
+            let upper = w::Integer(crate::number::NumberWire::Integer {
                 decimal: upper.to_string(),
             });
             Ok(w::Nullable(Some(w::Interval { lower, upper })))
