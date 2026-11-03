@@ -892,6 +892,19 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
     let owns = |node: &qsl_semantics::check::SemanticNode| {
         node.owner() == Some(&Owner::Source(owner.clone()))
     };
+    let occurrence_span = |key: &quire_exact::NodeKey,
+                           origin: &quire_exact::Origin|
+     -> Option<qsl_foundation::Span> {
+        let location = graph.occurrence(key.clone(), origin)?;
+        let region = graph.region(location)?;
+        if region.source() != source {
+            return None;
+        }
+        Some(qsl_foundation::Span {
+            start: usize::try_from(region.start()).ok()?,
+            end: usize::try_from(region.end()).ok()?,
+        })
+    };
     let declarations = graph
         .semantic_graph()
         .nodes()
@@ -905,47 +918,23 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
     let requirements = graph
         .requirements()
         .iter()
-        .filter(|(occurrence, _)| {
-            graph
-                .semantic_graph()
-                .node(occurrence.node().clone())
-                .is_some_and(owns)
-        })
-        .map(|(occurrence, record)| {
-            let span = graph
-                .occurrence(occurrence.node().clone(), occurrence.origin())
-                .and_then(|location| graph.region(location))
-                .and_then(|region| {
-                    Some(qsl_foundation::Span {
-                        start: usize::try_from(region.start()).ok()?,
-                        end: usize::try_from(region.end()).ok()?,
-                    })
-                });
-            TypeRequirement {
-                occurrence: occurrence.clone(),
-                record: record.clone(),
-                span,
-            }
+        .filter(|(occurrence, _)| occurrence_span(occurrence.node(), occurrence.origin()).is_some())
+        .map(|(occurrence, record)| TypeRequirement {
+            occurrence: occurrence.clone(),
+            record: record.clone(),
+            span: occurrence_span(occurrence.node(), occurrence.origin()),
         })
         .collect();
     let mut obligations: Vec<_> = graph
         .requirements()
         .iter()
         .filter_map(|(occurrence, record)| {
-            let node = graph.semantic_graph().node(occurrence.node().clone())?;
-            if !owns(node) {
-                return None;
-            }
-            let location = graph.occurrence(occurrence.node().clone(), occurrence.origin())?;
-            let region = graph.region(location)?;
+            let span = occurrence_span(occurrence.node(), occurrence.origin())?;
             Some(PendingObligation {
                 node: occurrence.node().clone(),
                 occurrence: occurrence.clone(),
                 capability_kind: record.requirements().kind().to_wire().to_owned(),
-                span: qsl_foundation::Span {
-                    start: usize::try_from(region.start()).ok()?,
-                    end: usize::try_from(region.end()).ok()?,
-                },
+                span,
             })
         })
         .collect();
