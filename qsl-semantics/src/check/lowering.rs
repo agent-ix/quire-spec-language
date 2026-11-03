@@ -1749,34 +1749,6 @@ impl<'w> LeafWalk<'w> {
 
 impl<'a> Lowering<'a> {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
-        scope: &'a Scope,
-        owner: &SourceOwner,
-        models: &'a [AdmittedModel],
-        dispatch_tables: &'a [DispatchTable],
-        units: UnitTable,
-        protocol_profile: Option<&'a DefinitionReference>,
-        function_count: usize,
-        occurrences: &'a mut OccurrenceMap<Location>,
-        meter: &'a mut Meter,
-        package_name: &str,
-    ) -> Self {
-        Self::new_with_source_owners(
-            scope,
-            owner,
-            &std::collections::BTreeMap::new(),
-            models,
-            dispatch_tables,
-            units,
-            protocol_profile,
-            function_count,
-            occurrences,
-            meter,
-            package_name,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_with_source_owners(
         scope: &'a Scope,
         owner: &SourceOwner,

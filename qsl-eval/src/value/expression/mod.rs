@@ -2323,13 +2323,14 @@ mod tests {
     #[trace("FR-090-AC-3", "TC-384")]
     #[test]
     fn s6a_invariant_breaks_are_internal_faults_not_panics() {
-        let graph = PackageDeclarations {
-            functions: vec![identity_function()],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![identity_function()];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");
@@ -2423,19 +2424,20 @@ mod tests {
                 qsl_foundation::Span { start: 0, end: 0 },
             )
         };
-        let graph = PackageDeclarations {
-            functions: vec![FunctionDeclaration::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.functions = vec![FunctionDeclaration::new(
                 "flip",
                 vec![("x".to_owned(), boolean())],
                 boolean(),
                 None,
                 Expression::logical_not(Expression::name("x".to_owned())),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("flip(x: Boolean): Boolean = not x checks cleanly");
@@ -2599,13 +2601,14 @@ mod tests {
             );
         }
 
-        let graph = PackageDeclarations {
-            functions: vec![identity_function()],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![identity_function()];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");

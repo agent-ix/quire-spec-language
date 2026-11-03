@@ -58,13 +58,14 @@ fn range(lower: i64, upper: i64) -> ValueType {
 }
 
 fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
-    PackageDeclarations {
-        functions,
-        ..PackageDeclarations::new(
+    {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.functions = functions;
+        declarations
     }
 }
 
@@ -247,13 +248,14 @@ fn located_dependency() -> CheckedPackage {
         DEPENDENCY_TEXT,
     );
     CheckedPackage::link(
-        PackageDeclarations {
-            functions: vec![declaration],
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 source,
                 "lib.g".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![declaration];
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap(),

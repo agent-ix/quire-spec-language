@@ -400,14 +400,15 @@ fn types(scenario: &Scenario) -> TypeEnvironment {
 }
 
 fn package(scenario: &Scenario) -> CheckedPackage {
-    let graph = PackageDeclarations {
-        types: types(scenario),
-        models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types(scenario);
+        declarations.models = vec![scenario.model.clone()];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -430,10 +431,15 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
 /// Like [`package_with_function`], with `p: Population<M::A>[maximum]`.
 fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPackage {
     let target = ValueType::Reference(scenario.a.clone());
-    let graph = PackageDeclarations {
-        types: types(scenario),
-        models: vec![scenario.model.clone()],
-        functions: vec![FunctionDeclaration::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types(scenario);
+        declarations.models = vec![scenario.model.clone()];
+        declarations.functions = vec![FunctionDeclaration::new(
             "F",
             vec![(
                 "p".to_owned(),
@@ -443,12 +449,8 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::size(all_instances(target)),
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -466,10 +468,15 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
 /// body (which, like `F`'s, is checked as `ClauseKind::Body` and could
 /// never see `pre(...)` regardless).
 fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
-    let graph = PackageDeclarations {
-        types: types(scenario),
-        models: vec![scenario.model.clone()],
-        functions: vec![FunctionDeclaration::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types(scenario);
+        declarations.models = vec![scenario.model.clone()];
+        declarations.functions = vec![FunctionDeclaration::new(
             "F2",
             vec![(
                 "elements".to_owned(),
@@ -480,12 +487,8 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::size(Expression::name("elements".to_owned())),
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1320,14 +1323,15 @@ fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
         ],
     )
     .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.models = vec![scenario.model.clone()];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1568,14 +1572,15 @@ fn attribute_world_of(
     let objects = ObjectEnvironment::new(ObjectClosure::new(&types, world, &[]).unwrap())
         .with_population(scenario.binding.clone())
         .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        models: vec![scenario.model.clone()],
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.models = vec![scenario.model.clone()];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -2076,13 +2081,14 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         ],
     )
     .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -3887,15 +3893,16 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
     })
     .expect("the spans have the body's shape");
     let package = CheckedPackage::link(
-        PackageDeclarations {
-            types: types(&scenario),
-            models: vec![scenario.model.clone()],
-            functions: vec![function],
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 source.clone(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types(&scenario);
+            declarations.models = vec![scenario.model.clone()];
+            declarations.functions = vec![function];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("the unit checks"),
@@ -4138,10 +4145,15 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
             model: AdmittedModel::new(&domain, &view).unwrap(),
         };
         let query = all_instances(ValueType::Reference(scenario.a.clone()));
-        let graph = PackageDeclarations {
-            types: types(&scenario),
-            models: vec![scenario.model.clone()],
-            functions: vec![FunctionDeclaration::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.types = types(&scenario);
+            declarations.models = vec![scenario.model.clone()];
+            declarations.functions = vec![FunctionDeclaration::new(
                 "F",
                 vec![(
                     "p".to_owned(),
@@ -4167,12 +4179,8 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                     .with_bounds(vec!["0".to_owned(), "1".to_owned()]),
                 None,
                 query.clone(),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap();

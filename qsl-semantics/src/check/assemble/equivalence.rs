@@ -489,6 +489,16 @@ pub(super) fn source_owner_key(form: &DimensionEquivalenceForm) -> String {
     )
 }
 
+/// Who owns the equivalences being decided: the unit's own owner, the
+/// owner of each declaration admitted from another source unit, and the
+/// package every node key names.
+#[derive(Clone, Copy)]
+pub(super) struct Ownership<'a> {
+    pub(super) owner: &'a SourceOwner,
+    pub(super) source_owners: &'a BTreeMap<String, SourceOwner>,
+    pub(super) package_name: &'a str,
+}
+
 /// The unit's dimension equivalences decided in `phase`: in
 /// [`Phase::Base`] no equivalence and every error of that phase, in
 /// [`Phase::All`] the admitted equivalences or every error found.
@@ -496,12 +506,15 @@ pub(super) fn assemble(
     forms: &[DimensionEquivalenceForm],
     source: SourceView<'_>,
     models: &[AdmittedModel],
-    owner: &SourceOwner,
-    source_owners: &BTreeMap<String, SourceOwner>,
-    package_name: &str,
+    ownership: Ownership<'_>,
     limits: AssemblyLimits,
     phase: Phase,
 ) -> Result<Vec<DimensionEquivalence>, Vec<AssemblyError>> {
+    let Ownership {
+        owner,
+        source_owners,
+        package_name,
+    } = ownership;
     let scope = Scope { source, models };
     let mut errors = Vec::new();
     // Steps 1 and 2, in source order.
@@ -692,7 +705,7 @@ pub(super) fn assemble(
         };
         let [first, second] = resolved.emitted_keys().ok_or_else(non_canonical)?;
         let source_owner = source_owners
-            .get(&source_owner_key(&resolved.form))
+            .get(&source_owner_key(resolved.form))
             .unwrap_or(owner);
         let node_owner = source_owner.node_owner(package_name);
         let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)

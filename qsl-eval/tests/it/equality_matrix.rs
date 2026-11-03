@@ -257,9 +257,14 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
             members: vec![left.clone(), right.clone()],
         };
         let shape = ValueType::Enum(binding.shape());
-        let declarations = PackageDeclarations {
-            enums: vec![binding],
-            functions: vec![FunctionDeclaration::new(
+        let declarations = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.enums = vec![binding];
+            declarations.functions = vec![FunctionDeclaration::new(
                 "Compare",
                 vec![
                     ("left".to_owned(), TypeForm::name("State", span)),
@@ -268,12 +273,8 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
                 TypeForm::builtin(BuiltinType::Boolean, span),
                 None,
                 source.clone(),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         };
         let package = CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
         let checked = package
@@ -2256,14 +2257,15 @@ fn e_construction_refusals_are_located() {
 // ---- scalar operators through the expression checker and evaluator ----------
 
 fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
-    let graph = PackageDeclarations {
-        types,
-        ieee_profile: ieee.then(|| profile().clone()),
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.ieee_profile = ieee.then(|| profile().clone());
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -3425,9 +3427,14 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         [],
     )
     .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        functions: vec![FunctionDeclaration::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types;
+        declarations.functions = vec![FunctionDeclaration::new(
             "pick".to_owned(),
             vec![(
                 "n".to_owned(),
@@ -3436,12 +3443,8 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             operand("n"),
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
