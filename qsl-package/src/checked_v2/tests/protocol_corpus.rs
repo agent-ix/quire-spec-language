@@ -8,10 +8,7 @@ use super::*;
 #[trace("FR-383-AC-19", "FR-383-AC-20", "TC-1063")]
 #[test]
 fn conformance_protocol_vector_positive_packages_are_admitted() {
-    let Some(directory) = qspec_directory() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let directory = qspec_directory().expect("QSPEC_DIR must name a quire-specification checkout");
     let fixtures = directory.join("proposals/checked-package-v2/fixtures");
     let vectors = read_fixture(&fixtures.join("protocol-node-vectors.json"));
     let positives = vectors["positive"]
