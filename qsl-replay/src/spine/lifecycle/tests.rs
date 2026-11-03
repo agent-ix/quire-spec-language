@@ -904,11 +904,19 @@ fn aggregate_model_selection_admits_selections_from_every_unit() {
     });
     let a = parse_named(
         source_a,
-        format!("{HEADER}model A = \"acme/orders\";").as_bytes(),
+        format!(
+            "{HEADER}model A = \"acme/orders\";\n\
+             function fa using v(x: Int[0, 9]): Boolean pure {{ x > 0 }}"
+        )
+        .as_bytes(),
     );
     let b = parse_named(
         source_b,
-        format!("{HEADER}model B = \"acme/orders\";").as_bytes(),
+        format!(
+            "{HEADER}model B = \"acme/orders\";\n\
+             function fb using v(x: Int[0, 9]): Boolean pure {{ x > 0 }}"
+        )
+        .as_bytes(),
     );
     let dependencies = DependencyInput::default();
     let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
