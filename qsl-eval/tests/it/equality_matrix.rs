@@ -1176,7 +1176,7 @@ fn animal_environment() -> TypeEnvironment {
 /// The comparison is still the identity triple: the same `Dog` object on
 /// both sides is `true`, another object is `false`.
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6", "QSpec-FR-149-AC-12")]
 #[test]
 fn e16a_references_admit_a_conforming_upcast_in_either_order() {
     let env = animal_environment();
@@ -1203,13 +1203,30 @@ fn e16a_references_admit_a_conforming_upcast_in_either_order() {
         equal(&env, (&animal, &rex("rex")), (&dog, &rex("fido"))),
         is(false)
     );
+    // The upcast row is not a conversion: the comparison charges only the
+    // one-pair equality plan.
+    let checked = check(&env, &animal, &dog).unwrap();
+    let mut meter = Meter::new(ScalarLimits {
+        value_occurrences: 1,
+        work_units: 5,
+        result_units: 1,
+        ..ZERO
+    });
+    assert_eq!(
+        checked.evaluate(&env, &rex("rex"), &rex("rex"), &mut meter),
+        Outcome::Completed(true)
+    );
+    assert_eq!(
+        crate::support::admitted_charge_points(&meter),
+        PLAN_SCHEDULE
+    );
 }
 
 /// TC-198 L08's adverse case: two object-reference types
 /// with no generalization relation between them still refuse `=` at check
 /// time, `ill_typed`/`type-mismatch`, in either order; siblings under one
 /// supertype are no more related than unrelated roots.
-#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6", "QSpec-FR-149-AC-12")]
 #[test]
 fn e16b_references_to_unrelated_object_types_refuse() {
     let env = animal_environment();
@@ -1779,6 +1796,197 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
             expected
         );
     }
+}
+
+fn native_uuid(text: &str) -> Value {
+    Value::Uuid(quire_exact::Uuid::from_canonical_text(text).expect("a canonical UUID"))
+}
+
+fn native_timestamp(text: &str) -> Value {
+    Value::Timestamp(
+        quire_exact::Timestamp::from_canonical_text(text).expect("a canonical Timestamp"),
+    )
+}
+
+const NATIVE_UUID: &str = "00112233-4455-6677-8899-aabbccddeeff";
+const NATIVE_UUID_LAST_DIGIT_E: &str = "00112233-4455-6677-8899-aabbccddeefe";
+
+/// FR-149-AC-14: independently admitted UUID values of one payload compare
+/// equal and have equal keys, changing the final digit compares unequal;
+/// Timestamp `0` equals `0` and not `1`; each comparison is one terminal pair
+/// under the existing equality schedule.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-14")]
+#[test]
+fn e30_uuid_and_timestamp_compare_by_payload_as_one_terminal_pair() {
+    let env = TypeEnvironment::default();
+    let limits = ScalarLimits {
+        value_occurrences: 1,
+        work_units: 5,
+        result_units: 1,
+        ..ZERO
+    };
+    let rows = [
+        (
+            ValueType::Uuid,
+            native_uuid(NATIVE_UUID),
+            native_uuid(NATIVE_UUID),
+            true,
+        ),
+        (
+            ValueType::Uuid,
+            native_uuid(NATIVE_UUID),
+            native_uuid(NATIVE_UUID_LAST_DIGIT_E),
+            false,
+        ),
+        (
+            ValueType::Timestamp,
+            native_timestamp("0"),
+            native_timestamp("0"),
+            true,
+        ),
+        (
+            ValueType::Timestamp,
+            native_timestamp("0"),
+            native_timestamp("1"),
+            false,
+        ),
+    ];
+    for (value_type, left, right, expected) in rows {
+        let checked = check(&env, &value_type, &value_type).unwrap();
+        let mut meter = Meter::new(limits);
+        assert_eq!(
+            checked.evaluate(&env, &left, &right, &mut meter),
+            Outcome::Completed(expected)
+        );
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            PLAN_SCHEDULE
+        );
+        assert_eq!(pairs(&left, &right), 1);
+        assert_eq!(
+            quire_exact::compare_keys(&left, &right).map(std::cmp::Ordering::is_eq),
+            Some(expected)
+        );
+    }
+}
+
+/// FR-149-AC-15: UUID against Timestamp, and either kind against `Int`,
+/// `Integer`, `Text`, `String` or `Boolean`, refuse `ill_typed`/`type-mismatch`
+/// before any equality charge and produce no Boolean; direct mixed-kind key
+/// comparison returns no key relation.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-15")]
+#[test]
+fn e31_uuid_and_timestamp_never_compare_with_another_kind() {
+    let env = TypeEnvironment::default();
+    let others = [
+        ValueType::Int(interval(0, 9)),
+        ValueType::Integer,
+        ValueType::Text(text_type(TextProfile::Nfc)),
+        ValueType::String,
+        ValueType::Boolean,
+    ];
+    let mismatch = Err(IllTyped {
+        cause: IllTypedCause::TypeMismatch,
+    });
+    for native in [ValueType::Uuid, ValueType::Timestamp] {
+        for other in &others {
+            assert_eq!(
+                check(&env, &native, other),
+                mismatch,
+                "{native:?} {other:?}"
+            );
+            assert_eq!(
+                check(&env, other, &native),
+                mismatch,
+                "{other:?} {native:?}"
+            );
+        }
+    }
+    assert_eq!(
+        check(&env, &ValueType::Uuid, &ValueType::Timestamp),
+        mismatch
+    );
+    assert_eq!(
+        check(&env, &ValueType::Timestamp, &ValueType::Uuid),
+        mismatch
+    );
+    assert_eq!(
+        quire_exact::compare_keys(&native_uuid(NATIVE_UUID), &native_timestamp("0")),
+        None
+    );
+    assert_eq!(
+        quire_exact::compare_keys(&native_timestamp("0"), &native_uuid(NATIVE_UUID)),
+        None
+    );
+
+    // An attempted equality conversion between the kinds is no conversion
+    // the table admits, so it refuses at check time as well.
+    for (source, target) in [
+        (ValueType::Uuid, ValueType::Timestamp),
+        (ValueType::Timestamp, ValueType::Uuid),
+        (ValueType::Integer, ValueType::Uuid),
+        (ValueType::Integer, ValueType::Timestamp),
+        (ValueType::Uuid, ValueType::Integer),
+        (ValueType::Timestamp, ValueType::Integer),
+    ] {
+        assert_eq!(
+            env.check_equality(
+                EqualityOperator::Equal,
+                EqualityOperand::converted(source.clone(), target.clone()),
+                typed(&target),
+                &EnumMemberIndex::default(),
+            ),
+            mismatch,
+            "{source:?} to {target:?}"
+        );
+    }
+
+    // The check-time refusal above takes no meter, so it precedes every
+    // equality charge. A kernel comparison of the two kinds is the typed
+    // checked-invariant refusal after the plan-form charge alone: no plan,
+    // pair or retained result is charged.
+    let invariant = Refusal::CheckedInvariant {
+        cause: quire_exact::CheckedInvariantCause::ValueKindMismatch,
+    };
+    for (left, right) in [
+        (native_uuid(NATIVE_UUID), native_timestamp("0")),
+        (native_timestamp("0"), native_uuid(NATIVE_UUID)),
+    ] {
+        assert_eq!(plan_equality(&left, &right).err(), Some(invariant.clone()));
+        let mut meter = Meter::new(UNLIMITED);
+        assert_eq!(
+            quire_exact::planned_equality(&left, &right, &mut meter),
+            Outcome::Refused(invariant.clone())
+        );
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            [ChargePoint::EqualityPlanForm]
+        );
+    }
+}
+
+/// FR-149-AC-16: same-kind keys compare canonical payload content unsigned
+/// ASCII bytewise with a proper prefix first: Timestamp `10` orders before
+/// `2` and `-1` before `-2`, equal payloads have equal keys.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-16")]
+#[test]
+fn e32_native_keys_order_by_canonical_payload_bytes() {
+    use std::cmp::Ordering;
+    let key = |left: &str, right: &str| {
+        quire_exact::compare_keys(&native_timestamp(left), &native_timestamp(right))
+    };
+    assert_eq!(key("10", "2"), Some(Ordering::Less));
+    assert_eq!(key("2", "10"), Some(Ordering::Greater));
+    assert_eq!(key("-1", "-2"), Some(Ordering::Less));
+    assert_eq!(key("7", "7"), Some(Ordering::Equal));
+    assert_eq!(key("1", "10"), Some(Ordering::Less));
+    assert_eq!(
+        quire_exact::compare_keys(
+            &native_uuid(NATIVE_UUID),
+            &native_uuid(NATIVE_UUID_LAST_DIGIT_E)
+        ),
+        Some(Ordering::Greater)
+    );
 }
 
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]

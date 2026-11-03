@@ -521,7 +521,7 @@ fn union_value(body: &CheckedBody) -> (NodeKey, usize, Vec<(&NodeKind<NodeId>, V
     (declaration.clone(), *member, arguments)
 }
 
-#[trace("FR-317-AC-1", "TC-819")]
+#[trace("FR-317-AC-1", "TC-819", "QSpec-TC-262", "QSpec-FR-143-AC-12")]
 #[test]
 fn a_union_construction_checks_as_the_member_over_its_union() {
     let (unit, typed) = check("Shape", "Shape::Empty");
@@ -556,7 +556,7 @@ fn a_union_construction_checks_as_the_member_over_its_union() {
     assert_eq!(bad.location, Unit::body().child(1), "at `true`");
 }
 
-#[trace("FR-317-AC-2", "TC-819")]
+#[trace("FR-317-AC-2", "TC-819", "QSpec-TC-262", "QSpec-FR-143-AC-12")]
 #[test]
 fn a_construction_of_the_wrong_shape_refuses_at_the_construction() {
     for body in [

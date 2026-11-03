@@ -995,7 +995,7 @@ fn in_universe(orders: &Orders, universe: u8, type_name: &str, object: &str) -> 
 /// object identity text. Navigation follows the whole key, so the held `p1`
 /// is not substituted: the target is dangling. A receiver `s1` of universe 7
 /// is a different receiver from `s1` of universe 9 and has no link.
-#[trace("TC-1034", "FR-364-AC-3")]
+#[trace("TC-1034", "FR-364-AC-3", "QSpec-TC-188", "QSpec-FR-143-AC-11")]
 #[test]
 fn navigation_follows_the_whole_reference_key_never_the_object_identity_alone() {
     let orders = Orders::new(Shape::BASE);

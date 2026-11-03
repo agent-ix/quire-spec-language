@@ -112,7 +112,7 @@ fn union_values_round_trip_through_their_witness_spelling() {
 
 /// FR-321: a witness union that is not a well-formed value of the slot's
 /// union refuses `WrongValueKind` naming the parameter.
-#[trace("FR-321-AC-1", "TC-829")]
+#[trace("FR-321-AC-1", "TC-829", "QSpec-TC-400", "QSpec-FR-143-AC-15")]
 #[test]
 fn a_witness_union_that_is_not_a_member_of_its_slots_union_is_refused() {
     let shape = fixture::union_type("Shape");

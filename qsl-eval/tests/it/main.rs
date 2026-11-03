@@ -13,6 +13,7 @@ const TEST_PACKAGE_NAME: &str = "qsl-eval-integration-tests";
 #[allow(dead_code)]
 mod tc235_k2;
 
+mod absent_literal;
 mod accounting_boundaries;
 mod automaton_kernels;
 mod automaton_key;
@@ -35,6 +36,7 @@ mod float_rounding;
 mod footprints;
 mod hyper_tuple;
 mod inherited_attributes;
+mod int_arithmetic_expected_type;
 mod kernel_refusal_payloads;
 mod machine_contexts;
 mod model_reference_queries;
@@ -61,6 +63,7 @@ mod timed_trace;
 mod total_functions;
 mod type_invariants;
 mod unbounded_set_call;
+mod union_value_profile;
 mod variant_fields;
 mod weighted_sampler;
 mod window_aggregates;
