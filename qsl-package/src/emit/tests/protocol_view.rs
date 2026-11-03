@@ -481,51 +481,57 @@ fn a_parallel_joins_only_the_branches_its_join_names() {
     assert_eq!(branches, 2, "the fork enters both branches");
 }
 
-/// FR-519-AC-1 (TC-1314 row 1): an `await` anchored at a compensation takes its
-/// anchor edge from the enter port of the template's forward effect. The
-/// checker cannot yet build that source, so the fixture's `await` node is
-/// edited to name the `Refund` template.
-#[trace("FR-519-AC-1", "TC-1314")]
+/// FR-519-AC-1 (TC-1314 row 1): an `await` anchored at a compensation checks,
+/// emits `after` as kind `compensation` naming the template, and takes its
+/// anchor edge from the enter port of the template's forward effect.
+#[trace("FR-519-AC-1", "FR-466-AC-6", "TC-1314", "TC-948")]
 #[test]
 fn an_await_after_a_compensation_is_anchored_at_the_forward_effect() {
-    let fixture = fixture();
+    let text = source_text().replace(
+        "after Main::PaymentRetries::ChargeCycle::Applied",
+        "after Refund",
+    );
+    assert!(text.contains("await WaitEvent after Refund using T"));
+    let fixture = fixture_over(&text);
     let package = &*fixture.admitted;
     let clause_id = clause(package).node_id.clone();
     let refund = by_name(package, "Refund").node_id.clone();
     let forward = by_name(package, "Applied").node_id.clone();
-    let wait = by_name(package, "WaitEvent").node_id.clone();
+    let wait = by_name(package, "WaitEvent");
 
-    let mut nodes = package.graph().nodes.clone();
-    let node = nodes.iter_mut().find(|node| node.node_id == wait).unwrap();
-    let CheckedTerm::Application { arguments, .. } = &mut node.body else {
+    let CheckedTerm::Application { arguments, .. } = &wait.body else {
         panic!("an application body");
     };
-    for argument in arguments {
-        let CheckedTerm::Binding { name, value } = argument else {
-            continue;
-        };
-        if &**name != "after" {
-            continue;
-        }
-        let CheckedTerm::Aggregate { members } = &mut **value else {
-            panic!("after is a group");
-        };
-        for member in members {
-            match member {
-                CheckedTerm::Binding { name, value } if &**name == "kind" => {
-                    let CheckedTerm::Literal { value, .. } = &mut **value else {
-                        panic!("a text kind");
-                    };
-                    *value = json!("compensation");
-                }
-                CheckedTerm::Binding { name, value } if &**name == "target" => {
-                    **value = CheckedTerm::reference(refund.clone());
-                }
-                _ => {}
+    let after = arguments
+        .iter()
+        .find_map(|argument| match argument {
+            CheckedTerm::Binding { name, value } if &**name == "after" => Some(&**value),
+            _ => None,
+        })
+        .expect("an after argument");
+    let CheckedTerm::Aggregate { members } = after else {
+        panic!("after is a group");
+    };
+    let (mut kind, mut target) = (None, None);
+    for member in members {
+        match member {
+            CheckedTerm::Binding { name, value } if &**name == "kind" => {
+                let CheckedTerm::Literal { value, .. } = &**value else {
+                    panic!("a text kind");
+                };
+                kind = Some(value.clone());
             }
+            CheckedTerm::Binding { name, value } if &**name == "target" => {
+                target = Some((**value).clone());
+            }
+            _ => {}
         }
     }
-    let anchors: Vec<_> = relation_over(&nodes, &clause_id)
+    assert_eq!(kind, Some(json!("compensation")));
+    assert_eq!(target, Some(CheckedTerm::reference(refund)));
+
+    let wait = wait.node_id.clone();
+    let anchors: Vec<_> = causal_relation(package, &clause_id)
         .unwrap()
         .edges()
         .iter()

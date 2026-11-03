@@ -24,6 +24,7 @@
 //! `choice`, and is declared at that control's declaration followed by its
 //! own name (QSpec FR-464 "Control tree").
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{AnchorSite, JoinPolicy, Outstanding, ProtocolNodeKind};
@@ -39,6 +40,7 @@ use crate::check::node_key::{
     Operator, TupleMember, TupleTerm,
 };
 use crate::check::protocol_clause::{CheckedControl, CheckedControlTree, ProtocolNodeId};
+use crate::check::protocol_obligation::CheckedCommit;
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::value::member::Member;
 
@@ -77,6 +79,10 @@ pub(super) struct RunInputs<'a> {
     pub(super) channels: &'a [(String, NodeKey)],
     /// The nodes each `attempt` names.
     pub(super) attempts: &'a [AttemptNodes],
+    /// The `compensate` operation of the clause's compensation templates.
+    pub(super) compensate: &'a Operation,
+    /// The operation anchor of each compensation template.
+    pub(super) compensation_anchors: &'a [CompensationNodes],
     /// The binders readable at the clause (`C0`).
     pub(super) clause_binders: &'a [Binder],
     /// The `Boolean` scalar type node.
@@ -90,6 +96,9 @@ pub(super) struct Run {
     pub(super) readable: Vec<Binder>,
     /// Every control's node, by its declaration.
     pub(super) nodes: BTreeMap<ProtocolNodeId, NodeRef>,
+    /// The compensation templates an `await` read while the tree was keyed,
+    /// by their index among the checked templates.
+    pub(super) compensations: BTreeMap<usize, NodeKey>,
 }
 
 /// What the lowering of one control reads of its protocol.
@@ -190,6 +199,7 @@ impl Lowering<'_> {
 
         let declarations = control_declarations(name, tree);
         let mut keys: BTreeMap<ProtocolNodeId, NodeRef> = BTreeMap::new();
+        let mut compensations: BTreeMap<usize, NodeKey> = BTreeMap::new();
         for node in controls.build_order()? {
             let control = tree.control(node).ok_or_else(unchecked)?;
             // A branch's or a case's body is held by its `parallel` or its
@@ -207,8 +217,25 @@ impl Lowering<'_> {
                 .iter()
                 .map(|segment| identifier(segment, &location))
                 .collect::<Result<Vec<_>, _>>()?;
+            // An `await` after a compensation reads the template, which is
+            // written once its forward effect and commit control are keyed.
+            if let Some(index) = controls.template_of(node) {
+                if let Entry::Vacant(slot) = compensations.entry(index) {
+                    let template = self.compensation_node(
+                        protocol,
+                        inputs.compensate,
+                        inputs.roles,
+                        &keys,
+                        inputs.clause_binders,
+                        inputs.boolean.clone(),
+                        inputs.compensation_anchors,
+                        index,
+                    )?;
+                    slot.insert(template);
+                }
+            }
             let (operator, arguments) =
-                self.control_arguments(&controls, node, &keys, &location)?;
+                self.control_arguments(&controls, node, &keys, &compensations, &location)?;
             let key = self.protocol_member_ref(
                 &location,
                 "control",
@@ -241,6 +268,7 @@ impl Lowering<'_> {
             root,
             readable,
             nodes: keys,
+            compensations,
         })
     }
 
@@ -251,6 +279,7 @@ impl Lowering<'_> {
         controls: &Controls<'_, '_>,
         node: ProtocolNodeId,
         keys: &BTreeMap<ProtocolNodeId, NodeRef>,
+        compensations: &BTreeMap<usize, NodeKey>,
         location: &quire_semantic_value::location::Location,
     ) -> Result<(&'static str, Vec<MemberTerm>), CheckRefusal> {
         let protocol = controls.protocol;
@@ -432,9 +461,19 @@ impl Lowering<'_> {
                     .iter()
                     .find(|awaited| awaited.node == node)
                     .ok_or_else(unchecked)?;
-                let target = anchor_of()?;
+                let (kind, target) = match controls.template_of(node) {
+                    Some(index) => (
+                        "compensation",
+                        compensations
+                            .get(&index)
+                            .cloned()
+                            .map(NodeRef::Admitted)
+                            .ok_or_else(unchecked)?,
+                    ),
+                    None => ("event", anchor_of()?),
+                };
                 let after = GroupTerm::new(vec![
-                    member("kind", self.text_literal("event", location)?),
+                    member("kind", self.text_literal(kind, location)?),
                     member("target", LeafTerm::reference_node(target)),
                 ]);
                 let clock = self.text_literal(&awaited.clock, location)?;
@@ -965,6 +1004,22 @@ impl AwaitParts {
 }
 
 impl Controls<'_, '_> {
+    /// The index of the compensation template the `await` `node` is anchored
+    /// at, if its anchor is a template rather than a control.
+    fn template_of(&self, node: ProtocolNodeId) -> Option<usize> {
+        let target = self.anchored.get(&node)?;
+        let declaration = self.protocol.form.declarations.get(target.0)?;
+        if declaration.kind != ProtocolNodeKind::CompensateTemplate {
+            return None;
+        }
+        self.protocol
+            .checked
+            .obligations
+            .compensations
+            .iter()
+            .position(|template| template.name == declaration.name.name)
+    }
+
     /// The node of the role named `name`.
     fn role(&self, name: &str) -> Option<NodeKey> {
         self.inputs
@@ -999,8 +1054,26 @@ impl Controls<'_, '_> {
             state.insert(node, false);
             stack.push((node, true));
             let control = tree.control(node).ok_or_else(unchecked)?;
-            let names = control.children.iter().chain(self.anchored.get(&node));
-            for &name in names.collect::<Vec<_>>().into_iter().rev() {
+            let mut names: Vec<ProtocolNodeId> = control.children.clone();
+            match self.template_of(node) {
+                // A compensation anchor is keyed from its forward effect and
+                // its commit control (QSpec FR-466 "Compensation templates").
+                Some(index) => {
+                    let template = self
+                        .protocol
+                        .checked
+                        .obligations
+                        .compensations
+                        .get(index)
+                        .ok_or_else(unchecked)?;
+                    names.push(template.effect);
+                    if let CheckedCommit::Node(commit) = template.commit {
+                        names.push(commit);
+                    }
+                }
+                None => names.extend(self.anchored.get(&node).copied()),
+            }
+            for name in names.into_iter().rev() {
                 if tree.control(name).is_none() {
                     return Err(unchecked());
                 }

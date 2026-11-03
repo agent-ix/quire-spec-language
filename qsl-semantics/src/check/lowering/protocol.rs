@@ -1016,6 +1016,7 @@ impl Lowering<'_> {
             &readable,
             boolean.clone(),
         )?;
+        let compensate = operation("compensate")?;
         let run = self.run_nodes(
             protocol,
             &RunInputs {
@@ -1023,6 +1024,8 @@ impl Lowering<'_> {
                 roles: &roles_by_name,
                 channels: &named_channels,
                 attempts: members.attempts,
+                compensate: &compensate,
+                compensation_anchors: members.compensations,
                 clause_binders: &readable,
                 boolean: boolean.clone(),
             },
@@ -1030,12 +1033,13 @@ impl Lowering<'_> {
         let roles: Vec<NodeKey> = sorted(roles_by_name.iter().map(|(_, key)| key.clone()));
         let compensations = self.compensation_nodes(
             protocol,
-            &operation("compensate")?,
+            &compensate,
             &roles_by_name,
             &run.nodes,
             &readable,
             boolean.clone(),
             members.compensations,
+            &run.compensations,
         )?;
         let named_roles: BTreeMap<String, NodeKey> = roles_by_name.iter().cloned().collect();
         let finish = self.finish_node(
@@ -1352,7 +1356,8 @@ impl Lowering<'_> {
 
     /// The compensation template nodes of `protocol` (FR-383-AC-8 and
     /// QSpec FR-466). Every checked stage is emitted from its checked body;
-    /// each introduced binder is a parameter at its stage-local level.
+    /// each introduced binder is a parameter at its stage-local level. A
+    /// template an `await` already read (`built`) is not written again.
     #[allow(clippy::too_many_arguments)]
     fn compensation_nodes(
         &mut self,
@@ -1366,340 +1371,366 @@ impl Lowering<'_> {
         readable: &[Binder],
         boolean: NodeKey,
         anchors: &[CompensationNodes],
+        built: &BTreeMap<usize, NodeKey>,
     ) -> Result<Vec<NodeKey>, CheckRefusal> {
-        let name = protocol.form.name.name.as_str();
-        let mut keys = Vec::with_capacity(protocol.checked.obligations.compensations.len());
-        for (index, checked) in protocol
-            .checked
-            .obligations
-            .compensations
-            .iter()
-            .enumerate()
-        {
-            let location = protocol_location(name, ProtocolSite::Compensation(&checked.name));
-            let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
-            let source = protocol
-                .form
-                .compensations
-                .get(index)
-                .ok_or_else(unchecked)?;
-            let anchor = anchors
-                .iter()
-                .find(|anchor| anchor.declaration == index)
-                .ok_or_else(unchecked)?
-                .anchor
-                .clone();
-            let effect = controls
-                .get(&checked.effect)
-                .cloned()
-                .ok_or_else(unchecked)?;
-            let role = roles
-                .get(checked.role)
-                .map(|(_, key)| key.clone())
-                .ok_or_else(unchecked)?;
-
-            let mut binder_levels = BTreeMap::new();
-            if let Some(input) = protocol.checked.slots.binders.first() {
-                binder_levels.insert(input.name.clone(), 0);
-            }
-            let mut next_level = 1;
-            if let CheckedActivation::OnEach { binder, .. } =
-                &protocol.checked.obligations.activation
-            {
-                binder_levels.insert(binder.clone(), next_level);
-                next_level += 1;
-            }
-            for (capture, _) in self.protocol_capture_entries(protocol) {
-                binder_levels.insert(capture, next_level);
-                next_level += 1;
-            }
-            binder_levels.insert(checked.forward.name.clone(), next_level);
-            next_level += 1;
-            for (capture, _) in self.capture_entries(protocol, &checked.registration_captures)? {
-                binder_levels.insert(capture, next_level);
-                next_level += 1;
-            }
-            binder_levels.insert(checked.trigger.name.clone(), next_level);
-            next_level += 1;
-            for (capture, _) in self.capture_entries(protocol, &checked.activation_captures)? {
-                binder_levels.insert(capture, next_level);
-                next_level += 1;
-            }
-            binder_levels.insert(checked.retry.earlier.name.clone(), next_level);
-            next_level += 1;
-            binder_levels.insert(checked.retry.later.name.clone(), next_level);
-            next_level += 1;
-            binder_levels.insert(checked.recover.binder.name.clone(), next_level);
-            let mut binder_parameters = BTreeMap::new();
-            for binder in readable {
-                let declared = protocol
-                    .checked
-                    .slots
-                    .binders
-                    .get(binder.slot)
-                    .ok_or_else(unchecked)?;
-                binder_parameters.insert(
-                    declared.name.clone(),
-                    (binder.parameter.clone(), binder.semantic_type.clone()),
-                );
-            }
-
-            let mut args = Vec::with_capacity(13);
-            args.push(MemberTerm::bound(
-                "forward",
-                LeafTerm::reference_node(effect),
-            ));
-            let forward = self.compensation_scope(
-                &[(
-                    checked.forward.name.clone(),
-                    checked.forward.value_type.clone(),
-                )],
-                &binder_levels,
-                &mut binder_parameters,
-                &location,
-            )?;
-            args.push(MemberTerm::bound(
-                "forward_binder",
-                LeafTerm::reference_node(forward.1[0].parameter.clone()),
-            ));
-            args.push(MemberTerm::bound("role", LeafTerm::reference(role)));
-            args.push(MemberTerm::bound("operation", LeafTerm::reference(anchor)));
-            args.push(MemberTerm::bound(
-                "clock",
-                self.text_literal(&source.clock.text, &location)?,
-            ));
-
-            let mut registration = Vec::with_capacity(checked.registration_captures.len());
-            for (position, &capture_index) in checked.registration_captures.iter().enumerate() {
-                let capture = protocol
-                    .checked
-                    .obligations
-                    .captures
-                    .get(capture_index)
-                    .ok_or_else(unchecked)?;
-                let mut entries = self.compensation_entries(
+        let count = protocol.checked.obligations.compensations.len();
+        let mut keys = Vec::with_capacity(count);
+        for index in 0..count {
+            let key = match built.get(&index) {
+                Some(key) => key.clone(),
+                None => self.compensation_node(
                     protocol,
-                    checked,
-                    CaptureStage::Registration,
-                    position,
-                )?;
-                entries.push((capture.name.clone(), capture.declared_type.clone()));
-                let scope = self.compensation_scope(
-                    &entries,
-                    &binder_levels,
-                    &mut binder_parameters,
-                    &location,
-                )?;
-                let initializer = self.expression(
-                    capture.initializer.root(),
-                    &mut Binders::new(&scope.0, &scope.1),
-                )?;
-                registration.push(TupleMember::Group(GroupTerm::new(vec![
-                    member(
-                        "binder",
-                        LeafTerm::reference_node(
-                            scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
-                        ),
-                    ),
-                    member("initializer", initializer),
-                ])));
-            }
-            args.push(MemberTerm::binding(
-                "registration_captures",
-                BindingValue::Tuple(TupleTerm::new(registration)),
-            ));
-
-            let mut trigger_entries = vec![(
-                checked.trigger.name.clone(),
-                checked.trigger.value_type.clone(),
-            )];
-            trigger_entries.extend(self.protocol_capture_entries(protocol));
-            trigger_entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
-            let trigger_scope = self.compensation_scope(
-                &trigger_entries,
-                &binder_levels,
-                &mut binder_parameters,
-                &location,
-            )?;
-            let guard = self.expression(
-                checked.guard.root(),
-                &mut Binders::new(&trigger_scope.0, &trigger_scope.1),
-            )?;
-            args.push(MemberTerm::binding(
-                "trigger",
-                BindingValue::Group(GroupTerm::new(vec![
-                    member(
-                        "binder",
-                        LeafTerm::reference_node(trigger_scope.1[0].parameter.clone()),
-                    ),
-                    member("guard", guard),
-                ])),
-            ));
-
-            let mut activation = Vec::with_capacity(checked.activation_captures.len());
-            for (position, &capture_index) in checked.activation_captures.iter().enumerate() {
-                let capture = protocol
-                    .checked
-                    .obligations
-                    .captures
-                    .get(capture_index)
-                    .ok_or_else(unchecked)?;
-                let mut entries = vec![(
-                    checked.trigger.name.clone(),
-                    checked.trigger.value_type.clone(),
-                )];
-                entries.extend(self.protocol_input_entries(protocol));
-                entries.extend(self.protocol_input_entries(protocol));
-                entries.extend(self.protocol_capture_entries(protocol));
-                entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
-                entries.extend(
-                    self.capture_entries(protocol, &checked.activation_captures[..position])?,
-                );
-                entries.push((capture.name.clone(), capture.declared_type.clone()));
-                let scope = self.compensation_scope(
-                    &entries,
-                    &binder_levels,
-                    &mut binder_parameters,
-                    &location,
-                )?;
-                let initializer = self.expression(
-                    capture.initializer.root(),
-                    &mut Binders::new(&scope.0, &scope.1),
-                )?;
-                activation.push(TupleMember::Group(GroupTerm::new(vec![
-                    member(
-                        "binder",
-                        LeafTerm::reference_node(
-                            scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
-                        ),
-                    ),
-                    member("initializer", initializer),
-                ])));
-            }
-            args.push(MemberTerm::binding(
-                "activation_captures",
-                BindingValue::Tuple(TupleTerm::new(activation)),
-            ));
-            args.push(MemberTerm::binding(
-                "within",
-                BindingValue::Group(GroupTerm::new(vec![
-                    member(
-                        "lower",
-                        self.integer_literal(Integer::from(checked.within.lower), &location)?,
-                    ),
-                    member(
-                        "upper",
-                        self.integer_literal(Integer::from(checked.within.upper), &location)?,
-                    ),
-                ])),
-            ));
-            let attempt_type = self.type_node(&checked.attempt_type, &location)?;
-            args.push(MemberTerm::binding(
-                "attempts",
-                BindingValue::Group(GroupTerm::new(vec![
-                    member(
-                        "maximum",
-                        self.integer_literal(Integer::from(checked.maximum_attempts), &location)?,
-                    ),
-                    member("record_type", LeafTerm::reference(attempt_type)),
-                ])),
-            ));
-
-            let mut retry_entries = vec![
-                (
-                    checked.retry.earlier.name.clone(),
-                    checked.retry.earlier.value_type.clone(),
-                ),
-                (
-                    checked.retry.later.name.clone(),
-                    checked.retry.later.value_type.clone(),
-                ),
-            ];
-            retry_entries.extend(self.protocol_capture_entries(protocol));
-            retry_entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
-            retry_entries.extend(self.capture_entries(protocol, &checked.activation_captures)?);
-            let retry_scope = self.compensation_scope(
-                &retry_entries,
-                &binder_levels,
-                &mut binder_parameters,
-                &location,
-            )?;
-            let relation = self.expression(
-                checked.retry.relation.root(),
-                &mut Binders::new(&retry_scope.0, &retry_scope.1),
-            )?;
-            args.push(MemberTerm::binding(
-                "retry",
-                BindingValue::Group(GroupTerm::new(vec![
-                    member(
-                        "earlier",
-                        LeafTerm::reference_node(retry_scope.1[0].parameter.clone()),
-                    ),
-                    member(
-                        "later",
-                        LeafTerm::reference_node(retry_scope.1[1].parameter.clone()),
-                    ),
-                    member("relation", relation),
-                ])),
-            ));
-            let commit = match checked.commit {
-                CheckedCommit::Never => empty_group(),
-                CheckedCommit::Node(node) => {
-                    BindingValue::Group(GroupTerm::references_nodes([controls
-                        .get(&node)
-                        .cloned()
-                        .ok_or_else(unchecked)?]))
-                }
-            };
-            args.push(MemberTerm::binding("commit", commit));
-            let mut recovery_entries = vec![(
-                checked.recover.binder.name.clone(),
-                checked.recover.binder.value_type.clone(),
-            )];
-            recovery_entries.extend(self.protocol_capture_entries(protocol));
-            recovery_entries
-                .extend(self.capture_entries(protocol, &checked.registration_captures)?);
-            recovery_entries.extend(self.capture_entries(protocol, &checked.activation_captures)?);
-            let recovery_scope = self.compensation_scope(
-                &recovery_entries,
-                &binder_levels,
-                &mut binder_parameters,
-                &location,
-            )?;
-            let predicate = self.expression(
-                checked.recover.predicate.root(),
-                &mut Binders::new(&recovery_scope.0, &recovery_scope.1),
-            )?;
-            args.push(MemberTerm::binding(
-                "recovery",
-                BindingValue::Group(GroupTerm::new(vec![
-                    member(
-                        "binder",
-                        LeafTerm::reference_node(recovery_scope.1[0].parameter.clone()),
-                    ),
-                    member("predicate", predicate),
-                ])),
-            ));
-            let key = self.protocol_member(
-                &location,
-                "compensation",
-                boolean.clone(),
-                vec![
-                    identifier(name, &location)?,
-                    identifier("compensate", &location)?,
-                    identifier(&checked.name, &location)?,
-                ],
-                None,
-                BodyTerm::application(
-                    Operator::ProtocolControl,
-                    operation.clone(),
+                    operation,
+                    roles,
+                    controls,
+                    readable,
                     boolean.clone(),
-                    args,
-                ),
-            )?;
+                    anchors,
+                    index,
+                )?,
+            };
             keys.push(key);
         }
         Ok(sorted(keys))
+    }
+
+    /// The node of the compensation template at `index`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn compensation_node(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        operation: &Operation,
+        roles: &[(String, NodeKey)],
+        controls: &std::collections::BTreeMap<
+            crate::check::protocol_clause::ProtocolNodeId,
+            NodeRef,
+        >,
+        readable: &[Binder],
+        boolean: NodeKey,
+        anchors: &[CompensationNodes],
+        index: usize,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let name = protocol.form.name.name.as_str();
+        let checked = protocol
+            .checked
+            .obligations
+            .compensations
+            .get(index)
+            .ok_or_else(|| fault(&protocol.location(), KeyFault::UncheckedProtocolFact))?;
+        let location = protocol_location(name, ProtocolSite::Compensation(&checked.name));
+        let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
+        let source = protocol
+            .form
+            .compensations
+            .get(index)
+            .ok_or_else(unchecked)?;
+        let anchor = anchors
+            .iter()
+            .find(|anchor| anchor.declaration == index)
+            .ok_or_else(unchecked)?
+            .anchor
+            .clone();
+        let effect = controls
+            .get(&checked.effect)
+            .cloned()
+            .ok_or_else(unchecked)?;
+        let role = roles
+            .get(checked.role)
+            .map(|(_, key)| key.clone())
+            .ok_or_else(unchecked)?;
+
+        let mut binder_levels = BTreeMap::new();
+        if let Some(input) = protocol.checked.slots.binders.first() {
+            binder_levels.insert(input.name.clone(), 0);
+        }
+        let mut next_level = 1;
+        if let CheckedActivation::OnEach { binder, .. } = &protocol.checked.obligations.activation {
+            binder_levels.insert(binder.clone(), next_level);
+            next_level += 1;
+        }
+        for (capture, _) in self.protocol_capture_entries(protocol) {
+            binder_levels.insert(capture, next_level);
+            next_level += 1;
+        }
+        binder_levels.insert(checked.forward.name.clone(), next_level);
+        next_level += 1;
+        for (capture, _) in self.capture_entries(protocol, &checked.registration_captures)? {
+            binder_levels.insert(capture, next_level);
+            next_level += 1;
+        }
+        binder_levels.insert(checked.trigger.name.clone(), next_level);
+        next_level += 1;
+        for (capture, _) in self.capture_entries(protocol, &checked.activation_captures)? {
+            binder_levels.insert(capture, next_level);
+            next_level += 1;
+        }
+        binder_levels.insert(checked.retry.earlier.name.clone(), next_level);
+        next_level += 1;
+        binder_levels.insert(checked.retry.later.name.clone(), next_level);
+        next_level += 1;
+        binder_levels.insert(checked.recover.binder.name.clone(), next_level);
+        let mut binder_parameters = BTreeMap::new();
+        for binder in readable {
+            let declared = protocol
+                .checked
+                .slots
+                .binders
+                .get(binder.slot)
+                .ok_or_else(unchecked)?;
+            binder_parameters.insert(
+                declared.name.clone(),
+                (binder.parameter.clone(), binder.semantic_type.clone()),
+            );
+        }
+
+        let mut args = Vec::with_capacity(13);
+        args.push(MemberTerm::bound(
+            "forward",
+            LeafTerm::reference_node(effect),
+        ));
+        let forward = self.compensation_scope(
+            &[(
+                checked.forward.name.clone(),
+                checked.forward.value_type.clone(),
+            )],
+            &binder_levels,
+            &mut binder_parameters,
+            &location,
+        )?;
+        args.push(MemberTerm::bound(
+            "forward_binder",
+            LeafTerm::reference_node(forward.1[0].parameter.clone()),
+        ));
+        args.push(MemberTerm::bound("role", LeafTerm::reference(role)));
+        args.push(MemberTerm::bound("operation", LeafTerm::reference(anchor)));
+        args.push(MemberTerm::bound(
+            "clock",
+            self.text_literal(&source.clock.text, &location)?,
+        ));
+
+        let mut registration = Vec::with_capacity(checked.registration_captures.len());
+        for (position, &capture_index) in checked.registration_captures.iter().enumerate() {
+            let capture = protocol
+                .checked
+                .obligations
+                .captures
+                .get(capture_index)
+                .ok_or_else(unchecked)?;
+            let mut entries =
+                self.compensation_entries(protocol, checked, CaptureStage::Registration, position)?;
+            entries.push((capture.name.clone(), capture.declared_type.clone()));
+            let scope = self.compensation_scope(
+                &entries,
+                &binder_levels,
+                &mut binder_parameters,
+                &location,
+            )?;
+            let initializer = self.expression(
+                capture.initializer.root(),
+                &mut Binders::new(&scope.0, &scope.1),
+            )?;
+            registration.push(TupleMember::Group(GroupTerm::new(vec![
+                member(
+                    "binder",
+                    LeafTerm::reference_node(
+                        scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
+                    ),
+                ),
+                member("initializer", initializer),
+            ])));
+        }
+        args.push(MemberTerm::binding(
+            "registration_captures",
+            BindingValue::Tuple(TupleTerm::new(registration)),
+        ));
+
+        let mut trigger_entries = vec![(
+            checked.trigger.name.clone(),
+            checked.trigger.value_type.clone(),
+        )];
+        trigger_entries.extend(self.protocol_capture_entries(protocol));
+        trigger_entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+        let trigger_scope = self.compensation_scope(
+            &trigger_entries,
+            &binder_levels,
+            &mut binder_parameters,
+            &location,
+        )?;
+        let guard = self.expression(
+            checked.guard.root(),
+            &mut Binders::new(&trigger_scope.0, &trigger_scope.1),
+        )?;
+        args.push(MemberTerm::binding(
+            "trigger",
+            BindingValue::Group(GroupTerm::new(vec![
+                member(
+                    "binder",
+                    LeafTerm::reference_node(trigger_scope.1[0].parameter.clone()),
+                ),
+                member("guard", guard),
+            ])),
+        ));
+
+        let mut activation = Vec::with_capacity(checked.activation_captures.len());
+        for (position, &capture_index) in checked.activation_captures.iter().enumerate() {
+            let capture = protocol
+                .checked
+                .obligations
+                .captures
+                .get(capture_index)
+                .ok_or_else(unchecked)?;
+            let mut entries = vec![(
+                checked.trigger.name.clone(),
+                checked.trigger.value_type.clone(),
+            )];
+            entries.extend(self.protocol_input_entries(protocol));
+            entries.extend(self.protocol_input_entries(protocol));
+            entries.extend(self.protocol_capture_entries(protocol));
+            entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+            entries
+                .extend(self.capture_entries(protocol, &checked.activation_captures[..position])?);
+            entries.push((capture.name.clone(), capture.declared_type.clone()));
+            let scope = self.compensation_scope(
+                &entries,
+                &binder_levels,
+                &mut binder_parameters,
+                &location,
+            )?;
+            let initializer = self.expression(
+                capture.initializer.root(),
+                &mut Binders::new(&scope.0, &scope.1),
+            )?;
+            activation.push(TupleMember::Group(GroupTerm::new(vec![
+                member(
+                    "binder",
+                    LeafTerm::reference_node(
+                        scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
+                    ),
+                ),
+                member("initializer", initializer),
+            ])));
+        }
+        args.push(MemberTerm::binding(
+            "activation_captures",
+            BindingValue::Tuple(TupleTerm::new(activation)),
+        ));
+        args.push(MemberTerm::binding(
+            "within",
+            BindingValue::Group(GroupTerm::new(vec![
+                member(
+                    "lower",
+                    self.integer_literal(Integer::from(checked.within.lower), &location)?,
+                ),
+                member(
+                    "upper",
+                    self.integer_literal(Integer::from(checked.within.upper), &location)?,
+                ),
+            ])),
+        ));
+        let attempt_type = self.type_node(&checked.attempt_type, &location)?;
+        args.push(MemberTerm::binding(
+            "attempts",
+            BindingValue::Group(GroupTerm::new(vec![
+                member(
+                    "maximum",
+                    self.integer_literal(Integer::from(checked.maximum_attempts), &location)?,
+                ),
+                member("record_type", LeafTerm::reference(attempt_type)),
+            ])),
+        ));
+
+        let mut retry_entries = vec![
+            (
+                checked.retry.earlier.name.clone(),
+                checked.retry.earlier.value_type.clone(),
+            ),
+            (
+                checked.retry.later.name.clone(),
+                checked.retry.later.value_type.clone(),
+            ),
+        ];
+        retry_entries.extend(self.protocol_capture_entries(protocol));
+        retry_entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+        retry_entries.extend(self.capture_entries(protocol, &checked.activation_captures)?);
+        let retry_scope = self.compensation_scope(
+            &retry_entries,
+            &binder_levels,
+            &mut binder_parameters,
+            &location,
+        )?;
+        let relation = self.expression(
+            checked.retry.relation.root(),
+            &mut Binders::new(&retry_scope.0, &retry_scope.1),
+        )?;
+        args.push(MemberTerm::binding(
+            "retry",
+            BindingValue::Group(GroupTerm::new(vec![
+                member(
+                    "earlier",
+                    LeafTerm::reference_node(retry_scope.1[0].parameter.clone()),
+                ),
+                member(
+                    "later",
+                    LeafTerm::reference_node(retry_scope.1[1].parameter.clone()),
+                ),
+                member("relation", relation),
+            ])),
+        ));
+        let commit = match checked.commit {
+            CheckedCommit::Never => empty_group(),
+            CheckedCommit::Node(node) => {
+                BindingValue::Group(GroupTerm::references_nodes([controls
+                    .get(&node)
+                    .cloned()
+                    .ok_or_else(unchecked)?]))
+            }
+        };
+        args.push(MemberTerm::binding("commit", commit));
+        let mut recovery_entries = vec![(
+            checked.recover.binder.name.clone(),
+            checked.recover.binder.value_type.clone(),
+        )];
+        recovery_entries.extend(self.protocol_capture_entries(protocol));
+        recovery_entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+        recovery_entries.extend(self.capture_entries(protocol, &checked.activation_captures)?);
+        let recovery_scope = self.compensation_scope(
+            &recovery_entries,
+            &binder_levels,
+            &mut binder_parameters,
+            &location,
+        )?;
+        let predicate = self.expression(
+            checked.recover.predicate.root(),
+            &mut Binders::new(&recovery_scope.0, &recovery_scope.1),
+        )?;
+        args.push(MemberTerm::binding(
+            "recovery",
+            BindingValue::Group(GroupTerm::new(vec![
+                member(
+                    "binder",
+                    LeafTerm::reference_node(recovery_scope.1[0].parameter.clone()),
+                ),
+                member("predicate", predicate),
+            ])),
+        ));
+        let key = self.protocol_member(
+            &location,
+            "compensation",
+            boolean.clone(),
+            vec![
+                identifier(name, &location)?,
+                identifier("compensate", &location)?,
+                identifier(&checked.name, &location)?,
+            ],
+            None,
+            BodyTerm::application(
+                Operator::ProtocolControl,
+                operation.clone(),
+                boolean.clone(),
+                args,
+            ),
+        )?;
+        Ok(key)
     }
 
     fn compensation_scope(
