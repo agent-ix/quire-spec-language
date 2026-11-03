@@ -22,7 +22,7 @@
 use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recovery, TokenClass};
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::abstraction_declaration;
 use super::hybrid_declaration;
@@ -212,11 +212,18 @@ impl ParsedUnit {
             combined.import_selection_units.extend(
                 std::iter::repeat(source_unit_index).take(unit.import_selection_units.len()),
             );
-            let mut unit_model_aliases = BTreeSet::new();
+            let mut unit_model_alias_counts = BTreeMap::new();
+            for model in &unit.selections.models {
+                *unit_model_alias_counts
+                    .entry(model.alias.clone())
+                    .or_insert(0usize) += 1;
+            }
             for model in unit.selections.models {
-                let first_alias_in_unit = unit_model_aliases.insert(model.alias.clone());
                 let key = (model.alias.clone(), model.identity.clone());
-                if first_alias_in_unit && combined_models.contains(&key) {
+                let unique_alias_in_unit = unit_model_alias_counts
+                    .get(&model.alias)
+                    .is_some_and(|count| *count == 1);
+                if unique_alias_in_unit && combined_models.contains(&key) {
                     continue;
                 }
                 combined_models.insert(key);

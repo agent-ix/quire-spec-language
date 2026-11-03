@@ -649,6 +649,37 @@ fn aggregate_resolves_a_reused_model_alias_per_source_unit() {
     )
     .expect_err("a same-unit duplicate model alias refuses");
     assert!(format!("{refusal:?}").contains("DuplicateAlias"));
+
+    let prior_source = SourceIdentity::new("test", "alias-prior", "prior", "1");
+    let repeated_source = SourceIdentity::new("test", "alias-repeated", "repeated", "1");
+    let prior = parse_unit_for_package(&prior_source, "M", PACKAGE, "type Prior = Integer;\n");
+    let repeated = parse_unit_for_package(
+        &repeated_source,
+        "M",
+        PACKAGE,
+        "model M = \"example/alternate-config-version\";\ntype Repeated = Integer;\n",
+    );
+    let units = admit_parsed_unit_list(vec![repeated, prior], &dependencies)
+        .expect("cross-unit repeated model selections admit for assembly");
+    let models = select_units(
+        &units,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("both model identities admit before alias validation")
+    .into_value();
+    let refusal = check_units(
+        &units,
+        "cross-unit-dedup-preserves-local-duplicate".to_owned(),
+        &models,
+        &dependencies,
+        spine::SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("a later unit's M=I then M=J selections remain a duplicate");
+    assert!(format!("{refusal:?}").contains("DuplicateAlias"));
 }
 
 /// Import aliases are scoped to their declaring source unit: each unit's
