@@ -118,7 +118,7 @@ pub fn m_actor_model() -> SelectedModel {
 /// `finish`, every body the bare literal `true`.
 pub fn attempt_flow(name: &str, contracts: &str) -> String {
     format!(
-        "protocol {name} using pp over (input: Boolean) on origin {{\n\
+        "protocol {name} using pp over (input: M::Actor) on origin {{\n\
          role R on M::Actor;\n\
          run sequence Main {{\n\
          attempt Tried by R on M::Actor::op contracts [{contracts}] \

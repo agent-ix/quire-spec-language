@@ -14,6 +14,14 @@ fn checks_with_header(header: &str, source: &str) {
         .unwrap_or_else(|refusals| panic!("{source}: {refusals:?}"));
 }
 
+fn recovery_flow_with_await(await_form: &str) -> String {
+    recovery_flow("Main::Committed", "").replacen(
+        "effect Applied of Tried as (applied: Boolean) { true };",
+        &format!("effect Applied of Tried as (applied: Boolean) {{ true }};\n{await_form}"),
+        1,
+    )
+}
+
 /// FR-508 / TC-1303: each protocol use resolves its own alias to the required
 /// profile kind, and a wrong-kind selection refuses at that alias with the
 /// selected identity and required kind retained.
@@ -47,16 +55,13 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
             "protocol profile",
         ),
         (
-            recovery_flow("Main::Committed", await_form),
+            recovery_flow_with_await(await_form),
             "v",
             "quire.value.complete/v1",
             "temporal profile",
         ),
         (
-            recovery_flow(
-                "Main::Committed",
-                &await_form.replace("using v", "using pp"),
-            ),
+            recovery_flow_with_await(&await_form.replace("using v", "using pp")),
             "pp",
             "quire.protocol.finite-global/v1",
             "temporal profile",
@@ -152,7 +157,7 @@ fn every_admitted_temporal_and_state_profile_is_accepted_at_its_use_site() {
         let await_form = "await Wait after Applied using e clock \"ticks\" within [0,1] \
             match event Seen by R for Undo as (seen: Boolean) { true }; \
             then sequence Then { } timeout sequence Timeout { }";
-        checks_with_header(&header, &recovery_flow("Main::Committed", await_form));
+        checks_with_header(&header, &recovery_flow_with_await(await_form));
     }
 
     let state_layers = [
@@ -206,14 +211,14 @@ fn wrong_kind_protocol_and_check_aliases_refuse_in_source_order() {
 #[test]
 fn a_missing_protocol_profile_alias_keeps_missing_profile() {
     let source = format!(
-        "function absent using v(): Boolean pure {{ true }}\n{}",
-        attempt_flow("Flow", "").replace("using pp", "using absent")
+        "function unusedFn using v(): Boolean pure {{ true }}\n{}",
+        attempt_flow("Flow", "").replace("using pp", "using unusedFn")
     );
     let (_, refusals) = refusals(&source);
     assert!(refusals.iter().any(|refusal| matches!(
         &refusal.cause,
         crate::check::CheckCause::ProtocolAnchor(cause)
-            if matches!(cause.as_ref(), ProtocolAnchorCause::MissingProfile { alias, .. } if alias == "absent")
+            if matches!(cause.as_ref(), ProtocolAnchorCause::MissingProfile { alias, .. } if alias == "unusedFn")
     )), "{refusals:?}");
 }
 
@@ -310,7 +315,7 @@ fn each_unchecked_part_of_an_attempt_protocol_refuses() {
             "missing-name",
         ),
         (
-            "using v over",
+            "using pp over",
             "using M over",
             "missing_declaration",
             "missing-name",
@@ -343,7 +348,10 @@ fn each_unchecked_part_of_an_attempt_protocol_refuses() {
 fn a_compensate_template_needs_a_temporal_profile() {
     let source = recovery_flow("Main::Committed", "");
     checks(&source);
-    let header = super::HEADER.replace("profile t = \"quire.temporal.infinite-trace/v1\";\n", "");
+    let header = super::HEADER.replace(
+        "profile e = \"quire.temporal.event-position.false-extension/v1\";\n",
+        "",
+    );
     assert_ne!(
         header,
         super::HEADER,

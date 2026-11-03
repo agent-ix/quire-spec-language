@@ -220,7 +220,7 @@ fn anchors_at(protocol: &ProtocolDeclarationForm, site: AnchorSite) -> Vec<usize
 /// `receive-of` cases route a `receive` through it).
 fn recovery_flow(commit: &str, main_extra: &str) -> String {
     format!(
-        "protocol RecoveryFlow using pp over (input: Boolean) on origin {{\n\
+        "protocol RecoveryFlow using pp over (input: M::Actor) on origin {{\n\
          role R on M::Actor;\n\
          channel C from R to R carries Boolean ordering unordered delivery at-most-once \
          capacity 1 overflow reject;\n\
