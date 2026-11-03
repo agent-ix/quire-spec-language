@@ -246,7 +246,8 @@ text. These points follow from it and are decided.
 - **Refusal and exhaustion.** A unit the S3 type phase refuses is an error
   outcome of `check` and yields no partial inventory rows. The exhaustion stop
   `TypeWorkExhausted`, which the spine produces as a stage limit outcome, is a
-  different case (`TypeAdmissionUnfinished` is never produced, FR-514): it
+  different case (the spine never produces `TypeAdmissionUnfinished`, FR-514; the composed-lane
+  inventory does until QSL-830 deletes it): it
   stays `Incomplete` with the retained partial rows and the typed cause
   (IR FR-052-AC-10). The inventory's identity binds the whole `RawSourceRef`;
   the row identity encoding belongs to the owning FR.

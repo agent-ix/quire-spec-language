@@ -108,8 +108,9 @@ comparing copied source references.
    `StageFailure::Limit`, which the IR names `TypeWorkExhausted`), the
    inventory stays `Incomplete`, retains the partial rows and carries the typed
    cause (IR FR-052-AC-10); FR-514 states the rows and the cause. The spine has
-   no unfinished-admission stop, so the IR's `TypeAdmissionUnfinished` is never
-   produced. The inventory's
+   no unfinished-admission stop, so the spine never produces the IR's
+   `TypeAdmissionUnfinished`; the composed-lane inventory does until QSL-830
+   deletes it (IR-1304 removes the cause). The inventory's
    identity binds the checked unit's whole source reference; its
    authored-document key semantics follow QSpec FR-202. The encoding of a row's
    identity belongs to the FR that owns the inventory rows.
