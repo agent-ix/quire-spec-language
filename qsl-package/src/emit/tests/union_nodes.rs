@@ -339,13 +339,13 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
         qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
         text,
     );
-    let graph = PackageDeclarations {
-        enums: vec![foreign],
-        functions: vec![area, keep],
-        ..PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
-    }
-    .check(CheckingLimits::default())
-    .expect("the two functions check");
+    let mut declarations =
+        PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.enums = vec![foreign];
+    declarations.functions = vec![area, keep];
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .expect("the two functions check");
     let package = CheckedPackage::link(graph);
     let emission = emit_checked(&package)
         .expect("emit_checked omits the unlocked enum instead of trying to place it");
