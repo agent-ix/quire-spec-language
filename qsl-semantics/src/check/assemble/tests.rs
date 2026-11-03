@@ -55,7 +55,7 @@ fn assemble_as(
     text: &str,
 ) -> Result<PackageDeclarations, AssemblyRefusal> {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new(authority, identity, "git", "1"),
+        SourceIdentity::new(authority, identity),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -2544,7 +2544,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
             ),
         );
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -3130,7 +3130,7 @@ fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
 fn a_declaration_named_quantity_is_invalid_syntax() {
     let source = text(PROFILE_V, "record Quantity { x: Boolean; }");
     let admissible = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3536,7 +3536,7 @@ fn a_union_is_bounded_only_by_the_configured_ceilings() {
     );
     let assemble_under = |work_units: u64| {
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -3703,7 +3703,7 @@ fn parsed_unit_as(
     text: &str,
 ) -> (RawSourceRef, qsl_forms::ParsedUnit) {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new(authority, identity, "git", "1"),
+        SourceIdentity::new(authority, identity),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

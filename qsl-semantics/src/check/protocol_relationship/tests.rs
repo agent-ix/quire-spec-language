@@ -116,7 +116,7 @@ fn pipeline(members: &str, related: &str) -> String {
 
 fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

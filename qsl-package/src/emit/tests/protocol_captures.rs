@@ -515,7 +515,7 @@ fn the_capture_types_without_an_initializer_refuse_where_written() {
         "decimal(100, 2)",
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         format!(
             "language \"ix:native\" edition \"1-draft\";\n\

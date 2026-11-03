@@ -204,7 +204,7 @@ fn world(
          function Noop using v(): Boolean pure {{ true }}\n{contracts}{clauses}",
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "smt", "git", "1"),
+        SourceIdentity::new("agent-ix", "smt"),
         "smt.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -246,8 +246,7 @@ fn world(
     let header = json!({"identity": PACKAGE});
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": "s0"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident("objects"), "complete": true,
@@ -267,8 +266,6 @@ fn world(
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         },
     }
 }

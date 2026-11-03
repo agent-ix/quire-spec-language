@@ -45,7 +45,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 #[test]
 fn evaluating_a_protocol_reference_refuses_unsupported_feature() {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         unit().as_bytes(),
         qsl_cst::Limits::default(),

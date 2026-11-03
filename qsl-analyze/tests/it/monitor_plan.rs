@@ -77,7 +77,7 @@ pub(crate) fn checked_clause_on(
     let domain = Domain::config_version();
     let packages =
         qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
-    let source = SourceIdentity::new("agent-ix", "monitor-plan", "git", "1");
+    let source = SourceIdentity::new("agent-ix", "monitor-plan");
     let unit = unit_source(formula, extra, real_time, activation);
     let parsed = qsl_cst::parse(
         source.clone(),

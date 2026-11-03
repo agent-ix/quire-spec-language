@@ -19,7 +19,7 @@ fn invalid(linked: LinkedPackage<'_>, bindings: CheckBindings) {
 #[trace("TC-049", "FR-016-AC-6")]
 fn tc_049_source_labels_path_bytes_and_formal_identity_must_correspond() {
     let models = [native_rule_model::parts().model()];
-    for changed in ["identity", "revision", "path", "formal_collision"] {
+    for changed in ["identity", "path", "formal_collision"] {
         let (linked, mut bindings) = prepared(&models, "true", ClauseKind::Invariant).unwrap();
         let original = bindings.source.source();
         let mut labels = original.identity().clone();
@@ -27,7 +27,6 @@ fn tc_049_source_labels_path_bytes_and_formal_identity_must_correspond() {
         let mut formal = bindings.source.identity().clone();
         match changed {
             "identity" => labels.identity.push_str(":foreign"),
-            "revision" => labels.revision.push_str(":foreign"),
             "path" => path.push_str(".foreign"),
             "formal_collision" => formal = models[0].source().identity().clone(),
             _ => unreachable!(),

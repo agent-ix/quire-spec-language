@@ -13,9 +13,7 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
         vec![],
         vec!["parse"],
         vec!["run", "id", "revision", "unused"],
-        vec![
-            "parse", "agent-ix", "id", "git", "revision", "unused", "extra",
-        ],
+        vec!["parse", "agent-ix", "id", "unused", "extra"],
     ] {
         let output = Command::new(executable).args(args).output().unwrap();
         assert_eq!(output.status.code(), Some(20));
@@ -25,7 +23,7 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
     // A directory is not a readable source file, including when tests run as root.
     for path in [missing.as_path(), temp.path()] {
         let output = Command::new(executable)
-            .args(["parse", "agent-ix", "id", "git", "revision"])
+            .args(["parse", "agent-ix", "id"])
             .arg(path)
             .output()
             .unwrap();
@@ -40,7 +38,7 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
     )
     .unwrap();
     let output = Command::new(executable)
-        .args(["parse", "agent-ix", "id", "git", "revision"])
+        .args(["parse", "agent-ix", "id"])
         .arg(&oversized)
         .output()
         .unwrap();
@@ -68,13 +66,11 @@ fn cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io() {
     let temp = tempfile::tempdir().unwrap();
     let missing = temp.path().join("missing.native");
     let executable = env!("CARGO_BIN_EXE_quire-spec");
-    for invalid_at in 0..5 {
+    for invalid_at in 0..3 {
         let mut args = vec![
             OsString::from("parse"),
             "agent-ix".into(),
             "id".into(),
-            "git".into(),
-            "revision".into(),
             missing.clone().into_os_string(),
         ];
         args[invalid_at] = OsString::from_vec(vec![0xff]);
@@ -105,7 +101,7 @@ fn cli_preserves_non_utf8_os_paths() {
     let bytes = include_bytes!("../fixtures/spine-compile.native");
     std::fs::write(&path, bytes).unwrap();
     let output = Command::new(executable)
-        .args(["parse", "agent-ix", "exact:é", "git", "revision:😀"])
+        .args(["parse", "agent-ix", "exact:é"])
         .arg(&path)
         .output()
         .unwrap();
@@ -115,7 +111,7 @@ fn cli_preserves_non_utf8_os_paths() {
     assert_eq!(value["category"], "success");
     // The CLI forwards the labels exactly: a limit refusal names them.
     let refused = Command::new(executable)
-        .args(["parse", "agent-ix", "exact:é", "git", "revision:😀"])
+        .args(["parse", "agent-ix", "exact:é"])
         .arg(&path)
         .args(["--tokens", "0"])
         .output()
@@ -127,7 +123,7 @@ fn cli_preserves_non_utf8_os_paths() {
         serde_json::json!({"authority": "agent-ix", "identity": "exact:é"})
     );
     // FR-010-AC-6: the same bytes parsed in process carry the exact labels.
-    let source = qsl_foundation::SourceIdentity::new("agent-ix", "exact:é", "git", "revision:😀");
+    let source = qsl_foundation::SourceIdentity::new("agent-ix", "exact:é");
     let parsed = qsl_replay::spine::parse(
         &qsl_replay::spine::ParseRequest {
             source: &source,
@@ -153,8 +149,6 @@ fn cli_parses_and_formats_without_claiming_execution() {
             "parse",
             "agent-ix",
             "test:parent",
-            "fixture",
-            "fixture:1",
             "tests/fixtures/spine-compile.native",
         ])
         .output()
@@ -177,8 +171,6 @@ fn cli_parses_and_formats_without_claiming_execution() {
             "format",
             "agent-ix",
             "test:value-format",
-            "fixture",
-            "fixture:1",
             "tests/fixtures/value-format.native",
         ])
         .output()
@@ -196,8 +188,6 @@ fn cli_parses_and_formats_without_claiming_execution() {
             "format",
             "agent-ix",
             "test:parent",
-            "fixture",
-            "fixture:1",
             "tests/fixtures/parent.native",
         ])
         .output()
@@ -213,8 +203,6 @@ fn cli_parses_and_formats_without_claiming_execution() {
             "parse",
             "agent-ix",
             "",
-            "fixture",
-            "fixture:1",
             "tests/fixtures/spine-compile.native",
         ])
         .output()
@@ -238,8 +226,6 @@ fn parse_output_failure_exits_30() {
             "parse",
             "agent-ix",
             "test:parent",
-            "fixture",
-            "fixture:1",
             "tests/fixtures/spine-compile.native",
         ])
         .stdout(std::process::Stdio::from(full))
@@ -298,7 +284,7 @@ fn parse_of_genuinely_malformed_syntax_exits_20_not_21() {
 
 fn parse_file(path: &std::path::Path, identity: &str) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .args(["parse", "agent-ix", identity, "fixture", "fixture:1"])
+        .args(["parse", "agent-ix", identity])
         .arg(path)
         .output()
         .unwrap()
@@ -312,15 +298,7 @@ fn malformed_operands_report_the_selected_command_before_io() {
         (vec!["run", "missing.json", "extra"], "run"),
         (vec!["parse", "source"], "parse"),
         (
-            vec![
-                "format",
-                "agent-ix",
-                "source",
-                "git",
-                "revision",
-                "missing.native",
-                "extra",
-            ],
+            vec!["format", "agent-ix", "source", "missing.native", "extra"],
             "format",
         ),
     ] {
@@ -345,9 +323,9 @@ fn malformed_operands_report_the_selected_command_before_io() {
 /// authority and identity, and no other member.
 #[trace("TC-425", "FR-010-AC-11")]
 #[test]
-fn parse_and_format_take_the_four_source_labels() {
+fn parse_and_format_take_the_two_source_labels() {
     let executable = env!("CARGO_BIN_EXE_quire-spec");
-    let labels = ["agent-ix", "specs/a.quire", "git", "3f2a"];
+    let labels = ["agent-ix", "specs/a.quire"];
     let file = "tests/fixtures/spine-compile.native";
     let parsed = Command::new(executable)
         .arg("parse")
@@ -375,7 +353,7 @@ fn parse_and_format_take_the_four_source_labels() {
     );
     // The success document carries no source member; the `ParsedSource` the
     // same operation returns in process names authority and identity only.
-    let source = qsl_foundation::SourceIdentity::new(labels[0], labels[1], labels[2], labels[3]);
+    let source = qsl_foundation::SourceIdentity::new(labels[0], labels[1]);
     let result = qsl_replay::spine::parse(
         &qsl_replay::spine::ParseRequest {
             source: &source,
@@ -406,28 +384,21 @@ fn parse_and_format_take_the_four_source_labels() {
     }
 
     let blank = Command::new(executable)
-        .args([
-            "parse",
-            "agent-ix",
-            "specs/a.quire",
-            "",
-            "3f2a",
-            "missing.native",
-        ])
+        .args(["parse", "agent-ix", "", "missing.native"])
         .output()
         .unwrap();
     assert_eq!(blank.status.code(), Some(20));
     let value: serde_json::Value = serde_json::from_slice(&blank.stderr).unwrap();
     assert_eq!(value["code"], "invalid_source_identity");
     assert_eq!(value["cause"], "blank-label");
-    assert_eq!(value["label"], "revision_namespace");
+    assert_eq!(value["label"], "identity");
     assert!(value["span"].is_null());
 
     // An empty file operand is a file error, not an `empty-path` refusal:
     // the file is opened before any source is admitted, so `empty-path` is
     // reachable only through a library read (FR-001).
     let empty = Command::new(executable)
-        .args(["parse", "agent-ix", "specs/a.quire", "git", "3f2a", ""])
+        .args(["parse", "agent-ix", "specs/a.quire", ""])
         .output()
         .unwrap();
     assert_eq!(empty.status.code(), Some(20));
@@ -461,7 +432,7 @@ fn parse_and_format_take_the_four_source_labels() {
 fn work_units_option_lowers_and_raises_the_s1_work_ceiling() {
     let run = |units: &str| {
         Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-            .args(["parse", "agent-ix", "id", "git", "revision"])
+            .args(["parse", "agent-ix", "id"])
             .arg("tests/fixtures/spine-compile.native")
             .args(["--work-units", units])
             .output()

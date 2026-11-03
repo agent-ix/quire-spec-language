@@ -481,7 +481,6 @@ fn checked_fr050_inputs_with_event_body(event_body: &str) -> Inputs {
     let model = crate::support::native_rule_model::from_text(
         &serde_json::to_string(&model).expect("serialize test model"),
         "fr050-native-model.json",
-        "1",
     )
     .expect("native model fixture with the same checked model identity")
     .model();
@@ -562,8 +561,6 @@ fn checked_fr050_unit(inputs: &Inputs, index: usize) -> qsl_replay::spine::Check
         SourceIdentity::new(
             inputs.sources[index].identity().authority.clone(),
             inputs.sources[index].identity().identity.clone(),
-            inputs.sources[index].identity().revision_namespace.clone(),
-            inputs.sources[index].identity().revision.clone(),
         ),
     )
 }
@@ -1120,29 +1117,17 @@ fn checked_successor_authenticates_each_emitted_profile_and_clock_before_evaluat
             let source_identity = SourceIdentity::new(
                 inputs.sources[0].identity().authority.clone(),
                 inputs.sources[0].identity().identity.clone(),
-                inputs.sources[0].identity().revision_namespace.clone(),
-                inputs.sources[0].identity().revision.clone(),
             );
             let exact_checked = checked_fr050_unit(inputs, 0);
             let wrong_authority = checked_fr050_unit_with_identity(
                 inputs,
                 0,
-                SourceIdentity::new(
-                    "other-authority",
-                    source_identity.identity.clone(),
-                    source_identity.revision_namespace.clone(),
-                    source_identity.revision.clone(),
-                ),
+                SourceIdentity::new("other-authority", source_identity.identity.clone()),
             );
             let wrong_identity = checked_fr050_unit_with_identity(
                 inputs,
                 0,
-                SourceIdentity::new(
-                    source_identity.authority.clone(),
-                    "other:event-time",
-                    source_identity.revision_namespace.clone(),
-                    source_identity.revision.clone(),
-                ),
+                SourceIdentity::new(source_identity.authority.clone(), "other:event-time"),
             );
             assert_eq!(
                 exact_checked.package().graph().source().authority(),

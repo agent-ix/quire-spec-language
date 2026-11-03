@@ -815,7 +815,7 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
     ] {
         let (unit, packages) = unit(&clauses, true);
         let parsed = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-1271", "fixture", "fixture:1"),
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-1271"),
             "program.native",
             unit.as_bytes(),
             qsl_cst::Limits::default(),

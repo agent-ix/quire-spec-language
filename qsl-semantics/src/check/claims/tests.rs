@@ -27,7 +27,7 @@ struct Checked {
 fn check(declarations: &str) -> Checked {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -935,7 +935,7 @@ fn family_check(
 
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

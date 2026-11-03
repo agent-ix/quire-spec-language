@@ -19,8 +19,6 @@ fn parse(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:abstraction-declaration".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "abstraction.native",
         text.as_bytes(),

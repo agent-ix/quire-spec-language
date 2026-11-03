@@ -248,12 +248,7 @@ pub(super) fn request(
     ReplayRequestWire {
         package_name: "fixture".to_owned(),
         profile_selections: Vec::new(),
-        sources: vec![(
-            AUTHORITY.to_owned(),
-            IDENTITY.to_owned(),
-            "git".to_owned(),
-            "1".to_owned(),
-        )],
+        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),

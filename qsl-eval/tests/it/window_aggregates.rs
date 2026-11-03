@@ -541,7 +541,7 @@ fn clause() -> CheckedTemporalClause {
          always[0,3] holds(c.level <= 9) }}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -792,7 +792,7 @@ impl Observed {
              profile v = \"quire.value.complete/v1\";\n\
              function zero using v(): Integer pure { 0 }\n";
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "window", "git", "1"),
+            SourceIdentity::new("a", "window"),
             "window.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),

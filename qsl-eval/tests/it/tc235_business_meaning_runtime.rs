@@ -211,7 +211,7 @@ fn model_package_with(
         body,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc235-m15", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc235-m15"),
         "tc235-m15.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -249,17 +249,13 @@ pub(crate) fn lifecycle_document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "tc235".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
 pub(crate) fn lifecycle_identity(reference: &DocumentRef) -> serde_json::Value {
     serde_json::json!({
-        "authority": reference.authority,
-        "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace,
-        "revision": reference.revision,
+    "authority": reference.authority,
+    "identity": reference.identity,
     })
 }
 
@@ -284,8 +280,6 @@ pub(crate) fn lifecycle_observation(
     let identity = DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "tc235".to_owned(),
-        revision: "1".to_owned(),
     };
     let bytes = serde_json::to_vec(&serde_json::json!({
         "format": "quire.state.snapshot/v1",
@@ -314,8 +308,6 @@ pub(crate) fn lifecycle_invocation_with(
     let identity = DocumentRef {
         authority: "test".to_owned(),
         identity: "i1".to_owned(),
-        revision_namespace: "tc235".to_owned(),
-        revision: "1".to_owned(),
     };
     let document_ref = |reference: &DocumentRef| {
         serde_json::json!({
@@ -663,8 +655,6 @@ fn tc235_m02_record_values_compare_every_field_at_runtime() {
             identity: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "s1".to_owned(),
-                revision_namespace: "tc235".to_owned(),
-                revision: "1".to_owned(),
             },
             environment: ObjectEnvironment::new(closure),
             populations: BTreeMap::new(),
@@ -1063,15 +1053,11 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "q1".to_owned(),
-                revision_namespace: "tc235".to_owned(),
-                revision: "1".to_owned(),
             },
             subject: ValuePathSubject::Invocation {
                 invocation: ObservationIdentity {
                     authority: "test".to_owned(),
                     identity: "i1".to_owned(),
-                    revision_namespace: "tc235".to_owned(),
-                    revision: "1".to_owned(),
                 },
                 binding: InvocationBinding::Receiver,
             },
@@ -1462,8 +1448,6 @@ fn process_observation(
             identity: DocumentRef {
                 authority: "test".to_owned(),
                 identity: label.to_owned(),
-                revision_namespace: "tc235".to_owned(),
-                revision: "1".to_owned(),
             },
             environment: ObjectEnvironment::new(closure),
             populations: BTreeMap::from([(crate::tc235_k2::id("PF"), true)]),
@@ -1596,8 +1580,6 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "s1".to_owned(),
-                revision_namespace: "tc235".to_owned(),
-                revision: "1".to_owned(),
             },
             subject: ValuePathSubject::Object(runs[1].clone()),
             steps: Vec::new(),
@@ -1790,8 +1772,6 @@ fn identity_of(label: &str) -> ObservationIdentity {
     ObservationIdentity {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "tc235".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 

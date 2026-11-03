@@ -13,8 +13,6 @@ fn parse_text(text: &str) -> Result<quire_spec_language::ParsedUnit, Box<Diagnos
         SourceIdentity {
             authority: "test".into(),
             identity: "test:boundary".into(),
-            revision_namespace: "test".into(),
-            revision: "fixture:1".into(),
         },
         "boundary.native",
         text.as_bytes(),
@@ -27,8 +25,6 @@ fn parse_complete(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:boundary".into(),
-            revision_namespace: "test".into(),
-            revision: "fixture:1".into(),
         },
         "boundary.quire",
         text.as_bytes(),

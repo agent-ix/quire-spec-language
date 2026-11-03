@@ -49,7 +49,7 @@ fn unit() -> Unit {
     use quire_exact::Cancel;
 
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}{UNIT}");
-    let identity = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+    let identity = SourceIdentity::new(AUTHORITY, IDENTITY);
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let parsed = parse(

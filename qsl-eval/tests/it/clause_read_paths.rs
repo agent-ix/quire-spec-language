@@ -114,7 +114,7 @@ fn orders_package() -> CheckedPackage {
     )
     .expect("the model admits");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-1040", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-1040"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -213,8 +213,6 @@ fn a_selection_on_a_navigation_is_located_at_the_referenced_object() {
         identity: DocumentRef {
             authority: "test".to_owned(),
             identity: "N".to_owned(),
-            revision_namespace: "tc1040".to_owned(),
-            revision: "1".to_owned(),
         },
         environment: ObjectEnvironment::new(closure).with_extents(extents),
         populations: BTreeMap::new(),
@@ -258,8 +256,6 @@ fn a_selection_on_a_navigation_is_located_at_the_referenced_object() {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "N".to_owned(),
-                revision_namespace: "tc1040".to_owned(),
-                revision: "1".to_owned(),
             },
             subject: ValuePathSubject::Object(t1),
             steps: vec![ValuePathStep::Member("level".to_owned())],

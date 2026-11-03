@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 fn model_with_package(package: &str) -> NativeModel {
     let mut document: Value = serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["package"] = Value::from(package);
-    native_rule_model::from_text(&document.to_string(), "other-model.json", "draft:1")
+    native_rule_model::from_text(&document.to_string(), "other-model.json")
         .expect("test model is valid")
         .model()
 }
@@ -80,8 +80,6 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
         SourceIdentity {
             authority: "test".into(),
             identity: id.into(),
-            revision_namespace: "test".into(),
-            revision: "test:source".into(),
         },
         format!("{id}.native"),
         text.as_bytes(),

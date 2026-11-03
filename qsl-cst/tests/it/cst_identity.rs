@@ -8,13 +8,11 @@ use qsl_foundation::{SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
 
-fn parse(revision: &str, text: &str) -> qsl_cst::ParsedSource {
+fn parse(text: &str) -> qsl_cst::ParsedSource {
     let parsed = qsl_cst::parse(
         SourceIdentity {
             authority: "test".into(),
             identity: "test:cst-identity".into(),
-            revision_namespace: "test".into(),
-            revision: revision.into(),
         },
         "identity.native",
         text.as_bytes(),
@@ -72,7 +70,7 @@ fn paths_from_the_root(cst: &LosslessCst) -> Vec<Option<Vec<u32>>> {
 #[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn structural_paths_are_derived_from_parent_links_on_request() {
-    let parsed = parse("r1", &functions(3));
+    let parsed = parse(&functions(3));
     let cst = parsed.cst();
     let expected = paths_from_the_root(cst);
     for node in cst.nodes() {
@@ -108,14 +106,14 @@ fn reuse_is_one_to_one_between_equal_operands() {
         format!("{HEADER}function f using Complete (x: Integer): Integer pure {{ x + x }}\n");
     let first = text.find("x + x").expect("body");
     let second = first + "x + ".len();
-    let before = parse("r1", &text);
+    let before = parse(&text);
     for (at, removed, replacement) in [
         (first, 0, "  "),
         (first + "x ".len(), 1, "-"),
         (second + 1, 0, " "),
     ] {
         let edited = format!("{}{replacement}{}", &text[..at], &text[at + removed..]);
-        let after = parse("r2", &edited);
+        let after = parse(&edited);
         let change = SourceChange {
             range: Span {
                 start: at,
@@ -141,7 +139,7 @@ fn reuse_is_one_to_one_between_equal_operands() {
         }
     }
     // A successor that is not the stated edit maps nothing.
-    let unrelated = parse("r3", &text.replace("x + x", "x * x"));
+    let unrelated = parse(&text.replace("x + x", "x * x"));
     let change = SourceChange {
         range: Span {
             start: first,

@@ -17,7 +17,7 @@ const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
 
 fn identity() -> SourceIdentity {
-    SourceIdentity::new("agent-ix", "test:parse-outcome", "fixture", "fixture:1")
+    SourceIdentity::new("agent-ix", "test:parse-outcome")
 }
 
 fn document_json(document: &OutcomeDocument) -> Value {

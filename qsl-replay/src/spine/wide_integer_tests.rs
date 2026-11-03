@@ -27,7 +27,7 @@ fn unit(parameter: &str, body: &str) -> String {
 
 fn compile(source: &str) -> Result<ComposedUnit, Box<CompileRefusal>> {
     compose(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),

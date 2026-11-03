@@ -221,8 +221,6 @@ pub(super) struct Program {
 pub(super) struct Identity {
     pub authority: String,
     pub identity: String,
-    pub revision_namespace: String,
-    pub revision: String,
     pub document: String,
     pub formal_revision: u64,
 }
@@ -233,8 +231,6 @@ impl Identity {
             native: qsl_foundation::SourceIdentity::new(
                 self.authority.clone(),
                 self.identity.clone(),
-                self.revision_namespace.clone(),
-                self.revision.clone(),
             ),
             formal: ir::SourceIdentity::new(
                 ir::SourceDocumentId::new(&self.document)?,

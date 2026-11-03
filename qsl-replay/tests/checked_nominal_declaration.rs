@@ -40,7 +40,7 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> NodeKey {
 fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     let acquisition = acquire_checked_closure(
         qsl_replay::CompileUnit {
-            source: SourceIdentity::new("a", "unit", "git", "1"),
+            source: SourceIdentity::new("a", "unit"),
             package_name: "fixture".to_owned(),
             path: "unit.native",
             bytes: SOURCE.as_bytes(),

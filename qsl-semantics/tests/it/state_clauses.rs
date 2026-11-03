@@ -1221,8 +1221,6 @@ fn frame_label(identity: &str) -> qsl_semantics::model::observation::DocumentRef
     qsl_semantics::model::observation::DocumentRef {
         authority: "test".to_owned(),
         identity: identity.to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
@@ -1237,10 +1235,8 @@ fn frame_identity_json(
     label: &qsl_semantics::model::observation::DocumentRef,
 ) -> serde_json::Value {
     json!({
-        "authority": label.authority,
-        "identity": label.identity,
-        "revision_namespace": label.revision_namespace,
-        "revision": label.revision,
+    "authority": label.authority,
+    "identity": label.identity,
     })
 }
 
@@ -4758,22 +4754,18 @@ fn tc465_row34_undeclared_field_refuses_unknown_member() {
     );
 }
 
-/// Row 42 (check 1.7 label order): blank `revision_namespace` and blank
-/// `revision` -- names `revision_namespace`, not `revision`.
+/// Row 42 (check 1.7 label order): blank `authority` and blank `identity`
+/// -- names `authority`, not `identity`.
 #[trace("TC-465", "FR-106-AC-7")]
 #[test]
 fn tc465_row42_two_blank_labels_names_the_first_in_order() {
     let document = tc465_document();
     let label = frame_label("current-snap");
     let mut blank = tc465_healthy_parent(&label);
-    blank["identity"]["revision_namespace"] = json!("");
-    blank["identity"]["revision"] = json!("");
+    blank["identity"]["authority"] = json!("");
+    blank["identity"]["identity"] = json!("");
     let bytes = blank.to_string().into_bytes();
-    let selected = qsl_semantics::model::observation::DocumentRef {
-        revision_namespace: String::new(),
-        revision: String::new(),
-        ..label
-    };
+    let selected = qsl_semantics::model::observation::DocumentRef { ..label };
     let mut snapshots = BTreeMap::new();
     snapshots.insert(selected.clone(), bytes);
     let result = run_tc465(
@@ -4796,7 +4788,7 @@ fn tc465_row42_two_blank_labels_names_the_first_in_order() {
     let record = assert_tc465_refused(result, "invalid_source_identity", "blank-label");
     assert_eq!(
         record.fields.get("label").map(String::as_str),
-        Some("revision_namespace")
+        Some("authority")
     );
 }
 

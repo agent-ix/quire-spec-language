@@ -41,7 +41,7 @@ fn unit(extra: &[(&str, &str)], declarations: &str) -> (String, DeclarationsOrRe
     .expect("the model admits");
     let built = crate::model_operations::parse_and_build(&text);
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-1054", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-1054"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

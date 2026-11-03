@@ -323,7 +323,7 @@ pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) 
     let text = unit_text_with(profiles, body);
     let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        SourceIdentity::new("agent-ix", "counter"),
         "counter.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -439,8 +439,7 @@ impl Documents {
         let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": name},
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": ident("cells"), "complete": true,
@@ -456,8 +455,6 @@ impl Documents {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 }
@@ -572,7 +569,7 @@ fn compiled_with(
     let document = document();
     qsl_replay::compile_package(
         qsl_replay::CompileUnit {
-            source: SourceIdentity::new("agent-ix", "counter", "git", "1"),
+            source: SourceIdentity::new("agent-ix", "counter"),
             package_name: "package".to_owned(),
             path: "counter.native",
             bytes: unit_text_with(profiles, body).as_bytes(),

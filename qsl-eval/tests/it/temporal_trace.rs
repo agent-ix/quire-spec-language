@@ -60,7 +60,7 @@ pub(crate) fn fixture_within(
          temporal C using t0 over ({over}) clock \"model-steps\" {activation} {{ {body} }}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         limits,
@@ -104,7 +104,7 @@ fn modelled_with(operations: Vec<serde_json::Value>, body: &str) -> Fixture {
          temporal C using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {body} }}\n",
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

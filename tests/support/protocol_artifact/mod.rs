@@ -66,8 +66,6 @@ impl Fixture {
             SourceIdentity {
                 authority: "test".into(),
                 identity: "test:rule-model".into(),
-                revision_namespace: "test".into(),
-                revision: "draft:1".into(),
             },
             "native-rule-model.json",
             native_rule_model::fixture().as_bytes(),
@@ -218,8 +216,6 @@ impl Fixture {
             native: w::NativeSource {
                 authority: "test".into(),
                 identity: "test:protocol-source".into(),
-                revision_namespace: "editable".into(),
-                revision: "editable:7".into(),
             },
             path: "protocol.quire".into(),
             formal: w::Formal {

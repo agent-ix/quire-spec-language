@@ -59,8 +59,6 @@ pub fn parse_with(
         SourceIdentity {
             authority: "agent-ix".into(),
             identity: IDENTITY.to_owned(),
-            revision_namespace: "bench".into(),
-            revision: "1".to_owned(),
         },
         "bench.native",
         text.as_bytes(),

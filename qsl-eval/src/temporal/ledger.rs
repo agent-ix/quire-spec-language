@@ -343,19 +343,17 @@ mod tests {
 
     fn binding() -> LedgerBinding {
         LedgerBinding {
-            package: package_identity("pkg", "1"),
+            package: package_identity("pkg"),
             clause: clause_identity("Refund", 0),
             clock: "ms".to_owned(),
             profile: "finite-window".to_owned(),
         }
     }
 
-    fn package_identity(identity: &str, revision: &str) -> qsl_foundation::SourceIdentity {
+    fn package_identity(identity: &str) -> qsl_foundation::SourceIdentity {
         qsl_foundation::SourceIdentity {
             authority: "test".to_owned(),
             identity: identity.to_owned(),
-            revision_namespace: "git".to_owned(),
-            revision: revision.to_owned(),
         }
     }
 
@@ -568,7 +566,7 @@ mod tests {
         let before = base.entry(&binding()).cloned();
         let variants = [
             LedgerBinding {
-                package: package_identity("other", "1"),
+                package: package_identity("other"),
                 ..binding()
             },
             LedgerBinding {

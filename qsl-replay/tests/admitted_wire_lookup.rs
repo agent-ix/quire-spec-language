@@ -41,7 +41,7 @@ fn resolve(context: &AdmittedContext, id: &CheckedNodeId) -> NodeKey {
 fn library() -> SuppliedLibrary {
     SuppliedLibrary {
         identity: "test/lib".to_owned(),
-        source: SourceIdentity::new("a", "lib", "git", "1"),
+        source: SourceIdentity::new("a", "lib"),
         path: "lib.native".to_owned(),
         bytes: format!("{HEADER}{LIBRARY}").into_bytes(),
     }
@@ -50,7 +50,7 @@ fn library() -> SuppliedLibrary {
 fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
         qsl_replay::CompileUnit {
-            source: SourceIdentity::new("a", "u", "git", "1"),
+            source: SourceIdentity::new("a", "u"),
             package_name: "fixture".to_owned(),
             path: "unit.native",
             bytes: text.as_bytes(),

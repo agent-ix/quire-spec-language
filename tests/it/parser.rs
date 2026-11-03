@@ -13,8 +13,6 @@ fn read(bytes: &[u8], limits: Limits) -> Result<ParsedUnit, Box<qsl_foundation::
         SourceIdentity {
             authority: "test".into(),
             identity: "test:source".into(),
-            revision_namespace: "test".into(),
-            revision: "test:revision-7".into(),
         },
         "test.native",
         bytes,
@@ -185,7 +183,6 @@ fn malformed_and_unsupported_are_distinct_and_located() {
             text.find(expression).unwrap() + if expression == "1 / 2" { 2 } else { 0 }
         );
         assert!(e.span.end.byte > e.span.start.byte);
-        assert_eq!(e.source.revision, "test:revision-7");
     }
     // A user-named call target is a declaration/call form this profile
     // excludes outright (the same concept as native_model/admission.rs's
@@ -198,7 +195,6 @@ fn malformed_and_unsupported_are_distinct_and_located() {
         assert_eq!(e.code, Code::InvalidPackage, "{expression}: {e:?}");
         assert_eq!(e.span.start.byte, text.find(expression).unwrap());
         assert!(e.span.end.byte > e.span.start.byte);
-        assert_eq!(e.source.revision, "test:revision-7");
     }
     for expression in [
         "helper(]",
@@ -349,7 +345,6 @@ fn deterministic_malformed_corpus_does_not_panic() {
         Ok(unit) => assert_eq!(unit.source().text().as_bytes(), bytes),
         Err(error) => {
             assert_eq!(error.source.identity, "test:source");
-            assert_eq!(error.source.revision, "test:revision-7");
             assert!(error.span.start.byte <= error.span.end.byte);
             assert!(error.span.end.byte <= bytes.len());
             assert!(error.span.start.line > 0 && error.span.start.column > 0);

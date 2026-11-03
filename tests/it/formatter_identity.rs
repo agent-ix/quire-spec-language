@@ -16,7 +16,7 @@ fn exact_format_output_bound_keeps_the_original_checked_identity() {
         "{}\n// café λ\n",
         include_str!("../fixtures/spine-compile.native")
     );
-    let source = SourceIdentity::new("test", "format-output-bound", "fixture", "original");
+    let source = SourceIdentity::new("test", "format-output-bound");
     let parsed = qsl_cst::parse(
         source.clone(),
         "unit.native",
@@ -44,7 +44,7 @@ fn exact_format_output_bound_keeps_the_original_checked_identity() {
         let limits = qsl_cst::format::FormatLimits::default().with_output_bytes(bound);
         let formatted = qsl_cst::format::format_with_limits(&parsed, limits).unwrap();
         assert_eq!(formatted, complete);
-        let identity = SourceIdentity::new("test", "format-output-bound", "fixture", "formatted");
+        let identity = SourceIdentity::new("test", "format-output-bound");
         let reparsed = qsl_cst::parse(
             identity.clone(),
             "unit.native",
@@ -98,7 +98,7 @@ fn private_state_source_identity(document: Vec<u8>, body: &str) {
     );
     let (text, packages) = semantic_models::config_unit_with_body(&document, body);
     emitted(
-        SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "tc-459"),
         "unit.native",
         text.as_bytes(),
         &packages,
@@ -171,7 +171,7 @@ fn protocol_attempt_identity(declarations: &str) {
     let text = format!("{}{declarations}\n", protocol_attempt_fixture::HEADER);
     let compile = |text: &str, revision: &str| {
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", revision),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -424,7 +424,7 @@ fn state_fixture_identity(case: usize) {
     );
     let (source, packages) = semantic_models::config_unit_with_body(&document, &body);
     emitted(
-        SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "tc-459"),
         "unit.native",
         source.as_bytes(),
         &packages,
@@ -810,7 +810,7 @@ fn literal_fixture_arguments(test_source: &str, callees: &[&str]) -> Vec<String>
 
 fn plain_fixture(text: &str) {
     emitted(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         &BTreeMap::new(),
@@ -821,7 +821,7 @@ fn plain_fixture(text: &str) {
 
 fn replay_fixture(text: &str) {
     emitted(
-        SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
+        SourceIdentity::new("agent-ix", "test:replay"),
         "test:replay",
         text.as_bytes(),
         &BTreeMap::new(),
@@ -836,7 +836,7 @@ fn ieee_fixture_identity(text: &str) {
     use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
     let compile = |text: &str, revision: &str| {
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", revision),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -866,7 +866,7 @@ fn ieee_fixture_identity(text: &str) {
     };
     compile(text, "1");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -874,7 +874,7 @@ fn ieee_fixture_identity(text: &str) {
     .unwrap();
     let formatted = qsl_cst::format::format(&parsed).unwrap();
     let reparsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "formatted"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         formatted.as_bytes(),
         qsl_cst::Limits::default(),
@@ -991,7 +991,7 @@ fn emitter_authored_units_keep_format_identity() {
             source.replace(removed, "")
         });
         emitted(
-            SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+            SourceIdentity::new("agent-ix", "test:spine-model"),
             "program.native",
             source.as_bytes(),
             &packages,
@@ -1107,7 +1107,7 @@ fn assembler_checked_owner_and_declaration_variants_keep_format_identity() {
     );
     for owner in ["u", "w"] {
         emitted(
-            SourceIdentity::new("a", owner, "git", "1"),
+            SourceIdentity::new("a", owner),
             "unit.native",
             format!("{header}{declarations}\n").as_bytes(),
             &BTreeMap::new(),
@@ -1149,7 +1149,7 @@ fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
     for (path, bytes) in &fixtures {
         let path = path.as_str();
         let refusal = emitted(
-            SourceIdentity::new("test", path, "fixture", "1"),
+            SourceIdentity::new("test", path),
             path,
             bytes,
             &BTreeMap::new(),
@@ -1168,7 +1168,7 @@ fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
 fn lifecycle_generated_bodies_keep_format_identity() {
     let fixture = include_str!("../../qsl-replay/src/spine/lifecycle/tests.rs");
     let header = source_literal(fixture, "HEADER");
-    let identity = || SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1");
+    let identity = || SourceIdentity::new("agent-ix", "test:lifecycle");
     let compile = |source: &str, limits| {
         crate::support::front_end::emitted_with_authority(
             identity(),
@@ -1248,7 +1248,7 @@ fn lifecycle_seeded_admitted_units_keep_format_identity() {
             _ => bytes.truncate(below(bytes.len())),
         }
         match emitted(
-            SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1"),
+            SourceIdentity::new("agent-ix", "test:lifecycle"),
             "unit.native",
             &bytes,
             &BTreeMap::new(),
@@ -1293,7 +1293,7 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
         .with_input_bytes(u64::MAX)
         .with_work_budget(u64::MAX);
     crate::support::front_end::emitted_with_authority(
-        SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:lifecycle"),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1330,7 +1330,7 @@ fn deep_source_generator_keeps_format_identity(label: &str) {
         .with_work_budget(u64::MAX);
     if label == "sum" {
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "small-stack"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             source.as_bytes(),
             limits.source,
@@ -1348,7 +1348,7 @@ fn deep_source_generator_keeps_format_identity(label: &str) {
         assert!(!formatted.is_empty(), "deep formatting emits source");
     }
     crate::support::front_end::emitted_with_authority(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1415,7 +1415,7 @@ fn replay_large_source_generator_keeps_format_identity() {
         .with_input_bytes(1 << 40)
         .with_work_budget(1 << 40);
     crate::support::front_end::emitted_with_authority(
-        SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
+        SourceIdentity::new("agent-ix", "test:replay"),
         "test:replay",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1443,7 +1443,7 @@ fn longest_admitted_and_chain_keeps_format_identity() {
     let admits = |levels| {
         let text = text(levels);
         let Ok(parsed) = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -1558,7 +1558,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
         &[("MODEL_PROFILE", &model_profile), ("body", &body)],
     );
     emitted(
-        SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
+        SourceIdentity::new("agent-ix", "test:replay"),
         "test:replay",
         source.as_bytes(),
         &packages,
@@ -1574,7 +1574,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
         &[("PROFILE", &profile)],
     );
     emitted(
-        SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
+        SourceIdentity::new("agent-ix", "test:replay"),
         "test:replay",
         source.as_bytes(),
         &packages,
@@ -1593,7 +1593,7 @@ fn dependency_library_and_scalar_variants_keep_format_identity() {
     let compile = |body: &str, caller: &str| {
         let library = SuppliedLibrary {
             identity: "test/geometry".to_owned(),
-            source: SourceIdentity::new("a", "geometry", "git", "1"),
+            source: SourceIdentity::new("a", "geometry"),
             path: "geometry.native".to_owned(),
             bytes: format!("{header}{body}").into_bytes(),
         };
@@ -1607,7 +1607,7 @@ fn dependency_library_and_scalar_variants_keep_format_identity() {
         .expect("original library checks independently");
         let source = format!("{header}import \"test/geometry\" as g;\n{caller}");
         crate::support::front_end::dependency_fixture_identity(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "u.native",
             &source,
             vec![library],
@@ -1681,13 +1681,13 @@ fn dependency_chain_and_order_variants_keep_format_identity() {
     let h = source_literal(fixture, "H");
     let library = |identity: &str, name: &str, body: &str| SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new("a", name, "git", "1"),
+        source: SourceIdentity::new("a", name),
         path: format!("{name}.native"),
         bytes: format!("{header}{body}").into_bytes(),
     };
     let run = |body: String, libraries| {
         dependency_fixture_identity(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "u.native",
             &format!("{header}{body}"),
             libraries,
@@ -1754,17 +1754,17 @@ fn replay_importing_and_call_mapping_units_keep_format_identity() {
         let constant = "BIG";
         let library = SuppliedLibrary {
             identity: "test/units".to_owned(),
-            source: SourceIdentity::new("agent-ix", "test:units", "git", "r1"),
+            source: SourceIdentity::new("agent-ix", "test:units"),
             path: "test:units".to_owned(),
             bytes: format!("{header}{}", source_literal(fixture, constant)).into_bytes(),
         };
-        dependency_fixture_identity(SourceIdentity::new("agent-ix", "test:replay", "git", "r1"), "test:replay",
+        dependency_fixture_identity(SourceIdentity::new("agent-ix", "test:replay"), "test:replay",
             &format!("{header}import \"test/units\" as u;\nfunction q using v(x: Int[0, 9]): Boolean pure {{ u::big(x) }}\n"), vec![library]);
     }
     let fixture = include_str!("../../qsl-replay/src/spine/call/tests.rs");
     let source = source_literal(fixture, "FIXTURE_F");
     emitted(
-        SourceIdentity::new("agent-ix", "spine-run-fixture", "git", "1"),
+        SourceIdentity::new("agent-ix", "spine-run-fixture"),
         "tc-452-f.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1817,7 +1817,7 @@ fn checker_family_authored_units_keep_format_identity() {
         ..Default::default()
     };
     crate::support::front_end::emitted_with_authority(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1864,7 +1864,7 @@ fn compile_facade_authored_units_keep_format_identity() {
         &[("HEADER", &header)],
     );
     emitted(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         &packages,
@@ -1899,7 +1899,7 @@ fn admission_corpus_authored_units_keep_format_identity() {
         &[],
     );
     emitted(
-        SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         source.as_bytes(),
         &packages,
@@ -1923,7 +1923,7 @@ fn package_dependent_library_keeps_format_identity() {
     );
     let source = format!("{}{body}", source_literal(fixture, "HEADER"));
     emitted(
-        SourceIdentity::new("a", "geometry", "git", "1"),
+        SourceIdentity::new("a", "geometry"),
         "geometry.native",
         source.as_bytes(),
         &qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
@@ -1940,7 +1940,7 @@ fn evaluator_source_call_fixture_keeps_checked_identity() {
         "UNIT",
     );
     emitted(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1963,7 +1963,7 @@ fn replay_composite_fixture_keeps_checked_identity() {
     );
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{profile}{body}");
     crate::support::front_end::emitted_with_authority(
-        SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
+        SourceIdentity::new("agent-ix", "test:replay"),
         "test:replay",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1994,7 +1994,7 @@ fn wide_integer_fixture_units_keep_checked_identity() {
     ] {
         let source = format!("{header}function u using v(x: {parameter}): Boolean pure {{ {body} }}\n");
         emitted(
-            SourceIdentity::new("a", "u", "git", "1"), "unit.native", source.as_bytes(),
+            SourceIdentity::new("a", "u"), "unit.native", source.as_bytes(),
             &BTreeMap::new(), &DependencyInput::default(),
         ).unwrap_or_else(|refusal| panic!("{body}: the admitted wide-integer fixture checks: {refusal}"));
     }
@@ -2022,7 +2022,7 @@ fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
         ),
     ] {
         emitted(
-            SourceIdentity::new("test", name, "fixture", "1"),
+            SourceIdentity::new("test", name),
             name,
             bytes,
             &packages,

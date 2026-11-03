@@ -44,7 +44,7 @@ fn package(clauses: &str) -> CheckedPackage {
         fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:abstraction", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:abstraction"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

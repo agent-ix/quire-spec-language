@@ -32,7 +32,7 @@ fn reaches() -> CheckedGraph {
          on origin { eventually holds(c.versionNumber = 2) }\n",
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "test:negotiation", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:negotiation"),
         "program.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

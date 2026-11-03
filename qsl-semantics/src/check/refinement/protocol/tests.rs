@@ -198,7 +198,7 @@ fn check_with_internals(
     internals: Option<serde_json::Value>,
 ) -> Result<CheckedGraph, Vec<Refused>> {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -2084,7 +2084,7 @@ fn effect_commit_and_cend_classes_are_catalogued() {
 /// constructs, so a protocol's clause key is as production resolves it.
 fn check_written(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

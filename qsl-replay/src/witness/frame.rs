@@ -186,8 +186,6 @@ mod tests {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "ns".to_owned(),
-            revision: "1".to_owned(),
         }
     }
 

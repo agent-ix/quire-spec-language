@@ -823,10 +823,6 @@ fn admitted(inputs: &Inputs, inspect: impl FnOnce(&proofs::ProofReport<'_, '_, '
                 package.sources[0].native.identity,
                 inputs.sources[0].identity().identity
             );
-            assert_eq!(
-                package.sources[0].native.revision,
-                inputs.sources[0].identity().revision
-            );
             assert_eq!(package.sources[0].text, inputs.sources[0].text());
             inspect(proofs, package);
             let emitted = native::emit(&admitted, Limits::default())
@@ -1203,7 +1199,6 @@ fn received_choice_with_cross_unit_operation_contracts_retains_original_owners()
                     .iter()
                     .find(|s| s.identity().identity == source.native.identity)
                     .unwrap();
-                assert_eq!(source.native.revision, original.identity().revision);
                 assert_eq!(source.text, original.text());
             }
             let find = |name| {

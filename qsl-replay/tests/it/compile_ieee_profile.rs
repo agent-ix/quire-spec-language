@@ -22,7 +22,7 @@ const TO_R: &str = include_str!("../fixtures/ieee_float/to_rational.native");
 fn compile(text: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
         qsl_replay::CompileUnit {
-            source: SourceIdentity::new("a", "ieee", "git", "1"),
+            source: SourceIdentity::new("a", "ieee"),
             package_name: "fixture".to_owned(),
             path: "ieee.native",
             bytes: text.as_bytes(),
@@ -621,7 +621,7 @@ fn a_supplied_library_never_replaces_an_ieee_intrinsic() {
     );
     let dependencies = DependencyInput::new(vec![qsl_replay::SuppliedLibrary {
         identity: "quire::value::ieee".to_owned(),
-        source: SourceIdentity::new("a", "ieee-library", "git", "1"),
+        source: SourceIdentity::new("a", "ieee-library"),
         path: "ieee-library.native".to_owned(),
         bytes: library_body.into_bytes(),
     }])
@@ -630,7 +630,7 @@ fn a_supplied_library_never_replaces_an_ieee_intrinsic() {
         let unit = format!("{HEADER}import \"quire::value::ieee\" as q;\nfunction call using v(a: Float64[nearest-even]): Float64[nearest-even] pure {{ quire::value::ieee::{call} }}");
         let Err(AdmittedRefusal::Package(refusal)) = compile_admitted(
             qsl_replay::CompileUnit {
-                source: SourceIdentity::new("a", "ieee", "git", "1"),
+                source: SourceIdentity::new("a", "ieee"),
                 package_name: "fixture".to_owned(),
                 path: "ieee.native",
                 bytes: unit.as_bytes(),
@@ -815,7 +815,7 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
                 json!({"kind": "rounding", "value": "nearest-even"}),
             );
             assert_ieee_law(&emitted, operation(&emitted, "quire.op.ieee.to_rational"));
-            let source = SourceIdentity::new("a", "ieee", "git", "1");
+            let source = SourceIdentity::new("a", "ieee");
             let limits = SpineLimits::default();
             let cancel = Cancel::new();
             let parsed = spine::parse(

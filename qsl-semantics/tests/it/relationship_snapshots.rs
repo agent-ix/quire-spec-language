@@ -287,15 +287,12 @@ fn label(name: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     }
 }
 
 fn labels(reference: &DocumentRef) -> Value {
     json!({
-        "authority": reference.authority, "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    "authority": reference.authority, "identity": reference.identity,
     })
 }
 
@@ -436,7 +433,7 @@ fn checked(variant: &Variant) -> Admission {
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-1035", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-1035"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

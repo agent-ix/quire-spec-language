@@ -795,7 +795,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
     use qsl_semantics::check::PackageDeclarations;
     use quire_semantic_value::checking::CheckingLimits;
     let source = qsl_foundation::Source::read(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "u".to_owned(),
         b"",
         0,

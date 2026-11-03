@@ -855,7 +855,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
         PACKAGE = PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "tc-235", "m22-flags", "fixture:1"),
+        SourceIdentity::new("test", "tc-235"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

@@ -128,13 +128,12 @@ impl Parts {
 
 /// Read QSL's generated model input; setup failures cannot become judgments.
 pub fn parts() -> Parts {
-    from_text(fixture(), "native-rule-model.json", "draft:1")
-        .expect("valid source-derived rule-model fixture")
+    from_text(fixture(), "native-rule-model.json").expect("valid source-derived rule-model fixture")
 }
 
 /// Orchestrate source intake, occurrence-aware decoding and typed lowering.
-pub fn from_text(text: &str, path: &str, revision: &str) -> Result<Parts> {
-    from_source(bind_source(text, path, revision)?)
+pub fn from_text(text: &str, path: &str) -> Result<Parts> {
+    from_source(bind_source(text, path)?)
 }
 
 /// Lower an explicitly identified original source, including multi-model fixtures.
@@ -160,13 +159,11 @@ pub fn from_source(source: FormalSource) -> Result<Parts> {
     })
 }
 
-fn bind_source(text: &str, path: &str, revision: &str) -> Result<FormalSource> {
+fn bind_source(text: &str, path: &str) -> Result<FormalSource> {
     let native = Source::read(
         SourceIdentity {
             authority: "agent-ix".into(),
             identity: "test:rule-model".into(),
-            revision_namespace: "git".into(),
-            revision: revision.into(),
         },
         path,
         text.as_bytes(),

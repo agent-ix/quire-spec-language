@@ -115,7 +115,6 @@ pub(super) fn validate(
         for text in [
             formal.identity().document().as_str(),
             source.identity().identity.as_str(),
-            source.identity().revision.as_str(),
             source.path(),
         ] {
             work.bytes(text.len())?;

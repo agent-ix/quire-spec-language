@@ -538,7 +538,7 @@ pub(crate) fn check_refusal(body: &str) -> CheckRefusal {
     let text = unit_text(body);
     let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        SourceIdentity::new("agent-ix", "counter"),
         "counter.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

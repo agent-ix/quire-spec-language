@@ -39,7 +39,7 @@ fn compile(text: &str) -> Result<Value, ReplayRefusal> {
     let stages: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();
     let compiled = compile_package(
         qsl_replay::CompileUnit {
-            source: SourceIdentity::new("a", "u", "git", "1"),
+            source: SourceIdentity::new("a", "u"),
             package_name: "fixture".to_owned(),
             path: "unit.native",
             bytes: text.as_bytes(),

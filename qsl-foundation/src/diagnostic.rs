@@ -1044,12 +1044,12 @@ mod foundation_tests {
             *Source::read(identity, path, b"x", crate::source::MAX_SOURCE_BYTES)
                 .expect_err("refused")
         };
-        let blank = read(SourceIdentity::new("a", "u", " ", "1"), "");
-        let empty = read(SourceIdentity::new("a", "u", "git", "1"), "");
+        let blank = read(SourceIdentity::new("a", " "), "");
+        let empty = read(SourceIdentity::new("a", "u"), "");
         assert_eq!(
             blank.identity_cause(),
             Some(SourceReadCause::BlankLabel {
-                label: SourceLabel::RevisionNamespace
+                label: SourceLabel::Identity
             })
         );
         assert_eq!(empty.identity_cause(), Some(SourceReadCause::EmptyPath));
@@ -1061,7 +1061,7 @@ mod foundation_tests {
 
     fn source() -> Source {
         Source::read(
-            SourceIdentity::new("agent-ix", "test:diagnostic", "git", "1"),
+            SourceIdentity::new("agent-ix", "test:diagnostic"),
             "diagnostic.native",
             b"x",
             crate::source::MAX_SOURCE_BYTES,

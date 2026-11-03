@@ -798,7 +798,7 @@ fn the_two_scopes_of_one_field_differ_in_the_node_and_both_at_once_refuse_at_int
     });
     let UnitParts { unit, packages, .. } = unit_of(&["own"], &[("own", both)]);
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-573", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-573"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

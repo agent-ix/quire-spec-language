@@ -15,7 +15,7 @@ use qsl_replay::{
 
 fn request(bytes: &[u8]) -> ClauseEvaluationRequest {
     ClauseEvaluationRequest {
-        source: SourceIdentity::new("a", "u", "git", "1"),
+        source: SourceIdentity::new("a", "u"),
         package_name: "fixture".to_owned(),
         path: "unit.native".to_owned(),
         bytes: bytes.to_vec(),

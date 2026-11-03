@@ -83,7 +83,7 @@ fn producer_name(path: &Path) -> String {
 /// given the labels the runnable output derives from `path`.
 fn producer_bytes(path: &Path, source: &str, documents: &[&[u8]]) -> Vec<u8> {
     crate::support::front_end::emitted(
-        SourceIdentity::new("local", format!("source:{}", path.display()), "file", "1"),
+        SourceIdentity::new("local", format!("source:{}", path.display())),
         &path.display().to_string(),
         source.as_bytes(),
         &qsl_semantics::model::intake::package_input(documents.iter().copied()).unwrap(),

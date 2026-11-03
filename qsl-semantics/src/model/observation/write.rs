@@ -11,7 +11,7 @@ use quire_checked::key::DeclarationKey;
 
 use super::{fault, AdmissionFailure, SnapshotValue};
 
-/// The four FR-001 labels of a document. Admission never compares these with the
+/// The two FR-001 labels of a document. Admission never compares these with the
 /// document's own identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentLabels {
@@ -19,10 +19,6 @@ pub struct EnvironmentLabels {
     pub authority: String,
     /// The `identity` label.
     pub identity: String,
-    /// The `revision_namespace` label.
-    pub revision_namespace: String,
-    /// The `revision` label.
-    pub revision: String,
 }
 
 /// One object of a population: its `key`, its object type's declaration
@@ -97,8 +93,6 @@ pub fn write_environment_document(
         "identity": {
             "authority": identity.authority,
             "identity": identity.identity,
-            "revision_namespace": identity.revision_namespace,
-            "revision": identity.revision,
         },
         "observation": "current",
         "anchor": {"kind": "handler", "name": "replay"},

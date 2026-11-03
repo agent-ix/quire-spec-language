@@ -16,7 +16,6 @@ fn bytes(source: &FormalSource) -> usize {
     source.source().text().len()
         + source.source().path().len()
         + source.source().identity().identity.len()
-        + source.source().identity().revision.len()
         + source.identity().document().as_str().len()
 }
 
@@ -55,7 +54,6 @@ impl<'s> Correspondence<'s> {
                     Dimension::Bytes,
                     bytes(source) - source.source().text().len()
                         + unit.source().identity().identity.len()
-                        + unit.source().identity().revision.len()
                         + unit.source().path().len(),
                 )?;
                 if same(source.source(), unit.source()) {

@@ -694,7 +694,7 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
         },
         &clauses,
         qsl_semantics::check::admitted_source(
-            qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics", "git", "1"),
+            qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics"),
             b"",
         ),
         crate::TEST_PACKAGE_NAME.to_owned(),
@@ -770,7 +770,7 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
             },
             &clauses,
             qsl_semantics::check::admitted_source(
-                qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics", "git", "1"),
+                qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics"),
                 b"",
             ),
             crate::TEST_PACKAGE_NAME.to_owned(),

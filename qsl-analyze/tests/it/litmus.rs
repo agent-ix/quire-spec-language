@@ -236,7 +236,7 @@ impl CellDocuments {
         let int = |value: i64| json!({"integer": value.to_string()});
         let snapshot = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": "s0-cell", "revision_namespace": "fixture", "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": "s0-cell"},
             "observation": "current", "model": {"identity": PACKAGE},
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": ident("cells"), "complete": true,
@@ -362,7 +362,7 @@ fn package_with_provisions(
     internals: Option<serde_json::Value>,
 ) -> CheckedPackage {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "litmus", "git", "1"),
+        SourceIdentity::new("agent-ix", "litmus"),
         "litmus.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -520,8 +520,7 @@ impl Documents {
         };
         let snapshot = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": "s0"},
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [
@@ -543,8 +542,6 @@ impl Documents {
             initial: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "s0".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "fixture:1".to_owned(),
             },
             spare,
             has_core,

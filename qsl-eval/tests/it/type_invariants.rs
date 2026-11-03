@@ -226,7 +226,7 @@ fn compile_unit(document: &Value, body: &str) -> (Compiled, Packages) {
 
 fn compile_parsed(unit: &str, packages: &Packages) -> Compiled {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc1050", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc1050"),
         "tc1050.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -533,8 +533,6 @@ fn unsigned_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "tc235".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
@@ -703,8 +701,6 @@ fn identity_of(label: &str) -> ObservationIdentity {
     ObservationIdentity {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "tc235".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 

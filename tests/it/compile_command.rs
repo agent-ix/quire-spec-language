@@ -45,7 +45,6 @@ fn spine_request(directory: &Path, program: &[u8]) {
     std::fs::write(directory.join("program.native"), program).unwrap();
     let request = json!({"format":"native-compile/1","request":{"models":[],"program":{
         "source":{"file":"program.native","authority":"agent-ix","identity":"test:spine",
-        "revision_namespace":"fixture","revision":"fixture:1",
         "document":"Spine","formal_revision":1}}}});
     std::fs::write(
         directory.join("compile.json"),
@@ -78,7 +77,7 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     );
     assert!(output.stderr.is_empty());
     let library = crate::support::front_end::emitted(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine"),
         "program.native",
         &program,
         &std::collections::BTreeMap::new(),
@@ -310,7 +309,6 @@ fn compile_file_count_refusal_names_the_models_group_before_file_io() {
     let output = compile_changed(directory.path(), |job| {
         let model = json!({"format":"semantic-ir/2.0.0","source":{
             "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
-            "revision_namespace":"fixture","revision":"fixture:1",
             "document":"M","formal_revision":1}});
         job["request"]["models"] = json!(vec![model; 64]);
         job["request"]["program"]["source"]["file"] = json!("missing.native");
@@ -336,8 +334,7 @@ fn clause_run_file_count_refusal_names_the_observations_group() {
     let request = json!({"format":"native-run/1","request":{
         "models":[],
         "program":{"source":{"file":"missing.native","authority":"agent-ix",
-            "identity":"test:count","revision_namespace":"fixture","revision":"fixture:1",
-            "document":"Count","formal_revision":1}},
+            "identity":"test:count","document":"Count","formal_revision":1}},
         "clause":{"selection":{"clause":{"name":"C","observation":"o0",
             "self":{"population":"ix://p/q","key":"k"},
             "anchor":{"kind":"handler","name":"h"}}},
@@ -517,7 +514,6 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     job["request"]["models"] = json!([{"format":"semantic-ir/2.0.0","source":{
         "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
-        "revision_namespace":"fixture","revision":"fixture:1",
         "document":"Orders","formal_revision":1}}]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
 }
@@ -544,7 +540,7 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         String::from_utf8_lossy(&output.stderr)
     );
     let library = crate::support::front_end::emitted(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine"),
         "program.native",
         &program,
         &qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
@@ -627,7 +623,7 @@ const GEOMETRY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }
 
 /// The source identity `geometry.native` is selected under.
 fn geometry_identity() -> qsl_foundation::SourceIdentity {
-    qsl_foundation::SourceIdentity::new("agent-ix", "test:geometry", "fixture", "fixture:1")
+    qsl_foundation::SourceIdentity::new("agent-ix", "test:geometry")
 }
 
 /// [`spine_request`] for a program importing `test/geometry`, with
@@ -645,7 +641,6 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     job["request"]["libraries"] = json!([{"identity":identity,"source":{
         "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
-        "revision_namespace":"fixture","revision":"fixture:1",
         "document":"Geometry","formal_revision":1}}]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
     program
@@ -685,7 +680,7 @@ fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
         }])
         .unwrap();
     let compiled = crate::support::front_end::emitted(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine"),
         "program.native",
         &program,
         &std::collections::BTreeMap::new(),
@@ -732,7 +727,6 @@ fn refinement_internal_list_defects_keep_their_input_owner() {
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     job["request"]["libraries"] = json!([{"identity":"test/geometry","source":{
         "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
-        "revision_namespace":"fixture","revision":"fixture:1",
         "document":"Geometry","formal_revision":1},
         "refinement_internals":[{"refinement":"NoSuchRefinement","internal":[]}] }]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
@@ -805,7 +799,6 @@ fn a_library_refusal_renders_over_the_library_source() {
 fn library_row(file: &str, identity: &str) -> Value {
     json!({"identity":identity,"source":{
         "file":file,"authority":"agent-ix","identity":format!("test:{file}"),
-        "revision_namespace":"fixture","revision":"fixture:1",
         "document":"Library","formal_revision":1}})
 }
 

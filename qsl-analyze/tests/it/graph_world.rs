@@ -246,7 +246,7 @@ impl World {
             model.alias, model.package
         );
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("agent-ix", "graph", "git", "1"),
+            SourceIdentity::new("agent-ix", "graph"),
             "graph.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -318,8 +318,7 @@ impl World {
         let header = json!({"identity": self.model.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": name},
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": self.model.ident(self.model.population),
@@ -334,8 +333,6 @@ impl World {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 
@@ -375,12 +372,7 @@ impl World {
         source: WitnessSource,
         keys: &[&str],
     ) -> GraphReplayResult {
-        let source_wire: (String, String, String, String) = (
-            "agent-ix".to_owned(),
-            "graph".to_owned(),
-            "git".to_owned(),
-            "1".to_owned(),
-        );
+        let source_wire: (String, String) = ("agent-ix".to_owned(), "graph".to_owned());
         let byte_provision = vec![(
             "agent-ix".to_owned(),
             "graph".to_owned(),

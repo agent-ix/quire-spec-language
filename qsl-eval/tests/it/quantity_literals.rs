@@ -70,7 +70,7 @@ fn package_with(functions: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
          profile v = \"quire.value.complete/v1\";\n{functions}"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -343,7 +343,7 @@ fn a_carried_quantity_exponent_expression_is_not_admitted() {
          function illegal_power using v(a: Quantity<m, Int[-2, 2]>): Quantity<m, Int[-2, 2]> pure {{ a ** 2 }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

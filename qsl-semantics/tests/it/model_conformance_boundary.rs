@@ -248,7 +248,7 @@ fn run_unit(
         "the admission operation's own work"
     );
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-196", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-196"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -1667,7 +1667,7 @@ fn staged_admission_spends_the_work_of_strict_admission() {
         )
         .expect("admits");
         let raw = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("test", "tc-196", "fixture", "1"),
+            qsl_foundation::SourceIdentity::new("test", "tc-196"),
             "unit.native",
             unit.as_bytes(),
             qsl_cst::Limits::default(),

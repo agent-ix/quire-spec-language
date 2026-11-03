@@ -436,8 +436,6 @@ mod tests {
             SourceIdentity {
                 authority: "agent-ix".into(),
                 identity: "test:spine-run".into(),
-                revision_namespace: "fixture".into(),
-                revision: "fixture:1".into(),
             },
             "program.native",
             b"",
@@ -468,8 +466,6 @@ mod tests {
                 "source": {
                     "authority": "agent-ix",
                     "identity": "test:spine-run",
-                    "revision_namespace": "fixture",
-                    "revision": "fixture:1",
                     "path": "program.native",
                 },
                 "function": "seven",

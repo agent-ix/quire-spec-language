@@ -48,7 +48,7 @@ const UNIT: &str = "record Left { a: Boolean; b: Boolean; }\n\
 const POINTS: &str = "record Point { x: Boolean; }\nunion Pick { A, B(Point) }\n";
 
 fn unit_identity() -> SourceIdentity {
-    SourceIdentity::new("a", "u", "git", "1")
+    SourceIdentity::new("a", "u")
 }
 
 fn limits() -> StageLimits {
@@ -78,7 +78,7 @@ fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
 fn library(identity: &str, name: &str, body: &str) -> SuppliedLibrary {
     SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new("a", name, "git", "1"),
+        source: SourceIdentity::new("a", name),
         path: format!("{name}.native"),
         bytes: format!("{HEADER}{body}").into_bytes(),
     }

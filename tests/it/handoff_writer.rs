@@ -72,8 +72,6 @@ impl Loaded {
             SourceIdentity {
                 authority: selected.native.authority.clone(),
                 identity: selected.native.identity.clone(),
-                revision_namespace: selected.native.revision_namespace.clone(),
-                revision: selected.native.revision.clone(),
             },
             &selected.path,
             &bytes,

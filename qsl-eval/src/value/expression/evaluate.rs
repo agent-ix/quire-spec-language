@@ -4632,8 +4632,6 @@ mod tests {
         let identity = |name: &str| ObservationIdentity {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "tc235".to_owned(),
-            revision: "1".to_owned(),
         };
         for context in [true, false] {
             let mut trail = Trail::new(identity("q1"), Some(identity("p1")));
@@ -5330,8 +5328,6 @@ mod tests {
         let observation = ObservationIdentity {
             authority: "test".to_owned(),
             identity: "current".to_owned(),
-            revision_namespace: "ns".to_owned(),
-            revision: "1".to_owned(),
         };
         let mut machine = Machine::new(
             package.graph().scope(),
@@ -5536,8 +5532,6 @@ mod tests {
                 super::super::s6a::separation::ObservationIdentity {
                     authority: "test".to_owned(),
                     identity: "current".to_owned(),
-                    revision_namespace: "ns".to_owned(),
-                    revision: "1".to_owned(),
                 },
                 None,
             );
@@ -5640,8 +5634,6 @@ mod tests {
                 super::super::s6a::separation::ObservationIdentity {
                     authority: "test".to_owned(),
                     identity: "current".to_owned(),
-                    revision_namespace: "ns".to_owned(),
-                    revision: "1".to_owned(),
                 },
                 None,
             );

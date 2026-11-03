@@ -17,8 +17,6 @@ fn read(text: &str) -> ParsedUnit {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:native-linking".into(),
-            revision_namespace: "test".into(),
-            revision: "draft:1".into(),
         },
         "native-linking.native",
         text.as_bytes(),
@@ -81,7 +79,7 @@ fn authored_model(edit: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
         serde_json::from_str(native_rule_model::fixture()).unwrap();
     edit(&mut authored);
     let text = serde_json::to_string(&authored).unwrap();
-    native_rule_model::from_text(&text, "native-link-variant.json", "draft:1")
+    native_rule_model::from_text(&text, "native-link-variant.json")
         .unwrap()
         .model()
 }
@@ -364,7 +362,7 @@ fn tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped()
 #[trace("TC-043", "FR-015-AC-4")]
 fn tc_043_inventory_conflicts_refuse_before_import_selection() {
     let original = parts().model();
-    for mutation in 0..3 {
+    for mutation in 0..2 {
         let mut input = parts();
         reowner(&mut input, "OtherRule");
         let old = input.source.source();
@@ -372,8 +370,7 @@ fn tc_043_inventory_conflicts_refuse_before_import_selection() {
         let text = old.text().to_owned();
         match mutation {
             0 => identity.identity.push_str(":foreign"),
-            1 => identity.revision.push_str(":foreign"),
-            2 => {
+            1 => {
                 reowner(&mut input, "RuleModel");
                 input.roles.operations[0].frame.fields.clear();
             }

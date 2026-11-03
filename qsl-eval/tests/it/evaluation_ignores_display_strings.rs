@@ -46,7 +46,7 @@ fn limits(work_units: u64) -> ScalarLimits {
 /// the loss count and how many charges the meter admitted.
 fn run(source: &str, entry: &str, argument: i64, work_units: u64) -> (String, usize, u64) {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

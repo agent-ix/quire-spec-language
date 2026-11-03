@@ -49,7 +49,7 @@ const TWO_CALLEES: &str = "function g using v(p: Int[0, 10]): Boolean pure { tru
 pub(super) fn check(declarations: &str) -> CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
     crate::support::front_end::emitted(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         &BTreeMap::new(),
@@ -57,7 +57,7 @@ pub(super) fn check(declarations: &str) -> CheckedGraph {
     )
     .expect("each checked request-builder fixture retains its formatted package identity");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

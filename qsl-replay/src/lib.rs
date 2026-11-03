@@ -531,12 +531,7 @@ mod redaction_tests {
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
             package_name: "fixture".to_owned(),
-            sources: vec![(
-                "registry".to_owned(),
-                "pkg-a".to_owned(),
-                "git".to_owned(),
-                "rev-1".to_owned(),
-            )],
+            sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
@@ -564,8 +559,6 @@ mod redaction_tests {
             .get(&crate::DefinitionSourceRef::new(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
-                "git".to_owned(),
-                "rev-1".to_owned(),
             ))
             .unwrap();
         assert_eq!(looked_up, entry_x.as_slice());

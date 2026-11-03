@@ -226,8 +226,6 @@ mod tests {
             qsl_foundation::SourceIdentity {
                 authority: source.native.authority.clone(),
                 identity: source.native.identity.clone(),
-                revision_namespace: source.native.revision_namespace.clone(),
-                revision: source.native.revision.clone(),
             },
             "examples/protocol-handoff/workflow.native",
             &original_bytes,

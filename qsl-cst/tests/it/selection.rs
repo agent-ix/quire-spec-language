@@ -52,8 +52,6 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
                 SourceIdentity {
                     authority: "test".into(),
                     identity: format!("test:{declaration_kind}-{invalid_component}"),
-                    revision_namespace: "test".into(),
-                    revision: "r1".into(),
                 },
                 "invalid-selection.native",
                 source.as_bytes(),
@@ -87,7 +85,7 @@ fn a_model_names_only_its_domain_package_identity() {
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"acme/profile\";\n{model}\nrecord R {{ datum: Integer; }}"
         );
         parse(
-            SourceIdentity::new("test", "test:model", "test", "r1"),
+            SourceIdentity::new("test", "test:model"),
             "model.native",
             source.as_bytes(),
             Limits::default(),
@@ -125,7 +123,7 @@ fn an_import_names_only_its_library_identity() {
     let parse_import = |import: &str| {
         let source = import_unit(import);
         parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             source.as_bytes(),
             Limits::default(),

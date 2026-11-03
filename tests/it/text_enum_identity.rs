@@ -171,8 +171,6 @@ fn parse(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:tc-186".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "tc-186.native",
         text.as_bytes(),

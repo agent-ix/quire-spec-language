@@ -67,7 +67,7 @@ fn fixture_of(functions: &str) -> Fixture {
          profile v = \"quire.value.complete/v1\";\n{functions}"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

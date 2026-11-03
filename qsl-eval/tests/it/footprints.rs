@@ -215,7 +215,7 @@ fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
         clauses.join("\n"),
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "fr-155", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "fr-155"),
         "fr-155.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -299,8 +299,7 @@ impl Subject {
             .collect();
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": name},
             "observation": "current", "model": self.header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": listed,
@@ -314,8 +313,6 @@ impl Subject {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 

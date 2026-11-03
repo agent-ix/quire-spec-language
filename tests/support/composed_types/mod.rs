@@ -189,8 +189,6 @@ fn try_model_with(
         SourceIdentity {
             authority: "test".into(),
             identity: format!("model:{name}"),
-            revision_namespace: "test".into(),
-            revision: "authored".into(),
         },
         format!("{name}.json"),
         text.as_bytes(),
@@ -236,8 +234,6 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
         SourceIdentity {
             authority: "test".into(),
             identity: format!("unit:{name}"),
-            revision_namespace: "test".into(),
-            revision: "authored".into(),
         },
         format!("{name}.native"),
         text.as_bytes(),

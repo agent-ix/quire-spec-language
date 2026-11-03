@@ -56,8 +56,7 @@ fn snapshot(role: &str, rows: &[(&str, i64, Option<&str>)]) -> Vec<u8> {
         .collect();
     let mut document = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "t", "identity": format!("ix://t/{role}"),
-            "revision_namespace": "ns", "revision": "1"},
+        "identity": {"authority": "t", "identity": format!("ix://t/{role}")},
         "observation": role,
         "model": {"identity": PACKAGE},
         "populations": [{"population": population(), "complete": true, "objects": objects}],
@@ -115,7 +114,7 @@ fn accounting(work_units: u64) -> ScalarLimits {
 
 fn evaluate(clause: &str, observation: ClauseObservation, work_units: u64) -> ClauseEvaluation {
     evaluate_clause(ClauseEvaluationRequest {
-        source: SourceIdentity::new("a", "u", "git", "1"),
+        source: SourceIdentity::new("a", "u"),
         package_name: "fixture".to_owned(),
         path: "unit.native".to_owned(),
         bytes: unit().into_bytes(),
@@ -258,7 +257,7 @@ fn a_snapshot_over_the_observation_byte_limit_is_incomplete() {
     let rows = rows_with_parent(2);
     let size = snapshot("current", &rows).len() as u64;
     let request = |bound: u64| ClauseEvaluationRequest {
-        source: SourceIdentity::new("a", "u", "git", "1"),
+        source: SourceIdentity::new("a", "u"),
         package_name: "fixture".to_owned(),
         path: "unit.native".to_owned(),
         bytes: unit().into_bytes(),

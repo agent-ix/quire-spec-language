@@ -417,7 +417,7 @@ fn tc134_attempt_bounds_and_provenance_mutations_are_checked() {
          model M = \"acme/orders\";\n{overflow}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "tc134-overflow", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "tc134-overflow"),
         "tc134.native",
         overflow_unit.as_bytes(),
         qsl_cst::Limits::default(),

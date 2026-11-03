@@ -330,7 +330,7 @@ fn checked_large_text(
     parse_limits.tokens = parse_limits.tokens.max(text.len());
     parse_limits.nodes = parse_limits.nodes.max(text.len().saturating_mul(16));
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         text.as_bytes(),
         parse_limits,

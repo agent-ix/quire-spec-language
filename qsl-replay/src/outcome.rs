@@ -1685,7 +1685,7 @@ mod tests {
 
     /// `check`, then `package`, over `text`.
     fn compiled(text: &str) -> (Checked, Option<Packaged>) {
-        let source = SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1");
+        let source = SourceIdentity::new("agent-ix", "test:outcome");
         let limits = SpineLimits::default();
         let cancel = Cancel::new();
         let request = ParseRequest {
@@ -2571,7 +2571,7 @@ mod tests {
                 supplied: Default::default(),
             };
             let outcome = run(
-                SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+                SourceIdentity::new("agent-ix", "test:outcome"),
                 "fixture".to_owned(),
                 "unit.native",
                 FIXTURE.as_bytes(),
@@ -2610,7 +2610,7 @@ mod tests {
             supplied: Default::default(),
         };
         let outcome = run(
-            SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            SourceIdentity::new("agent-ix", "test:outcome"),
             "fixture".to_owned(),
             "unit.native",
             FIXTURE.as_bytes(),
@@ -2642,7 +2642,7 @@ mod tests {
             ..call
         };
         let outcome = run(
-            SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            SourceIdentity::new("agent-ix", "test:outcome"),
             "fixture".to_owned(),
             "unit.native",
             FIXTURE.as_bytes(),
@@ -2670,7 +2670,7 @@ mod tests {
             })
         );
 
-        let source = SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1");
+        let source = SourceIdentity::new("agent-ix", "test:outcome");
         let limits = SpineLimits::default();
         let live = Cancel::new();
         let request = ParseRequest {
@@ -2857,7 +2857,7 @@ mod tests {
         cancel: &Cancel,
     ) -> Result<CallOutcome, Box<RunRefusal>> {
         run(
-            SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            SourceIdentity::new("agent-ix", "test:outcome"),
             "fixture".to_owned(),
             "unit.native",
             text.as_bytes(),

@@ -51,7 +51,7 @@ fn declarations_of(
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "variant-fields"),
         "variant-fields.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -249,7 +249,7 @@ fn intake_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::Mod
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "variant-fields"),
         "variant-fields.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -680,7 +680,7 @@ fn an_unknown_variant_type_name_in_a_type_position_refuses_at_the_assembler() {
             package = fixture::PACKAGE,
         );
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
+            SourceIdentity::new("test", "variant-fields"),
             "variant-fields.native",
             source.as_bytes(),
             qsl_cst::Limits::default(),
@@ -727,8 +727,6 @@ fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
@@ -790,8 +788,7 @@ impl Replay {
             "format": "quire.state.snapshot/v1",
             "identity": {
                 "authority": "test", "identity": "current",
-                "revision_namespace": "fixture", "revision": "1",
-            },
+                },
             "observation": "current",
             "model": self.model,
             "populations": [{
@@ -1212,8 +1209,7 @@ use qsl_semantics::model::observation::{
 
 fn identity_json(reference: &DocumentRef) -> serde_json::Value {
     json!({
-        "authority": reference.authority, "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    "authority": reference.authority, "identity": reference.identity,
     })
 }
 
@@ -1252,8 +1248,6 @@ impl Replay {
         let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: label.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "1".to_owned(),
         };
         let bytes = serde_json::to_vec(&json!({
             "format": "quire.state.snapshot/v1",
@@ -1286,8 +1280,6 @@ impl Replay {
         let invocation_identity = DocumentRef {
             authority: "test".to_owned(),
             identity: "call".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "1".to_owned(),
         };
         let reference = |document: &DocumentRef| {
             json!({
@@ -1393,7 +1385,7 @@ fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "variant-fields"),
         "variant-fields.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

@@ -272,8 +272,6 @@ pub(super) fn sources(
         for text in [
             &source.native.authority,
             &source.native.identity,
-            &source.native.revision_namespace,
-            &source.native.revision,
             &source.path,
             &source.formal.document,
         ] {

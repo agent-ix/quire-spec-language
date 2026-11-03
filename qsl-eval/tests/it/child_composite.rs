@@ -74,7 +74,7 @@ fn declarations_over(
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "child-composite", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "child-composite"),
         "child-composite.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -219,7 +219,7 @@ fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::C
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "hyper-linked-ledger", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "hyper-linked-ledger"),
         "hyper-linked-ledger.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -1049,15 +1049,12 @@ fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
 fn identity_json(reference: &DocumentRef) -> serde_json::Value {
     json!({
-        "authority": reference.authority, "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    "authority": reference.authority, "identity": reference.identity,
     })
 }
 
@@ -1079,8 +1076,6 @@ fn admit_invocation(
         let identity = DocumentRef {
             authority: "test".to_owned(),
             identity: label.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "1".to_owned(),
         };
         let bytes = serde_json::to_vec(&json!({
             "format": "quire.state.snapshot/v1",
@@ -1101,8 +1096,6 @@ fn admit_invocation(
     let invocation_identity = DocumentRef {
         authority: "test".to_owned(),
         identity: "call".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     };
     let reference = |document: &DocumentRef| {
         json!({

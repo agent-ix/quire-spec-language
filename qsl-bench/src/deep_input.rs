@@ -206,7 +206,7 @@ impl DeepInput {
     fn compile_under(&self, limits: SpineLimits) -> Result<EmittedUnit, FrontEndFailure> {
         use qsl_replay::spine::{check, package, parse, select};
         let cancel = Cancel::new();
-        let source = SourceIdentity::new("agent-ix", "qsl-bench", "deep-input", "1");
+        let source = SourceIdentity::new("agent-ix", "qsl-bench");
         let parsed = parse(
             &ParseRequest {
                 source: &source,
@@ -260,7 +260,7 @@ mod tests {
             let middle = (low + high) / 2;
             let input = DeepInput::new(Shape::OptionType(middle));
             let parsed = qsl_cst::parse(
-                SourceIdentity::new("agent-ix", "qsl-bench", "deep-input", "1"),
+                SourceIdentity::new("agent-ix", "qsl-bench"),
                 "deep-input.native",
                 input.source.as_bytes(),
                 limits,

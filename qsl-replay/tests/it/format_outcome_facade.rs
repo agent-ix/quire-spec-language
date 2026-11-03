@@ -17,7 +17,7 @@ const FIXTURE: &str = include_str!("../../../tests/fixtures/spine-compile.native
 
 fn parsed(text: &str) -> ParsedSource {
     qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "test:format-outcome", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:format-outcome"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

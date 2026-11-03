@@ -94,7 +94,7 @@ fn deep_declarations(source: &str) -> PackageDeclarations {
     limits.tokens = limits.tokens.max(bytes);
     limits.nodes = limits.nodes.max(bytes.saturating_mul(16));
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         limits,
@@ -281,7 +281,7 @@ fn and_chain(levels: usize) -> Option<PackageDeclarations> {
         ")".repeat(levels),
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

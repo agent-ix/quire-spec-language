@@ -303,7 +303,7 @@ fn assemble_over(document: &[u8], body: &str) -> PackageDeclarations {
     })
     .unwrap_or_else(|failure| panic!("a kept operation clause does not parse: {failure:?}"));
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-620", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-620"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -796,7 +796,7 @@ fn exact_values_are_bounded_as_written() {
 fn a_bare_negative_weight_is_refused_at_s1() {
     let (unit, _) = service_unit("random Server::attempt(d) ~ { 1: -1 };");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-620", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-620"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

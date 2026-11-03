@@ -153,8 +153,6 @@ impl World {
             DocumentRef {
                 authority: "test".to_owned(),
                 identity: "state".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "fixture:1".to_owned(),
             },
         )
         .expect("the state observes")

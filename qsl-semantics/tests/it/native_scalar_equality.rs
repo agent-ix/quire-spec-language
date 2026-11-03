@@ -31,7 +31,7 @@ fn parse(
 ) {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "native-eq", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "native-eq"),
         "native-eq.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

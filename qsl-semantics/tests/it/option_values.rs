@@ -18,7 +18,7 @@ fn check(
          {declarations}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "option-values", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "option-values"),
         "option-values.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

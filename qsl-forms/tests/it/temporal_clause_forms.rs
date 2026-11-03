@@ -36,7 +36,7 @@ fn clause_source(header: &str, formula: &str) -> String {
 
 fn parse(text: &str) -> qsl_cst::ParsedSource {
     qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

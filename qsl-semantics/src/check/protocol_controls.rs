@@ -739,7 +739,7 @@ mod tests {
     fn assemble(declarations: &str) -> (String, PackageDeclarations) {
         let text = format!("{HEADER}{declarations}\n");
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -1042,7 +1042,7 @@ mod tests {
         ] {
             let text = format!("{HEADER}{}\n", pipeline("", run));
             let parsed = qsl_cst::parse(
-                SourceIdentity::new("a", "u", "git", "1"),
+                SourceIdentity::new("a", "u"),
                 "unit.native",
                 text.as_bytes(),
                 qsl_cst::Limits::default(),

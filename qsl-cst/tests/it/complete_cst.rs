@@ -31,12 +31,10 @@ const SOURCE: &str = concat!(
     "verify Portfolio using Complete { check Safety claim M::Claim method M::Method domain M::Domain depends [Earlier] bound 10; }",
 );
 
-fn identity(revision: &str) -> SourceIdentity {
+fn identity() -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: "test:complete-cst".into(),
-        revision_namespace: "test".into(),
-        revision: revision.into(),
     }
 }
 
@@ -50,7 +48,7 @@ fn identity(revision: &str) -> SourceIdentity {
 #[test]
 fn complete_source_builds_a_byte_exact_trivia_preserving_cst() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -128,7 +126,7 @@ fn complete_source_builds_a_byte_exact_trivia_preserving_cst() {
 #[test]
 fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
     let baseline = qsl_cst::parse(
-        identity("node-count"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -139,27 +137,19 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
         nodes: node_count,
         ..Limits::default()
     };
-    assert!(qsl_cst::parse(
-        identity("node-exact"),
-        "complete.native",
-        SOURCE.as_bytes(),
-        exact,
-    )
-    .unwrap()
-    .is_admissible());
+    assert!(
+        qsl_cst::parse(identity(), "complete.native", SOURCE.as_bytes(), exact,)
+            .unwrap()
+            .is_admissible()
+    );
     let below = Limits {
         nodes: node_count - 1,
         ..Limits::default()
     };
     assert_eq!(
-        qsl_cst::parse(
-            identity("node-below"),
-            "complete.native",
-            SOURCE.as_bytes(),
-            below,
-        )
-        .unwrap_err()
-        .code,
+        qsl_cst::parse(identity(), "complete.native", SOURCE.as_bytes(), below,)
+            .unwrap_err()
+            .code,
         // The node ceiling is a `SyntaxLimit` kind the catalog
         // admits, so it now reports `stage_limit_exceeded`.
         CompleteCode::StageLimitExceeded
@@ -170,7 +160,7 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
 #[test]
 fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
     let baseline = qsl_cst::parse(
-        identity("leaf-count"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -181,13 +171,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         tokens: leaf_count,
         ..Limits::default()
     };
-    let accepted = qsl_cst::parse(
-        identity("leaf-exact"),
-        "complete.native",
-        SOURCE.as_bytes(),
-        exact,
-    )
-    .unwrap();
+    let accepted = qsl_cst::parse(identity(), "complete.native", SOURCE.as_bytes(), exact).unwrap();
     assert_eq!(accepted.cst().tokens().len(), leaf_count);
     assert!(accepted.is_admissible());
 
@@ -196,13 +180,8 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         tokens: leaf_count - 1,
         ..Limits::default()
     };
-    let refusal = qsl_cst::parse(
-        identity("leaf-below"),
-        "complete.native",
-        SOURCE.as_bytes(),
-        below,
-    )
-    .unwrap_err();
+    let refusal =
+        qsl_cst::parse(identity(), "complete.native", SOURCE.as_bytes(), below).unwrap_err();
     assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
     assert_eq!(refusal.byte_span().unwrap().start, first_excess.start);
     assert_eq!(refusal.byte_span().unwrap().end, first_excess.end);
@@ -213,7 +192,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         ("invalid-leaf", "@"),
     ] {
         let refusal = qsl_cst::parse(
-            identity(revision),
+            identity(),
             "complete.native",
             source.as_bytes(),
             Limits {
@@ -233,7 +212,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
 fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
     let source = format!("0x{}", "f".repeat(900_000));
     let refusal = qsl_cst::parse(
-        identity("large-hex-leaf-budget"),
+        identity(),
         "large.native",
         source.as_bytes(),
         Limits {
@@ -252,7 +231,7 @@ fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
 fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
     let source = "language \"ix:native\" edition \"1-draft\"; profile C = \"quire.value.complete/v1\"; record Broken { value: Integer }";
     let parsed = qsl_cst::parse(
-        identity("broken"),
+        identity(),
         "broken.native",
         source.as_bytes(),
         Limits::default(),
@@ -272,7 +251,7 @@ fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
 #[test]
 fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
     let parsed = qsl_cst::parse(
-        identity("clone"),
+        identity(),
         "clone.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -296,8 +275,6 @@ fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:tc-188".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "tc-188.native",
         text.as_bytes(),

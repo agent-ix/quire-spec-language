@@ -301,7 +301,7 @@ impl Fixture {
             contracts.join("\n"),
         );
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("agent-ix", "por", "git", "1"),
+            SourceIdentity::new("agent-ix", "por"),
             "por.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),
@@ -380,8 +380,7 @@ impl Fixture {
         let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": name},
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": listed,
@@ -395,8 +394,6 @@ impl Fixture {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 

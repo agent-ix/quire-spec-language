@@ -34,7 +34,7 @@ const COLORS: &str = "enum Color { BLUE, GREEN, RED }\n\
 const SHADES: &str = "enum Shade { DARK, LIGHT }\n";
 
 fn unit_identity() -> SourceIdentity {
-    SourceIdentity::new("a", "u", "git", "1")
+    SourceIdentity::new("a", "u")
 }
 
 fn limits(source_bytes: u64) -> StageLimits {
@@ -54,7 +54,7 @@ fn wire(key: NodeKey) -> NodeKey {
 fn library(identity: &str, name: &str, body: &str) -> SuppliedLibrary {
     SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new("a", name, "git", "1"),
+        source: SourceIdentity::new("a", name),
         path: format!("{name}.native"),
         bytes: format!("{HEADER}{body}").into_bytes(),
     }
@@ -349,7 +349,7 @@ fn compile_failures_are_package_or_resource_refusals() {
     assert_eq!(refusal.code(), Code::InvalidSyntax);
 
     let owned = SuppliedLibrary {
-        source: SourceIdentity::new("a", "u", "git", "2"),
+        source: SourceIdentity::new("a", "u"),
         ..library("lib", "lib", "")
     };
     let text = format!("{HEADER}{COLORS}");

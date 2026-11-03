@@ -25,7 +25,7 @@ fn is_identifier_admits_ascii_identifiers_only() {
 const FIXTURE: &str = include_str!("../../../../tests/fixtures/spine-run.native");
 
 fn source() -> SourceIdentity {
-    SourceIdentity::new("agent-ix", "spine-run-fixture", "git", "1")
+    SourceIdentity::new("agent-ix", "spine-run-fixture")
 }
 
 fn call(function: &str, arguments: Vec<CallArgument>) -> Call {

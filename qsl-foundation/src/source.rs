@@ -11,10 +11,10 @@ use provenance::{RawSourceRef, SourceRegion};
 pub mod node_table;
 pub mod provenance;
 
-/// FR-001: the four labels a caller names a source by, separate from the
-/// path or the source text. QSL defaults none of them and derives none
-/// from the path, the bytes or another label. Ordering is lexical over the
-/// four labels in declaration order.
+/// FR-001: the two labels a caller names a source by, separate from the
+/// path or the source text. QSL defaults neither and derives neither
+/// from the path, the bytes or the other label. Ordering is lexical over the
+/// two labels in declaration order.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub struct SourceIdentity {
     /// The authority that issues the source's identity.
@@ -22,33 +22,20 @@ pub struct SourceIdentity {
     /// The source's identity within that authority, preserved without
     /// normalization.
     pub identity: String,
-    /// The revision system the revision value belongs to, such as `git`.
-    pub revision_namespace: String,
-    /// The revision value within that namespace.
-    pub revision: String,
 }
 
-/// One of the four labels of a [`SourceIdentity`], in FR-001's check order.
+/// One of the two labels of a [`SourceIdentity`], in FR-001's check order.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SourceLabel {
     /// The authority that issues the identity.
     Authority,
     /// The identity within the authority.
     Identity,
-    /// The revision namespace.
-    RevisionNamespace,
-    /// The revision value.
-    Revision,
 }
 
 impl SourceLabel {
     /// The labels in the order admission checks them.
-    pub const ALL: [Self; 4] = [
-        Self::Authority,
-        Self::Identity,
-        Self::RevisionNamespace,
-        Self::Revision,
-    ];
+    pub const ALL: [Self; 2] = [Self::Authority, Self::Identity];
 
     /// The catalog spelling of the `label` payload
     /// (`quire.native.diagnostics/v1`, `blank-label`).
@@ -56,31 +43,21 @@ impl SourceLabel {
         match self {
             Self::Authority => "authority",
             Self::Identity => "identity",
-            Self::RevisionNamespace => "revision_namespace",
-            Self::Revision => "revision",
         }
     }
 }
 
 impl SourceIdentity {
-    /// The four labels exactly as given. Nothing is checked here: admission
+    /// The two labels exactly as given. Nothing is checked here: admission
     /// ([`Source::read_typed`]) refuses a blank label.
-    pub fn new(
-        authority: impl Into<String>,
-        identity: impl Into<String>,
-        revision_namespace: impl Into<String>,
-        revision: impl Into<String>,
-    ) -> Self {
+    pub fn new(authority: impl Into<String>, identity: impl Into<String>) -> Self {
         Self {
             authority: authority.into(),
             identity: identity.into(),
-            revision_namespace: revision_namespace.into(),
-            revision: revision.into(),
         }
     }
 
-    /// FR-001: the first blank label in the order authority, identity,
-    /// revision namespace, revision. A label is blank when it is empty or
+    /// FR-001: the first blank label in the order authority, identity. A label is blank when it is empty or
     /// only Unicode `White_Space` scalars (`str::trim` strips exactly
     /// those; U+3000 is blank, U+200B is not).
     pub fn first_blank_label(&self) -> Option<SourceLabel> {
@@ -99,8 +76,6 @@ impl SourceIdentity {
         match label {
             SourceLabel::Authority => &self.authority,
             SourceLabel::Identity => &self.identity,
-            SourceLabel::RevisionNamespace => &self.revision_namespace,
-            SourceLabel::Revision => &self.revision,
         }
     }
 
@@ -413,7 +388,7 @@ impl Source {
         Ok(Self::admit(identity, reference, path, text))
     }
 
-    /// FR-001: the `RawSourceRef` admission minted, the caller's four labels
+    /// FR-001: the `RawSourceRef` admission minted, the caller's two labels
     /// exactly as supplied. Every later stage names this source by it.
     pub fn reference(&self) -> &RawSourceRef {
         &self.0.reference
@@ -482,7 +457,7 @@ impl Source {
             wide_ends,
         }))
     }
-    /// The caller's four labels exactly as supplied.
+    /// The caller's two labels exactly as supplied.
     pub fn identity(&self) -> &SourceIdentity {
         &self.0.identity
     }
@@ -544,8 +519,8 @@ mod tests {
 
     use super::*;
 
-    fn labels(authority: &str, identity: &str, namespace: &str, revision: &str) -> SourceIdentity {
-        SourceIdentity::new(authority, identity, namespace, revision)
+    fn labels(authority: &str, identity: &str) -> SourceIdentity {
+        SourceIdentity::new(authority, identity)
     }
 
     fn refusal(labels: SourceIdentity, bytes: &[u8], limit: usize) -> Box<SourceReadRefusal> {
@@ -563,7 +538,7 @@ mod tests {
     fn admission_mints_the_caller_named_source_reference() {
         let admit = |bytes: &[u8]| {
             Source::read_typed(
-                labels("agent-ix", "specs/a.quire", "git", "3f2a"),
+                labels("agent-ix", "specs/a.quire"),
                 "a.quire",
                 bytes,
                 MAX_SOURCE_BYTES,
@@ -588,14 +563,10 @@ mod tests {
     fn a_blank_label_refuses_naming_it_and_admits_nothing() {
         for blank in ["", " ", "\u{3000}"] {
             for label in SourceLabel::ALL {
-                let mut values = ["agent-ix", "specs/a.quire", "git", "3f2a"];
+                let mut values = ["agent-ix", "specs/a.quire"];
                 let position = SourceLabel::ALL.iter().position(|l| *l == label).unwrap();
                 values[position] = blank;
-                let refused = refusal(
-                    labels(values[0], values[1], values[2], values[3]),
-                    b"b",
-                    MAX_SOURCE_BYTES,
-                );
+                let refused = refusal(labels(values[0], values[1]), b"b", MAX_SOURCE_BYTES);
                 assert_eq!(
                     refused.cause,
                     SourceReadCause::BlankLabel { label },
@@ -604,12 +575,12 @@ mod tests {
                 assert_eq!(refused.error.region, None);
             }
         }
-        let zero_width = labels("\u{200b}", "u", "git", "1");
+        let zero_width = labels("\u{200b}", "u");
         assert!(Source::read_typed(zero_width, "a", b"b", MAX_SOURCE_BYTES).is_ok());
     }
 
     /// FR-001-AC-11: the first blank label in order wins, and a blank label
-    /// beats an empty path; only with four non-blank labels is the path
+    /// beats an empty path; only with two non-blank labels is the path
     /// refused, as `empty-path`.
     #[trace("TC-424", "FR-001-AC-11")]
     #[test]
@@ -620,23 +591,20 @@ mod tests {
                 .cause
         };
         assert_eq!(
-            cause(labels(" ", "u", "", "1"), "a"),
+            cause(labels(" ", "u"), "a"),
             SourceReadCause::BlankLabel {
                 label: SourceLabel::Authority
             }
         );
         assert_eq!(
-            cause(labels("a", "", "git", "1"), ""),
+            cause(labels("a", ""), ""),
             SourceReadCause::BlankLabel {
                 label: SourceLabel::Identity
             }
         );
+        assert_eq!(cause(labels("a", "u"), ""), SourceReadCause::EmptyPath);
         assert_eq!(
-            cause(labels("a", "u", "git", "1"), ""),
-            SourceReadCause::EmptyPath
-        );
-        assert_eq!(
-            Source::read_typed(labels("a", "u", "git", "1"), "", b"b", MAX_SOURCE_BYTES)
+            Source::read_typed(labels("a", "u"), "", b"b", MAX_SOURCE_BYTES)
                 .unwrap_err()
                 .error
                 .region,
@@ -651,7 +619,7 @@ mod tests {
     #[trace("TC-424", "FR-001-AC-8")]
     #[test]
     fn content_refusals_are_located_under_the_offered_bytes() {
-        let named = || labels("a", "u", "git", "1");
+        let named = || labels("a", "u");
         for (bytes, cause, start, end) in [
             (&b"a\xffb"[..], SourceReadCause::InvalidUtf8, 1, 1),
             (&b"ab\0c"[..], SourceReadCause::Nul, 2, 3),
@@ -666,21 +634,21 @@ mod tests {
         }
     }
 
-    /// FR-001-AC-10: an empty revision namespace and five bytes under a
+    /// FR-001-AC-10: an empty identity and five bytes under a
     /// four-byte ceiling refuse with no region.
     #[trace("TC-424", "FR-001-AC-10")]
     #[test]
     fn unnamed_and_over_budget_refusals_have_no_region() {
-        let unnamed = refusal(labels("a", "u", "", "1"), b"b", MAX_SOURCE_BYTES);
+        let unnamed = refusal(labels("a", ""), b"b", MAX_SOURCE_BYTES);
         assert_eq!(
             unnamed.cause,
             SourceReadCause::BlankLabel {
-                label: SourceLabel::RevisionNamespace
+                label: SourceLabel::Identity
             }
         );
         assert_eq!(unnamed.error.region, None);
 
-        let over = refusal(labels("a", "u", "git", "1"), b"abcde", 4);
+        let over = refusal(labels("a", "u"), b"abcde", 4);
         assert_eq!(over.cause, SourceReadCause::ByteBudget);
         assert_eq!(over.error.region, None);
     }
@@ -692,7 +660,7 @@ mod tests {
     fn line_and_column_are_derived_when_rendered() {
         let text = "ab\ncdéf";
         let source = Source::read_typed(
-            labels("a", "u", "git", "1"),
+            labels("a", "u"),
             "a.quire",
             text.as_bytes(),
             MAX_SOURCE_BYTES,
@@ -712,7 +680,7 @@ mod tests {
 
         // A refusal region over bytes that were never admitted renders over
         // their longest valid prefix.
-        let refused = refusal(labels("a", "u", "git", "1"), b"a\n\xffb", MAX_SOURCE_BYTES);
+        let refused = refusal(labels("a", "u"), b"a\n\xffb", MAX_SOURCE_BYTES);
         let region = refused.error.region.expect("a located refusal");
         let rendered = render_offered(b"a\n\xffb", &region).expect("rendered");
         assert_eq!((rendered.start.line, rendered.start.column), (2, 1));

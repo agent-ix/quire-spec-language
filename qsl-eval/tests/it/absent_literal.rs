@@ -35,7 +35,7 @@ fn compile(declarations: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
          profile v = \"quire.value.complete/v1\";\n{RECORD}{declarations}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -197,7 +197,7 @@ fn an_optional_field_takes_no_absent_literal() {
                 function f using v(p: Population<Integer>[2], r: Integer): Boolean pure \
                 { lookup<Integer>(p, r) absent absent = r }\n";
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

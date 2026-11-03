@@ -366,8 +366,6 @@ mod tests {
             SourceIdentity {
                 authority: "test".into(),
                 identity: "test:raised".into(),
-                revision_namespace: "test".into(),
-                revision: "1".into(),
             },
             "raised.native",
             text.as_bytes(),

@@ -696,7 +696,7 @@ mod tests {
     }
 
     fn unit() -> PackageDeclarations {
-        let source = admitted_source(SourceIdentity::new("a", "u", "git", "1"), UNIT.as_bytes());
+        let source = admitted_source(SourceIdentity::new("a", "u"), UNIT.as_bytes());
         PackageDeclarations {
             functions: vec![function_f()],
             ..PackageDeclarations::new(source, "fixture", qsl_foundation::IdentityLimits::default())
@@ -856,7 +856,7 @@ mod tests {
     /// [`unit`]'s own `RawSourceRef` exactly.
     fn embedding_body() -> Source {
         Source::read(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "u.qsl",
             UNIT.as_bytes(),
             UNIT.len() + 1,
@@ -868,7 +868,7 @@ mod tests {
     /// of `document_text`, over `body`.
     fn embedding_map(document_text: &str, k: usize, body: Source) -> SourceMap {
         let original = Source::read(
-            SourceIdentity::new("a", "doc", "git", "1"),
+            SourceIdentity::new("a", "doc"),
             "doc.md",
             document_text.as_bytes(),
             document_text.len() + 1,
@@ -1005,7 +1005,7 @@ mod tests {
         let prefix = "# Notes\n\n```qsl\n";
         let document_text = format!("{prefix}{UNIT}```\n");
         let other_body = Source::read(
-            SourceIdentity::new("a", "other-unit", "git", "1"),
+            SourceIdentity::new("a", "other-unit"),
             "other.qsl",
             UNIT.as_bytes(),
             UNIT.len() + 1,
@@ -1050,14 +1050,14 @@ mod tests {
         let b = original_text.find('q').unwrap();
         let line = body_text.find('\n').unwrap();
         let original = Source::read(
-            SourceIdentity::new("a", "doc", "git", "1"),
+            SourceIdentity::new("a", "doc"),
             "doc.md",
             original_text.as_bytes(),
             original_text.len() + 1,
         )
         .unwrap();
         let body = Source::read(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "u.qsl",
             body_text.as_bytes(),
             body_text.len() + 1,
@@ -1305,10 +1305,7 @@ mod tests {
         // `not not a` is three nodes in each function.
         let g1_count = 3;
 
-        let source = admitted_source(
-            SourceIdentity::new("a", "u", "git", "1"),
-            TWO_FUNCTIONS.as_bytes(),
-        );
+        let source = admitted_source(SourceIdentity::new("a", "u"), TWO_FUNCTIONS.as_bytes());
         let declarations = PackageDeclarations {
             functions: vec![not_not_a("g1", 0), not_not_a("g2", g2_from)],
             ..PackageDeclarations::new(source, "fixture", qsl_foundation::IdentityLimits::default())

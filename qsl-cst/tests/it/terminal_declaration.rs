@@ -17,8 +17,6 @@ fn parse(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:terminal-declaration".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "terminal.native",
         text.as_bytes(),

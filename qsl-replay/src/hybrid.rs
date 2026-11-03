@@ -884,7 +884,7 @@ mod tests {
              temporal SlowEnough using p over (h: Braking) clock \"model-time\"\
                on origin { always [0, 10] holds(h.v < 30) }\n";
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("agent-ix", "qsl-1035", "fixture", "fixture:1"),
+            SourceIdentity::new("agent-ix", "qsl-1035"),
             "program.native",
             SOURCE.as_bytes(),
             qsl_cst::Limits::default(),

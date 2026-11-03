@@ -89,8 +89,6 @@ fn program<'a>(
         SourceIdentity {
             authority: "test".into(),
             identity: "test:native-checking".into(),
-            revision_namespace: "test".into(),
-            revision: "draft:9".into(),
         },
         "native-checking.native",
         text.as_bytes(),
@@ -112,7 +110,7 @@ fn authored_model(change: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
     let mut data = serde_json::from_str(native_rule_model::fixture()).unwrap();
     change(&mut data);
     let text = serde_json::to_string_pretty(&data).unwrap();
-    native_rule_model::from_text(&text, "checker-model.json", "draft:1")
+    native_rule_model::from_text(&text, "checker-model.json")
         .expect("source-derived IR setup precedes checker judgment")
         .model()
 }

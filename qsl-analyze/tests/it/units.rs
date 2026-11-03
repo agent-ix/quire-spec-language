@@ -128,7 +128,7 @@ pub(crate) fn clause(over: &str, fairness: &str, formula: &str) -> String {
 pub(crate) fn checked(domain: &Domain, text: &str) -> (CheckedPackage, Vec<CheckedTemporalClause>) {
     let packages = package_input([domain.document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "units", "git", "1"),
+        SourceIdentity::new("agent-ix", "units"),
         "units.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -210,8 +210,7 @@ impl World {
         let header = json!({"identity": self.domain.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": name},
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": self.domain.ident(self.domain.population),
@@ -226,8 +225,6 @@ impl World {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 

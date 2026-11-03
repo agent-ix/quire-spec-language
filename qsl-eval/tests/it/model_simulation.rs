@@ -338,7 +338,7 @@ fn build_world_document(
          model M = \"{PACKAGE}\";\nfunction Noop using v(): Boolean pure {{ true }}\n{clauses}\n",
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "fr-120", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "fr-120"),
         "fr-120.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -421,8 +421,7 @@ impl World {
     ) -> DocumentRef {
         let mut document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": name},
             "observation": observation, "model": self.header,
             "populations": [{"population": ident("counters"), "complete": true,
                 "objects": objects.iter().map(|object| object_json(object, self.extras, self.enum_mode)).collect::<Vec<_>>()}],
@@ -442,8 +441,6 @@ impl World {
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 
@@ -1168,8 +1165,7 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
     let mut world = world(vec![increment()], "");
     let document = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": "empty", "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": "empty"},
         "observation": "current", "model": world.header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [],
@@ -1183,8 +1179,6 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
     let omitted = DocumentRef {
         authority: "test".to_owned(),
         identity: "empty".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     };
     let failure = ModelSystem::new(request(
         &world,
@@ -1563,8 +1557,7 @@ impl OrdersWorld {
             crate::state_model_family::simulation_package_over(body, false, wobble);
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": "t1", "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": "t1"},
             "observation": "current",
             "model": {"identity": "test/orders"},
             "anchor": {"kind": "initialization", "name": "start"},
@@ -1583,8 +1576,6 @@ impl OrdersWorld {
         let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: "t1".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         };
         Self {
             package,

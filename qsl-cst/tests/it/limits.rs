@@ -24,8 +24,6 @@ fn identity(id: &str) -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: format!("test:limits:{id}"),
-        revision_namespace: "test".into(),
-        revision: "1".into(),
     }
 }
 

@@ -238,7 +238,7 @@ fn assemble(
 ) -> Result<PackageDeclarations, Error> {
     let stage = |stage| move |detail: String| Error::Assemble { stage, detail };
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         spine_model::unit().as_bytes(),
         qsl_cst::Limits::default(),

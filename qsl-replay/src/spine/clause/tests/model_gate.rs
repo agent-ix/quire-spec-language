@@ -284,7 +284,7 @@ fn library(profiles: &[(&str, &str)], declarations: &str) -> SuppliedLibrary {
     let (header, _) = header(profiles, "");
     SuppliedLibrary {
         identity: "test/lib".to_owned(),
-        source: qsl_foundation::SourceIdentity::new("agent-ix", "gate-lib", "git", "1"),
+        source: qsl_foundation::SourceIdentity::new("agent-ix", "gate-lib"),
         path: "lib.native".to_owned(),
         bytes: format!("{header}{declarations}\n").into_bytes(),
     }

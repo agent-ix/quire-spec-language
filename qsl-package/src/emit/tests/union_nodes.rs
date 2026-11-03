@@ -335,10 +335,8 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
         measure: None,
     })
     .expect("keep spans match its body");
-    let source = qsl_semantics::check::admitted_source(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-        text,
-    );
+    let source =
+        qsl_semantics::check::admitted_source(qsl_foundation::SourceIdentity::new("a", "u"), text);
     let mut declarations =
         PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default());
     declarations.enums = vec![foreign];

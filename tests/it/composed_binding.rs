@@ -63,8 +63,6 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
         SourceIdentity {
             authority: "test".into(),
             identity: id.into(),
-            revision_namespace: "test".into(),
-            revision: "test:source".into(),
         },
         format!("{id}.native"),
         text.as_bytes(),
@@ -155,8 +153,6 @@ fn large_admitted_model_resolves_repeated_nominal_parameters_at_defaults() {
             SourceIdentity {
                 authority: "test".into(),
                 identity: "large-model".into(),
-                revision_namespace: "test".into(),
-                revision: "1".into(),
             },
             "large-model.json",
             text.as_bytes(),

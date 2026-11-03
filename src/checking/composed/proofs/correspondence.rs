@@ -118,10 +118,7 @@ impl Mappings {
                     let candidate = input.source.source();
                     work.charge(
                         D::Bytes,
-                        original.identity().identity.len()
-                            + original.identity().revision.len()
-                            + candidate.identity().identity.len()
-                            + candidate.identity().revision.len(),
+                        original.identity().identity.len() + candidate.identity().identity.len(),
                         local_site,
                     )?;
                     if candidate.identity() == original.identity() {

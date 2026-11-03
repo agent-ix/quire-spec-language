@@ -16,7 +16,7 @@ const PACKAGE: &str = "example/config-version";
 const MODEL: &[u8] = include_bytes!("../../../examples/config-version/model.semantic-ir.json");
 
 fn checked_collection_query() -> CheckedUnit {
-    let source = SourceIdentity::new("agent-ix", "query-proof", "git", "1");
+    let source = SourceIdentity::new("agent-ix", "query-proof");
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

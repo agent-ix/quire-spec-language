@@ -1042,7 +1042,7 @@ fn a_point_qualified_clock_clause_refuses_at_the_clause() {
         "pre Late using v on Config::ConfigVersion::attemptUpdate { self.x >= 1 ms }\n",
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -1185,7 +1185,7 @@ fn an_indexed_element_write_is_refused() {
          self.ts[0] = Config::Timer { x: 0 ms, n: 1 } }\n",
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

@@ -180,22 +180,17 @@ impl ContextMember {
     }
 }
 
-/// The four FR-001 labels of an invocation document's own `identity`: how
+/// The two FR-001 labels of an invocation document's own `identity`: how
 /// a snapshot names the invocation it observes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct InvocationLabels {
     authority: String,
     identity: String,
-    revision_namespace: String,
-    revision: String,
 }
 
 impl InvocationLabels {
     fn names(&self, invocation: &DocumentRef) -> bool {
-        self.authority == invocation.authority
-            && self.identity == invocation.identity
-            && self.revision_namespace == invocation.revision_namespace
-            && self.revision == invocation.revision
+        self.authority == invocation.authority && self.identity == invocation.identity
     }
 }
 
@@ -293,19 +288,13 @@ fn blank(text: &str) -> bool {
 }
 
 /// Check 1.7: the first blank label of `identity`, in the order `authority`,
-/// `identity`, `revision_namespace`, `revision`.
+/// `identity`.
 fn first_blank_label(identity: &DocumentRef) -> Option<&'static str> {
     if blank(&identity.authority) {
         return Some("authority");
     }
     if blank(&identity.identity) {
         return Some("identity");
-    }
-    if blank(&identity.revision_namespace) {
-        return Some("revision_namespace");
-    }
-    if blank(&identity.revision) {
-        return Some("revision");
     }
     None
 }
@@ -468,8 +457,6 @@ pub(super) fn read_document(
     let document_identity = DocumentRef {
         authority: label("authority")?,
         identity: label("identity")?,
-        revision_namespace: label("revision_namespace")?,
-        revision: label("revision")?,
     };
     if let Some(blank_label) = first_blank_label(&document_identity) {
         return Err(refuse(
@@ -585,8 +572,6 @@ fn read_document_ref(
     Ok(DocumentRef {
         authority: label("authority")?,
         identity: label("identity")?,
-        revision_namespace: label("revision_namespace")?,
-        revision: label("revision")?,
     })
 }
 
@@ -767,8 +752,6 @@ fn read_invocation_labels(value: Json<'_>) -> Result<InvocationLabels, Admission
     Ok(InvocationLabels {
         authority: label("authority")?,
         identity: label("identity")?,
-        revision_namespace: label("revision_namespace")?,
-        revision: label("revision")?,
     })
 }
 

@@ -33,7 +33,7 @@ pub(super) enum Command<'a> {
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum UsageError<'a> {
-    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] [--work-units <n>] (limits for parse only) | quire-spec <run|compile> <request-file>")]
+    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] [--work-units <n>] (limits for parse only) | quire-spec <run|compile> <request-file>")]
     MissingCommand,
     #[error("{operand} must be UTF-8")]
     NonUtf8 { operand: &'static str },
@@ -62,13 +62,13 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                 let arity = || UsageError::Arity {
                     command,
                     operands: if command == "parse" {
-                        "<source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] [--work-units <n>]"
+                        "<source-authority> <source-id> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] [--work-units <n>]"
                     } else {
-                        "<source-authority> <source-id> <revision-namespace> <revision> <file>"
+                        "<source-authority> <source-id> <file>"
                     },
                 };
-                let Some(([authority, identity, namespace, revision, path], options)) =
-                    operands.split_first_chunk::<5>()
+                let Some(([authority, identity, path], options)) =
+                    operands.split_first_chunk::<3>()
                 else {
                     return Err(arity());
                 };
@@ -88,8 +88,6 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                     source: SourceIdentity::new(
                         label(authority, "source authority")?,
                         label(identity, "source identity")?,
-                        label(namespace, "revision namespace")?,
-                        label(revision, "source revision")?,
                     ),
                     path: Path::new(path),
                     limits,

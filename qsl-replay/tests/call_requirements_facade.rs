@@ -37,7 +37,7 @@ fn k() -> String {
 }
 
 fn identity() -> SourceIdentity {
-    SourceIdentity::new("a", "u", "git", "1")
+    SourceIdentity::new("a", "u")
 }
 
 fn integer(value: i64) -> Value {

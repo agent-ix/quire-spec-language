@@ -49,7 +49,7 @@ fn admit(
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
         qsl_replay::CompileUnit {
-            source: SourceIdentity::new("a", "u", "git", "1"),
+            source: SourceIdentity::new("a", "u"),
             package_name: "fixture".to_owned(),
             path: "unit.native",
             bytes: text.as_bytes(),

@@ -590,8 +590,6 @@ fn model(bytes: &[u8]) -> Result<NativeModel, Error> {
         SourceIdentity {
             authority: "agent-ix".into(),
             identity: format!("{AUTHORITY}/examples/protocol-handoff/model"),
-            revision_namespace: "example".into(),
-            revision: "1".into(),
         },
         "examples/protocol-handoff/model.json",
         bytes,
@@ -640,8 +638,6 @@ fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
         SourceIdentity {
             authority: "agent-ix".into(),
             identity: recipe.identity.into(),
-            revision_namespace: "example".into(),
-            revision: "1".into(),
         },
         format!("examples/protocol-handoff/{}", recipe.file),
         text.as_bytes(),
@@ -1164,8 +1160,6 @@ fn wire_source(artifact: w::ArtifactRef, source: &FormalSource) -> w::Source {
         native: w::NativeSource {
             authority: source.source().identity().authority.clone(),
             identity: source.source().identity().identity.clone(),
-            revision_namespace: source.source().identity().revision_namespace.clone(),
-            revision: source.source().identity().revision.clone(),
         },
         path: source.source().path().into(),
         formal: w::Formal {
