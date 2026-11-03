@@ -36,7 +36,7 @@ fn unit() -> String {
     model M = \"acme/orders\";\n\
     protocol P using p over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {\n\
       role R on M::Gadget;\n\
-      run sequence Main { check Ready using p { true }; }\n\
+      run sequence Main { check Ready using v { true }; }\n\
       finish End as (outcome: Boolean) { true };\n\
     }\n")
 }
@@ -96,7 +96,7 @@ fn compensation_package() -> CheckedPackage {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         profile t = \"quire.temporal.infinite-trace/v1\";\n\
+         profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
          model M = {:?};\n\
          protocol P using p over (input: M::Ledger) on origin {{\n\
            role R on M::Ledger;\n\
@@ -947,7 +947,7 @@ fn gated_package(precondition: bool) -> CheckedPackage {
            capture order: Boolean = view.flag;\n\
            capture gate: Boolean = view.ready();\n\
            role R on M::A;\n\
-           run sequence Main { check Ready using p { true }; }\n\
+           run sequence Main { check Ready using v { true }; }\n\
            finish End as (outcome: Boolean) { true };\n\
          }\n",
         precondition,
