@@ -776,7 +776,7 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     assert!(
         temporal_requirements
             .iter()
-            .any(|obligation| report_slice(obligation.span()) == "requires temporal Due;"),
+            .any(|obligation| report_slice(obligation.span()) == "Due"),
         "temporal obligation spans: {:?}",
         temporal_requirements
             .iter()
