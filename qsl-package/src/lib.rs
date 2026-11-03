@@ -64,8 +64,8 @@ pub use emit::{
     ProtocolEmissionResult, TemporalClockSelection, TimedOrderFault,
 };
 pub use evaluation_view::{
-    AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, SelectedProtocolTerm,
-    TermHandle, ViewFailure,
+    AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, ReaderProtocolField,
+    SelectedProtocolTerm, TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 #[cfg(feature = "std")]

@@ -1199,16 +1199,15 @@ fn the_reader_and_edge_reads_refuse_a_stored_value_of_another_type() {
         &mut machine,
         vec![vec![Some(Value::Reference(reference()))]],
     );
-    let location = Location::root(Origin::Expression);
-    let read = quire_checked::NodeRead {
-        operation: NodeKind::Attribute {
-            reference: 0,
-            field,
-            optional: false,
-            derefed: false,
+    let read = ReaderRoot {
+        slot: 0,
+        field: qsl_package::ReaderProtocolField::Attribute {
+            owner: field.owner.clone(),
+            name: field.name.to_string(),
         },
-        value_type: &reference_type,
-        location: &location,
+        optional: false,
+        derefed: false,
+        value_type: reference_type.clone(),
     };
     assert!(matches!(
         machine.eval_reader_read(read),

@@ -1845,18 +1845,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     "reader-protocol-root-has-supported-plain-data-projection",
                 )));
             };
-            Some(quire_checked::NodeRead {
-                operation: quire_checked::NodeKind::Attribute {
-                    reference: projection.slot(),
-                    field: quire_semantic_value::declaration::FieldRef::new(
-                        projection.owner(),
-                        projection.field(),
-                    ),
-                    optional: projection.optional(),
-                    derefed: projection.derefed(),
-                },
-                value_type: projection.value_type(),
-                location: projection.location(),
+            Some(evaluate::ReaderRoot {
+                slot: projection.slot(),
+                field: projection.field().clone(),
+                optional: projection.optional(),
+                derefed: projection.derefed(),
+                value_type: projection.value_type().clone(),
             })
         } else {
             None

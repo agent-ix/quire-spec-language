@@ -474,9 +474,31 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     Ok(value)
 }
 
+/// An unavailable binder read: the binder, the supplier's cause and the
+/// reading location (`None` for a reader-backed read).
+pub(crate) type UnavailableRead = (
+    quire_exact::NodeKey,
+    quire_semantic_value::catalog::CatalogCode,
+    Option<Location>,
+);
+
+/// The reader-backed root of a protocol slot: the plain data the admitted
+/// graph projects for a record-field, attribute or bare-reference root.
+///
+/// Throwaway until the reader returns canonical `NodeRead`s (FR-390-AC-16,
+/// AC-50); the machine then matches `NodeKind` alone and this is deleted.
+/// It reports no location, because the admitted wire has none for a leaf yet.
+pub(crate) struct ReaderRoot {
+    pub(crate) slot: usize,
+    pub(crate) field: qsl_package::ReaderProtocolField,
+    pub(crate) optional: bool,
+    pub(crate) derefed: bool,
+    pub(crate) value_type: quire_exact::ValueType,
+}
+
 enum Task<'a> {
     Eval(CheckedNode<'a>),
-    ReaderRead(Box<quire_checked::NodeRead<'a, usize>>),
+    ReaderRead(Box<ReaderRoot>),
     Apply(CheckedNode<'a>),
     Branch(CheckedNode<'a>),
     Short(CheckedNode<'a>),
@@ -652,12 +674,9 @@ pub(crate) struct Machine<'a, 'm> {
         ),
     >,
     /// The first unavailable read, recorded by the task loop so the
-    /// protocol-slot API can retain the exact read location.
-    unavailable_read: Option<(
-        quire_exact::NodeKey,
-        quire_semantic_value::catalog::CatalogCode,
-        Location,
-    )>,
+    /// protocol-slot API can retain the exact read location. A reader-backed
+    /// read has no location.
+    unavailable_read: Option<UnavailableRead>,
     tasks: Vec<Task<'a>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
@@ -968,7 +987,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     pub(crate) fn run_protocol_frame(
         mut self,
         root: CheckedNode<'a>,
-        reader_root: Option<quire_checked::NodeRead<'a, usize>>,
+        reader_root: Option<ReaderRoot>,
         frame: Vec<Option<Value>>,
         unavailable: std::collections::BTreeMap<
             Slot,
@@ -977,17 +996,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 quire_semantic_value::catalog::CatalogCode,
             ),
         >,
-    ) -> Result<
-        Result<
-            Evaluation,
-            (
-                quire_exact::NodeKey,
-                quire_semantic_value::catalog::CatalogCode,
-                Location,
-            ),
-        >,
-        InternalFault,
-    > {
+    ) -> Result<Result<Evaluation, UnavailableRead>, InternalFault> {
         self.unavailable_slots = unavailable;
         let provenance = vec![false; frame.len()];
         self.push_frame(frame, provenance);
@@ -1045,30 +1054,25 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Evaluate `root` on the current frame to its outcome: the task loop
     /// [`Self::run`] and FR-268's separation check share.
     fn drive(&mut self, root: CheckedNode<'a>) -> Result<Evaluation, InternalFault> {
-        self.drive_from(root, Task::Eval(root))
+        self.drive_from(root, Task::Eval(root), false)
     }
 
     fn drive_reader_root(
         &mut self,
         root: CheckedNode<'a>,
-        read: quire_checked::NodeRead<'a, usize>,
+        read: ReaderRoot,
     ) -> Result<Evaluation, InternalFault> {
-        self.drive_from(root, Task::ReaderRead(Box::new(read)))
+        self.drive_from(root, Task::ReaderRead(Box::new(read)), true)
     }
 
     fn drive_from(
         &mut self,
         root: CheckedNode<'a>,
         initial: Task<'a>,
+        reader_backed: bool,
     ) -> Result<Evaluation, InternalFault> {
         self.tasks.push(initial);
         while let Some(task) = self.tasks.pop() {
-            // Reader-backed reads carry their own admitted root location.
-            // Never associate their halt path with the source CheckedBody.
-            let reader_location = match &task {
-                Task::ReaderRead(read) => Some(read.location.clone()),
-                _ => None,
-            };
             // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
             // one, never once per task.
@@ -1102,13 +1106,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             );
             if let Err(halt) = self.step(task) {
                 let located = self.imported.first().copied().unwrap_or(located);
-                let reported_location = reader_location
-                    .as_ref()
-                    .unwrap_or_else(|| located.location());
+                // A reader-backed halt reports no location: it is never taken
+                // from the source CheckedBody (FR-390).
+                let reported_location = if reader_backed {
+                    None
+                } else {
+                    Some(located.location())
+                };
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
                     Halt::Unavailable { binder, cause } => {
-                        self.unavailable_read = Some((binder, cause, reported_location.clone()));
+                        self.unavailable_read = Some((binder, cause, reported_location.cloned()));
                         Err(InternalFault::new(
                             "S6a",
                             "protocol-slot-unavailable-source-read",
@@ -1118,17 +1126,22 @@ impl<'a, 'm> Machine<'a, 'm> {
                     // like a `Stop`, at the task that produced it.
                     Halt::Family(result) => Ok(Evaluation {
                         outcome: FamilyOutcome::FamilyEvaluated(result),
-                        location: Some(reported_location.clone()),
+                        location: reported_location.cloned(),
                         losses: Vec::new(),
                     }),
-                    Halt::Stop(stop) => Self::stopped(stop, Some(reported_location)),
+                    Halt::Stop(stop) => Self::stopped(stop, reported_location),
                     // An imported call site still locates at that call.
                     Halt::Located(at) => Self::stopped(
                         at.stop,
-                        Some(self.imported.first().map_or_else(
-                            || reader_location.as_ref().unwrap_or(&at.location),
-                            |call| call.location(),
-                        )),
+                        if reader_backed {
+                            None
+                        } else {
+                            Some(
+                                self.imported
+                                    .first()
+                                    .map_or(&at.location, |call| call.location()),
+                            )
+                        },
                     ),
                 };
             } else if applied {
@@ -1151,13 +1164,15 @@ impl<'a, 'm> Machine<'a, 'm> {
             Err(Halt::Family(result)) => {
                 return Ok(Evaluation {
                     outcome: FamilyOutcome::FamilyEvaluated(result),
-                    location: Some(root.location().clone()),
+                    location: (!reader_backed).then(|| root.location().clone()),
                     losses: Vec::new(),
                 });
             }
-            Err(Halt::Stop(stop)) => return Self::stopped(stop, Some(root.location())),
+            Err(Halt::Stop(stop)) => {
+                return Self::stopped(stop, (!reader_backed).then(|| root.location()));
+            }
             Err(Halt::Located(at)) => {
-                return Self::stopped(at.stop, Some(&at.location));
+                return Self::stopped(at.stop, (!reader_backed).then_some(&at.location));
             }
         };
         if !self.values.is_empty() || !self.value_guard_provenance.is_empty() {
@@ -1730,16 +1745,36 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn eval_reader_read(&mut self, read: quire_checked::NodeRead<'a, usize>) -> Result<(), Halt> {
-        match read.operation {
-            NodeKind::Local(slot) => self.eval_local(slot),
-            NodeKind::Attribute {
-                reference,
-                field,
-                optional,
-                derefed,
-            } => {
-                self.eval_local(reference)?;
+    fn eval_reader_read(&mut self, read: ReaderRoot) -> Result<(), Halt> {
+        let ReaderRoot {
+            slot: operand,
+            field,
+            optional,
+            derefed,
+            value_type,
+        } = read;
+        match field {
+            qsl_package::ReaderProtocolField::Local => self.eval_local(operand),
+            qsl_package::ReaderProtocolField::RecordField { declaration, name } => {
+                self.eval_local(operand)?;
+                let Value::Composite(composite) = self.pop()? else {
+                    return Err(invariant("reader-field-composite-value-expected"));
+                };
+                let field = quire_checked::node::RecordField::new(declaration, name);
+                let index = self
+                    .scope
+                    .record_slot(composite.declaration().clone(), &field)
+                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
+                let slot = composite
+                    .slots()
+                    .get(index)
+                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
+                let value = Self::project(self.scope.types(), slot, optional, &value_type, false)?;
+                self.push_value(value, false);
+                Ok(())
+            }
+            qsl_package::ReaderProtocolField::Attribute { owner, name } => {
+                self.eval_local(operand)?;
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant("reader-attribute-reference-is-a-reference"));
                 };
@@ -1747,19 +1782,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                     charge_model_read(self.meter, ChargePoint::ModelDeref)?;
                 }
                 charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
+                let field = quire_semantic_value::declaration::FieldRef::new(owner, name);
                 let objects = self.objects;
                 let (slot, witnessed) = self.admitted_slot(objects, &reference, &field)?;
-                let value = Self::project(
-                    self.scope.types(),
-                    slot,
-                    optional,
-                    read.value_type,
-                    witnessed,
-                )?;
+                let value =
+                    Self::project(self.scope.types(), slot, optional, &value_type, witnessed)?;
                 self.push_value(value, false);
                 Ok(())
             }
-            _ => Err(invariant("reader-protocol-root-read-is-supported-local")),
         }
     }
 

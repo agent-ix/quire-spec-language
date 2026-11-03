@@ -971,6 +971,42 @@ impl AdmittedPackageRead<'_> {
                 "reader-selected-protocol-node-is-retained",
             ));
         };
+        if let quire_contract_model::CheckedTerm::Reference { target } = &selected.body {
+            let target_key = graph.key(target).map_err(|_| {
+                InternalFault::new("FR-390", "reader-protocol-reference-has-structural-key")
+            })?;
+            if let Some(slot) = binders
+                .iter()
+                .position(|binder| binder.as_ref() == Some(&target_key))
+            {
+                let identities = self
+                    .source
+                    .graph()
+                    .selected_exact_identities(&self.read.admitted)
+                    .map_err(|_| {
+                        InternalFault::new("FR-390", "reader-selected-identities-are-admitted")
+                    })?;
+                let value_type = self
+                    .read
+                    .admitted
+                    .project_exact_type(
+                        &selected.semantic_type,
+                        &identities,
+                        self.read.effective_limits.work,
+                    )
+                    .map_err(|_| InternalFault::new("FR-390", "reader-result-type-is-admitted"))?
+                    .value_type()
+                    .clone();
+                return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
+                    slot,
+                    field: crate::evaluation_view::ReaderProtocolField::Local,
+                    optional: false,
+                    derefed: false,
+                    value_type,
+                }));
+            }
+            return Ok(None);
+        }
         let quire_contract_model::CheckedTerm::Application {
             operation,
             arguments,
@@ -1015,33 +1051,83 @@ impl AdmittedPackageRead<'_> {
                     .map_err(|_| {
                         InternalFault::new("FR-390", "reader-selected-identities-are-admitted")
                     })?;
-                let owner = identities
+                let exact_identity = identities
                     .declaration_rows()
                     .find(|row| row.structural_node == *declaration)
-                    .and_then(|row| match &row.exact_identity {
-                        quire_contract_model::SelectedExactIdentity::Object(identity) => {
-                            Some(identity.clone())
-                        }
-                        _ => None,
-                    })
+                    .map(|row| &row.exact_identity)
                     .ok_or_else(|| {
                         InternalFault::new("FR-390", "reader-field-owner-is-selected")
                     })?;
-                let fields = self
-                    .read
-                    .admitted
-                    .model_object_fields(declaration)
-                    .map_err(|_| {
-                        InternalFault::new("FR-390", "reader-field-declaration-is-admitted")
-                    })?;
-                let member_type = fields
-                    .field(field)
-                    .ok_or_else(|| InternalFault::new("FR-390", "reader-field-member-is-admitted"))?
-                    .member_type();
-                let optional = matches!(
-                    member_type,
-                    Some(quire_contract_model::CheckedMemberType::Option(_))
-                );
+                let (field, optional) = match exact_identity {
+                    quire_contract_model::SelectedExactIdentity::Object(owner) => {
+                        let fields = self
+                            .read
+                            .admitted
+                            .model_object_fields(declaration)
+                            .map_err(|_| {
+                                InternalFault::new("FR-390", "reader-field-declaration-is-admitted")
+                            })?;
+                        let member_type = fields
+                            .field(field)
+                            .ok_or_else(|| {
+                                InternalFault::new("FR-390", "reader-field-member-is-admitted")
+                            })?
+                            .member_type();
+                        let optional = matches!(
+                            member_type,
+                            Some(quire_contract_model::CheckedMemberType::Option(_))
+                        );
+                        (
+                            crate::evaluation_view::ReaderProtocolField::Attribute {
+                                owner: owner.clone(),
+                                name: field.to_string(),
+                            },
+                            optional,
+                        )
+                    }
+                    quire_contract_model::SelectedExactIdentity::Record(record_key) => {
+                        let projection = self
+                            .read
+                            .admitted
+                            .project_exact_type(
+                                declaration,
+                                &identities,
+                                self.read.effective_limits.work,
+                            )
+                            .map_err(|_| {
+                                InternalFault::new(
+                                    "FR-390",
+                                    "reader-record-field-declaration-is-admitted",
+                                )
+                            })?;
+                        let record = projection.record_view().ok_or_else(|| {
+                            InternalFault::new("FR-390", "reader-record-field-view-is-admitted")
+                        })?;
+                        let selected_field = record
+                            .fields()
+                            .iter()
+                            .find(|selected| selected.name() == field.as_ref())
+                            .ok_or_else(|| {
+                                InternalFault::new(
+                                    "FR-390",
+                                    "reader-record-field-member-is-admitted",
+                                )
+                            })?;
+                        (
+                            crate::evaluation_view::ReaderProtocolField::RecordField {
+                                declaration: record_key.clone(),
+                                name: field.to_string(),
+                            },
+                            selected_field.presence() == quire_exact::Presence::Optional,
+                        )
+                    }
+                    _ => {
+                        return Err(InternalFault::new(
+                            "FR-390",
+                            "reader-field-owner-is-selected",
+                        ));
+                    }
+                };
                 let value_type = self
                     .read
                     .admitted
@@ -1049,20 +1135,15 @@ impl AdmittedPackageRead<'_> {
                     .map_err(|_| InternalFault::new("FR-390", "reader-result-type-is-admitted"))?
                     .value_type()
                     .clone();
-                let location = quire_semantic_value::location::Location::root(
-                    quire_semantic_value::location::Origin::Expression,
-                );
                 return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
                     slot: index,
-                    field: field.to_string(),
-                    owner,
+                    field,
                     optional,
                     derefed: matches!(
                         read_form,
                         Some(quire_contract_model::CheckedFieldReadForm::ExplicitDeref)
                     ),
                     value_type,
-                    location,
                 }));
             }
             if !visited.insert(target.clone()) {
