@@ -15,8 +15,8 @@ use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, NodeKey, Rational};
 
 use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
-use crate::check::lowering::strongly_connected;
 use crate::check::lowering::AdmittedModel;
+use crate::check::lowering::{quantity_origin, strongly_connected, QuantityKind};
 use crate::check::node_key::SourceOwner;
 use crate::model::domain_package::PackageDimensionRecord;
 use crate::value::semantic_node::{ModelSubject, NodeOwner, NominalRefusal, OwnerSelection};
@@ -413,6 +413,10 @@ struct Walk<'a> {
     units: &'a [UnitForm],
     dimension_names: &'a [&'a str],
     dimension_spans: &'a [Span],
+    /// The rank of each dimension's source document in request order.
+    dimension_documents: &'a [usize],
+    /// The rank of each unit's source document in request order.
+    unit_documents: &'a [usize],
     unit_names: &'a [&'a str],
     unit_spans: &'a [Span],
     dimension_index: &'a BTreeMap<&'a str, usize>,
@@ -451,19 +455,26 @@ impl Walk<'_> {
             Dimension(usize),
             Unit(usize),
         }
-        let mut declarations: Vec<(usize, Declaration)> = self
+        let mut declarations: Vec<((usize, usize), Declaration)> = self
             .dimension_spans
             .iter()
             .enumerate()
-            .map(|(index, span)| (span.start, Declaration::Dimension(index)))
-            .chain(
-                self.unit_spans
-                    .iter()
-                    .enumerate()
-                    .map(|(index, span)| (span.start, Declaration::Unit(index))),
-            )
+            .map(|(index, span)| {
+                (
+                    (self.dimension_documents[index], span.start),
+                    Declaration::Dimension(index),
+                )
+            })
+            .chain(self.unit_spans.iter().enumerate().map(|(index, span)| {
+                (
+                    (self.unit_documents[index], span.start),
+                    Declaration::Unit(index),
+                )
+            }))
             .collect();
-        declarations.sort_by_key(|(start, _)| *start);
+        // Source order: the documents as the request lists them, then the
+        // byte offset within a document.
+        declarations.sort_by_key(|(position, _)| *position);
 
         let mut turns = Vec::new();
         let mut reached: BTreeSet<Turn> = BTreeSet::new();
@@ -899,11 +910,31 @@ pub(super) fn assemble(
     // Unit-graph topology (FR-091-AC-35): FR-142's turn list, the first
     // defect of the first node that has one, and no other.
     let maps = normalized(dimensions, &dimension_index, imported, &dimension_edges);
+    let document = |kind: QuantityKind, name: &str| {
+        owners
+            .get(&quantity_origin(kind, name))
+            .unwrap_or(owner)
+            .clone()
+    };
+    let dimension_owners: Vec<SourceOwner> = dimension_names
+        .iter()
+        .map(|name| document(QuantityKind::Dimension, name))
+        .collect();
+    let unit_owners: Vec<SourceOwner> = unit_names
+        .iter()
+        .map(|name| document(QuantityKind::Unit, name))
+        .collect();
+    let ranked: BTreeSet<&SourceOwner> = dimension_owners.iter().chain(&unit_owners).collect();
+    let rank = |found: &SourceOwner| ranked.iter().position(|each| *each == found).unwrap_or(0);
+    let dimension_documents: Vec<usize> = dimension_owners.iter().map(rank).collect();
+    let unit_documents: Vec<usize> = unit_owners.iter().map(rank).collect();
     let walk = Walk {
         dimensions,
         units,
         dimension_names: &dimension_names,
         dimension_spans: &dimension_spans,
+        dimension_documents: &dimension_documents,
+        unit_documents: &unit_documents,
         unit_names: &unit_names,
         unit_spans: &unit_spans,
         dimension_index: &dimension_index,
