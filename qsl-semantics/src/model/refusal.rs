@@ -1055,6 +1055,8 @@ pub enum ModelRefusalCause {
 pub enum IntakeLimit {
     /// The document's length in bytes.
     InputBytes,
+    /// The largest collection maximum the document declares (FR-506).
+    SequenceMaximum,
 }
 
 impl IntakeLimit {
@@ -1062,6 +1064,7 @@ impl IntakeLimit {
     pub const fn setting(self) -> qsl_foundation::Setting {
         match self {
             Self::InputBytes => qsl_foundation::Setting::IntakeInputBytes,
+            Self::SequenceMaximum => qsl_foundation::Setting::ModelSequenceMaximum,
         }
     }
 
@@ -1069,6 +1072,7 @@ impl IntakeLimit {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InputBytes => "input_bytes",
+            Self::SequenceMaximum => "sequence_maximum",
         }
     }
 }

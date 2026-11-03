@@ -101,13 +101,14 @@ fn function_two() -> FunctionDeclaration {
 }
 
 fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
-    PackageDeclarations {
-        functions,
-        ..PackageDeclarations::new(
+    {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.functions = functions;
+        declarations
     }
 }
 
@@ -115,13 +116,14 @@ fn declarations_with_source(
     functions: Vec<FunctionDeclaration>,
     source: qsl_foundation::source::provenance::RawSourceRef,
 ) -> PackageDeclarations {
-    PackageDeclarations {
-        functions,
-        ..PackageDeclarations::new(
+    {
+        let mut declarations = PackageDeclarations::new(
             source,
             "same-package".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.functions = functions;
+        declarations
     }
 }
 
@@ -516,8 +518,13 @@ fn h1_an_undeclared_name_is_refused_by_the_spelling_given() {
 #[test]
 fn h2_a_declaration_not_callable_by_name_is_refused_like_an_undeclared_one() {
     let package = link(
-        PackageDeclarations {
-            functions: vec![
+        {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.functions = vec![
                 function_one(),
                 FunctionDeclaration::clause(
                     "internal_guard",
@@ -527,12 +534,8 @@ fn h2_a_declaration_not_callable_by_name_is_refused_like_an_undeclared_one() {
                     Expression::boolean(true),
                     qsl_forms::DeclaredClauseKind::Body,
                 ),
-            ],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            ];
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap(),

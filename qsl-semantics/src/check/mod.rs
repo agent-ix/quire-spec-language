@@ -603,6 +603,68 @@ fn function_state<'a>(
     }
 }
 
+/// The kind of one resolved declaration reference retained by S3.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CheckedDependencyKind {
+    /// A function or predicate invocation in an expression.
+    PredicateCall,
+    /// An attempt's reference to a state precondition or postcondition.
+    OperationContract,
+    /// A protocol's reference to a temporal obligation.
+    TemporalObligation,
+}
+
+/// The typed syntax site of one resolved declaration reference.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDependencySite {
+    /// Expression location from the checked unit's source tree.
+    Expression(Location),
+    /// The authored `contracts [...]` name span.
+    OperationContract(qsl_foundation::Span),
+    /// The authored `requires temporal` name span.
+    TemporalRequirement(qsl_foundation::Span),
+}
+
+/// One S3-resolved native declaration reference.
+///
+/// Package-local contract and temporal references retain their referring
+/// declaration and target identity. An imported predicate call also retains
+/// the exact library identity; the resolved library closure is exposed
+/// separately by `CheckedPackage`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDependencyReference {
+    /// The source document that owns this occurrence.
+    pub source: qsl_foundation::source::provenance::RawSourceRef,
+    /// The declaration that contains this occurrence.
+    pub referring_declaration: String,
+    /// Which native declaration kind the occurrence requires.
+    pub kind: CheckedDependencyKind,
+    /// Its typed source occurrence.
+    pub site: CheckedDependencySite,
+    /// The name as authored at this occurrence.
+    pub name: String,
+    /// The exact checked target identity.
+    pub target: quire_exact::NodeKey,
+    /// The resolved library identity for an imported predicate, if any.
+    pub library: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum PendingDependencyTarget {
+    LocalFunction(usize),
+    Imported {
+        library: String,
+        target: quire_exact::NodeKey,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PendingDependencyReference {
+    pub(crate) name: String,
+    pub(crate) site: Location,
+    pub(crate) target: PendingDependencyTarget,
+}
+
 /// S3's stage output (ADR-013 T-1): a package whose every function is
 /// admitted. Its constructor and every field are private to this module
 /// (ADR-011 §4): `package`'s S4 link step (which builds the *different*
@@ -641,6 +703,10 @@ pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
     /// entry.
     source: qsl_foundation::source::provenance::RawSourceRef,
+    sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
+    /// Per-declaration source references for a multi-unit checked package.
+    source_owners: BTreeMap<String, qsl_foundation::source::provenance::RawSourceRef>,
+    function_sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
     /// The package manifest's top-level name, the `package` of every
     /// structural node id the graph's nodes carry.
     package_name: String,
@@ -674,6 +740,9 @@ pub struct CheckedGraph {
     /// FR-092/FR-093: every lowered, keyed node of this
     /// package's functions.
     semantic_graph: lowering::SemanticGraph,
+    /// Cross-declaration reference occurrences, captured at their S3
+    /// resolution sites and sorted by source position.
+    dependency_references: Vec<CheckedDependencyReference>,
     /// QSL-owned equality producer facts retained by keyed equality
     /// application occurrences. The wire encoder remains an IR-owned
     /// follow-up.
@@ -779,6 +848,9 @@ pub struct CheckedGraph {
     /// FR-383: protocol declarations refused by their own checks while
     /// independent declarations continued through checking.
     protocol_refusals: Vec<ProtocolCheckRefusal>,
+    /// Unit-level state-clause refusals retained by the protocol continuation
+    /// path so independent protocols can still be emitted.
+    unit_refusals: Vec<CheckRefusal>,
     /// Checked protocol classes retained for importing refinements (FR-147).
     protocol_classes: BTreeMap<String, refinement::ImportedProtocolClasses>,
     /// FR-390: emitted protocol node keys mapped back to their one S3
@@ -872,6 +944,9 @@ impl DebugWith for CheckedGraph {
         let CheckedGraph {
             graph_identity: _,
             source,
+            sources,
+            source_owners,
+            function_sources,
             package_name,
             scope,
             functions,
@@ -882,6 +957,7 @@ impl DebugWith for CheckedGraph {
             model_correspondence,
             type_nodes,
             semantic_graph,
+            dependency_references,
             equality_producer_data,
             equality_producer_identities,
             dispatch_producer_decisions,
@@ -911,6 +987,7 @@ impl DebugWith for CheckedGraph {
             protocols,
             protocol_order,
             protocol_refusals,
+            unit_refusals,
             protocol_classes,
             protocol_node_keys,
             temporal_clauses,
@@ -936,6 +1013,9 @@ impl DebugWith for CheckedGraph {
         } = self;
         f.debug_struct("CheckedGraph")
             .field("source", &source)
+            .field("sources", &sources)
+            .field("source_owners", &source_owners)
+            .field("function_sources", &function_sources)
             .field("package_name", &package_name)
             .field("scope", &With(scope, table))
             .field("functions", &With(functions, table))
@@ -952,6 +1032,22 @@ impl DebugWith for CheckedGraph {
             .field("model_correspondence", &With(model_correspondence, table))
             .field("type_nodes", &NodeValueMap(type_nodes.iter(), table))
             .field("semantic_graph", &With(semantic_graph, table))
+            .field(
+                "dependency_references",
+                &dependency_references
+                    .iter()
+                    .map(|reference| {
+                        (
+                            &reference.referring_declaration,
+                            reference.kind,
+                            &reference.site,
+                            &reference.name,
+                            NodeKeyDebug(&reference.target, table),
+                            &reference.library,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
             .field(
                 "equality_producer_data",
                 &equality_producer_data
@@ -996,6 +1092,7 @@ impl DebugWith for CheckedGraph {
             .field("protocols", &Seq(protocols, table))
             .field("protocol_order", protocol_order)
             .field("protocol_refusals", protocol_refusals)
+            .field("unit_refusals", unit_refusals)
             .field(
                 "protocol_classes",
                 &ValueMap(protocol_classes.iter(), table),
@@ -1509,24 +1606,67 @@ impl PackageDeclarations {
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        let graph = self.check_with_protocol_results_and_cancel(limits, cancel)?;
-        if graph.protocol_refusals.is_empty() {
-            Ok(graph)
-        } else {
-            Err(graph
-                .protocol_refusals
+        let mut protocol_refusals = Vec::new();
+        let outcome =
+            self.check_retaining_protocols(limits, cancel, false, false, &mut protocol_refusals);
+        let flatten = |results: &[ProtocolCheckRefusal]| -> Vec<CheckRefusal> {
+            results
                 .iter()
                 .flat_map(|result| result.refusals.iter().cloned())
-                .collect())
+                .collect()
+        };
+        match outcome {
+            Ok(graph) if graph.protocol_refusals.is_empty() => Ok(graph),
+            Ok(graph) => Err(flatten(&graph.protocol_refusals)),
+            // The check stopped after the refinements, so the protocol
+            // refusals lead the list, in the order they were found. A
+            // cancelled check already carries them in its list.
+            Err(refusals) if cancel.tripped().is_some() => Err(refusals),
+            Err(refusals) => {
+                let mut all = flatten(&protocol_refusals);
+                all.extend(refusals);
+                Err(all)
+            }
         }
     }
 
     /// [`Self::check_with_protocol_results`] under a caller-owned
     /// [`Cancel`] handle.
     pub fn check_with_protocol_results_and_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_retaining_protocols(limits, cancel, true, false, &mut Vec::new())
+    }
+
+    /// Continue through a unit-level state-clause refusal so independent
+    /// protocol declarations can still be checked and reported by the
+    /// compiler. Public strict and protocol-results entry points keep their
+    /// established stop behavior.
+    pub fn check_with_protocol_continuation_and_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_retaining_protocols(limits, cancel, true, true, &mut Vec::new())
+    }
+
+    /// The check proper. `protocol_check_refusals` receives every refusal a
+    /// protocol declaration's own checks produced, including when a later
+    /// unit-level refusal prevents a graph from being returned.
+    /// `independent_protocols` lets the stages after the refinements run past
+    /// a refused protocol so the other protocols keep their results (FR-383);
+    /// without it the check ends there and reports the refusals found so far,
+    /// since the later stages would only add consequences of the refusal (an
+    /// unkeyed reference to the protocol, a work budget it already spent).
+    fn check_retaining_protocols(
         mut self,
         limits: CheckingLimits,
         cancel: &Cancel,
+        independent_protocols: bool,
+        continue_state_clause_refusals: bool,
+        protocol_check_refusals: &mut Vec<ProtocolCheckRefusal>,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-230: S2 retains every timed declaration independent of header
         // selection. S3 owns the facet gate and keeps incomplete timed
@@ -1858,6 +1998,7 @@ impl PackageDeclarations {
             })
         };
         let mut refusals = Vec::new();
+        let mut unit_refusals = Vec::new();
         // QSL FR-246: the task sets and the claims over them. They are timed
         // forms, so FR-230's facet gate admits them; every defect is reported.
         let mut checked_task_sets = CheckedTaskSets::default();
@@ -2165,6 +2306,15 @@ impl PackageDeclarations {
             .map(|(index, function)| (function.name.as_str(), index))
             .collect();
         let mut model_function_bodies = vec![false; self.functions.len()];
+        // Operation bodies and their synthesized precondition functions are
+        // model-family declarations even when no ordinary named function
+        // calls them. They can read model populations just like clauses
+        // reached from a model-context function.
+        for index in self.model_clauses.keys() {
+            if let Some(model_function) = model_function_bodies.get_mut(*index) {
+                *model_function = true;
+            }
+        }
         while let Some(name) = model_context_calls.pop() {
             let Some(index) = function_indices.get(name.as_str()).copied() else {
                 continue;
@@ -2331,6 +2481,11 @@ impl PackageDeclarations {
             .map(|function| function.parameter_spans().map(<[_]>::to_vec))
             .collect();
         let owner = node_key::SourceOwner::from(&source);
+        let source_owners: BTreeMap<String, node_key::SourceOwner> = self
+            .source_owners
+            .iter()
+            .map(|(name, source)| (name.clone(), node_key::SourceOwner::from(source)))
+            .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let models = self.models;
@@ -2368,25 +2523,25 @@ impl PackageDeclarations {
                     .map(|node| (declaration.clone(), node))
             })
             .collect();
-        let mut model_selections: Vec<_> = models
-            .iter()
-            .map(|model| model.selection().clone())
-            .collect();
-        model_selections.sort_by(|a, b| a.identity.cmp(&b.identity));
-        // FR-094 (ADR-013 O-01): a check selects one version of each domain
-        // package identity, so a model owner names one declaration.
-        let mut selected = std::collections::BTreeSet::new();
-        if let Some(model) = models
-            .iter()
-            .find(|model| !selected.insert(model.selection().identity.as_str()))
-        {
-            return Err(vec![CheckRefusal {
-                location: root(Origin::Expression),
-                cause: CheckCause::InternalFault(Box::new(KeyFault::DuplicateModelSelection(
-                    model.selection().identity.clone(),
-                ))),
-            }]);
+        let mut selections_by_identity = BTreeMap::new();
+        for model in &models {
+            let selection = model.selection();
+            if let Some(existing) = selections_by_identity.get(&selection.identity) {
+                if existing != selection {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(
+                            KeyFault::DuplicateModelSelection(selection.identity.clone()),
+                        )),
+                    }]);
+                }
+            } else {
+                selections_by_identity.insert(selection.identity.clone(), selection.clone());
+            }
         }
+        let model_selections: Vec<_> = selections_by_identity.into_values().collect();
+        // FR-094 (ADR-013 O-01): aliases that select one package version
+        // share one model root; conflicting versions of one identity refuse.
         // QSpec FR-322 `model_root`: one key per selection, from the check's
         // identity limits, shared by the refinement headers and the emitter.
         let mut model_roots = Vec::with_capacity(model_selections.len());
@@ -2536,9 +2691,10 @@ impl PackageDeclarations {
             let mut sealing_meter =
                 quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
             let mut sealing_occurrences = family::OccurrenceMap::default();
-            let mut sealing = lowering::Lowering::new(
+            let mut sealing = lowering::Lowering::new_with_source_owners(
                 &scope,
                 &owner,
+                &source_owners,
                 &models,
                 &dispatch_tables,
                 scope.types().units().clone(),
@@ -2630,6 +2786,7 @@ impl PackageDeclarations {
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
+                source_owner: self.function_sources.get(index).cloned(),
                 regions: Some(&regions),
                 cancel: Some(cancel),
             };
@@ -2684,6 +2841,13 @@ impl PackageDeclarations {
                     });
                     return Err(refusals);
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&limit),
+                    });
+                    return Err(refusals);
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2699,6 +2863,13 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(*refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
             }
         }
         if !refusals.is_empty() {
@@ -2708,7 +2879,7 @@ impl PackageDeclarations {
         // family's own contract once every function signature is known (a
         // clause body may call a function), against the same package-wide
         // node total and contract meter.
-        let state_clause_forms = self.state_clauses;
+        let mut state_clause_forms = self.state_clauses;
         let mut typed_clauses = Vec::with_capacity(state_clause_forms.len());
         // FR-185: every read of an operation parameter by a checked
         // precondition, so a read of a random parameter refuses.
@@ -2767,6 +2938,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2778,6 +2958,13 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(*refusal);
                     if exhausted {
                         return Err(refusals);
                     }
@@ -2933,7 +3120,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&terminal.name).cloned());
             match terminal::check_terminal(index, terminal, &declarations, &mut contract_cx) {
                 Ok((declaration, used)) => {
                     nodes_used = used;
@@ -3087,7 +3275,8 @@ impl PackageDeclarations {
                     &mut contract_meter,
                     &mut contract_diagnostics,
                     &mut contract_scopes,
-                );
+                )
+                .with_source_owner(self.source_owners.get(&$refinement.form.name.name).cloned());
                 let env = refinement::RefinementEnv {
                     support: self.refinement_support,
                     lists: &internal_lists,
@@ -3180,7 +3369,22 @@ impl PackageDeclarations {
                 .iter()
                 .flat_map(|(_, pending)| pending.refusals().iter().cloned())
                 .collect();
-            return Err(with_deferred(refusals, &prechecked_deferred));
+            if continue_state_clause_refusals
+                && refusals
+                    .iter()
+                    .all(|refusal| matches!(refusal.location.origin, Origin::StateClause { .. }))
+            {
+                unit_refusals.append(&mut refusals);
+                // The continuation graph is only used to finish independent
+                // protocol checks. Do not carry a refused clause without its
+                // typed/lowered counterpart into requirement keying below.
+                // The package is refused at the unit boundary, so omitting
+                // these clauses from this temporary graph cannot emit them.
+                state_clause_forms.clear();
+                typed_clauses.clear();
+            } else {
+                return Err(with_deferred(refusals, &prechecked_deferred));
+            }
         }
         // FR-220: the model's views, for the symbolic footprints the access
         // classification of a protocol's `parallel` attempts reads.
@@ -3287,7 +3491,6 @@ impl PackageDeclarations {
         // protocol compiles only when every part is checked.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
-        let mut protocol_check_refusals = Vec::new();
         // The selected protocol profile, which the structural refusals of a
         // protocol's control tree name (FR-218, FR-381).
         let protocol_profile_identity = protocol_profile
@@ -3404,7 +3607,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
@@ -3480,7 +3684,8 @@ impl PackageDeclarations {
                         &mut contract_meter,
                         &mut contract_diagnostics,
                         &mut contract_scopes,
-                    );
+                    )
+                    .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
                     match protocol_slots::check(
                         protocol,
                         &checked,
@@ -3517,7 +3722,8 @@ impl PackageDeclarations {
                         &mut contract_meter,
                         &mut contract_diagnostics,
                         &mut contract_scopes,
-                    );
+                    )
+                    .with_source_owner(self.source_owners.get(&protocol.name.name).cloned());
                     match protocol_controls::check(
                         protocol,
                         &self.alias_names,
@@ -3588,7 +3794,7 @@ impl PackageDeclarations {
                 ))
             })
             .collect();
-        for result in &mut protocol_check_refusals {
+        for result in protocol_check_refusals.iter_mut() {
             for refusal in &mut result.refusals {
                 let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
                     continue;
@@ -3789,6 +3995,9 @@ impl PackageDeclarations {
             checked.concrete_subject_node =
                 concrete_model.and_then(|model| root_of(model.selection()));
         }
+        if !independent_protocols && !protocol_check_refusals.is_empty() {
+            return Err(refusals);
+        }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
@@ -3827,13 +4036,17 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&clause.form.name.name).cloned());
             let outcome = temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx);
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
             let body_refused = match &outcome {
                 Ok(staged) => !temporal_clause::is_emitted(staged.value()),
                 Err(StageFailure::Refused(refusal)) => {
+                    temporal_clause::refuses_after_activation(&clause.form, refusal)
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
                 Err(_) => false,
@@ -3964,6 +4177,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -3973,6 +4195,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(*refusal),
             }
         }
         // FR-185: the `random`, `reward` and `workload` declarations,
@@ -4046,7 +4269,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(&claim.form.name.name).cloned());
             match state_graph_claim::StateGraphFamily::check(claim, &mut contract_cx) {
                 Ok(staged) => {
                     let checked = staged.into_value();
@@ -4056,6 +4280,15 @@ impl PackageDeclarations {
                 Err(StageFailure::Limit(limit)) => {
                     refusals.push(CheckRefusal {
                         location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
                         cause: limit_cause(&limit),
                     });
                     if cancel.tripped().is_some() {
@@ -4073,6 +4306,13 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(*refusal);
                     if exhausted {
                         return Err(refusals);
                     }
@@ -4153,7 +4393,8 @@ impl PackageDeclarations {
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
-            );
+            )
+            .with_source_owner(self.source_owners.get(clause.name()).cloned());
             match hyper_clause::HyperTraceFamily::check(clause, &mut contract_cx) {
                 Ok(staged) => match staged.into_value() {
                     // FR-488: a clause over `behaviours` is emitted unless
@@ -4177,6 +4418,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4186,6 +4436,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(*refusal),
             }
         }
         // The nodes the hyper conditions checked count against the package's
@@ -4268,9 +4519,10 @@ impl PackageDeclarations {
                 units.append(table);
             }
         }
-        let mut lowering = lowering::Lowering::new(
+        let mut lowering = lowering::Lowering::new_with_source_owners(
             &scope,
             &owner,
+            &source_owners,
             &models,
             &dispatch_tables,
             units,
@@ -6459,9 +6711,151 @@ impl PackageDeclarations {
                 )
             })
             .collect();
+        let mut dependency_references = Vec::new();
+        for pending in scope.take_dependency_references() {
+            let referring_declaration = match &pending.site.origin {
+                Origin::Body { function, .. } | Origin::Measure { function, .. } => {
+                    function.clone()
+                }
+                Origin::StateClause { clause, .. } => clause.clone(),
+                Origin::TypeDeclaration { name } => {
+                    if let Some(index) = name
+                        .strip_prefix("temporal ")
+                        .and_then(|name| name.split_whitespace().next())
+                        .and_then(|index| index.parse::<usize>().ok())
+                    {
+                        let Some(temporal) = temporal_clauses.get(index) else {
+                            continue;
+                        };
+                        temporal.clause().name().to_owned()
+                    } else {
+                        name.clone()
+                    }
+                }
+                Origin::ProtocolAttempt { protocol, .. } => {
+                    let Some(protocol) = self.protocols.get(*protocol) else {
+                        continue;
+                    };
+                    protocol.name.name.clone()
+                }
+                Origin::ModelOperationClause { operation, .. } => operation.clone(),
+                Origin::Expression => continue,
+            };
+            let Some(source_region) = regions.region(&pending.site) else {
+                // A compiler-synthesized expression has no authored source
+                // occurrence and therefore is not a static reference row.
+                continue;
+            };
+            let source = source_region.source().clone();
+            let (target, library) = match pending.target {
+                PendingDependencyTarget::LocalFunction(index) => (
+                    functions
+                        .get(index)
+                        .map(|(_, function)| function.identity.clone()),
+                    None,
+                ),
+                PendingDependencyTarget::Imported { library, target } => {
+                    (Some(target), Some(library))
+                }
+            };
+            let Some(target) = target else {
+                continue;
+            };
+            dependency_references.push(CheckedDependencyReference {
+                source,
+                referring_declaration,
+                kind: CheckedDependencyKind::PredicateCall,
+                site: CheckedDependencySite::Expression(pending.site),
+                name: pending.name,
+                target,
+                library,
+            });
+        }
+        for (source_index, form) in self.protocols.iter().enumerate() {
+            let Some(checked_index) = protocol_places.get(source_index).copied().flatten() else {
+                continue;
+            };
+            let Some(checked) = checked_protocols.get(checked_index) else {
+                continue;
+            };
+            let source_owner = self
+                .source_owners
+                .get(&form.name.name)
+                .unwrap_or(&source)
+                .clone();
+            for attempt in &form.attempts {
+                let Some(checked_attempt) = checked
+                    .attempts
+                    .iter()
+                    .find(|entry| entry.declaration == attempt.declaration)
+                else {
+                    continue;
+                };
+                for (contract, target) in attempt.contracts.iter().zip(&checked_attempt.contracts) {
+                    dependency_references.push(CheckedDependencyReference {
+                        source: source_owner.clone(),
+                        referring_declaration: form.name.name.clone(),
+                        kind: CheckedDependencyKind::OperationContract,
+                        site: CheckedDependencySite::OperationContract(contract.span),
+                        name: contract.name.clone(),
+                        target: target.clone(),
+                        library: None,
+                    });
+                }
+            }
+            for requirement in &form.requirements {
+                let target = checked.requirements.iter().find_map(|bound| {
+                    temporal_clauses
+                        .get(bound.temporal)
+                        .filter(|temporal| temporal.clause().name() == requirement.temporal.name)
+                        .map(TemporalClauseNode::identity)
+                });
+                if let Some(target) = target {
+                    dependency_references.push(CheckedDependencyReference {
+                        source: source_owner.clone(),
+                        referring_declaration: form.name.name.clone(),
+                        kind: CheckedDependencyKind::TemporalObligation,
+                        site: CheckedDependencySite::TemporalRequirement(requirement.temporal.span),
+                        name: requirement.temporal.name.clone(),
+                        target,
+                        library: None,
+                    });
+                }
+            }
+        }
+        dependency_references.sort_by(|left, right| {
+            let source_span = |reference: &CheckedDependencyReference| match &reference.site {
+                CheckedDependencySite::Expression(location) => regions
+                    .region(location)
+                    .map_or((u64::MAX, u64::MAX), |region| {
+                        (region.start(), region.end())
+                    }),
+                CheckedDependencySite::OperationContract(span)
+                | CheckedDependencySite::TemporalRequirement(span) => (
+                    u64::try_from(span.start).unwrap_or(u64::MAX),
+                    u64::try_from(span.end).unwrap_or(u64::MAX),
+                ),
+            };
+            left.source
+                .cmp(&right.source)
+                .then_with(|| source_span(left).cmp(&source_span(right)))
+                .then_with(|| left.referring_declaration.cmp(&right.referring_declaration))
+                .then_with(|| left.kind.cmp(&right.kind))
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| left.target.cmp(&right.target))
+        });
+        dependency_references.dedup();
+        if !protocol_check_refusals.is_empty() || !unit_refusals.is_empty() {
+            // A continuation graph may retain clean siblings beside a
+            // refusal. It must not publish a partial package reference set.
+            dependency_references.clear();
+        }
         let mut graph = CheckedGraph {
             graph_identity: CheckedGraphIdentity::fresh(),
             source,
+            sources: self.sources,
+            source_owners: self.source_owners,
+            function_sources: self.function_sources,
             package_name,
             scope,
             functions,
@@ -6476,6 +6870,7 @@ impl PackageDeclarations {
                 .into_iter()
                 .collect(),
             semantic_graph,
+            dependency_references,
             equality_producer_data,
             equality_producer_identities,
             dispatch_producer_decisions,
@@ -6508,7 +6903,8 @@ impl PackageDeclarations {
                 .iter()
                 .map(|protocol| protocol.name.name.clone())
                 .collect(),
-            protocol_refusals: protocol_check_refusals,
+            protocol_refusals: std::mem::take(protocol_check_refusals),
+            unit_refusals,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
                 .map(|(name, members)| {
@@ -7156,6 +7552,20 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
+    /// Every checked predicate call, operation-contract reference and
+    /// temporal-obligation reference, in source order. Each row retains its
+    /// referring declaration, authored name, exact syntax site and resolved
+    /// target; an imported predicate additionally names its library. An
+    /// attributed refusal makes the graph incomplete, in which case this
+    /// returns an empty slice rather than exposing partial rows.
+    pub fn dependency_references(&self) -> &[CheckedDependencyReference] {
+        if self.protocol_refusals.is_empty() && self.unit_refusals.is_empty() {
+            &self.dependency_references
+        } else {
+            &[]
+        }
+    }
+
     /// The checked protocol-class view imported refinements use to resolve
     /// one of this package's protocol clauses by name.
     pub(crate) fn imported_protocol_classes(
@@ -7338,10 +7748,17 @@ impl CheckedGraph {
         &self.header_layers
     }
 
-    /// FR-001: the `RawSourceRef` of the unit this package was checked
-    /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
+    /// FR-001: the canonical first `RawSourceRef` of the checked package,
+    /// retained for the single-source compatibility accessor. Multi-unit
+    /// consumers should use [`Self::sources`] and owner-aware regions.
     pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {
         &self.source
+    }
+
+    /// Every source reference contributing a declaration, in canonical
+    /// `(authority, identity)` order.
+    pub fn sources(&self) -> Vec<&qsl_foundation::source::provenance::RawSourceRef> {
+        self.sources.iter().collect()
     }
 
     /// The package manifest's top-level name this package was checked under:
@@ -7621,6 +8038,13 @@ impl CheckedGraph {
     /// FR-383: typed refusals attributed to individual protocol declarations.
     pub fn protocol_refusals(&self) -> &[ProtocolCheckRefusal] {
         &self.protocol_refusals
+    }
+
+    /// Unit-level state-clause refusals preserved by the protocol
+    /// continuation check. Ordinary check operations still return these as
+    /// primary refusals.
+    pub fn unit_refusals(&self) -> &[CheckRefusal] {
+        &self.unit_refusals
     }
 
     /// FR-383: protocol names in declaration order, including refused ones.

@@ -339,6 +339,7 @@ impl Lowering<'_> {
                 node_site: &|node| hyper_location(input.index, Site::Node(node)),
                 conditions: &conditions,
                 root_site: &wrapper_at,
+                tick_intervals: false,
             },
             boolean.clone(),
             &scope,

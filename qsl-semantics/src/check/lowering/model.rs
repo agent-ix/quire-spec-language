@@ -2568,9 +2568,15 @@ impl<'a> Lowering<'a> {
             // declares carries its name as its `declaration` and its
             // `SourceOwner`. The unit table holds no other node.
             let (declaration, owner, model_alias) = if key.package() == self.package_name {
+                let declaration_name = qualified.join(".");
                 (
                     Some(identifiers(qualified.iter().map(String::as_str), &site)?),
-                    Owner::Source(self.owner.clone()),
+                    Owner::Source(
+                        self.source_owners
+                            .get(&declaration_name)
+                            .cloned()
+                            .unwrap_or_else(|| self.owner.clone()),
+                    ),
                     None,
                 )
             } else {
@@ -2659,7 +2665,7 @@ impl<'a> Lowering<'a> {
                     semantic_form: "dimension_equivalence",
                     semantic_type: Some(NodeRef::Admitted(key.clone())),
                     declaration: None,
-                    owner: Some(Owner::Source(self.owner.clone())),
+                    owner: Some(Owner::Source(equivalence.owner.clone())),
                     body: BodyTerm::aggregate(
                         equivalence
                             .dimensions

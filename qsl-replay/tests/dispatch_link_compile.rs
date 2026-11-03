@@ -1636,3 +1636,94 @@ fn own_precondition_clauses_conjoin_in_ascending_name_whatever_the_source_order(
         "{undefined_first:?}"
     );
 }
+
+/// Runs `pre c1 ... Sub::probe { self.size() = 2 }` on a `Sub` receiver with
+/// `sub_pre` as `Sub::size`'s own `pre` clauses and `a_pre` as
+/// `ConfigVersion::size`'s: the clause's outcome and charged work.
+fn run_sub_size_probe(sub_pre: &[(&str, bool)], a_pre: &[(&str, bool)]) -> FamilyOutcome<Quire> {
+    let document = package(
+        vec![
+            query("ConfigVersion", "size", &[], None),
+            query("ConfigVersion", "probe", &[], None),
+        ],
+        &[(
+            "Sub",
+            "ConfigVersion",
+            vec![query("Sub", "size", &[], Some("ConfigVersion"))],
+        )],
+    );
+    let mut declarations = String::from(
+        "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
+         body sizeB using v on Config::Sub::size() { 2 }\n",
+    );
+    for (name, value) in a_pre {
+        declarations.push_str(&format!(
+            "pre {name} using v on Config::ConfigVersion::size {{ {value} }}\n"
+        ));
+    }
+    for (name, value) in sub_pre {
+        declarations.push_str(&format!(
+            "pre {name} using v on Config::Sub::size {{ {value} }}\n"
+        ));
+    }
+    declarations.push_str("pre c1 using v on Config::Sub::probe { self.size() = 2 }\n");
+    let checked = compiled(&document, &declarations, SpineLimits::default());
+    let receiver = checked
+        .package()
+        .graph()
+        .state_clause("c1")
+        .expect("c1")
+        .context();
+    run_pre(&checked, "c1", receiver).0
+}
+
+fn is_precondition_false(outcome: &FamilyOutcome<Quire>) -> bool {
+    let text = format!("{outcome:?}");
+    text.contains("PreconditionFalse") && text.contains("\"operation\": \"size\"")
+}
+
+/// FR-151-AC-17: `B.size` with own clauses `PB1`, `PB2` and the redefined
+/// `A.size`'s `PA` has the effective precondition `(PB1 and PB2) or PA`. With
+/// `PB1` true, `PB2` false and `PA` true the call proceeds; with `PA` false
+/// it is undefined for `precondition-false`, which a flat disjunction of the
+/// three clauses (true through `PB1`) would not give.
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-17")]
+#[test]
+fn effective_precondition_is_own_conjunction_or_the_redefined_precondition() {
+    let sub = [("PB1", true), ("PB2", false)];
+    let proceeds = run_sub_size_probe(&sub, &[("PA", true)]);
+    assert!(
+        matches!(
+            &proceeds,
+            FamilyOutcome::Evaluated(Outcome::Completed(Quire::Boolean(true)))
+        ),
+        "PA true admits the call: {proceeds:?}"
+    );
+    let refused = run_sub_size_probe(&sub, &[("PA", false)]);
+    assert!(is_precondition_false(&refused), "PA false: {refused:?}");
+    // Both own clauses true admit the call whatever `PA` says.
+    let own = run_sub_size_probe(&[("PB1", true), ("PB2", true)], &[("PA", false)]);
+    assert!(
+        matches!(
+            &own,
+            FamilyOutcome::Evaluated(Outcome::Completed(Quire::Boolean(true)))
+        ),
+        "PB1 and PB2 true: {own:?}"
+    );
+}
+
+/// FR-151-AC-18: an operation member with no own precondition clause has
+/// `true` as `own(m)`, so its effective precondition is `true` whatever the
+/// redefined member's precondition says.
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-18")]
+#[test]
+fn a_member_without_own_precondition_clauses_is_unconditionally_admitted() {
+    let outcome = run_sub_size_probe(&[], &[("PA", false)]);
+    assert!(
+        matches!(
+            &outcome,
+            FamilyOutcome::Evaluated(Outcome::Completed(Quire::Boolean(true)))
+        ),
+        "B without own clauses ignores a false PA: {outcome:?}"
+    );
+}

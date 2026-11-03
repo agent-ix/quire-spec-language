@@ -2085,6 +2085,7 @@ impl Disposition {
                     | super::RunRefusal::UnsupportedHelper(_)
                     | super::RunRefusal::Cancelled(_) => None,
                     super::RunRefusal::Supplied(stop) => qsl_eval::value::supplied_stop_cause(stop),
+                    super::RunRefusal::ObjectEnvironment(record) => Some(record.catalog.cause()),
                     super::RunRefusal::Storage { failure, .. } => membership_failure_cause(failure),
                 };
                 let mut record = RefusalWire::new(refusal.code().as_str(), cause);
@@ -2152,6 +2153,9 @@ impl Disposition {
                     | super::RunRefusal::Storage { position, .. } => {
                         record =
                             record.fields(BTreeMap::from([("position", position.to_string())]));
+                    }
+                    super::RunRefusal::ObjectEnvironment(admission) => {
+                        record = record.fields(admission.fields.clone());
                     }
                     super::RunRefusal::Fault(_)
                     | super::RunRefusal::Cancelled(_)
@@ -2228,7 +2232,9 @@ impl Disposition {
             }
             // `write_clause_run_result` refuses a temporal disposition before
             // it builds this record.
-            ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_) => {}
+            ClauseDisposition::Temporal(_)
+            | ClauseDisposition::TemporalRefusal(_)
+            | ClauseDisposition::ProgressContradiction(_) => {}
         }
         result
     }
@@ -2248,7 +2254,9 @@ fn format_model_selection(
 pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, NativeRunResultError> {
     if matches!(
         report.disposition,
-        ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_)
+        ClauseDisposition::Temporal(_)
+            | ClauseDisposition::TemporalRefusal(_)
+            | ClauseDisposition::ProgressContradiction(_)
     ) {
         return Err(NativeRunResultError::TemporalDisposition);
     }

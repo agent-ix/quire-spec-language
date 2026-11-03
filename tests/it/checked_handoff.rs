@@ -82,7 +82,7 @@ fn recipe(kind: &str) -> (&'static str, Vec<(&'static str, ClockConfiguration)>)
     }
 }
 
-fn request(kind: &str, corpus: Corpus) -> CheckedHandoffRequest {
+pub(super) fn request(kind: &str, corpus: Corpus) -> CheckedHandoffRequest {
     let (unit, clocks) = recipe(kind);
     CheckedHandoffRequest {
         emit: Request {
@@ -107,10 +107,10 @@ fn request(kind: &str, corpus: Corpus) -> CheckedHandoffRequest {
     }
 }
 
-const KINDS: [&str; 3] = ["event_position", "fixed_sample", "timestamped_event"];
+pub(super) const KINDS: [&str; 3] = ["event_position", "fixed_sample", "timestamped_event"];
 
 /// Every regular file below `root`, keyed by its root-relative path.
-fn tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+pub(super) fn tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
     fn walk(root: &Path, directory: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
         for entry in std::fs::read_dir(directory).expect("read directory") {
             let path = entry.expect("entry").path();
@@ -213,7 +213,7 @@ fn written(kind: &str, corpus: Corpus, double: &Double) -> (tempfile::TempDir, P
     (holder, out)
 }
 
-fn admitted(bytes: &[u8], evidence: &CheckedPackageEvidence) -> Box<CheckedPackageV2> {
+pub(super) fn admitted(bytes: &[u8], evidence: &CheckedPackageEvidence) -> Box<CheckedPackageV2> {
     match read_checked_package(bytes, CheckedPackageReadLimits::bounded(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => package,
         other => panic!("the reader refused the package: {other:?}"),

@@ -12,20 +12,20 @@ use super::admission_corpus::config_version_unit;
 use super::*;
 use crate::checked_v2::{clause_roots, resolve_clause_root, ClauseRoot, V2ReadRefusal};
 
-const INFINITE: &str = "quire.temporal.infinite-trace/v1";
-const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
+pub(super) const INFINITE: &str = "quire.temporal.infinite-trace/v1";
+pub(super) const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
 
 /// ADR-018 §6's clause formula.
 const EVENTUALLY_TWO: &str = "always eventually holds(c.versionNumber = 2)";
 
 /// The ConfigVersion domain package document.
-fn document() -> &'static [u8] {
+pub(super) fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
 /// A unit selecting the ConfigVersion model and the temporal profile
 /// `profile` as `t`, then `declarations`.
-fn unit(profile: &str, declarations: &str) -> String {
+pub(super) fn unit(profile: &str, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
@@ -36,13 +36,13 @@ fn unit(profile: &str, declarations: &str) -> String {
 }
 
 /// The clause `name` over `c: Config::ConfigVersion` whose body is `body`.
-fn declared(name: &str, body: &str) -> String {
+pub(super) fn declared(name: &str, body: &str) -> String {
     declared_on(name, "on origin", body)
 }
 
 /// The clause `name` over `c: Config::ConfigVersion`, activated as
 /// `activation`, whose body is `body`.
-fn declared_on(name: &str, activation: &str, body: &str) -> String {
+pub(super) fn declared_on(name: &str, activation: &str, body: &str) -> String {
     format!(
         "temporal {name} using t over (c: Config::ConfigVersion) clock \"model-steps\" \
          {activation} {{ {body} }}"
@@ -56,15 +56,15 @@ fn reaches_two(fair: &str) -> String {
 
 /// One compiled temporal unit: the checked graph's clauses, the emission
 /// and its wire.
-struct Compiled {
-    clauses: Vec<qsl_semantics::check::TemporalClauseNode>,
-    emission: Emission,
-    wire: Value,
+pub(super) struct Compiled {
+    pub(super) clauses: Vec<qsl_semantics::check::TemporalClauseNode>,
+    pub(super) emission: Emission,
+    pub(super) wire: Value,
 }
 
 /// `unit` through S1, S2, I1, the assembler, check, link and the v2
 /// emitter, with nothing omitted.
-fn compile(unit: &str) -> Compiled {
+pub(super) fn compile(unit: &str) -> Compiled {
     let graph = check_graph(unit);
     let selections = graph
         .temporal_clauses()
@@ -92,7 +92,7 @@ fn compile(unit: &str) -> Compiled {
     }
 }
 
-fn fixture_clock(
+pub(super) fn fixture_clock(
     profile: qsl_semantics::check::TemporalProfile,
 ) -> Option<quire_contract_model::ClockConfiguration> {
     use qsl_semantics::check::TemporalProfile as P;
@@ -241,7 +241,7 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
 
 /// The I2 evidence for a ConfigVersion package: its required features and
 /// the domain package document.
-fn evidence(wire: &Value) -> CheckedPackageEvidence {
+pub(super) fn evidence(wire: &Value) -> CheckedPackageEvidence {
     let mut evidence = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
@@ -258,7 +258,7 @@ fn read_bytes(bytes: &[u8], wire: &Value) -> Read {
 }
 
 /// QSL's full I2 read of `compiled`, and IR's admitted package.
-fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
+pub(super) fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
     let read = crate::checked_v2::read_checked_package_v2(
         compiled.emission.package.bytes(),
         library(),

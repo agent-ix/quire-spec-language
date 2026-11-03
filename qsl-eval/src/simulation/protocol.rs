@@ -33,6 +33,7 @@ mod memory;
 mod program;
 mod ra;
 mod race;
+mod reach;
 mod roles;
 mod selection;
 mod settle;
@@ -95,6 +96,7 @@ pub use memory::{
 use program::{Program, Rest};
 pub use ra::{CarriedView, Ra, RaComponent};
 pub use race::{AccessRecord, Conflict, DataRace, EarlierKind};
+pub use reach::{ReachRefusal, Reachable, ReachedState};
 pub use selection::{
     MemorySelection, MemorySelectionRefusal, ResolvedMemory, ResolvedParallel, SubjectMemory,
 };

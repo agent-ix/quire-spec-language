@@ -259,6 +259,35 @@ mod tests {
         );
     }
 
+    /// FR-285-AC-8 (TC-769 step 7): retained stage results do not affect the
+    /// category or exit selected by the primary cause or limit.
+    #[trace("TC-769", "FR-285-AC-8")]
+    #[test]
+    fn a_stage_failure_payload_does_not_change_its_category_or_exit() {
+        let refusal = Cause("ill_typed");
+        let plain: StageFailure<Cause> = StageFailure::Refused(refusal);
+        let with_payload: StageFailure<Cause, Vec<&str>> = StageFailure::RefusedWithPayload(
+            Box::new(Cause("ill_typed")),
+            vec!["emitted", "refused"],
+        );
+        assert_eq!(plain.category(), with_payload.category());
+        assert_eq!(
+            plain.category().exit_code(),
+            with_payload.category().exit_code()
+        );
+        assert_eq!(with_payload.payload(), Some(&vec!["emitted", "refused"]));
+
+        let limit = LimitExceeded::new(Setting::S3WorkUnits, 10, 11);
+        let plain: StageFailure<Cause> = StageFailure::Limit(limit.clone());
+        let with_payload: StageFailure<Cause, Vec<&str>> =
+            StageFailure::LimitWithPayload(limit, vec!["emitted", "incomplete"]);
+        assert_eq!(plain.category(), with_payload.category());
+        assert_eq!(
+            plain.category().exit_code(),
+            with_payload.category().exit_code()
+        );
+    }
+
     /// FR-275: an internal fault is an internal failure, whatever the stage.
     #[trace("TC-769", "FR-285-AC-3")]
     #[test]
@@ -401,11 +430,19 @@ impl<T> Staged<T> {
 /// T-4 does not define the diagnostics' type, and a family `check` refuses
 /// one form with one cause.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StageFailure<C> {
+pub enum StageFailure<C, P = ()> {
     /// A configured stage limit was reached first.
     Limit(LimitExceeded),
+    /// A configured stage limit with caller-defined retained stage results.
+    /// The payload does not change the limit's incomplete category.
+    LimitWithPayload(LimitExceeded, P),
     /// The stage refused its input with its own typed cause.
     Refused(C),
+    /// A stage refusal with caller-defined retained stage results. The
+    /// payload does not change the refusal cause or category. The cause is
+    /// boxed so this variant does not keep `Refused(C)` from sharing its
+    /// layout niche, which would grow every `StageFailure<C>`.
+    RefusedWithPayload(Box<C>, P),
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// stage stopped at its next charge (ADR-029 LC-3, FR-276).
     Cancelled(CancelCause),
@@ -414,12 +451,24 @@ pub enum StageFailure<C> {
     Fault(InternalFault),
 }
 
-impl<C> StageFailure<C> {
+impl<C, P> StageFailure<C, P> {
+    /// The stage results retained with this refusal or limit, when present.
+    pub fn payload(&self) -> Option<&P> {
+        match self {
+            Self::LimitWithPayload(_, payload) | Self::RefusedWithPayload(_, payload) => {
+                Some(payload)
+            }
+            Self::Limit(_) | Self::Refused(_) | Self::Cancelled(_) | Self::Fault(_) => None,
+        }
+    }
+
     /// The stage's refusal cause, or what stopped it instead.
     pub fn into_refused(self) -> Result<C, Stopped> {
         match self {
             Self::Refused(cause) => Ok(cause),
+            Self::RefusedWithPayload(cause, _) => Ok(*cause),
             Self::Limit(limit) => Err(Stopped::Limit(limit)),
+            Self::LimitWithPayload(limit, _) => Err(Stopped::Limit(limit)),
             Self::Cancelled(cause) => Err(Stopped::Cancelled(cause)),
             Self::Fault(fault) => Err(Stopped::Fault(fault)),
         }
@@ -438,19 +487,27 @@ pub enum Stopped {
     Fault(InternalFault),
 }
 
-impl<C: CatalogCoded> StageFailure<C> {
+impl<C: CatalogCoded, P> StageFailure<C, P> {
     /// FR-285: this failure's ADR-013 O-16 category. `Refused` takes its
     /// cause's: a profile-gated construct (`unsupported_construct`) is
     /// unsupported, any other refusal is a refusal. `Limit` and `Cancelled`
     /// are incomplete, and a `Fault` is the fault's own internal failure.
     pub fn category(&self) -> Category {
         match self {
-            Self::Limit(_) | Self::Cancelled(_) => Category::Incomplete,
+            Self::Limit(_) | Self::LimitWithPayload(_, _) | Self::Cancelled(_) => {
+                Category::Incomplete
+            }
             Self::Fault(fault) => fault.category(),
             Self::Refused(cause) => match Code::from_code(cause.catalog_code().code()) {
                 Some(code) if code.is_unsupported() => Category::Unsupported,
                 Some(_) | None => Category::Refusal,
             },
+            Self::RefusedWithPayload(cause, _) => {
+                match Code::from_code(cause.catalog_code().code()) {
+                    Some(code) if code.is_unsupported() => Category::Unsupported,
+                    Some(_) | None => Category::Refusal,
+                }
+            }
         }
     }
 }

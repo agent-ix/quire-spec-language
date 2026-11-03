@@ -56,6 +56,7 @@ name nothing in the selected package are offered at run time:
 | H3 | `evaluate_holds` | a formula node id that is no `holds` atom of the clause, and an id beyond the clause's node count | an `Err` fault naming the node; no `Evaluation` |
 | H4 | `evaluate_protocol_slot` | a `ProtocolSlot` selected from another package's protocol, and a slot whose supply is for a different slot | refusal before any charge (FR-390), the meter unchanged |
 | H5 | `evaluate` | a valid `CheckedExpression` produced by checking package A's graph, supplied to package B's evaluator; both packages and the expression are otherwise valid and have distinct identities | a typed caller-input/admission refusal with catalog code/cause `invalid_runtime_input`/`foreign-checked-expression`; no `Evaluation`, no internal fault, and the meter unchanged |
+| H6 | `call`, `evaluate` | an object environment built under another type environment: an attribute of another type, unit or integer range, a missing or surplus attribute, an object of a type the package does not declare, or an out-of-range integer no FR-106 witness names | `CallFailure::Admission` refusal `invalid_runtime_input`/`wrong-value-kind` naming the object and attribute; no `Evaluation`, no internal fault, and the meter unchanged. Attributes reordered against the package's declarations, and FR-106-witnessed out-of-range integers at the witnessed path, are read as declared |
 
 Each row asserts the typed refusal or fault as a field and the unchanged meter,
 never message text.

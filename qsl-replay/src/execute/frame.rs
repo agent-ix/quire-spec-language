@@ -240,6 +240,7 @@ pub fn replay_frame(
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
         sources: &sources,
+        progress_capacity: qsl_eval::temporal::DEFAULT_COVERED_POSITIONS,
     };
     let FrameCheck { report, documents } =
         check_frame(&run, context, operation_frame, &payload.invocation);
@@ -281,6 +282,7 @@ pub fn replay_frame(
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::Temporal(_)
         | ClauseDisposition::TemporalRefusal(_)
+        | ClauseDisposition::ProgressContradiction(_)
         | ClauseDisposition::ArgumentRefusal(_) => {
             return Err(ReplayRefusal::Fault(InternalFault::new(
                 "replay",

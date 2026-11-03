@@ -1029,7 +1029,21 @@ fn same_action(left: &ProductAction, right: &ProductAction) -> bool {
     match (left, right) {
         (ProductAction::Identity(a), ProductAction::Identity(b)) => a == b,
         (ProductAction::PostState(a), ProductAction::PostState(b)) => a == b,
-        (ProductAction::TerminalStutter, ProductAction::TerminalStutter) => true,
+        (ProductAction::TerminalStutter, ProductAction::TerminalStutter)
+        | (ProductAction::UnitDelay, ProductAction::UnitDelay)
+        | (ProductAction::EnterIdleDelay, ProductAction::EnterIdleDelay)
+        | (ProductAction::IdleDelay, ProductAction::IdleDelay)
+        | (ProductAction::IdleObserve, ProductAction::IdleObserve) => true,
+        (
+            ProductAction::WorkloadResolve {
+                identity: left,
+                delay: left_delay,
+            },
+            ProductAction::WorkloadResolve {
+                identity: right,
+                delay: right_delay,
+            },
+        ) => left == right && left_delay == right_delay,
         _ => false,
     }
 }

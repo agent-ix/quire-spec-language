@@ -202,6 +202,8 @@ pub struct StateClauseDeclaration {
     pub kind: StateClauseKind,
     /// The declared clause name.
     pub name: String,
+    /// The source declaring this clause, for FR-480 source-local imports.
+    pub source_owner: Option<qsl_foundation::source::provenance::RawSourceRef>,
     /// The span of the authored clause name, used for binding refusals.
     pub name_span: qsl_foundation::Span,
     /// The operation name exactly as authored in `on M::T::op`; it is
@@ -245,6 +247,7 @@ impl StateClauseDeclaration {
     /// What the `ProtocolClause` family's check reads of this clause.
     fn view(&self) -> ClauseView<'_> {
         ClauseView {
+            source_owner: self.source_owner.as_ref(),
             kind: self.kind,
             complete_value: is_complete_value(&self.selection),
             context: Some(self.context.clone()),
@@ -273,6 +276,8 @@ pub(crate) fn is_complete_value(selection: &ProfileSelection) -> bool {
 /// `requires`/`ensures` (FR-103), which names no profile and so checks under
 /// the typer's profile-independent defaults.
 pub(crate) struct ClauseView<'a> {
+    /// Declaring source unit, when the view came from authored source.
+    pub(crate) source_owner: Option<&'a qsl_foundation::source::provenance::RawSourceRef>,
     pub(crate) kind: StateClauseKind,
     /// Whether the selected profile is the complete-value one.
     pub(crate) complete_value: bool,
@@ -908,6 +913,7 @@ fn check_clause_in(
         &mut nodes,
         form.clause_kind(),
     )
+    .with_source_owner(form.source_owner.cloned())
     .with_cancel(input.cancel)
     .with_complete_value(form.complete_value)
     .with_context(cx.reborrow(input.scope));

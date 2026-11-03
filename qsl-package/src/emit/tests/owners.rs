@@ -144,15 +144,15 @@ fn source_declared_nodes_carry_their_source_owner() {
         None,
         name("s"),
     );
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = p_and_tree_types();
+    declarations.enums = vec![status];
+    declarations.functions = vec![keep];
     let package = CheckedPackage::link(
-        PackageDeclarations {
-            types: p_and_tree_types(),
-            enums: vec![status],
-            functions: vec![keep],
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("the package checks"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks"),
     );
     let emission = emit(&package);
     assert_eq!(emission.omitted, []);

@@ -506,7 +506,7 @@ fn n03_a_subtype_receiver_navigates() {
 /// FR-363-AC-1 (N04): the source role navigates forward to the target end's
 /// `[0,3]` set; the target end's role names the inverse end under
 /// `bidirectional`, whose destination is the source end `{1,1}`.
-#[trace("TC-1031", "FR-363-AC-1")]
+#[trace("TC-1031", "FR-363-AC-1", "QSpec-TC-197", "QSpec-FR-152-AC-9")]
 #[test]
 fn n04_the_source_role_and_the_target_role_name_the_forward_and_inverse_ends() {
     assert_navigates(
@@ -534,6 +534,32 @@ fn n04_the_source_role_and_the_target_role_name_the_forward_and_inverse_ends() {
             )
         },
         2,
+    );
+}
+
+/// QSpec FR-152-AC-9: a relationship end is navigable by the role of the end
+/// nearest the receiver only; a far-end role finds no candidate and refuses
+/// `ill_typed`/`type-mismatch` at checking.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-9", "TC-1031", "FR-363-AC-2")]
+#[test]
+fn a_far_end_role_finds_no_candidate_and_refuses_a_type_mismatch() {
+    // `lines` is the source (`Order`) end's role and `owner` the target
+    // (`Line`) end's: each receiver reaches only its own nearest end's role.
+    assert_refused(
+        &links(),
+        "Order",
+        "present(self.owner)",
+        Code::IllTyped,
+        "type-mismatch",
+        vec![0],
+    );
+    assert_refused(
+        &links(),
+        "Line",
+        "present(self.lines)",
+        Code::IllTyped,
+        "type-mismatch",
+        vec![0],
     );
 }
 

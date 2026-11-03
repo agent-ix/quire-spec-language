@@ -520,6 +520,53 @@ pub enum StepLabelForm {
     },
 }
 
+/// A quoted text literal: the decoded Unicode scalar sequence and the exact
+/// quoted spelling it was decoded from. Two spellings of one sequence, such as
+/// a raw `é` and `\u00e9`, decode to one value (QSpec FR-141) and stay
+/// distinct provenance.
+///
+/// Equality is the decoded text's: a form compares by the value it spells,
+/// never by its spelling. [`Self::spelling`] reads the spelling for
+/// provenance.
+#[derive(Clone, Debug, Eq)]
+pub struct StringLiteral {
+    text: String,
+    spelling: String,
+}
+
+impl PartialEq for StringLiteral {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+    }
+}
+
+impl StringLiteral {
+    /// The literal a quoted `spelling` writes, or `None` when `spelling` is
+    /// not one well-formed quoted text.
+    pub fn from_spelling(spelling: impl Into<String>) -> Option<Self> {
+        let spelling = spelling.into();
+        let text = qsl_cst::token::decode_quoted(&spelling)?;
+        Some(Self { text, spelling })
+    }
+
+    /// The literal of `text`, spelled as its canonical quoted text.
+    pub fn from_text(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let spelling = qsl_cst::token::encode_quoted(&text);
+        Self { text, spelling }
+    }
+
+    /// The decoded Unicode scalar sequence.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// The quoted source spelling, escapes undecoded.
+    pub fn spelling(&self) -> &str {
+        &self.spelling
+    }
+}
+
 /// One node of a value expression: its payload, with each subexpression
 /// named by its [`ExprId`] in the same [`Expression`] arena.
 ///
@@ -548,8 +595,9 @@ pub enum ExprNode {
     /// spelled unit. S2 resolves neither.
     Quantity(QuantityForm),
     /// A quoted text literal (FR-091 "Native scalar literals"): the decoded
-    /// Unicode scalar sequence, kept exactly. It is always a `String`.
-    String(String),
+    /// Unicode scalar sequence, kept exactly, with the source spelling it was
+    /// decoded from. It is always a `String`.
+    String(StringLiteral),
     /// A parameter, `let` or binder name, or a qualified enum member.
     Name(NameForm),
     /// `let name = value in body`.
@@ -1328,9 +1376,10 @@ impl Expression {
         Self::single(ExprNode::Float64(bits))
     }
 
-    /// A quoted text literal holding the decoded scalar sequence `text`.
+    /// A quoted text literal holding the decoded scalar sequence `text`,
+    /// spelled as the canonical quoted text of `text`.
     pub fn string(text: impl Into<String>) -> Self {
-        Self::single(ExprNode::String(text.into()))
+        Self::single(ExprNode::String(StringLiteral::from_text(text)))
     }
 
     /// `rational(numerator, denominator)`.

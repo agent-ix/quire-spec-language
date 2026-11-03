@@ -117,6 +117,7 @@ impl CompileRefusal {
     /// `runtime_invariant` cause, as [`Self::code`] does.
     pub fn causes(&self) -> Vec<RefusalCause> {
         match self {
+            Self::UnitList(refusal) => vec![RefusalCause::new(refusal.code(), refusal.cause())],
             Self::Source(diagnostic) => {
                 vec![
                     RefusalCause::new(diagnostic.code, None).reaching(diagnostic.limit().map(
@@ -220,6 +221,7 @@ fn widen(bound: usize) -> u64 {
 /// The limit an assembly cause reached, where it carries one.
 fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
     match cause {
+        AssemblyCause::EmptyUnitList => None,
         AssemblyCause::TypeLimit(limit)
         | AssemblyCause::IdentityLimit(limit)
         | AssemblyCause::DecimalScaleLimit(limit) => Some(ReachedLimit::of(limit)),
@@ -341,6 +343,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::SumCase(_)
         | CheckCause::UnprovedDecrease { .. }
         | CheckCause::IeeeProfileNotAdmitted
+        | CheckCause::ReservedIntrinsicConflict(_)
         | CheckCause::UnrepresentableBound
         | CheckCause::DefinitionCycle { .. }
         | CheckCause::InvalidDispatchDeclaration(_)
@@ -424,6 +427,7 @@ fn group(refusal: &CompileRefusal) -> Group {
             UnitIntakeCause::Refused(_) | UnitIntakeCause::Invariant => Group::Setup,
         },
         CompileRefusal::Profile { .. }
+        | CompileRefusal::UnitList(_)
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Dependency { .. } => Group::Setup,
         CompileRefusal::Import { refusal, .. } => match refusal {
@@ -553,7 +557,9 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
         ClauseDisposition::EvaluateFault(_) => one(ToolFailure, Code::RuntimeInvariant, None),
         // A refinement check runs state clauses and functions; it selects no
         // temporal clause, so a temporal disposition is a broken invariant.
-        ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_) => {
+        ClauseDisposition::Temporal(_)
+        | ClauseDisposition::TemporalRefusal(_)
+        | ClauseDisposition::ProgressContradiction(_) => {
             one(ToolFailure, Code::RuntimeInvariant, None)
         }
     }

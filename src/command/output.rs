@@ -219,6 +219,12 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                     .map_or(types::Details::None, |position| types::Details::Position {
                         position,
                     }),
+                qsl_replay::spine::RunRefusal::ObjectEnvironment(record) => {
+                    types::Details::ObjectEnvironment {
+                        object: record.fields.get("object").map(String::as_str),
+                        field: record.fields.get("field").map(String::as_str),
+                    }
+                }
                 qsl_replay::spine::RunRefusal::Compile(_)
                 | qsl_replay::spine::RunRefusal::Cancelled(_) => types::Details::None,
                 qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {

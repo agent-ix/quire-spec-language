@@ -20,7 +20,9 @@ Verify that the quoted literal, `UUID("...")`, `Timestamp(n)` and the explicit
 `Text("...")` constructor build, check, lower and evaluate as the native
 `String`, `UUID` and `Timestamp` values and the slot's `Text[..]` value; that
 malformed literals refuse with the stated code and cause; and that a literal
-never adapts to a slot of another type.
+never adapts to a slot of another type; and that a `Text("...")` value keeps
+the quoted spelling it was written with as provenance without the spelling
+reaching its equality, node identity or lowering.
 
 Catches a quoted literal typed `Text`, a normalized or case-folded String, a
 UUID literal that accepts a non-canonical spelling, a Timestamp read through
@@ -50,6 +52,11 @@ Every unit starts with the complete-V1 header and one profile selection `v`.
    expect no `Text[..]`, argument forms, the ambiguous name and the lexical
    escape.
 9. Lower the functions of FR-093-AC-50 and inspect the nodes.
+10. Check and evaluate the FR-091-AC-70 vectors: `Text("é")` and
+    `Text("\u00e9")` and the other spelling groups under a scalar and a
+    normalizing profile, compare each with the runtime payload bytes `c3 a9`,
+    read each value's provenance, lower the functions and read the literal
+    nodes, and deduplicate the guard literals of two spellings.
 
 ## Expected Results
 
@@ -82,3 +89,8 @@ Every unit starts with the complete-V1 header and one profile selection `v`.
   `value_kind` `text` typed by the slot's `Text[..]` node; equal retained
   sequences share a node; the comparison is the text equality with the
   `text_profile` law.
+- Step 10: every spelling of a text holds that text's payload bytes; the raw,
+  escaped and runtime values compare equal; each literal's provenance is its
+  own quoted spelling, equal for equal spellings and distinct for distinct
+  ones; two spellings of one text lower to one literal node per slot type and
+  are one data literal.

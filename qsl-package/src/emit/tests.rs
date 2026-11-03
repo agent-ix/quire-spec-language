@@ -39,6 +39,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod abstraction;
 mod admission_corpus;
+mod checked_views;
 mod child_composite;
 mod clock_places;
 mod control_node;
@@ -49,6 +50,7 @@ mod golden;
 mod hybrid;
 mod hyper_clause;
 mod large_cycle;
+mod mapping_support;
 mod navigation;
 mod operation_effects;
 mod option_value;
@@ -62,10 +64,12 @@ mod protocol_compensation;
 mod protocol_controls;
 mod protocol_function_bodies;
 mod protocol_graph;
+mod protocol_occurrence;
 mod protocol_recursion;
 mod protocol_reference;
 mod protocol_requirements;
 mod protocol_terminal;
+mod protocol_view;
 mod reachability;
 mod receiver_frames;
 mod refinement_adverse;
@@ -188,16 +192,15 @@ fn graph_of_named(
     package_name: &str,
     functions: Vec<FunctionDeclaration>,
 ) -> qsl_semantics::check::CheckedGraph {
-    PackageDeclarations {
-        functions,
-        ..PackageDeclarations::new(
-            source(),
-            package_name,
-            qsl_foundation::IdentityLimits::default(),
-        )
-    }
-    .check(CheckingLimits::default())
-    .expect("the fixture functions check")
+    let mut declarations = PackageDeclarations::new(
+        source(),
+        package_name,
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.functions = functions;
+    declarations
+        .check(CheckingLimits::default())
+        .expect("the fixture functions check")
 }
 
 fn package(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
@@ -225,13 +228,13 @@ fn tree() -> CheckedPackage {
         [],
     )
     .expect("FR-143 admits Tree");
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = types;
     CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("Tree checks"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("Tree checks"),
     )
 }
 
@@ -705,12 +708,12 @@ pub(super) fn nodes(wire: &Value) -> &[Value] {
 #[test]
 fn a_function_identity_survives_emission_and_the_i2_read() {
     let checked = |functions| {
-        PackageDeclarations {
-            functions,
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("t and f check")
+        let mut declarations =
+            PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+        declarations.functions = functions;
+        declarations
+            .check(CheckingLimits::default())
+            .expect("t and f check")
     };
     let mut identities = BTreeSet::new();
     for functions in [vec![t(), f()], vec![f(), t()]] {
@@ -1149,15 +1152,15 @@ fn declared_types(
     enums: Vec<qsl_semantics::check::EnumBinding>,
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = point_and_pair_types();
+    declarations.enums = enums;
+    declarations.functions = functions;
     CheckedPackage::link(
-        PackageDeclarations {
-            types: point_and_pair_types(),
-            enums,
-            functions,
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("the declared types check"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the declared types check"),
     )
 }
 
@@ -1295,12 +1298,12 @@ fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
         [],
     )
     .expect("the environment admits the shape");
-    let refusals = PackageDeclarations {
-        types,
-        ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-    }
-    .check(CheckingLimits::default())
-    .expect_err("the name has no identifier segments");
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = types;
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("the name has no identifier segments");
     assert!(
         refusals.iter().any(|refusal| refusal.cause
             == qsl_semantics::check::CheckCause::NodePreimage(
@@ -1623,6 +1626,8 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         Encoding,
         TimedModelNodeSetMismatch,
         TimedModelWriterInvariant,
+        MonitorPlanInvariant,
+        MonitorPlanAmbiguous,
         RefinementSubjectNotEmitted,
         RefinementIdentityEncoding,
         RefinementNotEmitted,
@@ -1645,6 +1650,8 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
             Err(EmitRefusal::TimedModelNodeSetMismatch) => Seen::TimedModelNodeSetMismatch,
             Err(EmitRefusal::TimedModelWriterInvariant(_)) => Seen::TimedModelWriterInvariant,
+            Err(EmitRefusal::MonitorPlanInvariant(_)) => Seen::MonitorPlanInvariant,
+            Err(EmitRefusal::MonitorPlanAmbiguous { .. }) => Seen::MonitorPlanAmbiguous,
             Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
             Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
@@ -1922,16 +1929,15 @@ fn call_source() -> RawSourceRef {
 
 /// `functions`, checked (not yet linked) against [`call_source`].
 fn checked_call_package(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
-    PackageDeclarations {
-        functions,
-        ..PackageDeclarations::new(
-            call_source(),
-            "pkg",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    }
-    .check(CheckingLimits::default())
-    .expect("g and f check cleanly")
+    let mut declarations = PackageDeclarations::new(
+        call_source(),
+        "pkg",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.functions = functions;
+    declarations
+        .check(CheckingLimits::default())
+        .expect("g and f check cleanly")
 }
 
 /// The call node's own key and (identity, role, ordinal) occurrence,
@@ -2082,13 +2088,13 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
         qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
         INT_TEXT,
     );
+    let mut declarations =
+        PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.functions = vec![inc_read_from_text()];
     let package = CheckedPackage::link(
-        PackageDeclarations {
-            functions: vec![inc_read_from_text()],
-            ..PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("inc checks"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("inc checks"),
     );
     let emission = emit_checked(&package).expect("inc emits");
     assert!(
@@ -2292,15 +2298,15 @@ pub(super) fn q_and_t_package_over(
         None,
         Expression::binary(BinaryOperator::Equal, square(), square()),
     );
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = TypeEnvironment::default().with_units(units);
+    declarations.aliases = vec![("Length".to_owned(), ValueType::Quantity(metre))];
+    declarations.functions = vec![q, t()];
     CheckedPackage::link(
-        PackageDeclarations {
-            types: TypeEnvironment::default().with_units(units),
-            aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
-            functions: vec![q, t()],
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("q checks"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("q checks"),
     )
 }
 

@@ -484,10 +484,26 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .ok_or_else(missing)?;
         for guard in timed.guards() {
             // `self` and the elements the part reads; an operation
-            // parameter is read by no guard here.
+            // parameter is read by no guard here. A random parameter is read
+            // by no precondition (FR-185), so it is no read.
+            let random = |name: &str| {
+                graph
+                    .probabilistic_model()
+                    .random_parameters()
+                    .iter()
+                    .any(|random| {
+                        random.parameter() == name
+                            && random.operation().declaring() == guard.operation().declaring
+                            && random.operation().name() == guard.operation().declaration.name()
+                    })
+            };
             if guard.parts().iter().any(|part| {
-                part.data()
-                    .is_some_and(|data| data.parameters().len() > 1 + part.elements().len())
+                part.data().is_some_and(|data| {
+                    data.parameters()
+                        .iter()
+                        .skip(1 + part.elements().len())
+                        .any(|(name, _)| !random(name))
+                })
             }) {
                 return Err(TimedSubjectRefusal::ParameterizedGuard {
                     clause: guard.clause().to_owned(),

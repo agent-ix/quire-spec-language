@@ -18,6 +18,7 @@ use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
 
+use super::finite_window::{evaluate_finite_window, TimestampedTrace, Valuation, WindowEvaluation};
 use super::{
     AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
     TemporalRefusal, TemporalTrace, UndefinedCause,
@@ -115,6 +116,8 @@ fn evaluate_observed_goal(
         over,
         stopped: None,
         undefined: None,
+        absent: &[],
+        classes: &[],
     };
     let result = super::engine::run(
         super::engine::Subject::of_clause(clause.clause()),
@@ -127,6 +130,65 @@ fn evaluate_observed_goal(
         result,
         stopped: letters.stopped,
         undefined: letters.undefined,
+    }
+}
+
+/// What a finite-window run reads of each atom beyond the observations.
+#[derive(Clone, Copy, Debug)]
+pub struct WindowValuations<'a> {
+    /// The `(position, atom node)` valuations absent from the admitted
+    /// observations.
+    pub absent: &'a [(u64, u64)],
+    /// Each formula node's atom class: a node index shared by the nodes that
+    /// are one atom (the same `holds` condition), so they read one
+    /// valuation; empty makes every node its own atom.
+    pub classes: &'a [usize],
+}
+
+/// What [`evaluate_observed_finite_window`] returns: the evaluator's result
+/// and, when a condition stopped the run, why (the result is then the stop's
+/// fault).
+#[derive(Debug)]
+pub struct ObservedWindowRun {
+    /// The evaluator's result.
+    pub result: Result<WindowEvaluation, TemporalRefusal>,
+    /// The condition stop that ended the run, if one did.
+    pub stopped: Option<HoldsStop>,
+}
+
+/// Evaluate `clause` under the finite-window profile (FR-501) over the object
+/// environment of each position of `trace` in canonical order, reading the
+/// possibility sets of its atoms, and return the full result report: verdict,
+/// basis, decision support, premises and result identity. `valuations` names
+/// the `(position, atom node)` valuations absent from the admitted
+/// observations; two observations of one stamp that read differently are a
+/// conflict the evaluator finds itself.
+pub fn evaluate_observed_finite_window(
+    package: &CheckedPackage,
+    clause: &TemporalClauseNode,
+    environments: &[ObjectEnvironment],
+    trace: &TimestampedTrace,
+    over: &ObjectReference,
+    valuations: WindowValuations<'_>,
+    meter: &mut Meter,
+) -> ObservedWindowRun {
+    let mut letters = ObservedLetters {
+        package,
+        clause,
+        environments,
+        trace: TemporalTrace::Finite {
+            len: u64::try_from(trace.len()).unwrap_or(u64::MAX),
+        },
+        over,
+        stopped: None,
+        undefined: None,
+        absent: valuations.absent,
+        classes: valuations.classes,
+    };
+    let result = evaluate_finite_window(clause.clause(), trace, &mut letters, meter);
+    ObservedWindowRun {
+        result,
+        stopped: letters.stopped,
     }
 }
 
@@ -153,6 +215,11 @@ struct ObservedLetters<'a> {
     over: &'a ObjectReference,
     stopped: Option<HoldsStop>,
     undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+    /// The `(position, atom node)` valuations the finite-window input names
+    /// as absent from the admitted observation (QSpec FR-160).
+    absent: &'a [(u64, u64)],
+    /// Each node's atom class (empty: every node is its own atom).
+    classes: &'a [usize],
 }
 
 impl ObservedLetters<'_> {
@@ -259,6 +326,30 @@ impl TemporalLetters for ObservedLetters<'_> {
             }
         }
         Ok(reading)
+    }
+
+    fn valuation(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<Valuation, LetterStop> {
+        let key = u64::try_from(atom.index())
+            .map(|atom| (position.index(), atom))
+            .map_err(|_| {
+                LetterStop::Fault(InternalFault::new("temporal.observed", "atom-in-u64"))
+            })?;
+        if self.absent.contains(&key) {
+            return Ok(Valuation::Missing);
+        }
+        self.atom(atom, position, meter).map(Valuation::from)
+    }
+
+    fn atom_class(&self, atom: FormulaNodeId) -> usize {
+        self.classes
+            .get(atom.index())
+            .copied()
+            .unwrap_or(atom.index())
     }
 
     fn activation(

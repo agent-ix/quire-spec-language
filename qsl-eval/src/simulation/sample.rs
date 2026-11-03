@@ -389,10 +389,7 @@ mod tests {
     #[trace("TC-454", "FR-101-AC-3")]
     #[test]
     fn tc_454_published_index_sequence_is_the_samplers() {
-        let Some(section) = tc_210_section() else {
-            println!("skipped: QSPEC_DIR not set");
-            return;
-        };
+        let section = tc_210_section().expect("QSPEC_DIR must name a quire-specification checkout");
         let published: Vec<usize> = section
             .split("index `")
             .skip(1)

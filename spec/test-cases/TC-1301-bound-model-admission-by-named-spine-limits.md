@@ -33,8 +33,8 @@ operations, parameters, results and frame entries are 2 + 2 + 1 + 1 + 1 + 3 =
 | 7 | `model.sequence_maximum` 0, a package with any collection | `resource_exhausted` |
 | 8 | `model.sequence_maximum` 3 with maximum 3, then 4 | 3 admitted, 4 refused |
 | 9 | Text `maxLength` 1048576, then 1048577 | admitted, then `unsupported_construct`/`declaration-form` naming the bound |
-| 10 | `intake.input_bytes` equal to L0's document bytes, +1 short, 0 | admitted, `resource_exhausted` naming it, `resource_exhausted` |
-| 11 | `s3.nodes` and `identity.input_bytes` at exact usage, one short, 0 | admitted, refused naming the setting, refused |
+| 10 | `intake.input_bytes` equal to L0's document bytes, one byte over, 0 | admitted, `resource_exhausted` naming it, `resource_exhausted` |
+| 11 | `s3.nodes` at exact usage, one node over, and 0 | admitted, refused naming `s3.nodes`, refused; identity-byte boundaries are covered at actual identity-producing inputs under FR-259, not model structural keys |
 | 12 | row 2, 5, 10, 11 refusals | none contains `model roles limit exceeded`, `model entries limit exceeded` or `model nodes limit exceeded` |
 | 14 | `model.sequence_maximum` 3 through the builder, `stage_limits` and the settings operand; maximum 4, then 3 | `resource_exhausted`/`intake-limit-exceeded` with `kind`, `bound` 3, `actual` 4, `setting`; then admitted |
 | 15 | `model.sequence_maximum` 4294967295 with a declared maximum 4294967295; operand `model.sequence_maximum=4294967296` | admitted; usage refusal naming the operand, cause `not an integer that fits a bound`; no limit changes |

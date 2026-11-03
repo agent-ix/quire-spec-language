@@ -381,13 +381,30 @@ impl ObjectEnvironment {
         reference: &ObjectReference,
         field: &FieldRef,
     ) -> bool {
-        let Some(attributes) = types.attributes(reference.object_type().clone()) else {
-            return false;
-        };
-        self.out_of_range.iter().any(|witnessed| {
+        self.witnesses(types, reference, field).next().is_some()
+    }
+
+    /// Whether this environment holds any FR-106 check 6.5 out-of-range
+    /// witness, so its options and collections carry range-widened types.
+    pub fn holds_out_of_range(&self) -> bool {
+        !self.out_of_range.is_empty()
+    }
+
+    /// The out-of-range witnesses recorded for `reference`'s slot for
+    /// `field`.
+    pub fn witnesses<'a>(
+        &'a self,
+        types: &'a TypeEnvironment,
+        reference: &'a ObjectReference,
+        field: &'a FieldRef,
+    ) -> impl Iterator<Item = &'a OutOfRange> + 'a {
+        let attributes = types.attributes(reference.object_type().clone());
+        self.out_of_range.iter().filter(move |witnessed| {
             witnessed.object == *reference
-                && attributes.iter().any(|attribute| {
-                    attribute.identity() == witnessed.field && attribute.stands_for(field)
+                && attributes.is_some_and(|attributes| {
+                    attributes.iter().any(|attribute| {
+                        attribute.identity() == witnessed.field && attribute.stands_for(field)
+                    })
                 })
         })
     }

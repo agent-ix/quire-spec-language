@@ -328,6 +328,12 @@ impl Trail {
         self.decisions.insert(at.clone(), value);
     }
 
+    /// The decision recorded at `at`, for the evaluator's own tests.
+    #[cfg(test)]
+    pub(crate) fn decision(&self, at: &Location) -> Option<bool> {
+        self.decisions.get(at).copied()
+    }
+
     pub(crate) fn stopped(&mut self, at: &Location, report: StopReport) {
         self.stops.insert(at.clone(), report);
     }

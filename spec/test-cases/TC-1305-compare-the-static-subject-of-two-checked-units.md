@@ -24,12 +24,12 @@ is the subject of checking `Z0` under default limits.
 | --- | --- | --- |
 | 1 | all limits raised | subject equal to `S0`; `differences` empty; `BuildProvenance` unequal |
 | 2 | replay the emitted unit with two populations, two windows, two traces and two backends; compute the subject before and after | equal to `S0`, empty |
-| 3 | `v` selects `quire.state.core/v1`, source still checks | [profiles] |
+| 3 | the header changes `v` to select `quire.state.core/v1`, source still checks | [sources, profiles] |
 | 4 | `Pkg` version 2 | [models] |
 | 5 | source text edited (a body literal) | [sources] |
 | 6 | supply an extra library the unit never imports | [] |
 | 7 | the unit imports a second library | [sources, dependencies] |
-| 8 | two declarations each bind a role `x`; then rename one | two role entries with different owners; then [roles] |
+| 8 | two declarations each bind a role `x`; then rename one role in the source | two role entries with different owners; then [sources, roles] |
 | 9 | a unit that fails S3 | the refusal; no subject exists |
 | 10 | compile-fail: obtain a package identity or bytes from `StaticSubject` | does not compile |
 

@@ -121,8 +121,10 @@ pub enum ProtocolSlotEvaluation {
         binder: NodeKey,
         /// The caller-provided reason it was unavailable.
         cause: CatalogCode,
-        /// The checked expression read that encountered the binder.
-        location: Location,
+        /// The checked expression read that encountered the binder; `None`
+        /// for a reader-backed view, whose admitted wire carries no leaf
+        /// location yet and which never takes one from the source package.
+        location: Option<Location>,
     },
 }
 

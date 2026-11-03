@@ -128,7 +128,12 @@ fn assert_closed_formulas(nodes: &[Node]) {
 
 /// TC-1024 steps 1 to 4: chains, a 500-layer ladder whose paths are
 /// exponential, and 1,000 types with ten parents each.
-#[trace("QSpec-TC-1024", "QSpec-FR-081-AC-11")]
+#[trace(
+    "QSpec-TC-1024",
+    "QSpec-FR-081-AC-11",
+    "QSpec-TC-195",
+    "QSpec-FR-150-AC-14"
+)]
 #[test]
 fn cost_follows_closed_formulas() {
     for edges in [10, 100, 1000] {

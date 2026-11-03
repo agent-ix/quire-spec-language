@@ -11,7 +11,7 @@ use super::protocol_reference::{clause_argument, node_by_id, node_of};
 use super::reachability::{lower_with, Lowered};
 use super::*;
 
-mod fixture_w;
+pub(super) mod fixture_w;
 
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";

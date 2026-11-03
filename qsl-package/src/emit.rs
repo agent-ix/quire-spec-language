@@ -173,6 +173,17 @@ pub enum EmitRefusal {
     /// A typed timed model cannot be serialized with its available literals.
     #[error("typed timed-model writer invariant: {0}")]
     TimedModelWriterInvariant(&'static str),
+    /// The plan-root writer found the package missing a node it needs
+    /// (QSpec FR-487).
+    #[error("the tick-monitor plan cannot be written: {0}")]
+    MonitorPlanInvariant(&'static str),
+    /// The plan-root writer found a name or selection declared more than
+    /// once and refuses to bind the first (QSpec FR-487).
+    #[error("the tick-monitor plan cannot be written: {name} is declared more than once")]
+    MonitorPlanAmbiguous {
+        /// The ambiguous declared name.
+        name: String,
+    },
     /// A checked refinement has no selected subject key to bind.
     #[error("a checked refinement has no selected state-machine subject node")]
     RefinementSubjectNotEmitted,
@@ -309,10 +320,11 @@ impl EmitRefusal {
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Code::UnsupportedConstruct
             }
+            Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
             Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
-            Self::TimedModelWriterInvariant(_) | Self::RefinementSubjectNotEmitted => {
-                Code::RuntimeInvariant
-            }
+            Self::TimedModelWriterInvariant(_)
+            | Self::MonitorPlanInvariant(_)
+            | Self::RefinementSubjectNotEmitted => Code::RuntimeInvariant,
             Self::RefinementIdentityEncoding => Code::OutputFailure,
             Self::RefinementNotEmitted => Code::UnsupportedConstruct,
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
@@ -344,6 +356,8 @@ impl EmitRefusal {
             | Self::TimedModelNodeSetMismatch
             | Self::TimedOrder(_)
             | Self::TimedModelWriterInvariant(_)
+            | Self::MonitorPlanInvariant(_)
+            | Self::MonitorPlanAmbiguous { .. }
             | Self::RefinementSubjectNotEmitted
             | Self::RefinementIdentityEncoding
             | Self::UnlocatedRefinementDeclaration
@@ -2184,12 +2198,13 @@ fn equality_producer_emission_rows_excluding(
                     application: application.clone(),
                 });
             }
-            let package_source = source_artifact(graph.source());
+            let package_sources: Vec<_> =
+                graph.sources().into_iter().map(source_artifact).collect();
             if source_map_entry.regions.is_empty()
                 || source_map_entry
                     .regions
                     .iter()
-                    .any(|region| region.source != package_source)
+                    .any(|region| !package_sources.contains(&region.source))
             {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: application.clone(),
@@ -3571,8 +3586,29 @@ fn emit_checked_uncached(
 pub fn emit_checked_with_protocol_results(
     package: &CheckedPackage,
 ) -> Result<ProtocolEmission, EmitRefusal> {
+    emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
+        package,
+        &[],
+        &Cancel::new(),
+    )
+}
+
+/// Emit each protocol independently while applying the package's explicit
+/// temporal selections and polling the caller's cancellation handle.
+pub fn emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
+    package: &CheckedPackage,
+    selections: &[TemporalClockSelection],
+    cancel: &Cancel,
+) -> Result<ProtocolEmission, EmitRefusal> {
     let graph = package.graph();
-    let emission = match emit_checked_uncached(package, &Cancel::new()) {
+    let emission = match emit_package_inner(
+        package,
+        graph.memoized_regions(),
+        |_| None,
+        cancel,
+        &ir_decodes,
+        selections,
+    ) {
         Ok(emission) => Some(emission),
         Err(EmitRefusal::NothingToEmit { .. }) if !graph.protocol_refusals().is_empty() => None,
         Err(refusal) => return Err(refusal),
@@ -5125,7 +5161,7 @@ fn emit_package_inner(
         })
         .collect();
     let (mut source_map, mut sources) = source_map(&order, &regions)?;
-    sources.insert(source_artifact(graph.source()));
+    sources.extend(graph.sources().into_iter().map(source_artifact));
     let wire_nodes = order
         .iter()
         .map(
@@ -5787,7 +5823,6 @@ fn temporal_binding_rows(
         }
     }
 
-    let source = graph.source();
     let mut rows = Vec::new();
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
@@ -5800,6 +5835,13 @@ fn temporal_binding_rows(
         ) {
             continue;
         }
+        let location = graph
+            .occurrence(temporal.identity(), temporal.claim())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let region = graph
+            .region(location)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let source = region.source().clone();
         let span = clause.span();
         let key = (source.clone(), span.start, span.end);
         let Some(clock) = selected.remove(&key) else {
@@ -5837,6 +5879,16 @@ fn temporal_binding_rows(
         ) {
             continue;
         }
+        let occurrence = hyper
+            .assembled_occurrence()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let location = graph
+            .occurrence(occurrence.node().clone(), occurrence.origin())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let region = graph
+            .region(location)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let source = region.source().clone();
         let span = hyper.span();
         let key = (source.clone(), span.start, span.end);
         let Some(clock) = selected.remove(&key) else {
@@ -5852,9 +5904,6 @@ fn temporal_binding_rows(
                 profile: profile.identity(),
             });
         }
-        let occurrence = hyper
-            .assembled_occurrence()
-            .ok_or(EmitRefusal::SourceMapInvariant)?;
         let hyper_node = graph
             .semantic_graph()
             .node(occurrence.node().clone())
@@ -5920,6 +5969,10 @@ fn temporal_binding_rows(
         })
         .collect();
     for protocol in graph.protocols() {
+        // Protocol compensation templates do not carry an assembled claim
+        // occurrence; their existing source contract is the graph's primary
+        // source until protocol owner occurrences are exposed.
+        let source = graph.source().clone();
         for template in &protocol.obligations.compensations {
             let Some(profile) = template.temporal_profile else {
                 continue;
@@ -6195,5 +6248,9 @@ pub(crate) mod tests;
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
+mod monitor_plan;
+pub use monitor_plan::{
+    declaration_less_function_id, emit_monitor_plan, emit_monitor_plan_over, MonitorPlanWire,
+};
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;

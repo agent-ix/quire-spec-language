@@ -54,7 +54,8 @@ pub use abstraction_declaration::{
 };
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
-    build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
+    build_unit, build_unit_with_protocol_results, FormsCause, FormsRefusal, LeadingTokenKind,
+    ParsedForm, ParsedUnit, ProtocolFormsRefusal,
 };
 pub use hyper_clause::{
     AlignSkipForm, ExecutionBindingForm, HyperBehavioursForm, HyperFiniteForm, ModelRelationForm,
@@ -95,7 +96,7 @@ pub use syntax::{
     RoleForm, RoleLifetime, SchedulableForm, SchedulerForm, ScopeEntry, ScopeId, ScopeName,
     ScopedAnchorForm, ShapeChanged, SignedQuantityForm, Spellings, StateClauseForm,
     StateClauseKind, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
-    StepLabelForm, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
+    StepLabelForm, StringLiteral, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
     TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TemporalOperatorUse,
     TermOperator, TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantBoundForm,
     TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedIntervalForm, TimedUpper,

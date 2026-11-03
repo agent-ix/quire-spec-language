@@ -766,13 +766,14 @@ mod checked {
         let level = admit("Level", true, &["high", "low"]);
         let colors = collection_type(CollectionKind::Set, ValueType::Enum(color.shape()), 0, 3);
         let levels = collection_type(CollectionKind::Set, ValueType::Enum(level.shape()), 0, 2);
-        let package = package(PackageDeclarations {
-            enums: vec![color.clone(), level.clone()],
-            ..PackageDeclarations::new(
+        let package = package({
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.enums = vec![color.clone(), level.clone()];
+            declarations
         });
         let c = formed(
             &colors,
@@ -835,18 +836,19 @@ mod checked {
     #[test]
     fn c06_reference_keyed_holder_sets_answer_every_query_form() {
         let types = holder_environment();
-        let package = package(PackageDeclarations {
-            types: types.clone(),
-            models: vec![crate::support::model::object_model(
-                "collection-algebra",
-                "M::Obj",
-                object_type("M::Obj"),
-            )],
-            ..PackageDeclarations::new(
+        let package = package({
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types.clone();
+            declarations.models = vec![crate::support::model::object_model(
+                "collection-algebra",
+                "M::Obj",
+                object_type("M::Obj"),
+            )];
+            declarations
         });
         let holder_type = ValueType::Composite(key("Holder"));
         let holders = collection_type(CollectionKind::Set, holder_type.clone(), 0, 2);
@@ -926,18 +928,19 @@ mod checked {
     #[test]
     fn c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member() {
         let types = holder_environment();
-        let package = package(PackageDeclarations {
-            types: types.clone(),
-            models: vec![crate::support::model::object_model(
-                "collection-algebra",
-                "M::Obj",
-                object_type("M::Obj"),
-            )],
-            ..PackageDeclarations::new(
+        let package = package({
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types.clone();
+            declarations.models = vec![crate::support::model::object_model(
+                "collection-algebra",
+                "M::Obj",
+                object_type("M::Obj"),
+            )];
+            declarations
         });
         let holder_type = ValueType::Composite(key("Holder"));
         let holders = collection_type(CollectionKind::Set, holder_type.clone(), 0, 2);

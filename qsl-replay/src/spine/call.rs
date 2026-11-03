@@ -324,6 +324,12 @@ pub enum RunRefusal {
     /// refusal: never invalid input, never a limit.
     #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
     UnsupportedHelper(Box<quire_semantic_value::supplied_stop::UnsupportedHelperStop>),
+    /// FR-049-AC-2: the call's entry refused the caller's object environment
+    /// against the package's declarations (an object of an undeclared type,
+    /// or a missing, surplus or ill-typed attribute), before any charge. The
+    /// record names the code, cause, object and attribute.
+    #[error("the object environment is refused: {0:?}")]
+    ObjectEnvironment(Box<quire_semantic_value::admission::AdmissionRecord>),
 }
 
 impl RunRefusal {
@@ -347,6 +353,7 @@ impl RunRefusal {
             | Self::DanglingReference { .. }
             | Self::Supplied(_)
             | Self::UnsupportedHelper(_)
+            | Self::ObjectEnvironment(_)
             | Self::Fault(_) => "call",
             Self::Cancelled(_) => return None,
         })
@@ -375,6 +382,7 @@ impl RunRefusal {
             | Self::Storage { .. }
             | Self::DanglingReference { .. }
             | Self::UnsupportedHelper(_)
+            | Self::ObjectEnvironment(_)
             | Self::Fault(_) => None,
         }
     }
@@ -397,6 +405,9 @@ impl RunRefusal {
             Self::Cancelled(_) => Code::Cancelled,
             Self::Supplied(stop) => qsl_eval::value::supplied_stop_code(stop),
             Self::UnsupportedHelper(_) => Code::UnsupportedConstruct,
+            Self::ObjectEnvironment(record) => {
+                Code::from_code(record.catalog.code()).unwrap_or(Code::InvalidRuntimeInput)
+            }
         }
     }
 
@@ -876,12 +887,19 @@ pub(crate) fn convert_call_failure(failure: quire_eval::CallFailure) -> Box<RunR
             "call",
             "spine-run-supplies-admitted-name-and-arity",
         ))),
-        // The spine's function call path supplies a checked name/argument
-        // vector and does not select a protocol slot or binder map.
-        CallFailure::Admission(_) => Box::new(RunRefusal::Fault(InternalFault::new(
-            "call",
-            "spine-function-call-has-no-protocol-slot-admission",
-        ))),
+        // FR-049-AC-2: the entry refused the object environment, caller
+        // input. The spine's function call path supplies a checked
+        // name/argument vector and selects no protocol slot or binder map,
+        // so every other admission failure is a broken invariant.
+        CallFailure::Admission(failure) => {
+            match qsl_eval::value::object_environment_refusal(&failure) {
+                Some(record) => Box::new(RunRefusal::ObjectEnvironment(Box::new(record.clone()))),
+                None => Box::new(RunRefusal::Fault(InternalFault::new(
+                    "call",
+                    "spine-function-call-has-no-protocol-slot-admission",
+                ))),
+            }
+        }
         CallFailure::Fault(fault) => Box::new(RunRefusal::Fault(fault)),
         // `run` uses the checked interpreter, not a registered host body;
         // the public application facade returns body failures unchanged.

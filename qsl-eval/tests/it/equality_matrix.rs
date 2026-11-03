@@ -257,9 +257,14 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
             members: vec![left.clone(), right.clone()],
         };
         let shape = ValueType::Enum(binding.shape());
-        let declarations = PackageDeclarations {
-            enums: vec![binding],
-            functions: vec![FunctionDeclaration::new(
+        let declarations = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.enums = vec![binding];
+            declarations.functions = vec![FunctionDeclaration::new(
                 "Compare",
                 vec![
                     ("left".to_owned(), TypeForm::name("State", span)),
@@ -268,12 +273,8 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
                 TypeForm::builtin(BuiltinType::Boolean, span),
                 None,
                 source.clone(),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         };
         let package = CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
         let checked = package
@@ -1176,7 +1177,7 @@ fn animal_environment() -> TypeEnvironment {
 /// The comparison is still the identity triple: the same `Dog` object on
 /// both sides is `true`, another object is `false`.
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6", "QSpec-FR-149-AC-12")]
 #[test]
 fn e16a_references_admit_a_conforming_upcast_in_either_order() {
     let env = animal_environment();
@@ -1203,13 +1204,30 @@ fn e16a_references_admit_a_conforming_upcast_in_either_order() {
         equal(&env, (&animal, &rex("rex")), (&dog, &rex("fido"))),
         is(false)
     );
+    // The upcast row is not a conversion: the comparison charges only the
+    // one-pair equality plan.
+    let checked = check(&env, &animal, &dog).unwrap();
+    let mut meter = Meter::new(ScalarLimits {
+        value_occurrences: 1,
+        work_units: 5,
+        result_units: 1,
+        ..ZERO
+    });
+    assert_eq!(
+        checked.evaluate(&env, &rex("rex"), &rex("rex"), &mut meter),
+        Outcome::Completed(true)
+    );
+    assert_eq!(
+        crate::support::admitted_charge_points(&meter),
+        PLAN_SCHEDULE
+    );
 }
 
 /// TC-198 L08's adverse case: two object-reference types
 /// with no generalization relation between them still refuse `=` at check
 /// time, `ill_typed`/`type-mismatch`, in either order; siblings under one
 /// supertype are no more related than unrelated roots.
-#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6", "QSpec-FR-149-AC-12")]
 #[test]
 fn e16b_references_to_unrelated_object_types_refuse() {
     let env = animal_environment();
@@ -1781,6 +1799,197 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
     }
 }
 
+fn native_uuid(text: &str) -> Value {
+    Value::Uuid(quire_exact::Uuid::from_canonical_text(text).expect("a canonical UUID"))
+}
+
+fn native_timestamp(text: &str) -> Value {
+    Value::Timestamp(
+        quire_exact::Timestamp::from_canonical_text(text).expect("a canonical Timestamp"),
+    )
+}
+
+const NATIVE_UUID: &str = "00112233-4455-6677-8899-aabbccddeeff";
+const NATIVE_UUID_LAST_DIGIT_E: &str = "00112233-4455-6677-8899-aabbccddeefe";
+
+/// FR-149-AC-14: independently admitted UUID values of one payload compare
+/// equal and have equal keys, changing the final digit compares unequal;
+/// Timestamp `0` equals `0` and not `1`; each comparison is one terminal pair
+/// under the existing equality schedule.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-14")]
+#[test]
+fn e30_uuid_and_timestamp_compare_by_payload_as_one_terminal_pair() {
+    let env = TypeEnvironment::default();
+    let limits = ScalarLimits {
+        value_occurrences: 1,
+        work_units: 5,
+        result_units: 1,
+        ..ZERO
+    };
+    let rows = [
+        (
+            ValueType::Uuid,
+            native_uuid(NATIVE_UUID),
+            native_uuid(NATIVE_UUID),
+            true,
+        ),
+        (
+            ValueType::Uuid,
+            native_uuid(NATIVE_UUID),
+            native_uuid(NATIVE_UUID_LAST_DIGIT_E),
+            false,
+        ),
+        (
+            ValueType::Timestamp,
+            native_timestamp("0"),
+            native_timestamp("0"),
+            true,
+        ),
+        (
+            ValueType::Timestamp,
+            native_timestamp("0"),
+            native_timestamp("1"),
+            false,
+        ),
+    ];
+    for (value_type, left, right, expected) in rows {
+        let checked = check(&env, &value_type, &value_type).unwrap();
+        let mut meter = Meter::new(limits);
+        assert_eq!(
+            checked.evaluate(&env, &left, &right, &mut meter),
+            Outcome::Completed(expected)
+        );
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            PLAN_SCHEDULE
+        );
+        assert_eq!(pairs(&left, &right), 1);
+        assert_eq!(
+            quire_exact::compare_keys(&left, &right).map(std::cmp::Ordering::is_eq),
+            Some(expected)
+        );
+    }
+}
+
+/// FR-149-AC-15: UUID against Timestamp, and either kind against `Int`,
+/// `Integer`, `Text`, `String` or `Boolean`, refuse `ill_typed`/`type-mismatch`
+/// before any equality charge and produce no Boolean; direct mixed-kind key
+/// comparison returns no key relation.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-15")]
+#[test]
+fn e31_uuid_and_timestamp_never_compare_with_another_kind() {
+    let env = TypeEnvironment::default();
+    let others = [
+        ValueType::Int(interval(0, 9)),
+        ValueType::Integer,
+        ValueType::Text(text_type(TextProfile::Nfc)),
+        ValueType::String,
+        ValueType::Boolean,
+    ];
+    let mismatch = Err(IllTyped {
+        cause: IllTypedCause::TypeMismatch,
+    });
+    for native in [ValueType::Uuid, ValueType::Timestamp] {
+        for other in &others {
+            assert_eq!(
+                check(&env, &native, other),
+                mismatch,
+                "{native:?} {other:?}"
+            );
+            assert_eq!(
+                check(&env, other, &native),
+                mismatch,
+                "{other:?} {native:?}"
+            );
+        }
+    }
+    assert_eq!(
+        check(&env, &ValueType::Uuid, &ValueType::Timestamp),
+        mismatch
+    );
+    assert_eq!(
+        check(&env, &ValueType::Timestamp, &ValueType::Uuid),
+        mismatch
+    );
+    assert_eq!(
+        quire_exact::compare_keys(&native_uuid(NATIVE_UUID), &native_timestamp("0")),
+        None
+    );
+    assert_eq!(
+        quire_exact::compare_keys(&native_timestamp("0"), &native_uuid(NATIVE_UUID)),
+        None
+    );
+
+    // An attempted equality conversion between the kinds is no conversion
+    // the table admits, so it refuses at check time as well.
+    for (source, target) in [
+        (ValueType::Uuid, ValueType::Timestamp),
+        (ValueType::Timestamp, ValueType::Uuid),
+        (ValueType::Integer, ValueType::Uuid),
+        (ValueType::Integer, ValueType::Timestamp),
+        (ValueType::Uuid, ValueType::Integer),
+        (ValueType::Timestamp, ValueType::Integer),
+    ] {
+        assert_eq!(
+            env.check_equality(
+                EqualityOperator::Equal,
+                EqualityOperand::converted(source.clone(), target.clone()),
+                typed(&target),
+                &EnumMemberIndex::default(),
+            ),
+            mismatch,
+            "{source:?} to {target:?}"
+        );
+    }
+
+    // The check-time refusal above takes no meter, so it precedes every
+    // equality charge. A kernel comparison of the two kinds is the typed
+    // checked-invariant refusal after the plan-form charge alone: no plan,
+    // pair or retained result is charged.
+    let invariant = Refusal::CheckedInvariant {
+        cause: quire_exact::CheckedInvariantCause::ValueKindMismatch,
+    };
+    for (left, right) in [
+        (native_uuid(NATIVE_UUID), native_timestamp("0")),
+        (native_timestamp("0"), native_uuid(NATIVE_UUID)),
+    ] {
+        assert_eq!(plan_equality(&left, &right).err(), Some(invariant.clone()));
+        let mut meter = Meter::new(UNLIMITED);
+        assert_eq!(
+            quire_exact::planned_equality(&left, &right, &mut meter),
+            Outcome::Refused(invariant.clone())
+        );
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            [ChargePoint::EqualityPlanForm]
+        );
+    }
+}
+
+/// FR-149-AC-16: same-kind keys compare canonical payload content unsigned
+/// ASCII bytewise with a proper prefix first: Timestamp `10` orders before
+/// `2` and `-1` before `-2`, equal payloads have equal keys.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-16")]
+#[test]
+fn e32_native_keys_order_by_canonical_payload_bytes() {
+    use std::cmp::Ordering;
+    let key = |left: &str, right: &str| {
+        quire_exact::compare_keys(&native_timestamp(left), &native_timestamp(right))
+    };
+    assert_eq!(key("10", "2"), Some(Ordering::Less));
+    assert_eq!(key("2", "10"), Some(Ordering::Greater));
+    assert_eq!(key("-1", "-2"), Some(Ordering::Less));
+    assert_eq!(key("7", "7"), Some(Ordering::Equal));
+    assert_eq!(key("1", "10"), Some(Ordering::Less));
+    assert_eq!(
+        quire_exact::compare_keys(
+            &native_uuid(NATIVE_UUID),
+            &native_uuid(NATIVE_UUID_LAST_DIGIT_E)
+        ),
+        Some(Ordering::Greater)
+    );
+}
+
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]
 #[test]
 fn e26_exactly_the_tabled_equality_conversions_are_admitted() {
@@ -2048,14 +2257,15 @@ fn e_construction_refusals_are_located() {
 // ---- scalar operators through the expression checker and evaluator ----------
 
 fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
-    let graph = PackageDeclarations {
-        types,
-        ieee_profile: ieee.then(|| profile().clone()),
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.ieee_profile = ieee.then(|| profile().clone());
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -2400,6 +2610,796 @@ fn x04_quantities_order_and_add_only_in_one_unit() {
     );
 }
 
+/// One unit declared by a graph the evaluating package does not hold: its
+/// own `Mass` dimension, so neither its id nor its dimension is in `units()`.
+fn foreign_unit() -> (UnitId, UnitTable) {
+    let dimension = json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner_json(),
+        "qualified_declaration": ["Foreign", "Mass"],
+        "terms": [],
+    });
+    let dimension_key = DimensionPreimage::from_json(dimension.clone())
+        .unwrap()
+        .key()
+        .unwrap();
+    let unit = json!({
+        "version": "quire.unit-node/v1",
+        "owner": owner_json(),
+        "qualified_declaration": ["Foreign", "kilogram"],
+        "dimension_node_id": node_id(dimension_key.clone()),
+        "target_unit_node_id": serde_json::Value::Null,
+        "scale": {"numerator": "1", "denominator": "1"},
+        "offset": {"numerator": "0", "denominator": "1"},
+    });
+    let unit_key = UnitPreimage::from_json(unit.clone())
+        .unwrap()
+        .key()
+        .unwrap();
+    let graph = admit_unit_graph(
+        [(
+            DimensionPreimage::from_json(dimension).unwrap(),
+            dimension_key,
+        )],
+        [(UnitPreimage::from_json(unit).unwrap(), unit_key.clone())],
+        &owners(),
+    )
+    .unwrap();
+    (
+        graph.declared_unit_id(unit_key).unwrap(),
+        UnitTable::declared(&graph),
+    )
+}
+
+/// FR-049-AC-2 (TC-136 H5 shape): `result` is the entry-level refusal of an
+/// object environment that is not admitted under the package's declarations
+/// -- `CallFailure::Admission` with `invalid_runtime_input`/`wrong-value-kind`,
+/// naming `field` when the defect is one attribute -- and `meter` equals
+/// `before`: nothing was evaluated or charged.
+fn assert_object_environment_refused(
+    result: Result<Evaluation, CallFailure>,
+    field: Option<&str>,
+    meter: &Meter,
+    before: &Meter,
+    label: &str,
+) {
+    let failure = result.expect_err(label);
+    let CallFailure::Admission(failure) = failure else {
+        panic!("{label}: an entry admission refusal, not {failure:?}");
+    };
+    let quire_eval::CallAdmissionFailure::Refused(record) = *failure else {
+        panic!("{label}: a refusal, not {failure:?}");
+    };
+    assert_eq!(
+        (record.record.catalog.code(), record.record.catalog.cause()),
+        ("invalid_runtime_input", "wrong-value-kind"),
+        "{label}"
+    );
+    assert_eq!(
+        record.record.fields.get("field").map(String::as_str),
+        field,
+        "{label}"
+    );
+    assert_eq!(meter, before, "{label}: the refusal charges nothing");
+}
+
+/// `package.evaluate(checked, [r], objects)` under a fresh meter: the result,
+/// the meter after, and the meter before.
+fn evaluate_over(
+    package: &CheckedPackage,
+    checked: &CheckedExpression,
+    reference: &ObjectReference,
+    objects: &ObjectEnvironment,
+) -> (Result<Evaluation, CallFailure>, Meter, Meter) {
+    let mut meter = Meter::new(UNLIMITED);
+    let before = meter.clone();
+    let result = package.evaluate(
+        checked,
+        vec![Value::Reference(reference.clone())],
+        objects,
+        &mut meter,
+    );
+    (result, meter, before)
+}
+
+/// QSL-1470/QSL-1565 (FR-049-AC-2/AC-3): the package declares
+/// `E { q: Quantity(metre) }`. A caller-built `ObjectClosure` typed under
+/// another `TypeEnvironment` gives `q` a unit the package does not hold (a
+/// foreign graph's kilogram) or one it does hold but not the declared one
+/// (second). `evaluate` refuses that environment at entry, naming `q`, with
+/// the meter unchanged -- never an internal fault and never a completed
+/// quantity in the wrong unit -- while the same read over an environment typed
+/// as declared completes.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn an_object_environment_typed_under_another_unit_is_refused_at_entry() {
+    let units = units();
+    let (kilogram, foreign_table) = foreign_unit();
+    let object = |unit: &UnitId| {
+        ObjectTypeDeclaration::new(
+            object_type("E"),
+            "E",
+            vec![FieldDeclaration::new(
+                "q",
+                ValueType::Quantity(unit.clone()),
+                Presence::Required,
+            )],
+        )
+    };
+    let package = expression_package(
+        TypeEnvironment::new([], [object(&units.m)])
+            .unwrap()
+            .with_units(units.table.clone()),
+        false,
+    );
+    let whole = |value: i64| Rational::from_integer(integer(value));
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let environment = |declared: &UnitId, table: &UnitTable, held: &UnitId| {
+        let caller = TypeEnvironment::new([], [object(declared)])
+            .unwrap()
+            .with_units(table.clone());
+        let quantity = FieldValue::Present(Value::Quantity(Quantity::new(whole(1), held.clone())));
+        ObjectEnvironment::new(
+            ObjectClosure::new(&caller, [(reference.clone(), vec![("q", quantity)])], &[]).unwrap(),
+        )
+    };
+    let read = || Expression::field(Expression::deref(operand("r")), "q".to_owned());
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let checked = |expression: &Expression| {
+        check_in(&package, &parameters, expression, None, CheckMode::Kernel).unwrap()
+    };
+    let sum = Expression::binary(BinaryOperator::Add, read(), read());
+    let less = Expression::binary(BinaryOperator::Less, read(), read());
+
+    let declared = environment(&units.m, &units.table, &units.m);
+    let (result, _, _) = evaluate_over(&package, &checked(&sum), &reference, &declared);
+    let FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(total))) =
+        result.unwrap().outcome
+    else {
+        panic!("an environment typed as declared completes");
+    };
+    assert_eq!((total.magnitude(), total.unit()), (&whole(2), &units.m));
+
+    for (label, objects) in [
+        ("foreign", environment(&kilogram, &foreign_table, &kilogram)),
+        ("held", environment(&units.s, &units.table, &units.s)),
+    ] {
+        for expression in [&sum, &less, &read()] {
+            let (result, meter, before) =
+                evaluate_over(&package, &checked(expression), &reference, &objects);
+            assert_object_environment_refused(result, Some("q"), &meter, &before, label);
+        }
+    }
+}
+
+/// QSL-1470/QSL-1565 (FR-049-AC-2/AC-3): a witness the caller built does not
+/// exempt a slot from its type and unit; only an integer's range is relaxed,
+/// and a witness naming no integer the slot holds is forged.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn a_forged_range_witness_does_not_admit_a_foreign_unit() {
+    let units = units();
+    let (kilogram, foreign_table) = foreign_unit();
+    let object = |unit: &UnitId| {
+        ObjectTypeDeclaration::new(
+            object_type("E"),
+            "E",
+            vec![FieldDeclaration::new(
+                "q",
+                ValueType::Quantity(unit.clone()),
+                Presence::Required,
+            )],
+        )
+    };
+    let package = expression_package(
+        TypeEnvironment::new([], [object(&units.m)])
+            .unwrap()
+            .with_units(units.table.clone()),
+        false,
+    );
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let caller = TypeEnvironment::new([], [object(&kilogram)])
+        .unwrap()
+        .with_units(foreign_table);
+    let held = Quantity::new(Rational::from_integer(integer(1)), kilogram);
+    let closure = ObjectClosure::new(
+        &caller,
+        [(
+            reference.clone(),
+            vec![("q", FieldValue::Present(Value::Quantity(held)))],
+        )],
+        &[],
+    )
+    .unwrap();
+    let forged = qsl_semantics::model::observation::OutOfRange {
+        object: reference.clone(),
+        field: FieldRef::new(object_type("E"), "q"),
+        index: None,
+        range: IntegerInterval::new(integer(0), integer(1)).unwrap(),
+        observed: integer(9),
+        steps: Vec::new(),
+    };
+    let objects = ObjectEnvironment::new(closure).with_out_of_range(vec![forged]);
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let read = || Expression::field(Expression::deref(operand("r")), "q".to_owned());
+    for expression in [
+        read(),
+        Expression::binary(BinaryOperator::Add, read(), read()),
+    ] {
+        let checked =
+            check_in(&package, &parameters, &expression, None, CheckMode::Kernel).unwrap();
+        let (result, meter, before) = evaluate_over(&package, &checked, &reference, &objects);
+        assert_object_environment_refused(result, Some("q"), &meter, &before, "forged witness");
+    }
+}
+
+/// QSL-1565 (FR-049-AC-2/AC-3, FR-106-AC-12): the closure names each slot by
+/// its attribute name, so a caller layout that orders the package's
+/// attributes differently -- same-typed `{b, a}` for the package's `{a, b}`,
+/// or differently typed -- reads each attribute's own slot. A layout that
+/// cannot hold the package's attributes (one missing, one ill-typed, one the
+/// package does not declare, or an object of a type the package does not
+/// declare) refuses at entry with the meter unchanged.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn a_caller_attribute_layout_is_read_by_name_and_refused_at_entry_when_it_cannot_hold_the_package()
+{
+    let field =
+        |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
+    let object = |label: &str, fields: Vec<FieldDeclaration>| {
+        ObjectTypeDeclaration::new(object_type(label), label, fields)
+    };
+    let reference = |label: &str| {
+        ObjectReference::new(
+            crate::support::ids::universe_id([0x42]),
+            object_type(label),
+            ObjectId::new("e").unwrap(),
+        )
+    };
+    let int = |value: i64| FieldValue::Present(Value::Integer(integer(value)));
+    let truth = || FieldValue::Present(Value::Boolean(true));
+    let environment =
+        |types: Vec<ObjectTypeDeclaration>,
+         objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)>| {
+            let caller = TypeEnvironment::new([], types).unwrap();
+            ObjectEnvironment::new(ObjectClosure::new(&caller, objects, &[]).unwrap())
+        };
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let read = |package: &CheckedPackage, objects: &ObjectEnvironment, name: &str| {
+        let expression = Expression::field(Expression::deref(operand("r")), name.to_owned());
+        let checked = check_in(package, &parameters, &expression, None, CheckMode::Kernel).unwrap();
+        evaluate_over(package, &checked, &reference("E"), objects)
+    };
+    let completed =
+        |result: (Result<Evaluation, CallFailure>, Meter, Meter)| match result.0.unwrap().outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(value)) => value,
+            other => panic!("the read completes, not {other:?}"),
+        };
+
+    // Same-typed reorder: positional slots read `b` for `a` (QSL-1565).
+    let same_typed = expression_package(
+        TypeEnvironment::new(
+            [],
+            [object(
+                "E",
+                vec![
+                    field("a", ValueType::Integer),
+                    field("b", ValueType::Integer),
+                ],
+            )],
+        )
+        .unwrap(),
+        false,
+    );
+    let reordered = environment(
+        vec![object(
+            "E",
+            vec![
+                field("b", ValueType::Integer),
+                field("a", ValueType::Integer),
+            ],
+        )],
+        vec![(reference("E"), vec![("a", int(1)), ("b", int(2))])],
+    );
+    assert!(matches!(
+        completed(read(&same_typed, &reordered, "a")),
+        Value::Integer(held) if held == integer(1)
+    ));
+    assert!(matches!(
+        completed(read(&same_typed, &reordered, "b")),
+        Value::Integer(held) if held == integer(2)
+    ));
+
+    let package = expression_package(
+        TypeEnvironment::new(
+            [],
+            [object(
+                "E",
+                vec![
+                    field("a", ValueType::Integer),
+                    field("b", ValueType::Boolean),
+                ],
+            )],
+        )
+        .unwrap(),
+        false,
+    );
+    let swapped = environment(
+        vec![object(
+            "E",
+            vec![
+                field("b", ValueType::Boolean),
+                field("a", ValueType::Integer),
+            ],
+        )],
+        vec![(reference("E"), vec![("a", int(1)), ("b", truth())])],
+    );
+    assert!(matches!(
+        completed(read(&package, &swapped, "a")),
+        Value::Integer(held) if held == integer(1)
+    ));
+    assert!(matches!(
+        completed(read(&package, &swapped, "b")),
+        Value::Boolean(true)
+    ));
+
+    let refusals = [
+        (
+            "missing",
+            environment(
+                vec![object("E", vec![field("a", ValueType::Integer)])],
+                vec![(reference("E"), vec![("a", int(1))])],
+            ),
+            Some("b"),
+        ),
+        (
+            "ill-typed",
+            environment(
+                vec![object(
+                    "E",
+                    vec![
+                        field("a", ValueType::Boolean),
+                        field("b", ValueType::Boolean),
+                    ],
+                )],
+                vec![(reference("E"), vec![("a", truth()), ("b", truth())])],
+            ),
+            Some("a"),
+        ),
+        (
+            "surplus",
+            environment(
+                vec![object(
+                    "E",
+                    vec![
+                        field("a", ValueType::Integer),
+                        field("b", ValueType::Boolean),
+                        field("c", ValueType::Integer),
+                    ],
+                )],
+                vec![(
+                    reference("E"),
+                    vec![("a", int(1)), ("b", truth()), ("c", int(1))],
+                )],
+            ),
+            Some("c"),
+        ),
+        (
+            "foreign object type",
+            environment(
+                vec![
+                    object(
+                        "E",
+                        vec![
+                            field("a", ValueType::Integer),
+                            field("b", ValueType::Boolean),
+                        ],
+                    ),
+                    object("F", vec![field("a", ValueType::Integer)]),
+                ],
+                vec![
+                    (reference("E"), vec![("a", int(1)), ("b", truth())]),
+                    (reference("F"), vec![("a", int(1))]),
+                ],
+            ),
+            None,
+        ),
+    ];
+    for (label, objects, field) in refusals {
+        for name in ["a", "b"] {
+            let (result, meter, before) = read(&package, &objects, name);
+            assert_object_environment_refused(result, field, &meter, &before, label);
+        }
+    }
+}
+
+/// QSL-1470/QSL-1565 (FR-049-AC-2/AC-3): the members of a record-typed
+/// attribute are admitted against the package's own record declaration, not
+/// the caller's: a record built under a caller environment that gives `P.q` a
+/// foreign unit and `P.b` an integer is refused at entry, bare and nested in a
+/// record, an option and a sequence, with the meter unchanged, and never
+/// reaches a member read, a quantity operation or an equality.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn the_members_of_a_caller_built_record_attribute_are_admitted_against_the_package_declaration() {
+    let units = units();
+    let (kilogram, foreign_table) = foreign_unit();
+    let record = CompositeShape::Record;
+    let field =
+        |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
+    let p_key = key("P");
+    let n_key = key("N");
+    let sequence = |element: ValueType| {
+        ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None))
+    };
+    let p = ValueType::Composite(p_key.clone());
+    // `only` names the one record-holding attribute `E` declares; `None`
+    // declares all four.
+    let declarations = |q: &UnitId, b: ValueType, only: Option<&str>| {
+        let composites = [
+            CompositeDeclaration::new(
+                p_key.clone(),
+                "P",
+                record(vec![
+                    field("q", ValueType::Quantity(q.clone())),
+                    field("b", b),
+                ]),
+            ),
+            CompositeDeclaration::new(n_key.clone(), "N", record(vec![field("inner", p.clone())])),
+        ];
+        let attributes = [
+            field("p", p.clone()),
+            field("o", ValueType::option(p.clone())),
+            field("s", sequence(p.clone())),
+            field("n", ValueType::Composite(n_key.clone())),
+        ]
+        .into_iter()
+        .filter(|attribute| only.is_none_or(|only| attribute.name() == only))
+        .collect();
+        let object = ObjectTypeDeclaration::new(object_type("E"), "E", attributes);
+        TypeEnvironment::new(composites, [object]).unwrap()
+    };
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let environment = |caller: TypeEnvironment, unit: &UnitId, b: Value, only: Option<&str>| {
+        let q = FieldValue::Present(Value::Quantity(Quantity::new(
+            Rational::from_integer(integer(1)),
+            unit.clone(),
+        )));
+        let p = caller
+            .record(p_key.clone(), vec![("q", q), ("b", FieldValue::Present(b))])
+            .unwrap();
+        let present = |value: &Value| FieldValue::Present(value.clone());
+        let optional =
+            quire_exact::OptionValue::present(ValueType::Composite(p_key.clone()), p.clone())
+                .unwrap();
+        let collection_type = CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Composite(p_key.clone()),
+            None,
+        );
+        let many = quire_exact::form_collection(
+            &collection_type,
+            vec![p.clone()],
+            &mut Meter::new(UNLIMITED),
+        )
+        .unwrap()
+        .completed()
+        .unwrap();
+        let n = caller
+            .record(n_key.clone(), vec![("inner", present(&p))])
+            .unwrap();
+        let attributes = vec![
+            ("p", present(&p)),
+            ("o", present(&optional)),
+            ("s", present(&many)),
+            ("n", present(&n)),
+        ]
+        .into_iter()
+        .filter(|(name, _)| only.is_none_or(|only| *name == only))
+        .collect();
+        ObjectEnvironment::new(
+            ObjectClosure::new(&caller, [(reference.clone(), attributes)], &[]).unwrap(),
+        )
+    };
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let member = |attribute: &str, name: &str| {
+        Expression::field(
+            Expression::field(Expression::deref(operand("r")), attribute.to_owned()),
+            name.to_owned(),
+        )
+    };
+    let attribute =
+        |name: &str| Expression::field(Expression::deref(operand("r")), name.to_owned());
+    let expressions = [
+        member("p", "b"),
+        Expression::binary(BinaryOperator::Add, member("p", "q"), member("p", "q")),
+        Expression::binary(BinaryOperator::Equal, member("p", "b"), member("p", "b")),
+        attribute("p"),
+        attribute("o"),
+        attribute("s"),
+        attribute("n"),
+    ];
+
+    let package = expression_package(
+        declarations(&units.m, ValueType::Boolean, None).with_units(units.table.clone()),
+        false,
+    );
+    let checked = |package: &CheckedPackage, expression: &Expression| {
+        check_in(package, &parameters, expression, None, CheckMode::Kernel).unwrap()
+    };
+    let declared = environment(
+        declarations(&units.m, ValueType::Boolean, None).with_units(units.table.clone()),
+        &units.m,
+        Value::Boolean(true),
+        None,
+    );
+    for expression in &expressions {
+        let (result, _, _) = evaluate_over(
+            &package,
+            &checked(&package, expression),
+            &reference,
+            &declared,
+        );
+        assert!(
+            matches!(result.unwrap().outcome, FamilyOutcome::Evaluated(_)),
+            "a record typed as declared completes"
+        );
+    }
+    // Each carrier alone, so the refusal names the carrier's own attribute.
+    for carrier in ["p", "o", "s", "n"] {
+        let package = expression_package(
+            declarations(&units.m, ValueType::Boolean, Some(carrier))
+                .with_units(units.table.clone()),
+            false,
+        );
+        let foreign = environment(
+            declarations(&kilogram, ValueType::Integer, Some(carrier))
+                .with_units(foreign_table.clone()),
+            &kilogram,
+            Value::Integer(integer(7)),
+            Some(carrier),
+        );
+        let read = checked(&package, &attribute(carrier));
+        let (result, meter, before) = evaluate_over(&package, &read, &reference, &foreign);
+        assert_object_environment_refused(result, Some(carrier), &meter, &before, carrier);
+    }
+}
+
+/// QSL-1470/QSL-1565 (FR-049-AC-2/AC-3): a range witness relaxes the integer
+/// range only at the position it names, for the integer it observed. A
+/// witness for element 0 does not admit an out-of-range element 1, and a
+/// witness whose observed integer is not the stored one is forged. The
+/// sequence carries the range-widened type FR-106 check 6.5 gives a witnessed
+/// environment's collections.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn a_range_witness_relaxes_only_the_position_it_names() {
+    let range = IntegerInterval::new(integer(0), integer(9)).unwrap();
+    let sequence =
+        |element: ValueType| CollectionType::new(CollectionKind::Sequence, element, None);
+    let object = |element: ValueType| {
+        ObjectTypeDeclaration::new(
+            object_type("E"),
+            "E",
+            vec![FieldDeclaration::new(
+                "xs",
+                ValueType::collection(sequence(element)),
+                Presence::Required,
+            )],
+        )
+    };
+    let package = expression_package(
+        TypeEnvironment::new([], [object(ValueType::Int(range.clone()))]).unwrap(),
+        false,
+    );
+    let caller = TypeEnvironment::new([], [object(ValueType::Integer)]).unwrap();
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let held = quire_exact::form_collection(
+        &sequence(ValueType::Integer),
+        vec![Value::Integer(integer(20)), Value::Integer(integer(30))],
+        &mut Meter::new(UNLIMITED),
+    )
+    .unwrap()
+    .completed()
+    .unwrap();
+    let closure = ObjectClosure::new(
+        &caller,
+        [(reference.clone(), vec![("xs", FieldValue::Present(held))])],
+        &[],
+    )
+    .unwrap();
+    let witness = |index: usize, observed: i64| qsl_semantics::model::observation::OutOfRange {
+        object: reference.clone(),
+        field: FieldRef::new(object_type("E"), "xs"),
+        index: Some(index),
+        range: range.clone(),
+        observed: integer(observed),
+        steps: Vec::new(),
+    };
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let read = Expression::field(Expression::deref(operand("r")), "xs".to_owned());
+    let checked = check_in(&package, &parameters, &read, None, CheckMode::Kernel).unwrap();
+    let run = |witnesses: Vec<_>| {
+        let objects = ObjectEnvironment::new(closure.clone()).with_out_of_range(witnesses);
+        evaluate_over(&package, &checked, &reference, &objects)
+    };
+    for witnesses in [
+        vec![witness(0, 20)],
+        vec![witness(0, 20), witness(1, 31)],
+        vec![witness(0, 21), witness(1, 30)],
+    ] {
+        let (result, meter, before) = run(witnesses);
+        assert_object_environment_refused(result, Some("xs"), &meter, &before, "witness");
+    }
+    let (result, _, _) = run(vec![witness(0, 20), witness(1, 30)]);
+    assert!(matches!(
+        result.unwrap().outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(_))
+    ));
+}
+
+/// QSL-1565 (FR-049-AC-2/AC-3): only an environment holding range witnesses
+/// carries range-widened option and collection types. Without one, a
+/// `Sequence<Integer>` at a `Sequence<Int[0, 9]>` attribute and an
+/// `Option<Integer>` at an `Option<Int[0, 9]>` attribute refuse at entry even
+/// when every integer is in range: no implicit conversion of the carried type.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn an_unwitnessed_range_widened_carried_type_refuses_at_entry() {
+    let digit = ValueType::Int(IntegerInterval::new(integer(0), integer(9)).unwrap());
+    let sequence =
+        |element: ValueType| CollectionType::new(CollectionKind::Sequence, element, None);
+    let declared = |name: &str, value_type: ValueType| {
+        TypeEnvironment::new(
+            [],
+            [ObjectTypeDeclaration::new(
+                object_type("E"),
+                "E",
+                vec![FieldDeclaration::new(name, value_type, Presence::Required)],
+            )],
+        )
+        .unwrap()
+    };
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let held_sequence = quire_exact::form_collection(
+        &sequence(ValueType::Integer),
+        vec![Value::Integer(integer(1))],
+        &mut Meter::new(UNLIMITED),
+    )
+    .unwrap()
+    .completed()
+    .unwrap();
+    let held_option = OptionValue::present(ValueType::Integer, Value::Integer(integer(1))).unwrap();
+    for (name, package_type, caller_type, held) in [
+        (
+            "xs",
+            ValueType::collection(sequence(digit.clone())),
+            ValueType::collection(sequence(ValueType::Integer)),
+            held_sequence,
+        ),
+        (
+            "o",
+            ValueType::option(digit.clone()),
+            ValueType::option(ValueType::Integer),
+            held_option,
+        ),
+    ] {
+        let package = expression_package(declared(name, package_type), false);
+        let objects = ObjectEnvironment::new(
+            ObjectClosure::new(
+                &declared(name, caller_type),
+                [(reference.clone(), vec![(name, FieldValue::Present(held))])],
+                &[],
+            )
+            .unwrap(),
+        );
+        let parameters = [("r", ValueType::Reference(object_type("E")))];
+        let read = Expression::field(Expression::deref(operand("r")), name.to_owned());
+        let checked = check_in(&package, &parameters, &read, None, CheckMode::Kernel).unwrap();
+        let (result, meter, before) = evaluate_over(&package, &checked, &reference, &objects);
+        assert_object_environment_refused(result, Some(name), &meter, &before, name);
+    }
+}
+
+/// QSL-1565 (FR-049-AC-2/AC-3): a range witness inside a record relaxes only
+/// the record member its steps name. The package declares
+/// `E { r: R }`, `R { lo: Int[0, 9], hi: Int[0, 9] }`; a witness for `r.lo`
+/// observing 20 admits `lo = 20` but not an out-of-range `hi`, and not a `lo`
+/// other than the observed one.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn a_range_witness_inside_a_record_relaxes_only_the_member_it_names() {
+    let range = IntegerInterval::new(integer(0), integer(9)).unwrap();
+    let r_key = key("R");
+    let declarations = |member: ValueType| {
+        let field = |name: &str| FieldDeclaration::new(name, member.clone(), Presence::Required);
+        TypeEnvironment::new(
+            [CompositeDeclaration::new(
+                r_key.clone(),
+                "R",
+                CompositeShape::Record(vec![field("lo"), field("hi")]),
+            )],
+            [ObjectTypeDeclaration::new(
+                object_type("E"),
+                "E",
+                vec![FieldDeclaration::new(
+                    "r",
+                    ValueType::Composite(r_key.clone()),
+                    Presence::Required,
+                )],
+            )],
+        )
+        .unwrap()
+    };
+    let package = expression_package(declarations(ValueType::Int(range.clone())), false);
+    let caller = declarations(ValueType::Integer);
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let objects = |lo: i64, hi: i64, observed: i64| {
+        let int = |value: i64| FieldValue::Present(Value::Integer(integer(value)));
+        let record = caller
+            .record(r_key.clone(), vec![("lo", int(lo)), ("hi", int(hi))])
+            .unwrap();
+        let closure = ObjectClosure::new(
+            &caller,
+            [(reference.clone(), vec![("r", FieldValue::Present(record))])],
+            &[],
+        )
+        .unwrap();
+        ObjectEnvironment::new(closure).with_out_of_range(vec![
+            qsl_semantics::model::observation::OutOfRange {
+                object: reference.clone(),
+                field: FieldRef::new(object_type("E"), "r"),
+                index: None,
+                range: range.clone(),
+                observed: integer(observed),
+                steps: vec![quire_semantic_value::admission::PathStep::Field(
+                    "lo".to_owned(),
+                )],
+            },
+        ])
+    };
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let read = Expression::field(
+        Expression::field(Expression::deref(operand("r")), "r".to_owned()),
+        "lo".to_owned(),
+    );
+    let checked = check_in(&package, &parameters, &read, None, CheckMode::Kernel).unwrap();
+    let (result, _, _) = evaluate_over(&package, &checked, &reference, &objects(20, 5, 20));
+    assert!(matches!(
+        result.unwrap().outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(held))) if held == integer(20)
+    ));
+    for (label, lo, hi) in [("unwitnessed hi", 20, 30), ("other lo", 21, 5)] {
+        let (result, meter, before) =
+            evaluate_over(&package, &checked, &reference, &objects(lo, hi, 20));
+        assert_object_environment_refused(result, Some("r"), &meter, &before, label);
+    }
+}
+
 /// A product or quotient's unit is a compound unit no package declares:
 /// checking forms it as the node's static type, and evaluation forms it again
 /// when the value exists, so a further operation reads it by its `UnitId`.
@@ -2467,7 +3467,7 @@ fn x04_compound_results_feed_further_quantity_operations() {
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-6")]
 #[test]
-fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
+fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
     let package = expression_package(TypeEnvironment::default(), true);
     let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
     let parameters = [
@@ -2556,9 +3556,19 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         ))
     };
     let ill = |cause| CheckCause::IllTyped(cause);
+    // FR-397-AC-12: a same-type float ordering checks as the IEEE
+    // comparison composition; unlike widths are a mismatch.
+    assert!(check_in(
+        &package,
+        &parameters,
+        &operation(BinaryOperator::Less, "f", "g"),
+        None,
+        CheckMode::Kernel,
+    )
+    .is_ok());
     assert_eq!(
-        cause(&package, &operation(BinaryOperator::Less, "f", "g")),
-        ill(IllTypedCause::OperatorIneligible)
+        cause(&package, &operation(BinaryOperator::Less, "f", "h")),
+        ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&package, &negation("f")),
@@ -2568,20 +3578,72 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         cause(&package, &operation(BinaryOperator::Add, "f", "h")),
         ill(IllTypedCause::TypeMismatch)
     );
-    // FR-397-AC-6: arithmetic over a float and an exact type is a mismatch,
-    // while any comparison with a float operand is ineligible.
+    // FR-397-AC-6, FR-397-AC-12: arithmetic or ordering over a float and an
+    // exact type is a mismatch.
     assert_eq!(
         cause(&package, &operation(BinaryOperator::Add, "f", "i")),
         ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&package, &operation(BinaryOperator::Less, "f", "i")),
-        ill(IllTypedCause::OperatorIneligible)
+        ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&plain_package(), &operation(BinaryOperator::Add, "f", "g")),
         CheckCause::IeeeProfileNotAdmitted
     );
+}
+
+/// The connectives under `node`: whether each is one the checker synthesized
+/// (true) or one the source wrote (false), by the origin the node carries.
+fn connective_sites(node: qsl_semantics::check::CheckedNode<'_>, found: &mut Vec<bool>) {
+    use quire_checked::node::{ConnectiveOrigin, NodeKind};
+    match node.kind() {
+        NodeKind::Connective(_, origin, left, right) => {
+            found.push(matches!(origin, ConnectiveOrigin::Synthesized));
+            connective_sites(node.at(*left), found);
+            connective_sites(node.at(*right), found);
+        }
+        NodeKind::Not(operand) => connective_sites(node.at(*operand), found),
+        NodeKind::Let { value, body, .. } => {
+            connective_sites(node.at(*value), found);
+            connective_sites(node.at(*body), found);
+        }
+        _ => {}
+    }
+}
+
+/// FR-265 records a decision for each authored `and`, `or`, `implies` and
+/// `if`; the connectives a float ordering lowers to carry the synthesized
+/// origin, which is how the evaluator tells them from authored ones.
+#[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
+#[trace("TC-1091", "FR-397-AC-12")]
+#[test]
+fn a_float_ordering_adds_no_connective_a_decision_could_attach_to() {
+    let package = expression_package(TypeEnvironment::default(), true);
+    let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
+    let parameters = [("f", double.clone()), ("g", double)];
+    let checked = |expression: &Expression| {
+        check_in(&package, &parameters, expression, None, CheckMode::Kernel)
+            .expect("the expression checks")
+    };
+    for operator in [
+        BinaryOperator::Less,
+        BinaryOperator::LessOrEqual,
+        BinaryOperator::Greater,
+        BinaryOperator::GreaterOrEqual,
+    ] {
+        let ordering = operation(operator, "f", "g");
+        let mut sites = Vec::new();
+        connective_sites(checked(&ordering).root(), &mut sites);
+        assert!(!sites.is_empty() && sites.iter().all(|synthetic| *synthetic));
+        // Written inside an `and`, only the written connective is one a
+        // decision attaches to.
+        let both = Expression::binary(BinaryOperator::And, ordering.clone(), ordering);
+        let mut sites = Vec::new();
+        connective_sites(checked(&both).root(), &mut sites);
+        assert_eq!(sites.iter().filter(|synthetic| !**synthetic).count(), 1);
+    }
 }
 
 fn record(name: &str, fields: Vec<(&str, Expression)>) -> Expression {
@@ -2617,9 +3679,14 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         [],
     )
     .unwrap();
-    let graph = PackageDeclarations {
-        types,
-        functions: vec![FunctionDeclaration::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types;
+        declarations.functions = vec![FunctionDeclaration::new(
             "pick".to_owned(),
             vec![(
                 "n".to_owned(),
@@ -2628,12 +3695,8 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             operand("n"),
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();

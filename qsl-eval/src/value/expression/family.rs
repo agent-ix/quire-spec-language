@@ -355,13 +355,14 @@ mod family_contract_tests {
         ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(diagnostics.entries().len(), 1);
         // The admitted declaration is declared once and has an identity.
-        PackageDeclarations {
-            functions: vec![form],
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![form];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("f checks")
@@ -426,13 +427,14 @@ mod family_contract_tests {
     #[trace("FR-090-AC-3", "TC-384")]
     #[test]
     fn evaluate_faults_on_a_second_call_on_the_same_env() {
-        let graph = PackageDeclarations {
-            functions: vec![declaration("f", Expression::boolean(true))],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![declaration("f", Expression::boolean(true))];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly");
@@ -485,13 +487,14 @@ mod family_contract_tests {
     #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
-        let graph = PackageDeclarations {
-            functions: vec![declaration("f", Expression::boolean(true))],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![declaration("f", Expression::boolean(true))];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly, never Incomplete");
@@ -564,16 +567,17 @@ mod family_contract_tests {
     /// meter is charged.
     #[test]
     fn a_reused_env_never_reports_an_earlier_calls_losses() {
-        let graph = PackageDeclarations {
-            functions: vec![
-                decimal_division("rounding", "nearest-even"),
-                decimal_division("exact", "exact"),
-            ],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![
+                decimal_division("rounding", "nearest-even"),
+                decimal_division("exact", "exact"),
+            ];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("p / q with q in [1, 9] checks cleanly");
@@ -654,16 +658,17 @@ mod family_contract_tests {
     /// `callee` is the one denied, with one unit already consumed.
     #[test]
     fn evaluate_returns_incomplete_when_a_nested_call_exhausts_the_meter() {
-        let graph = PackageDeclarations {
-            functions: vec![
-                declaration("callee", Expression::boolean(true)),
-                declaration("caller", Expression::call("callee".to_owned(), Vec::new())),
-            ],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![
+                declaration("callee", Expression::boolean(true)),
+                declaration("caller", Expression::call("callee".to_owned(), Vec::new())),
+            ];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("callee and caller both check cleanly");

@@ -41,7 +41,7 @@ pub mod witness;
 pub use backend::{BackendId, EmptyBackendIdentity};
 pub use diagnostic::{Code, Diagnostic, Phase, SyntaxLimit};
 pub use identity_limits::{IdentityLimits, DEFAULT_IDENTITY_INPUT_BYTES};
-pub use intake_limits::{IntakeLimits, DEFAULT_INTAKE_INPUT_BYTES};
+pub use intake_limits::{IntakeLimits, DEFAULT_INTAKE_INPUT_BYTES, DEFAULT_SEQUENCE_MAXIMUM};
 pub use memory::MemoryModelName;
 pub use reduction::ReductionKind;
 pub use request_index::RequestIndex;

@@ -709,6 +709,8 @@ pub(crate) struct Lowering<'a> {
     ordinals: HashMap<NodeKey, u64>,
     /// The checked unit's own source: the owner of every node it declares.
     owner: SourceOwner,
+    /// Per-declaration owners for an aggregate source-unit package.
+    source_owners: std::collections::BTreeMap<String, SourceOwner>,
     models: &'a [AdmittedModel],
     /// The package's units and every compound unit the check stage formed.
     units: UnitTable,
@@ -1747,9 +1749,10 @@ impl<'w> LeafWalk<'w> {
 
 impl<'a> Lowering<'a> {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
+    pub(crate) fn new_with_source_owners(
         scope: &'a Scope,
         owner: &SourceOwner,
+        source_owners: &std::collections::BTreeMap<String, SourceOwner>,
         models: &'a [AdmittedModel],
         dispatch_tables: &'a [DispatchTable],
         units: UnitTable,
@@ -1765,6 +1768,7 @@ impl<'a> Lowering<'a> {
             ordinals: HashMap::new(),
             scope,
             owner: owner.clone(),
+            source_owners: source_owners.clone(),
             models,
             dispatch_tables,
             units,
@@ -2025,9 +2029,14 @@ impl<'a> Lowering<'a> {
         declaration: Option<Vec<Identifier>>,
         body: BodyTerm,
     ) -> Result<NodeRef, CheckRefusal> {
-        let owner = declaration
-            .as_ref()
-            .map(|_| Owner::Source(self.owner.clone()));
+        let owner = declaration.as_ref().map(|segments| {
+            let source_owner = segments
+                .iter()
+                .rev()
+                .find_map(|segment| self.source_owners.get(segment.as_str()))
+                .unwrap_or(&self.owner);
+            Owner::Source(source_owner.clone())
+        });
         self.insert_node(
             location,
             NodeContent {
@@ -2808,7 +2817,12 @@ impl<'a> Lowering<'a> {
                 semantic_form: "enum",
                 semantic_type: None,
                 declaration: Some(name),
-                owner: Some(Owner::Source(self.owner.clone())),
+                owner: Some(Owner::Source(
+                    self.source_owners
+                        .get(&binding.name)
+                        .cloned()
+                        .unwrap_or_else(|| self.owner.clone()),
+                )),
                 body: BodyTerm::aggregate(Vec::new()),
             },
             Some(NominalPayload::Enum(EnumPayload::of(
@@ -3981,7 +3995,7 @@ impl<'a> Lowering<'a> {
                 let identity = format!("quire.op.ieee.{width}.sqrt");
                 (
                     Keyed::Application(
-                        Operator::Unary,
+                        Operator::Call,
                         Operation {
                             laws: vec![law],
                             mode: Some(OperationMode::Rounding(*rounding)),
@@ -3991,6 +4005,47 @@ impl<'a> Lowering<'a> {
                     Operands::One(operand),
                 )
             }
+            NodeKind::IeeeFloat32Fma(rounding, a, b, c)
+            | NodeKind::IeeeFloat64Fma(rounding, a, b, c) => {
+                let width = if matches!(node.kind(), NodeKind::IeeeFloat32Fma(..)) {
+                    "float32"
+                } else {
+                    "float64"
+                };
+                let law = self.law(LawRole::IeeeProfile, node.location())?;
+                let identity = format!("quire.op.ieee.{width}.fma");
+                (
+                    Keyed::Application(
+                        Operator::Call,
+                        Operation {
+                            laws: vec![law],
+                            mode: Some(OperationMode::Rounding(*rounding)),
+                            ..plain(&identity)
+                        },
+                    ),
+                    Operands::Three(a, b, c),
+                )
+            }
+            NodeKind::IeeeTotalOrder(_, left, right) => (
+                Keyed::Application(
+                    Operator::Call,
+                    Operation {
+                        laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
+                        ..plain("quire.op.ieee.total_order")
+                    },
+                ),
+                Operands::Two(left, right),
+            ),
+            NodeKind::IeeeBitIdentical(left, right) => (
+                Keyed::Application(
+                    Operator::Call,
+                    Operation {
+                        laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
+                        ..plain("quire.op.ieee.bit_identical")
+                    },
+                ),
+                Operands::Two(left, right),
+            ),
             NodeKind::ConvertDecimal(operand, target) => {
                 // FR-149 scale reduction: a decimal of larger maximum scale,
                 // or a rational whose denominators exceed 1.
@@ -4028,6 +4083,11 @@ impl<'a> Lowering<'a> {
                     OrderedKind::Enums => "enum",
                     OrderedKind::Texts => "text",
                     OrderedKind::Quantities => "quantity",
+                    // The checker lowers a float ordering to
+                    // `IeeeTotalOrder` compositions, never to `Order`.
+                    OrderedKind::Float => {
+                        return Err(fault(node.location(), KeyFault::UntypedIeeeOperand))
+                    }
                 };
                 let mut operation =
                     plain(&format!("quire.op.{family}.{}", ordering_suffix(*operator)));
@@ -4055,7 +4115,7 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::IeeeNumericEquality(left, right) => (
                 Keyed::Application(
-                    Operator::Binary,
+                    Operator::Call,
                     Operation {
                         laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
                         ..plain("quire.op.ieee.numeric_equal")
@@ -4063,7 +4123,7 @@ impl<'a> Lowering<'a> {
                 ),
                 Operands::Two(left, right),
             ),
-            NodeKind::Connective(connective, left, right) => {
+            NodeKind::Connective(connective, _, left, right) => {
                 let identity = match connective {
                     Connective::And => "quire.op.boolean.and",
                     Connective::Or => "quire.op.boolean.or",

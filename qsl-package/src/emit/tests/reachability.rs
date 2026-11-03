@@ -120,6 +120,9 @@ pub(super) struct Lowered {
     pub(super) ir: Result<Box<quire_contract_model::CheckedPackageV2>, String>,
     /// The activation rows derived before emission from the checked package.
     pub(super) activation_rows: Vec<quire_contract_model::CheckedProtocolActivationRow>,
+    /// FR-384: the occurrence schemas derived from the in-process protocol
+    /// nodes.
+    pub(super) occurrences: Result<Vec<crate::ProtocolOccurrence>, crate::OccurrenceRefusal>,
     /// The unbounded population domains each `claim` occurrence's
     /// requirement record names, from the checked graph.
     pub(super) claim_domains: Vec<usize>,
@@ -182,6 +185,7 @@ pub(super) fn lower_package(
     let activation_rows = package.protocol_activation_relation();
     let emission = emit_checked(&package).expect("the package emits");
     assert_eq!(emission.omitted, []);
+    let occurrences = package.protocol_occurrence_schemas();
     let mut evidence = read_evidence(&emission);
     evidence
         .insert_domain_package_document(package_identity(&document[..]), &document[..])
@@ -206,6 +210,7 @@ pub(super) fn lower_package(
         wire,
         ir,
         activation_rows,
+        occurrences,
         verified: matches!(read_with(&emission, &evidence), Read::Verified { .. }),
         claim_domains,
         selected_exact_declarations,

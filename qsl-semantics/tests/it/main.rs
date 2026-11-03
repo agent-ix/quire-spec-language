@@ -31,6 +31,7 @@ mod ieee_profiles;
 mod import_view_names;
 mod integer_division;
 mod library_resolution;
+mod model_admission_limits;
 #[cfg(feature = "test-support")]
 mod model_conformance;
 #[cfg(feature = "test-support")]

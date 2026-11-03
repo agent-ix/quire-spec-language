@@ -24,7 +24,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      unit ms : Time = rational(1, 1000) * s;\n";
 
 /// FR-447's `Braking`, with `flow` the flow of `Moving`.
-fn braking(flow: &str) -> String {
+pub(super) fn braking(flow: &str) -> String {
     format!(
         "hybrid Braking using p {{\n\
            mode Moving invariant {{ v >= 0 and v <= 20 and a >= 1 and a <= 2 }}\n\
@@ -36,10 +36,10 @@ fn braking(flow: &str) -> String {
     )
 }
 
-const FLOW: &str = "v' = -a; a' = 0; t' = 1;";
+pub(super) const FLOW: &str = "v' = -a; a' = 0; t' = 1;";
 
 /// `SlowEnough` under the profile alias `profile`, with `body`.
-fn slow_enough(profile: &str, body: &str) -> String {
+pub(super) fn slow_enough(profile: &str, body: &str) -> String {
     format!(
         "temporal SlowEnough using {profile} over (h: Braking) clock \"model-time\" \
          on origin {{ {body} }}\n"
@@ -79,7 +79,7 @@ struct Checked {
 
 /// `declarations` through S1, S2, the assembler, check, link and the v2
 /// emitter; nothing may be omitted.
-fn compile(declarations: &str) -> (Emission, Value) {
+pub(super) fn compile(declarations: &str) -> (Emission, Value) {
     let (emission, wire, _) = compile_checked(declarations);
     (emission, wire)
 }
@@ -517,10 +517,8 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
 #[trace("TC-1220", "FR-447-AC-12", "QSpec-FR-481-AC-8", "QSpec-FR-481-AC-9")]
 #[test]
 fn braking2_restored_nodes_match_qspec_vectors() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
     let qspec = std::path::PathBuf::from(qspec);
     let path = qspec.join("proposals/checked-package-v2/hybrid-node-vectors.json");
     let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect("QSpec vectors"))
