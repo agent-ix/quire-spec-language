@@ -45,8 +45,8 @@ use crate::counter::Letters;
 use crate::derived_request::{derived_subjects, protocol_request};
 use crate::fill::{
     attempt, compiled, contracts, document, fill_unit, instance, json_of, package, package_with,
-    projections, protocol, reachable, sc_system, subject, unit_text_with, universe, v, Documents,
-    Reached, PACKAGE, PROTOCOL_PROFILE,
+    package_without_protocol_profile_selection, projections, protocol, reachable, sc_system,
+    subject, unit_text_with, universe, v, Documents, Reached, PACKAGE, PROTOCOL_PROFILE,
 };
 use crate::model_settle::{envelope_at, protocol_anchor, request};
 
@@ -86,6 +86,22 @@ impl Case {
             documents,
             initial,
             checked: package_with(PROTOCOL_PROFILE, body),
+        }
+    }
+
+    /// Build a runtime-only protocol case without selecting its wire profile.
+    pub(crate) fn new_without_protocol_profile_selection(body: &str, values: &[i64]) -> Self {
+        let mut documents = Documents::new();
+        let initial = values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| documents.start(&format!("s{index}"), &[("c", *value)]))
+            .collect();
+        Self {
+            body: body.to_owned(),
+            documents,
+            initial,
+            checked: package_without_protocol_profile_selection(body),
         }
     }
 

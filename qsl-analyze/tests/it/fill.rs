@@ -409,6 +409,55 @@ pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) 
     CheckedPackage::link(graph)
 }
 
+/// A package that declares the protocol profile but does not select it.
+/// Runtime fixtures use this when they exercise interpreter behavior that
+/// the finite-global wire profile does not emit.
+pub(crate) fn package_without_protocol_profile_selection(body: &str) -> CheckedPackage {
+    let document = document();
+    let text = unit_text_with(PROTOCOL_PROFILE, body);
+    let packages = package_input([document.as_slice()]).unwrap();
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("agent-ix", "counter"),
+        "counter.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(
+        parsed.is_admissible(),
+        "S1: {text}: {:?}",
+        parsed.diagnostics()
+    );
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the operation clauses parse");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "package".to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles");
+    declarations
+        .profile_selections
+        .retain(|selection| selection.alias != "pp");
+    declarations.protocol_profile = None;
+    let graph = declarations
+        .with_unwritten_refinements()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
 /// A protocol `name` over `k: M::Cell` with role `w`, `members` before
 /// `run`, the run control `run` and the finish constraint `finish`.
 pub(crate) fn protocol(name: &str, members: &str, run: &str, finish: &str) -> String {

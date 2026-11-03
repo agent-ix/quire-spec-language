@@ -30,6 +30,14 @@ fn case(members: &str, run: &str) -> Case {
     )
 }
 
+/// A runtime-only case for constructs the selected wire profile cannot emit.
+fn case_without_protocol_profile_selection(members: &str, run: &str) -> Case {
+    Case::new_without_protocol_profile_selection(
+        &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
+        &[0],
+    )
+}
+
 /// A channel `name` of `Boolean` from `w` to `w` with `premises` (ordering,
 /// delivery, capacity and overflow).
 fn channel(name: &str, premises: &str) -> String {
@@ -1169,7 +1177,7 @@ fn a_nested_repeat_counter_restarts_on_each_entry() {
         touch("E"),
         touch("F"),
     );
-    let unit = case("", &run);
+    let unit = case_without_protocol_profile_selection("", &run);
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
