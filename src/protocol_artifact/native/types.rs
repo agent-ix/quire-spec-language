@@ -7,9 +7,10 @@ use quire_contract_model as ir;
 
 use crate::checking::{DomainType, NativeType};
 use crate::native_model::{NativeModel, ScalarKind, Unit};
+use crate::number::{NumberWire, ProtocolNumber};
 use crate::protocol_artifact::{
     domain, wire as w, work::Work, AdmittedDomainPackage, AdmittedModel, Dimension, Error, Invalid,
-    NumberWire, Unsupported,
+    Unsupported,
 };
 use qsl_semantics::model::admitted::AdmittedPackage;
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
@@ -332,8 +333,7 @@ impl<'a> ValueBuilder<'a> {
                 (Shape::Option, w::Type::Option { value }) => at = *value as usize,
                 (Shape::Sequence(expected), w::Type::Sequence { element, maximum }) => {
                     work.bytes(20)?;
-                    let crate::protocol_artifact::ProtocolNumber::Integer(maximum) =
-                        maximum.checked()?
+                    let ProtocolNumber::Integer(maximum) = maximum.checked()?
                     else {
                         return Err(Error::Invalid(Invalid::Type));
                     };

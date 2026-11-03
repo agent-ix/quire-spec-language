@@ -8,9 +8,8 @@ use ix_trace_rs::trace;
 use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::scopes::{BinderKind, BinderType};
-use quire_spec_language::protocol_artifact::{
-    native, wire as w, Error, Limits, ProtocolNumber, Unsupported,
-};
+use quire_spec_language::number::ProtocolNumber;
+use quire_spec_language::protocol_artifact::{native, wire as w, Error, Limits, Unsupported};
 use quire_spec_language::syntax::composed::{self as c, ComposedUnit};
 use quire_spec_language::syntax::{ExprId, ExprKind};
 use setup::{Inputs, Unit};

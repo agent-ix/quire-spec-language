@@ -7,9 +7,10 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use quire_spec_language::number::ExactInteger;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::protocol_artifact::{
-    self as artifact, native, occurrence_key_schema, wire as w, Dimension, Error, ExactInteger,
+    self as artifact, native, occurrence_key_schema, wire as w, Dimension, Error,
     Invalid, Limits, NodeOccurrenceSchema, NodeRole, OccurrenceKeyError, OccurrenceKeySchema,
     RepeatOrdinalSchema, WorkflowInstanceIdentity,
 };

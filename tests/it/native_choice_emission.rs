@@ -5,6 +5,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use quire_spec_language::number::ProtocolNumber;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::scopes::ScopeIssue;
 use quire_spec_language::protocol_artifact::{
@@ -1679,7 +1680,7 @@ fn repeat_progress_covers_every_feasible_dynamic_case_and_keeps_dead_cases() {
                 let w::ControlOperation::Repeat { maximum, .. } = &repeat.operation else {
                     panic!("repeat")
                 };
-                let artifact::ProtocolNumber::Integer(maximum) = maximum.checked().unwrap() else {
+                let ProtocolNumber::Integer(maximum) = maximum.checked().unwrap() else {
                     panic!("authored integer")
                 };
                 assert_eq!(maximum.value(), 2);
@@ -1872,7 +1873,7 @@ fn a_zero_maximum_observed_repeat_keeps_its_authored_bound_without_a_body_obliga
         else {
             panic!("repeat")
         };
-        let artifact::ProtocolNumber::Integer(maximum) = maximum.checked().unwrap() else {
+        let ProtocolNumber::Integer(maximum) = maximum.checked().unwrap() else {
             panic!("authored integer")
         };
         assert_eq!(maximum.value(), 0);

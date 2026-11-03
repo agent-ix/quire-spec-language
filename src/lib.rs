@@ -13,6 +13,7 @@ pub mod linking;
 pub mod located_json;
 pub mod model_source;
 pub mod native_model;
+pub mod number;
 mod parser;
 #[cfg(feature = "population-fixtures")]
 pub mod population_fixtures;

@@ -33,7 +33,6 @@ pub mod handoff;
 mod intake;
 mod models;
 pub mod native;
-mod number;
 mod occurrence;
 mod recovery;
 pub mod v2;
@@ -43,10 +42,9 @@ mod value_graph;
 pub mod wire;
 mod work;
 
-pub use number::{
-    ExactInteger, ExactRational, NumberComponent, NumberError, NumberWire, ProtocolNumber,
-    NUMERIC_PROFILE,
-};
+// Compatibility re-export for downstream users that still import this type
+// from `protocol_artifact`; new consumers should use the root `number` module.
+pub use crate::number::ProtocolNumber;
 
 pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_REVISION_NAMESPACE};
 pub use encoding::encode_candidate;
@@ -59,6 +57,7 @@ pub use occurrence::{
 pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
 use crate::native_model::NativeModel;
+use crate::number::NumberError;
 
 /// The clock name of each temporal declaration of an admitted package, read
 /// once from the wire's `clock:` binding name at admission (ADR-012 section 9):

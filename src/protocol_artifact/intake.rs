@@ -3,6 +3,7 @@
 
 use super::{wire::*, work::Work, *};
 use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
+use crate::number::NUMERIC_PROFILE;
 
 type Key<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 

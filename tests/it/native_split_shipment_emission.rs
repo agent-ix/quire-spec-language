@@ -12,6 +12,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use quire_spec_language::number::ProtocolNumber;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::scopes::{
     DeclarationScope, ScopeIssue, StructuralKind,
@@ -182,7 +183,7 @@ fn subject(control: &w::Handle) -> w::Subject {
 }
 
 fn integer_value(value: &w::Integer) -> i64 {
-    let artifact::ProtocolNumber::Integer(value) = value.checked().unwrap() else {
+    let ProtocolNumber::Integer(value) = value.checked().unwrap() else {
         panic!("authored integer bound")
     };
     value.value()

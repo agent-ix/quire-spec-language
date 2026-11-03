@@ -5,10 +5,8 @@
 //! and repeat ordinals remain caller-owned runtime inputs.
 
 use super::work::Work;
-use super::{
-    report, wire as w, AdmittedPackage, Dimension, Error, ExactInteger, Invalid, Limits,
-    ProtocolNumber, Report,
-};
+use super::{report, wire as w, AdmittedPackage, Dimension, Error, Invalid, Limits, Report};
+use crate::number::{ExactInteger, ProtocolNumber};
 
 /// Opaque read-only projection shared by version-exact admitted package types.
 ///

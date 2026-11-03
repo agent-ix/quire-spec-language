@@ -1,5 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-038: exact tagged decimal strings, with no wire normalization or rounding.
+//!
+//! The public root path carries the selected protocol-number profile:
+//!
+//! ```
+//! use quire_spec_language::number::{
+//!     ExactInteger, ExactRational, NumberComponent, NumberError, NumberWire,
+//!     ProtocolNumber, NUMERIC_PROFILE,
+//! };
+//! assert_eq!(NUMERIC_PROFILE, "quire.protocol.numeric/1");
+//! let value = ProtocolNumber::Integer(ExactInteger::new(7));
+//! assert_eq!(value, ProtocolNumber::Integer(ExactInteger::new(7)));
+//! let _ = ExactRational::new(1, 3).unwrap();
+//! let _: Option<NumberComponent> = None;
+//! let _: Option<NumberError> = None;
+//! let _: Option<NumberWire> = None;
+//! ```
+//!
+//! `protocol_artifact::number` is not a module path:
+//!
+//! ```compile_fail
+//! use quire_spec_language::protocol_artifact::number::ProtocolNumber;
+//! ```
 
 use std::fmt;
 
@@ -82,7 +104,7 @@ impl ExactInteger {
 /// Private fields prevent bypassing that validation:
 ///
 /// ```compile_fail,E0451
-/// use quire_spec_language::protocol_artifact::ExactRational;
+/// use quire_spec_language::number::ExactRational;
 /// let invalid = ExactRational { numerator: 1, denominator: 0 };
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
