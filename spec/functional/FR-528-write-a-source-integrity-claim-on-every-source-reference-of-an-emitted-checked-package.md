@@ -284,7 +284,7 @@ pre-activation criteria do not depend on Contract IR and are verified first.
 | FR-528-AC-17 | Gated on IR-1273: emitting a graph whose source has no attached digest returns `EmitRefusal::SourceBytesNotSupplied` naming the pair, with code `invalid_package` and cause `source-integrity`, and no bytes. | Test (TC-1323) |
 | FR-528-AC-18 | Gated on IR-1273: of several pairs with no digest, the refusal names the first in the order `lock.sources`, `source_map`, `refinement_step_rows`, `diagnostics.entries`, array order within a site. | Test (TC-1323) |
 | FR-528-AC-19 | Gated on IR-1273: emitting with a `TemporalClockSelection` over an assembled source whose digest is attached writes the package, and the selection adds no source reference. | Test (TC-1323) |
-| FR-528-AC-20 | Gated on IR-1273: every `lock.sources` entry of an emitted package carries a `source_integrity` equal to the SHA-256 of the authored bytes of its source (QSpec FR-322-AC-319, FR-322-AC-324). | Test (TC-1323) |
+| FR-528-AC-20 | Gated on IR-1273: every `lock.sources` entry of an emitted package carries a `source_integrity` equal to the SHA-256 of the bytes of the `Source` admitted under its pair (QSpec FR-322-AC-319, FR-322-AC-324). | Test (TC-1323) |
 | FR-528-AC-21 | Gated on IR-1273: an empty source's `lock.sources` entry carries the digest of zero bytes (QSpec FR-322-AC-331). | Test (TC-1323) |
 | FR-528-AC-22 | Gated on IR-1273: the `source` of every `source_map` region of an emitted package carries the claim of its pair (QSpec FR-322-AC-320). | Test (TC-1323) |
 | FR-528-AC-23 | Gated on IR-1273: the `source` of every `refinement_step_rows` region of an emitted package carries the claim of its pair (QSpec FR-322-AC-320). | Test (TC-1323) |
@@ -292,7 +292,7 @@ pre-activation criteria do not depend on Contract IR and are verified first.
 | FR-528-AC-25 | Gated on IR-1273: a pair named at all four sites carries one identical claim at each. | Test (TC-1323) |
 | FR-528-AC-26 | Gated on IR-1273: changing one byte of one source of a two-source package and emitting again changes the claim of that pair at every site and changes no other pair's claim. | Test (TC-1323) |
 | FR-528-AC-27 | Gated on IR-1273: `DefinitionRef` and `SourceOwner` members of an emitted package carry no `source_integrity` (QSpec FR-322-AC-322, FR-322-AC-323). | Test (TC-1323) |
-| FR-528-AC-28 | Gated on IR-1273: the reader, handed the authored bytes of each source, admits an emitted package (QSpec FR-322-AC-330). | Test (TC-1323) |
+| FR-528-AC-28 | Gated on IR-1273: the reader, handed the bytes of the `Source` admitted under each pair, admits an emitted package (QSpec FR-322-AC-330). | Test (TC-1323) |
 | FR-528-AC-29 | Gated on IR-1273: the reader, handed bytes that differ in one byte of one source, refuses `invalid_package`/`source-integrity` at that source's reference (QSpec FR-322-AC-329). | Test (TC-1323) |
 | FR-528-AC-30 | Gated on IR-1273: a package compiled from an extracted native body carries, for the body's identity, the SHA-256 of the body bytes, and the reader handed the original Markdown bytes under that identity refuses `invalid_package`/`source-integrity`. | Test (TC-1323) |
 | FR-528-AC-31 | Gated on IR-1273: a library compiled for import is read back by the I2 read with its own bytes and builds its import view. | Test (TC-1323) |

@@ -75,7 +75,8 @@ The inventory covers the `quire-eval` closure only. `qsl-foundation`'s
 `sha2` (NFR-015, FR-528) is a QSL-crate dependency and `quire-eval` does not
 depend on `qsl-foundation`, so `sha2` and the digest stack it reaches
 (`digest`, `block-buffer`, `crypto-common`, `generic-array`, `typenum`,
-`cfg-if`) are outside the closure, and the inventory holds no entry for them:
+`cfg-if`, and `cpufeatures`, which `sha2` pulls in on x86 and aarch64 even
+with `force-soft`) are outside the closure, and the inventory holds no entry for them:
 an entry would be a `stale-entry` finding. The feature set is `sha2` with
 default features off and `force-soft`, which has no processor-specific
 unsafe path in `sha2` itself. The digest stack's own unsafe items, expected in

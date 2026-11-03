@@ -31,3 +31,26 @@ Tickets: QSL-1559, QSL-1560, QSL-1562. Integrity, EARS, failure-domain, object a
 ## Verdict
 
 Changes requested, not mergeable: FND-001 (high) must be amended in this PR. FND-002 to FND-004 are medium and need the author or a planner ruling (FND-004: gate the emit refusal with the lock bump or list the callers). Peter ruled source_integrity in scope; nothing here defers it.
+
+
+## Dispositions (final)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | sha2 stays in qsl-foundation; NFR-015 row, AC-2 and new AC-11 (default features off, force-soft only; TC-1110 scope) amended. Verified: quire-eval's lock deps are quire-exact, quire-semantic-value, thiserror only, so qsl-foundation and sha2 are outside its closure; NFR-016 scopes the inventory to the quire-eval closure (make audit-unsafe in agent-ix/quire-eval) and has the stale-entry rule; deny.toml admits sha2 by licence (MIT/Apache-2.0) with no ban and qsl-eval already resolves it. |
+| FND-002 | fixed | SourceDigests has one constructor, of_sources over admitted Sources, no public insert; conflicting bytes under one pair refuse; the builder refuses a foreign pair. Bare SourceDigest::of_bytes stays public for replay's provision bytes, which is harmless because only SourceDigests reaches the emitter. Residual trust (the caller pairs forms with the Source) is stated and matches how RawSourceRef is already named. |
+| FND-003 | fixed | The claim covers the Source admitted under the pair the reference names; for an extracted body that is the body bytes, and AC-30 tests that Markdown bytes under the body pair are refused. This fits QSpec FR-322-AC-319..341, which keys the reader's bytes by the (authority, identity) pair the package names and never mentions extraction. Nit: AC-20 still says authored bytes; read as the bytes of the pair's Source. |
+| FND-004 | fixed | The refusal takes effect with the IR-1273 lock bump (AC-17..32 gated); AC-16 states pre-activation emission writes no claim and refuses nothing; the caller list is given. |
+| FND-005 | fixed | Two-label fixes in FR-099, FR-109, FR-031, FR-106; ADR-013 and ADR-015 amendment notes; FR-001 section 'Code still carrying four labels' names the follow-up. |
+| FND-006 | fixed | FR-350 Settlement defines tool-failure with cause corpus-decode and the JSON pointer. |
+| FND-007 | fixed | FR-528 now has 32 single-claim ACs; FR-350-AC-15 can fail (passed or failed by expectation). |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-008 | low | NFR-015-AC-2 still says `lists exactly` the dependencies of qsl-foundation, but the manifest also has hashbrown (default-features off) and serde_json (alloc), so the AC fails on any implementation. The PR edits this very sentence to add sha2: fix the list here (add hashbrown and serde_json, and extend the no-std-feature clause to serde_json). The NFR-016 digest-stack list also omits cpufeatures, which sha2 pulls on x86 and aarch64 hosts even with force-soft; harmless to the verdict since none is in the quire-eval closure. | NFR-015-AC-2 | wrong-requirement |
+
+## Verdict (disposition pass 1)
+
+Mergeable. `quire validate` clean on all touched files; FR-528 and TC-1323..1325 unused on origin/main; no open QSL PR touches these files. FND-008 is low and pre-existing; fix it in this PR (one list) or fix forward.
