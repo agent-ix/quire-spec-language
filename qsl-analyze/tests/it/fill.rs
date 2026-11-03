@@ -319,15 +319,14 @@ pub(crate) fn tcb_01_event_position_selection(
 
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
-    let protocol_profile = if body.contains("protocol R using p ")
-        && !profiles.contains("profile p ")
-    {
-        PROTOCOL_PROFILE_P
-    } else if body.contains("protocol ") && !profiles.contains("profile pp ") {
-        PROTOCOL_PROFILE
-    } else {
-        ""
-    };
+    let protocol_profile =
+        if body.contains("protocol R using p ") && !profiles.contains("profile p ") {
+            PROTOCOL_PROFILE_P
+        } else if body.contains("protocol ") && !profiles.contains("profile pp ") {
+            PROTOCOL_PROFILE
+        } else {
+            ""
+        };
     package_with_name("package", &format!("{profiles}{protocol_profile}"), body)
 }
 

@@ -204,7 +204,8 @@ impl World {
         letters: &dyn ModelLetters,
         max_live_instances: Option<u64>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-        let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE_P, &self.body).into_bytes();
+        let unit =
+            crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE_P, &self.body).into_bytes();
         let node = &self.checked.graph().temporal_clauses()[0];
         let clause_node = node.identity().clone();
         let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
