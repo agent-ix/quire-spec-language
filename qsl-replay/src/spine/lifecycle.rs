@@ -1166,7 +1166,7 @@ pub fn check_units(
             })
             .unzip();
         let mut checked_units = Vec::with_capacity(sources.len());
-        for (parsed, source) in admitted.units().iter().zip(sources) {
+        for (parsed, source) in admitted.units().iter().zip(sources.iter().cloned()) {
             let (protocol_results, protocol_failure) =
                 protocol_check_outcome(parsed, package.graph());
             if let Some(refusal) = protocol_failure.as_ref() {
