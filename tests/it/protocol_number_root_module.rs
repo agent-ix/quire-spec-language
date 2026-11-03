@@ -7,8 +7,14 @@ use quire_spec_language::number::{
     NUMERIC_PROFILE,
 };
 
-/// FR-511-AC-1 / TC-1306: the downstream import surface resolves at `number`.
-#[trace("FR-511-AC-1", "TC-1306")]
+/// FR-511-AC-1..4 / TC-1306: the root import surface and retained codec contract.
+#[trace(
+    "FR-511-AC-1",
+    "FR-511-AC-2",
+    "FR-511-AC-3",
+    "FR-511-AC-4",
+    "TC-1306"
+)]
 #[test]
 fn root_number_module_publishes_the_complete_codec_surface() {
     assert_eq!(NUMERIC_PROFILE, "quire.protocol.numeric/1");

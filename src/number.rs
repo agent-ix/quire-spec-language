@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-038: exact tagged decimal strings, with no wire normalization or rounding.
+//! FR-038/511: exact tagged decimal strings, with no wire normalization or rounding.
 //!
 //! The public root path carries the selected protocol-number profile:
 //!
