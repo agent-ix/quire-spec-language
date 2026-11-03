@@ -155,6 +155,10 @@ pub enum ReplayRefusal {
     /// E3 import resolution (FR-087-AC-13).
     #[error("the package reference names {0} source units; the spine recompiles exactly one")]
     SourceCount(usize),
+    /// FR-480: the package reference's source list is empty, repeats an
+    /// owner, or names a document from the byte provision.
+    #[error("invalid_package/invalid-value at /package/sources: {0}")]
+    PackageSources(&'static str),
     /// The recompile refused at one spine stage, or reached one of the
     /// stage limits the request carries (`stage_limit_exceeded`).
     #[error("the recompile refused at stage {stage}: {refusal}", stage = .0.stage().as_str(), refusal = .0)]
@@ -500,6 +504,7 @@ impl ReplayRefusal {
             Self::Request(refusal) => refusal.code(),
             Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::SourceCount(_) => Code::InvalidRequest,
+            Self::PackageSources(_) => Code::InvalidPackage,
             Self::InvalidPackageName(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.code(),
@@ -565,6 +570,7 @@ impl ReplayRefusal {
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.cause(),
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
             Self::DependencySelections(_) => Some("invalid-value"),
+            Self::PackageSources(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
@@ -657,6 +663,7 @@ impl ReplayRefusal {
                 _ => "/replay/obligation_identity",
             }),
             Self::ObservedTemporalInput { pointer, .. } => Some(pointer),
+            Self::PackageSources(_) => Some("/package/sources"),
             _ => None,
         }
     }
@@ -1566,9 +1573,10 @@ pub(crate) fn recompile_with_temporal_selections(
             }
         }
     }
-    // Rule 2: the proved package's sources, and each entry's, name one
-    // source unit.
-    let source = one_source(request.sources())?;
+    // Rule 2: the proved package's sources name a non-empty set of unique
+    // source units, independent of request order. Dependencies remain
+    // single-source library inputs under FR-099.
+    let sources = package_sources(request)?;
     let library_sources = request
         .dependencies()
         .iter()
@@ -1598,24 +1606,25 @@ pub(crate) fn recompile_with_temporal_selections(
         })
         .collect::<Result<Vec<_>, ReplayRefusal>>()?;
     let dependencies = DependencyInput::new(libraries).map_err(ReplayRefusal::DependencyInput)?;
-    dependencies
-        .check_unit_owner(&labels(source))
-        .map_err(ReplayRefusal::DependencyInput)?;
-    let bytes = provided(source)?;
     let packages = domain_packages(request)?;
     // Rule 4: the recompile.
     let package_name =
         LibraryName::new(request.package_name()).map_err(ReplayRefusal::InvalidPackageName)?;
-    let compiled = run_spine_with_temporal_selections_and_execution_points(
-        SpineUnit {
-            identity: &labels(source),
-            package: &package_name,
-            path: source.identity(),
-            bytes,
-        },
+    let units = sources
+        .iter()
+        .map(|source| {
+            Ok::<_, ReplayRefusal>((
+                labels(source),
+                source.identity().to_owned(),
+                provided(source)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let compiled = run_spine_units(
+        &units,
+        &package_name,
         &packages,
         &dependencies,
-        &spine::StateClauseExecutionPoints::new(),
         temporal_selections,
         limits.spine,
     )?;
@@ -1652,6 +1661,131 @@ fn one_source(references: &[DefinitionSourceRef]) -> Result<&DefinitionSourceRef
 }
 
 /// A source reference's two FR-001 labels.
+fn package_sources(request: &ReplayRequest) -> Result<Vec<&DefinitionSourceRef>, ReplayRefusal> {
+    let references = request.sources();
+    if references.is_empty() {
+        return Err(ReplayRefusal::PackageSources("the list is empty"));
+    }
+    for (second, source) in references.iter().enumerate() {
+        if references[..second].iter().any(|earlier| {
+            earlier.authority() == source.authority() && earlier.identity() == source.identity()
+        }) {
+            return Err(ReplayRefusal::PackageSources("an owner is repeated"));
+        }
+        if request.byte_provision().documents().any(|bytes| {
+            qsl_semantics::model::observation::document_reference(bytes).is_some_and(|document| {
+                document.authority == source.authority()
+                    && document.identity == source.identity()
+                    && document.revision_namespace == source.revision_namespace()
+                    && document.revision == source.revision()
+            })
+        }) {
+            return Err(ReplayRefusal::PackageSources(
+                "a source reference names a definition document",
+            ));
+        }
+        if qsl_semantics::model::intake::package_input(request.byte_provision().package_documents())
+            .is_ok_and(|packages| packages.contains_key(source.identity()))
+        {
+            return Err(ReplayRefusal::PackageSources(
+                "a source reference names a definition document",
+            ));
+        }
+    }
+    let mut canonical = references.iter().collect::<Vec<_>>();
+    canonical.sort_by(|left, right| {
+        left.authority()
+            .as_bytes()
+            .cmp(right.authority().as_bytes())
+            .then_with(|| left.identity().as_bytes().cmp(right.identity().as_bytes()))
+    });
+    Ok(canonical)
+}
+
+fn run_spine_units(
+    units: &[(SourceIdentity, String, &[u8])],
+    package: &LibraryName,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    dependencies: &DependencyInput,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    limits: SpineLimits,
+) -> Result<Recompiled, ReplayRefusal> {
+    #[cfg(test)]
+    SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
+    let cancel = Cancel::new();
+    let refusal = |failure| match failure {
+        qsl_foundation::diagnostic::StageFailure::RefusedWithPayload(refusal, protocol_results) => {
+            ReplayRefusal::RecompileWithProtocolResults {
+                refusal: *refusal,
+                protocol_results,
+            }
+        }
+        qsl_foundation::diagnostic::StageFailure::LimitWithPayload(limit, protocol_results) => {
+            ReplayRefusal::RecompileWithProtocolResults {
+                refusal: Box::new(CompileRefusal::Limit(limit)),
+                protocol_results,
+            }
+        }
+        failure => match spine::refusal_or_fault(failure) {
+            Ok(refusal) => ReplayRefusal::Recompile(refusal),
+            Err(fault) => ReplayRefusal::Fault(fault),
+        },
+    };
+    let requests = units
+        .iter()
+        .map(|(identity, path, bytes)| ParseRequest {
+            source: identity,
+            path,
+            bytes,
+        })
+        .collect::<Vec<_>>();
+    spine::preflight_unit_list(&requests, dependencies).map_err(ReplayRefusal::Recompile)?;
+    let parsed = requests
+        .iter()
+        .map(|request| {
+            spine::parse_for_continuation(request, limits.source, &cancel)
+                .map(|parsed| parsed.into_value())
+                .map_err(&refusal)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let admitted =
+        spine::admit_parsed_unit_list(parsed, dependencies).map_err(ReplayRefusal::Recompile)?;
+    let models = spine::select_units(&admitted, packages, limits.model, limits.source, &cancel)
+        .map_err(&refusal)?
+        .into_value();
+    let checked = spine::check_units(
+        &admitted,
+        package.as_str().to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(&refusal)?
+    .into_value();
+    let checked = checked.into_iter().next().ok_or_else(|| {
+        ReplayRefusal::Fault(InternalFault::new(
+            "replay",
+            "non-empty-package-has-checked-unit",
+        ))
+    })?;
+    let emitted = spine::package_with_temporal_selections(
+        &checked,
+        temporal_selections,
+        spine::PackageLimits::default(),
+        &cancel,
+    )
+    .map_err(&refusal)?
+    .into_value();
+    Ok(Recompiled {
+        checked,
+        emitted,
+        package: package.clone(),
+        packages: packages.clone(),
+        model_limits: limits.model,
+    })
+}
+
 fn labels(reference: &DefinitionSourceRef) -> SourceIdentity {
     SourceIdentity::new(reference.authority(), reference.identity())
 }

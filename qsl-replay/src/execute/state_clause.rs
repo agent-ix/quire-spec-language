@@ -25,8 +25,7 @@ use quire_exact::NodeKey;
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    check_envelope_target, consumed, domain_packages, one_source, recompile, wrong_target,
-    ReplayRefusal,
+    check_envelope_target, consumed, domain_packages, recompile, wrong_target, ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
 use crate::identity::DefinitionSourceRef;
@@ -213,8 +212,37 @@ pub fn replay_state_clause(
         });
     }
 
-    // `recompile` already required exactly one source, provided.
-    let source = one_source(request.sources())?;
+    // Resolve the selected clause's source through the recompiled package's
+    // own claim occurrence, which remains bound to its declaring unit.
+    let graph = compiled.checked.package().graph();
+    let source_region = graph
+        .occurrences()
+        .find_map(|(node, origin, location)| {
+            (node == clause.identity() && origin == *clause.claim())
+                .then(|| graph.region(location))
+                .flatten()
+        })
+        .ok_or_else(|| {
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "checked-clause-claim-has-source-region",
+            ))
+        })?;
+    let source_reference = source_region.source();
+    let source = request
+        .sources()
+        .iter()
+        .find(|source| {
+            source.authority() == source_reference.authority()
+                && source.identity() == source_reference.identity()
+        })
+        .cloned()
+        .ok_or_else(|| {
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "checked-clause-source-is-in-package-reference",
+            ))
+        })?;
     let packages = domain_packages(&request)?;
     // FR-106 reads every document only from the byte provision, by its
     // identity labels.
@@ -383,7 +411,7 @@ pub fn replay_state_clause(
     };
     Ok(StateClauseReplayResult {
         result,
-        source: source.clone(),
+        source,
         package_name,
         clause: target.clone(),
         clause_node: envelope.clause_node().clone(),

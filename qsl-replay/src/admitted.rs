@@ -620,6 +620,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             ReplayRefusal::Request(_)
             | ReplayRefusal::DomainPackages(_)
             | ReplayRefusal::SourceCount(_)
+            | ReplayRefusal::PackageSources(_)
             | ReplayRefusal::DependencySelections(_)
             | ReplayRefusal::InvalidPackageName(_)
             | ReplayRefusal::UnknownFunction { .. }
