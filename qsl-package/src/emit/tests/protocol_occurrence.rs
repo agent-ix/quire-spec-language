@@ -8,8 +8,9 @@ use super::protocol_requirements::fixture_w::{document, PROFILES_W, W};
 use super::reachability::{lower_with, Lowered};
 use super::*;
 use crate::{
-    protocol_occurrence_schemas_from_read, ControlEntry, ControlOwner, ProtocolOccurrence,
-    RepeatDimension, RoleReplication, SubjectKind,
+    protocol_occurrence_schemas_from_read, ControlEntry, ControlOperator, ControlOwner,
+    ProtocolOccurrence, RepeatDimension, RoleLifetime, RoleReplication, RuntimeBindingRequirement,
+    SubjectKind,
 };
 use quire_exact::Integer;
 
@@ -91,6 +92,17 @@ const AWAIT_AND_FENCE: &str = "    fence Barrier ordering seq_cst;\n\
     match event Seen by Payments as (seen: Boolean) { true }; \
     then sequence Then { } timeout sequence Late { }";
 
+const PARTIAL: &str = "  compensate Partial for Main::Applied as (partial: M::ChargeResult)\n\
+        by Payments on M::Payment::refund using T clock \"refund-clock\" {\n\
+        capture partialSaved: Integer = partial.order;\n\
+        activate first (partialTrigger: M::RefundTrigger) when { partialTrigger.ok } { }\n\
+        within [0,5];\n\
+        attempts 1 of M::RefundAttempt;\n\
+        retry (partialOlder: M::RefundAttempt, partialNewer: M::RefundAttempt) { partialNewer.order = partialOlder.order };\n\
+        commit never;\n\
+        recover (partialRecovery: M::RefundRecovery) { partialRecovery.order = partialSaved };\n\
+        }\n";
+
 #[trace("FR-384-AC-1", "TC-1064")]
 #[test]
 fn w_schema_holds_the_slots_the_owners_and_the_template() {
@@ -108,12 +120,11 @@ fn w_schema_holds_the_slots_the_owners_and_the_template() {
     assert!(schema
         .roles
         .iter()
-        .all(|role| role.replication == RoleReplication::Static && !role.region.is_empty()));
+        .all(|role| role.replication == RoleReplication::Static));
     assert_eq!(schema.controls.len(), 15);
     assert_eq!(schema.compensations.len(), 1);
     assert_eq!(last(&schema.compensations[0].path), "Refund");
     assert_eq!(schema.compensations[0].maximum_attempts, int(2));
-    assert!(!schema.compensations[0].region.is_empty());
     let mut paths: Vec<_> = schema.controls.iter().map(|c| c.path.clone()).collect();
     let sorted = {
         let mut copy = paths.clone();
@@ -138,6 +149,17 @@ fn w_schema_holds_the_slots_the_owners_and_the_template() {
                 "{name}"
             );
         }
+    }
+    for (name, operator) in [
+        ("Main", ControlOperator::Sequence),
+        ("Shipments", ControlOperator::Parallel),
+        ("Outcome", ControlOperator::Choice),
+        ("Poll", ControlOperator::Repeat),
+        ("Applied", ControlOperator::Effect),
+        ("Polled", ControlOperator::Attempt),
+        ("Limit", ControlOperator::Check),
+    ] {
+        assert_eq!(control(&occurrence, name).operator, operator, "{name}");
     }
     for name in ["Main", "Shipments", "Done", "Failed", "Limit"] {
         assert_eq!(
@@ -300,21 +322,31 @@ fn nested_repeats_zero_and_missing_maximums_and_branches_outside_a_repeat() {
 #[test]
 fn w_holds_no_runtime_value_and_parity_holds_across_variants() {
     let occurrence = w();
-    assert!(occurrence.requirements.iter().all(|r| r.authority.is_none()
-        && r.contract.is_none()
-        && r.scope == occurrence.schema.workflow));
-    // Reformatting, a duplicated requirement and a reordered declaration
-    // give the same derivation (compiling needs no runtime input).
-    let reformatted = format!("// reformatted W\n{}", W.replace(';', ";\n\n"));
-    assert_eq!(
-        derive(PROFILES_W, &reformatted, document()).len(),
-        1,
-        "reformatted W derives"
-    );
-    for variant in [w_with(AWAIT_AND_FENCE), reformatted] {
-        let derived = only(derive(PROFILES_W, &variant, document()));
-        assert_eq!(derived.schema.compensations.len(), 1);
+    // A requirement is exactly a subject kind, a subject key and a scope: the
+    // exhaustive pattern stops compiling if an authority, a contract or a
+    // runtime value is added (FR-384-AC-6).
+    for requirement in &occurrence.requirements {
+        let RuntimeBindingRequirement {
+            kind: _,
+            subject: _,
+            scope,
+        } = requirement;
+        assert_eq!(*scope, occurrence.schema.workflow);
     }
+    // Reformatting the source gives the same schema and requirements
+    // (compiling needs no runtime input).
+    let reformatted = format!("// reformatted W\n{}", W.replace(';', ";\n\n"));
+    assert_ne!(reformatted, W);
+    assert_eq!(
+        only(derive(PROFILES_W, &reformatted, document())),
+        occurrence,
+        "reformatted W derives the same schema and requirements"
+    );
+    let with_extras = only(derive(PROFILES_W, &w_with(AWAIT_AND_FENCE), document()));
+    assert_eq!(
+        with_extras.schema.compensations,
+        occurrence.schema.compensations
+    );
 }
 
 #[trace("FR-384-AC-4", "TC-1064")]
@@ -344,38 +376,44 @@ fn same_named_roles_and_controls_of_two_protocols_are_distinct_entries() {
     keys.dedup();
     assert_eq!(keys.len(), 4, "two Payer roles and two Charge controls");
 
-    // Declaring W's roles and channel in another order gives the same schema.
-    let reordered = W.replace(
+    // Declaring W's roles, channel and compensations in another order gives
+    // the same schema, whole: no part of an entry follows the source.
+    let reordered_roles = W.replace(
         "  role Orders on M::OrderView;\n  role Payments on M::Payment;\n  role Fulfillment on M::Shipment;\n",
         "  role Fulfillment on M::Shipment;\n  role Payments on M::Payment;\n  role Orders on M::OrderView;\n",
     );
-    assert_ne!(reordered, W);
-    // A declaration region is a source position, so it is the one part that
-    // follows the source text; everything else is equal.
-    let strip = |mut occurrences: Vec<ProtocolOccurrence>| {
-        for occurrence in &mut occurrences {
-            occurrence
-                .schema
-                .roles
-                .iter_mut()
-                .for_each(|r| r.region.clear());
-            occurrence
-                .schema
-                .controls
-                .iter_mut()
-                .for_each(|c| c.region.clear());
-            occurrence
-                .schema
-                .compensations
-                .iter_mut()
-                .for_each(|c| c.region.clear());
-        }
-        occurrences
-    };
+    assert_ne!(reordered_roles, W);
+    assert_eq!(only(derive(PROFILES_W, &reordered_roles, document())), w());
+
+    let channel = "  channel Charges from Orders to Payments carries M::ChargeRequest\n    ordering fifo by (message: M::ChargeRequest) { message.order }\n    delivery at-least-once capacity 4 overflow reject;\n";
+    assert!(W.contains(channel));
+    // The grammar fixes the order of the member kinds, so channels reorder
+    // among themselves: a second channel declared before or after the first.
+    let second = channel.replace(
+        "Charges from Orders to Payments",
+        "Replies from Payments to Orders",
+    );
+    let channels_after = W.replace(channel, &format!("{channel}{second}"));
+    let channels_before = W.replace(channel, &format!("{second}{channel}"));
+    assert_ne!(channels_after, channels_before);
+    let after = only(derive(PROFILES_W, &channels_after, document()));
     assert_eq!(
-        strip(derive(PROFILES_W, &reordered, document())),
-        strip(vec![w()]),
-        "schema is a function of the nodes, not the declaration order"
+        after,
+        only(derive(PROFILES_W, &channels_before, document())),
+        "two channels declared in either order give the same schema"
+    );
+    assert_eq!(after.schema, w().schema, "a channel adds no schema entry");
+
+    let refund_first = W.replace("  terminal any;", &format!("{PARTIAL}  terminal any;"));
+    let partial_first = W.replace(
+        "  compensate Refund",
+        &format!("{PARTIAL}  compensate Refund"),
+    );
+    assert_ne!(refund_first, partial_first);
+    assert_eq!(
+        only(derive(PROFILES_W, &refund_first, document())),
+        only(derive(PROFILES_W, &partial_first, document())),
+        "two templates declared in either order give the same schema"
     );
 }
 
@@ -455,9 +493,7 @@ fn requirements_are_exactly_the_subject_kinds_of_the_operator_table() {
     assert!(occurrence
         .requirements
         .iter()
-        .all(|r| r.scope == occurrence.schema.workflow
-            && r.authority.is_none()
-            && r.contract.is_none()));
+        .all(|r| r.scope == occurrence.schema.workflow));
 
     // Event, fence and await imply none either.
     let extra = only(derive(PROFILES_W, &w_with(AWAIT_AND_FENCE), document()));
@@ -481,7 +517,10 @@ fn a_replicated_role_is_marked_one_for_each_spawned_object() {
         .unwrap();
     assert!(matches!(
         &agent.replication,
-        RoleReplication::Replicated { max, lifetime, .. } if *max == int(3) && lifetime == "workflow"
+        RoleReplication::Replicated { population, max, lifetime }
+            if population.as_str() == "people"
+                && *max == int(3)
+                && *lifetime == RoleLifetime::Workflow
     ));
     for role in &occurrence.schema.roles {
         let replicated = last(&role.path) == "Agent";
@@ -563,19 +602,9 @@ fn no_node_carries_the_schema_and_a_role_member_is_refused() {
 #[trace("FR-384-AC-8", "TC-1064")]
 #[test]
 fn a_full_and_a_partial_template_give_two_entries_and_two_requirement_sets() {
-    let partial = "  compensate Partial for Main::Applied as (partial: M::ChargeResult)\n\
-        by Payments on M::Payment::refund using T clock \"refund-clock\" {\n\
-        capture partialSaved: Integer = partial.order;\n\
-        activate first (partialTrigger: M::RefundTrigger) when { partialTrigger.ok } { }\n\
-        within [0,5];\n\
-        attempts 1 of M::RefundAttempt;\n\
-        retry (partialOlder: M::RefundAttempt, partialNewer: M::RefundAttempt) { partialNewer.order = partialOlder.order };\n\
-        commit never;\n\
-        recover (partialRecovery: M::RefundRecovery) { partialRecovery.order = partialSaved };\n\
-        }\n  terminal any;";
     let occurrence = only(derive(
         PROFILES_W,
-        &W.replace("  terminal any;", partial),
+        &W.replace("  terminal any;", &format!("{PARTIAL}  terminal any;")),
         document(),
     ));
     let schema = &occurrence.schema;

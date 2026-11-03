@@ -68,9 +68,10 @@ pub use evaluation_view::{
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 #[cfg(feature = "std")]
 pub use protocol_occurrence::{
-    protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOwner,
-    OccurrenceRefusal, ProtocolOccurrence, ProtocolOccurrenceSchema, RepeatDimension,
-    RoleReplication, RoleSlot, RuntimeBindingRequirement, SubjectKind,
+    protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,
+    ControlOwner, OccurrenceRefusal, PopulationName, ProtocolOccurrence, ProtocolOccurrenceSchema,
+    RepeatDimension, RoleLifetime, RoleReplication, RoleSlot, RuntimeBindingRequirement,
+    SubjectKind,
 };
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 

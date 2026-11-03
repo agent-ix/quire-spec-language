@@ -13,13 +13,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::string_edge;
-use qsl_foundation::source::provenance::{PackageSourceMap, SourceRegion};
+use qsl_semantics::check::wire_id::WireIdError;
 use qsl_semantics::check::{
     BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, LiteralValue, MemberTerm, NodeTag,
     TupleMember,
 };
 use qsl_semantics::value::Member;
-use quire_contract_model::{CheckedPackageV2, CheckedTerm};
+use quire_contract_model::{
+    CheckedNodeKind, CheckedNodeTag, CheckedPackageV2, CheckedTerm, LiteralKind, ProtocolForm,
+};
 use quire_exact::{Integer, NodeKey};
 
 use crate::checked::CheckedPackage;
@@ -44,12 +46,110 @@ pub enum OccurrenceRefusal {
         /// The protocol node holding the reference.
         node: NodeKey,
     },
+    /// A protocol node's `semantic_form` is not a closed `protocol` form, or
+    /// a control node's operator is not one of the thirteen control forms.
+    #[error("protocol node has an unrecognised `{member}`")]
+    Unrecognised {
+        /// The protocol node.
+        node: NodeKey,
+        /// The member that names no closed form.
+        member: &'static str,
+    },
     /// The wire identities of the package do not decode to structural keys.
-    #[error("package node identities do not decode to structural keys")]
-    Identity,
-    /// The package's source map is not readable.
-    #[error("package source map is not readable")]
-    SourceMap,
+    #[error("package node identities do not decode to structural keys: {0}")]
+    Identity(#[source] WireIdError),
+}
+
+/// The thirteen protocol control forms (QSpec FR-465 "Controls"), closed at
+/// the intake edge so no later code compares an operator string.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ControlOperator {
+    /// `sequence`.
+    Sequence,
+    /// `choice`.
+    Choice,
+    /// `parallel`.
+    Parallel,
+    /// `repeat`.
+    Repeat,
+    /// `await`.
+    Await,
+    /// `check`.
+    Check,
+    /// `send`.
+    Send,
+    /// `receive`.
+    Receive,
+    /// `attempt`.
+    Attempt,
+    /// `effect`.
+    Effect,
+    /// `event`.
+    Event,
+    /// `commit`.
+    Commit,
+    /// `fence`.
+    Fence,
+}
+
+impl ControlOperator {
+    /// The control form a wire operator word names, `None` for any other word.
+    // Intake edge: the one total conversion of an operator word.
+    #[string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        Some(match word {
+            "sequence" => Self::Sequence,
+            "choice" => Self::Choice,
+            "parallel" => Self::Parallel,
+            "repeat" => Self::Repeat,
+            "await" => Self::Await,
+            "check" => Self::Check,
+            "send" => Self::Send,
+            "receive" => Self::Receive,
+            "attempt" => Self::Attempt,
+            "effect" => Self::Effect,
+            "event" => Self::Event,
+            "commit" => Self::Commit,
+            "fence" => Self::Fence,
+            _ => return None,
+        })
+    }
+}
+
+/// How long a replicated role's spawned object lives (QSpec FR-428).
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RoleLifetime {
+    /// `workflow`.
+    Workflow,
+    /// `scope`.
+    Scope,
+    /// `until`.
+    Until,
+}
+
+impl RoleLifetime {
+    /// The lifetime a wire word names, `None` for any other word.
+    // Intake edge: the one total conversion of a lifetime word.
+    #[string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        Some(match word {
+            "workflow" => Self::Workflow,
+            "scope" => Self::Scope,
+            "until" => Self::Until,
+            _ => return None,
+        })
+    }
+}
+
+/// The authored name of the population a replicated role draws from.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct PopulationName(String);
+
+impl PopulationName {
+    /// The authored population text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// The repeat dimension a control holds in a runtime key (FR-384 Behavior).
@@ -90,12 +190,12 @@ pub enum RoleReplication {
     Static,
     /// A role spawned for each object of a population.
     Replicated {
-        /// The authored population text.
-        population: String,
+        /// The authored population.
+        population: PopulationName,
         /// The authored spawn maximum.
         max: Integer,
-        /// `workflow`, `scope` or `until`.
-        lifetime: String,
+        /// How long a spawned object lives.
+        lifetime: RoleLifetime,
     },
 }
 
@@ -106,8 +206,6 @@ pub struct RoleSlot {
     pub key: NodeKey,
     /// The role node's declaration path, one entry for each segment.
     pub path: Vec<String>,
-    /// The role's declaration region, from the package's source map.
-    pub region: Vec<SourceRegion>,
     /// Static, or replicated with population, maximum and lifetime.
     pub replication: RoleReplication,
 }
@@ -119,10 +217,8 @@ pub struct ControlEntry {
     pub key: NodeKey,
     /// The control node's declaration path, one entry for each segment.
     pub path: Vec<String>,
-    /// The control's operator (`sequence`, `repeat`, `send`, ...).
-    pub operator: String,
-    /// The control's declaration region, from the package's source map.
-    pub region: Vec<SourceRegion>,
+    /// The control's operator.
+    pub operator: ControlOperator,
     /// A role node, or structural.
     pub owner: ControlOwner,
     /// Enclosing repeat dimensions, outermost first.
@@ -136,8 +232,6 @@ pub struct CompensationEntry {
     pub key: NodeKey,
     /// The template node's declaration path, one entry for each segment.
     pub path: Vec<String>,
-    /// The template's declaration region, from the package's source map.
-    pub region: Vec<SourceRegion>,
     /// The role that runs the template.
     pub role: NodeKey,
     /// The forward `effect` control the template compensates.
@@ -194,7 +288,9 @@ pub enum SubjectKind {
     WorkflowClosure,
 }
 
-/// One runtime binding a later runtime satisfies.
+/// One runtime binding a later runtime satisfies. It carries no authority and
+/// no contract: the package lock's `binding_contract` selection supplies them
+/// (QSpec FR-465 "Runtime subjects").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeBindingRequirement {
     /// The subject kind.
@@ -203,10 +299,6 @@ pub struct RuntimeBindingRequirement {
     pub subject: NodeKey,
     /// The `protocol_clause` node's key.
     pub scope: NodeKey,
-    /// Always `None`: the consumer's binding supplies the authority.
-    pub authority: Option<NodeKey>,
-    /// Always `None`: the consumer's binding supplies the contract.
-    pub contract: Option<NodeKey>,
 }
 
 /// The schema and the binding requirements of one protocol.
@@ -226,6 +318,7 @@ pub struct ProtocolOccurrence {
 #[derive(Clone, Debug)]
 enum Term {
     Ref(NodeKey),
+    Integer(Integer),
     Text(String),
     List(Vec<Term>),
     Group(Vec<(String, Term)>),
@@ -234,8 +327,9 @@ enum Term {
 
 struct Raw {
     key: NodeKey,
-    form: String,
-    operator: String,
+    form: ProtocolForm,
+    /// Set exactly for a `control` node.
+    operator: Option<ControlOperator>,
     path: Vec<String>,
     args: Vec<(String, Term)>,
 }
@@ -246,6 +340,11 @@ impl Raw {
             .iter()
             .find_map(|(candidate, term)| (candidate == name).then_some(term))
             .ok_or_else(|| self.malformed(name))
+    }
+
+    /// The control operator of a control node.
+    fn control_operator(&self) -> Result<ControlOperator, OccurrenceRefusal> {
+        self.operator.ok_or_else(|| self.malformed("operation"))
     }
 
     fn malformed(&self, member: &'static str) -> OccurrenceRefusal {
@@ -327,7 +426,7 @@ fn as_ref(term: &Term) -> Option<&NodeKey> {
 
 fn as_integer(term: &Term) -> Option<Integer> {
     match term {
-        Term::Text(text) => text.parse().ok(),
+        Term::Integer(integer) => Some(integer.clone()),
         _ => None,
     }
 }
@@ -364,8 +463,8 @@ fn leaf(leaf: &LeafTerm) -> Term {
             LiteralValue::Text(text) | LiteralValue::String(text) | LiteralValue::Enum(text) => {
                 Term::Text(text.clone())
             }
-            LiteralValue::Integer(integer) => Term::Text(integer.to_string()),
-            LiteralValue::Count(count) => Term::Text(count.to_string()),
+            LiteralValue::Integer(integer) => Term::Integer(integer.clone()),
+            LiteralValue::Count(count) => Term::Integer(Integer::from(*count)),
             _ => Term::Other,
         },
         LeafTerm::DependencyReference { .. } => Term::Other,
@@ -414,6 +513,23 @@ fn member_term(member: &MemberTerm) -> (Option<String>, Term) {
     }
 }
 
+/// The control operator of a `control` node; every other form has none.
+fn control_operator(
+    node: &NodeKey,
+    form: ProtocolForm,
+    word: &str,
+) -> Result<Option<ControlOperator>, OccurrenceRefusal> {
+    if form != ProtocolForm::Control {
+        return Ok(None);
+    }
+    ControlOperator::from_wire(word)
+        .map(Some)
+        .ok_or_else(|| OccurrenceRefusal::Unrecognised {
+            node: node.clone(),
+            member: "operation",
+        })
+}
+
 fn in_process_nodes(package: &CheckedPackage) -> Result<Vec<Raw>, OccurrenceRefusal> {
     let mut nodes = Vec::new();
     for node in package.graph().semantic_graph().nodes() {
@@ -433,6 +549,13 @@ fn in_process_nodes(package: &CheckedPackage) -> Result<Vec<Raw>, OccurrenceRefu
                 member: "operation",
             });
         };
+        let Some(form) = ProtocolForm::from_wire(node.semantic_form()) else {
+            return Err(OccurrenceRefusal::Unrecognised {
+                node: key,
+                member: "semantic_form",
+            });
+        };
+        let operator = control_operator(&key, form, operator.as_str())?;
         let mut args = Vec::new();
         for argument in &application.arguments {
             if let (Some(name), term) = member_term(argument) {
@@ -440,8 +563,8 @@ fn in_process_nodes(package: &CheckedPackage) -> Result<Vec<Raw>, OccurrenceRefu
             }
         }
         nodes.push(Raw {
-            form: node.semantic_form().to_owned(),
-            operator: operator.as_str().to_owned(),
+            form,
+            operator,
             path: node
                 .declaration()
                 .map(|path| path.iter().map(|part| part.as_str().to_owned()).collect())
@@ -455,20 +578,35 @@ fn in_process_nodes(package: &CheckedPackage) -> Result<Vec<Raw>, OccurrenceRefu
 
 // --- the read-back adapter -------------------------------------------------
 
+/// A wire literal by its declared kind: an `integer` literal is a number or
+/// its canonical decimal string, a `string`, `text` or `enum` literal is text.
+/// A literal of one kind is never read as the other.
+fn read_literal(kind: LiteralKind, value: &serde_json::Value) -> Term {
+    match (kind, value) {
+        (LiteralKind::Integer, serde_json::Value::Number(number)) => number
+            .to_string()
+            .parse()
+            .map_or(Term::Other, Term::Integer),
+        (LiteralKind::Integer, serde_json::Value::String(text)) => {
+            text.parse().map_or(Term::Other, Term::Integer)
+        }
+        (
+            LiteralKind::String | LiteralKind::Text | LiteralKind::Enum,
+            serde_json::Value::String(text),
+        ) => Term::Text(text.clone()),
+        _ => Term::Other,
+    }
+}
+
 fn read_term(
     term: &CheckedTerm,
     keys: &mut dyn FnMut(&quire_contract_model::CheckedNodeId) -> Option<NodeKey>,
 ) -> (Option<String>, Term) {
     match term {
         CheckedTerm::Reference { target } => (None, keys(target).map_or(Term::Other, Term::Ref)),
-        CheckedTerm::Literal { value, .. } => (
-            None,
-            match value {
-                serde_json::Value::String(text) => Term::Text(text.clone()),
-                serde_json::Value::Number(number) => Term::Text(number.to_string()),
-                _ => Term::Other,
-            },
-        ),
+        CheckedTerm::Literal {
+            value_kind, value, ..
+        } => (None, read_literal(*value_kind, value)),
         CheckedTerm::Aggregate { members } => (
             None,
             aggregate(
@@ -484,15 +622,23 @@ fn read_term(
 }
 
 fn read_nodes(package: &CheckedPackageV2) -> Result<Vec<Raw>, OccurrenceRefusal> {
-    let graph = wire_graph(package).map_err(|_| OccurrenceRefusal::Identity)?;
+    let graph = wire_graph(package).map_err(OccurrenceRefusal::Identity)?;
     let mut nodes = Vec::new();
     for node in &package.graph().nodes {
-        if &*node.node_tag != "protocol" {
+        if CheckedNodeTag::from_wire(&node.node_tag) != Some(CheckedNodeTag::Protocol) {
             continue;
         }
         let key = graph
             .key(&node.node_id)
-            .map_err(|_| OccurrenceRefusal::Identity)?;
+            .map_err(OccurrenceRefusal::Identity)?;
+        let Some(CheckedNodeKind::Protocol(form)) =
+            CheckedNodeKind::decode(CheckedNodeTag::Protocol, &node.semantic_form)
+        else {
+            return Err(OccurrenceRefusal::Unrecognised {
+                node: key,
+                member: "semantic_form",
+            });
+        };
         let CheckedTerm::Application {
             operation,
             arguments,
@@ -518,6 +664,7 @@ fn read_nodes(package: &CheckedPackageV2) -> Result<Vec<Raw>, OccurrenceRefusal>
                 member: "operation",
             });
         };
+        let operator = control_operator(&key, form, operator)?;
         let mut lookup = |id: &quire_contract_model::CheckedNodeId| graph.key(id).ok();
         let mut args = Vec::new();
         for argument in arguments {
@@ -526,8 +673,8 @@ fn read_nodes(package: &CheckedPackageV2) -> Result<Vec<Raw>, OccurrenceRefusal>
             }
         }
         nodes.push(Raw {
-            form: (*node.semantic_form).to_owned(),
-            operator: operator.to_owned(),
+            form,
+            operator,
             path: node
                 .declaration
                 .as_ref()
@@ -548,33 +695,25 @@ fn read_nodes(package: &CheckedPackageV2) -> Result<Vec<Raw>, OccurrenceRefusal>
 
 // --- the derivation --------------------------------------------------------
 
-fn declaration_region(map: &PackageSourceMap, node: &NodeKey) -> Vec<SourceRegion> {
-    map.occurrences(node)
-        .filter(|(key, _)| key.origin().role().as_str() == "declaration")
-        .flat_map(|(_, regions)| regions.iter().cloned())
-        .collect()
-}
-
 /// The control nodes a control holds: a `repeat`'s `body` and `exhausted`
 /// control, a `sequence`'s children, a `choice` case's and a `parallel`
 /// branch's body, and an `await`'s inline `event`, `then` and `timeout`. Each is paired with
 /// the repeat dimension holding it adds.
-#[string_edge]
 fn held<'a>(
     control: &'a Raw,
 ) -> Result<Vec<(&'a NodeKey, Option<RepeatDimension>)>, OccurrenceRefusal> {
     let plain =
         |keys: Vec<&'a NodeKey>| keys.into_iter().map(|key| (key, None)).collect::<Vec<_>>();
-    Ok(match control.operator.as_str() {
-        "sequence" => plain(control.references("children")?),
-        "choice" => plain(control.record_bodies("cases")?),
-        "parallel" => plain(control.record_bodies("branches")?),
-        "await" => plain(vec![
+    Ok(match control.control_operator()? {
+        ControlOperator::Sequence => plain(control.references("children")?),
+        ControlOperator::Choice => plain(control.record_bodies("cases")?),
+        ControlOperator::Parallel => plain(control.record_bodies("branches")?),
+        ControlOperator::Await => plain(vec![
             control.reference("event")?,
             control.reference("then")?,
             control.reference("timeout")?,
         ]),
-        "repeat" => {
+        ControlOperator::Repeat => {
             let maximum = control
                 .optional("maximum")?
                 .map(|term| as_integer(term).ok_or_else(|| control.malformed("maximum")))
@@ -600,15 +739,20 @@ fn held<'a>(
             }
             held
         }
-        _ => Vec::new(),
+        ControlOperator::Check
+        | ControlOperator::Send
+        | ControlOperator::Receive
+        | ControlOperator::Attempt
+        | ControlOperator::Effect
+        | ControlOperator::Event
+        | ControlOperator::Commit
+        | ControlOperator::Fence => Vec::new(),
     })
 }
 
-#[string_edge]
 fn owner_of(
     control: &Raw,
     nodes: &BTreeMap<&NodeKey, &Raw>,
-    visiting: &mut BTreeSet<NodeKey>,
 ) -> Result<ControlOwner, OccurrenceRefusal> {
     let channel_end = |end: &'static str| -> Result<ControlOwner, OccurrenceRefusal> {
         let channel = control.reference("channel")?;
@@ -619,32 +763,35 @@ fn owner_of(
             })?;
         Ok(ControlOwner::Role(channel.reference(end)?.clone()))
     };
-    Ok(match control.operator.as_str() {
-        "choice" | "repeat" => ControlOwner::Role(control.reference("owner")?.clone()),
-        "attempt" | "event" | "commit" => ControlOwner::Role(control.reference("role")?.clone()),
-        "send" => channel_end("from")?,
-        "receive" => channel_end("to")?,
-        "effect" => {
-            let attempt = control.reference("of")?;
-            if !visiting.insert(attempt.clone()) {
+    Ok(match control.control_operator()? {
+        ControlOperator::Choice | ControlOperator::Repeat => {
+            ControlOwner::Role(control.reference("owner")?.clone())
+        }
+        ControlOperator::Attempt | ControlOperator::Event | ControlOperator::Commit => {
+            ControlOwner::Role(control.reference("role")?.clone())
+        }
+        ControlOperator::Send => channel_end("from")?,
+        ControlOperator::Receive => channel_end("to")?,
+        ControlOperator::Effect => {
+            let attempt = nodes.get(control.reference("of")?).ok_or_else(|| {
+                OccurrenceRefusal::UnknownNode {
+                    node: control.key.clone(),
+                }
+            })?;
+            if attempt.operator != Some(ControlOperator::Attempt) {
                 return Err(control.malformed("of"));
             }
-            let attempt = nodes
-                .get(attempt)
-                .ok_or_else(|| OccurrenceRefusal::UnknownNode {
-                    node: control.key.clone(),
-                })?;
             ControlOwner::Role(attempt.reference("role")?.clone())
         }
-        _ => ControlOwner::Structural,
+        ControlOperator::Sequence
+        | ControlOperator::Parallel
+        | ControlOperator::Await
+        | ControlOperator::Check
+        | ControlOperator::Fence => ControlOwner::Structural,
     })
 }
 
-#[string_edge]
-fn derive(
-    nodes: &[Raw],
-    map: &PackageSourceMap,
-) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
+fn derive(nodes: &[Raw]) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
     let by_key: BTreeMap<&NodeKey, &Raw> = nodes.iter().map(|node| (&node.key, node)).collect();
     let lookup = |from: &Raw, key: &NodeKey| -> Result<&Raw, OccurrenceRefusal> {
         by_key
@@ -655,7 +802,10 @@ fn derive(
             })
     };
     let mut derived = Vec::new();
-    for clause in nodes.iter().filter(|node| node.form == "protocol_clause") {
+    for clause in nodes
+        .iter()
+        .filter(|node| node.form == ProtocolForm::ProtocolClause)
+    {
         let mut roles = Vec::new();
         for key in clause.references("roles")? {
             let role = lookup(clause, key)?;
@@ -663,22 +813,22 @@ fn derive(
                 [] => RoleReplication::Static,
                 fields => {
                     let text = |name: &'static str| match field(fields, name) {
-                        Some(Term::Text(text)) => Ok(text.clone()),
+                        Some(Term::Text(text)) => Ok(text.as_str()),
                         _ => Err(role.malformed("replication")),
                     };
                     RoleReplication::Replicated {
-                        population: text("population")?,
+                        population: PopulationName(text("population")?.to_owned()),
                         max: field(fields, "max")
                             .and_then(as_integer)
                             .ok_or_else(|| role.malformed("replication"))?,
-                        lifetime: text("lifetime")?,
+                        lifetime: RoleLifetime::from_wire(text("lifetime")?)
+                            .ok_or_else(|| role.malformed("replication"))?,
                     }
                 }
             };
             roles.push(RoleSlot {
                 key: role.key.clone(),
                 path: role.path.clone(),
-                region: declaration_region(map, &role.key),
                 replication,
             });
         }
@@ -693,17 +843,16 @@ fn derive(
                 continue;
             }
             let control = lookup(clause, &key)?;
-            let owner = owner_of(control, &by_key, &mut BTreeSet::new())?;
+            let owner = owner_of(control, &by_key)?;
             for (child, dimension) in held(control)? {
                 let mut inner = dimensions.clone();
                 inner.extend(dimension);
                 pending.push((child.clone(), inner));
             }
             controls.push(ControlEntry {
-                region: declaration_region(map, &control.key),
                 key: control.key.clone(),
                 path: control.path.clone(),
-                operator: control.operator.clone(),
+                operator: control.control_operator()?,
                 owner,
                 dimensions,
             });
@@ -717,7 +866,6 @@ fn derive(
             compensations.push(CompensationEntry {
                 key: template.key.clone(),
                 path: template.path.clone(),
-                region: declaration_region(map, &template.key),
                 role: template.reference("role")?.clone(),
                 effect: template.reference("forward")?.clone(),
                 maximum_attempts: field(attempts, "maximum")
@@ -748,13 +896,20 @@ fn derive(
         }
         for entry in &controls {
             let node = lookup(clause, &entry.key)?;
-            let kinds: &[SubjectKind] = match entry.operator.as_str() {
-                "send" => &[SubjectKind::Message, SubjectKind::Send],
-                "receive" => &[SubjectKind::Receive, SubjectKind::Delivery],
-                "attempt" => &[SubjectKind::OperationAttempt],
-                "effect" => &[SubjectKind::BusinessEffect],
-                "commit" => &[SubjectKind::Commit],
-                _ => &[],
+            let kinds: &[SubjectKind] = match entry.operator {
+                ControlOperator::Send => &[SubjectKind::Message, SubjectKind::Send],
+                ControlOperator::Receive => &[SubjectKind::Receive, SubjectKind::Delivery],
+                ControlOperator::Attempt => &[SubjectKind::OperationAttempt],
+                ControlOperator::Effect => &[SubjectKind::BusinessEffect],
+                ControlOperator::Commit => &[SubjectKind::Commit],
+                ControlOperator::Sequence
+                | ControlOperator::Choice
+                | ControlOperator::Parallel
+                | ControlOperator::Repeat
+                | ControlOperator::Await
+                | ControlOperator::Check
+                | ControlOperator::Event
+                | ControlOperator::Fence => &[],
             };
             subject(node, kinds);
         }
@@ -781,8 +936,6 @@ fn derive(
                 kind,
                 subject: node,
                 scope: clause.key.clone(),
-                authority: None,
-                contract: None,
             })
             .collect();
 
@@ -804,16 +957,13 @@ impl CheckedPackage {
     /// Derives the occurrence schema and runtime binding requirements of
     /// every local protocol from the in-process protocol nodes (FR-384).
     ///
-    /// `source_map` is the source map emitted for this package (the
-    /// emission's [`source_map`](crate::Emission::source_map)); it supplies
-    /// each declaration region and nothing else. The result is ordered by
-    /// protocol clause key. No source text, display string or name is read
-    /// for a node's key, and no runtime value is fabricated.
+    /// The result is ordered by protocol clause key and is a function of the
+    /// nodes alone: no source text, source position, display string or name
+    /// is read for a node's key, and no runtime value is fabricated.
     pub fn protocol_occurrence_schemas(
         &self,
-        source_map: &PackageSourceMap,
     ) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
-        derive(&in_process_nodes(self)?, source_map)
+        derive(&in_process_nodes(self)?)
     }
 }
 
@@ -822,8 +972,155 @@ impl CheckedPackage {
 pub fn protocol_occurrence_schemas_from_read(
     package: &CheckedPackageV2,
 ) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
-    let graph = wire_graph(package).map_err(|_| OccurrenceRefusal::Identity)?;
-    let map = crate::checked_v2::package_source_map(&graph, package.source_map())
-        .map_err(|_| OccurrenceRefusal::SourceMap)?;
-    derive(&read_nodes(package)?, &map)
+    derive(&read_nodes(package)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use ix_trace_rs::trace;
+    use quire_exact::PathSegment;
+
+    use super::*;
+
+    fn key(name: &str) -> NodeKey {
+        NodeKey::new("pkg", vec![PathSegment::Text(name.to_owned())], 0).expect("a structural key")
+    }
+
+    fn control(name: &str, operator: ControlOperator, args: Vec<(&str, Term)>) -> Raw {
+        Raw {
+            key: key(name),
+            form: ProtocolForm::Control,
+            operator: Some(operator),
+            path: vec![name.to_owned()],
+            args: args
+                .into_iter()
+                .map(|(name, term)| (name.to_owned(), term))
+                .collect(),
+        }
+    }
+
+    fn repeat(maximum: Term) -> Raw {
+        control(
+            "R",
+            ControlOperator::Repeat,
+            vec![
+                ("maximum", Term::List(vec![maximum])),
+                ("body", Term::Ref(key("B"))),
+                ("exhausted", Term::List(Vec::new())),
+            ],
+        )
+    }
+
+    /// An integer maximum is read; the same digits as text are a malformed
+    /// maximum, so a string never passes as an integer (FR-384-AC-2).
+    #[trace("FR-384-AC-2", "TC-1064")]
+    #[test]
+    fn a_string_maximum_is_not_an_integer_maximum() {
+        let ok = repeat(Term::Integer(Integer::from(3_i64)));
+        let dimensions = held(&ok).expect("an integer maximum is read");
+        assert_eq!(
+            dimensions
+                .into_iter()
+                .map(|(_, dimension)| dimension)
+                .collect::<Vec<_>>(),
+            [Some(RepeatDimension::Iteration {
+                repeat: key("R"),
+                upper_exclusive: Some(Integer::from(3_i64)),
+            })]
+        );
+        let text = repeat(Term::Text("3".to_owned()));
+        assert_eq!(
+            held(&text).err(),
+            Some(OccurrenceRefusal::Malformed {
+                node: key("R"),
+                member: "maximum",
+            })
+        );
+    }
+
+    /// A wire literal is read by its declared kind (FR-384-AC-2).
+    #[trace("FR-384-AC-2", "TC-1064")]
+    #[test]
+    fn a_wire_literal_is_read_by_its_declared_kind() {
+        let three = serde_json::json!(3);
+        let digits = serde_json::json!("3");
+        assert!(matches!(
+            read_literal(LiteralKind::Integer, &three),
+            Term::Integer(value) if value == Integer::from(3_i64)
+        ));
+        assert!(matches!(
+            read_literal(LiteralKind::Integer, &digits),
+            Term::Integer(value) if value == Integer::from(3_i64)
+        ));
+        assert!(
+            matches!(read_literal(LiteralKind::String, &digits), Term::Text(text) if text == "3")
+        );
+        assert!(matches!(
+            read_literal(LiteralKind::String, &three),
+            Term::Other
+        ));
+    }
+
+    /// An `effect` is owned through the `attempt` it is of; any other node
+    /// there is malformed (FR-384-AC-1).
+    #[trace("FR-384-AC-1", "TC-1064")]
+    #[test]
+    fn an_effect_of_a_non_attempt_is_malformed() {
+        let check = control("C", ControlOperator::Check, Vec::new());
+        let effect = control(
+            "E",
+            ControlOperator::Effect,
+            vec![("of", Term::Ref(key("C")))],
+        );
+        let nodes: BTreeMap<&NodeKey, &Raw> = [(&check.key, &check)].into_iter().collect();
+        assert_eq!(
+            owner_of(&effect, &nodes).err(),
+            Some(OccurrenceRefusal::Malformed {
+                node: key("E"),
+                member: "of",
+            })
+        );
+        let role = key("Payer");
+        let attempt = control(
+            "A",
+            ControlOperator::Attempt,
+            vec![("role", Term::Ref(role.clone()))],
+        );
+        let nodes: BTreeMap<&NodeKey, &Raw> = [(&attempt.key, &attempt)].into_iter().collect();
+        let effect = control(
+            "E",
+            ControlOperator::Effect,
+            vec![("of", Term::Ref(key("A")))],
+        );
+        assert_eq!(owner_of(&effect, &nodes), Ok(ControlOwner::Role(role)));
+    }
+
+    /// A control node whose operator names no control form is refused with
+    /// the node, and an identity failure carries its cause (FR-384-AC-3).
+    #[trace("FR-384-AC-3", "TC-1064")]
+    #[test]
+    fn refusals_name_the_node_and_carry_their_cause() {
+        assert_eq!(
+            control_operator(&key("X"), ProtocolForm::Control, "teleport"),
+            Err(OccurrenceRefusal::Unrecognised {
+                node: key("X"),
+                member: "operation",
+            })
+        );
+        assert_eq!(
+            control_operator(&key("X"), ProtocolForm::Control, "await"),
+            Ok(Some(ControlOperator::Await))
+        );
+        assert_eq!(
+            control_operator(&key("X"), ProtocolForm::Role, "role"),
+            Ok(None)
+        );
+        let identity = OccurrenceRefusal::Identity(WireIdError::NoGraph { index: 7 });
+        assert_eq!(
+            identity.source().map(ToString::to_string),
+            Some(WireIdError::NoGraph { index: 7 }.to_string())
+        );
+    }
 }
