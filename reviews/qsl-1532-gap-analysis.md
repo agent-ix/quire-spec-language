@@ -46,3 +46,16 @@ on QSL-1532 or follow-ups. AC-10, AC-14 and AC-15 already have follow-ups.
 
 - Read FR-513 (AC-9..15 and the retained-criteria table) and TC-1308 rows 18-25 at the PR head.
 - Focused tests for the new code passed (see SR-20261103213521).
+
+## Dispositions
+
+Round 1, reviewed at `8f94fba0f01de42d4ab8149eec58b329dda7a6a5` on base `795458ae1919b50c9222ca9f148343fa742f1007`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | The emitter now tests malformed clock values and clock selection refusal, but authenticated temporal definition identity/revision/artifact substitution is still a typed-carrier API gap tracked by QSL-1596. |
+| FND-002 | deferred | The erroneous retired-v3 successor tags were removed; the checked-package derived activation-mapping successor and mutation tests remain tracked by QSL-1595. |
+| FND-003 | deferred | The skipped sibling-branch-binder operand is now exercised. The same-spelled other-owner case currently fails earlier at package-wide `Shadow`, before S3 guard checking; QSL-1597 tracks resolution of that boundary/case. |
+| FND-004 | deferred | Supported FR-106 cases are tagged, but occurrence identity in admission results plus the remaining surplus/duplicate-storage-key cases are tracked by QSL-1582. |
+| FND-005 | deferred | The I2 input-byte limit is covered; `identity.input_bytes` admission/refusal/retry remains tracked by QSL-1583. |
+| FND-006 | deferred | The inappropriate behavior-test tags were removed, but the matrix deletion-without-successor regression harness remains tracked by QSL-1584. |

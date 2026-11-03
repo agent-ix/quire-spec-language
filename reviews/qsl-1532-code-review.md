@@ -49,3 +49,15 @@ hardening.
 - Built the committed head `ab648524a` in a detached scratch worktree, through `locked-build.sh` with the shared `port-target`.
 - Passed: `cargo test --locked --all-features -p quire-spec-language --test it`, filtered to `compiled_protocol_v2::strict_reader_rejects_structural_and_identity_substitutions` and `checked_handoff::protocol_package_is_independently_admitted_and_identity_mutations_refuse` (2 passed).
 - Confirmed `serde_json` has no `preserve_order` (no `indexmap` in Cargo.lock), so `Value` re-serialisation sorts keys. FND-005 is about missing assertions, not a known false pass.
+
+## Dispositions
+
+Round 1, reviewed at `8f94fba0f01de42d4ab8149eec58b329dda7a6a5` on base `795458ae1919b50c9222ca9f148343fa742f1007`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Emission-side malformed clock values and selection checks are now tested, and the false retired-reader tag was removed. Definition identity, revision, and artifact identity are still not represented by the producer/typed carrier; QSL-1596 tracks that remaining contract and its tests. |
+| FND-002 | fixed | `every_case_gets_the_refusal_of_its_row` now carries only FR-518-AC-2, FR-518-AC-3, and TC-1313. |
+| FND-003 | deferred | The false FR-513-AC-11/AC-15/TC-1308 tags were removed from TC-143. A checked-package derived-activation-mapping successor remains tracked by QSL-1595. |
+| FND-004 | fixed | The behavior tests now retain their original criterion tags without FR-513-AC-15; for example, `population_and_window_documents_remain_distinct_from_clock_and_model_exports` carries only TC-136, FR-049-AC-2, and FR-049-AC-5. |
+| FND-005 | fixed | `protocol_package_is_independently_admitted_and_identity_mutations_refuse` admits the unmutated Value round-trip, then asserts each mutation's refusal code, cause, and path. |
