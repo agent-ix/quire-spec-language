@@ -821,7 +821,15 @@ fn parse_operation(
                 cancel,
             )
         })?;
-        if !continue_protocol_refusals && !parsed.protocol_results.is_empty() {
+        if !continue_protocol_refusals
+            && parsed.protocol_results.iter().any(|result| {
+                matches!(
+                    result,
+                    super::ProtocolResult::Refused { .. }
+                        | super::ProtocolResult::Incomplete { .. }
+                )
+            })
+        {
             let refusal = parsed
                 .syntax
                 .diagnostics()
@@ -1063,6 +1071,7 @@ fn check_with_context_and_temporal_selections(
         let mut resolution = Resolution {
             dependencies,
             packages: &models.packages,
+            continuation_source: parsed.source().reference().clone(),
             limits,
             cancel,
             temporal_selections,
@@ -1421,7 +1430,8 @@ fn forms_protocol_results(
     }
     clauses
         .into_iter()
-        .map(|node| {
+        .enumerate()
+        .map(|(source_index, node)| {
             let span = node.span();
             let declaration = parsed
                 .source()
@@ -1438,11 +1448,12 @@ fn forms_protocol_results(
             {
                 super::ProtocolResult::Refused {
                     declaration,
-                    source_index: 0,
+                    source_index,
                     declaration_span: failure.declaration_span,
                     code: failure.refusal.catalog_code(),
                     cause: format!("{:?}", failure.refusal.cause),
-                    locus: None,
+                    locus: region(parsed.source().reference(), failure.declaration_span)
+                        .map(Locus::Region),
                 }
             } else {
                 super::ProtocolResult::Cleared {
@@ -1675,11 +1686,11 @@ fn syntax_protocol_results(
         if source_index == owner {
             results.push(super::ProtocolResult::Refused {
                 declaration,
-                source_index: 0,
+                source_index,
                 declaration_span: span,
                 code: diagnostic.code,
                 cause: format!("{:?}", diagnostic.cause),
-                locus: None,
+                locus: region(parsed.source().reference(), span).map(Locus::Region),
             });
         } else {
             results.push(super::ProtocolResult::Cleared {
@@ -1905,6 +1916,7 @@ struct ResolvedLibrary {
 struct Resolution<'a> {
     dependencies: &'a DependencyInput,
     packages: &'a qsl_semantics::model::intake::PackageInput,
+    continuation_source: RawSourceRef,
     limits: SpineLimits,
     cancel: &'a Cancel,
     temporal_selections: &'a [qsl_package::TemporalClockSelection],
@@ -2178,7 +2190,11 @@ impl<'a> Resolution<'a> {
         })?;
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
-            declarations.check_with_protocol_continuation_and_cancel(limits.checking, cancel)
+            if frame.raw == self.continuation_source {
+                declarations.check_with_protocol_continuation_and_cancel(limits.checking, cancel)
+            } else {
+                declarations.check_with_cancel(limits.checking, cancel)
+            }
         })
         .map_err(|refusals| {
             let refusals = pending.report(refusals);

@@ -289,7 +289,7 @@ fn protocol_source(name: &str, close: bool) -> String {
          role R on M::Widget;\n\
          run sequence Main {{ }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
-         {}}}",
+         {}",
         if close { "}" } else { "" }
     )
 }
@@ -317,7 +317,7 @@ fn parse_carries_protocol_results_for_a_confined_syntax_refusal() {
         results.as_slice(),
         [
             crate::spine::ProtocolResult::Cleared { declaration: w, stage: SpineStage::Forms },
-            crate::spine::ProtocolResult::Refused { declaration: x, source_index: 0, .. },
+            crate::spine::ProtocolResult::Refused { declaration: x, source_index: 1, .. },
             crate::spine::ProtocolResult::Cleared { declaration: z, stage: SpineStage::Forms },
         ] if w == "W" && x == "X" && z == "Z"
     ));
@@ -341,6 +341,90 @@ fn parse_does_not_attach_protocol_results_to_unattributable_syntax_errors() {
         .expect_err("the unit syntax is invalid");
         assert!(failure.payload().is_none(), "{failure:?}");
     }
+}
+
+/// FR-503-AC-1 (TC-1298 row 3): an attributable S2 refusal is indexed within
+/// its own source, and its locus keeps the owning source identity.
+#[trace("TC-1298", "FR-503-AC-1")]
+#[test]
+fn forms_refusal_is_attributed_to_its_declaration_and_source() {
+    use crate::spine::ProtocolResult;
+    use qsl_cst::Production;
+    use qsl_forms::{FormsCause, FormsRefusal, ProtocolFormsRefusal};
+
+    let bytes = format!(
+        "{HEADER}\n{}\n{}\n{}",
+        protocol_source("W", true),
+        protocol_source("X", true),
+        protocol_source("Z", true)
+    );
+    let cancel = Cancel::new();
+    let parse_source = |authority: &str, location: &str| {
+        let source = SourceIdentity::new(authority, location, "fixture", location);
+        qsl_cst::parse_with_cancel(
+            source,
+            "unit.native",
+            bytes.as_bytes(),
+            SourceLimits::default(),
+            &cancel,
+        )
+        .expect("three protocol declarations parse")
+    };
+    let root = parse_source("agent-ix", "test:lifecycle-root");
+    let library = parse_source("agent-ix", "test:lifecycle-library");
+    let root_results = super::forms_protocol_results(&root, &[]).expect("root protocols");
+    assert!(root_results.iter().all(|result| matches!(
+        result,
+        ProtocolResult::Cleared {
+            stage: SpineStage::Forms,
+            ..
+        }
+    )));
+
+    let declaration_span = library
+        .cst()
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::Declaration)
+        .find(|node| {
+            library
+                .source()
+                .text()
+                .get(node.span().start..node.span().end)
+                .is_some_and(|text| text.contains("protocol X"))
+        })
+        .expect("X's declaration node")
+        .span();
+    let refusal = ProtocolFormsRefusal {
+        declaration: "X".to_owned(),
+        declaration_span,
+        refusal: FormsRefusal {
+            cause: FormsCause::UnexpectedShape {
+                production: Production::ProtocolClause,
+            },
+            span: Some(declaration_span),
+            recoveries: Vec::new(),
+        },
+    };
+    let library_results =
+        super::forms_protocol_results(&library, &[refusal]).expect("library protocols");
+    assert!(matches!(
+        library_results.as_slice(),
+        [
+            ProtocolResult::Cleared { declaration: w, stage: SpineStage::Forms },
+            ProtocolResult::Refused {
+                declaration: x,
+                source_index: 1,
+                locus: Some(qsl_foundation::diagnostic::Locus::Region(locus)),
+                ..
+            },
+            ProtocolResult::Cleared { declaration: z, stage: SpineStage::Forms },
+        ] if w == "W"
+            && x == "X"
+            && z == "Z"
+            && locus.source() == library.source().reference()
+            && locus.source() != root.source().reference()
+    ));
 }
 
 /// FR-503-AC-3..6 (TC-1298 rows 3-8): S4 replaces cleared declarations with
@@ -412,16 +496,43 @@ fn protocol_check_stage(
     .into_value();
     let mut limits = SpineLimits::default();
     limits.checking = checking;
-    super::check_for_continuation(
+    super::check(
         &parsed,
         "fixture".to_owned(),
-        &Default::default(),
-        &[],
         &models,
         &DependencyInput::default(),
         limits,
         &cancel,
     )
+}
+
+fn standalone_protocol_check_code(bytes: &[u8]) -> Code {
+    let cancel = Cancel::new();
+    let parsed = parse(&request(bytes), SourceLimits::default(), &cancel)
+        .expect("standalone protocol source parses")
+        .into_value();
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &cancel,
+    )
+    .expect("fixture model admits")
+    .into_value();
+    let failure = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .expect_err("the standalone protocol refuses");
+    refusal_or_fault(failure)
+        .expect("the standalone check returns a refusal")
+        .code()
 }
 
 fn checked_protocol_source(bytes: &[u8]) -> CheckedUnit {
@@ -483,7 +594,7 @@ fn syntax_refusal_does_not_suppress_clean_protocol_emission() {
         declaration: z,
         nodes: emitted_z,
         ..
-    }] = results.as_slice()
+    }] = results
     else {
         panic!("ordered W/X/Z results: {results:?}");
     };
@@ -502,6 +613,8 @@ fn check_retains_the_owning_protocol_locus() {
     use crate::spine::ProtocolResult;
 
     let broken = protocol_source("X", true).replace("M::Widget", "M::Absent");
+    let standalone_unit = format!("{HEADER}model M = \"acme/orders\";\n{broken}");
+    let standalone_code = standalone_protocol_check_code(standalone_unit.as_bytes());
     let unit = format!(
         "{HEADER}model M = \"acme/orders\";\n{}\n{}",
         protocol_source("W", true),
@@ -530,10 +643,14 @@ fn check_retains_the_owning_protocol_locus() {
         &cancel,
     )
     .expect_err("X's missing type refuses check");
+    let x_start = unit.find("protocol X").expect("X's declaration") + "protocol ".len();
     let StageFailure::RefusedWithPayload(refusal, results) = failure else {
         panic!("check retains protocol results: {failure:?}");
     };
-    assert_eq!(refusal.code(), Code::InvalidModelBinding);
+    assert_eq!(refusal.code(), standalone_code);
+    let with_payload_code = refusal.code();
+    let with_payload_category = with_payload_code.category();
+    let with_payload_exit = with_payload_category.exit_code();
     assert!(matches!(
         results.as_slice(),
         [
@@ -543,12 +660,25 @@ fn check_retains_the_owning_protocol_locus() {
             },
             ProtocolResult::Refused {
                 declaration: x,
-                source_index: 0,
-                locus: Some(_),
+                source_index: 1,
+                declaration_span,
+                locus: Some(qsl_foundation::diagnostic::Locus::Region(locus)),
                 ..
             }
-        ] if w == "W" && x == "X"
+        ] if w == "W"
+            && x == "X"
+            && declaration_span.start == x_start
+            && declaration_span.end == x_start + 1
+            && locus.source() == parsed.source().reference()
+            && locus.start() == x_start as u64
+            && locus.end() == (x_start + 1) as u64
     ));
+    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    assert_eq!(with_payload_category, without_payload.code().category());
+    assert_eq!(
+        with_payload_exit,
+        without_payload.code().category().exit_code()
+    );
 }
 
 /// FR-503-AC-5 (TC-1298 row 7): the shared S3 budget leaves the completed
@@ -558,7 +688,12 @@ fn check_retains_the_owning_protocol_locus() {
 fn check_limit_retains_completed_and_incomplete_protocol_results() {
     use crate::spine::ProtocolResult;
 
-    let unit = |protocols: &str| format!("{HEADER}model M = \"acme/orders\";\n{protocols}");
+    let unit = |protocols: &str| {
+        format!(
+            "{HEADER}model M = \"acme/orders\";\n\
+             function baseline using v(): Boolean pure {{ true }}\n{protocols}"
+        )
+    };
     let no_protocols = protocol_check_stage(unit("").as_bytes(), CheckingLimits::default())
         .expect("the no-protocol unit checks");
     let base = no_protocols.work().s3;
@@ -598,7 +733,7 @@ fn check_limit_retains_completed_and_incomplete_protocol_results() {
             && second_limit.setting() == Setting::S3WorkUnits
             && third_limit.setting() == Setting::S3WorkUnits
     ));
-    assert_eq!(failure_category_for_limit(&limit), Category::Incomplete);
+    assert_eq!(Code::StageLimitExceeded.category(), Category::Incomplete);
 }
 
 /// FR-503-AC-6 (TC-1298 row 8): a separate state-clause refusal keeps W
@@ -636,29 +771,44 @@ fn state_clause_refusal_keeps_protocol_result_cleared() {
         &cancel,
     )
     .expect_err("the state clause's missing member refuses check");
-    let with_payload_category = failure.category();
-    let with_payload_exit = with_payload_category.exit_code();
     let StageFailure::RefusedWithPayload(refusal, results) = failure else {
         panic!("state-clause refusal keeps protocol results: {failure:?}");
     };
+    let expected_code = refusal.code();
+    let with_payload_category = expected_code.category();
+    let with_payload_exit = with_payload_category.exit_code();
     assert_eq!(with_payload_category, Category::Refusal);
     assert_eq!(with_payload_exit, 20);
-    let without_payload: StageFailure<_, Vec<ProtocolResult>> = StageFailure::Refused(refusal);
-    assert_eq!(with_payload_category, without_payload.category());
-    assert_eq!(with_payload_exit, without_payload.category().exit_code());
     assert!(matches!(
         results.as_slice(),
         [ProtocolResult::Cleared { declaration, stage: SpineStage::Check }]
             if declaration == "W"
     ));
-}
+    let without_payload = crate::ReplayRefusal::Recompile(refusal);
+    assert_eq!(with_payload_category, without_payload.code().category());
+    assert_eq!(
+        with_payload_exit,
+        without_payload.code().category().exit_code()
+    );
 
-fn failure_category_for_limit(limit: &LimitExceeded) -> Category {
-    StageFailure::<Box<CompileRefusal>, Vec<crate::spine::ProtocolResult>>::LimitWithPayload(
-        limit.clone(),
-        Vec::new(),
+    let compile_failure = crate::compile::compile_package(
+        crate::compile::CompileUnit {
+            source: identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: unit.as_bytes(),
+        },
+        [MODEL_DOCUMENT],
+        &DependencyInput::default(),
+        StageLimits::default(),
+        ReplayLimits::default(),
     )
-    .category()
+    .expect_err("the state clause prevents a unit package");
+    assert_eq!(compile_failure.code(), expected_code);
+    assert!(matches!(
+        compile_failure.protocol_results(),
+        Some([ProtocolResult::Emitted { declaration, .. }]) if declaration == "W"
+    ));
 }
 
 /// The one library the import tests supply: `x < 5` over a digit.
@@ -2318,7 +2468,7 @@ fn an_internal_invariant_failure_is_a_fault() {
         }],
         region: None,
     });
-    let failure = failure_of(refusal, &|_| None);
+    let failure = failure_of(refusal.into(), &|_| None);
     assert!(matches!(failure, StageFailure::Fault(_)), "{failure:?}");
     assert!(refusal_or_fault(failure).is_err());
 }
@@ -2358,7 +2508,7 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
         }],
         region: None,
     });
-    let failure = failure_of(refusal, &|_| None);
+    let failure = failure_of(refusal.into(), &|_| None);
     let fault = refusal_or_fault(failure)
         .expect_err("a rebound node is a fault: the unit yields no refusal and no package");
     assert_eq!(fault.stage(), "S3");

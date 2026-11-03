@@ -2776,7 +2776,7 @@ impl PackageDeclarations {
         // family's own contract once every function signature is known (a
         // clause body may call a function), against the same package-wide
         // node total and contract meter.
-        let state_clause_forms = self.state_clauses;
+        let mut state_clause_forms = self.state_clauses;
         let mut typed_clauses = Vec::with_capacity(state_clause_forms.len());
         // FR-185: every read of an operation parameter by a checked
         // precondition, so a read of a random parameter refuses.
@@ -3270,6 +3270,13 @@ impl PackageDeclarations {
                     .all(|refusal| matches!(refusal.location.origin, Origin::StateClause { .. }))
             {
                 unit_refusals.append(&mut refusals);
+                // The continuation graph is only used to finish independent
+                // protocol checks. Do not carry a refused clause without its
+                // typed/lowered counterpart into requirement keying below.
+                // The package is refused at the unit boundary, so omitting
+                // these clauses from this temporary graph cannot emit them.
+                state_clause_forms.clear();
+                typed_clauses.clear();
             } else {
                 return Err(with_deferred(refusals, &prechecked_deferred));
             }
