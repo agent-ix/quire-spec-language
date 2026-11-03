@@ -9,10 +9,10 @@ use qsl_cst::Limits as SourceLimits;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{self, ParseRequest};
 use qsl_replay::{
-    call_site, replay, replay_state_clause, DependencyInput, EnvelopeSource, ObligationIdentity,
-    QualifiedName, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplaySource,
-    ReplayTargetMembers, RequestTargetWire, StateClauseCounterexample, StateEnvironment,
-    WitnessEnvelope, WitnessPacket,
+    call_site, replay, replay_state_clause, DependencyEntryWire, DependencyInput, EnvelopeSource,
+    ObligationIdentity, QualifiedName, ReplayLimits, ReplayRefusal, ReplayRequestWire,
+    ReplaySource, ReplayTargetMembers, RequestTargetWire, StateClauseCounterexample,
+    StateEnvironment, SuppliedLibrary, WitnessEnvelope, WitnessPacket,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::package_input;
@@ -50,6 +50,16 @@ const FIRST_ID: &str = "test:replay-first";
 const SECOND_ID: &str = "test:replay-second";
 const PACKAGE: &str = "example/config-version";
 const HISTORY: &str = "ix://example/config-version/config_history";
+const LIBRARY_FIRST: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
+    function f using v(x: Boolean): Boolean pure { g(x) }\n";
+const LIBRARY_SECOND: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
+    function g using v(x: Boolean): Boolean pure { x }\n";
+const LIBRARY_CALLER: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
+    import \"test/library\" as l;\n\
+    function p using v(): Boolean pure { l::f(true) }\n";
 
 fn selected() -> QualifiedName {
     QualifiedName::new(vec![quire_exact::Identifier::new("p").unwrap()]).unwrap()
@@ -377,6 +387,118 @@ fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
     let replayed = replay_state_clause(wire, &envelope, ReplayLimits::default())
         .expect("D10 state clause replays from either reference order");
     (replayed, package_bytes)
+}
+
+fn multi_source_dependency_replay(reverse: bool) -> (qsl_replay::ReplayResult, Vec<u8>) {
+    let first = SuppliedLibrary {
+        identity: "test/library".to_owned(),
+        source: SourceIdentity::new("test", "library-u1", "unit", "1"),
+        path: "library-u1.native".to_owned(),
+        bytes: LIBRARY_FIRST.as_bytes().to_vec(),
+    };
+    let second = SuppliedLibrary {
+        identity: "test/library".to_owned(),
+        source: SourceIdentity::new("test", "library-u2", "unit", "1"),
+        path: "library-u2.native".to_owned(),
+        bytes: LIBRARY_SECOND.as_bytes().to_vec(),
+    };
+    let units = if reverse {
+        vec![second.clone(), first.clone()]
+    } else {
+        vec![first.clone(), second.clone()]
+    };
+    let dependencies = DependencyInput::new([first.clone()])
+        .expect("one library identity admits")
+        .with_library_units("test/library", units)
+        .expect("both units belong to one library");
+    let selection = call_site(
+        SourceIdentity::new(AUTHORITY, FIRST_ID, NAMESPACE, REVISION),
+        "fixture".to_owned(),
+        FIRST_ID,
+        LIBRARY_CALLER.as_bytes(),
+        std::iter::empty::<&[u8]>(),
+        &dependencies,
+        &selected(),
+    )
+    .expect("the call site resolves through the multi-unit dependency");
+    let package = selection.package;
+    let dependency_reference = |identity: &str| {
+        (
+            "test".to_owned(),
+            identity.to_owned(),
+            "unit".to_owned(),
+            "1".to_owned(),
+        )
+    };
+    let source_refs = if reverse {
+        vec![
+            dependency_reference("library-u2"),
+            dependency_reference("library-u1"),
+        ]
+    } else {
+        vec![
+            dependency_reference("library-u1"),
+            dependency_reference("library-u2"),
+        ]
+    };
+    let dependency = DependencyEntryWire {
+        identity: "test/library".to_owned(),
+        sources: source_refs.clone(),
+    };
+    let target = RequestTargetWire::function(selected(), selection.site.declaration.clone());
+    let wire = ReplayRequestWire {
+        package_name: "fixture".to_owned(),
+        profile_selections: Vec::new(),
+        sources: vec![reference(FIRST_ID)],
+        dependencies: vec![dependency],
+        replay_target: target,
+        source: ReplaySource::Input(Vec::new()),
+        obligation_identity: selection.site.obligation_identity().clone(),
+        backend: "tc-1210".to_owned(),
+        state_environment: StateEnvironment::default(),
+        accounting_limits: UNLIMITED,
+        stage_limits: BTreeMap::new(),
+        supplied_limits: None,
+        object_environment: None,
+        declared_domains: Vec::new(),
+        byte_provision: vec![
+            (
+                AUTHORITY.to_owned(),
+                FIRST_ID.to_owned(),
+                LIBRARY_CALLER.as_bytes().to_vec(),
+            ),
+            (
+                "test".to_owned(),
+                "library-u1".to_owned(),
+                LIBRARY_FIRST.as_bytes().to_vec(),
+            ),
+            (
+                "test".to_owned(),
+                "library-u2".to_owned(),
+                LIBRARY_SECOND.as_bytes().to_vec(),
+            ),
+        ],
+        documents: Vec::new(),
+    };
+    let replayed = replay(wire, ReplayLimits::default())
+        .expect("multi-unit dependency recompiles and replays");
+    (replayed, package)
+}
+
+#[trace("TC-1210", "FR-480-AC-7")]
+#[test]
+fn replay_accepts_canonical_and_reversed_dependency_unit_sources() {
+    let (canonical, canonical_package) = multi_source_dependency_replay(false);
+    let (reversed, reversed_package) = multi_source_dependency_replay(true);
+    assert_eq!(canonical_package, reversed_package);
+    assert_eq!(canonical, reversed);
+    let qsl_replay::ReplayResult::Input(result) = canonical else {
+        panic!("input replay result expected");
+    };
+    assert_eq!(
+        result.value(),
+        Some(qsl_replay::EvaluatedValue::Boolean(true))
+    );
 }
 
 #[trace("TC-1210", "FR-480-AC-7")]

@@ -1573,14 +1573,13 @@ pub(crate) fn recompile_with_temporal_selections(
             }
         }
     }
-    // Rule 2: the proved package's sources name a non-empty set of unique
-    // source units, independent of request order. Dependencies remain
-    // single-source library inputs under FR-099.
+    // Rule 2: the proved package's and each dependency's sources name
+    // non-empty sets of unique source units, independent of request order.
     let sources = package_sources(request)?;
     let library_sources = request
         .dependencies()
         .iter()
-        .map(|entry| one_source(entry.sources()))
+        .map(|entry| canonical_dependency_sources(entry.sources()))
         .collect::<Result<Vec<_>, _>>()?;
     let provided = |reference: &DefinitionSourceRef| {
         request.byte_provision().get(reference).ok_or_else(|| {
@@ -1596,16 +1595,35 @@ pub(crate) fn recompile_with_temporal_selections(
         .dependencies()
         .iter()
         .zip(library_sources)
-        .map(|(entry, reference)| {
-            Ok(SuppliedLibrary {
-                identity: entry.identity().as_str().to_owned(),
-                source: labels(reference),
-                path: reference.identity().to_owned(),
-                bytes: provided(reference)?.to_vec(),
-            })
+        .map(|(entry, references)| {
+            references
+                .into_iter()
+                .map(|reference| {
+                    Ok(SuppliedLibrary {
+                        identity: entry.identity().as_str().to_owned(),
+                        source: labels(reference),
+                        path: reference.identity().to_owned(),
+                        bytes: provided(reference)?.to_vec(),
+                    })
+                })
+                .collect::<Result<Vec<_>, ReplayRefusal>>()
         })
         .collect::<Result<Vec<_>, ReplayRefusal>>()?;
-    let dependencies = DependencyInput::new(libraries).map_err(ReplayRefusal::DependencyInput)?;
+    let dependencies = DependencyInput::new(libraries.iter().map(|units| {
+        units
+            .first()
+            .expect("dependency sources are non-empty")
+            .clone()
+    }))
+    .map_err(ReplayRefusal::DependencyInput)?;
+    let dependencies = request.dependencies().iter().zip(libraries).try_fold(
+        dependencies,
+        |dependencies, (entry, units)| {
+            dependencies
+                .with_library_units(entry.identity().as_str(), units)
+                .map_err(ReplayRefusal::DependencyInput)
+        },
+    )?;
     let packages = domain_packages(request)?;
     // Rule 4: the recompile.
     let package_name =
@@ -1661,6 +1679,29 @@ fn one_source(references: &[DefinitionSourceRef]) -> Result<&DefinitionSourceRef
 }
 
 /// A source reference's two FR-001 labels.
+
+fn canonical_dependency_sources(
+    references: &[DefinitionSourceRef],
+) -> Result<Vec<&DefinitionSourceRef>, ReplayRefusal> {
+    if references.is_empty() {
+        return Err(ReplayRefusal::SourceCount(0));
+    }
+    let mut canonical = references.iter().collect::<Vec<_>>();
+    canonical.sort_by(|left, right| {
+        left.authority()
+            .as_bytes()
+            .cmp(right.authority().as_bytes())
+            .then_with(|| left.identity().as_bytes().cmp(right.identity().as_bytes()))
+    });
+    if canonical.windows(2).any(|pair| {
+        pair[0].authority() == pair[1].authority() && pair[0].identity() == pair[1].identity()
+    }) {
+        return Err(ReplayRefusal::PackageSources(
+            "a dependency source owner is repeated",
+        ));
+    }
+    Ok(canonical)
+}
 fn package_sources(request: &ReplayRequest) -> Result<Vec<&DefinitionSourceRef>, ReplayRefusal> {
     let references = request.sources();
     if references.is_empty() {
