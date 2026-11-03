@@ -56,12 +56,14 @@ pub use checked_v2::{
 };
 #[cfg(feature = "std")]
 pub use emit::{
-    checked_occurrence, emit_checked, emit_checked_with_cancel, emit_checked_with_protocol_results,
+    checked_occurrence, declaration_less_function_id, emit_checked, emit_checked_with_cancel,
+    emit_checked_with_protocol_results,
     emit_checked_with_protocol_results_and_temporal_selections_and_cancel,
     emit_checked_with_temporal_selections, emit_checked_with_temporal_selections_and_cancel,
-    emit_package, emit_package_with_temporal_selections, emit_timed_models, Emission, EmitRefusal,
-    OmissionCause, OmittedNode, ProtocolEmission, ProtocolEmissionAggregate,
-    ProtocolEmissionResult, TemporalClockSelection, TimedOrderFault,
+    emit_monitor_plan, emit_monitor_plan_over, emit_package, emit_package_with_temporal_selections,
+    emit_timed_models, Emission, EmitRefusal, MonitorPlanWire, OmissionCause, OmittedNode,
+    ProtocolEmission, ProtocolEmissionAggregate, ProtocolEmissionResult, TemporalClockSelection,
+    TimedOrderFault,
 };
 pub use evaluation_view::{
     AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, ReaderProtocolField,

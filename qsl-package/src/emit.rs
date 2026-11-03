@@ -173,6 +173,17 @@ pub enum EmitRefusal {
     /// A typed timed model cannot be serialized with its available literals.
     #[error("typed timed-model writer invariant: {0}")]
     TimedModelWriterInvariant(&'static str),
+    /// The plan-root writer found the package missing a node it needs
+    /// (QSpec FR-487).
+    #[error("the tick-monitor plan cannot be written: {0}")]
+    MonitorPlanInvariant(&'static str),
+    /// The plan-root writer found a name or selection declared more than
+    /// once and refuses to bind the first (QSpec FR-487).
+    #[error("the tick-monitor plan cannot be written: {name} is declared more than once")]
+    MonitorPlanAmbiguous {
+        /// The ambiguous declared name.
+        name: String,
+    },
     /// A checked refinement has no selected subject key to bind.
     #[error("a checked refinement has no selected state-machine subject node")]
     RefinementSubjectNotEmitted,
@@ -309,10 +320,11 @@ impl EmitRefusal {
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Code::UnsupportedConstruct
             }
+            Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
             Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
-            Self::TimedModelWriterInvariant(_) | Self::RefinementSubjectNotEmitted => {
-                Code::RuntimeInvariant
-            }
+            Self::TimedModelWriterInvariant(_)
+            | Self::MonitorPlanInvariant(_)
+            | Self::RefinementSubjectNotEmitted => Code::RuntimeInvariant,
             Self::RefinementIdentityEncoding => Code::OutputFailure,
             Self::RefinementNotEmitted => Code::UnsupportedConstruct,
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
@@ -344,6 +356,8 @@ impl EmitRefusal {
             | Self::TimedModelNodeSetMismatch
             | Self::TimedOrder(_)
             | Self::TimedModelWriterInvariant(_)
+            | Self::MonitorPlanInvariant(_)
+            | Self::MonitorPlanAmbiguous { .. }
             | Self::RefinementSubjectNotEmitted
             | Self::RefinementIdentityEncoding
             | Self::UnlocatedRefinementDeclaration
@@ -6234,5 +6248,9 @@ pub(crate) mod tests;
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
+mod monitor_plan;
+pub use monitor_plan::{
+    declaration_less_function_id, emit_monitor_plan, emit_monitor_plan_over, MonitorPlanWire,
+};
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;

@@ -59,6 +59,7 @@ mod state_model_family;
 mod supplied_phases;
 mod tc235_business_meaning_runtime;
 mod temporal_trace;
+mod tick_monitor;
 mod timed_subject;
 mod timed_trace;
 mod total_functions;
