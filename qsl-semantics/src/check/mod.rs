@@ -2713,6 +2713,13 @@ impl PackageDeclarations {
                     });
                     return Err(refusals);
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&limit),
+                    });
+                    return Err(refusals);
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2722,6 +2729,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
@@ -2796,6 +2810,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2805,6 +2828,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
@@ -3867,6 +3897,9 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                    temporal_clause::refuses_after_activation(&clause.form, refusal)
+                }
                 Err(_) => false,
             };
             if body_refused {
@@ -3995,6 +4028,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4004,6 +4046,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
             }
         }
         // FR-185: the `random`, `reward` and `workload` declarations,
@@ -4093,6 +4136,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4102,6 +4154,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
@@ -4208,6 +4267,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4217,6 +4285,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
             }
         }
         // The nodes the hyper conditions checked count against the package's
