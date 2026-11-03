@@ -119,7 +119,8 @@ fn absent_denotes_the_none_of_the_option_its_position_expects() {
          function produce using v(): Option<Integer> pure { absent }\n\
          function choose using v(x: Option<Integer>): Option<Integer> pure { if true then absent else x }\n\
          function built using v(): Q pure { Q { a: 1, v: absent } }\n\
-         function built_none using v(q: Q): Boolean pure { q.v = absent }",
+         function built_none using v(q: Q): Boolean pure { q.v = absent }\n\
+         function built_field using v(): Boolean pure { let q = Q { a: 1, v: absent } in q.v = absent }",
     )
     .unwrap_or_else(|refusals| panic!("every position admits absent: {refusals:?}"));
     for name in ["left", "right"] {
@@ -129,11 +130,18 @@ fn absent_denotes_the_none_of_the_option_its_position_expects() {
     assert!(truth(call(&package, "both", vec![none(), none()])));
     assert!(!truth(call(&package, "both", vec![none(), some(1)])));
     assert!(truth(call(&package, "passed", vec![])));
-    let holds_none = |outcome: Outcome<Value>| {
-        format!("{outcome:?}") == format!("{:?}", Outcome::Completed(none()))
-    };
-    assert!(holds_none(call(&package, "produce", vec![])));
-    assert!(holds_none(call(&package, "choose", vec![some(7)])));
+    for outcome in [
+        call(&package, "produce", vec![]),
+        call(&package, "choose", vec![some(7)]),
+    ] {
+        let Outcome::Completed(Value::Option(option)) = outcome else {
+            panic!("a completed option, not {outcome:?}");
+        };
+        assert_eq!(option.payload_type(), &ValueType::Integer);
+        assert!(option.payload().is_none(), "the none of Option<Integer>");
+    }
+    // The record field `v: absent` holds the `none` of `Option<Integer>`.
+    assert!(truth(call(&package, "built_field", vec![])));
 }
 
 /// FR-143-AC-19: an `absent` with no unique expected type (both operands of

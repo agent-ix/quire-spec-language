@@ -2120,6 +2120,33 @@ fn absent_takes_the_option_type_its_context_expects() {
     }
 }
 
+/// [`option_clock_document`] with `v` an `Option<Integer>` instead.
+fn option_integer_document() -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(&option_clock_document()).expect("JSON");
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields");
+    let v = fields
+        .iter_mut()
+        .find(|field| field["name"] == "v")
+        .expect("the optional field v");
+    assert_eq!(v["typeRef"], "ix://quire/native/Clock");
+    v["typeRef"] = json!("ix://quire/native/Integer");
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-143-AC-18 (TC-188): `self.v = absent` is admitted as the `none` of the
+/// written place's own option, for `v: Option<Clock>` and for
+/// `v: Option<Integer>`.
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-18")]
+#[test]
+fn the_absent_write_is_the_none_of_an_option_clock_and_an_option_integer() {
+    let body =
+        format!("{UNITS}{DENSE}post Disarm using v on Config::Call::bump {{ self.v = absent }}\n");
+    check(&option_clock_document(), &body).expect("the Option<Clock> write checks");
+    check(&option_integer_document(), &body).expect("the Option<Integer> write checks");
+}
+
 /// FR-230-AC-12 (TC-685), the drop: `self.v = absent` over `v:
 /// Option<Clock>` records a drop of `v` and no reset; with a frame not
 /// naming `v`, the drop and a reset `self.v = 0 ms` each refuse

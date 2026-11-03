@@ -1918,6 +1918,51 @@ fn e31_uuid_and_timestamp_never_compare_with_another_kind() {
         quire_exact::compare_keys(&native_timestamp("0"), &native_uuid(NATIVE_UUID)),
         None
     );
+
+    // An attempted equality conversion between the kinds is no conversion
+    // the table admits, so it refuses at check time as well.
+    for (source, target) in [
+        (ValueType::Uuid, ValueType::Timestamp),
+        (ValueType::Timestamp, ValueType::Uuid),
+        (ValueType::Integer, ValueType::Uuid),
+        (ValueType::Integer, ValueType::Timestamp),
+        (ValueType::Uuid, ValueType::Integer),
+        (ValueType::Timestamp, ValueType::Integer),
+    ] {
+        assert_eq!(
+            env.check_equality(
+                EqualityOperator::Equal,
+                EqualityOperand::converted(source.clone(), target.clone()),
+                typed(&target),
+                &EnumMemberIndex::default(),
+            ),
+            mismatch,
+            "{source:?} to {target:?}"
+        );
+    }
+
+    // The check-time refusal above takes no meter, so it precedes every
+    // equality charge. A kernel comparison of the two kinds is the typed
+    // checked-invariant refusal after the plan-form charge alone: no plan,
+    // pair or retained result is charged.
+    let invariant = Refusal::CheckedInvariant {
+        cause: quire_exact::CheckedInvariantCause::ValueKindMismatch,
+    };
+    for (left, right) in [
+        (native_uuid(NATIVE_UUID), native_timestamp("0")),
+        (native_timestamp("0"), native_uuid(NATIVE_UUID)),
+    ] {
+        assert_eq!(plan_equality(&left, &right).err(), Some(invariant.clone()));
+        let mut meter = Meter::new(UNLIMITED);
+        assert_eq!(
+            quire_exact::planned_equality(&left, &right, &mut meter),
+            Outcome::Refused(invariant.clone())
+        );
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            [ChargePoint::EqualityPlanForm]
+        );
+    }
 }
 
 /// FR-149-AC-16: same-kind keys compare canonical payload content unsigned

@@ -261,6 +261,37 @@ fn empty_inventory_and_blank_editable_authority_do_not_establish_a_namespace() {
     ));
 }
 
+/// QSpec FR-039-AC-4 (the runtime-expression clause): `rational(n, d)` takes
+/// two unsigned integer literals, so a runtime expression as either argument
+/// refuses `invalid_syntax` at that argument instead of choosing a domain.
+#[test]
+#[trace("QSpec-TC-039", "QSpec-FR-039-AC-4")]
+fn a_runtime_expression_argument_to_a_rational_literal_is_refused() {
+    for (argument, at) in [
+        ("rational(input.signed, 2)", "input"),
+        ("rational(1, input.signed)", "input"),
+        ("rational(input.signed + 1, 2)", "input"),
+    ] {
+        let text = format!(
+            "{HEADER}predicate Literal using S (input: M::Node): Boolean {{ input.fraction = {argument} }}"
+        );
+        let unit = source("test:runtime", "r1", "runtime.native", &text);
+        let selected = inventory(&[("runtime", &unit)]);
+        let supplied = [unit];
+        let report = admit(&selected, &supplied);
+        assert!(report.namespace().is_none(), "{argument}");
+        let [InventoryIssue::ParseFailure { diagnostic, .. }] = report.issues() else {
+            panic!("{argument}: one parse failure, not {:?}", report.issues());
+        };
+        assert_eq!(diagnostic.code, Code::InvalidSyntax, "{argument}");
+        assert_eq!(
+            &text[diagnostic.span.start.byte..diagnostic.span.end.byte],
+            at,
+            "{argument}"
+        );
+    }
+}
+
 #[test]
 #[trace("TC-114", "FR-036-AC-2")]
 fn malformed_source_retains_its_diagnostic_and_the_other_successful_parse() {
