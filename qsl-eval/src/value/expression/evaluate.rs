@@ -17,18 +17,20 @@ use std::sync::Arc;
 
 use super::causes::{
     HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
-    ProtocolClauseSnapshot, ProtocolClauseUnsupported,
+    ObjectFieldIllTyped, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
+use super::slot_admission;
 use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_semantics::check::{
     CheckedGraph, CheckedNode, DispatchTable, NodeId, Operator, Scope, Slot,
 };
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
+use qsl_semantics::model::observation::OutOfRange;
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::divide as integer_divide;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
@@ -65,7 +67,7 @@ use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::catalog::{render_identity, InternalFault};
 use quire_semantic_value::declaration::{
     operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
-    EqualityOperator, FieldRef, TypeEnvironment,
+    EqualityOperator, FieldDeclaration, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -1746,11 +1748,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
                 let objects = self.objects;
-                let slot = objects
-                    .objects()
-                    .attribute(self.scope.types(), &reference, &field)
-                    .ok_or_else(|| invariant("reader-attribute-slot-is-admitted"))?;
-                let witnessed = objects.is_witnessed(self.scope.types(), &reference, &field);
+                let (slot, witnessed) = self.admitted_slot(objects, &reference, &field)?;
                 let value = Self::project(
                     self.scope.types(),
                     slot,
@@ -2377,12 +2375,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         ReferenceUnresolved,
                     ))));
                 }
-                let slot = objects
-                    .objects()
-                    .attribute(self.scope.types(), &reference, field)
-                    .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+                let (slot, witnessed) = self.admitted_slot(objects, &reference, field)?;
                 self.log_field_read(node, objects, &reference, field)?;
-                let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
                 } else {
@@ -3530,11 +3524,19 @@ impl<'a, 'm> Machine<'a, 'm> {
             .find(|attribute| attribute.stands_for(edge))
             .ok_or_else(|| invariant("edge-attribute-unresolved"))?;
         let field = attribute.field();
-        let slot = self
-            .objects_for(node)?
-            .objects()
-            .attribute(self.scope.types(), current, edge)
-            .ok_or_else(|| invariant("edge-slot-unresolved"))?;
+        let objects = self.objects_for(node)?;
+        if !objects.objects().contains(current) {
+            return Err(invariant("edge-slot-unresolved"));
+        }
+        let (slot, _) = self.admitted_slot(objects, current, edge)?;
+        Self::slot_edge_targets(field, slot)
+    }
+
+    /// The references an admitted `slot` of the edge field `field` holds.
+    fn slot_edge_targets(
+        field: &FieldDeclaration,
+        slot: &FieldValue,
+    ) -> Result<Vec<ObjectReference>, Halt> {
         match field.value_type() {
             ValueType::Reference(_) => match (slot, field.presence()) {
                 (FieldValue::Present(Value::Reference(reference)), _) => {
@@ -3560,6 +3562,79 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             _ => Err(invariant("edge-field-type-invalid")),
         }
+    }
+
+    /// The caller-supplied slot of `reference` for `field`, admitted against
+    /// the evaluating package's own types (FR-049-AC-2/AC-3), and whether it
+    /// holds a witnessed out-of-range integer.
+    ///
+    /// The closure stores slots in the order of the type environment it was
+    /// admitted under and records no names, so the package's attribute
+    /// positions are the only way to find one. Every attribute the package
+    /// declares must have a slot, and the slot read must be of the declared
+    /// type: anything else is caller input that refuses
+    /// `invalid_runtime_input`/`wrong-value-kind`, never a fault or a misread.
+    /// A same-typed reordering is not detectable here.
+    fn admitted_slot<'o>(
+        &self,
+        objects: &'o ObjectEnvironment,
+        reference: &ObjectReference,
+        field: &FieldRef,
+    ) -> Result<(&'o FieldValue, bool), Halt> {
+        let types = self.scope.types();
+        let refuse = || {
+            Halt::Family(FamilyResult::Refused(Box::new(ObjectFieldIllTyped {
+                field: field.name.clone(),
+            })))
+        };
+        // An object the closure does not hold is not a layout defect: the
+        // read has nothing to project (a reference a current state tolerates
+        // dangling) and keeps its own fault.
+        if !objects.objects().contains(reference) {
+            return Err(invariant("attribute-slot-unresolved"));
+        }
+        let declared = types
+            .attributes(reference.object_type().clone())
+            .ok_or_else(refuse)?;
+        // Slots are stored by position, so the last declared attribute
+        // having a slot proves the layout is long enough.
+        let mut last = None;
+        let mut read = None;
+        for attribute in declared {
+            if attribute.stands_for(field) {
+                read = Some((attribute.identity(), attribute.field().value_type()));
+            }
+            last = Some(attribute.identity());
+        }
+        let lookup = |identity: &FieldRef| {
+            objects
+                .objects()
+                .attribute(types, reference, identity)
+                .ok_or_else(refuse)
+        };
+        if let Some(last) = &last {
+            lookup(last)?;
+        }
+        let (identity, value_type) = read.ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+        let slot = lookup(&identity)?;
+        let witnesses: Vec<&OutOfRange> = objects.witnesses(types, reference, field).collect();
+        let witnessed = !witnesses.is_empty();
+        if let FieldValue::Present(value) = slot {
+            match slot_admission::admits(types, value_type, value, &witnesses) {
+                Ok(true) => {}
+                Ok(false) => return Err(refuse()),
+                Err(EnvironmentFailure::Allocation(_)) => {
+                    return Err(invariant("object-field-admission-allocation-denied"))
+                }
+                Err(EnvironmentFailure::Capacity(_)) => {
+                    return Err(invariant("object-field-admission-capacity-overflow"))
+                }
+                Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
+                    return Err(invariant("object-field-admission-contract-broken"))
+                }
+            }
+        }
+        Ok((slot, witnessed))
     }
 
     /// `witnessed`: the slot holds a value FR-106 check 6.5 admitted
