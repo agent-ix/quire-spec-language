@@ -673,8 +673,10 @@ pub(crate) fn population_of(
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
+    let mut package_roots = BTreeSet::new();
     let found: Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> = models
         .iter()
+        .filter(|model| package_roots.insert(model.selection().identity.as_str()))
         .flat_map(|model| model.populations_of(object.clone(), |sub, sup| types.conforms(sub, sup)))
         .collect();
     match found.as_slice() {
@@ -705,8 +707,10 @@ pub(crate) fn populations_overlapping(
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Vec<PopulationDomain> {
+    let mut package_roots = BTreeSet::new();
     let mut found: Vec<(&DeclarationKey, PopulationDomain)> = models
         .iter()
+        .filter(|model| package_roots.insert(model.selection().identity.as_str()))
         .flat_map(|model| {
             model.populations_overlapping(object.clone(), |sub, sup| types.conforms(sub, sup))
         })
