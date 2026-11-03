@@ -63,6 +63,7 @@ mod protocol_compensation;
 mod protocol_controls;
 mod protocol_function_bodies;
 mod protocol_graph;
+mod protocol_occurrence;
 mod protocol_recursion;
 mod protocol_reference;
 mod protocol_requirements;

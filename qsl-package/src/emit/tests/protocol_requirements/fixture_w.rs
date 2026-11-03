@@ -5,12 +5,13 @@ use super::*;
 use crate::checked_v2::V2ReadRefusal;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
 
-const PROFILES_W: &str = "profile P = \"quire.protocol.finite-global/v1\";\n\
+pub(in crate::emit::tests) const PROFILES_W: &str =
+    "profile P = \"quire.protocol.finite-global/v1\";\n\
                          profile T = \"quire.temporal.infinite-trace/v1\";\n";
 
 /// W's order, payment, shipment and refund domain, using the test domain's
 /// existing semantic-IR envelope and object declaration shape.
-fn document() -> Vec<u8> {
+pub(in crate::emit::tests) fn document() -> Vec<u8> {
     let mut document: Value = serde_json::from_slice(&model()).unwrap();
     let template = document["types"][0].clone();
     let field = |owner: &str, name: &str, ty: &str| {
@@ -100,7 +101,7 @@ fn document() -> Vec<u8> {
     serde_json::to_vec(&document).unwrap()
 }
 
-const W: &str = r#"
+pub(in crate::emit::tests) const W: &str = r#"
 pre CanCharge using v on M::Payment::charge { true }
 post ChargePost using v on M::Payment::charge { true }
 temporal OrderClosureBounded using T over (view: M::OrderView) clock "model-steps"
