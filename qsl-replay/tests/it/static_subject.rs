@@ -72,6 +72,23 @@ fn library(identity: &str, name: &str) -> SuppliedLibrary {
     }
 }
 
+fn library_importing(
+    identity: &str,
+    name: &str,
+    dependency_identity: &str,
+    dependency_alias: &str,
+) -> SuppliedLibrary {
+    let mut library = library(identity, name);
+    let source = String::from_utf8(library.bytes).expect("fixture source is UTF-8");
+    library.bytes = source
+        .replace(
+            "profile v =",
+            &format!("import \"{dependency_identity}\" as {dependency_alias};\nprofile v ="),
+        )
+        .into_bytes();
+    library
+}
+
 #[trace("FR-510-AC-1", "TC-1305")]
 #[test]
 fn raised_limits_change_provenance_without_changing_subject() {
@@ -310,7 +327,12 @@ fn aggregate_units_keep_sibling_imports_and_references_out_of_each_subject() {
         .expect("parse unit")
         .into_value()
     };
-    let dependencies = DependencyInput::new(vec![library("lib-a", "lib-a")]).expect("input");
+    let dependencies = DependencyInput::new(vec![
+        library_importing("lib-a", "lib-a", "lib-b", "b"),
+        library_importing("lib-b", "lib-b", "lib-c", "c"),
+        library("lib-c", "lib-c"),
+    ])
+    .expect("input");
     let admitted = spine::admit_parsed_unit_list(
         vec![
             parse_unit(&source_a, &unit_a),
@@ -363,13 +385,14 @@ fn aggregate_units_keep_sibling_imports_and_references_out_of_each_subject() {
             .iter()
             .map(|dependency| dependency.identity.as_str())
             .collect::<Vec<_>>(),
-        ["lib-a"]
+        ["lib-a", "lib-b", "lib-c"]
     );
     let [reference] = subject_a.dependency_references() else {
         panic!("unit A retains its own imported call: {:?}", subject_a);
     };
     assert_eq!(reference.referring_declaration, "calls");
     assert_eq!(reference.library.as_deref(), Some("lib-a"));
+    assert_eq!(subject_a.sources().len(), 4);
 
     let subject_b = checked_b.static_subject().unwrap();
     assert!(subject_b.dependencies().is_empty());

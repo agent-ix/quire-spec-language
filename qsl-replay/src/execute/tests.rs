@@ -6,6 +6,7 @@ use quire_semantic_value::catalog::Category;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
@@ -195,6 +196,88 @@ fn request(
 
 fn input(parameter: NodeKey, value: i64) -> ReplaySource {
     typed_input(parameter, WitnessValue::Integer(i128::from(value)))
+}
+
+fn static_subject_after_recompile(wire: ReplayRequestWire) -> crate::spine::StaticSubject {
+    let limits = ReplayLimits::default();
+    let request = ReplayRequest::decode(wire, limits).expect("request decodes");
+    let caller = request_limits(request.stage_limits(), request.accounting_limits(), limits)
+        .expect("request limits are valid");
+    let recompiled =
+        recompile_with_temporal_selections(&request, &caller, &[]).expect("request recompiles");
+    let checked = recompiled
+        .checked
+        .static_subject()
+        .expect("successful replay recompile has a static subject")
+        .clone();
+    assert_eq!(
+        &checked,
+        recompiled
+            .emitted
+            .static_subject()
+            .expect("emitted replay unit retains a static subject")
+    );
+    checked
+}
+
+#[trace("FR-510-AC-2", "TC-1305")]
+#[test]
+fn static_subject_is_stable_across_replay_runtime_variants() {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}function seq using v(xs: Sequence<Boolean>[0, 64]): Boolean pure {{ false }}\n"
+    );
+    let compiled = spine(&source, &BTreeMap::new());
+    let sequence = parameter(&compiled, "seq", 0);
+    let make_wire = |length: usize, population_maximum: u64, window_maximum: u64, backend: &str| {
+        let trace_value = WitnessValue::Sequence(vec![WitnessValue::Boolean(true); length]);
+        let transcript = format!(
+            "<<<assertion|seq|c|{}={}>>>",
+            crate::pn(&sequence),
+            trace_value
+                .to_value_text()
+                .expect("sequence has value text")
+        );
+        let mut wire = request(
+            source.as_bytes(),
+            &compiled,
+            name(&["seq"]),
+            ReplaySource::Witness(Witness::parse(transcript).expect("witness trace parses")),
+        );
+        let collection = ProofBound::new(
+            DomainKey::Node {
+                node: sequence.clone(),
+                path: vec![0],
+            },
+            Some(DomainKind::Collection),
+            FiniteBound::cardinality(window_maximum),
+        )
+        .expect("a sequence window bound");
+        let population = ProofBound::new(
+            DomainKey::Population {
+                member_type: crate::fixture_node(3),
+                ordinal: 0,
+            },
+            Some(DomainKind::Population),
+            FiniteBound::cardinality(population_maximum),
+        )
+        .expect("a population bound");
+        wire.declared_domains = vec![
+            crate::identity::DeclaredDomain::new(collection),
+            crate::identity::DeclaredDomain::new(population),
+        ];
+        wire.backend = backend.to_owned();
+        wire
+    };
+    let first = make_wire(1, 2, 2, "backend-a");
+    let initial = static_subject_after_recompile(first.clone());
+    for wire in [first, make_wire(3, 5, 4, "backend-b")] {
+        let before = static_subject_after_recompile(wire.clone());
+        assert_eq!(initial, before);
+        replay(wire.clone(), ReplayLimits::default()).expect("runtime variant replays");
+        let after = static_subject_after_recompile(wire);
+        assert_eq!(initial, after);
+        assert!(initial.differences(&after).is_empty());
+    }
 }
 
 fn typed_input(parameter: NodeKey, value: WitnessValue) -> ReplaySource {

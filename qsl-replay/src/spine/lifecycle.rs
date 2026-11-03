@@ -2708,7 +2708,7 @@ fn resolved_libraries_for_unit(
             LibraryName::new(&import.identity).expect("parsed library identity is valid");
         identities.insert(identity.clone());
         if let Some(library) = compiled.get(&identity) {
-            identities.extend(library.package.dependencies().keys().cloned());
+            identities.extend(library.package.dependency_selections().keys().cloned());
         }
     }
     let sources = identities
