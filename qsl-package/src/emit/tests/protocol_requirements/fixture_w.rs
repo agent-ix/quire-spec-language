@@ -158,7 +158,7 @@ on each (opened: M::OrderStarted) {
 /// TC-134's checked-v2 fixture: one static charge attempt and effect live
 /// inside a bounded repeat, while two refund obligations refer to that exact
 /// successful effect.
-fn tc134_source() -> String {
+pub(in crate::emit::tests) fn tc134_source() -> String {
     let source = W.to_owned();
     let source = source.replace(
         "  terminal any;",
@@ -914,12 +914,13 @@ fn a_canonical_relationship_binds_through_real_model_intake() {
     }
 }
 
-const TIMED_PROFILES_W: &str = "profile P = \"quire.protocol.finite-global/v1\";\n\
+pub(in crate::emit::tests) const TIMED_PROFILES_W: &str =
+    "profile P = \"quire.protocol.finite-global/v1\";\n\
                          profile T = \"quire.temporal.event-position.false-extension/v1\";\n";
 
 /// The v2 checked-package event-position clock the timed TC-134 fixture
 /// selects for its temporal declarations.
-fn tc134_clock() -> quire_contract_model::ClockConfiguration {
+pub(in crate::emit::tests) fn tc134_clock() -> quire_contract_model::ClockConfiguration {
     quire_contract_model::ClockConfiguration::EventPosition {
         sequence_authority: "tc134-order-events".into(),
     }
@@ -952,7 +953,7 @@ fn tc134_timed_graph_with(
 
 /// One clock selection per timed temporal declaration of `graph`, the
 /// `compensate` windows included (QSpec FR-322-AC-305).
-fn tc134_selections(
+pub(in crate::emit::tests) fn tc134_selections(
     graph: &qsl_semantics::check::CheckedGraph,
 ) -> Vec<crate::emit::TemporalClockSelection> {
     let source = graph.source().clone();
