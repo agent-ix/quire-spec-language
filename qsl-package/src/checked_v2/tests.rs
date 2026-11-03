@@ -1261,7 +1261,8 @@ pub(crate) fn admitted_fixture_graph(fixture: &str, patch: Option<&Value>) -> Fi
 #[trace("TC-421", "FR-095-AC-3", "TC-1111", "NFR-015-AC-6")]
 #[test]
 fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
-    let (_, paths) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (_, paths) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let mut looked_up = 0_usize;
     for path in &paths {
         let envelope = read_fixture(path);
@@ -1318,7 +1319,8 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
 #[trace("FR-320-AC-4")]
 #[test]
 fn qspec_union_value_application_keys_are_admitted_by_i2() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let envelope = read_fixture(&directory.join("positive-union-nodes.json"));
     let nodes = envelope["semantic_graph"]["nodes"]
         .as_array()
@@ -1368,7 +1370,8 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
 #[trace("TC-253", "FR-087-AC-3", "TC-1111", "NFR-015-AC-6")]
 #[test]
 fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
-    let (directory, paths) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, paths) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let mut unsorted = 0_usize;
     for path in &paths {
         let envelope = read_fixture(path);
@@ -1451,7 +1454,8 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
 )]
 #[test]
 fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let base = read_fixture(&directory.join("positive-all-families.json"));
     let nodes = base["semantic_graph"]["nodes"].as_array().unwrap();
     let hybrid = nodes
@@ -1495,7 +1499,8 @@ fn conformance_tank_reads_back_with_a_bare_variable_rate_and_reset() {
         CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable,
         HybridTerm, InitialEntry, ModeIndex, ResetConstraint, VariableClass, VariableIndex,
     };
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let base = read_fixture(&directory.join("positive-all-families.json"));
     let package = admitted_fixture(ALL_FAMILIES, &base);
     let read = super::read_hybrids(&package, 10_000).expect("the fixture reads back");
@@ -1551,7 +1556,8 @@ fn conformance_tank_reads_back_with_a_bare_variable_rate_and_reset() {
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let mut candidate = read_fixture(&directory.join("positive-all-families.json"));
     let model = candidate["semantic_graph"]["nodes"]
         .as_array()
@@ -1588,7 +1594,8 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_timed_model_nodes_are_retained_by_i2() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let (name, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &envelope);
     let Read::Verified {
@@ -1669,7 +1676,8 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
 #[trace("TC-1187", "FR-415-AC-17", "FR-447-AC-13")]
 #[test]
 fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let envelope = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
     let (name, outcome) = read_fixture_wire(TICK_TIMED_MODEL_NODES, &envelope);
     let Read::Verified {
@@ -1714,7 +1722,8 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
 #[trace("TC-367", "FR-415-AC-17", "FR-322-AC-122")]
 #[test]
 fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let original = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let (_, read_outcome) = read_fixture_wire(TIMED_MODEL_NODES, &original);
     let Read::Verified {
@@ -1775,7 +1784,8 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
 #[trace("TC-367", "FR-322-AC-120", "FR-415-AC-17")]
 #[test]
 fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let mut envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let graph_before = WireGraph::of_package_value(&envelope).expect("the fixture graph");
     let nodes = envelope["semantic_graph"]["nodes"].as_array_mut().unwrap();
@@ -1900,7 +1910,8 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
 #[trace("TC-685")]
 #[test]
 fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let mut base_wire = read_fixture(&directory.join("positive-timed-model-nodes.json"));
 
     // Add a second unit with the same time dimension so the unit mutation is
@@ -2128,7 +2139,8 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimensions() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     for name in [
         "positive-all-families.json",
         "positive-timed-model-nodes.json",
@@ -2214,7 +2226,8 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 #[trace("QSpec-FR-322-AC-260")]
 #[test]
 fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let base = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let tick_base = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
     let vectors = read_fixture(&directory.join("../timed-model-node-vectors.json"));
@@ -2656,7 +2669,8 @@ fn assert_admitted_binder_round_trip(
 #[trace("QSpec-FR-322-AC-295", "QSpec-TC-367")]
 #[test]
 fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let proposals = directory.parent().expect("the proposal directory");
     let vectors = read_fixture(&proposals.join("timed-clause-node-vectors.json"));
     let mut replayed = 0_usize;
@@ -2974,7 +2988,8 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
 #[trace("TC-253", "TC-416", "FR-087-AC-3", "FR-093-AC-16")]
 #[test]
 fn conformance_dependency_selection_vectors() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let vectors = read_fixture(&directory.join("../dependency-selection-vectors.json"));
     let fixture = vectors["base"].as_str().unwrap();
     let base = read_fixture(&directory.join("..").join(fixture));
@@ -3351,7 +3366,8 @@ fn frame_node_index(package: &Value) -> usize {
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn conformance_fr340_frame_mutations_match_qspec_vectors() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let vectors = read_fixture(&directory.join("../node-identity-vectors.json"));
     let mutations = vectors["frame_mutations"]
         .as_array()
@@ -3442,7 +3458,8 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
 )]
 #[test]
 fn conformance_node_index_vectors_refuse_malformed_wire() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let proposals = directory.parent().expect("the proposal directory");
     let vectors = read_fixture(&proposals.join("node-index-vectors.json"));
     let fixture = vectors["base"].as_str().expect("a base fixture");
@@ -3792,7 +3809,8 @@ fn assert_extension_vector(directory: &std::path::Path, vector: &Value) {
 #[trace("FR-469-AC-10", "FR-469-AC-3", "TC-951")]
 #[test]
 fn extension_definition_vectors_xd_01_to_04() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let package_dir = directory.join("..");
     let file = read_fixture(&package_dir.join("extension-definition-vectors.json"));
     assert_eq!(
@@ -3815,7 +3833,8 @@ fn extension_definition_vectors_xd_01_to_04() {
 #[trace("FR-469-AC-3", "TC-951")]
 #[test]
 fn extension_definition_absent_from_selections_refuses_missing_selection() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let fixture = "fixtures/positive-extension-nodes.json";
     let original = read_fixture(&directory.join("positive-extension-nodes.json"));
     let mut mutated = original.clone();
@@ -3877,7 +3896,8 @@ fn extension_definition_absent_from_selections_refuses_missing_selection() {
 #[trace("FR-469-AC-9", "TC-951")]
 #[test]
 fn published_extension_definitions_conform_to_their_schema_and_pairing() {
-    let (directory, _) = qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
+    let (directory, _) =
+        qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
     let package_dir = directory.join("..");
     let file = read_fixture(&package_dir.join("extension-definitions.json"));
     let schema = read_fixture(&package_dir.join("extension-definitions.schema.json"));

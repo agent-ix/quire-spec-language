@@ -691,7 +691,8 @@ fn patched(base: &Value, patch: &Value) -> Value {
 #[trace("QSpec-TC-233", "QSpec-FR-142-AC-8")]
 #[test]
 fn published_compound_unit_vectors_admit_and_each_mutation_is_refused_by_its_named_check() {
-    let qspec = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
     let path = std::path::Path::new(&qspec)
         .join("proposals/quire-v1/definitions/value-compound-unit-vectors.json");
     let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("reading {path:?}: {error}"));

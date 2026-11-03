@@ -78,7 +78,8 @@ fn vector_roles<'a>(vectors: &'a Value, vector: &'a Value) -> Vec<&'a str> {
 #[trace("QSpec-TC-192")]
 #[test]
 fn conformance_admit_selection_matches_qspec_vectors() {
-    let vectors = qspec_document("complete-value-selection-vectors.json").expect("QSPEC_DIR must name a quire-specification checkout");
+    let vectors = qspec_document("complete-value-selection-vectors.json")
+        .expect("QSPEC_DIR must name a quire-specification checkout");
     let accepted = vectors["accepted"].as_array().unwrap();
     assert!(!accepted.is_empty());
     for vector in accepted {

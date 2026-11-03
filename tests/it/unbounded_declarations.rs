@@ -538,7 +538,8 @@ fn a_quantity_root_leaves_no_finite_bound_available() {
 )]
 #[test]
 fn emitted_collection_and_population_type_keys_match_qspec_vectors() {
-    let qspec = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
     let path = std::path::PathBuf::from(qspec)
         .join("proposals/checked-package-v2/collection-population-type-vectors.json");
     let vectors: serde_json::Value = serde_json::from_slice(

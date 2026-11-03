@@ -517,7 +517,8 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
 #[trace("TC-1220", "FR-447-AC-12", "QSpec-FR-481-AC-8", "QSpec-FR-481-AC-9")]
 #[test]
 fn braking2_restored_nodes_match_qspec_vectors() {
-    let qspec = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
     let qspec = std::path::PathBuf::from(qspec);
     let path = qspec.join("proposals/checked-package-v2/hybrid-node-vectors.json");
     let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect("QSpec vectors"))
