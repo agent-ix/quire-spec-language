@@ -736,7 +736,7 @@ fn located_causes(source: &str) -> Vec<(ProtocolAnchorCause, String)> {
 /// a discarded `let` that reads a fact still needs the fact listed; a read
 /// of the `over` input refuses `ill_typed`/`operator-ineligible` at the read,
 /// naming the guard; a read of a protocol capture checks without listing.
-#[trace("TC-1056", "FR-218-AC-17")]
+#[trace("TC-1056", "TC-1308", "FR-218-AC-17", "FR-513-AC-12")]
 #[test]
 fn a_decision_reads_only_listed_facts_of_its_owner() {
     let graph = checks(&received(&pick(
@@ -829,6 +829,16 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
         ),
         [read("rx", ObservationReason::Unlisted, "rx.ready")]
     );
+    assert_eq!(
+        observed("S", &received(&pick("S", "", "true or rx.ready", "false"))),
+        [read("rx", ObservationReason::Unlisted, "rx.ready")],
+        "a short-circuited operand still has to be listed"
+    );
+    assert_eq!(
+        observed("R", &received(&pick("R", "", "true or rx.ready", "false"))),
+        [read("rx", ObservationReason::OtherRole, "rx.ready")],
+        "a short-circuited operand cannot read another role's fact"
+    );
     for (binder, node) in [
         (
             "applied",
@@ -861,6 +871,22 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
                 ObservationReason::IneligibleKind,
                 &format!("{binder}.ready")
             )]
+        );
+        let skipped = flow(
+            "",
+            &format!(
+                "sequence Main {{ {node} {} }}",
+                pick("R", "", &format!("true or {binder}.ready"), "false")
+            ),
+        );
+        assert_eq!(
+            observed("R", &skipped),
+            [read(
+                binder,
+                ObservationReason::IneligibleKind,
+                &format!("{binder}.ready")
+            )],
+            "a short-circuited effect/commit binder remains ineligible"
         );
     }
     let activated = flow("", &pick("R", "tick.ready", "tick.ready", "not tick.ready")).replacen(

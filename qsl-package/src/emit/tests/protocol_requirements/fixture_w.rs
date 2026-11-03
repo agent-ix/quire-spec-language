@@ -1203,7 +1203,14 @@ fn tc134_strict_reader_admits_compensation_rows() {
 /// profile-incompatible clock selection for an explicit temporal declaration
 /// refuses emission, and so does each of those for a `compensate` window
 /// (CB-01 missing, CB-02 duplicate, CB-03 surplus, CB-05 kind mismatch).
-#[trace("FR-048-AC-8", "FR-050-AC-14", "FR-322-AC-305", "TC-134")]
+#[trace(
+    "FR-048-AC-8",
+    "FR-050-AC-14",
+    "FR-322-AC-305",
+    "TC-134",
+    "TC-1308",
+    "FR-513-AC-9"
+)]
 #[test]
 fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
     use crate::emit::EmitRefusal as R;

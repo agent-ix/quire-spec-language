@@ -4,7 +4,7 @@
 use ix_trace_rs::trace;
 use quire_spec_language::protocol_artifact::wire::{ArtifactKind, BindingKind};
 
-#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-5")]
+#[trace("TC-136", "TC-1308", "FR-049-AC-2", "FR-049-AC-5", "FR-513-AC-15")]
 #[test]
 fn population_and_window_documents_remain_distinct_from_clock_and_model_exports() {
     assert_eq!(

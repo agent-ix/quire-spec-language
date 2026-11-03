@@ -1104,7 +1104,7 @@ fn the_manifest_lists_every_case_in_table_order() {
 /// FR-518-AC-2 and AC-3: each `reader` case is refused by the reader with
 /// its row's code, cause and pointer; each `selection` case is admitted by
 /// the reader and refused with its axis; the unmutated package passes both.
-#[trace("FR-518-AC-2", "FR-518-AC-3", "TC-1313")]
+#[trace("FR-518-AC-2", "FR-518-AC-3", "TC-1313", "TC-1308", "FR-513-AC-9")]
 #[test]
 fn every_case_gets_the_refusal_of_its_row() {
     let table = table();
@@ -1150,6 +1150,66 @@ fn every_case_gets_the_refusal_of_its_row() {
     }
     // 30 cases: 20 stage `reader` and 10 stage `selection`.
     assert_eq!((reader_cases, selection_cases), (20, 10));
+}
+
+/// TC-1308 row 23: Contract IR admits the emitted protocol package directly,
+/// then refuses substitutions to its source, selected model, result node
+/// identity, and canonical wire bytes.
+#[trace("TC-1308", "FR-513-AC-13")]
+#[test]
+fn protocol_package_is_independently_admitted_and_identity_mutations_refuse() {
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let files = tree(&out);
+    let bytes = &files["checked-package.json"];
+    let held = evidence(&request("event_position", Corpus::None)).unwrap();
+    admitted(bytes, &held);
+
+    let refuses = |package: Value| {
+        let bytes = serde_json::to_vec(&package).expect("mutated package is JSON");
+        matches!(
+            read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &held),
+            CheckedPackageDispatchResult::Refused(_)
+        )
+    };
+
+    let mut source = serde_json::from_slice::<Value>(bytes).unwrap();
+    source["lock"]["sources"][0]["identity"] = serde_json::json!("source:foreign");
+    assert!(
+        refuses(source),
+        "a substituted locked source identity is refused"
+    );
+
+    let mut model = serde_json::from_slice::<Value>(bytes).unwrap();
+    let root = model["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["semantic_form"] == "model_root")
+        .expect("the protocol package carries its selected model root");
+    root["owner"]["identity"] = serde_json::json!("foreign/model");
+    assert!(
+        refuses(model),
+        "a substituted domain-package identity is refused"
+    );
+
+    let mut result = serde_json::from_slice::<Value>(bytes).unwrap();
+    let node = result["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .first_mut()
+        .expect("the protocol package has a result node");
+    node["node_id"]["ordinal"] = serde_json::json!(u64::MAX);
+    assert!(
+        refuses(result),
+        "a substituted result node identity is refused"
+    );
+
+    let noncanonical = serde_json::to_vec_pretty(&serde_json::from_slice::<Value>(bytes).unwrap())
+        .expect("the same package can be reserialized with whitespace");
+    assert!(matches!(
+        read_checked_package(&noncanonical, CheckedPackageReadLimits::bounded(), &held),
+        CheckedPackageDispatchResult::Refused(_)
+    ));
 }
 
 /// FR-518-AC-4: the case of row 12 (the clauses, the lock and the binding rows

@@ -272,7 +272,7 @@ fn configured_temporal_clause_without_selection_refuses_emission() {
 
 /// FR-322-AC-294: configuration shape is checked against the selected law,
 /// and selections cannot be duplicated or moved to a different source locus.
-#[trace("TC-134", "FR-322-AC-294")]
+#[trace("TC-134", "TC-1308", "FR-322-AC-294", "FR-513-AC-9")]
 #[test]
 fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
     let graph = check_graph(&unit(
