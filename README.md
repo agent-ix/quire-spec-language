@@ -309,6 +309,20 @@ empty object is refused rather than emitting point-free bytes, since passing
 the option means points are expected. In every refusal no bytes are written and
 the exit is nonzero. Without the option the clauses are point-free.
 
+**Clock selections.** `--clock-selections <file>` supplies the clock
+configuration of each `temporal` clause or `compensate` template whose profile
+takes one (FR-517), so the package carries its `temporal_bindings` rows. The
+file is a JSON object from the exact authored clause or template name to a
+clock configuration in the `TemporalBinding` `clock` wire form, for example
+`{"Due": {"kind": "event_position", "sequence_authority": "events"}}`,
+`{"DueSample": {"kind": "fixed_sample", "epoch": {"kind": "integer",
+"decimal": "0"}, "period": {"kind": "rational", "numerator": "1",
+"denominator": "10"}, "unit": "milliseconds"}}` or `{"DueTimestamp": {"kind":
+"timestamped_event", "timestamp_unit": "rfc3339"}}`. It is read under the same file ceiling; an empty object, a
+repeated name, an unknown `kind`, a member the configuration does not define
+and a missing member are each a refusal naming the file, and a name that matches no clause or
+template is refused before any bytes are emitted.
+
 The [ConfigVersion example](examples/config-version/README.md) lists all
 seventeen cases: parents, cycles, object identity, operation frames, and refused
 and incomplete runs. `run` can also evaluate one pure function;

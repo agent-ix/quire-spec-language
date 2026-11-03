@@ -66,6 +66,16 @@ behind the Cargo feature `checked-handoff` and adding no dependency:
   also selects a `compensate` template by its template name);
 - `corpus`: `None` or `Standard` (FR-518).
 
+The `emit_checked_v2` command line carries `temporal_selections` as
+`--clock-selections <json-file>`: a JSON object from the exact authored name of
+a `temporal` clause or `compensate` template to its clock configuration in the
+`TemporalBinding` `clock` wire form, for example `{"Due": {"kind":
+"event_position", "sequence_authority": "events-authority"}}`. Each member is
+one `ClockSelection`, in file order. An empty object, a repeated name or a
+value that is not a well-formed clock configuration is a refusal naming the
+file; a name that matches no clause or template is the request's
+`UnknownClause` refusal. Without the option the request holds no selection.
+
 ## Outputs
 
 A new directory containing exactly:
@@ -207,10 +217,11 @@ the three directories. The packages hold:
 | FR-517-AC-12 | With the spine admitting a bounded rational value type (QSL-1522, FR-505), **R** carries the rationals `9223372036854775807/9223372036854775806` and `-9223372036854775808/9223372036854775807` as `Exact` values of the emitted package. | Test (TC-1312) |
 | FR-517-AC-13 | With the model admitting a unit on a bounded scalar (QSL-1558, FR-497), the `Amount` and `Total` scalars of **R** carry the unit `U`. | Test (TC-1312) |
 | FR-517-AC-14 | With a `sum` query binder admitted inside `recover` (QSL-1555), the `recover` condition of `Full` is that the receipt sum equals the captured target, and that of `Partial` is that the receipt sum is positive and below the captured target. | Test (TC-1312) |
-| FR-517-AC-15 | Until QSL-1558, over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`: a source whose `pre` compares the `Amount` parameter with `1 U` is written and admitted; a source that reads no unit-typed member is refused by the reader with `missing_declaration`/`missing-name` at `/types/7/fields/0/typeRef`; `sum<M::Total>` refuses `UnresolvedTypeName` for `M::Total`; and `sum<Cash>` over the receipts, with `type Cash = Quantity<U>;`, refuses `IllTyped(TypeMismatch)` at its state clause. | Test (TC-1312) |
+| FR-517-AC-15 | `emit_checked_v2` run with `--clock-selections` naming a file that holds the clock configuration of each temporal clause and compensation template of an **R** package emits the bytes `emit_checked_v2::emit` returns for the equal `Request`; an empty object, a repeated name, an unknown `kind`, a member the configuration does not define and a member it requires that is missing are each a refusal naming the file that writes no bytes, and a name matching no clause or template is the `UnknownClause` refusal that writes no bytes. | Test (TC-1312) |
+| FR-517-AC-16 | Until QSL-1558, over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`: a source whose `pre` compares the `Amount` parameter with `1 U` is written and admitted; a source that reads no unit-typed member is refused by the reader with `missing_declaration`/`missing-name` at `/types/7/fields/0/typeRef`; `sum<M::Total>` refuses `UnresolvedTypeName` for `M::Total`; and `sum<Cash>` over the receipts, with `type Cash = Quantity<U>;`, refuses `IllTyped(TypeMismatch)` at its state clause. | Test (TC-1312) |
 
 ## Dependencies
 
-- **Upstream:** QSL-1512 (`qsl_inventory` over the spine unit, FR-517-AC-11), QSL-1522 (FR-517-AC-12), QSL-1558 (FR-517-AC-13, AC-15), QSL-1555 (FR-517-AC-14), FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
+- **Upstream:** QSL-1512 (`qsl_inventory` over the spine unit, FR-517-AC-11), QSL-1522 (FR-517-AC-12), QSL-1558 (FR-517-AC-13, AC-16), QSL-1555 (FR-517-AC-14), FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
   FR-505, FR-514, FR-515, `emit_checked_v2`, `qsl_package::emit_checked_with_temporal_selections`.
 - **Downstream:** quire-protocol IT-001 (QSL-1549).

@@ -118,6 +118,7 @@ mod parser;
 mod protocol_artifact;
 mod protocol_number;
 mod protocol_number_root_module;
+mod replay_multi_source;
 mod request_builder;
 mod requirement_item_proof_bounds;
 mod retired_mapped_extraction;

@@ -118,6 +118,7 @@ fn evaluate_observed_goal(
         undefined: None,
         absent: &[],
         classes: &[],
+        silent_from: None,
     };
     let result = super::engine::run(
         super::engine::Subject::of_clause(clause.clause()),
@@ -143,6 +144,10 @@ pub struct WindowValuations<'a> {
     /// are one atom (the same `holds` condition), so they read one
     /// valuation; empty makes every node its own atom.
     pub classes: &'a [usize],
+    /// The first position that is a silent sample (FR-504): it carries no
+    /// observation and every `holds` atom there reads false. `None` when
+    /// every position is an observation.
+    pub silent_from: Option<u64>,
 }
 
 /// What [`evaluate_observed_finite_window`] returns: the evaluator's result
@@ -184,6 +189,7 @@ pub fn evaluate_observed_finite_window(
         undefined: None,
         absent: valuations.absent,
         classes: valuations.classes,
+        silent_from: valuations.silent_from,
     };
     let result = evaluate_finite_window(clause.clause(), trace, &mut letters, meter);
     ObservedWindowRun {
@@ -220,9 +226,17 @@ struct ObservedLetters<'a> {
     absent: &'a [(u64, u64)],
     /// Each node's atom class (empty: every node is its own atom).
     classes: &'a [usize],
+    /// The first silent sample, where every `holds` atom reads false.
+    silent_from: Option<u64>,
 }
 
 impl ObservedLetters<'_> {
+    /// Whether `position` is a silent sample (FR-504).
+    fn is_silent(&self, position: TemporalPosition) -> bool {
+        self.silent_from
+            .is_some_and(|first| position.index() >= first)
+    }
+
     /// The environment position `position` observes: a lasso wraps past its
     /// last represented position into the loop.
     fn environment(&self, position: TemporalPosition) -> Result<&ObjectEnvironment, LetterStop> {
@@ -311,6 +325,9 @@ impl TemporalLetters for ObservedLetters<'_> {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
+        if self.is_silent(position) {
+            return Ok(AtomReading::False);
+        }
         let objects = self.environment(position)?;
         let evaluation = self.package.evaluate_holds(
             self.clause,

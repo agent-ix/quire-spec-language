@@ -21,7 +21,7 @@ use qsl_eval::temporal::{
 use qsl_semantics::check::{FormulaNode, FormulaNodeId, SCALAR_LIMITS_UNLIMITED};
 use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
-use crate::temporal_trace::{fixture, Fixture, EVENT};
+use crate::temporal_trace::{fixture, Fixture, EVENT, INFINITE};
 
 const FINITE_WINDOW: &str = "quire.temporal.timestamped-event.finite-window/v1";
 
@@ -1164,11 +1164,13 @@ fn mixed_authorities_have_one_canonical_order() {
     assert!(identities.windows(2).all(|pair| pair[0] == pair[1]));
 }
 
-/// FR-501 "Verdicts": a clause under another profile is refused.
+/// FR-501 "Verdicts": a clause under a profile that carries no progress is
+/// refused. The event-position and fixed-sample profiles are read through the
+/// same evaluator by FR-504, so the refused profile here is infinite-trace.
 #[trace("TC-1295", "FR-501-AC-1")]
 #[test]
 fn a_clause_under_another_profile_is_refused() {
-    let control = fixture(EVENT, "c: Counter", "on origin", "always[0,1] holds(p)");
+    let control = fixture(INFINITE, "c: Counter", "on origin", "always[0,1] holds(p)");
     let request = request(vec![p(0, "T")], 1, Some(1));
     let trace = request.admit(&control).expect("admits");
     let mut letters = Letters::new(&control, &request, &trace);

@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
-    evaluate_observed, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
-    UndefinedCause, UndefinedEvaluation, WindowRefusal,
+    evaluate_observed, HoldsStop, PositionRefusal, ProgressedRefusal, TemporalOutcome,
+    TemporalRefusal, TemporalTrace, TimestampedTrace, UndefinedCause, UndefinedEvaluation,
+    WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{FormulaNode, TemporalProfile};
@@ -23,7 +24,8 @@ use quire_semantic_value::catalog::CatalogCode;
 
 use super::progress::{
     ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
-    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressValue, Refusal,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLowerBoundary,
+    ProgressValue, Refusal,
 };
 use super::{
     convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
@@ -46,6 +48,12 @@ pub enum TraceInput {
         trace: Vec<DocumentRef>,
         /// The progress assertion for this request.
         progress: ProgressAssertion,
+        /// Whether the first position is an authoritative origin.
+        lower_boundary: ProgressLowerBoundary,
+        /// The profile, clock binding name and clock parameters the trace
+        /// asserts (FR-522), compared with the clause's before any position
+        /// is visited.
+        binding: TraceBinding,
     },
     /// A timestamped-event trace with progress (FR-501).
     Timestamped {
@@ -83,7 +91,9 @@ impl TraceInput {
     /// The progress assertion and position identities carried by this trace.
     fn progress(&self) -> Option<(ProgressAssertion, Vec<ObservedPosition>)> {
         match self {
-            Self::Progressed { trace, progress } => {
+            Self::Progressed {
+                trace, progress, ..
+            } => {
                 let positions = trace
                     .iter()
                     .enumerate()
@@ -485,6 +495,14 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         return early(refused("invalid-value", BTreeMap::new()));
     }
 
+    if let TraceInput::Progressed { binding, .. } = trace {
+        // FR-522: the same authentication precedes every position of a
+        // progressed trace (FR-330-AC-11).
+        if let Some(refusal) = binding_refusal(Some(binding), clause) {
+            return early(refusal);
+        }
+    }
+
     if let TraceInput::Timestamped {
         observations,
         window,
@@ -540,6 +558,57 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             TemporalTrace::Lasso { .. } => TemporalTraceRefusal::EmptyLoop,
         }));
     }
+
+    // FR-504 "Consistency": an assertion the trace contradicts is refused at
+    // admit before any snapshot is read, and is never shortened.
+    let mut meter = Meter::new(run.accounting);
+    let progressed = match trace {
+        TraceInput::Progressed {
+            trace: documents,
+            progress,
+            lower_boundary,
+            ..
+        } => {
+            let assertion = qsl_eval::temporal::SampleProgress {
+                watermark: progress.watermark,
+                completeness: progress.completeness.into(),
+                scope: progress.scope.into(),
+                execution: progress.execution.into(),
+                lower_boundary: match lower_boundary {
+                    ProgressLowerBoundary::AuthoritativeOrigin => {
+                        qsl_eval::temporal::LowerBoundary::AuthoritativeOrigin
+                    }
+                    ProgressLowerBoundary::HistoryCutoff => {
+                        qsl_eval::temporal::LowerBoundary::HistoryCutoff
+                    }
+                },
+            };
+            let identities = documents.iter().map(observation_identity).collect();
+            match TimestampedTrace::admit_progressed(clause, identities, assertion, &mut meter) {
+                Ok(Ok(admitted)) => Some(admitted),
+                Ok(Err(inconsistent)) => {
+                    let member = match inconsistent {
+                        ProgressedRefusal::WatermarkBelowLastPosition => "watermark",
+                        ProgressedRefusal::CompletenessBelowLastPosition => "completeness",
+                        ProgressedRefusal::NotSampleProfile { .. } => "profile",
+                        ProgressedRefusal::Incomplete(incomplete) => {
+                            return early(ClauseDisposition::Temporal(
+                                TemporalVerdict::Incomplete(incomplete),
+                            ));
+                        }
+                    };
+                    return early(refused(
+                        "invalid-value",
+                        BTreeMap::from([("member", member.to_owned())]),
+                    ));
+                }
+                Err(refusal) => {
+                    return early(ClauseDisposition::TemporalRefusal(trace_refusal(refusal)))
+                }
+            }
+        }
+        TraceInput::Finite(_) | TraceInput::Timestamped { .. } | TraceInput::Lasso { .. } => None,
+    };
 
     let mut admitted = AdmissionUsage::default();
     let mut environments: Vec<ObjectEnvironment> = Vec::new();
@@ -646,23 +715,31 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         };
     }
 
-    if matches!(trace, TraceInput::Progressed { .. }) {
-        // FR-504's progress-aware outcome rules are not part of the current
-        // evaluator API. Keep the accepted ledger, but do not pass progress
-        // assertions to the closed-finite-trace evaluator as if they were
-        // equivalent.
-        let mut report = late(ClauseDisposition::TemporalRefusal(
-            TemporalTraceRefusal::ProfileNotEvaluated {
-                profile: clause.profile(),
-            },
-        ));
-        if accepted_ledger.is_some() {
-            report.ledger = accepted_ledger;
+    if let Some(window_trace) = progressed {
+        let silent_from = u64::try_from(window_trace.observed()).ok();
+        let (disposition, visits, window_report) = run_window(
+            run,
+            node,
+            &window_trace,
+            (&[], silent_from),
+            &environments,
+            reference,
+            &mut meter,
+        );
+        let accepted = !matches!(
+            disposition.category(),
+            quire_semantic_value::catalog::Category::Refusal
+                | quire_semantic_value::catalog::Category::InternalFailure
+        );
+        let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
+        usage.temporal_visits = visits;
+        let mut finished = report(disposition, usage);
+        finished.finite_window = window_report;
+        if accepted {
+            finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
-        return report;
+        return finished;
     }
-
-    let mut meter = Meter::new(run.accounting);
     if let TraceInput::Timestamped {
         observations,
         progress,
@@ -743,8 +820,7 @@ fn run_finite_window(
     meter: &mut Meter,
 ) -> (ClauseDisposition, u64, Option<FiniteWindowReport>) {
     use qsl_eval::temporal::{
-        evaluate_observed_finite_window, LowerBoundary,
-        TimestampedObservation as WindowObservation, TimestampedTrace, Watermark, WindowClock,
+        LowerBoundary, TimestampedObservation as WindowObservation, Watermark, WindowClock,
         WindowProgress,
     };
     let fault = |invariant: &'static str| {
@@ -834,15 +910,41 @@ fn run_finite_window(
             .collect()
     };
     let absent = same_atom(canonical(&input.window.missing_valuations));
-    let observed = evaluate_observed_finite_window(
+    run_window(
+        run,
+        node,
+        &trace,
+        (&absent, None),
+        environments,
+        over,
+        meter,
+    )
+}
+
+/// FR-501, FR-504: evaluate `clause` over the admitted `trace` and report its
+/// verdict with its basis, decision support, premises and result identity.
+/// `valuations` are the `(position, atom)` valuations absent from the
+/// observations and the first silent sample.
+fn run_window(
+    run: &CompiledRun<'_>,
+    node: &qsl_semantics::check::TemporalClauseNode,
+    trace: &qsl_eval::temporal::TimestampedTrace,
+    (absent, silent_from): (&[(u64, u64)], Option<u64>),
+    environments: &[ObjectEnvironment],
+    over: &quire_exact::ObjectReference,
+    meter: &mut Meter,
+) -> (ClauseDisposition, u64, Option<FiniteWindowReport>) {
+    let classes = atom_classes(run, node);
+    let observed = qsl_eval::temporal::evaluate_observed_finite_window(
         run.package,
         node,
         environments,
-        &trace,
+        trace,
         over,
         qsl_eval::temporal::WindowValuations {
-            absent: &absent,
+            absent,
             classes: &classes,
+            silent_from,
         },
         meter,
     );
@@ -1023,6 +1125,9 @@ fn window_verdict(
             at: at.index(),
             deadline,
         },
+        WindowVerdict::PendingNextEvent { at } => {
+            TemporalVerdict::PendingNextEvent { at: at.index() }
+        }
         WindowVerdict::Indeterminate { at, reason } => TemporalVerdict::Indeterminate {
             at: at.index(),
             reason: match reason {

@@ -21,7 +21,8 @@
 //! (ADR-011 §6.1), and `replay` may not depend on `command`, so this is the
 //! one place the chain is written.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{ClauseTextRefusal, FormsCause, FormsRefusal};
@@ -55,7 +56,10 @@ pub use lifecycle::{
     ParseRequest, ParsedUnitSource, PendingObligation, TypeDeclaration, TypeReport,
     TypeRequirement,
 };
-pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
+pub(crate) use lifecycle::{
+    check_for_continuation, check_units_with_options, parse_for_continuation, ContinuationInputs,
+    UnitCheckOptions,
+};
 pub use subject::{
     BuildProvenance, ComponentKind, DeclarationProfileComponent, DependencyComponent,
     DependencyReferenceComponent, ModelComponent, ProfileComponent, RoleComponent, RoleKind,
@@ -139,11 +143,11 @@ pub use clause::{
     ConsequentState, ContradictedDimension, FiniteWindowAssessment, FiniteWindowPremises,
     FiniteWindowReport, FiniteWindowSupport, LedgerBinding, ObservedPosition, OperationName,
     OverObject, ProgressAssertion, ProgressClosure, ProgressCompleteness, ProgressContradiction,
-    ProgressLedger, ProgressLedgerEntry, ProgressLimitReached, ProgressRefusal, ProgressValue,
-    TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedCover,
-    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
-    TraceBinding, TraceInput,
+    ProgressLedger, ProgressLedgerEntry, ProgressLimitReached, ProgressLowerBoundary,
+    ProgressRefusal, ProgressValue, TemporalIndeterminateReason, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TimestampedCover, TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
+    TimestampedWindow, TraceBinding, TraceInput,
 };
 mod refinement;
 pub use refinement::{
@@ -1777,7 +1781,11 @@ pub struct SuppliedLibrary {
 /// library per library identity, each source with its own owner.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DependencyInput {
-    libraries: BTreeMap<LibraryName, SuppliedLibrary>,
+    libraries: BTreeMap<LibraryName, Arc<SuppliedLibrary>>,
+    /// Every source unit of each supplied library, in canonical owner order.
+    /// Single-source entries also appear here so library compilation has one
+    /// source of truth for its unit list.
+    library_units: BTreeMap<LibraryName, Vec<Arc<SuppliedLibrary>>>,
     /// FR-147/FR-099: each supplied library's own unchecked internal-list
     /// value, keyed by the library identity that owns it.
     refinement_internals: BTreeMap<LibraryName, serde_json::Value>,
@@ -1842,6 +1850,25 @@ pub enum DependencyInputRefusal {
         /// The unmatched library identity.
         identity: String,
     },
+    /// A multi-source library was supplied without any source units.
+    #[error("invalid_package/invalid-value: library {identity} has no source units")]
+    EmptyLibraryUnits {
+        /// The library identity.
+        identity: String,
+    },
+    /// A unit listed for a library declares a different library identity.
+    #[error(
+        "invalid_package/conflicting-definition: source {} is listed under library {library} but declares {declared}",
+        .source_labels.identity
+    )]
+    LibraryIdentityMismatch {
+        /// The library identity whose source list contains the unit.
+        library: LibraryName,
+        /// The library identity declared by the source list entry.
+        declared: String,
+        /// The mismatched unit's source labels.
+        source_labels: Box<SourceIdentity>,
+    },
 }
 
 impl DependencyInputRefusal {
@@ -1849,7 +1876,10 @@ impl DependencyInputRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::EmptyIdentity { .. } => Code::InvalidIdentifier,
-            Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => Code::InvalidPackage,
+            Self::DuplicateIdentity { .. }
+            | Self::SharedOwner { .. }
+            | Self::LibraryIdentityMismatch { .. } => Code::InvalidPackage,
+            Self::EmptyLibraryUnits { .. } => Code::InvalidPackage,
             Self::UnknownRefinementInternals { .. } => Code::InvalidRequest,
         }
     }
@@ -1858,7 +1888,10 @@ impl DependencyInputRefusal {
     pub fn host_cause(&self) -> Option<HostCause> {
         match self {
             Self::EmptyIdentity { .. } => Some(HostCause::SelectionIdentity),
-            Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => None,
+            Self::DuplicateIdentity { .. }
+            | Self::SharedOwner { .. }
+            | Self::LibraryIdentityMismatch { .. }
+            | Self::EmptyLibraryUnits { .. } => None,
             Self::UnknownRefinementInternals { .. } => Some(HostCause::SelectionIdentity),
         }
     }
@@ -1866,9 +1899,10 @@ impl DependencyInputRefusal {
     /// The catalog cause of an `invalid_package` refusal.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
-            Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => {
-                Some("conflicting-definition")
-            }
+            Self::DuplicateIdentity { .. }
+            | Self::SharedOwner { .. }
+            | Self::LibraryIdentityMismatch { .. } => Some("conflicting-definition"),
+            Self::EmptyLibraryUnits { .. } => Some("invalid-value"),
             Self::EmptyIdentity { .. } | Self::UnknownRefinementInternals { .. } => None,
         }
     }
@@ -1881,7 +1915,8 @@ impl DependencyInput {
     pub fn new(
         libraries: impl IntoIterator<Item = SuppliedLibrary>,
     ) -> Result<Self, DependencyInputRefusal> {
-        let mut held: BTreeMap<LibraryName, SuppliedLibrary> = BTreeMap::new();
+        let mut held: BTreeMap<LibraryName, Arc<SuppliedLibrary>> = BTreeMap::new();
+        let mut library_units: BTreeMap<LibraryName, Vec<Arc<SuppliedLibrary>>> = BTreeMap::new();
         for library in libraries {
             let Ok(identity) = LibraryName::new(library.identity.as_str()) else {
                 return Err(DependencyInputRefusal::EmptyIdentity {
@@ -1906,12 +1941,105 @@ impl DependencyInput {
                     identity: library.source.identity,
                 });
             }
+            let library = Arc::new(library);
+            library_units.insert(identity.clone(), vec![Arc::clone(&library)]);
             held.insert(identity, library);
         }
         Ok(Self {
             libraries: held,
+            library_units,
             refinement_internals: BTreeMap::new(),
         })
+    }
+
+    /// Replace one supplied library's source with a non-empty source-unit
+    /// list. Every unit must name `identity`; units are sorted in canonical
+    /// authority and identity order before the package is checked.
+    pub fn with_library_units(
+        mut self,
+        identity: &str,
+        mut units: Vec<SuppliedLibrary>,
+    ) -> Result<Self, DependencyInputRefusal> {
+        if units.is_empty() {
+            return Err(DependencyInputRefusal::EmptyLibraryUnits {
+                identity: identity.to_owned(),
+            });
+        }
+        let name =
+            LibraryName::new(identity).map_err(|_| DependencyInputRefusal::EmptyIdentity {
+                labels: Box::new(units[0].source.clone()),
+            })?;
+        for unit in &units {
+            if unit.identity != identity {
+                return Err(DependencyInputRefusal::LibraryIdentityMismatch {
+                    library: name.clone(),
+                    declared: unit.identity.clone(),
+                    source_labels: Box::new(unit.source.clone()),
+                });
+            }
+        }
+        units.sort_by(|left, right| {
+            left.source
+                .authority
+                .as_bytes()
+                .cmp(right.source.authority.as_bytes())
+                .then_with(|| {
+                    left.source
+                        .identity
+                        .as_bytes()
+                        .cmp(right.source.identity.as_bytes())
+                })
+        });
+        let mut owners = BTreeSet::new();
+        for unit in &units {
+            if !owners.insert((unit.source.authority.clone(), unit.source.identity.clone())) {
+                return Err(DependencyInputRefusal::SharedOwner {
+                    first: SourceHolder::Library(name.clone()),
+                    second: name.clone(),
+                    authority: unit.source.authority.clone(),
+                    identity: unit.source.identity.clone(),
+                });
+            }
+        }
+        if let Some(other) = self
+            .library_units
+            .iter()
+            .filter(|(other, _)| **other != name)
+            .find_map(|(other, sources)| {
+                sources
+                    .iter()
+                    .find(|source| {
+                        units
+                            .iter()
+                            .any(|unit| same_owner(&source.source, &unit.source))
+                    })
+                    .map(|source| (other.clone(), source.source.clone()))
+            })
+        {
+            return Err(DependencyInputRefusal::SharedOwner {
+                first: SourceHolder::Library(other.0),
+                second: name,
+                authority: other.1.authority,
+                identity: other.1.identity,
+            });
+        }
+        let units: Vec<_> = units.into_iter().map(Arc::new).collect();
+        self.libraries.insert(name.clone(), Arc::clone(&units[0]));
+        self.library_units.insert(name, units);
+        Ok(self)
+    }
+
+    /// All supplied source units for `identity`, in canonical owner order.
+    pub(crate) fn source_units(&self, identity: &LibraryName) -> Option<&[Arc<SuppliedLibrary>]> {
+        self.library_units.get(identity).map(Vec::as_slice)
+    }
+
+    pub(crate) fn without_library(&self, identity: &LibraryName) -> Self {
+        let mut dependencies = self.clone();
+        dependencies.libraries.remove(identity);
+        dependencies.library_units.remove(identity);
+        dependencies.refinement_internals.remove(identity);
+        dependencies
     }
 
     /// The dependency input with unchecked internal-list values attached to
@@ -1948,12 +2076,13 @@ impl DependencyInput {
         &self,
         unit: &SourceIdentity,
     ) -> Result<(), DependencyInputRefusal> {
-        match self
-            .libraries
-            .iter()
-            .find(|(_, library)| same_owner(&library.source, unit))
-        {
-            Some((identity, _)) => Err(DependencyInputRefusal::SharedOwner {
+        match self.library_units.iter().find_map(|(identity, sources)| {
+            sources
+                .iter()
+                .find(|library| same_owner(&library.source, unit))
+                .map(|_| identity)
+        }) {
+            Some(identity) => Err(DependencyInputRefusal::SharedOwner {
                 first: SourceHolder::Unit,
                 second: identity.clone(),
                 authority: unit.authority.clone(),
