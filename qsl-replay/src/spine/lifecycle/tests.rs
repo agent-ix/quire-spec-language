@@ -689,7 +689,8 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     let text = format!(
         "{HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model M = \"acme/orders\";\n\
-         function f using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n\
+         function g using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n\
+         function f using v(x: Int[0, 9]): Int[0, 9] pure {{ g(x) }}\n\
          temporal Due using inf over (input: M::Widget) clock \"model-steps\" on origin {{ always holds(true) }}\n\
          protocol Fill using Complete over (input: M::Widget) on origin {{\n\
            role R on M::Widget;\n\
@@ -719,12 +720,13 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     )
     .expect("function checks")
     .into_value();
-    let [declaration] = checked.type_report().declarations() else {
-        panic!(
-            "one function declaration is retained, got {:?}",
-            checked.type_report().declarations()
-        );
-    };
+    assert_eq!(checked.type_report().declarations().len(), 2);
+    let declaration = checked
+        .type_report()
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.kind() == NodeTag::Function)
+        .expect("the function declaration is retained");
     assert_eq!(declaration.kind(), NodeTag::Function);
     assert!(declaration.value_type().is_some());
     assert!(!checked.type_report().requirements().is_empty());
@@ -733,6 +735,18 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
         .requirements()
         .iter()
         .all(|requirement| requirement.span().is_some()));
+    assert!(checked
+        .type_report()
+        .requirements()
+        .iter()
+        .all(|requirement| {
+            requirement.record().requirements().kind().to_wire() == "value-validity"
+        }));
+    assert!(checked
+        .type_report()
+        .obligations()
+        .iter()
+        .any(|obligation| obligation.capability_kind() == "value-validity"));
     let temporal_requirements: Vec<_> = checked
         .type_report()
         .obligations()
