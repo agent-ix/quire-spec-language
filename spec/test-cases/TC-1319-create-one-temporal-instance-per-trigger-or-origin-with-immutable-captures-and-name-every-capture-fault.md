@@ -17,7 +17,7 @@ Verify FR-524-AC-1 to FR-524-AC-31. The vectors are the FR-044 cases and TC-123 
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
 | 1 | 1 | deliveries `t1`, `t2` with equal payloads and captured amounts | two instances, two environments keyed by `t1` and `t2` |
-| 2 | 2 | an instance-bound atom with an entry only for `t2` at a position | `t1` assessed with a missing valuation naming `t1` and `t2`; `t2` assessed with its entry |
+| 2 | 2 | an instance-bound atom with an entry only for `t2` at a position | `t1` `Indeterminate` with `MissingValuation` `instance` `t1`, `also_held_by` `[t2]`; `t2` assessed with its entry |
 | 3 | 3 | `t1` again under another receipt, equal payload | one instance; the new receipt after the first |
 | 4 | 4 | the environment of `t1` before and after row 3 | byte-equal |
 | 5 | 5 | two deliveries of `t1` with different payloads, passed to `activate` | contradiction refusal naming `t1`; environment unchanged |

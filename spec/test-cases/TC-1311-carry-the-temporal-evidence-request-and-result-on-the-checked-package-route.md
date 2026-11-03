@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the typed request and result of the temporal evidence route. Scope:
-FR-516-AC-1 to FR-516-AC-16. The numeric vectors are the QSpec FR-370 and
+FR-516-AC-1 to FR-516-AC-19. The numeric vectors are the QSpec FR-370 and
 FR-043 cases and TC-144; they are referenced, never copied.
 
 ## Test Procedure
@@ -25,7 +25,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 5 | 5 | change the surrounding closure, then the completeness state, then the trigger scope | each echoed exactly; only the field and the FR-043-derived truth change |
 | 6 | 6 | superseding result of `r1` with the ledger of `r1`'s call | `lineage + 1` and the identity of `r1`; `r1` unchanged |
 | 7 | 7 | each of `formula_nodes`, `instances`, `positions`, `valuations`, `captures`, `support`, `history_span`, `evaluation_steps`, `lineage`, `visited`, `request_bytes`, `result_bytes`, `member_bytes` at measured usage and one below | completed; `Incomplete` naming the counter, no truth |
-| 8 | 8 | the timestamped-event clause under FR-501's vectors (TC-1295) and FR-502's (TC-1296) through `evaluate_temporal_evidence`; in-process vs read-back | the outcomes those cases state; equal results and equal charge logs |
+| 8 | 8 | the timestamped-event clause under FR-501's vectors (TC-1295) through `evaluate_temporal_evidence` | the outcomes those cases state; `temporal.visit` charges FR-501-AC-12's plus one per delivery or origin |
 | 9 | 9 | evaluate with `contract`, `schema_digest`, `digest`, `authority_digest` set to arbitrary and to empty bytes, then change each by one byte | each echoed byte for byte; only the echoed member differs between results |
 | 10 | 10 | `deliveries` holding `t1` and `t2` with equal timestamp/receipt/payload/captures | two instances in `instances` |
 | 11 | 11 | `deliveries` holding `t1` twice with an equal payload | one instance holding both receipts |
@@ -34,8 +34,11 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 14 | 14 | a sibling clause evaluated after row 7's stop | keeps its own result |
 | 15 | 15 | `control` naming the protocol clause whose FR-449 row names the call's clause | evaluated |
 | 16 | 16 | `control` naming a protocol clause with no FR-449 row; one whose row names another clause | `activation-mapping-missing`; `activation-mapping-mismatch`, each `Err(CallFailure::Admission)` |
+| 17 | 17 | a `progress_ledger` holding W 100: a request at W 60; a request with `Complete { through: 60 }` after `Complete { through: 100 }` | each refused as FR-502-AC-1 and AC-2, empty charge log, progress ledger unchanged |
+| 18 | 18 | the in-process package vs the read-back package | equal results, charge log included |
+| 19 | 19 | `trigger` naming no delivery, origin or ledger entry; `trigger` naming a delivery with a false guard | `trigger-unknown`; no truth and FR-524's disposition |
 
-Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-16", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
+Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-19", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
 
 ## Expected Results
 

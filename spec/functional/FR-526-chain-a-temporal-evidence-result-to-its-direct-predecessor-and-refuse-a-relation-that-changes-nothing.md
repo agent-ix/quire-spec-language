@@ -56,7 +56,7 @@ keeps that history in the caller-held `EvidenceLedger` of FR-524, in the way
 FR-502 keeps progress in the `ProgressLedger`. The ledger's `results` table holds,
 for each obligation instance (the package identity, the clause and the trigger
 identity), one flat entry for the latest result: its `result_identity`, its
-`input_identity` (FR-522's identity without the relation), its correspondence
+`input_identity` (FR-522: the identity over the evidence members only, which excludes the relation and the ledger), its correspondence
 identity and its lineage. Entries hold no recursive chain and no result bytes.
 Only the evaluator writes an entry.
 
@@ -126,8 +126,8 @@ result and the `cause` named in the criterion. A lineage stop is `Incomplete`
 | FR-526-AC-9 | A request for another clause of the same package naming `r1`, and a request for the same clause in another package naming `r1`, each return `Err(CallFailure::Admission)` with cause `predecessor-unknown`. | Test (TC-1321) |
 | FR-526-AC-10 | A request whose trigger identity differs from `r1`'s in one byte, naming `r1`, returns `Err(CallFailure::Admission)` with cause `predecessor-unknown`. | Test (TC-1321) |
 | FR-526-AC-11 | A request whose `correspondence` differs from `r1`'s, naming `r1`, returns `Err(CallFailure::Admission)` with cause `correspondence-changed`. | Test (TC-1321) |
-| FR-526-AC-12 | A predecessor at a `lineage` equal to the `lineage` ceiling returns `Incomplete` naming `lineage` with no truth, and a predecessor one below the ceiling completes. | Test (TC-1321) |
-| FR-526-AC-13 | A predecessor entry at lineage `u64::MAX` returns `Incomplete` naming `lineage` and does not wrap. | Test (TC-1321) |
+| FR-526-AC-12 | With the `lineage` ceiling set to 2, the third correction of a chain (lineage 3) returns `Incomplete` naming `lineage` with no truth, and with the ceiling set to 3 it completes. | Test (TC-1321) |
+| FR-526-AC-13 | The evaluator computes `lineage` from the predecessor entry's lineage with checked `u64` arithmetic, which has no wrapping or saturating form, so an entry at `u64::MAX` (unreachable by calls) cannot yield a smaller lineage. | Inspection |
 | FR-526-AC-14 | A chain of three corrections `r1`, `r2`, `r3` returns `lineage` 1, 2, 3, each naming its direct predecessor, with `r1` and `r2` unchanged after `r3`. | Test (TC-1321) |
 | FR-526-AC-15 | An `Original` request over a ledger that holds an entry for its key returns `lineage` 0 and replaces that entry. | Test (TC-1321) |
 | FR-526-AC-16 | The same request, relation and ledger evaluated twice give equal results and equal ledgers, charge log included. | Test (TC-1321) |

@@ -1,6 +1,6 @@
 ---
 id: FR-523
-title: "Count temporal evidence work on thirteen named counters and keep a stopped activation apart from a stopped declaration"
+title: "Count temporal evidence work on thirteen named counters and keep a stopped instance apart from a stopped declaration"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-033
@@ -24,15 +24,14 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-499
     type: references
 ---
-# FR-523: Count temporal evidence work on thirteen named counters and keep a stopped activation apart from a stopped declaration
+# FR-523: Count temporal evidence work on thirteen named counters and keep a stopped instance apart from a stopped declaration
 
 ## Description
 
 The spine temporal evaluator SHALL count the work of one temporal evidence call
 across thirteen named counters, each with a caller-set ceiling. When a ceiling is
 reached, the evaluator stops with a typed `Incomplete` that names the counter,
-and every activation that settled before the stop keeps its truth, basis and
-support.
+and the result of every other call keeps its truth, basis and support.
 
 This is the spine successor of NFR-008-AC-1 to AC-5 and of FR-052-AC-11. FR-516
 names the counters and the exact-usage rule; this requirement defines what each
@@ -42,10 +41,10 @@ temporal request is in "Counter mapping".
 
 ## Use case
 
-A caller evaluates a clause over a long recording with a work ceiling it chose.
-When the ceiling is too low for the third activation, the first two keep their
-verdicts, the third reports which counter ran out and the setting that raises it,
-and no activation reports a guess.
+A caller assesses three instances of one clause over a long recording, one call
+each, sharing one work meter it sized. When the meter is too small for the third
+call, the first two keep their verdicts, the third reports which charge ran out,
+and no call reports a guess.
 
 ## Semantic authority and boundary
 
@@ -53,6 +52,8 @@ NFR-008 owns the reliability target (no truth after a stop; siblings keep
 theirs). FR-255 owns setting names and defaults. FR-327 and FR-501 own the
 `temporal.visit` charge. This requirement owns the counters' definitions and the
 stop scope. The entry that applies them is `evaluate_temporal_evidence` (FR-516).
+One call assesses one instance, which activates once (FR-516), so the siblings of a
+stopped call are the results of other calls, which are values and do not change.
 
 ## Inputs
 
@@ -63,13 +64,9 @@ or the library builder `TemporalEvidenceLimits`, and the call's `Meter` (FR-516)
 
 `usage`: the thirteen counters' measured values (FR-516).
 
-`settled_activations`: for each activation that settled before a stop, its
-position, truth, settlement basis and decision support. It is the successor of the
-legacy `Report.settled_siblings`.
-
 On a stop, `Incomplete(LimitReached{limit, value, setting})` with `limit` the limit
 kind of FR-255, `value` the ceiling, `setting` the counter's setting name, the
-position of the activation being evaluated (when there is one) and no truth value.
+assessed instance (when the stop is at the instance) and no truth value.
 
 ## Behavior
 
@@ -109,8 +106,8 @@ at each eligible position and one scan per position).
 - After an `Incomplete`, a retry under sufficient ceilings from the same
   inputs SHALL give the result the first call would have given with those
   ceilings.
-- The evaluator SHALL charge the counter before it charges the meter, and SHALL
-  report a denied counter by its name.
+- The evaluator SHALL charge the counter before it charges the meter.
+- The evaluator SHALL report a denied counter by its name.
 - When the meter denies a `temporal.visit` charge that every counter admitted,
   the evaluator SHALL return `Incomplete` at the `temporal.visit` charge point as
   FR-327 states.
@@ -123,25 +120,23 @@ at each eligible position and one scan per position).
   activation anchor `t0`, the sum `t0 + Hf + m` of FR-501 with checked `u64`
   arithmetic.
 - When a sum does not fit in `u64`, the evaluator SHALL return `Incomplete` naming
-  `history_span` before it visits any position, and SHALL NOT wrap, saturate or
-  narrow.
+  `history_span` before it visits any position.
+- The evaluator SHALL NOT wrap, saturate or narrow a tick sum.
 - The tick domain is `u64`, which is the domain of FR-326's horizon and of
   FR-501's non-negative stamps.
 
 ### Stop scope
 
 - The counters `formula_nodes` and `history_span` and the tick arithmetic are
-  properties of the clause and its anchors. When one stops the call, the evaluator
-  SHALL evaluate no activation.
-- The evaluator SHALL leave `settled_activations` empty for such a stop.
-- When another counter reaches its ceiling during one activation, the evaluator
-  SHALL stop that activation with the `Incomplete`.
-- The `Incomplete` SHALL name the position of that activation.
-- The evaluator SHALL list every activation that settled before the stop in
-  `settled_activations` with its truth, basis and decision support.
-- The evaluator SHALL begin no activation after the stop.
-- The cumulative counters SHALL be shared by the activations of one call, so the
-  activation at which a ceiling is reached depends on the activations before it.
+  properties of the clause and its anchor. When one stops the call, the evaluator
+  SHALL assess no instance.
+- When another counter reaches its ceiling while the evaluator assesses the
+  instance, the evaluator SHALL stop that instance with the `Incomplete`.
+- The `Incomplete` SHALL name the assessed instance.
+- The evaluator SHALL NOT change the result of any other call.
+- Calls that share one `Meter` SHALL accumulate its charges, so the call at which
+  the meter's ceiling is reached depends on the calls before it.
+- The temporal counters SHALL be per call.
 
 ### Counter mapping
 
@@ -169,23 +164,24 @@ at each eligible position and one scan per position).
 | FR-523-AC-9 | A refused charge leaves the counter's usage at its last successful value. | Test (TC-1318) |
 | FR-523-AC-10 | The charge log of a call whose ceiling is one below the exact usage equals the log of the successful prefix of the full call. | Test (TC-1318) |
 | FR-523-AC-11 | A retry of the AC-3 call after an AC-5 stop, with sufficient ceilings from the same inputs, returns the result of a call that never stopped, byte for byte. | Test (TC-1318) |
-| FR-523-AC-12 | A clause whose `history_span` exceeds its ceiling stops the call before any activation is evaluated, with `settled_activations` empty. | Test (TC-1318) |
-| FR-523-AC-13 | A clause whose `formula_nodes` exceeds its ceiling stops the call before any activation is evaluated, with `settled_activations` empty. | Test (TC-1318) |
-| FR-523-AC-14 | Over **R**'s `on each` clause evaluated by `evaluate_temporal_evidence` over four positions, with `evaluation_steps` set to the first activation's usage plus one, the first activation appears in `settled_activations` with its truth, basis and support, the second activation's `Incomplete` names `evaluation_steps` and the second activation's position, and the third and fourth activations are not begun. | Test (TC-1318) |
+| FR-523-AC-12 | A clause whose `history_span` exceeds its ceiling stops the call before the instance is assessed, and the call returns no result for it. | Test (TC-1318) |
+| FR-523-AC-13 | A clause whose `formula_nodes` exceeds its ceiling stops the call before the instance is assessed, and the call returns no result for it. | Test (TC-1318) |
+| FR-523-AC-14 | Two calls for instances `t1` and `t2` of **R**'s `on each` clause share one `Meter` whose work-unit ceiling is the first call's usage plus one: the first call returns its result with its truth, basis and support, and the second returns `Incomplete` at the `temporal.visit` charge point naming `t2`. | Test (TC-1318) |
 | FR-523-AC-15 | With `evaluation_steps` at 1000 and the meter's work-unit ceiling one below the call's `temporal.visit` usage, the `Incomplete` is at the `temporal.visit` charge point; with the meter unbounded and `evaluation_steps` one below, it names `evaluation_steps`. | Test (TC-1318) |
 | FR-523-AC-16 | A stamp for which `t0 + Hf + m` exceeds `u64::MAX` returns `Incomplete` naming `history_span` before any position is visited (the charge log is empty), and a stamp whose sum is `u64::MAX` evaluates. | Test (TC-1318) |
 | FR-523-AC-17 | A formula nested 100,000 deep evaluates with `formula_nodes` and `evaluation_steps` raised to fit it, on a thread with a 512 KiB stack. | Test (TC-1318) |
 | FR-523-AC-18 | The `usage` of a call reports all thirteen counters, and two requests that differ only in one ceiling give distinct `result_identity` values (FR-522-AC-17). | Test (TC-1318) |
+| FR-523-AC-19 | After the second call of AC-14 stopped, the first call's result is byte-equal to the value it returned. | Test (TC-1318) |
 
 ## Dependencies
 
 - NFR-008-AC-1 to AC-5 and FR-052-AC-11 (the legacy criteria this requirement
   succeeds), FR-255 (setting names and defaults, extended with the thirteen rows of
   this requirement), FR-327 and FR-501 (the visit charge), FR-522 (the identity
-  that carries the ceilings), FR-524 (the activation charges), FR-526
-  (`lineage`).
-- FR-516 carries the counter names and the entry and is a reference, not a
-  dependency, of this requirement.
+  that carries the ceilings).
+- FR-516 carries the counter names and the entry. FR-524 (the activation charges)
+  and FR-526 (`lineage`) use these counters and depend on this requirement; this
+  requirement refers to them and does not depend on them.
 
 ## References
 

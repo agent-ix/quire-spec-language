@@ -148,10 +148,12 @@ The `result_identity` of every outcome follows the identity rule below.
   binding, the clock cover (`Exact` or `Counter { uncertainty }`, FR-501), the
   stamps, valuations and order keys or the positions of the trace, the progress
   inputs (watermark, completeness, scope closure, surrounding-execution closure,
-  lower boundary), the retained instance state the request carries (the
-  `EvidenceLedger` entries of the obligation, FR-524), the work ceilings of
-  FR-523, the meter's work-unit ceiling and, for an evidence result, the
-  trigger identity and the relation of FR-526.
+  lower boundary), the retained-instance entries of the request's
+  `EvidenceLedger` for the obligation (FR-524), the progress-ledger entry for the
+  binding (FR-502), the work ceilings of FR-523, the meter's work-unit ceiling
+  and, for an evidence result, the trigger identity and the relation of FR-526.
+  The `EvidenceLedger`'s latest-results table is not a member: it records
+  identities, not evidence.
 - When two requests carry equal members, the evaluator SHALL give them one
   `result_identity`.
 - When two requests differ in one member, the evaluator SHALL give them
@@ -161,7 +163,10 @@ The `result_identity` of every outcome follows the identity rule below.
 - The evaluator SHALL NOT rewrite the bytes of the earlier result.
 - `result_identity` is an equality of members, not a digest of a document
   (FR-516).
-- FR-526's `input_identity` is the same function without the relation member.
+- `input_identity` SHALL be the same function over the evidence members only: it
+  excludes the relation, the whole `EvidenceLedger` and the progress ledger, so
+  that a repeat of an earlier request's evidence has the earlier request's
+  `input_identity` whatever ledger it carries.
 
 ## Acceptance Criteria
 
@@ -183,10 +188,11 @@ The `result_identity` of every outcome follows the identity rule below.
 | FR-522-AC-14 | The `Finite`, `Lasso` and `Model` traces carry no `TraceBinding`, and their reports hold no `authenticated`. | Test (TC-1317) |
 | FR-522-AC-15 | Evaluating one request of each of **R**'s three clauses twice gives one `result_identity` per request. | Test (TC-1317) |
 | FR-522-AC-16 | The `result_identity` values of **R**'s three clauses' requests are pairwise distinct. | Test (TC-1317) |
-| FR-522-AC-17 | For **R**'s fixed-sample clause, changing exactly one member of the identity list gives a `result_identity` distinct from AC-15's; TC-1317 varies each member of the list alone: the `epoch`, `period` and `unit` of the clock row, the profile, the clock name, the cover, one stamp, one valuation, one order key, the watermark, `through`, the scope closure, the surrounding-execution closure, the lower boundary, one ledger entry, each of the thirteen ceilings of FR-523 and the meter's work-unit ceiling. | Test (TC-1317) |
+| FR-522-AC-17 | For **R**'s fixed-sample clause, changing exactly one member of the identity list gives a `result_identity` distinct from AC-15's; TC-1317 varies each member of the list alone: the `epoch`, `period` and `unit` of the clock row, the profile, the clock name, the cover, one stamp, one valuation, one order key, the watermark, `through`, the scope closure, the surrounding-execution closure, the lower boundary, one retained-instance entry, one progress-ledger entry, each of the thirteen ceilings of FR-523 and the meter's work-unit ceiling. | Test (TC-1317) |
 | FR-522-AC-18 | After AC-17's changed request is evaluated, the first request's result is neither reused nor rewritten: its bytes equal those it returned before. | Test (TC-1317) |
 | FR-522-AC-19 | For an event-position `Progressed` request, changing alone the `sequence_authority` of the row, the watermark or the scope closure gives a distinct `result_identity`. | Test (TC-1317) |
 | FR-522-AC-20 | The `result_identity` of the in-process package equals the `result_identity` of the package read back with the reader. | Test (TC-1317) |
+| FR-522-AC-21 | Two requests that differ only in the relation, the `EvidenceLedger` or the progress ledger have equal `input_identity` values and distinct `result_identity` values where the ledger holds a retained-instance entry. | Test (TC-1317) |
 
 ## Dependencies
 

@@ -1,12 +1,12 @@
 ---
 id: TC-1320
-title: "Map each legacy temporal evaluator criterion to its spine successor or name the open row"
+title: "Map each legacy temporal evaluator criterion to its spine successor"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-525
     type: verifies
 ---
-# TC-1320: Map each legacy temporal evaluator criterion to its spine successor or name the open row
+# TC-1320: Map each legacy temporal evaluator criterion to its spine successor
 
 ## Description
 

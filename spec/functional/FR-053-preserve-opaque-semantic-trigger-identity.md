@@ -50,7 +50,7 @@ observation evidence under QSpec FR-479.
 | --- | --- | --- |
 | FR-053-AC-7 | Distinct opaque trigger identities remain distinct through checked-package activation and evaluation, including identities with equal timestamps, receipts, payloads or captures; repeated delivery of one identity does not create a second instance. | Test |
 | FR-053-AC-8 | Changing any trigger identity byte changes the selected activation/instance identity or is refused; no timestamp, receipt, display text, payload, capture, static coordinate or declaration position can stand in for the trigger identity. | Test |
-| FR-053-AC-9 | An absent, empty, malformed, stale, mismatched or cross-version trigger identity is rejected with a typed non-truth outcome and no substituted or partial activation; a version-specific reader performs no cross-version translation. | Test |
+| FR-053-AC-9 | An empty trigger identity is refused at construction (FR-526); a delivery whose identity is absent creates no instance and no aliased or partial activation (FR-524); a stale or mismatched identity (a correction naming another trigger's result, or a redelivery whose payload differs from the retained one) is refused (FR-526, FR-524). The identity is opaque non-empty bytes with one version, so a malformed or cross-version identity cannot occur and no translation exists. No outcome carries a substituted identity or truth. | Test |
 
 ## Dependencies
 

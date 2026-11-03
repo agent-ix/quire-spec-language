@@ -105,9 +105,14 @@ An evaluation outcome:
   first tick whose establishment would resolve it;
 - `Indeterminate { where, reason }`: the window is closed and the evidence still
   leaves the verdict open, with `reason` one of `MissingValuation { position,
-  atom }`, `ConflictingValuation { position, atom }`, `IncompleteInput`,
+  atom, instance, also_held_by }`, `ConflictingValuation { position, atom }`,
+  `IncompleteInput`,
   `MissingHistory` or `StraddlesBound` (a counter cover straddling a bound,
-  QSpec FR-160);
+  QSpec FR-160). `instance` and `also_held_by` are set only for an
+  instance-bound atom of an evidence call (FR-524): `instance` is the assessed
+  instance and `also_held_by` the other instances that hold a valuation of the
+  atom at the position; both are empty otherwise, and FR-504's `Indeterminate`
+  carries the same members;
 - `Undefined` and `InsufficientData` as FR-327 states them;
 - `Incomplete` with its charge point (work), as FR-327 states it; and
 - a refusal (below) in place of any of them.
@@ -182,8 +187,10 @@ ranks below 10.
 ### Canonical order
 
 - The evaluator SHALL order the observations before it visits any position by
-  ascending stamp, then by ascending order key among observations whose keys come
-  from one order authority, then by ascending observation identity (FR-106).
+  ascending stamp, then by ascending order-authority identity (an observation
+  without an order key after every keyed one), then by ascending key within the
+  authority, then by ascending observation identity (FR-106), which is a total
+  order.
 - The evaluator SHALL NOT consult the order in which the caller listed the
   observations.
 - The outcome and the result identity SHALL NOT depend on the listed order.
@@ -327,8 +334,10 @@ as its own ticket, referenced from QSL-1493; it is not part of this repository.
 | FR-501-AC-15 | The report keeps scope closure, surrounding-execution closure, assessment-execution disposition and input completeness as four fields: changing the scope from `Closed` to `Open` changes the basis and the scope field and no other field or the verdict; changing the surrounding execution changes only its field; an `Incomplete` (work) outcome reports assessment `Failed` where a verdict reports `Completed`; changing completeness from `Complete { through: 5 }` to `Incomplete` changes the verdict class exactly as AC-5 states and no closure field. | Test (TC-1295) |
 | FR-501-AC-16 | Evaluating AC-1's request twice gives one result identity; changing the stamp unit, the cover, any one stamp, valuation, order key, `W`, `through`, the lower-boundary kind or a meter ceiling, each alone, gives a distinct identity, and the earlier result is neither reused nor rewritten. | Test (TC-1295) |
 | FR-501-AC-17 | `Complete { through: 9 }` with `W` 5 for `eventually[0,5] holds(p)` over stamps 0, 2, 5 with `p` false, false, false is `Completed(false)` (the activation is established at 5); with `W` 3 it is `Pending { deadline: 5 }`. A trace with no positions is refused at stage `admit`, `invalid_runtime_input`/`invalid-value`, before any position is visited; AC-7's equal-stamp refusal is at stage `evaluate`. | Test (TC-1295) |
-| FR-501-AC-18 | Over AC-1's request, listing the observations in the order of stamps 5, 0, 2 gives the outcome, the decision support and the `result_identity` that listing 0, 2, 5 gives, and the `until` of AC-7 over keys from one authority gives one outcome for the listed order and for its reverse. | Test (TC-1295) |
+| FR-501-AC-18 | Over AC-1's request, listing the observations in the order of stamps 5, 0, 2 gives the outcome, the decision support and the `result_identity` that listing 0, 2, 5 gives. | Test (TC-1295) |
 | FR-501-AC-19 | Over AC-1's request listed as stamps 5, 0, 2 with `p` true at 0 and 5 and false at 2, the outcome is `Completed(false)` at position 0 and the decision support is {(position 1, p)}: positions are indices in canonical order, not in the listed order. | Test (TC-1295) |
+| FR-501-AC-20 | The `until` of AC-7 over keys from one authority gives one outcome for the listed order and for its reverse. | Test (TC-1295) |
+| FR-501-AC-21 | Four observations at one stamp, keyed A1, A2 (authority A) and B1 (authority B) and one without a key, listed in each of three different orders, give one canonical order (A1, A2, B1, the keyless one) and one `result_identity`. | Test (TC-1295) |
 
 ## Dependencies
 

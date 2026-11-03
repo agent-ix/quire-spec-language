@@ -39,6 +39,19 @@ Tickets: QSL-1502, QSL-1503, QSL-1504. Integrity pass (atomicity and consistency
 | FND-005 | low | [QSL-1503] The bullet and the next one ('a predecessor that is the result the request would produce (equal input_identity)') state the same refusal; one of them is redundant. | spec/functional/FR-526-chain-a-temporal-evidence-result-to-its-direct-predecessor-and-refuse-a-relation-that-changes-nothing.md:84 | wrong-requirement |
 | FND-006 | medium | [QSL-1503] AC-4 and AC-5 are conditions on the head of a future change that deletes src/temporal, restate FR-499's gate, carry Verification 'Test' while TC-1320 says no test carries the tag because the check is not a Rust test, and cannot pass or fail in this repository now. State them as FR-499 gate rows with Inspection, or make them gate conditions of FR-499 only. | spec/functional/FR-525-map-each-legacy-temporal-evaluator-criterion-to-its-spine-successor-or-name-the-open-row.md:157 | wrong-requirement |
 
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The 24-claim AC is split into AC-4 and AC-5 (exact usage completes, one below stops), each one universally quantified claim over the thirteen counters. |
+| FND-002 | fixed | FR-522 ACs are split to twenty single-claim rows (AC-5, AC-7, AC-8, AC-10, AC-15, AC-16, AC-18 to AC-20). |
+| FND-003 | fixed | FR-524 ACs are split to thirty-one (AC-8 and AC-9, AC-12 to AC-16, AC-27 to AC-30). |
+| FND-004 | fixed | FR-527-AC-11 and AC-12, AC-16 and AC-17, AC-19 are separate claims. |
+| FND-005 | fixed | The redundant bullet is gone; unchanged-input is one bullet with its cause. |
+| FND-006 | fixed | The gate conditions moved to FR-499-AC-8 (Inspection) and FR-525 holds three ACs. |
+
 ## Verdict
 
 6 findings: 0 high, 2 medium, 4 low. Tickets: QSL-1502 2, QSL-1503 3, QSL-1504 1.
+
+Disposition pass 1 at head 87bdf5f2828737f46113bab3ee801a1e369fd27b: 6 fixed, 0 still-open, 0 new findings.

@@ -79,6 +79,7 @@ result field:
 | `execution` | `execution` | `Completed`/`Failed` disposition |
 | `completeness` | `completeness` | `{ reference, state, facts }` |
 | `authoritative_origin`, `evicted` | same | |
+| none | `progress_ledger: Option<ProgressLedger>` | FR-502's ledger of watermark, completeness and closure per binding; the call applies FR-502 to the request's progress assertion and returns the updated ledger |
 | none | `ledger: Option<EvidenceLedger>` | the caller-held ledger of retained instances (FR-524) and latest results (FR-526); the result returns the updated ledger |
 | `relation` | `relation` | `Original`, `Superseding(prev)` or `Invalidating(prev)`, `prev` the predecessor's `result_identity` (FR-526) |
 | none | `control: Option<CheckedNodeId>` | the protocol clause the caller selected; when present, the package's FR-449 activation-map row of that clause must name the call's clause (below) |
@@ -103,9 +104,8 @@ instance is identified by the trigger identity (FR-053).
 | `support()` | `support: Vec<SupportRef>` (the fact references inside the decision support) |
 | `decision_progress()` … `surrounding_closure()`, `completeness()` | the four axes and the completeness record, echoed exactly |
 | `limits()` | `usage`: the meter charges of the call, over the thirteen counters of the Work limits item |
-| `predecessor()`, `lineage()`, `relation_kind()` | `relation` echoed with `prev`; `lineage: u64`; `input_identity` (FR-526); the updated `ledger` |
+| `predecessor()`, `lineage()`, `relation_kind()` | `relation` echoed with `prev`; `lineage: u64`; `input_identity` (FR-526); the updated `ledger` and `progress_ledger` |
 | none | `authenticated: AuthenticatedBinding` (FR-522), present on every result because a refused binding returns no result |
-| `Report.settled_siblings` | `settled_activations` (FR-523): the activations that settled before a stop |
 | none | `instances`: every instance the lists resolved, each with its identity and activation state, so that the siblings of the assessed instance stay inspectable (FR-524) |
 | `request_identity()`, `subject_identity()`, `document().*` | `result_identity` as FR-043-AC-13 states it (an evaluator identity, not a digest); the rest end with the documents |
 
@@ -137,6 +137,19 @@ obligation was never activated.
 - **No supplied truth.** The request has no truth, settlement or support field;
   the result's three are derived from the package and the evidence
   (FR-052-AC-9).
+- **Assessed instance.** The instance activates once, at the position the request's
+  `anchor` names (a clause `on origin` at position 0), so the call returns that one
+  activation's outcome and combines no activations. `trigger` names the assessed
+  instance among the resolved ones. When `trigger` names an identity that no delivery
+  or origin of the request and no entry of the ledger holds, the call is refused
+  with cause `trigger-unknown` as `Err(CallFailure::Admission)`. When `trigger`
+  names a delivery whose guard is false, there is no instance and the result holds
+  the activation disposition FR-524 gives a scope with no instance, no truth and the
+  matching `non_value`.
+- **Progress.** A regressing watermark, a conflicting completeness revision and a
+  closure contradiction in the request's progress assertion are refused as FR-502
+  states, as `Err(CallFailure::Admission)` with an empty charge log and the
+  contradicted dimension in the failure; the progress ledger is unchanged.
 - **Independent facts.** Each of the four axes, the trigger scope, the
   completeness record, the anchor, the clock row and the execution disposition is
   returned as its own field; an absent fact yields a non-value, never a default
@@ -156,8 +169,9 @@ obligation was never activated.
   another temporal clause it is refused with cause `activation-mapping-mismatch`,
   each as `Err(CallFailure::Admission)` (the successors of the legacy
   `MissingActivationMapping` and `ActivationMappingMismatch`).
-- **Work limits.** None of the retired fourteen dimensions is dropped. Four
-  bounded the JSON documents and become counters on the typed values:
+- **Work limits.** Of the retired fourteen dimensions, twelve have a successor and
+  two are retired with their reasons below, and one counter, `instances`, is added.
+  Three bounded the JSON documents and become counters on the typed values:
   `input_bytes` becomes `request_bytes` (the total of the request's opaque byte
   members), `output_bytes` becomes `result_bytes` (the same over the result), and
   `string_bytes` becomes `member_bytes` (the longest single opaque member).
@@ -187,7 +201,7 @@ obligation was never activated.
 | FR-516-AC-5 | The decision and surrounding progress and closure axes, the trigger scope and the completeness record are each echoed in the result exactly as supplied, and changing one of them changes only its field and the derived truth where FR-043 says it does. | Test (TC-1311) |
 | FR-516-AC-6 | A superseding result carries its direct predecessor's `result_identity` and `lineage + 1`, and the predecessor result is unchanged. | Test (TC-1311) |
 | FR-516-AC-7 | For each of the thirteen work counters (the nine carried, `instances` and `request_bytes`, `result_bytes`, `member_bytes`), the call at exactly the measured usage completes and the call one below returns `Incomplete` naming that counter with `truth = None`. | Test (TC-1311) |
-| FR-516-AC-8 | Over **R**'s timestamped-event clause, the request/result path of FR-501 and FR-502 (finite window, regressing watermark, conflicting completeness revision) returns the outcomes those requirements state through `evaluate_temporal_evidence`, and the result for the in-process package equals the result for the read-back package, charge log included. | Test (TC-1311) |
+| FR-516-AC-8 | Over **R**'s timestamped-event clause, FR-501's finite-window outcomes are returned through `evaluate_temporal_evidence`, the call's `temporal.visit` charges being FR-501-AC-12's plus one for each delivery or origin it resolves (FR-523). | Test (TC-1311) |
 | FR-516-AC-9 | A request whose `EvidenceRef` members `contract`, `schema_digest`, `digest` and `authority_digest` are arbitrary byte strings, including empty ones, is evaluated; the result echoes each byte for byte, and changing any one of them changes no truth, settlement, support or activation value, only the echoed member. | Test (TC-1311) |
 | FR-516-AC-10 | A request whose `deliveries` hold `t1` and `t2` with equal timestamps, receipts, payloads and captures resolves two instances in `instances`. | Test (TC-1311) |
 | FR-516-AC-11 | A request whose `deliveries` hold `t1` twice with an equal payload resolves one instance holding both receipts. | Test (TC-1311) |
@@ -196,6 +210,9 @@ obligation was never activated.
 | FR-516-AC-14 | A sibling clause evaluated in the same package after the AC-7 stop keeps its own result. | Test (TC-1311) |
 | FR-516-AC-15 | A request whose `control` names the protocol clause whose FR-449 row names the call's clause is evaluated. | Test (TC-1311) |
 | FR-516-AC-16 | A request whose `control` names a protocol clause with no FR-449 row is refused with cause `activation-mapping-missing`, and one whose row names another temporal clause is refused with `activation-mapping-mismatch`, each as `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
+| FR-516-AC-17 | Through `evaluate_temporal_evidence` with a `progress_ledger`, a regressing watermark and a conflicting completeness revision are refused as FR-502-AC-1 and AC-2 state, with an empty charge log and the progress ledger unchanged. | Test (TC-1311) |
+| FR-516-AC-18 | The result for the in-process package equals the result for the read-back package, charge log included. | Test (TC-1311) |
+| FR-516-AC-19 | A request whose `trigger` names no delivery, origin or ledger entry is refused with cause `trigger-unknown`, and one whose `trigger` names a delivery with a false guard returns no truth and the disposition of FR-524. | Test (TC-1311) |
 
 ## Dependencies
 

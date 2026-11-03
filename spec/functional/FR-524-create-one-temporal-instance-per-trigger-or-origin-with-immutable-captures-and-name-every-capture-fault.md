@@ -153,7 +153,8 @@ No output holds a truth value.
 - When a delivery's `guard` is `Some(true)`, the evaluator SHALL create the
   instance.
 - When a delivery's `guard` is `Some(false)`, the evaluator SHALL create no
-  instance and SHALL NOT report a refusal.
+  instance.
+- The evaluator SHALL NOT report a refusal for a false guard.
 - When the clause has a guard and a delivery's `guard` is `None`, the evaluator
   SHALL report an `ActivationFault` naming the guard with `non_value.kind`
   `Missing`.
@@ -167,8 +168,8 @@ No output holds a truth value.
   source binding and anchor.
 - The evaluator SHALL examine a delivery's faults in this order: a redelivery
   contradiction, the guard, the number of captures, the delivery anchor, then each
-  capture in authored order, an evicted record before the capture's fact, and
-  SHALL report the first fault found.
+  capture in authored order, an evicted record before the capture's fact.
+- The evaluator SHALL report the first fault found in that order.
 - When the delivery supplies fewer captures than the clause declares, the
   evaluator SHALL report an `ActivationFault` naming the first capture the
   delivery does not supply, with `non_value.kind` `Missing`.
@@ -199,7 +200,9 @@ No output holds a truth value.
   position, the evaluator SHALL treat the valuation as missing (FR-501).
 - The evaluator SHALL NOT read another instance's entry for that atom.
 - The missing valuation SHALL name the assessed instance and the identities of the
-  other instances that hold an entry for the same atom and position.
+  other instances that hold an entry for the same atom and position, in the
+  `instance` and `also_held_by` members of FR-501's `MissingValuation` reason,
+  which FR-504's `Indeterminate` carries identically.
 
 ### Retained valuations
 
@@ -238,7 +241,7 @@ No output holds a truth value.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-524-AC-1 | Two deliveries with identities `t1` and `t2` and equal payloads and captured amounts create two instances with two distinct capture environments keyed by `t1` and `t2`. | Test (TC-1319) |
-| FR-524-AC-2 | An instance-bound atom with an entry only for `t2` at a position leaves `t1`'s valuation missing: `t1` is assessed with a missing valuation naming `t1` and `t2`, and `t2` is assessed with its entry. | Test (TC-1319) |
+| FR-524-AC-2 | An instance-bound atom with an entry only for `t2` at a position leaves `t1`'s valuation missing: where the verdict depends on the atom, `t1`'s `Indeterminate` carries the reason `MissingValuation` with `instance` `t1` and `also_held_by` holding `t2`, and `t2` is assessed with its entry. | Test (TC-1319) |
 | FR-524-AC-3 | A second delivery of `t1` under another receipt with an equal payload creates no second instance and adds its receipt after the first in `t1`'s provenance. | Test (TC-1319) |
 | FR-524-AC-4 | The capture environment of `t1` is byte-equal before and after the AC-3 delivery. | Test (TC-1319) |
 | FR-524-AC-5 | Two deliveries of `t1` with different payloads, passed to `activate`, return the contradiction refusal with `contradicted_identity` `t1`, and the retained environment is unchanged. | Test (TC-1319) |

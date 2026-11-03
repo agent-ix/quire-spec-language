@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-501-AC-1 to AC-19 and FR-330-AC-9 (the finite-window part): the
+Verify FR-501-AC-1 to AC-21 and FR-330-AC-9 (the finite-window part): the
 spine evaluator returns a definite verdict on a closed complete window, pending
 or indeterminate only for a genuinely unresolved obligation, and never refuses
 the profile.
@@ -68,6 +68,8 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 31 | `eventually[0,5] holds(p)`; then the same clause with an empty trace | stamps 0,2,5; p F,F,F; W 5, C(9); W 3, C(9) | `Completed(false)`; `Pending {deadline 5}`; stage `admit` `invalid_runtime_input`/`invalid-value` for the empty trace |
 | 32 | row 1's first clause, observations listed as stamps 5,0,2 then 0,2,5 | p T at 0 and 5, F at 2 | equal outcome, support and `result_identity` for both listings (FR-501-AC-18) |
 | 33 | row 32's listing 5,0,2 | p T at 0 and 5, F at 2 | `Completed(false)` at position 0; support {(1,p)} (FR-501-AC-19) |
+| 34 | row 17's `until` over keys from one authority, listed as given and reversed | keys 1, 2 at stamp 1 | one outcome for both listings (FR-501-AC-20) |
+| 35 | four observations at one stamp: keys A1, A2 (authority A), B1 (authority B), none; three listings | one clause, equal valuations | canonical order A1, A2, B1, keyless; one `result_identity` (FR-501-AC-21) |
 
 ## Expected Results
 

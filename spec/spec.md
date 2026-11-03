@@ -1373,9 +1373,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-520](functional/FR-520-evaluate-state-and-compensation-expressions-through-the-checked-package-evaluation-entry-points.md) | FR |
 | [FR-521](functional/FR-521-gate-the-deletions-behind-quire-protocol-on-the-checked-package-and-name-each-behavior-it-relies-on.md) | FR |
 | [FR-522](functional/FR-522-bind-a-temporal-trace-to-the-checked-clause-s-profile-and-clock-and-report-the-authenticated-clock.md) | FR |
-| [FR-523](functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-activation-apart-from-a-stopped-declaration.md) | FR |
+| [FR-523](functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-instance-apart-from-a-stopped-declaration.md) | FR |
 | [FR-524](functional/FR-524-create-one-temporal-instance-per-trigger-or-origin-with-immutable-captures-and-name-every-capture-fault.md) | FR |
-| [FR-525](functional/FR-525-map-each-legacy-temporal-evaluator-criterion-to-its-spine-successor-or-name-the-open-row.md) | FR |
+| [FR-525](functional/FR-525-map-each-legacy-temporal-evaluator-criterion-to-its-spine-successor.md) | FR |
 | [FR-526](functional/FR-526-chain-a-temporal-evidence-result-to-its-direct-predecessor-and-refuse-a-relation-that-changes-nothing.md) | FR |
 | [FR-527](functional/FR-527-classify-native-to-tl-mapping-support-from-the-checked-temporal-clause-node.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |

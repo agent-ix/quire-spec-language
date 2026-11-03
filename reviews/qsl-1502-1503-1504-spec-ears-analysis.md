@@ -41,6 +41,27 @@ Tickets: QSL-1502, QSL-1503, QSL-1504. EARS pass over the Behavior statements of
 | FND-007 | low | [QSL-1504] The requirement body says the function's crate and names are an inference; state the location and names as the requirement and keep the question on the ticket. | spec/functional/FR-527-classify-native-to-tl-mapping-support-from-the-checked-temporal-clause-node.md:55 | wrong-requirement |
 | FND-008 | low | [QSL-1503] The Open rows section embeds a Recommendation column and an owner-choice note on formula_depth; recommendations are not requirement content and belong on the tickets that need the ruling. | spec/functional/FR-525-map-each-legacy-temporal-evaluator-criterion-to-its-spine-successor-or-name-the-open-row.md:131 | wrong-requirement |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-009 | low | [QSL-1503] Four Behavior statements still carry two SHALL clauses: FR-524 'examine a delivery's faults ... and SHALL report the first fault found' and 'When ... Some(false) ... SHALL create no instance and SHALL NOT report a refusal', and FR-523 'charge the counter before it charges the meter, and SHALL report a denied counter by its name' and the u64 overflow bullet ('return Incomplete ... and SHALL NOT wrap, saturate or narrow'). FR-525-AC-2 is labelled Test while TC-1320 says no test carries it. | spec/functional/FR-524-create-one-temporal-instance-per-trigger-or-origin-with-immutable-captures-and-name-every-capture-fault.md:168 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-523 bullets are split to one obligation each; two statements still carry two SHALL clauses (FND-009). |
+| FND-002 | fixed | FR-524 bullets are split; two statements still carry two SHALL clauses (FND-009). |
+| FND-003 | fixed | No FR-522 Behavior statement carries two SHALL clauses now. |
+| FND-004 | fixed | retain selection and constrain its construction are separate statements. |
+| FND-005 | fixed | The inference caveat is removed from FR-524. |
+| FND-006 | fixed | The inference caveat is removed from FR-526; the rationale is stated as behavior. |
+| FND-007 | fixed | The location and names are stated as the requirement. |
+| FND-008 | fixed | The Recommendation column and the owner-choice note are gone from FR-525. |
+
 ## Verdict
 
 8 findings: 0 high, 4 medium, 4 low. Tickets: QSL-1502 2, QSL-1503 4, QSL-1504 2.
+
+Disposition pass 1 at head 87bdf5f2828737f46113bab3ee801a1e369fd27b: 8 fixed, 0 still-open, 1 new findings.
