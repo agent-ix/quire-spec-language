@@ -125,6 +125,10 @@ pub(super) struct FormulaInput<'a, 'c> {
     pub(super) conditions: &'a BTreeMap<usize, FormulaCondition<'c>>,
     /// Where a fault of the formula as a whole is located.
     pub(super) root_site: &'a Location,
+    /// Whether the clause's intervals count ticks of its clock unit (the
+    /// finite-window profile): checked as closed integral timed intervals,
+    /// written as FR-370 step intervals.
+    pub(super) tick_intervals: bool,
 }
 
 /// A lowered temporal clause's keys.
@@ -231,6 +235,8 @@ impl Lowering<'_> {
                 node_site: &|node| temporal_location(input.index, TemporalSite::Node(node)),
                 conditions: &conditions,
                 root_site: &claim,
+                tick_intervals: clause.profile()
+                    == crate::check::TemporalProfile::TimestampedEventFiniteWindow,
             },
             boolean.clone(),
             &scope,
@@ -460,7 +466,7 @@ impl Lowering<'_> {
                     operand: only,
                 } => (
                     unary_identity(*operator),
-                    Some(temporal_interval(interval.as_ref())),
+                    Some(temporal_interval(interval.as_ref(), input.tick_intervals)),
                     vec![operand(*only)?],
                 ),
                 FormulaNode::Binary {
@@ -470,7 +476,7 @@ impl Lowering<'_> {
                     right,
                 } => (
                     binary_identity(*operator),
-                    Some(temporal_interval(interval.as_ref())),
+                    Some(temporal_interval(interval.as_ref(), input.tick_intervals)),
                     vec![operand(*left)?, operand(*right)?],
                 ),
             };
@@ -533,17 +539,54 @@ pub(super) fn stage_fault(location: &Location, invariant: &'static str) -> Check
 }
 
 /// A checked operator's interval in the FR-370 wire form.
-fn temporal_interval(interval: Option<&CheckedInterval>) -> Member {
+fn temporal_interval(interval: Option<&CheckedInterval>, ticks: bool) -> Member {
     match interval {
         None => Member::TemporalInterval { interval: None },
         Some(CheckedInterval::Steps(interval)) => Member::TemporalInterval {
             interval: Some(*interval),
         },
-        Some(CheckedInterval::Timed(interval)) => Member::TimedInterval(Box::new(TimedMember {
-            lower: interval.lower().clone(),
-            lower_closed: interval.lower_closed(),
-            upper: Some(interval.upper().clone()),
-            upper_closed: interval.upper_closed(),
-        })),
+        // A tick interval of the finite-window profile is an integral closed
+        // interval: it is written as the step interval FR-370 gives it.
+        Some(CheckedInterval::Timed(interval)) if ticks => {
+            match tick_bounds(interval).and_then(|(lower, upper)| {
+                qsl_foundation::bound::TemporalInterval::new(
+                    lower,
+                    qsl_foundation::bound::TemporalUpper::Finite(upper),
+                )
+                .ok()
+            }) {
+                Some(step) => Member::TemporalInterval {
+                    interval: Some(step),
+                },
+                None => timed_member(interval),
+            }
+        }
+        Some(CheckedInterval::Timed(interval)) => timed_member(interval),
     }
+}
+
+/// The integral closed bounds of a tick interval, or `None` when a bound is
+/// not an integer, an end is open or a bound exceeds `u64`.
+fn tick_bounds(interval: &qsl_foundation::bound::TimedInterval) -> Option<(u64, u64)> {
+    if !interval.lower_closed()
+        || !interval.upper_closed()
+        || !interval.lower().is_integer()
+        || !interval.upper().is_integer()
+    {
+        return None;
+    }
+    Some((
+        interval.lower().numerator().to_u64()?,
+        interval.upper().numerator().to_u64()?,
+    ))
+}
+
+/// A timed interval in its rational wire form.
+fn timed_member(interval: &qsl_foundation::bound::TimedInterval) -> Member {
+    Member::TimedInterval(Box::new(TimedMember {
+        lower: interval.lower().clone(),
+        lower_closed: interval.lower_closed(),
+        upper: Some(interval.upper().clone()),
+        upper_closed: interval.upper_closed(),
+    }))
 }
