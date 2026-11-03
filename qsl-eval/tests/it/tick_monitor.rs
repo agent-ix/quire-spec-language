@@ -239,7 +239,7 @@ fn a_positive_lower_bound_keeps_the_upper_bound_capacity() {
 fn after_a_gap_history_is_gone_and_past_windows_are_indeterminate() {
     let mut plan = Plan::new("once[0 ms, 10 ms] holds(c.level = 2)", ratio(0, 1));
     plan.width_bits = 16;
-    plan.max_gap = 100;
+    plan.max_gap = 2000;
     let p = plan.holds()[0];
     let node = plan
         .fixture
@@ -263,9 +263,11 @@ fn after_a_gap_history_is_gone_and_past_windows_are_indeterminate() {
     // Once the window has refilled past the marker the result decides.
     let mut tick = 65510_u64;
     let mut last = TickOutcome::Indeterminate;
-    for _ in 0..3 {
-        tick += 100;
-        // keep within 16 bits: 65510 + 100 wraps, a delta of 100 is in range.
+    // The window is ten milliseconds, ten thousand ticks of this fixture, so
+    // a dozen readings a thousand ticks apart refill it past the marker.
+    for _ in 0..12 {
+        tick += 1000;
+        // keep within 16 bits: a delta of 1000 wraps and stays in range.
         let results = monitor.step(&reading(tick % 65536, &[(p, false)])).unwrap();
         if let Some(result) = results.iter().find(|result| result.subformula == node) {
             last = result.outcome;

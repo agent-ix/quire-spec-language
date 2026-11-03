@@ -1390,9 +1390,8 @@ pub fn render(spec: &EntrySpec) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     );
-    let zero_status = format!(
-        "ActStatus {{ position: 0, rep: 0, acc: vFalse(), pfx: vTrue(), atoms: zeroAtoms(), uv: noUv() }}"
-    );
+    let zero_status = "ActStatus { position: 0, rep: 0, acc: vFalse(), pfx: vTrue(), atoms: zeroAtoms(), uv: noUv() }"
+        .to_owned();
     let _ = writeln!(
         w,
         "function pairCells using v(a: Cells, b: Cells): Sequence<Cells> pure {{ sequence[a, b] }}\n\
