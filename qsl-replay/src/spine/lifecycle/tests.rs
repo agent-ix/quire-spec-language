@@ -15,7 +15,7 @@ use qsl_eval::value::QualifiedName;
 use qsl_foundation::diagnostic::{
     LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
 };
-use qsl_foundation::{Code, Setting, SourceIdentity};
+use qsl_foundation::{Code, IdentityLimits, Setting, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -2309,7 +2309,7 @@ fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit.
-#[trace("TC-758", "FR-277-AC-1")]
+#[trace("TC-758", "FR-277-AC-1", "FR-506-AC-5")]
 #[test]
 fn check_names_the_checking_limit_field_it_reached() {
     let chain = fixture_chain();
@@ -2338,6 +2338,16 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+    let zero_nodes = run(|mut limits, _| {
+        limits.checking = CheckingLimits::new(0)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        limits
+    })(0);
+    assert!(matches!(
+        zero_nodes,
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
     assert_field(
         Setting::S3InputBytes,
         FoundationKind::InputBytes,
@@ -2356,6 +2366,78 @@ fn check_names_the_checking_limit_field_it_reached() {
             limits
         }),
     );
+}
+
+/// FR-506-AC-5 (TC-1301 row 11): `identity.input_bytes` consumes the exact
+/// canonical identity preimage length, admits at that length and refuses at
+/// one less and at zero.
+#[trace("FR-506-AC-5", "TC-1301")]
+#[test]
+fn model_identity_preimage_limit_is_exact() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
+    let parsed = parse(
+        &request(spine_model::unit().as_bytes()),
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the selected model unit parses")
+    .into_value();
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the model selects")
+    .into_value();
+    let s3_nodes = |bound: u64| {
+        let mut limits = SpineLimits::default();
+        limits.checking = CheckingLimits::new(bound)
+            .with_input_bytes(limits.checking.input_bytes())
+            .with_work_budget(limits.checking.work_budget());
+        reached(check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &Cancel::new(),
+        ))
+    };
+    assert_field(
+        Setting::S3Nodes,
+        FoundationKind::NodeCount,
+        100_000,
+        s3_nodes,
+    );
+    assert!(matches!(
+        s3_nodes(0),
+        Reached::Limit(limit) if limit.setting() == Setting::S3Nodes
+    ));
+    let run = |bound: u64| {
+        let mut limits = SpineLimits::default();
+        limits.assembly.identity = IdentityLimits::default().with_input_bytes(bound);
+        reached(check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &Cancel::new(),
+        ))
+    };
+    let Reached::Limit(at_zero) = run(0) else {
+        panic!("identity bytes exceed the zero bound");
+    };
+    assert_eq!(at_zero.setting(), Setting::IdentityInputBytes);
+    let exact = u64::try_from(at_zero.actual()).expect("identity preimage length fits");
+    assert!(matches!(run(exact), Reached::Output));
+    let Reached::Limit(one_short) = run(exact - 1) else {
+        panic!("one byte short refuses");
+    };
+    assert_eq!(one_short.setting(), Setting::IdentityInputBytes);
+    assert_eq!(one_short.configured_bound(), exact - 1);
+    assert_eq!(one_short.actual(), u128::from(exact));
 }
 
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
