@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-330
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-337
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-501
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-094
@@ -41,8 +43,10 @@ progress and leaves every earlier result as it was.
 - An optional `ProgressLedger` in FR-330's `Temporal` selection, or in an
   `EvidenceRequest` (FR-516), whose call applies this requirement to its
   progress assertion and returns the updated ledger.
-- A **binding**: the checked package identity, the checked clause identity, the
-  clock binding name and the selected profile identity.
+- A **binding**: the checked package identity, the checked clause occurrence (the
+  declaration node and the occurrence ordinal of the clause's `claim`, FR-337
+  "Clause names and clock bindings per occurrence"), the clock binding name and
+  the selected profile identity.
 - A progress assertion in a `TraceInput::Timestamped` trace (FR-330, FR-501): a
   watermark `W`, a completeness assertion, the decision-scope closure and the
   surrounding-execution closure. `TraceInput::Progressed` (FR-504) carries the same assertion for
@@ -68,8 +72,20 @@ request supplied none. The same holds for a request that returns
 
 ## Behavior
 
+- The clause's declared name is not part of the clause body identity: two
+  structurally equal clauses share one declaration node whatever they are named
+  (FR-337). The ledger binding is nonetheless **per occurrence**. Two clauses
+  with identical bodies and different names are two occurrences of one node, and
+  each SHALL have its own ledger binding, keyed by the declaration node and the
+  occurrence ordinal that the package's `temporal_clause_names` and
+  `temporal_bindings` rows carry (QSpec TemporalBinding.occurrence). Progress
+  asserted for one occurrence settles nothing for the other, and a watermark,
+  completeness or closure that would contradict one occurrence's entry is not a
+  contradiction for the other; this keeps two independently monitored clauses
+  from sharing, and refusing, each other's progress merely because their bodies
+  are equal.
 - The ledger SHALL key each entry by the whole binding. An assertion under any
-  other package, clause, clock binding name or profile identity is progress for
+  other package, clause occurrence, clock binding name or profile identity is progress for
   a different binding, which settles nothing for this binding and creates or
   updates only its own entry.
 - Within one binding the watermark SHALL be monotonic. When an assertion
@@ -144,3 +160,4 @@ request supplied none. The same holds for a request that returns
 | FR-502-AC-9 | With `progress.covered_positions` set to 3, a ledger holding two covered positions under B, and a request under a second binding B2 covering two positions, the request returns `Incomplete(LimitReached{limit: node count, value: 3, setting: progress.covered_positions})` and the ledger is unchanged; a request under B2 covering one position is accepted. | Test (TC-1296) |
 | FR-502-AC-10 | After `Complete { through: 100 }` is retained under B over a position of identity `p1` stamped 80, a later trace holding a position of another identity stamped 80 is refused `Completeness`, and one holding identity `p1` stamped 80 is accepted. | Test (TC-1296) |
 | FR-502-AC-11 | The report of a request refused by FR-502 returns the ledger the request supplied, equal to it, and the report of a refused request that supplied no ledger returns none. | Test (TC-1296) |
+| FR-502-AC-12 | A package with two structurally equal clauses `Fast` and `Slow`, identical bodies and different names, so one declaration node with occurrence ordinals 0 and 1: after `W` 100 is retained under `Fast`'s binding, `W` 60 under `Slow`'s binding is accepted and creates its own entry, a later `W` 60 under `Fast` is refused `Watermark` with retained 100, and `Slow`'s entry still holds `W` 60. Renaming `Slow` to a third name does not change either entry's key. | Test (TC-1296) |

@@ -41,16 +41,23 @@ pending, because event position does not advance in silence.
 
 ## Inputs
 
-`TraceInput::Progressed { trace: Vec<DocumentRef>, progress }` (FR-330), where
-`progress` holds:
+`TraceInput::Progressed { trace: Vec<DocumentRef>, progress, lower_boundary, binding }`
+(FR-330), where `progress` holds:
 
 - `watermark`: a non-negative integer `W`;
 - `completeness`: `Complete { through }` (a non-negative integer) or `Incomplete`;
 - `scope`: `Closed` or `Open`, the decision scope's closure;
-- `execution`: `Closed` or `Open`, the surrounding execution's closure; and
-- `lower_boundary`: `AuthoritativeOrigin` or `HistoryCutoff`.
+- `execution`: `Closed` or `Open`, the surrounding execution's closure.
 
-`TraceInput::Progressed` also carries a required `binding`, a `TraceBinding` that
+`lower_boundary` (`AuthoritativeOrigin` or `HistoryCutoff`) is a member of
+`Progressed` beside `progress`, not a member of the progress assertion. The
+progress assertion is the one value the ledger (FR-502) and a `Timestamped`
+trace share, and a `Timestamped` trace carries its lower boundary in its window
+(FR-501); keeping the boundary out of the assertion lets one assertion type
+serve every shape and keeps the boundary, which describes the trace and not the
+observer's progress, out of the ledger's contradiction rules.
+
+`Progressed` also carries a required `binding`, a `TraceBinding` that
 the evaluator compares with the clause's profile and clock rows before it visits
 any position (FR-522).
 
@@ -75,7 +82,11 @@ defined below.
 - **Silent samples (fixed-sample only).** The evaluator SHALL read samples `n` to
   `S` with no observation with every `holds` atom false and every constant unchanged, because a
   progress assertion advances sample ticks even when no business predicate is
-  true.
+  true. A silent sample is a fixed-sample watermark sample at which every
+  `holds` atom is false. It is read for the clause's window but anchors no
+  `on each` activation: a clock tick with no observation is not an observed
+  event that fires the activation, so `on each` fires at the trace's own
+  positions only. (`on origin` anchors at position 0 and is unaffected.)
 - **Closed scope, complete input.** When `scope` is `Closed` and the input is
   complete (`Complete { through }` with `through >= S`), positions after `S` read
   by false extension and the clause is evaluated as FR-327 states, with the
@@ -133,6 +144,7 @@ defined below.
 | FR-504-AC-6 | Event-position, two positions, `once[0,2] holds(p)` `on each`, `p` false at both: `HistoryCutoff` gives `Indeterminate { MissingHistory }` with `where` 0 (the first activation in position order reaches before the trace), `AuthoritativeOrigin` gives `Completed(false)`. | Test (TC-1299) |
 | FR-504-AC-7 | A `Finite` trace with no `progress` gives the outcomes of FR-327-AC-1 unchanged. A fixed-sample `Progressed` request over two positions with `watermark` 0, one over two positions with `Complete { through: 0 }`, and a `Progressed` request over a `Lasso`, a `Model` or an infinite-trace clause are each refused at stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1299) |
 | FR-504-AC-8 | With a ledger, a fixed-sample request at `W` 3 followed by one at `W` 1 is refused `Watermark` (FR-502); an event-position request at `W` 3 followed by `W` 9 is accepted and its `Pending` outcome is unchanged. | Test (TC-1296, TC-1299) |
+| FR-504-AC-9 | Fixed-sample, one position at index 0 with `p` true, `eventually[0,0] holds(p)` `on each`, scope `Closed`, `W` 3, `Complete { through: 3 }`: the outcome is `Completed(true)`, because the silent samples at indices 1 to 3 anchor no activation; an evaluator that anchored an activation at a silent sample would find `p` false there and return `Completed(false)`. With a second real position at index 1 with `p` false, the outcome is `Completed(false)` at position 1, the real position. | Test (TC-1299) |
 
 ## Dependencies
 
