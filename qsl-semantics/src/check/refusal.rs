@@ -148,6 +148,21 @@ pub enum ProtocolAnchorCause {
         /// The function name's span.
         span: Span,
     },
+    /// A predicate join names a protocol that exists but was refused by its
+    /// own S3 check. The dependent refusal keeps the ordinary
+    /// `missing_declaration`/`missing-name` pair while recording the target's
+    /// own code and cause as structured dependency provenance.
+    RefusedDependency {
+        /// The protocol name written as the predicate function.
+        function: String,
+        /// The refused protocol and its original check pair.
+        refused_dependency: Box<RefusedProtocolDependency>,
+        /// True because this refusal follows from the target protocol's
+        /// refusal rather than a missing declaration.
+        consequence: bool,
+        /// The predicate reference span.
+        span: Span,
+    },
     /// FR-218 Predicate joins: the resolved function's Boolean signature
     /// does not match the distinct joined labels.
     JoinFunctionType {
@@ -630,6 +645,17 @@ pub enum ProtocolAnchorCause {
     },
 }
 
+/// The typed refusal pair of a protocol named by a dependent protocol.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RefusedProtocolDependency {
+    /// The target protocol declaration.
+    pub declaration: String,
+    /// The target's own refusal code.
+    pub code: Code,
+    /// The target's own catalog cause.
+    pub cause: &'static str,
+}
+
 /// Which expression slot of a protocol node a refusal is about (FR-218
 /// "Scopes").
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1023,6 +1049,7 @@ impl ProtocolAnchorCause {
             | Self::Unimplemented { span, .. }
             | Self::JoinFunctionMissing { span, .. }
             | Self::JoinFunctionKind { span, .. }
+            | Self::RefusedDependency { span, .. }
             | Self::JoinFunctionType { span, .. }
             | Self::MissingProfile { span, .. }
             | Self::MissingRoleType { span, .. }
@@ -1083,6 +1110,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => Code::MissingDeclaration,
             Self::JoinFunctionMissing { .. } => Code::MissingDeclaration,
+            Self::RefusedDependency { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -1138,6 +1166,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => "missing-name",
             Self::JoinFunctionMissing { .. } => "missing-name",
+            Self::RefusedDependency { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -3375,6 +3404,20 @@ pub struct CheckRefusal {
     pub location: Location,
     /// The typed cause.
     pub cause: CheckCause,
+}
+
+/// Refusals owned by one protocol declaration while the rest of the unit
+/// continues checking (FR-383 per-protocol results).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ProtocolCheckRefusal {
+    /// The protocol declaration's authored name.
+    pub declaration: String,
+    /// The protocol declaration's source-unit index.
+    pub source_index: usize,
+    /// The span of the protocol declaration's name.
+    pub declaration_span: Span,
+    /// Every typed refusal attributed to this declaration, in check order.
+    pub refusals: Vec<CheckRefusal>,
 }
 
 impl CheckRefusal {
