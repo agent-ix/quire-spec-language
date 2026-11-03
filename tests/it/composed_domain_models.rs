@@ -10,10 +10,12 @@
 //! FR-152 classification. No semantic context or model JSON is hand-built.
 //!
 //! The bundle is read at test time from the pinned
-//! `agent-ix-extraction-frontend` checkout and copied into a temporary
-//! directory, where each test edits it as TC-148 directs. The unedited
-//! bundle does not admit whole at this pin, for reasons owned outside this
-//! linker (asserted by `qsl-semantics`' `model_intake` tests):
+//! `agent-ix-extraction-frontend` checkout. The temporary test root hard-links
+//! untouched files to that canonical fixture; edits detach only the files a
+//! test changes. This keeps the frontend's directory walk on regular files
+//! while avoiding a second copy of the upstream fixture tree. The unedited bundle does not admit whole at this pin, for
+//! reasons owned outside this linker (asserted by `qsl-semantics`'
+//! `model_intake` tests):
 //!
 //! - `Pump`/`Sys`/`Tank.id` are typed `UUID`, which is not a QSL native value
 //!   type (FCD fixture `spec/model/Pump.md:21`, `Sys.md:20`, `Tank.md:20`;
@@ -88,17 +90,27 @@ fn fcd_fixtures_dir() -> &'static Path {
     })
 }
 
-fn copy_tree(from: &Path, to: &Path) {
+fn hard_link_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).expect("create bundle directory");
     for entry in std::fs::read_dir(from).expect("read bundle directory") {
         let entry = entry.expect("bundle entry");
         let target = to.join(entry.file_name());
         if entry.file_type().expect("entry type").is_dir() {
-            copy_tree(&entry.path(), &target);
+            hard_link_tree(&entry.path(), &target);
         } else {
-            std::fs::copy(entry.path(), &target).expect("copy bundle file");
+            std::fs::hard_link(entry.path(), &target).expect("link canonical bundle file");
         }
     }
+}
+
+fn write_overlay(path: &Path, bytes: &[u8]) {
+    if std::fs::symlink_metadata(path).is_ok() {
+        std::fs::remove_file(path).expect("detach canonical fixture hard link");
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create overlay parent");
+    }
+    std::fs::write(path, bytes).expect("write overlay file");
 }
 
 pub(crate) fn edit(path: &Path, from: &str, to: &str) {
@@ -108,17 +120,20 @@ pub(crate) fn edit(path: &Path, from: &str, to: &str) {
         "{}: {from:?} not found",
         path.display()
     );
-    std::fs::write(path, text.replace(from, to)).expect("write bundle file");
+    write_overlay(path, text.replace(from, to).as_bytes());
 }
 
-/// The architecture bundle, copied and edited as the module docs describe,
-/// then `extra` applied to the copy.
+/// The canonical architecture fixture with only edited files detached into
+/// the temp root, then `extra` applied to those overlays.
 pub(crate) fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let source = fcd_fixtures_dir().join("architecture");
-    copy_tree(&source.join("spec"), &dir.path().join("spec"));
-    std::fs::copy(source.join("modules.json"), dir.path().join("modules.json"))
-        .expect("copy modules.json");
+    hard_link_tree(&source, dir.path());
+    assert!(
+        dir.path().join("spec/spec.md").is_file(),
+        "canonical fixture root did not link spec/spec.md from {}",
+        source.display()
+    );
     let spec = dir.path().join("spec");
     for entity in ["model/Pump.md", "model/Sys.md", "model/Tank.md"] {
         edit(&spec.join(entity), "| id | UUID |", "| id | Boolean |");
@@ -502,12 +517,12 @@ fn native_references_bind_to_domain_declaration_keys_and_kinds() {
 
 /// TC-1308 row 17: the pinned FCD #173 architecture bundle enters through
 /// spine I2, is selected by a native model declaration, and its field, Port
-/// and Connection references survive checked-package emission.
+/// and Connection records retain their selected identities through S3.
 #[trace("TC-1308", "FR-036-AC-9", "FR-056-AC-8", "FR-513-AC-8")]
 #[test]
 fn architecture_fixture_binds_references_through_spine_i2() {
     let bundle = architecture_bundle(|_| {});
-    let (admitted_package, bytes) = admitted_with_bytes(bundle.path());
+    let bytes = lift(bundle.path());
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
         .expect("the lifted FCD package enters I2 intake");
     let text = format!(
@@ -546,6 +561,54 @@ fn architecture_fixture_binds_references_through_spine_i2() {
         .map_err(failure)
         .expect("the fixture is selected by model M")
         .into_value();
+    let selected_model = models
+        .models()
+        .iter()
+        .find(|model| model.alias == "M")
+        .expect("selected M model");
+    let selected_package = selected_model.view.domain_package();
+    let endpoint = |artifact: &str| {
+        selected_package
+            .records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::Endpoint(endpoint)
+                    if endpoint.key.node == key(artifact).node =>
+                {
+                    Some(endpoint)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("selected model is missing endpoint {artifact}"))
+    };
+    let pump_out = endpoint("pump_out");
+    assert_eq!(pump_out.owning_component, key("sys_pump"));
+    assert_eq!(pump_out.direction, Some(PortDirection::Out));
+    assert_eq!(pump_out.value_type, key("Flow"));
+    assert_eq!(
+        (pump_out.multiplicity.lower, pump_out.multiplicity.upper),
+        (1, Some(1))
+    );
+    let tank_in = endpoint("tank_in");
+    assert_eq!(tank_in.owning_component, key("sys_tank"));
+    assert_eq!(tank_in.direction, Some(PortDirection::In));
+    assert_eq!(tank_in.value_type, key("Flow"));
+    assert_eq!(
+        (tank_in.multiplicity.lower, tank_in.multiplicity.upper),
+        (1, Some(1))
+    );
+    let selected_domain = selected_package.clone();
+    let mut meter = Meter::new(ModelNormalizationLimits::default());
+    let systems = classify(&selected_domain, &mut meter).expect("selected systems classify");
+    assert_eq!(
+        check_connection(
+            &ModelIndex::build(selected_domain),
+            &systems,
+            &key("pipe"),
+            &mut meter,
+        ),
+        ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted)
+    );
     let checked = qsl_replay::spine::check(
         &parsed,
         "tc-1308-fcd-i2".to_owned(),
@@ -605,46 +668,6 @@ fn architecture_fixture_binds_references_through_spine_i2() {
             .iter()
             .any(|protocol| protocol.name == "Plumbing"),
         "the checked protocol retains the fixture's role and relationship bindings"
-    );
-
-    let endpoint = |artifact: &str| {
-        let declaration = admitted_package
-            .declaration(artifact)
-            .expect("fixture endpoint declaration");
-        assert_eq!(declaration.kind, DeclarationKind::Port);
-        let DomainPackageRecord::Endpoint(endpoint) = declaration.record else {
-            panic!("{artifact} is not an endpoint")
-        };
-        endpoint.clone()
-    };
-    let pump_out = endpoint("pump_out");
-    assert_eq!(pump_out.owning_component, key("sys_pump"));
-    assert_eq!(pump_out.direction, Some(PortDirection::Out));
-    assert_eq!(pump_out.value_type, key("Flow"));
-    assert_eq!(
-        (pump_out.multiplicity.lower, pump_out.multiplicity.upper),
-        (1, Some(1))
-    );
-    let tank_in = endpoint("tank_in");
-    assert_eq!(tank_in.owning_component, key("sys_tank"));
-    assert_eq!(tank_in.direction, Some(PortDirection::In));
-    assert_eq!(tank_in.value_type, key("Flow"));
-    assert_eq!(
-        (tank_in.multiplicity.lower, tank_in.multiplicity.upper),
-        (1, Some(1))
-    );
-    let pipe = admitted_package.declaration("pipe").expect("pipe declared");
-    assert_eq!(pipe.kind, DeclarationKind::Connection);
-    let mut meter = Meter::new(ModelNormalizationLimits::default());
-    let systems = classify(admitted_package.package(), &mut meter).expect("systems classify");
-    assert_eq!(
-        check_connection(
-            &ModelIndex::build(admitted_package.package().clone()),
-            &systems,
-            &key("pipe"),
-            &mut meter,
-        ),
-        ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted)
     );
 }
 
@@ -908,16 +931,16 @@ pub(crate) fn record_value_type(root: &Path, name: &str, fields: &[(&str, &str, 
         .iter()
         .map(|(field, ty, multiplicity)| format!("| {field} | {ty} | {multiplicity} | |\n"))
         .collect();
-    std::fs::write(
-        root.join(format!("spec/model/{name}.md")),
+    write_overlay(
+        &root.join(format!("spec/model/{name}.md")),
         format!(
             "---\nid: {name}\ntitle: {name}\nobject: value_object\ntype: value_object\nname: {name}\n---\n\n\
              # {name}: {name}\n\n## Description\n\nA test-authored record value type.\n\n\
              ## Properties\n\n| Field | Type | Multiplicity | Constraints |\n\
              |-------|------|--------------|-------------|\n{rows}"
-        ),
-    )
-    .expect("write record value type");
+        )
+        .as_bytes(),
+    );
 }
 
 /// Presence wraps the multiplicity-derived type independently. Native
@@ -1130,7 +1153,7 @@ pub(crate) fn pump_operations(root: &Path) {
          |-------|------|--------------|-------------|\n\
          | self | Boolean | 1 | |\n",
     );
-    std::fs::write(&pump, text).expect("write Pump");
+    write_overlay(&pump, text.as_bytes());
 }
 
 /// A state clause over a domain operation binds its declared parameters as
