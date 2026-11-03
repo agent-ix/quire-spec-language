@@ -906,11 +906,12 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
     let owns = |node: &qsl_semantics::check::SemanticNode| {
         node.owner() == Some(&Owner::Source(owner.clone()))
     };
+    let regions = graph.memoized_regions();
     let occurrence_span = |key: &quire_exact::NodeKey,
                            origin: &quire_exact::Origin|
      -> Option<qsl_foundation::Span> {
         let location = graph.occurrence(key.clone(), origin)?;
-        let region = graph.region(location)?;
+        let region = regions(location)?;
         if region.source() != source {
             return None;
         }
@@ -973,7 +974,7 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
                     continue;
                 };
                 let location = body.body.root().location();
-                let Some(region) = graph.region(location) else {
+                let Some(region) = regions(location) else {
                     continue;
                 };
                 if region.source() != source {

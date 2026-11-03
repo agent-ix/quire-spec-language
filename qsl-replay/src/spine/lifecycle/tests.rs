@@ -3513,3 +3513,75 @@ fn a_limit_or_fault_inside_a_type_invariant_is_read_through_its_wrapper() {
     assert_eq!(fields["member"], "TypeDefinition.clauses[1]");
     assert!(named.to_string().contains("TypeDefinition.clauses[1]"));
 }
+
+/// FR-514-AC-1: building the type report resolves every requirement's
+/// region without re-walking the location's ancestry per lookup, so a body
+/// whose expression tree is 12,000 terms deep reports in time linear in its
+/// size. Re-walking costs tens of seconds here; the shared memo costs about a second.
+#[trace("FR-514-AC-1")]
+#[test]
+fn type_report_resolves_a_deep_body_without_rewalking_each_ancestry() {
+    const TERMS: usize = 12_000;
+    let sum = vec!["x"; TERMS].join(" + ");
+    let text = format!("{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ {sum} < 5 }}\n");
+    let cancel = Cancel::new();
+    let source_limits = SourceLimits {
+        source_bytes: 1 << 28,
+        tokens: 1 << 28,
+        nodes: 1 << 28,
+        work_units: 1 << 20,
+    };
+    let identity = identity();
+    let parsed = parse(
+        &ParseRequest {
+            source: &identity,
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
+        source_limits,
+        &cancel,
+    )
+    .expect("the deep source parses under raised limits")
+    .into_value();
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &cancel,
+    )
+    .expect("fixture model admits")
+    .into_value();
+    let raised = SpineLimits {
+        source: source_limits,
+        checking: SpineLimits::default()
+            .checking
+            .with_nodes(1 << 40)
+            .with_input_bytes(1 << 40)
+            .with_work_budget(1 << 40),
+        ..SpineLimits::default()
+    };
+    let checked = check(
+        &parsed,
+        "deep-body".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        raised,
+        &cancel,
+    )
+    .expect("the deep body checks under raised limits")
+    .into_value();
+    let started = std::time::Instant::now();
+    let report = super::type_report(checked.package().graph(), parsed.source().reference());
+    let elapsed = started.elapsed();
+    assert!(
+        report.requirements().len() >= TERMS,
+        "every term of the body has a requirement row: {}",
+        report.requirements().len()
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(10),
+        "the type report took {elapsed:?}"
+    );
+}
