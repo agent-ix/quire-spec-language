@@ -981,12 +981,15 @@ fn a_case_result_type_follows_the_expectation_then_the_arm_bodies() {
         "Integer",
         "let c = case s { Empty: r; Circle(a): w; Rect(a, b): r; } in c",
     );
-    // The let-bound case is read back, so the root type is the case's own
-    // inferred type: `Integer`, not the hull `Int[0, 99]`.
-    assert_eq!(
-        typed.expect("checks").root().value_type(),
-        &ValueType::Integer
-    );
+    // The root `let` takes the declared type, so the case's own inferred type
+    // is read from the let-bound value: `Integer`, not an arm's `Int[..]` or
+    // the hull `Int[0, 99]`.
+    let body = typed.expect("checks");
+    let NodeKind::Let { value, .. } = body.root().kind() else {
+        panic!("the body is a let");
+    };
+    assert!(matches!(body.node(*value).kind(), NodeKind::Case { .. }));
+    assert_eq!(body.node(*value).value_type(), &ValueType::Integer);
 
     // Arms of one `Text` type keep that type.
     let (_, typed) = check_over(
