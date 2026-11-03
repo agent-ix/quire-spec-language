@@ -587,8 +587,10 @@ pub fn build_unit_with_protocol_results(
         .collect();
     let mut forms = Vec::new();
     let edition = declared_edition(cst);
+    let mut protocol_spans: Vec<Span> = protocol_nodes.iter().map(|node| node.span()).collect();
+    protocol_spans.sort_by_key(|span| span.start);
     for node in declarations(cst) {
-        let is_protocol = contains_protocol(cst, node.span());
+        let is_protocol = contains_protocol(&protocol_spans, node.span());
         if rejected_spans.contains(&node.span()) {
             continue;
         }
@@ -640,12 +642,14 @@ pub fn build_unit_with_protocol_results(
     ))
 }
 
-fn contains_protocol(cst: &LosslessCst, span: Span) -> bool {
-    cst.nodes().iter().any(|node| {
-        node.production() == Production::ProtocolClause
-            && span.start <= node.span().start
-            && node.span().end <= span.end
-    })
+/// Whether a protocol clause lies inside `span`; `protocol_spans` is sorted by
+/// start, so only the clauses starting inside `span` are visited.
+fn contains_protocol(protocol_spans: &[Span], span: Span) -> bool {
+    let first = protocol_spans.partition_point(|clause| clause.start < span.start);
+    protocol_spans[first..]
+        .iter()
+        .take_while(|clause| clause.start <= span.end)
+        .any(|clause| clause.end <= span.end)
 }
 
 fn protocol_name(cst: &LosslessCst, span: Span) -> String {
