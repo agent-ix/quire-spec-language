@@ -1429,35 +1429,82 @@ fn bounded_protocol_results_around_nonprotocol_diagnostic(
     parsed: &qsl_cst::ParsedSource,
     diagnostic: &qsl_cst::CompleteDiagnostic,
 ) -> Option<Vec<super::ProtocolResult>> {
-    use qsl_cst::{TokenClass, TokenKind};
+    use qsl_cst::TokenClass;
 
     let diagnostic_span = diagnostic.byte_span()?;
-    let tokens: Vec<_> = parsed
-        .cst()
+    if diagnostic_span.start >= parsed.source().text().len() {
+        return None;
+    }
+    let protocols = bounded_protocol_clause_declarations(parsed)?;
+    if protocols.is_empty()
+        || protocols
+            .iter()
+            .any(|(_, span)| span.start < diagnostic_span.start && diagnostic_span.start < span.end)
+    {
+        return None;
+    }
+
+    let nonprotocol_declaration_heads = parsed.cst().tokens().iter().any(|token| {
+        token.class() == TokenClass::Token
+            && token.span().start <= diagnostic_span.start
+            && is_nonprotocol_declaration_head(token.spelling())
+            && !protocols
+                .iter()
+                .any(|(_, span)| span.start <= token.span().start && token.span().start < span.end)
+    });
+    if !nonprotocol_declaration_heads {
+        return None;
+    }
+
+    Some(
+        protocols
+            .into_iter()
+            .map(|(declaration, _)| super::ProtocolResult::Cleared {
+                declaration,
+                stage: super::SpineStage::Forms,
+            })
+            .collect(),
+    )
+}
+
+/// Return only protocol declarations represented by actual top-level CST
+/// nodes. A failed whole-unit parse has no declaration tree, so in that case
+/// each declaration-shaped token range is parsed independently and accepted
+/// only when the resulting CST contains a top-level `ProtocolClause`.
+fn bounded_protocol_clause_declarations(
+    parsed: &qsl_cst::ParsedSource,
+) -> Option<Vec<(String, qsl_foundation::Span)>> {
+    use qsl_cst::Production;
+
+    let source_text = parsed.source().text();
+    let cst = parsed.cst();
+    let clauses: Vec<_> = cst
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProtocolClause)
+        .collect();
+    if !clauses.is_empty() {
+        return clauses
+            .into_iter()
+            .map(|clause| protocol_clause_declaration(cst, source_text, clause.span()))
+            .collect();
+    }
+
+    use qsl_cst::TokenClass;
+    let tokens: Vec<_> = cst
         .tokens()
         .iter()
         .filter(|token| token.class() == TokenClass::Token)
         .collect();
-    let starts: Vec<usize> = tokens
-        .iter()
-        .enumerate()
-        .filter_map(|(index, token)| {
-            (token.kind() == TokenKind::Grammar && token.spelling() == b"protocol").then_some(index)
-        })
+    let starts: Vec<usize> = (0..tokens.len())
+        .filter(|index| is_protocol_declaration_start(&tokens, *index))
         .collect();
-    if starts.len() < 2 {
-        return None;
-    }
-
-    let mut protocols = Vec::with_capacity(starts.len());
-    for (source_index, start) in starts.iter().copied().enumerate() {
-        let end_before = starts
-            .get(source_index + 1)
-            .copied()
-            .unwrap_or(tokens.len());
+    let mut declarations = Vec::with_capacity(starts.len());
+    for (ordinal, start) in starts.iter().copied().enumerate() {
+        let boundary = starts.get(ordinal + 1).copied().unwrap_or(tokens.len());
         let mut depth = 0_usize;
         let mut declaration_end = None;
-        for token in tokens.get(start..end_before)? {
+        for token in tokens.get(start..boundary)? {
             match token.spelling() {
                 b"{" => depth = depth.checked_add(1)?,
                 b"}" => {
@@ -1471,51 +1518,136 @@ fn bounded_protocol_results_around_nonprotocol_diagnostic(
             }
         }
         let end = declaration_end?;
-        let name = tokens
-            .get(start + 1..end_before)?
+        let start_byte = tokens[start].span().start;
+        let text = source_text.get(start_byte..end)?;
+        let header = "language \"ix:native\" edition \"1-draft\";\n";
+        let isolated_text = format!("{header}{text}");
+        let isolated = qsl_cst::parse_with_cancel(
+            parsed.source().identity().clone(),
+            parsed.source().path(),
+            isolated_text.as_bytes(),
+            parsed.effective_limits(),
+            &Cancel::new(),
+        )
+        .ok()?;
+        if !isolated.is_admissible() {
+            return None;
+        }
+        let clause = isolated
+            .cst()
+            .nodes()
             .iter()
-            .find(|token| token.kind() == TokenKind::Identifier)?;
-        protocols.push((
-            source_index,
-            String::from_utf8(name.spelling().to_vec()).ok()?,
+            .find(|node| node.production() == Production::ProtocolClause)?;
+        let name_span = clause.span();
+        let declaration_name = isolated
+            .source()
+            .text()
+            .get(name_span.start..name_span.end)?
+            .strip_prefix("protocol")?
+            .trim_start()
+            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .next()?
+            .to_owned();
+        let declaration = isolated.cst().nodes().iter().find(|node| {
+            node.production() == Production::Declaration
+                && node.span().start <= name_span.start
+                && name_span.end <= node.span().end
+        })?;
+        let local_start = declaration.span().start.checked_sub(header.len())?;
+        let local_end = declaration.span().end.checked_sub(header.len())?;
+        declarations.push((
+            declaration_name,
             qsl_foundation::Span {
-                start: tokens[start].span().start,
-                end,
+                start: start_byte.checked_add(local_start)?,
+                end: start_byte.checked_add(local_end)?,
             },
         ));
     }
+    Some(declarations)
+}
 
-    if protocols
-        .iter()
-        .any(|(_, _, span)| span.start < diagnostic_span.start && diagnostic_span.start < span.end)
-    {
-        return None;
-    }
-    let previous = protocols
-        .iter()
-        .rposition(|(_, _, span)| span.end <= diagnostic_span.start)?;
-    let next = protocols
-        .iter()
-        .position(|(_, _, span)| span.start >= diagnostic_span.start)?;
-    if previous >= next {
-        return None;
-    }
-    let gap_has_declaration = tokens.iter().any(|token| {
-        protocols[previous].2.end <= token.span().start
-            && token.span().end <= protocols[next].2.start
-    });
-    if !gap_has_declaration {
-        return None;
-    }
+fn protocol_clause_declaration(
+    cst: &qsl_cst::LosslessCst,
+    source_text: &str,
+    clause_span: qsl_foundation::Span,
+) -> Option<(String, qsl_foundation::Span)> {
+    use qsl_cst::Production;
+    let declaration = cst.nodes().iter().find(|node| {
+        node.production() == Production::Declaration
+            && node.span().start <= clause_span.start
+            && clause_span.end <= node.span().end
+    })?;
+    let name = source_text
+        .get(clause_span.start..clause_span.end)?
+        .strip_prefix("protocol")?
+        .trim_start()
+        .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+        .next()?
+        .to_owned();
+    Some((name, declaration.span()))
+}
 
-    Some(
-        protocols
-            .into_iter()
-            .map(|(_, declaration, _)| super::ProtocolResult::Cleared {
-                declaration,
-                stage: super::SpineStage::Forms,
-            })
-            .collect(),
+fn is_protocol_declaration_start(tokens: &[&qsl_cst::CstToken], index: usize) -> bool {
+    use qsl_cst::TokenKind;
+    let spelling_is = |offset: usize, spelling: &[u8]| {
+        tokens
+            .get(index + offset)
+            .is_some_and(|token| token.kind() == TokenKind::Grammar && token.spelling() == spelling)
+    };
+    tokens
+        .get(index)
+        .is_some_and(|token| token.kind() == TokenKind::Grammar && token.spelling() == b"protocol")
+        && tokens
+            .get(index + 1)
+            .is_some_and(|token| token.kind() == TokenKind::Identifier)
+        && spelling_is(2, b"using")
+        && tokens
+            .get(index + 3)
+            .is_some_and(|token| token.kind() == TokenKind::Identifier)
+        && spelling_is(4, b"over")
+}
+
+fn is_nonprotocol_declaration_head(spelling: &[u8]) -> bool {
+    matches!(
+        spelling,
+        b"dimension"
+            | b"unit"
+            | b"enum"
+            | b"record"
+            | b"tuple"
+            | b"union"
+            | b"type"
+            | b"function"
+            | b"predicate"
+            | b"invariant"
+            | b"constraint"
+            | b"pre"
+            | b"post"
+            | b"body"
+            | b"bound"
+            | b"temporal"
+            | b"terminal"
+            | b"time"
+            | b"urgent"
+            | b"taskset"
+            | b"schedulable"
+            | b"response"
+            | b"release"
+            | b"random"
+            | b"reward"
+            | b"delay"
+            | b"workload"
+            | b"probabilistic"
+            | b"possible"
+            | b"always"
+            | b"unique"
+            | b"refinement"
+            | b"relation"
+            | b"hyper"
+            | b"hybrid"
+            | b"synthesis"
+            | b"verify"
+            | b"abstraction"
     )
 }
 

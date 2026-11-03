@@ -354,6 +354,77 @@ fn unbounded_protocol_eof_does_not_attach_protocol_results() {
     assert!(failure.payload().is_none(), "{failure:?}");
 }
 
+/// FR-503-AC-2 (TC-1298 row 2): a bounded non-protocol refusal after the
+/// only protocol still reports that protocol as cleared.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn bounded_nonprotocol_error_after_single_protocol_keeps_it_cleared() {
+    let w = protocol_source("W", true);
+    let broken_clause = "invariant Bad using Complete on M::Widget at current { true; }";
+    let unit = format!("{HEADER}\n{w}\n{broken_clause}");
+    let failure = parse(
+        &request(unit.as_bytes()),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("the bounded state-clause syntax error refuses the unit");
+    let results = failure
+        .payload()
+        .expect("the bounded protocol retains its reached-stage result");
+    assert!(matches!(
+        results.as_slice(),
+        [crate::spine::ProtocolResult::Cleared {
+            declaration,
+            stage: SpineStage::Forms
+        }] if declaration == "W"
+    ));
+}
+
+/// FR-503-AC-2 (TC-1298 row 2): `protocol QualifiedName` in a function body
+/// is an expression, not another top-level protocol result.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn protocol_expression_is_not_counted_as_a_declaration() {
+    let w = protocol_source("W", true);
+    let expression =
+        "function references using Complete (): Boolean pure { protocol QualifiedName }";
+    let broken_clause = "invariant Bad using Complete on M::Widget at current { true; }";
+    let unit = format!("{HEADER}\n{w}\n{expression}\n{broken_clause}");
+    let failure = parse(
+        &request(unit.as_bytes()),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("the bounded state-clause syntax error refuses the unit");
+    let results = failure
+        .payload()
+        .expect("W remains the only actual protocol declaration");
+    assert!(matches!(
+        results.as_slice(),
+        [crate::spine::ProtocolResult::Cleared {
+            declaration,
+            stage: SpineStage::Forms
+        }] if declaration == "W"
+    ));
+}
+
+/// FR-503-AC-2 (TC-1298 row 2): a non-protocol declaration that runs to EOF
+/// is unbounded and carries no protocol result payload.
+#[trace("TC-1298", "FR-503-AC-2")]
+#[test]
+fn unbounded_nonprotocol_eof_does_not_attach_protocol_results() {
+    let w = protocol_source("W", true);
+    let broken_clause = "invariant Bad using Complete on M::Widget at current { true";
+    let unit = format!("{HEADER}\n{w}\n{broken_clause}");
+    let failure = parse(
+        &request(unit.as_bytes()),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("the state clause reaches EOF without a closing delimiter");
+    assert!(failure.payload().is_none(), "{failure:?}");
+}
+
 /// FR-503-AC-2 (TC-1298 row 2): a non-protocol brace error between two
 /// protocols is unit-level; both bounded protocols remain Cleared.
 #[trace("TC-1298", "FR-503-AC-2")]
