@@ -44,7 +44,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   package input and the stage limits, as today.
 - The dependency input: supplied libraries, each `{identity, source}`,
   where `identity` is a non-empty library identity string and `source` a
-  source unit with its four FR-001 labels, path and bytes. At most one
+  source unit with its two FR-001 labels (authority and identity), path and bytes. At most one
   library per identity.
 - The optional **refinement internals** input (QSpec FR-375, FR-432): one JSON
   value for the unit, and one optional JSON value on each supplied library

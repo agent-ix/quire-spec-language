@@ -139,7 +139,10 @@ schema requires a claim on every entry and the claims' meaning is FR-071's.
 
 If executing a vector panics, returns an internal fault, or cannot read a
 file the vector names, then its outcome SHALL be `tool-failure`, holding
-the panic message, the fault or the I/O error. Otherwise the runner SHALL
+the panic message, the fault or the I/O error. If an input file the vector
+names is not a valid document of its kind (a `replay-request` file that does
+not match `$defs.ReplayRequest`), then its outcome SHALL be `tool-failure`
+holding the cause `corpus-decode` and the JSON pointer of the first defect. Otherwise the runner SHALL
 settle the vector by the first of these, in this order, that holds:
 
 1. `passed`: the actual result matches the expected disposition. A value,
@@ -223,7 +226,7 @@ consumer type. A class with no such vector contributes none.
 | FR-350-AC-12 | The adapter maps each `sources` entry, of the package and of each `dependencies` entry, to its authority, identity and `source_integrity` string as the file states them, with no revision label, and maps the `byte_provision` rows by reading each sibling `bytes_path` file as raw bytes. | Test (TC-1325) |
 | FR-350-AC-13 | The adapter maps `object_environment` to the closed `{authority, identity}` identity and refuses a file whose `object_environment` identity carries `source_integrity`. | Test (TC-1325) |
 | FR-350-AC-14 | A `replay-request` file that does not match `$defs.ReplayRequest` (an unknown member, a missing required member such as a `sources` entry's `source_integrity`, a wrong JSON kind) is that vector's `tool-failure` with cause `corpus-decode` naming the JSON pointer of the defect, and not a QSL refusal. | Test (TC-1325) |
-| FR-350-AC-15 | A replay vector whose request fails an integrity rule of FR-071 (the corpus holds only requests whose claims hold, since the published schema requires `source_integrity`) is settled by the typed refusal `qsl_replay::replay` returns, never by the adapter. | Test (TC-1325) |
+| FR-350-AC-15 | Over a fixture corpus holding a schema-valid `replay-request` vector whose `package.sources[0].source_integrity` differs from the SHA-256 of its `bytes_path` file, the adapter hands the request to `qsl_replay::replay` unchanged, and the vector is `passed` when it expects `invalid_package`/`source-integrity` at `/package/sources/0` and `failed`, holding the expected and the actual result, when it expects a success. | Test (TC-1325) |
 
 ## Dependencies
 

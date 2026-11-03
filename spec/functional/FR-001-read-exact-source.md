@@ -166,6 +166,24 @@ identity gives every source-owned declaration a different key.
   replay module's recompilation path, the S8 row of ADR-011 §2. TC-444
   checks the whitespace-only label.
 
+### Code still carrying four labels
+
+The text of this requirement and of every requirement that names a source or
+document identity is two labels. The code lags it, and the following is an
+explicit follow-up that carries no behavior change beyond dropping the two
+labels:
+
+- `qsl_foundation::SourceIdentity` and `SourceLabel` carry four labels
+  (authority, identity, revision namespace, revision) and `SourceIdentity::new`
+  takes four; they become the two-label identity of this requirement, and every
+  caller that passes a revision label stops passing it.
+- `qsl-replay`'s `object_environment` reader (`LABELS`) and invocation
+  `DocumentRef` carry four labels; they become the closed two-member
+  `{authority, identity}` of FR-071's `object_environment` and FR-106's
+  `invocation` (QSpec FR-336-AC-10).
+- `qsl-replay`'s `DefinitionSourceRef` and `SourceRefWire` carry four labels;
+  FR-071 "Source integrity" gives the replacement.
+
 ### Runtime artifacts are not sources
 
 A snapshot or an invocation is not a source read under this requirement.

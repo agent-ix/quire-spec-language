@@ -69,6 +69,28 @@ These are outside the closure:
 - the QSL repository's crates: QSL's host builds unify `std` features into
   the shared leaves (FR-403), so they do not build this closure.
 
+### Dependencies that are not in the evaluator closure
+
+The inventory covers the `quire-eval` closure only. `qsl-foundation`'s
+`sha2` (NFR-015, FR-528) is a QSL-crate dependency and `quire-eval` does not
+depend on `qsl-foundation`, so `sha2` and the digest stack it reaches
+(`digest`, `block-buffer`, `crypto-common`, `generic-array`, `typenum`,
+`cfg-if`) are outside the closure, and the inventory holds no entry for them:
+an entry would be a `stale-entry` finding. The feature set is `sha2` with
+default features off and `force-soft`, which has no processor-specific
+unsafe path in `sha2` itself. The digest stack's own unsafe items, expected in
+`generic-array` and `block-buffer`, are third-party code a maintainer
+accepts when the change that brings the dependency in is approved, as for an
+inventory entry; the acceptance is that SHA-256 over a source document is a
+pure function with no input beyond its bytes, so the unsafe code it reaches
+adds no host interaction. The audit-unsafe scan, not this text, decides the
+actual unsafe status, and when `quire-eval`'s closure begins to include
+`qsl-foundation` or `sha2` the inventory gains one entry per unsafe-bearing
+crate with that reason and the gate decides. `deny.toml` already admits
+`sha2` (crates.io, a permitted licence) because `qsl-eval` resolves it; no
+`deny.toml` or architecture-lint rule changes, since the architecture lint
+constrains crate-to-crate edges and `sha2` is a third-party leaf.
+
 ### First-party and third-party crates
 
 A first-party crate is a closure package whose source is a member of the
@@ -266,6 +288,7 @@ workspace cannot reproduce.
 | NFR-016-AC-6 | Given an entry with a `version` key, an entry with a `reached_through` key, an entry with an empty `acceptance`, two entries with the same `name`, two entries out of `name` order, and an entry naming the first-party crate `quire-checked`, the checker reports `malformed-entry` for each and fails. | Test (TC-1131) |
 | NFR-016-AC-7 | Given a fixture in which unsafe code is reported only in a proc-macro crate and in a crate reached only through it, and that crate is absent from the closure, the checker reports no finding and requires no entry, and an entry for that proc-macro crate reports `stale-entry`. Given a scan that lists a closure package under `packages_without_metrics`, and separately a scan whose `packages` lacks a closure package, the checker reports `unscanned` naming it and fails. A scan listing a build-script output file under `used_but_not_scanned_files` yields no finding. | Test (TC-1131) |
 | NFR-016-AC-8 | With `cargo-geiger` absent from `PATH`, `make audit-unsafe` exits non-zero and prints the install command; the Makefile, the checker's command line and its environment offer no setting that skips the gate, a crate or a finding. | Test (TC-1130) and Inspection |
+| NFR-016-AC-9 | `unsafe-inventory.toml` holds no entry for `sha2` or for the digest stack it reaches while `cargo tree --locked -p quire-eval -e normal,no-proc-macro --target thumbv7em-none-eabi` lists none of them, and the gate reports no `stale-entry` for them. | Test |
 
 ## Verification
 
