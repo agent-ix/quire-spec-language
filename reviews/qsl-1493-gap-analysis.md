@@ -71,3 +71,10 @@ FR-501-AC-6 is absent from every code trace tag. The current AC-1/2 test covers 
 - {test_id: "order_sensitive_equal_stamps_require_one_authority_and_sort_by_key", ac_id: "FR-501-AC-7", trace: correct}
 - {test_id: "timestamped_past_windows_respect_history_cutoff", ac_id: "FR-501-AC-8", trace: correct}
 - {test_id: "timestamped_guarded_on_each_activations_are_evaluated", ac_id: "FR-501-AC-10", trace: correct}
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | A dedicated test now asserts incomplete and complete outcomes and carries the FR-501-AC-5 trace tag. |
+| FND-002 | fixed | A dedicated test covers the inclusive deadline, next tick, and half-open watermark and carries the FR-501-AC-6 trace tag. |

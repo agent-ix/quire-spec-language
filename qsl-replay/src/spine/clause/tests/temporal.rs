@@ -10,6 +10,7 @@
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+use quire_semantic_value::Origin;
 
 use super::receiver_frames::{counter, fixture, snapshot, unit_and_packages};
 use super::*;
@@ -2020,11 +2021,11 @@ fn timestamped_guarded_on_each_activations_are_evaluated() {
     );
 }
 
-/// FR-044 / FR-501-AC-10 (TC-1295): an undefined `on each` guard is an
-/// unresolved activation, not a false guard that can yield vacuous success.
+/// FR-044-AC-7 / FR-501-AC-10 (TC-1295): an undefined `on each` guard is
+/// reported as an incomplete activation naming that guard, not a violation.
 #[trace("TC-1295", "FR-501-AC-10")]
 #[test]
-fn timestamped_guarded_on_each_undefined_guard_does_not_vacuously_hold() {
+fn timestamped_guarded_on_each_undefined_guard_reports_named_incomplete_activation() {
     let mut request = timestamped_with(Unit::TimestampedEach, &[0, 10], &[2, 2], 12, Some(12));
     let bytes = program_source_bytes(&mut request);
     let source = String::from_utf8(bytes.clone()).unwrap();
@@ -2035,11 +2036,26 @@ fn timestamped_guarded_on_each_undefined_guard_does_not_vacuously_hold() {
         )
         .into_bytes();
     let report = report(request);
-    assert!(
-        matches!(outcome(&report), TemporalVerdict::Undefined { .. }),
-        "{:?}",
-        report.disposition
-    );
+    assert_eq!(report.category_label(), "incomplete");
+    assert_eq!(report.disposition.exit_code(), 22);
+    assert_eq!(report.disposition.truth(), None);
+    match &report.disposition {
+        ClauseDisposition::TemporalActivationIncomplete { at, guard } => {
+            assert_eq!(*at, 0);
+            assert_eq!(
+                guard.origin,
+                Origin::StateClause {
+                    clause: "Window".to_owned(),
+                    index: 0,
+                }
+            );
+            assert!(
+                !guard.path().is_empty(),
+                "the reported identity must name the guard expression within its clause"
+            );
+        }
+        other => panic!("expected named incomplete activation, got {other:?}"),
+    }
 }
 
 /// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace

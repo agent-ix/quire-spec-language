@@ -649,41 +649,55 @@ pub(super) fn run_temporal(
         ),
     };
     let pending_activation = observed.pending_activation;
+    let unestablished_activation = observed.unestablished_activation;
     let atom_readings = observed.atom_readings;
     let conflicting_valuation = observed.conflicting_valuation;
     let temporal_visits = observed.temporal_visits;
-    let disposition = match (observed.stopped, observed.result) {
-        // A condition's refusal is reported as FR-109 reports a state
-        // clause's (`convert_outcome`); a failed call as `check_clause` does.
-        (Some(HoldsStop::Refused(evaluation)), _) => {
-            match convert_outcome(evaluation, run.package.graph(), run.sources) {
-                Ok(outcome) => ClauseDisposition::Evaluate(outcome),
-                Err(refusal) => match *refusal {
-                    RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
-                    other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
-                },
+    let disposition = if let Some(position) = unestablished_activation {
+        match node.guard() {
+            Some((guard, _)) => ClauseDisposition::TemporalActivationIncomplete {
+                at: position.index(),
+                guard: guard.location().clone(),
+            },
+            None => ClauseDisposition::EvaluateFault(InternalFault::new(
+                "temporal.observed",
+                "undefined-activation-has-guard",
+            )),
+        }
+    } else {
+        match (observed.stopped, observed.result) {
+            // A condition's refusal is reported as FR-109 reports a state
+            // clause's (`convert_outcome`); a failed call as `check_clause` does.
+            (Some(HoldsStop::Refused(evaluation)), _) => {
+                match convert_outcome(evaluation, run.package.graph(), run.sources) {
+                    Ok(outcome) => ClauseDisposition::Evaluate(outcome),
+                    Err(refusal) => match *refusal {
+                        RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                        other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+                    },
+                }
             }
+            (Some(HoldsStop::Failed(failure)), _) => match *convert_call_failure(failure) {
+                RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+            },
+            (None, Ok(outcome)) => {
+                let verdict = match trace {
+                    TraceInput::Timestamped(input) => finite_window_verdict(
+                        outcome,
+                        input,
+                        clause,
+                        pending_activation,
+                        &atom_readings,
+                        conflicting_valuation,
+                    ),
+                    TraceInput::Finite(_) | TraceInput::Lasso { .. } => verdict(outcome),
+                };
+                ClauseDisposition::Temporal(verdict)
+            }
+            (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
+            (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
         }
-        (Some(HoldsStop::Failed(failure)), _) => match *convert_call_failure(failure) {
-            RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
-            other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
-        },
-        (None, Ok(outcome)) => {
-            let verdict = match trace {
-                TraceInput::Timestamped(input) => finite_window_verdict(
-                    outcome,
-                    input,
-                    clause,
-                    pending_activation,
-                    &atom_readings,
-                    conflicting_valuation,
-                ),
-                TraceInput::Finite(_) | TraceInput::Lasso { .. } => verdict(outcome),
-            };
-            ClauseDisposition::Temporal(verdict)
-        }
-        (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
-        (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
     };
     let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
     usage.temporal_visits = temporal_visits;

@@ -55,6 +55,8 @@ pub struct ObservedRun {
     /// The first unresolved finite-window activation and its establishment
     /// deadline, if the run contains a pending activation.
     pub pending_activation: Option<(TemporalPosition, quire_exact::Rational)>,
+    /// The first `on each` activation guard whose value was undefined.
+    pub unestablished_activation: Option<TemporalPosition>,
 }
 
 /// Evaluate `clause`, a temporal clause of `package`, over `environments`,
@@ -158,6 +160,7 @@ pub fn evaluate_observed_finite_window(
                             conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
+                            unestablished_activation: Some(TemporalPosition::new(index as u64)),
                         };
                     }
                     Err(LetterStop::Incomplete(incomplete)) => {
@@ -169,6 +172,7 @@ pub fn evaluate_observed_finite_window(
                             conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
+                            unestablished_activation: None,
                         };
                     }
                     Err(LetterStop::WindowLimit(limit)) => {
@@ -180,6 +184,7 @@ pub fn evaluate_observed_finite_window(
                             conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
+                            unestablished_activation: None,
                         };
                     }
                     Err(LetterStop::Window(refusal)) => {
@@ -191,6 +196,7 @@ pub fn evaluate_observed_finite_window(
                             conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
+                            unestablished_activation: None,
                         };
                     }
                     Err(LetterStop::Fault(fault)) => {
@@ -202,6 +208,7 @@ pub fn evaluate_observed_finite_window(
                             conflicting_valuation: None,
                             temporal_visits: 0,
                             pending_activation: None,
+                            unestablished_activation: None,
                         };
                     }
                 }
@@ -267,6 +274,7 @@ pub fn evaluate_observed_finite_window(
                     conflicting_valuation,
                     temporal_visits,
                     pending_activation: first_pending,
+                    unestablished_activation: None,
                 };
             }
             Err(refusal) => {
@@ -278,6 +286,7 @@ pub fn evaluate_observed_finite_window(
                     conflicting_valuation,
                     temporal_visits,
                     pending_activation: first_pending,
+                    unestablished_activation: None,
                 };
             }
         }
@@ -301,6 +310,7 @@ pub fn evaluate_observed_finite_window(
         conflicting_valuation,
         temporal_visits,
         pending_activation: first_pending,
+        unestablished_activation: None,
     }
 }
 
@@ -339,6 +349,7 @@ fn evaluate_observed_goal(
         conflicting_valuation: None,
         temporal_visits: 0,
         pending_activation: None,
+        unestablished_activation: None,
     }
 }
 

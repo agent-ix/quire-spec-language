@@ -114,3 +114,19 @@ With `--all-features`, `ClauseRunSource` includes `Extracted`, so these `let` bi
 - {test_id: "order_sensitive_equal_stamps_require_one_authority_and_sort_by_key", ac_id: "FR-501-AC-7", trace: correct}
 - {test_id: "timestamped_past_windows_respect_history_cutoff", ac_id: "FR-501-AC-8", trace: correct}
 - {test_id: "timestamped_guarded_on_each_activations_are_evaluated", ac_id: "FR-501-AC-10", trace: correct}
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | The guard now returns Undefined, which the spine maps to a violation; FR-044 requires an incomplete or refused activation naming the guard. |
+| FND-002 | fixed | A definite in-bound consequent witness now suppresses the later counter-cover straddle result. |
+| FND-003 | fixed | Order refusal now traverses only positions participating in each interval; a regression test covers duplicates outside the interval. |
+| FND-004 | fixed | Conflicting readings at an equal stamp are lifted to unknown for general temporal formulas, with an `always` regression test. |
+| FND-005 | fixed | Missing-history conversion now checks the actual lower boundary of reachable past operators; zero-width `once` has a regression test. |
+| FND-006 | fixed | The progress constructor rejects negative uncertainty margins. |
+| FND-007 | fixed | The test helper uses a `let-else` binding that compiles when `Extracted` is enabled; focused all-features tests passed. |
+
+## Disposition pass 1 summary
+
+FND-002 through FND-007 are fixed. FND-001 remains open: the new undefined-guard path returns `TemporalOutcome::Undefined`, which the spine maps to `TemporalVerdict::Undefined` and the `Violation` category. FR-044-AC-7 requires an incomplete or refused activation naming the guard. The regression test asserts the `Undefined` result, so it does not establish the required behavior. The PR is not mergeable until this is corrected.
