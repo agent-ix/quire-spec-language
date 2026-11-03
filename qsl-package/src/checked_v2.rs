@@ -117,7 +117,9 @@ pub(crate) fn read_v2(
             }
         }
         Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
+        Err(StageFailure::RefusedWithPayload(refusal, _)) => Read::Refused(refusal),
         Err(StageFailure::Limit(limit)) => Read::Limit(limit),
+        Err(StageFailure::LimitWithPayload(limit, _)) => Read::Limit(limit),
         Err(StageFailure::Cancelled(cause)) => Read::Cancelled(cause),
         Err(StageFailure::Fault(fault)) => Read::Fault(fault),
     }
