@@ -556,6 +556,46 @@ fn an_equivalence_derives_one_class_with_the_least_key_as_root() {
     assert_eq!(classes.class(greater).0, least);
 }
 
+/// QSpec FR-142-AC-16, AC-18 and FR-091-AC-55: a package dimension takes its
+/// turn when a declaration first reaches it, before that declaration, so the
+/// base-dimension rule refuses the first node of the turn list that no unit
+/// anchors: `Q` declared before the declaration that names `F::Mass`, or
+/// `F::Mass` when `Force` is declared first. Each refusal is
+/// `missing_declaration`/`missing-name` naming the node and the unit.
+#[trace("TC-483", "FR-091-AC-55", "QSpec-TC-187", "QSpec-FR-142-AC-16")]
+#[test]
+fn a_package_dimension_takes_its_turn_when_a_declaration_reaches_it() {
+    let unit = "unit n : Force = rational(1, 1);\n";
+    let (cause, code, at) = refused_over_quantities(&format!(
+        "dimension Q;\ndimension Force = F::Mass * Q;\n{unit}"
+    ));
+    assert_eq!(
+        (cause, code.as_str(), at.as_str()),
+        (
+            AssemblyCause::UnanchoredBaseDimension {
+                dimension: "Q".to_owned(),
+                unit: "n".to_owned(),
+            },
+            "missing_declaration/missing-name",
+            "Q"
+        )
+    );
+    let (cause, code, at) = refused_over_quantities(&format!(
+        "dimension Force = F::Mass * Q;\ndimension Q;\n{unit}"
+    ));
+    assert_eq!(
+        (cause, code.as_str()),
+        (
+            AssemblyCause::UnanchoredBaseDimension {
+                dimension: "ix://acme/flow/dimension/Mass".to_owned(),
+                unit: "n".to_owned(),
+            },
+            "missing_declaration/missing-name",
+        )
+    );
+    assert!(at.starts_with("model F = \"acme/flow\""), "{at}");
+}
+
 /// QSpec FR-322 "Nominal nodes": the dimension node an admitted domain
 /// package declares and a unit's graph names carries that package's
 /// `ModelOwner` (`{identity, node}`) and no `declaration`, while the unit's

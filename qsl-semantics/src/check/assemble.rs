@@ -548,7 +548,6 @@ impl AssemblyCause {
             Self::QuantityCycle { .. } | Self::DimensionEquivalence { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
-            // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
             Self::IllFormedBounds(_)
             | Self::ImportedTypeName { .. }
@@ -643,9 +642,12 @@ impl AssemblyCause {
             },
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
-            // Informational (FR-091-OQ-12): STD-112 replaces this cause
-            // once QSpec publishes the topology causes; nothing reads it.
-            Self::UnitGraphTopology { .. } => "unit-graph-topology",
+            // QSpec FR-142 rows 1, 5, 3 and 4.
+            Self::UnitGraphTopology { fault, .. } => match fault {
+                TopologyFault::ZeroScale | TopologyFault::NonIdentityRoot => "invalid-value",
+                TopologyFault::CrossDimensionTarget => "incompatible-definition",
+                TopologyFault::TwoRoots => "conflicting-definition",
+            },
             Self::IllFormedBounds(_) | Self::OverNotObjectType { .. } => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
