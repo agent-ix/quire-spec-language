@@ -50,9 +50,10 @@ FR-109's `ClauseRunRequest`, with the selection
 - `trace`: `TraceInput::Finite(Vec<DocumentRef>)`,
   `TraceInput::Lasso{prefix: Vec<DocumentRef>, loop: Vec<DocumentRef>}`, or
   `TraceInput::Model{initial: DocumentRef, universes, prefix:
-  Vec<ModelStep>, loop: Vec<ModelStep>}`, `TraceInput::Progressed{trace: Vec<DocumentRef>, progress}` (FR-504), the finite
-  trace of an event-position or fixed-sample clause with its watermark,
-  completeness, scope closure, surrounding-execution closure and lower boundary,
+  Vec<ModelStep>, loop: Vec<ModelStep>}`, `TraceInput::Progressed{trace: Vec<DocumentRef>, progress, lower_boundary, binding}` (FR-504), the finite
+  trace of an event-position or fixed-sample clause with its progress assertion
+  (watermark, completeness, scope closure and surrounding-execution closure), its
+  lower boundary beside the assertion and its `TraceBinding`,
   or `TraceInput::Timestamped{
   observations: Vec<{document: DocumentRef, stamp, order_key}>, watermark,
   completeness, scope, execution, lower_boundary, cover}` (FR-501), the trace of a clause under the
