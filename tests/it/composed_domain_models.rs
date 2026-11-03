@@ -10,10 +10,12 @@
 //! FR-152 classification. No semantic context or model JSON is hand-built.
 //!
 //! The bundle is read at test time from the pinned
-//! `agent-ix-extraction-frontend` checkout and copied into a temporary
-//! directory, where each test edits it as TC-148 directs. The unedited
-//! bundle does not admit whole at this pin, for reasons owned outside this
-//! linker (asserted by `qsl-semantics`' `model_intake` tests):
+//! `agent-ix-extraction-frontend` checkout. The temporary test root hard-links
+//! untouched files to that canonical fixture; edits detach only the files a
+//! test changes. This keeps the frontend's directory walk on regular files
+//! while avoiding a second copy of the upstream fixture tree. The unedited bundle does not admit whole at this pin, for
+//! reasons owned outside this linker (asserted by `qsl-semantics`'
+//! `model_intake` tests):
 //!
 //! - `Pump`/`Sys`/`Tank.id` are typed `UUID`, which is not a QSL native value
 //!   type (FCD fixture `spec/model/Pump.md:21`, `Sys.md:20`, `Tank.md:20`;
@@ -33,6 +35,7 @@ use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{Source, SourceIdentity};
+use qsl_replay::DependencyInput;
 use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
 use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
 use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef, PortDirection};
@@ -42,6 +45,7 @@ use qsl_semantics::model::systems::{
     check_connection, classify, ConnectionCheckOutcome, ConnectionOutcome,
 };
 use quire_checked::key::DeclarationKey;
+use quire_exact::Cancel;
 use quire_spec_language::linking::composed::binding_work::{Limits as BindingLimits, Work};
 use quire_spec_language::linking::composed::models::{
     bind_models, ImportRefusal, ModelBindings, ModelErrorKind, ModelInput, ModelTarget,
@@ -86,17 +90,27 @@ fn fcd_fixtures_dir() -> &'static Path {
     })
 }
 
-fn copy_tree(from: &Path, to: &Path) {
+fn hard_link_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).expect("create bundle directory");
     for entry in std::fs::read_dir(from).expect("read bundle directory") {
         let entry = entry.expect("bundle entry");
         let target = to.join(entry.file_name());
         if entry.file_type().expect("entry type").is_dir() {
-            copy_tree(&entry.path(), &target);
+            hard_link_tree(&entry.path(), &target);
         } else {
-            std::fs::copy(entry.path(), &target).expect("copy bundle file");
+            std::fs::hard_link(entry.path(), &target).expect("link canonical bundle file");
         }
     }
+}
+
+fn write_overlay(path: &Path, bytes: &[u8]) {
+    if std::fs::symlink_metadata(path).is_ok() {
+        std::fs::remove_file(path).expect("detach canonical fixture hard link");
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create overlay parent");
+    }
+    std::fs::write(path, bytes).expect("write overlay file");
 }
 
 pub(crate) fn edit(path: &Path, from: &str, to: &str) {
@@ -106,17 +120,20 @@ pub(crate) fn edit(path: &Path, from: &str, to: &str) {
         "{}: {from:?} not found",
         path.display()
     );
-    std::fs::write(path, text.replace(from, to)).expect("write bundle file");
+    write_overlay(path, text.replace(from, to).as_bytes());
 }
 
-/// The architecture bundle, copied and edited as the module docs describe,
-/// then `extra` applied to the copy.
+/// The canonical architecture fixture with only edited files detached into
+/// the temp root, then `extra` applied to those overlays.
 pub(crate) fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let source = fcd_fixtures_dir().join("architecture");
-    copy_tree(&source.join("spec"), &dir.path().join("spec"));
-    std::fs::copy(source.join("modules.json"), dir.path().join("modules.json"))
-        .expect("copy modules.json");
+    hard_link_tree(&source, dir.path());
+    assert!(
+        dir.path().join("spec/spec.md").is_file(),
+        "canonical fixture root did not link spec/spec.md from {}",
+        source.display()
+    );
     let spec = dir.path().join("spec");
     for entity in ["model/Pump.md", "model/Sys.md", "model/Tank.md"] {
         edit(&spec.join(entity), "| id | UUID |", "| id | Boolean |");
@@ -498,6 +515,162 @@ fn native_references_bind_to_domain_declaration_keys_and_kinds() {
     });
 }
 
+/// TC-1308 row 17: the pinned FCD #173 architecture bundle enters through
+/// spine I2, is selected by a native model declaration, and its field, Port
+/// and Connection records retain their selected identities through S3.
+#[trace("TC-1308", "FR-036-AC-9", "FR-056-AC-8", "FR-513-AC-8")]
+#[test]
+fn architecture_fixture_binds_references_through_spine_i2() {
+    let bundle = architecture_bundle(|_| {});
+    let bytes = lift(bundle.path());
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
+        .expect("the lifted FCD package enters I2 intake");
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"quire.value.complete/v1\";\n\
+         model M = \"{PACKAGE}\";\n\
+         pre FieldRule using S on M::Pump::run {{ self.id }}\n\
+         protocol Plumbing using S over (view: M::Sys) on origin {{\n\
+             role Operator on M::Sys;\n\
+             role Outlet on M::pump_out;\n\
+             relationship Pipe = M::pipe;\n\
+             run sequence Main {{ check Valid using S {{ true }}; }}\n\
+             finish Closed as (closed: M::Sys) {{ true }};\n\
+         }}\n\
+         predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n"
+    );
+    let source = SourceIdentity::new("agent-ix", "test:tc-1308-fcd-i2");
+    let cancel = Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let failure = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure).expect("no internal front-end fault")
+    };
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "architecture.native",
+            bytes: text.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("the native unit parses")
+    .into_value();
+    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(failure)
+        .expect("the fixture is selected by model M")
+        .into_value();
+    let selected_model = models
+        .models()
+        .iter()
+        .find(|model| model.alias == "M")
+        .expect("selected M model");
+    let selected_package = selected_model.view.domain_package();
+    let endpoint = |artifact: &str| {
+        selected_package
+            .records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::Endpoint(endpoint)
+                    if endpoint.key.node == key(artifact).node =>
+                {
+                    Some(endpoint)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("selected model is missing endpoint {artifact}"))
+    };
+    let pump_out = endpoint("pump_out");
+    assert_eq!(pump_out.owning_component, key("sys_pump"));
+    assert_eq!(pump_out.direction, Some(PortDirection::Out));
+    assert_eq!(pump_out.value_type, key("Flow"));
+    assert_eq!(
+        (pump_out.multiplicity.lower, pump_out.multiplicity.upper),
+        (1, Some(1))
+    );
+    let tank_in = endpoint("tank_in");
+    assert_eq!(tank_in.owning_component, key("sys_tank"));
+    assert_eq!(tank_in.direction, Some(PortDirection::In));
+    assert_eq!(tank_in.value_type, key("Flow"));
+    assert_eq!(
+        (tank_in.multiplicity.lower, tank_in.multiplicity.upper),
+        (1, Some(1))
+    );
+    let selected_domain = selected_package.clone();
+    let mut meter = Meter::new(ModelNormalizationLimits::default());
+    let systems = classify(&selected_domain, &mut meter).expect("selected systems classify");
+    assert_eq!(
+        check_connection(
+            &ModelIndex::build(selected_domain),
+            &systems,
+            &key("pipe"),
+            &mut meter,
+        ),
+        ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted)
+    );
+    let checked = qsl_replay::spine::check(
+        &parsed,
+        "tc-1308-fcd-i2".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("field, Port and Connection references check on the spine")
+    .into_value();
+
+    let selections = checked.package().graph().model_selections();
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].identity.as_str(), PACKAGE);
+    let plumbing = checked
+        .package()
+        .graph()
+        .protocols()
+        .iter()
+        .find(|protocol| protocol.name == "Plumbing")
+        .expect("Plumbing checked protocol");
+    let outlet = plumbing
+        .roles
+        .iter()
+        .find(|role| role.name == "Outlet")
+        .expect("Outlet role binds to the selected Port");
+    assert_eq!(outlet.model_member.as_ref(), Some(&key("pump_out")));
+    assert_eq!(
+        plumbing.relationships[0].key,
+        key("pipe"),
+        "the protocol relationship retains the connection declaration key"
+    );
+    assert!(
+        checked
+            .package()
+            .graph()
+            .field_domain(
+                &quire_exact::Identifier::new("M").unwrap(),
+                &quire_exact::Identifier::new("Pump").unwrap(),
+                &quire_exact::Identifier::new("id").unwrap(),
+            )
+            .expect("field binding has no internal fault")
+            .is_some(),
+        "the field read binds to the selected Pump.id domain key"
+    );
+    let emitted = qsl_package::emit_checked(checked.package()).expect("checked unit emits");
+    assert!(
+        !emitted.package().bytes().is_empty(),
+        "the checked package carrying the bindings emits"
+    );
+    assert!(
+        checked
+            .package()
+            .graph()
+            .protocols()
+            .iter()
+            .any(|protocol| protocol.name == "Plumbing"),
+        "the checked protocol retains the fixture's role and relationship bindings"
+    );
+}
+
 /// Refusals at the same reference sites: a name the package does not
 /// declare, a member that does not exist, and a kind the site cannot take --
 /// a member or a Port at a type site, a Connection as a role, a Port as a
@@ -758,16 +931,16 @@ pub(crate) fn record_value_type(root: &Path, name: &str, fields: &[(&str, &str, 
         .iter()
         .map(|(field, ty, multiplicity)| format!("| {field} | {ty} | {multiplicity} | |\n"))
         .collect();
-    std::fs::write(
-        root.join(format!("spec/model/{name}.md")),
+    write_overlay(
+        &root.join(format!("spec/model/{name}.md")),
         format!(
             "---\nid: {name}\ntitle: {name}\nobject: value_object\ntype: value_object\nname: {name}\n---\n\n\
              # {name}: {name}\n\n## Description\n\nA test-authored record value type.\n\n\
              ## Properties\n\n| Field | Type | Multiplicity | Constraints |\n\
              |-------|------|--------------|-------------|\n{rows}"
-        ),
-    )
-    .expect("write record value type");
+        )
+        .as_bytes(),
+    );
 }
 
 /// Presence wraps the multiplicity-derived type independently. Native
@@ -980,7 +1153,7 @@ pub(crate) fn pump_operations(root: &Path) {
          |-------|------|--------------|-------------|\n\
          | self | Boolean | 1 | |\n",
     );
-    std::fs::write(&pump, text).expect("write Pump");
+    write_overlay(&pump, text.as_bytes());
 }
 
 /// A state clause over a domain operation binds its declared parameters as

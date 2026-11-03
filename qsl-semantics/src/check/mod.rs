@@ -2162,6 +2162,13 @@ impl PackageDeclarations {
                 .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
                 .collect(),
         )
+        .with_model_ports(
+            self.models
+                .iter()
+                .flat_map(AdmittedModel::port_roles)
+                .map(|(alias, artifact, key, owner)| ((alias, artifact), (key, owner)))
+                .collect(),
+        )
         .with_declared_units(&self.units)
         .with_protocols(
             self.protocols

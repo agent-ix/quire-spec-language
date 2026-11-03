@@ -125,6 +125,7 @@ pub fn content(
         if !whole_model
             && scope.object_type_named(&role.context.name).is_none()
             && scope.named_types(&role.context.name).is_empty()
+            && scope.model_port(&role.context.name).is_none()
         {
             refusals.push((
                 role.context.span,

@@ -418,6 +418,9 @@ pub struct CheckedRole {
     /// The object type the role is `on` or `each`; `None` for a role bound
     /// statically to a whole model or a name the controls check refuses.
     pub context: Option<quire_exact::EffectiveId>,
+    /// Exact selected model declaration when a role is bound to a systems
+    /// Port; `None` for value-type and whole-model roles.
+    pub model_member: Option<quire_checked::key::DeclarationKey>,
     /// The selected package when a static role is `on` a model alias. This
     /// retains the model binding identity for checked protocol consumers.
     pub model_selection: Option<String>,

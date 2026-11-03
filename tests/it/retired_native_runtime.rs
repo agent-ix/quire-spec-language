@@ -57,7 +57,7 @@ fn assert_import_is_absent(
 
 /// FR-493-AC-1: no source, test or schema keeps the native package/runtime
 /// wire or public API, and downstream Rust cannot import those APIs.
-#[trace("TC-1276", "FR-493-AC-1")]
+#[trace("TC-1276", "FR-493-AC-1", "FR-493-AC-5")]
 #[test]
 fn native_package_and_runtime_surfaces_are_absent() {
     let retired_names = [

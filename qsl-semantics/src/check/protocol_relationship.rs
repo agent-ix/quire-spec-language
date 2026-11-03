@@ -146,10 +146,30 @@ pub(crate) fn check(
             continue;
         };
         let end = |key: &DeclarationKey| model.object_type_id(key).map(ValueType::Reference);
-        let (Some(source), Some(target_end)) = (
+        let ends = match (
             end(&record.source.type_identity),
             end(&record.target.type_identity),
-        ) else {
+        ) {
+            (Some(source), Some(target)) => [source, target],
+            _ => match model.admitted_connection_ends(&record.key) {
+                Some(ends) => ends,
+                None => {
+                    refusals.push((
+                        target.span,
+                        refusal(ProtocolAnchorCause::Unimplemented {
+                            name: protocol.name.name.clone(),
+                            construct: ProtocolConstructKind::Relationship.label(),
+                            span: target.span,
+                        }),
+                    ));
+                    continue;
+                }
+            },
+        };
+        if ends
+            .iter()
+            .any(|end| !matches!(end, ValueType::Reference(_)))
+        {
             refusals.push((
                 target.span,
                 refusal(ProtocolAnchorCause::Unimplemented {
@@ -159,11 +179,11 @@ pub(crate) fn check(
                 }),
             ));
             continue;
-        };
+        }
         checked.push(CheckedRelationship {
             name: relationship.name.name.clone(),
             key: record.key.clone(),
-            ends: [source, target_end],
+            ends,
             span: relationship.span,
         });
     }
