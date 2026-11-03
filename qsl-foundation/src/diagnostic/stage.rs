@@ -299,7 +299,7 @@ mod tests {
             // `temporal_evidence.history_span` reports `tick count` on an
             // `Incomplete`, not a `stage_limit_exceeded` code (FR-255
             // Behavior 1 row for `TemporalEvidenceLimits`).
-            .filter(|setting| setting.kind() != LimitKind::TickCount)
+            .filter(|setting| setting.kind() != crate::diagnostic::LimitKind::TickCount)
         {
             let exceeded = LimitExceeded::new(setting, 10, 11);
             let cause = setting.kind().catalog_cause();
