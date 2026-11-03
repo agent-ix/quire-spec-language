@@ -1243,7 +1243,7 @@ fn a_regressing_watermark_reports_stage_evaluate_refusal_with_its_fields() {
         .expect_err("a regressing watermark is refused");
     assert_eq!(disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(disposition.category(), Category::Refusal);
-    let ClauseDisposition::ProgressContradiction(refusal) = disposition else {
+    let ClauseDisposition::ProgressContradiction(refusal) = *disposition else {
         panic!("expected a progress contradiction");
     };
     assert_eq!(refusal.record.catalog.code(), "invalid_runtime_input");
@@ -1284,7 +1284,7 @@ fn covered_positions_over_the_setting_report_incomplete_with_the_limit_fields() 
     )
     .expect_err("four positions over a capacity of three");
     assert_eq!(disposition.category(), Category::Incomplete);
-    let ClauseDisposition::Temporal(TemporalVerdict::ProgressLimitReached(reached)) = disposition
+    let ClauseDisposition::Temporal(TemporalVerdict::ProgressLimitReached(reached)) = *disposition
     else {
         panic!("expected a progress limit outcome");
     };

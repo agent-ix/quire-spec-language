@@ -173,16 +173,16 @@ pub fn admit_progress(
     assertion: ProgressAssertion,
     positions: &[ObservedPosition],
     covered_positions: u64,
-) -> Result<ProgressLedger, ClauseDisposition> {
+) -> Result<ProgressLedger, Box<ClauseDisposition>> {
     ledger
         .admit(binding, assertion, positions, covered_positions)
         .map_err(|refusal| match refusal {
-            LedgerRefusal::Contradiction(contradiction) => {
-                ClauseDisposition::ProgressContradiction(Box::new(contradiction.into()))
-            }
-            LedgerRefusal::LimitReached(reached) => {
-                ClauseDisposition::Temporal(TemporalVerdict::ProgressLimitReached(reached))
-            }
+            LedgerRefusal::Contradiction(contradiction) => Box::new(
+                ClauseDisposition::ProgressContradiction(Box::new(contradiction.into())),
+            ),
+            LedgerRefusal::LimitReached(reached) => Box::new(ClauseDisposition::Temporal(
+                TemporalVerdict::ProgressLimitReached(reached),
+            )),
         })
 }
 
