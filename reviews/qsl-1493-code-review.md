@@ -61,6 +61,12 @@ fixtures.
 | FND-013 | low | A duplicate order key within one authority is treated as comparable by require_order, so two same-stamp observations with equal keys are decided by observation identity in the canonical order, although FR-501 says the order of observations without a usable key must not decide a verdict. The spec is silent on duplicate keys (AC-7 and AC-21 do not cover them); either refuse equal keys of one authority for an order-sensitive operator or state that identity breaks the tie. | qsl-eval/src/temporal/finite_window/run.rs:481-504 | correct-requirement-no-evidence |
 | FND-014 | low | TraceBinding authenticates Profile and Clock name only; ClockParameters and member dimensions are not compared because the replay side does not expose the temporal_bindings row (documented in the code). An absent binding is refused without a mismatched_dimension field. No ticket owns exposing the row. | qsl-replay/src/spine/clause/temporal.rs:213-240 | missing-requirement |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-015 | low | In the lowering of a finite-window clause, `temporal_interval` falls back to the rational TimedInterval member when `tick_bounds` returns None (an open end, a non-integer bound or a bound above u64) instead of reporting a fault; the checker already admits only closed integral intervals, so the branch is unreachable today, but a future change to the checker would silently emit a differently-typed interval for the profile. | qsl-semantics/src/check/lowering/temporal.rs:temporal_interval | implementation-bug-despite-evidence |
+
 ## Dispositions
 
 Round 1 against stacked PR 2169 head 0d9e923a61f1 (effective diff origin/main...head, main ceecfab74). Gates: workspace check and clippy -D warnings clean (default and --no-default-features); qsl-eval and qsl-replay tests green; qsl-semantics --all-features: 4 failures identical on origin/main (control run), none new; arch-lint qualified-core PASS.
@@ -77,3 +83,12 @@ Round 1 against stacked PR 2169 head 0d9e923a61f1 (effective diff origin/main...
 | FND-008 | fixed | lift.rs lifts over possibility sets with atom classes by holds text and exact enumeration up to 12 ambiguous atoms; test finite_window.rs:1220-1232 asserts p or not p with p absent is true and p and not p false. A two-valued result with W at or past the deadline is Indeterminate (run.rs: Pending only when watermark < need). Mutation atom-classes-off: 1 eval and 1 replay test fail. |
 | FND-009 | fixed | No unreachable!, unwrap, expect, cast or u64::MAX saturation on added production paths (checked by grep of the effective diff); atoms are named by the condition's source text; dead code removed. |
 | FND-010 | fixed | Mutation watermark >= to > in Run::established: 11 eval and 9 replay tests fail. Mutation comparator authority term removed from the canonical sort: 1 eval test fails. Mutation binding refusal off: 1 replay test fails. |
+
+Round 2 against stacked PR 2169 head 28a7a3e2e0b5 (main fd5bde253 merged in; origin/main 4152e633f merge-tested). Rows below are this round's; each finding's latest row is current.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-011 | fixed | Both QSPEC_DIR vector tests now `expect` the variable (qsl-eval finite_window.rs:704, qsl-replay temporal tests:1538) and fail when it is unset. |
+| FND-012 | deferred: ticket filed by the code lead; FR-267's temporal wire table has no finite-window kinds, so the native-result record cannot carry label, reason or exit 11 until that table is extended | The category() half is fixed: it is now pub(crate) shared_category(), documented not authoritative, and ClauseDisposition::category() documents the same; label_and_exit remains the one authoritative mapping. write_clause_run_result still refuses temporal dispositions. |
+| FND-013 | deferred: spec gap (FR-501 is silent on repeated order keys of one authority); repeated keys are comparable with an identity tiebreak | Needs a spec ruling, not a code change. |
+| FND-014 | deferred: the binding authenticates Profile and Clock only; ClockParameters and member dimensions need the temporal_bindings row, which the replay side does not expose | A TraceBinding is now required (absent or other profile or clock name is an admit refusal with mismatched_dimension); no ticket yet for exposing the row. |

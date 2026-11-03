@@ -62,3 +62,5 @@ Round 1 against stacked PR 2169 head 0d9e923a61f1 (effective diff origin/main...
 | FND-004 | deferred: FR-285-AC-7 machine output tracked by SR-1493002 FND-012 | label_and_exit is the single mapping read by run_clause and the ranking (FR-285-AC-10/12, spec interim mapping). FR-285-AC-7's machine-output sentence is not met: write_clause_run_result refuses every temporal disposition. See SR-1493002 FND-012; no ticket yet. |
 | FND-005 | fixed | engine.rs no longer refuses the profile as ProfileNotEvaluated (TraceCarriesNoStamps for a stampless trace). |
 | FND-006 | fixed | a_settled_sibling_keeps_its_verdict_when_a_charge_is_denied (finite_window.rs:783-795) and the run-twice equality tests (spine temporal tests around 1137) assert the sentences; AC-13..25 are tagged and asserted. |
+
+Round 2 against stacked PR 2169 head 28a7a3e2e0b5. No gap finding changed; the FND-004 machine-output half stays with SR-1493002 FND-012 (deferred, ticket filed by the code lead). The dispositions above are current.

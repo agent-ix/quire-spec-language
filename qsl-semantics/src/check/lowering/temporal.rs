@@ -466,7 +466,10 @@ impl Lowering<'_> {
                     operand: only,
                 } => (
                     unary_identity(*operator),
-                    Some(temporal_interval(interval.as_ref(), input.tick_intervals)),
+                    Some(
+                        temporal_interval(interval.as_ref(), input.tick_intervals)
+                            .map_err(|invariant| stage_fault(&location, invariant))?,
+                    ),
                     vec![operand(*only)?],
                 ),
                 FormulaNode::Binary {
@@ -476,7 +479,10 @@ impl Lowering<'_> {
                     right,
                 } => (
                     binary_identity(*operator),
-                    Some(temporal_interval(interval.as_ref(), input.tick_intervals)),
+                    Some(
+                        temporal_interval(interval.as_ref(), input.tick_intervals)
+                            .map_err(|invariant| stage_fault(&location, invariant))?,
+                    ),
                     vec![operand(*left)?, operand(*right)?],
                 ),
             };
@@ -538,9 +544,14 @@ pub(super) fn stage_fault(location: &Location, invariant: &'static str) -> Check
     )
 }
 
-/// A checked operator's interval in the FR-370 wire form.
-fn temporal_interval(interval: Option<&CheckedInterval>, ticks: bool) -> Member {
-    match interval {
+/// A checked operator's interval in the FR-370 wire form. A tick interval of
+/// the finite-window profile that is not integral and closed breaks an
+/// invariant of its check and is a fault, never written as a rational.
+fn temporal_interval(
+    interval: Option<&CheckedInterval>,
+    ticks: bool,
+) -> Result<Member, &'static str> {
+    Ok(match interval {
         None => Member::TemporalInterval { interval: None },
         Some(CheckedInterval::Steps(interval)) => Member::TemporalInterval {
             interval: Some(*interval),
@@ -548,21 +559,19 @@ fn temporal_interval(interval: Option<&CheckedInterval>, ticks: bool) -> Member 
         // A tick interval of the finite-window profile is an integral closed
         // interval: it is written as the step interval FR-370 gives it.
         Some(CheckedInterval::Timed(interval)) if ticks => {
-            match tick_bounds(interval).and_then(|(lower, upper)| {
-                qsl_foundation::bound::TemporalInterval::new(
-                    lower,
-                    qsl_foundation::bound::TemporalUpper::Finite(upper),
-                )
-                .ok()
-            }) {
-                Some(step) => Member::TemporalInterval {
-                    interval: Some(step),
-                },
-                None => timed_member(interval),
+            let (lower, upper) =
+                tick_bounds(interval).ok_or("finite-window-interval-is-integral-closed")?;
+            let step = qsl_foundation::bound::TemporalInterval::new(
+                lower,
+                qsl_foundation::bound::TemporalUpper::Finite(upper),
+            )
+            .map_err(|_| "finite-window-interval-is-ordered")?;
+            Member::TemporalInterval {
+                interval: Some(step),
             }
         }
         Some(CheckedInterval::Timed(interval)) => timed_member(interval),
-    }
+    })
 }
 
 /// The integral closed bounds of a tick interval, or `None` when a bound is
@@ -589,4 +598,48 @@ fn timed_member(interval: &qsl_foundation::bound::TimedInterval) -> Member {
         upper: Some(interval.upper().clone()),
         upper_closed: interval.upper_closed(),
     }))
+}
+
+#[cfg(test)]
+mod tick_interval_tests {
+    use quire_exact::{Integer, Rational};
+
+    use super::*;
+
+    fn rational(numerator: i64, denominator: i64) -> Rational {
+        Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a denominator")
+    }
+
+    fn timed(lower: Rational, upper: Rational, upper_closed: bool) -> CheckedInterval {
+        CheckedInterval::Timed(
+            qsl_foundation::bound::TimedInterval::new(lower, true, upper, upper_closed)
+                .expect("a valid interval"),
+        )
+    }
+
+    /// FR-501: an integral closed tick interval is written as the FR-370 step
+    /// interval; any other is a fault, not a rational timed member.
+    #[test]
+    fn a_tick_interval_is_a_step_interval_or_a_fault() {
+        let integral = timed(rational(0, 1), rational(5, 1), true);
+        assert!(matches!(
+            temporal_interval(Some(&integral), true),
+            Ok(Member::TemporalInterval { interval: Some(_) })
+        ));
+        let fractional = timed(rational(1, 2), rational(3, 2), true);
+        assert_eq!(
+            temporal_interval(Some(&fractional), true).err(),
+            Some("finite-window-interval-is-integral-closed")
+        );
+        let open = timed(rational(0, 1), rational(5, 1), false);
+        assert_eq!(
+            temporal_interval(Some(&open), true).err(),
+            Some("finite-window-interval-is-integral-closed")
+        );
+        // The timed profile keeps its rational wire form.
+        assert!(matches!(
+            temporal_interval(Some(&fractional), false),
+            Ok(Member::TimedInterval(_))
+        ));
+    }
 }
