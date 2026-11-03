@@ -247,6 +247,7 @@ impl StaticSubject {
         let dependency_references: Vec<_> = graph
             .dependency_references()
             .iter()
+            .filter(|reference| reference.source == *source.reference())
             .map(|reference| DependencyReferenceComponent {
                 referring_declaration: reference.referring_declaration.clone(),
                 kind: reference.kind,

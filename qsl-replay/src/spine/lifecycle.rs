@@ -80,7 +80,7 @@
 //! }
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
@@ -1313,6 +1313,11 @@ pub fn check_units(
             .iter()
             .map(|unit| unit.source().clone())
             .collect();
+        let unit_library_data: Vec<_> = admitted
+            .units()
+            .iter()
+            .map(|unit| resolved_libraries_for_unit(unit, &resolution.compiled))
+            .collect();
         let mut library_packages = BTreeMap::new();
         let (library_names, libraries): (Vec<_>, Vec<_>) = resolution
             .compiled
@@ -1323,7 +1328,12 @@ pub fn check_units(
             })
             .unzip();
         let mut checked_units = Vec::with_capacity(sources.len());
-        for (parsed, source) in admitted.units().iter().zip(sources.iter().cloned()) {
+        for ((parsed, source), (resolved_libraries, subject_libraries)) in admitted
+            .units()
+            .iter()
+            .zip(sources.iter().cloned())
+            .zip(unit_library_data)
+        {
             let (protocol_results, protocol_failure) =
                 protocol_check_outcome(parsed, package.graph());
             if let Some(refusal) = protocol_failure.as_ref() {
@@ -1339,17 +1349,13 @@ pub fn check_units(
                         | super::ProtocolResult::Incomplete { .. }
                 )
             });
-            let resolved_libraries: Vec<_> = library_names
-                .iter()
-                .map(|identity| identity.as_str().to_owned())
-                .collect();
             let static_subject =
                 if has_protocol_refusal || !package.graph().unit_refusals().is_empty() {
                     Err(SubjectUnavailable::RefusedCheck)
                 } else {
                     StaticSubject::from_check(
                         parsed.source(),
-                        &libraries,
+                        &subject_libraries,
                         parsed.unit().edition(),
                         &parsed.unit().selections().profiles,
                         &parsed.unit().selections().models,
@@ -2687,6 +2693,39 @@ struct ResolvedLibrary {
     /// This library's own source, exactly as its own `qsl_cst::parse` read
     /// it (FND-016).
     source: Source,
+}
+
+/// The direct and transitive libraries reachable from one root source unit.
+/// A multi-unit package has one shared compiled map, but each unit's static
+/// subject contains only the closure named by that unit's own imports.
+fn resolved_libraries_for_unit(
+    parsed: &ParsedUnitSource,
+    compiled: &BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+) -> (Vec<String>, Vec<Source>) {
+    let mut identities = BTreeSet::new();
+    for import in &parsed.unit().selections().imports {
+        let identity =
+            LibraryName::new(&import.identity).expect("parsed library identity is valid");
+        identities.insert(identity.clone());
+        if let Some(library) = compiled.get(&identity) {
+            identities.extend(library.package.dependencies().keys().cloned());
+        }
+    }
+    let sources = identities
+        .iter()
+        .map(|identity| {
+            compiled
+                .get(identity)
+                .expect("each selected dependency closure identity was compiled")
+                .source
+                .clone()
+        })
+        .collect();
+    let identities = identities
+        .into_iter()
+        .map(|identity| identity.as_str().to_owned())
+        .collect();
+    (identities, sources)
 }
 
 /// One compile's S4 source resolution state (ADR-015 D-1).

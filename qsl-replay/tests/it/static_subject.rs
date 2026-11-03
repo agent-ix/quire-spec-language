@@ -274,6 +274,113 @@ fn imported_predicate_reference_retains_the_exact_library_target() {
 
 #[trace("FR-510-AC-3", "TC-1305")]
 #[test]
+fn aggregate_units_keep_sibling_imports_and_references_out_of_each_subject() {
+    let source_a = SourceIdentity::new("test", "unit-a", "git", "1");
+    let source_b = SourceIdentity::new("test", "unit-b", "git", "1");
+    let unit_a = SOURCE
+        .replace("model M =", "import \"lib-a\" as d;\nmodel M =")
+        .replace(
+            ANSWER,
+            "function calls using v(x: Integer): Boolean pure { d::from_library(x) }\n",
+        );
+    let unit_b_header = SOURCE
+        .replace("acme/orders", "acme/inventory")
+        .replace(
+            "profile v = \"quire.value.complete/v1\";\n",
+            "profile v = \"quire.value.complete/v1\";\nprofile p = \"quire.protocol.finite-global/v1\";\n",
+        )
+        .replace(ANSWER, "");
+    let unit_b = format!(
+        "{}{}function plain using v(): Integer pure {{ 1 }}\n",
+        unit_b_header,
+        protocol("FlowB", "agent")
+    );
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parse_unit = |source: &SourceIdentity, bytes: &str| {
+        spine::parse(
+            &ParseRequest {
+                source,
+                path: "unit.native",
+                bytes: bytes.as_bytes(),
+            },
+            limits.source,
+            &cancel,
+        )
+        .expect("parse unit")
+        .into_value()
+    };
+    let dependencies = DependencyInput::new(vec![library("lib-a", "lib-a")]).expect("input");
+    let admitted = spine::admit_parsed_unit_list(
+        vec![
+            parse_unit(&source_a, &unit_a),
+            parse_unit(&source_b, &unit_b),
+        ],
+        &dependencies,
+    )
+    .expect("distinct units are admitted");
+    let inventory_model = String::from_utf8(MODEL.to_vec())
+        .expect("fixture JSON is UTF-8")
+        .replace("acme/orders", "acme/inventory")
+        .into_bytes();
+    let model_input = [
+        ("acme/orders".to_owned(), MODEL.to_vec()),
+        ("acme/inventory".to_owned(), inventory_model),
+    ]
+    .into_iter()
+    .collect();
+    let models = spine::select_units(
+        &admitted,
+        &model_input,
+        limits.model,
+        limits.source,
+        &cancel,
+    )
+    .expect("unit model selections are admitted")
+    .into_value();
+    let checked = spine::check_units(
+        &admitted,
+        "aggregate-static-subject".to_owned(),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .expect("aggregate units check")
+    .into_value();
+    let checked_a = checked
+        .iter()
+        .find(|unit| unit.source().identity() == &source_a)
+        .expect("unit A is checked");
+    let checked_b = checked
+        .iter()
+        .find(|unit| unit.source().identity() == &source_b)
+        .expect("unit B is checked");
+    let subject_a = checked_a.static_subject().unwrap();
+    assert_eq!(
+        subject_a
+            .dependencies()
+            .iter()
+            .map(|dependency| dependency.identity.as_str())
+            .collect::<Vec<_>>(),
+        ["lib-a"]
+    );
+    let [reference] = subject_a.dependency_references() else {
+        panic!("unit A retains its own imported call: {:?}", subject_a);
+    };
+    assert_eq!(reference.referring_declaration, "calls");
+    assert_eq!(reference.library.as_deref(), Some("lib-a"));
+
+    let subject_b = checked_b.static_subject().unwrap();
+    assert!(subject_b.dependencies().is_empty());
+    assert!(subject_b.dependency_references().is_empty());
+    assert_eq!(subject_b.sources().len(), 1);
+    assert_eq!(subject_b.models()[0].package, "acme/inventory");
+    assert_eq!(subject_b.roles()[0].type_identity, "acme/inventory::Gadget");
+}
+
+#[trace("FR-510-AC-3", "TC-1305")]
+#[test]
 fn temporal_requirement_reference_retains_owner_and_checked_target() {
     let header = SOURCE
         .replace(

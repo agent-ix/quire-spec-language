@@ -633,6 +633,8 @@ pub enum CheckedDependencySite {
 /// separately by `CheckedPackage`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedDependencyReference {
+    /// The source document that owns this occurrence.
+    pub source: qsl_foundation::source::provenance::RawSourceRef,
     /// The declaration that contains this occurrence.
     pub referring_declaration: String,
     /// Which native declaration kind the occurrence requires.
@@ -6721,11 +6723,12 @@ impl PackageDeclarations {
                 Origin::ModelOperationClause { operation, .. } => operation.clone(),
                 Origin::Expression => continue,
             };
-            if regions.region(&pending.site).is_none() {
+            let Some(source_region) = regions.region(&pending.site) else {
                 // A compiler-synthesized expression has no authored source
                 // occurrence and therefore is not a static reference row.
                 continue;
-            }
+            };
+            let source = source_region.source().clone();
             let (target, library) = match pending.target {
                 PendingDependencyTarget::LocalFunction(index) => (
                     functions
@@ -6741,6 +6744,7 @@ impl PackageDeclarations {
                 continue;
             };
             dependency_references.push(CheckedDependencyReference {
+                source,
                 referring_declaration,
                 kind: CheckedDependencyKind::PredicateCall,
                 site: CheckedDependencySite::Expression(pending.site),
@@ -6756,6 +6760,11 @@ impl PackageDeclarations {
             let Some(checked) = checked_protocols.get(checked_index) else {
                 continue;
             };
+            let source = self
+                .source_owners
+                .get(&form.name.name)
+                .unwrap_or(&self.source)
+                .clone();
             for attempt in &form.attempts {
                 let Some(checked_attempt) = checked
                     .attempts
@@ -6766,6 +6775,7 @@ impl PackageDeclarations {
                 };
                 for (contract, target) in attempt.contracts.iter().zip(&checked_attempt.contracts) {
                     dependency_references.push(CheckedDependencyReference {
+                        source: source.clone(),
                         referring_declaration: form.name.name.clone(),
                         kind: CheckedDependencyKind::OperationContract,
                         site: CheckedDependencySite::OperationContract(contract.span),
@@ -6784,6 +6794,7 @@ impl PackageDeclarations {
                 });
                 if let Some(target) = target {
                     dependency_references.push(CheckedDependencyReference {
+                        source: source.clone(),
                         referring_declaration: form.name.name.clone(),
                         kind: CheckedDependencyKind::TemporalObligation,
                         site: CheckedDependencySite::TemporalRequirement(requirement.temporal.span),
@@ -6807,8 +6818,9 @@ impl PackageDeclarations {
                     u64::try_from(span.end).unwrap_or(u64::MAX),
                 ),
             };
-            source_span(left)
-                .cmp(&source_span(right))
+            left.source
+                .cmp(&right.source)
+                .then_with(|| source_span(left).cmp(&source_span(right)))
                 .then_with(|| left.referring_declaration.cmp(&right.referring_declaration))
                 .then_with(|| left.kind.cmp(&right.kind))
                 .then_with(|| left.name.cmp(&right.name))
