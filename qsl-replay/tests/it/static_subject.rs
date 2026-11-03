@@ -82,8 +82,10 @@ fn library_importing(
     let source = String::from_utf8(library.bytes).expect("fixture source is UTF-8");
     library.bytes = source
         .replace(
-            "profile v =",
-            &format!("import \"{dependency_identity}\" as {dependency_alias};\nprofile v ="),
+            "profile v = \"quire.value.complete/v1\";\n",
+            &format!(
+                "profile v = \"quire.value.complete/v1\";\nimport \"{dependency_identity}\" as {dependency_alias};\n"
+            ),
         )
         .into_bytes();
     library
