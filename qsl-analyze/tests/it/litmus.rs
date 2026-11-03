@@ -29,7 +29,7 @@ use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
 use quire_semantic_value::checking::CheckingLimits;
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 use crate::counter::UNLIMITED;
 
@@ -335,6 +335,56 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
     package_with("", body)
 }
 
+/// A checked litmus package whose protocol alias is declared but not selected.
+/// The fixture removes only the protocol profile selection before checking,
+/// while preserving temporal profiles and the alias's profile kind. This
+/// models the FR-368 no-profile route case without changing the source vector.
+pub(crate) fn package_without_protocol_profile_selection(body: &str) -> CheckedPackage {
+    let document = document();
+    let text = unit_text_with(PROTOCOL_PROFILE, body);
+    let packages = package_input([document.as_slice()]).unwrap();
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("agent-ix", "litmus", "git", "1"),
+        "litmus.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(
+        parsed.is_admissible(),
+        "S1: {text}: {:?}",
+        parsed.diagnostics()
+    );
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the operation clauses parse");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "package".to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles");
+    declarations
+        .profile_selections
+        .retain(|selection| selection.alias != "pp");
+    declarations.protocol_profile = None;
+    let graph = declarations
+        .with_unwritten_refinements()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
 /// The checked package of `body` that also selects the protocol profile,
 /// so each protocol clause the package writes has its node.
 pub(crate) fn protocol_profiled_package(body: &str) -> CheckedPackage {
@@ -481,8 +531,7 @@ pub(crate) const NO_BOTH_ZERO: &str = "temporal NoBothZero using t0 over (k: M::
      \"model-steps\" on origin { always holds(not (k.r1 = 0 and k.r2 = 0)) }\n";
 
 /// The bounded event-position form used by fixtures that also await.
-pub(crate) const NO_BOTH_ZERO_BOUNDED: &str =
-    "temporal NoBothZero using t0 over (k: M::Core) clock \
+pub(crate) const NO_BOTH_ZERO_BOUNDED: &str = "temporal NoBothZero using t0 over (k: M::Core) clock \
      \"model-steps\" on origin { always[0,1] holds(not (k.r1 = 0 and k.r2 = 0)) }\n";
 
 /// The `SB` unit over `run`, with the claim.

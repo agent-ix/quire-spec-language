@@ -117,6 +117,12 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
             "state-bearing layer",
         ),
         (
+            recovery_flow("Main::Committed", "check Fine using t { true };"),
+            "t",
+            "quire.temporal.infinite-trace/v1",
+            "state-bearing layer",
+        ),
+        (
             recovery_flow("Main::Committed", "").replace(
                 "on M::Actor::op using e clock",
                 "on M::Actor::op using pp clock",

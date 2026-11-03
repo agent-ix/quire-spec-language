@@ -51,7 +51,7 @@ use crate::counter::{CONTRACT, clause_text};
 use crate::dense_route::{ids, registry};
 use crate::model_settle::case;
 use crate::timed_world::{DENSE, PACKAGE, World};
-use crate::zone_search::{INFINITE, rpc, rpc_claim};
+use crate::zone_search::{INFINITE, rpc, rpc_claim, rpc_claim_without_protocol_profile};
 
 /// The derived items, each with its obligation, that
 /// `ModelRequest::derived` writes, with EN-1 and EN-6 registered, after
@@ -1069,12 +1069,12 @@ fn a_subject_reading_no_model_selection_has_no_derived_request_item() {
 #[trace("QSpec-TC-431", "QSpec-FR-368-AC-25")]
 #[test]
 fn a_protocol_subject_over_a_timed_model_gains_no_time_lock_freedom_item() {
-    let world = rpc_claim(
+    let world = rpc_claim_without_protocol_profile(
         4,
         INFINITE,
         "temporal NoLateReply using inf over (c: M::Call) clock \"model-steps\" on origin \
          { always holds(not c.late) }\n\
-         protocol P using v over (c: M::Call) on origin {\n\
+         protocol P using pp over (c: M::Call) on origin {\n\
          role w on M::Call;\n\
          run sequence Main { }\n\
          finish Done as (d: Boolean) { true };\n\

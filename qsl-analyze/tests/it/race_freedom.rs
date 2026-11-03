@@ -1715,7 +1715,7 @@ fn one_clause_under_two_sets_of_resolved_models_is_two_items() {
 #[trace("QSpec-TC-431", "QSpec-FR-368-AC-25")]
 #[test]
 fn a_protocol_subject_of_a_unit_with_no_protocol_profile_is_settled_unsupported() {
-    let case = Case::with_letters(
+    let case = Case::without_protocol_profile(
         &(contracts() + &protocol("SB", &message_passing("", "release", "acquire")) + NO_BOTH_ZERO),
         &MP,
     );

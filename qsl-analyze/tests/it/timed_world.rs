@@ -18,7 +18,7 @@ use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::ScalarLimits;
 use quire_semantic_value::checking::CheckingLimits;
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 pub(crate) const PACKAGE: &str = "test/timed";
 
@@ -300,6 +300,39 @@ pub(crate) fn world_built_in(
     armed: &[&str],
     extra: &Json,
 ) -> World {
+    world_built_in_with_protocol_selection(
+        package, document, profiles, body, keys, armed, extra, true,
+    )
+}
+
+/// [`world_built_in`] with a declared protocol alias that is absent from the
+/// selected profiles, for route tests of FR-368's no-profile anchor.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn world_built_in_without_protocol_profile(
+    package: &str,
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+    keys: &[&str],
+    armed: &[&str],
+    extra: &Json,
+) -> World {
+    world_built_in_with_protocol_selection(
+        package, document, profiles, body, keys, armed, extra, false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn world_built_in_with_protocol_selection(
+    package: &str,
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+    keys: &[&str],
+    armed: &[&str],
+    extra: &Json,
+    select_protocol_profile: bool,
+) -> World {
     let packages = package_input([document]).unwrap();
     let unit = unit_text(package, profiles, body);
     let parsed = qsl_cst::parse(
@@ -321,17 +354,24 @@ pub(crate) fn world_built_in(
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the kept operation clauses parse");
-    let graph = PackageDeclarations::assemble(
+    let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         "package".to_owned(),
         built,
         models,
         Vec::new(),
     )
-    .expect("the unit assembles")
-    .with_unwritten_timed_members()
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    .expect("the unit assembles");
+    if !select_protocol_profile {
+        declarations
+            .profile_selections
+            .retain(|selection| selection.identity != "quire.protocol.finite-global/v1");
+        declarations.protocol_profile = None;
+    }
+    let graph = declarations
+        .with_unwritten_timed_members()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let header = json!({"identity": package});
     let mut fields = json!({"phase": {"integer": "0"}, "inflight": {"boolean": false},
         "late": {"boolean": false}, "retried": {"boolean": false}});
@@ -455,11 +495,11 @@ pub(crate) fn refining_from(
     abstract_inflight: bool,
 ) -> Result<Refining, Vec<(String, String, String)>> {
     let packages = package_input([abstract_document, concrete_document]).unwrap();
-    let abstract_package = serde_json::from_slice::<Json>(abstract_document).expect("JSON")
-        ["package"]["identity"]
-        .as_str()
-        .expect("an identity")
-        .to_owned();
+    let abstract_package =
+        serde_json::from_slice::<Json>(abstract_document).expect("JSON")["package"]["identity"]
+            .as_str()
+            .expect("an identity")
+            .to_owned();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
