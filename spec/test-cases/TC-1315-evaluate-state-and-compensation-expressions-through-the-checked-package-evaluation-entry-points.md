@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the slot evaluation quire-protocol's compensation engine relies on.
-Scope: FR-520-AC-1 to FR-520-AC-11. **R** is the package of FR-517.
+Scope: FR-520-AC-1 to FR-520-AC-13. **R** is the package of FR-517.
 
 ## Test Procedure
 
@@ -23,14 +23,16 @@ Scope: FR-520-AC-1 to FR-520-AC-11. **R** is the package of FR-517.
 | 4 | 3 | target 10; receipts `[3,4]`, `[4,6]`, `[]`, `[5,6]` | `Partial` T and `Full` F; `Full` T and `Partial` F; both F; both F |
 | 5 | 4 | `retry.relation` over attempts 1 and 2; read `attempts maximum` | a Boolean from the relation; the authored count |
 | 6 | 5 | target 11; receipts `[3,5]` with target 10; the other relation's slot; a record with only a successful operation and an outcome `successful` | each changes the true result to false or to no result; no true from the record alone |
-| 7 | 6 | recovery supply with an incomplete population reference; missing target; missing achieved state; `Unavailable` binder; compile-fail `as_bool` / `Into<bool>` | `Admission`, `Unavailable` or `Incomplete`, never `Completed(true)`; does not compile |
-| 8 | 7 | three slot calls on one meter vs three on fresh meters; `retry.relation` at exact usage and one below | equal summed charge logs over the ten counters; completed / `Incomplete` |
+| 7 | 6 | recovery supply with an incomplete population reference; missing target; missing achieved state; `Unavailable` binder | `Admission`, `Unavailable` or `Incomplete`, never `Completed(true)` |
+| 8 | 7 | three slot calls on one meter vs three on fresh meters; `retry.relation` at exact usage and one below | per counter, the sum for `work_units` and `result_units` and the maximum for the other eight; completed / `Incomplete` |
 | 9 | 8 | `cargo tree` of qsl-eval and qsl-package evaluation path; run under a denied-syscall harness | no I/O dependency; completes |
 | 10 | 9 | each slot of both compensations, in-process and read back | equal results and charge logs |
-| 11 | 10 | search QSL exports for the four retired names | none |
-| 12 | 11 | a slot call over three binders, one `Unavailable`; the same call twice | per-binder entries for the binders read, none for the unread one; entries plus unattributed equal the total; equal logs; `accounting_version` present |
+| 11 | 10 | search the root crate for a `state` module and for the four retired names in their `state::` form | none; the `evaluate_v2` of `src/temporal.rs` and the `ACCOUNTING_VERSION` of `src/linking/composed/binding_work.rs` remain |
+| 12 | 11 | a `Meter` with per-binder attribution and `accounting_version` (IR-1280); a slot call over three binders, one `Unavailable`; the same call twice | per-binder entries for the binders read, none for the unread one; entries combined with unattributed equal the total; equal logs; `accounting_version` present; gated on IR-1280 |
+| 13 | 12 | the `compile_fail` doctests of `ProtocolSlotEvaluation` and `Evaluation` for `as_bool` and `Into<bool>`, read by the tagged doctest-binding test | each block keeps its pinned error code and compiling control; neither compiles |
+| 14 | 13 | search the evaluation crates' sources for `unwrap_or(false)` over an evaluation result | none |
 
-Tag the test `#[trace("FR-520-AC-1", ..., "FR-520-AC-11", "TC-1315")]`; rows 1, 2, 8 also carry FR-390-AC-9 and AC-10.
+Tag the test `#[trace("FR-520-AC-1", ..., "FR-520-AC-12", "TC-1315")]`; rows 1, 2, 8 also carry FR-390-AC-9 and AC-10.
 
 ## Expected Results
 

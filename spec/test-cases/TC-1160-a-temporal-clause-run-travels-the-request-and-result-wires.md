@@ -24,7 +24,7 @@ every FR-330 temporal disposition is written and read as
 basis, and that a refused `holds` condition settles as a refusal at its
 position.
 
-Scope: FR-312-AC-7, FR-267-AC-13, FR-267-AC-14, FR-267-AC-15, FR-267-AC-16, FR-266-AC-4,
+Scope: FR-312-AC-7, FR-312-AC-8, FR-267-AC-13, FR-267-AC-14, FR-267-AC-15, FR-267-AC-16, FR-266-AC-4,
 FR-327-AC-6, FR-330-AC-7.
 
 ## Test Procedure
@@ -36,7 +36,8 @@ snapshots with `c.value` 0, 1, 2.
 1. Through `run`, send FR-312-AC-7's temporal request over the lasso with
    loop `s0`, `s1`, then over loop `s0`, `s1`, `s2`; build the same
    `ClauseRunRequest` in process and compare. Send each malformed request
-   of FR-312-AC-7.
+   of FR-312-AC-7, and send a request whose `trace` is `{"timestamped": {}}`
+   (FR-312-AC-8).
 2. Write FR-330-AC-2's lasso violation report; check its bytes against
    FR-267-AC-13 and their RFC 8785 re-encoding; wrap its `counterexample`
    in an FR-070 envelope naming `Reaches` and replay it through FR-331.
@@ -59,7 +60,9 @@ step asserts.
 - Step 1: exit 10 then exit 0, result document byte-identical to the in-process
   report's document; each malformed request refuses `invalid-request` at
   stage `request`, exit 20, no result document, naming `trace` or the member; the
-  empty `finite` array reports stage `evaluate`, `refusal`.
+  empty `finite` array reports stage `evaluate`, `refusal`; the
+  `timestamped` trace refuses `invalid-request` at stage `request`, exit 20,
+  naming `trace`, with no result document.
 - Step 2: the document of FR-267-AC-13, whose counterexample
   `trace_position` is the JSON integer `0`; the replay settles
   `reproduced-with-evaluated-witness`; `interval` is

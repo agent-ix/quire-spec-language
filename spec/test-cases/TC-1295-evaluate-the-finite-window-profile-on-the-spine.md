@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-501-AC-1 to AC-21 and FR-330-AC-9 (the finite-window part): the
+Verify FR-501-AC-1 to AC-25 and FR-330-AC-9 (the finite-window part): the
 spine evaluator returns a definite verdict on a closed complete window, pending
 or indeterminate only for a genuinely unresolved obligation, and never refuses
 the profile.
@@ -44,7 +44,7 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 7 | `eventually[0,5] holds(p)`; `always[0,5] holds(p)`, scope `Open` | stamps 0,1; W 1; C(1); p true at 1; p false at 1 | `Completed(true)`; `Completed(false)` |
 | 8 | `eventually[0,5] holds(p)` | stamps 0,2,5; p F,absent,F; W 5; C(5) | `Indeterminate {MissingValuation, position 1, p}` |
 | 9 | same, p true at 5 | p F,absent,T | `Completed(true)` |
-| 10 | same, p admitted both T and F at stamp 2, F elsewhere | W 5; C(5) | `Indeterminate {ConflictingValuation, position 1, p}` |
+| 10 | same | stamps 0,2,2,5; p = F,T,F,F (two observations at stamp 2 differ); W 5; C(5) | `Indeterminate {ConflictingValuation, position 1, p}` |
 | 11 | row 8 with W 3 | C(3) | `Pending {deadline 5}` |
 | 12 | `always[0,5] holds(p)` | stamp 0; p T; W 5; Inc | `Indeterminate {IncompleteInput}`; with C(5) `Completed(true)` |
 | 13 | `eventually[2,3] holds(p)` | stamp 0; W 3; Inc; then C(2) | `Indeterminate {IncompleteInput}` both |
@@ -70,6 +70,10 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 33 | row 32's listing 5,0,2 | p T at 0 and 5, F at 2 | `Completed(false)` at position 0; support {(1,p)} (FR-501-AC-19) |
 | 34 | row 17's `until` over keys from one authority, listed as given and reversed | keys 1, 2 at stamp 1 | one outcome for both listings (FR-501-AC-20) |
 | 35 | four observations at one stamp: keys A1, A2 (authority A), B1 (authority B), none; three listings | one clause, equal valuations | canonical order A1, A2, B1, keyless; one `result_identity` (FR-501-AC-21) |
+| 36 | row 20's clause, the cover omitted from the trace input | req at 0; ack at 2998, 3000, 3001; W, C beyond 3001 | `Completed(true)`, `Completed(true)`, `Completed(false)` (FR-501-AC-22) |
+| 37 | row 8's clause | stamps 0,2,2,5; p = F,T,T,F; W 5; C(5) | `Completed(true)` (FR-501-AC-23) |
+| 38 | row 27's request with the supplied cover `Counter{u=1}`, W 3001, C(3002); then the same input with cover `Exact` | req at 0; no ack | `Pending {deadline 3002}`; `Completed(false)` and a different result identity (FR-501-AC-24) |
+| 39 | row 1's request with `execution` `Open`, then `Closed` | as row 1 | the same verdict; the premises report `Open`, then `Closed` (FR-501-AC-25) |
 
 ## Expected Results
 

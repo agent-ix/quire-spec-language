@@ -114,7 +114,9 @@ QSpec FR-095. The admitted temporal profiles are
 `quire.temporal.timestamped-event.finite-window/v1` and
 `quire.temporal.infinite-trace/v1`. The rows are evaluated in order, and the
 first three are mutually exclusive with the last five, so the table is total
-over those four profiles:
+over those four profiles. The timed profile `quire.temporal.timed/v1`, which
+QSL FR-234 admits at check, has no row: a declaration under it is `Unsupported`
+naming a timed-profile dimension, and QSL FR-527 states that classification:
 
 | Native request | TL target | Disposition |
 | --- | --- | --- |
@@ -128,8 +130,8 @@ over those four profiles:
 | Either false-extension profile, no bounded temporal operator reachable at all | the same two targets, selected by surrounding-execution closure | Supported; a formula with no bounded operator imposes no additional TL obligation |
 
 The first three rows accumulate: a declaration matching more than one SHALL
-return every matched dimension. The last five are mutually exclusive, so every admitted declaration
-matches exactly one row and each row is reachable by some declaration.
+return every matched dimension. The last five are mutually exclusive, so every declaration under the four
+profiles matches exactly one row and each row is reachable by some declaration.
 
 The bounded-past operator set is exactly the one defined by QSpec FR-092. The
 past-only row covers each member of that set; QSpec FR-092 defines strong
