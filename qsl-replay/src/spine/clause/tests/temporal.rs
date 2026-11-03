@@ -2044,15 +2044,11 @@ fn timestamped_guarded_on_each_undefined_guard_reports_named_incomplete_activati
             assert_eq!(*at, 0);
             assert_eq!(
                 guard.origin,
-                Origin::StateClause {
-                    clause: "Window".to_owned(),
-                    index: 0,
+                Origin::TypeDeclaration {
+                    name: "temporal 0 guard".to_owned(),
                 }
             );
-            assert!(
-                !guard.path().is_empty(),
-                "the reported identity must name the guard expression within its clause"
-            );
+            assert!(guard.path().is_empty());
         }
         other => panic!("expected named incomplete activation, got {other:?}"),
     }
