@@ -92,13 +92,14 @@ pub fn call_chain(functions: usize) -> PackageDeclarations {
             function(chain_name(index), body)
         })
         .collect();
-    PackageDeclarations {
-        functions: declarations,
-        ..PackageDeclarations::new(
+    {
+        let mut package_declarations = PackageDeclarations::new(
             source(),
             "qsl-bench",
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        package_declarations.functions = declarations;
+        package_declarations
     }
 }
 
@@ -118,13 +119,14 @@ pub fn independent(functions: usize) -> PackageDeclarations {
             )
         })
         .collect();
-    PackageDeclarations {
-        functions: declarations,
-        ..PackageDeclarations::new(
+    {
+        let mut package_declarations = PackageDeclarations::new(
             source(),
             "qsl-bench",
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        package_declarations.functions = declarations;
+        package_declarations
     }
 }
 
@@ -196,14 +198,15 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
             )
         })
         .collect();
-    PackageDeclarations {
-        functions: declarations,
-        enums: vec![binding.clone()],
-        ..PackageDeclarations::new(
+    {
+        let mut package_declarations = PackageDeclarations::new(
             source(),
             "qsl-bench",
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        package_declarations.functions = declarations;
+        package_declarations.enums = vec![binding.clone()];
+        package_declarations
     }
 }
 

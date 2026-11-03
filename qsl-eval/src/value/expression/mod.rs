@@ -20,6 +20,8 @@ mod evaluate;
 mod family;
 mod protocol_slot;
 mod s6a;
+mod slot_admission;
+pub use slot_admission::object_environment_refusal;
 mod value_invariants;
 
 use evaluate::Machine;
@@ -543,7 +545,28 @@ pub struct FrameEvaluation {
 /// depth for a `Value::Population` the type checker's own structural
 /// argument-type matching would otherwise have already ruled out at every
 /// nested call site.
+///
+/// FR-049-AC-2: `objects` is admitted whole after the arguments
+/// (`slot_admission::admit_objects`): an object of a type the package does not
+/// declare, a missing, surplus or ill-typed attribute refuses here, before any
+/// charge, as `invalid_runtime_input`/`wrong-value-kind`.
 pub fn admit_arguments(
+    parameters: &[(String, ValueType)],
+    arguments: &[Value],
+    objects: &ObjectEnvironment,
+    types: &TypeEnvironment,
+    run: &mut SuppliedRun,
+) -> Result<(), CallFailure> {
+    admit_argument_values(parameters, arguments, objects, types, run)?;
+    // FR-049-AC-2: the object environment is caller input too, admitted
+    // whole against the package's own declarations before any charge. A
+    // cancellation during it names the position after the last argument.
+    slot_admission::admit_objects(objects, types, run, parameters.len())
+}
+
+/// [`admit_arguments`] without the object environment: every argument's
+/// arity, membership and reference resolution.
+fn admit_argument_values(
     parameters: &[(String, ValueType)],
     arguments: &[Value],
     objects: &ObjectEnvironment,
@@ -1313,7 +1336,7 @@ fn resolve_quantifier<'g>(
                 pending.push((node.at(*otherwise), lets));
             }
             NodeKind::Not(operand) => pending.push((node.at(*operand), lets)),
-            NodeKind::Connective(_, left, right) => {
+            NodeKind::Connective(_, _, left, right) => {
                 pending.push((node.at(*left), lets.clone()));
                 pending.push((node.at(*right), lets));
             }
@@ -1322,6 +1345,72 @@ fn resolve_quantifier<'g>(
         }
     }
     None
+}
+
+/// [`CheckedPackageEvaluation::evaluate`], admitting the object environment
+/// at entry when `admit_environment`. The one caller that does not is
+/// [`evaluate_over_admitted_environment`].
+fn evaluate_expression(
+    package: &CheckedPackage,
+    expression: &CheckedExpression,
+    arguments: Vec<Value>,
+    objects: &ObjectEnvironment,
+    meter: &mut Meter,
+    admit_environment: bool,
+) -> Result<Evaluation, CallFailure> {
+    if !expression.is_from_graph(package.graph()) {
+        return Err(protocol_slot::resolve::refused(
+            "invalid_runtime_input",
+            "foreign-checked-expression",
+            CallAdmissionLocus::Member {
+                name: "checked-expression".to_owned(),
+                index: None,
+            },
+        ));
+    }
+    let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
+        .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
+    let types = package.graph().scope().types();
+    if admit_environment {
+        admit_arguments(
+            expression.parameters(),
+            &arguments,
+            objects,
+            types,
+            &mut run,
+        )?;
+    } else {
+        admit_argument_values(
+            expression.parameters(),
+            &arguments,
+            objects,
+            types,
+            &mut run,
+        )?;
+    }
+    // An expression root incurs no call charge unless it reaches an
+    // application (FR-262).
+    let mut registry =
+        Registry::new(PackageClosure::<&CheckedPackage, &CheckedExpression>::pre_admitted(package));
+    registry
+        .begin_expression(expression, arguments, objects, meter)?
+        .run()
+}
+
+/// [`CheckedPackageEvaluation::evaluate`] over an environment FR-106 admitted
+/// against this package's own declarations (a snapshot position of an
+/// observed trace): the arguments are admitted, the environment is not walked
+/// again, and every attribute read still admits its own slot. An observed
+/// window reads several expressions at every position, so admitting the
+/// whole environment on each read would cost O(environment) per read.
+pub(crate) fn evaluate_over_admitted_environment(
+    package: &CheckedPackage,
+    expression: &CheckedExpression,
+    arguments: Vec<Value>,
+    objects: &ObjectEnvironment,
+    meter: &mut Meter,
+) -> Result<Evaluation, CallFailure> {
+    evaluate_expression(package, expression, arguments, objects, meter, false)
 }
 
 impl CheckedPackageEvaluation for CheckedPackage {
@@ -1435,33 +1524,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
-        if !expression.is_from_graph(self.graph()) {
-            return Err(protocol_slot::resolve::refused(
-                "invalid_runtime_input",
-                "foreign-checked-expression",
-                CallAdmissionLocus::Member {
-                    name: "checked-expression".to_owned(),
-                    index: None,
-                },
-            ));
-        }
-        let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
-            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
-        admit_arguments(
-            expression.parameters(),
-            &arguments,
-            objects,
-            self.graph().scope().types(),
-            &mut run,
-        )?;
-        // An expression root incurs no call charge unless it reaches an
-        // application (FR-262).
-        let mut registry = Registry::new(
-            PackageClosure::<&CheckedPackage, &CheckedExpression>::pre_admitted(self),
-        );
-        registry
-            .begin_expression(expression, arguments, objects, meter)?
-            .run()
+        evaluate_expression(self, expression, arguments, objects, meter, true)
     }
 
     fn evaluate_protocol_slot(
@@ -1844,18 +1907,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     "reader-protocol-root-has-supported-plain-data-projection",
                 )));
             };
-            Some(quire_checked::NodeRead {
-                operation: quire_checked::NodeKind::Attribute {
-                    reference: projection.slot(),
-                    field: quire_semantic_value::declaration::FieldRef::new(
-                        projection.owner(),
-                        projection.field(),
-                    ),
-                    optional: projection.optional(),
-                    derefed: projection.derefed(),
-                },
-                value_type: projection.value_type(),
-                location: projection.location(),
+            Some(evaluate::ReaderRoot {
+                slot: projection.slot(),
+                field: projection.field().clone(),
+                optional: projection.optional(),
+                derefed: projection.derefed(),
+                value_type: projection.value_type().clone(),
             })
         } else {
             None
@@ -2322,13 +2379,14 @@ mod tests {
     #[trace("FR-090-AC-3", "TC-384")]
     #[test]
     fn s6a_invariant_breaks_are_internal_faults_not_panics() {
-        let graph = PackageDeclarations {
-            functions: vec![identity_function()],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![identity_function()];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");
@@ -2422,19 +2480,20 @@ mod tests {
                 qsl_foundation::Span { start: 0, end: 0 },
             )
         };
-        let graph = PackageDeclarations {
-            functions: vec![FunctionDeclaration::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.functions = vec![FunctionDeclaration::new(
                 "flip",
                 vec![("x".to_owned(), boolean())],
                 boolean(),
                 None,
                 Expression::logical_not(Expression::name("x".to_owned())),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("flip(x: Boolean): Boolean = not x checks cleanly");
@@ -2598,13 +2657,14 @@ mod tests {
             );
         }
 
-        let graph = PackageDeclarations {
-            functions: vec![identity_function()],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.functions = vec![identity_function()];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");

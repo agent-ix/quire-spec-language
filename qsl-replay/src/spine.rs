@@ -45,16 +45,72 @@ pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
+mod subject;
 pub use lifecycle::{
-    check, check_with_execution_points, check_with_execution_points_and_refinement_internals,
-    check_with_refinement_internals, check_with_temporal_selections_and_execution_points, package,
-    package_with_temporal_selections, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit,
-    EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
+    admit_parsed_unit_list, check, check_units, check_with_execution_points,
+    check_with_execution_points_and_refinement_internals, check_with_refinement_internals,
+    check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
+    parse, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
+    AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
+    ParseRequest, ParsedUnitSource, PendingObligation, TypeDeclaration, TypeReport,
+    TypeRequirement,
+};
+pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
+pub use subject::{
+    BuildProvenance, ComponentKind, DeclarationProfileComponent, DependencyComponent,
+    DependencyReferenceComponent, ModelComponent, ProfileComponent, RoleComponent, RoleKind,
+    SourceComponent, StaticSubject, SubjectUnavailable,
 };
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.
 pub type StateClauseExecutionPoints = BTreeMap<String, quire_contract_model::ExecutionPoint>;
+
+/// One protocol declaration's result through the lifecycle operation that
+/// stopped the unit. Results stay in source declaration order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProtocolResult {
+    /// The declaration passed every stage the operation reached.
+    Cleared {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The last stage the operation completed for this declaration.
+        stage: SpineStage,
+    },
+    /// The declaration emitted independently, even though another protocol
+    /// prevented the unit package from being admitted.
+    Emitted {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The emitted clause's stable structural key.
+        clause_key: String,
+        /// Canonical protocol-owned nodes retained from emission.
+        nodes: Vec<serde_json::Value>,
+    },
+    /// The declaration was refused at an attributable stage.
+    Refused {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The source-unit index of the declaration.
+        source_index: usize,
+        /// The declaration's full source span.
+        declaration_span: qsl_foundation::Span,
+        /// Stable catalog code of the primary refusal.
+        code: qsl_foundation::Code,
+        /// Stable catalog cause of the primary refusal.
+        cause: String,
+        /// The refusal locus, when the stage supplied one.
+        locus: Option<qsl_foundation::diagnostic::Locus>,
+    },
+    /// The shared protocol work budget ended before this declaration
+    /// completed its check.
+    Incomplete {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The reached typed stage limit.
+        limit: qsl_foundation::diagnostic::LimitExceeded,
+    },
+}
 
 #[cfg(test)]
 pub(crate) use lifecycle::composed_declaration;
@@ -76,12 +132,18 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    run_clause, run_clause_with_temporal_selections, ClauseArgument, ClauseArgumentValue,
-    ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
-    ClauseRunSource, ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent,
-    ConsequentSourceEvents, ConsequentState, OperationName, OverObject, TemporalPositionRefusal,
-    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
-    TraceInput,
+    admit_progress, run_clause, run_clause_with_temporal_selections, temporal_batch_exit_code,
+    temporal_batch_outcome, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
+    ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
+    ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents,
+    ConsequentState, ContradictedDimension, FiniteWindowAssessment, FiniteWindowPremises,
+    FiniteWindowReport, FiniteWindowSupport, LedgerBinding, ObservedPosition, OperationName,
+    OverObject, ProgressAssertion, ProgressClosure, ProgressCompleteness, ProgressContradiction,
+    ProgressLedger, ProgressLedgerEntry, ProgressLimitReached, ProgressRefusal, ProgressValue,
+    TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedCover,
+    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
+    TraceBinding, TraceInput,
 };
 mod refinement;
 pub use refinement::{
@@ -113,6 +175,9 @@ pub(crate) use call::{convert_outcome, kernel_undefined_reason};
 /// stage records one, the region of the unit it concerns.
 #[derive(Debug, thiserror::Error)]
 pub enum CompileRefusal {
+    /// FR-480: unit-list admission refused before the package is assembled.
+    #[error("{0}")]
+    UnitList(UnitListRefusal),
     /// E1: S1 refused the bytes, or the CST carries a diagnostic or a
     /// recovery, which E2 does not admit. Holds the first diagnostic.
     #[error("{}", .0.message)]
@@ -228,6 +293,7 @@ impl CompileRefusal {
     /// The catalog code of this refusal: the stage cause's own.
     pub fn code(&self) -> Code {
         match self {
+            Self::UnitList(refusal) => refusal.code(),
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
@@ -263,6 +329,7 @@ impl CompileRefusal {
     /// names one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::UnitList(refusal) => refusal.cause(),
             Self::Check { refusals, .. } => refusals.first()?.cause.cause(),
             Self::Profile { refusals, .. } => refusals.first().map(ProfileRefusal::cause),
             Self::DependencyInput(refusal) => refusal.cause(),
@@ -324,6 +391,7 @@ impl CompileRefusal {
     /// The stage that refused.
     pub fn stage(&self) -> SpineStage {
         match self {
+            Self::UnitList(_) => SpineStage::Intake,
             Self::Source(_) => SpineStage::Source,
             Self::Forms { .. } => SpineStage::Forms,
             Self::Intake { .. }
@@ -356,6 +424,7 @@ impl CompileRefusal {
                 | Setting::EnvironmentWorkUnits
                 | Setting::IdentityInputBytes => SpineStage::Assembly,
                 Setting::ModelDeclarationRecords
+                | Setting::ModelSequenceMaximum
                 | Setting::ModelDerivationFacts
                 | Setting::ModelEffectiveDeclarations
                 | Setting::ModelDispatchCandidates
@@ -411,7 +480,8 @@ impl CompileRefusal {
                 | Setting::TemporalEvidenceRequestBytes
                 | Setting::TemporalEvidenceResultBytes
                 | Setting::TemporalEvidenceMemberBytes
-                | Setting::InspectMaxViewEntries => SpineStage::Emit,
+                | Setting::InspectMaxViewEntries
+                | Setting::ProgressCoveredPositions => SpineStage::Emit,
             },
         }
     }
@@ -420,6 +490,7 @@ impl CompileRefusal {
     /// one.
     pub fn region(&self) -> Option<&SourceRegion> {
         match self {
+            Self::UnitList(refusal) => refusal.region(),
             Self::Source(diagnostic) => diagnostic.region.as_ref(),
             Self::Forms { region, .. }
             | Self::Intake { region, .. }
@@ -452,6 +523,116 @@ impl CompileRefusal {
                     ..
                 }
         )
+    }
+}
+
+/// FR-480's pre-S3 refusal from validating a supplied source-unit list.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum UnitListRefusal {
+    /// The package supplied no source units.
+    #[error("invalid_package/invalid-value: a source-unit list must not be empty")]
+    Empty,
+    /// Two request positions name the same source owner.
+    #[error("invalid_package/conflicting-definition: source units at positions {first} and {second} share owner {authority}/{identity}")]
+    DuplicateOwner {
+        /// Earlier request position.
+        first: usize,
+        /// Later request position.
+        second: usize,
+        /// Shared authority.
+        authority: String,
+        /// Shared identity.
+        identity: String,
+    },
+    /// A supplied library source has the owner of a source unit.
+    #[error("invalid_package/conflicting-definition: library {library} shares source owner {authority}/{identity} with unit {unit}")]
+    LibraryOwner {
+        /// Request position of the unit.
+        unit: usize,
+        /// Supplied library identity.
+        library: String,
+        /// Shared authority.
+        authority: String,
+        /// Shared identity.
+        identity: String,
+    },
+    /// Unit headers disagree on language, edition, or ordered profile identities.
+    #[error("invalid_package/conflicting-definition: headers of {first_unit:?} ({first_header:?}) and {second_unit:?} ({second_header:?}) differ")]
+    HeaderConflict {
+        /// Identity of the first unit.
+        first_unit: Box<SourceIdentity>,
+        /// Header span in the first unit.
+        first_header: Span,
+        /// Identity of the conflicting unit.
+        second_unit: Box<SourceIdentity>,
+        /// Header span in the conflicting unit.
+        second_header: Span,
+        /// Region of the conflicting unit's header.
+        region: Option<SourceRegion>,
+    },
+    /// A native declaration name is repeated across distinct units.
+    #[error("ambiguous_declaration/ambiguous-name: `{name}` is declared at unit {first_unit:?} ({first_span:?}) and unit {second_unit:?} ({second_span:?})")]
+    DuplicateName {
+        /// The repeated declared spelling.
+        name: String,
+        /// Identity of the unit holding the first declaration.
+        first_unit: Box<SourceIdentity>,
+        /// Span of the first declaration in its source.
+        first_span: Span,
+        /// Identity of the unit holding the later declaration.
+        second_unit: Box<SourceIdentity>,
+        /// Span of the later declaration in its source.
+        second_span: Span,
+    },
+    /// An import names another supplied unit instead of a library.
+    #[error("missing_import/missing-selection: import `{identity}` at {region:?} names sibling unit {unit:?} but no library is supplied")]
+    SiblingImport {
+        /// The import identity that matches a sibling unit.
+        identity: String,
+        /// Identity of the sibling unit.
+        unit: Box<SourceIdentity>,
+        /// Region of the import identity in the importing unit.
+        region: Option<SourceRegion>,
+    },
+}
+
+impl UnitListRefusal {
+    /// Catalog code for the refusal.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Empty
+            | Self::DuplicateOwner { .. }
+            | Self::LibraryOwner { .. }
+            | Self::HeaderConflict { .. } => Code::InvalidPackage,
+            Self::DuplicateName { .. } => Code::AmbiguousDeclaration,
+            Self::SiblingImport { .. } => Code::MissingImport,
+        }
+    }
+
+    /// Catalog cause for the refusal.
+    pub fn cause(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::Empty => "invalid-value",
+            Self::DuplicateOwner { .. }
+            | Self::LibraryOwner { .. }
+            | Self::HeaderConflict { .. } => "conflicting-definition",
+            Self::DuplicateName { .. } => "ambiguous-name",
+            Self::SiblingImport { .. } => "missing-selection",
+        })
+    }
+
+    /// Source region carried by a refusal, when it identifies an offending
+    /// unit header or import.
+    pub fn region(&self) -> Option<&SourceRegion> {
+        match self {
+            Self::HeaderConflict { region, .. } | Self::SiblingImport { region, .. } => {
+                region.as_ref()
+            }
+            Self::Empty
+            | Self::DuplicateOwner { .. }
+            | Self::LibraryOwner { .. }
+            | Self::DuplicateName { .. } => None,
+        }
     }
 }
 
@@ -544,6 +725,7 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         return "no error recorded".to_owned();
     };
     let message = match &first.cause {
+        AssemblyCause::EmptyUnitList => "the package has no source units".to_owned(),
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
         AssemblyCause::ImportedTypeName { name } => {
             format!("`{name}` names an imported declaration, which stands only as a callee")
@@ -1857,6 +2039,8 @@ pub struct SpineLimits {
     /// The I2 reader's ceilings for each library's emitted package the
     /// compile imports (`i2.*`).
     pub imports: qsl_package::V2ReadLimits,
+    /// The progress ledger's ceilings (FR-502).
+    pub progress: ProgressLimits,
 }
 
 /// FR-255: every compile stage's settings, each owned by one part.
@@ -1868,6 +2052,7 @@ impl qsl_foundation::SettingLimits for SpineLimits {
         bounds.extend(self.dependencies.bounds());
         bounds.extend(self.assembly.bounds());
         bounds.extend(self.imports.bounds());
+        bounds.extend(self.progress.bounds());
         bounds
     }
 
@@ -1878,6 +2063,38 @@ impl qsl_foundation::SettingLimits for SpineLimits {
             || self.dependencies.set_bound(setting, bound)
             || self.assembly.set_bound(setting, bound)
             || self.imports.set_bound(setting, bound)
+            || self.progress.set_bound(setting, bound)
+    }
+}
+
+/// The progress ledger's ceiling (FR-502).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProgressLimits {
+    /// The positions the ledger may list as covered, set by
+    /// `progress.covered_positions`. Defaults to 1000000.
+    pub covered_positions: u64,
+}
+
+/// FR-255: the `progress.*` settings.
+impl qsl_foundation::SettingLimits for ProgressLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![(Setting::ProgressCoveredPositions, self.covered_positions)]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        if setting != Setting::ProgressCoveredPositions {
+            return false;
+        }
+        self.covered_positions = bound;
+        true
+    }
+}
+
+impl Default for ProgressLimits {
+    fn default() -> Self {
+        Self {
+            covered_positions: qsl_eval::temporal::DEFAULT_COVERED_POSITIONS,
+        }
     }
 }
 

@@ -485,6 +485,7 @@ mod tests {
         mapped.set_bound(Setting::FormatOutputBytes, 36);
         mapped.set_bound(Setting::RenderOutputBytes, 38);
         mapped.set_bound(Setting::InspectMaxViewEntries, 41);
+        mapped.set_bound(Setting::ProgressCoveredPositions, 42);
         mapped.set_bound(Setting::PrepareCompileWorkUnits, 39);
         mapped.set_bound(Setting::PrepareCodeBytes, 40);
         let built = CallerLimits {
@@ -513,6 +514,9 @@ mod tests {
                 model: qsl_semantics::model::accounting::ModelNormalizationLimits {
                     intake: qsl_foundation::IntakeLimits::default().with_input_bytes(35),
                     ..SpineLimits::default().model
+                },
+                progress: crate::spine::ProgressLimits {
+                    covered_positions: 42,
                 },
                 ..SpineLimits::default()
             },
@@ -569,6 +573,61 @@ mod tests {
             };
             assert_eq!(bound_of(&requested, *setting), expected, "{setting}");
         }
+    }
+
+    /// FR-506-AC-7 and AC-8 (TC-1301 rows 14 and 15): `model.sequence_maximum`
+    /// reaches model intake through the library builder, a request's
+    /// `stage_limits` entry and the settings operand, each refusing a
+    /// declared maximum 4 at the limit 3 and admitting 3; the limit takes
+    /// `u32::MAX`, and the operand 4294967296 is a usage refusal that
+    /// changes no limit.
+    #[trace("FR-506-AC-7", "FR-506-AC-8", "TC-1301")]
+    #[test]
+    fn the_sequence_maximum_reaches_intake_through_every_entry_point() {
+        use qsl_semantics::model::intake::PackageDocument;
+        let package = |maximum: u64| {
+            serde_json::json!({
+                "types": [{"fields": [{"multiplicity": {
+                    "lower": 0, "upper": maximum, "ordered": false, "unique": true,
+                }}]}],
+            })
+            .to_string()
+            .into_bytes()
+        };
+        let by_builder = qsl_foundation::IntakeLimits::default().with_sequence_maximum(3);
+        let by_operand = CallerLimits::from_operands(["model.sequence_maximum=3"])
+            .unwrap()
+            .spine
+            .model
+            .intake;
+        let entries: StageLimits = [(Setting::ModelSequenceMaximum, 3)].into_iter().collect();
+        let by_request = CallerLimits::for_request(
+            &entries,
+            AccountingLimits::default().0,
+            ReplayLimits::default(),
+        )
+        .spine
+        .model
+        .intake;
+        for intake in [by_builder, by_operand, by_request] {
+            assert_eq!(intake.sequence_maximum, 3);
+            let refusal = PackageDocument::parse(&package(4), intake).unwrap_err();
+            let fields = refusal.cause.catalog_fields().unwrap();
+            assert_eq!(fields["bound"], "3");
+            assert_eq!(fields["actual"], "4");
+            assert_eq!(fields["setting"], "model.sequence_maximum");
+            assert!(PackageDocument::parse(&package(3), intake).is_ok());
+        }
+        let widest = CallerLimits::from_operands(["model.sequence_maximum=4294967295"]).unwrap();
+        assert_eq!(widest.spine.model.intake.sequence_maximum, u32::MAX);
+        assert!(
+            PackageDocument::parse(&package(u64::from(u32::MAX)), widest.spine.model.intake)
+                .is_ok()
+        );
+        let refusal =
+            CallerLimits::from_operands(["model.sequence_maximum=4294967296"]).unwrap_err();
+        assert_eq!(refusal.operand, "model.sequence_maximum=4294967296");
+        assert_eq!(refusal.cause, UsageCause::NotAnInteger);
     }
 
     /// FR-255-AC-5: a malformed operand is a usage refusal naming it.

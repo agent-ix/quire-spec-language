@@ -65,20 +65,26 @@ consumer's.
 - `workflow`: one slot, the `workflow-instance` requirement of the clause.
 - `roles`: one slot for each `role` node, ordered by the segments of the role's
   declaration path, each as UTF-8 bytes, each holding the role node's
-  key, its declaration region and its replication (static, or replicated
-  with its population, `max` and lifetime).
+  key, its declaration path and its replication (static, or replicated
+  with its population, `max` and a lifetime of `workflow`, `scope` or `until`).
 - `controls`: one entry for each `control` node, ordered by
   the segments of the declaration path, each as UTF-8 bytes, each holding the control's
-  key, its operator, its declaration region, its owner and its repeat
-  dimensions.
+  key, its declaration path, its operator (one of the thirteen control forms),
+  its owner and its repeat dimensions.
 - `compensations`: one entry for each `compensation` node, ordered the same
   way, each holding the template's key, its role, its forward `effect`
   control and its maximum attempts.
 
+No entry holds a source position, source text or display string: the
+declaration path and the key locate each entry, and the schema is a function
+of the nodes alone.
+
 `RuntimeBindingRequirement` records for the protocol: one record for each
 (subject kind, subject node) the operators of the protocol's nodes imply,
-each holding its subject kind, the subject node's key, its scope (the key of
-the `protocol_clause` node) and its authority and contract, both absent.
+each holding its subject kind, the subject node's key and its scope (the key of
+the `protocol_clause` node). A record holds no authority and no contract: the
+package lock's `binding_contract` selection supplies both (QSpec FR-465
+"Runtime subjects"), so the record has no member for either.
 
 ## Behavior
 
@@ -99,6 +105,10 @@ the `protocol_clause` node) and its authority and contract, both absent.
   dimension whose single value is the maximum. A control held by no `repeat`
   has no dimension. A `parallel` branch, a `choice` case and the `then` and
   `timeout` positions of an `await` add no dimension.
+- The `event` control an `await` awaits is a control entry like any other: it
+  is held by the `await`, so it takes the dimensions that enclose the `await`
+  and adds none, and its owner is the role it is `by`. The `await` itself is
+  structural.
 - The schema SHALL hold no concrete workflow identity, role instance and
   ordinal. Each is a runtime input.
 - The schema is a function of the nodes and not of the source: declaring the
@@ -123,10 +133,11 @@ the `protocol_clause` node) and its authority and contract, both absent.
   | `finish` | the workflow-closure observation |
 
   Every other operator implies none.
-- A record's scope SHALL be the key of the `protocol_clause` node, and its
-  authority and contract SHALL be absent: the consumer's binding supplies
-  them (QSpec FR-465), and the derivation never guesses an authority or a
-  contract. A record names no concrete value.
+- A record's scope SHALL be the key of the `protocol_clause` node, and it
+  SHALL hold no authority and no contract: the package lock's
+  `binding_contract` selection supplies them (QSpec FR-465), and the
+  derivation never guesses an authority or a contract. A record names no
+  concrete value.
 - A requirement is derived for a node the package holds. A construct the
   package does not hold has no requirement, and the derivation reads no
   source text, display string or name for a node's key.
@@ -137,13 +148,13 @@ the `protocol_clause` node) and its authority and contract, both absent.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-384-AC-1 | Over fixture **W** (TC-1061), the schema holds one `workflow` slot, three role slots ordered by declaration path, the 15 control entries and the one compensation entry; the owners are `Orders` for `Requested`, `Payments` for `Received`, `Charged` and `Applied`, `Fulfillment` for `East`, `West`, `Outcome`, `Poll` and `Polled`, `Orders` for `Finalized`, and structural for `Main`, `Shipments`, `Done`, `Failed` and `Limit`; a `fence` and an `await` in variants are structural. | Test (TC-1064) |
+| FR-384-AC-1 | Over fixture **W** (TC-1061), the schema holds one `workflow` slot, three role slots ordered by declaration path, the 15 control entries and the one compensation entry; the owners are `Orders` for `Requested`, `Payments` for `Received`, `Charged` and `Applied`, `Fulfillment` for `East`, `West`, `Outcome`, `Poll` and `Polled`, `Orders` for `Finalized`, and structural for `Main`, `Shipments`, `Done`, `Failed` and `Limit`; a `fence` and an `await` in variants are structural, and an `await`'s awaited `event` is an entry owned by its role. | Test (TC-1064) |
 | FR-384-AC-2 | In **W**, `Polled` has one `Iteration` dimension with domain `[0, 3)` and `Limit` one `Exhaustion` dimension with value 3; a control inside a `repeat` inside a `repeat` has two dimensions, outer first; a `repeat` with `maximum` 0 gives an empty `Iteration` domain; a `repeat` with no maximum gives an unbounded `Iteration` dimension and no `Exhaustion` entry; a control in a `parallel` branch, a `choice` case or an `await`'s `then` outside any `repeat` has none. | Test (TC-1064) |
 | FR-384-AC-3 | The schema and requirements of **W** hold no workflow identity, role instance, ordinal, delivery or clock observation; compiling **W** with no runtime input succeeds; the schema and requirements derived from the in-process package equal those derived from the package read back through the I2 reader. | Test (TC-1064) |
-| FR-384-AC-4 | Two protocols in one package that each declare a role `Payer` on the same model and a control `Charge` give distinct role keys and distinct control keys, so four distinct schema entries; **W** with its roles, channels and compensations declared in another order gives the same schema. | Test (TC-1064) |
+| FR-384-AC-4 | Two protocols in one package that each declare a role `Payer` on the same model and a control `Charge` give distinct role keys and distinct control keys, so four distinct schema entries; **W** with its roles, its channel or its compensations declared in another order, or reformatted, gives the same schema in every entry, so no entry depends on a source position. | Test (TC-1064) |
 | FR-384-AC-5 | Over a variant of **W** with a `commit`, an `effect`, a `send`, a `receive`, an `attempt`, a replicated role and a template, the requirements hold exactly the subject kinds of the table for each node: one `workflow-instance` for the clause; `role-instance` for each role, with the replicated role's marked as one for each spawned object; `message` and `send` for the `send`; `receive` and `delivery` for the `receive`; `operation-attempt`; `business-effect`; `commit`; `compensation`, `compensation-attempt` and `compensation-effect` for the template; the workflow-closure observation for `finish`; and none for a `sequence`, `choice`, `parallel`, `repeat`, `await`, `check`, `fence`, `event`, channel, queue or `terminal`. | Test (TC-1064) |
-| FR-384-AC-6 | Each requirement names its subject node's key, the `protocol_clause` key as its scope and an absent authority and contract. | Test (TC-1064) |
-| FR-384-AC-7 | No protocol node holds a requirement, a schema entry, an instance or an ordinal: the nodes of **W** contain none, and an `internal` or `external` member added to a role node is refused by QSL's I2 reader with `malformed_wire`. | Test (TC-1064) |
+| FR-384-AC-6 | Each requirement names its subject node's key and the `protocol_clause` key as its scope, and holds no authority and no contract member. | Test (TC-1064) |
+| FR-384-AC-7 | No protocol node holds a requirement, a schema entry, an instance or an ordinal: the nodes of **W** contain none, and an `internal` or `external` member bound into the body arguments of a role node is refused by QSL's I2 reader with `malformed_wire`, and the same member added as a member of the node itself, outside its body, is refused with `unknown_member`, because the node shape is closed. | Test (TC-1064) |
 | FR-384-AC-8 | A `Full` and a `Partial` template for one effect give two compensation entries and two sets of `compensation`, `compensation-attempt` and `compensation-effect` requirements, each naming its own template's key. | Test (TC-1064) |
 
 ## Dependencies

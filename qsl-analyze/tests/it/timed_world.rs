@@ -277,6 +277,17 @@ pub(crate) fn world_built(
     world_built_in(PACKAGE, document, profiles, body, keys, armed, extra)
 }
 
+/// The source text of a world's unit: the fixed header, `profiles`, the model
+/// declaration over `package`, then `body`.
+pub(crate) fn unit_text(package: &str, profiles: &str, body: &str) -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.complete/v1\";\n{profiles}\
+         model M = \"{package}\";\n{body}"
+    )
+}
+
 /// [`world_built`] over `document` written for the package `package`
 /// (`renamed_package`), for a second package of one run.
 #[allow(clippy::too_many_arguments)] // one fixture's package, text and universe
@@ -290,12 +301,7 @@ pub(crate) fn world_built_in(
     extra: &Json,
 ) -> World {
     let packages = package_input([document]).unwrap();
-    let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.model.complete/v1\";\n\
-         profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{package}\";\n{body}"
-    );
+    let unit = unit_text(package, profiles, body);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-239", "fixture", "1"),
         "fr-239.native",

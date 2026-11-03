@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
@@ -17,7 +18,7 @@ use super::{
     admit_types_with, model_field, model_operation, model_value_type, AssemblyCause, AssemblyError,
     AssemblyRefusal, TopologyFault, Unmapped,
 };
-use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
+use crate::check::{CheckCause, Owner, PackageDeclarations, SourceOwner, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
     AliasTypeRecord, ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
@@ -2750,7 +2751,7 @@ const TIME_UNITS: &str = "dimension Time;\n\
 /// FR-091-AC-44 (TC-483 step 5): `Quantity<ms>` resolves to the type of the
 /// unit node `ms` and introduces no declaration; a dimension or an unknown
 /// name refuses `missing_declaration`/`missing-name` at the name.
-#[trace("FR-091-AC-44", "TC-483")]
+#[trace("FR-091-AC-44", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-11")]
 #[test]
 fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
     let accepted =
@@ -2799,7 +2800,13 @@ fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
 
 /// FR-091-AC-44: `f(3 s)` where `f` takes `Quantity<ms>` refuses
 /// `ill_typed`/`type-mismatch`.
-#[trace("FR-091-AC-44", "FR-093-AC-34", "TC-483")]
+#[trace(
+    "FR-091-AC-44",
+    "FR-093-AC-34",
+    "TC-483",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-11"
+)]
 #[test]
 fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
     let source = format!(
@@ -2825,6 +2832,50 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
                 .catalog_code()
                 .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
         "the mismatch is located at the argument: {refusals:?}"
+    );
+}
+
+/// QSpec FR-142-AC-12: `f(d: Quantity<ms>): Quantity<ms>` returning `d`
+/// checks; returning `convert<Quantity<s>>(d)` refuses `ill_typed`/
+/// `type-mismatch` at the returned expression.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-12")]
+#[test]
+fn a_quantity_result_checks_and_a_converted_result_of_another_unit_is_a_mismatch() {
+    let returning = |body: &str| {
+        format!("{TIME_UNITS}function f using v(d: Quantity<ms>): Quantity<ms> pure {{ {body} }}")
+    };
+    assemble(&returning("d"))
+        .1
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("returning d checks");
+
+    let source = returning("convert<Quantity<s>>(d)");
+    let (text, assembled) = assemble(&source);
+    let package = assembled.expect("the unit assembles");
+    let regions = assemble(&source).1.expect("the unit assembles");
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a Quantity<s> result is not a Quantity<ms>");
+    let returned = last(&text, "convert<Quantity<s>>(d)");
+    let [refusal] = refusals.as_slice() else {
+        panic!("exactly the one result mismatch, not {refusals:?}")
+    };
+    let region = regions
+        .region(&refusal.location)
+        .expect("the refusal names a source region");
+    assert_eq!(
+        (
+            region.start(),
+            region.end(),
+            refusal.cause.catalog_code().map(|code| code.to_string())
+        ),
+        (
+            returned.start as u64,
+            returned.end as u64,
+            Some("ill_typed/type-mismatch".to_owned())
+        ),
+        "the mismatch is located at the returned expression: {refusals:?}"
     );
 }
 
@@ -3039,7 +3090,7 @@ fn a_quantity_literal_refuses_with_the_first_violated_condition_in_order() {
 /// The strict checked-package reader refuses the emitted package of a unit
 /// and a record that share a name (`AmbiguousDeclaration`); that is
 /// Remaining work: QSL-950, so this test asserts `check` only.
-#[trace("FR-091-AC-44", "TC-483")]
+#[trace("FR-091-AC-44", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-13")]
 #[test]
 fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
     let both = format!(
@@ -3074,7 +3125,7 @@ fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
 
 /// FR-091-AC-44 (QSpec FR-142-AC-13): a declaration named `Quantity` is
 /// refused at S1.
-#[trace("FR-091-AC-44", "TC-483")]
+#[trace("FR-091-AC-44", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-13")]
 #[test]
 fn a_declaration_named_quantity_is_invalid_syntax() {
     let source = text(PROFILE_V, "record Quantity { x: Boolean; }");
@@ -3392,7 +3443,13 @@ fn recursion_refusals(
     (text, refusals)
 }
 
-#[trace("FR-316-AC-2", "TC-817", "TC-818")]
+#[trace(
+    "FR-316-AC-2",
+    "TC-817",
+    "TC-818",
+    "QSpec-TC-263",
+    "QSpec-FR-143-AC-13"
+)]
 #[test]
 fn a_union_recurses_only_through_an_escaping_edge() {
     let (_, tree) = assemble(
@@ -3414,7 +3471,7 @@ fn a_union_recurses_only_through_an_escaping_edge() {
     );
 }
 
-#[trace("FR-316-AC-2", "TC-818")]
+#[trace("FR-316-AC-2", "TC-818", "QSpec-TC-263", "QSpec-FR-143-AC-13")]
 #[test]
 fn a_cycle_through_a_record_and_a_union_is_refused_at_both_declarations() {
     let (text, refusals) = recursion_refusals("record Box { inner: U; }\nunion U { Wrap(Box) }");
@@ -3638,4 +3695,262 @@ fn the_value_layer_admits_functions_and_the_package_records_its_layers() {
     .1
     .expect("the value layer admits functions, predicates and integer division");
     assert_eq!(package.header_layers, [HeaderLayer::ValueComplete]);
+}
+
+fn parsed_unit_as(
+    authority: &str,
+    identity: &str,
+    text: &str,
+) -> (RawSourceRef, qsl_forms::ParsedUnit) {
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new(authority, identity, "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the source unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let source = parsed.source().reference().clone();
+    (
+        source,
+        build_unit(&parsed).expect("S2 builds the source unit"),
+    )
+}
+
+/// FR-480-AC-2, AC-5, AC-8: the aggregate assembler resolves a function
+/// signature against another unit, keeps the declaring unit on the type
+/// node and its source region, and assigns stable identities in canonical
+/// source order independent of request order.
+#[trace("FR-480-AC-2", "FR-480-AC-5", "FR-480-AC-8")]
+#[test]
+fn aggregate_units_resolve_types_and_retain_the_declaring_source() {
+    let a_text = text("", "record Point { x: Int[0, 9]; }");
+    let b_text = text(
+        PROFILE_V,
+        "function px using v(p: Point): Int[0, 9] pure { p.x }",
+    );
+    let (source_a, unit_a) = parsed_unit_as("repo", "a", &a_text);
+    let (source_b, unit_b) = parsed_unit_as("repo", "b", &b_text);
+    let assemble = |units| {
+        PackageDeclarations::assemble_units(
+            "test/package".to_owned(),
+            units,
+            crate::model::intake::SelectedModels::default(),
+            Vec::new(),
+            super::AssemblyLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the aggregate namespace resolves Point")
+        .check(CheckingLimits::default())
+        .expect("the cross-unit function checks")
+    };
+    let first = assemble(vec![
+        (source_b.clone(), unit_b.clone()),
+        (source_a.clone(), unit_a.clone()),
+    ]);
+    let second = assemble(vec![(source_a.clone(), unit_a), (source_b.clone(), unit_b)]);
+
+    let callable = first.callable("px").expect("px is checked");
+    assert!(matches!(&callable.parameters[0].1, ValueType::Composite(_)));
+    let region = first
+        .region(&Location::root(Origin::TypeDeclaration {
+            name: "Point".to_owned(),
+        }))
+        .expect("Point resolves to its own source region");
+    assert_eq!(region.source(), &source_a);
+    assert_eq!(first.source(), &source_a);
+    assert_eq!(first.sources(), vec![&source_a, &source_b]);
+    let body_region = first
+        .region(&Location::root(Origin::Body {
+            function: "px".to_owned(),
+            index: 0,
+        }))
+        .expect("px resolves to its own source region");
+    assert_eq!(body_region.source(), &source_b);
+    assert_eq!(
+        first.function_identity("px"),
+        second.function_identity("px"),
+        "request order does not change function identity"
+    );
+    let first_point = first.checked_type_nodes().next().unwrap().node();
+    let second_point = second.checked_type_nodes().next().unwrap().node();
+    assert_eq!(first_point, second_point);
+
+    let moved_text = text(
+        PROFILE_V,
+        "record Point { x: Int[0, 9]; }\nfunction px using v(p: Point): Int[0, 9] pure { p.x }",
+    );
+    let (source_b, moved_unit) = parsed_unit_as("repo", "b", &moved_text);
+    let moved = assemble(vec![(source_b.clone(), moved_unit)]);
+    let moved_point = moved.checked_type_nodes().next().unwrap().node();
+    assert_eq!(
+        first_point, moved_point,
+        "the structural node identity remains stable when ownership moves"
+    );
+    let point_owner = |graph: &crate::check::CheckedGraph| {
+        graph
+            .semantic_graph()
+            .nodes()
+            .find(|node| {
+                node.declaration().is_some_and(|segments| {
+                    segments
+                        .last()
+                        .is_some_and(|segment| segment.as_str() == "Point")
+                })
+            })
+            .and_then(|node| node.owner())
+            .cloned()
+            .expect("Point's checked node retains its source owner")
+    };
+    assert_eq!(
+        point_owner(&first),
+        Owner::Source(SourceOwner::from(&source_a))
+    );
+    assert_eq!(
+        point_owner(&moved),
+        Owner::Source(SourceOwner::from(&source_b))
+    );
+    let px_owner = first
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.declaration().is_some_and(|segments| {
+                segments
+                    .last()
+                    .is_some_and(|segment| segment.as_str() == "px")
+            })
+        })
+        .and_then(|node| node.owner())
+        .cloned()
+        .expect("px's checked node retains its source owner");
+    assert_eq!(px_owner, Owner::Source(SourceOwner::from(&source_b)));
+    let moved_region = moved
+        .region(&Location::root(Origin::TypeDeclaration {
+            name: "Point".to_owned(),
+        }))
+        .expect("moved Point resolves to its new source region");
+    assert_eq!(moved_region.source(), &source_b);
+}
+
+/// FR-480-AC-2: a duplicate declaration is still ambiguous after the
+/// aggregate assembler has merged all units into one namespace.
+#[trace("FR-480-AC-2")]
+#[test]
+fn aggregate_units_refuse_duplicate_type_declarations() {
+    let (source_a, unit_a) =
+        parsed_unit_as("repo", "a", &text("", "record Point { x: Int[0, 9]; }"));
+    let (source_b, unit_b) =
+        parsed_unit_as("repo", "b", &text("", "record Point { y: Int[0, 9]; }"));
+    let refusal = PackageDeclarations::assemble_units(
+        "test/package".to_owned(),
+        vec![(source_a, unit_a), (source_b, unit_b)],
+        crate::model::intake::SelectedModels::default(),
+        Vec::new(),
+        super::AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("two Point declarations are ambiguous");
+    assert!(refusal.errors.iter().any(|error| matches!(
+        &error.cause,
+        AssemblyCause::AmbiguousTypeName { name, .. } if name == "Point"
+    )));
+}
+
+/// FR-480-AC-5: a dimension equivalence declared in a later unit keeps that
+/// unit's owner on its checked node and resolves its declaration region to
+/// that unit's source.
+#[trace("FR-480-AC-5")]
+#[test]
+fn aggregate_dimension_equivalence_keeps_its_declaring_source_owner() {
+    let a_text = text(
+        "",
+        "dimension Length; dimension Time; unit m : Length = rational(1, 1); unit s : Time = rational(1, 1);",
+    );
+    let b_text = text(
+        PROFILE_V,
+        "dimension Distance; dimension Duration; unit dm : Distance = rational(1, 1); unit ms : Duration = rational(1, 1); dimension Distance ~ Length by 1 dm = 1 m;\nfunction later using v(x: Quantity<dm>, y: Quantity<ms>): Boolean pure { true }",
+    );
+    let (source_a, unit_a) = parsed_unit_as("repo", "a", &a_text);
+    let (source_b, unit_b) = parsed_unit_as("repo", "b", &b_text);
+    let package = PackageDeclarations::assemble_units(
+        "test/package".to_owned(),
+        vec![(source_b.clone(), unit_b), (source_a, unit_a)],
+        crate::model::intake::SelectedModels::default(),
+        Vec::new(),
+        super::AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the cross-unit dimensions and units resolve");
+    for name in ["Distance", "Duration", "dm", "ms"] {
+        assert_eq!(
+            package.source_owners.get(name),
+            Some(&source_b),
+            "the aggregate owner map records {name} under its bare declaration name"
+        );
+    }
+    for (kind, name) in [
+        (super::super::lowering::QuantityKind::Dimension, "Distance"),
+        (super::super::lowering::QuantityKind::Dimension, "Duration"),
+        (super::super::lowering::QuantityKind::Unit, "dm"),
+        (super::super::lowering::QuantityKind::Unit, "ms"),
+    ] {
+        let origin = super::super::lowering::quantity_origin(kind, name);
+        assert_eq!(
+            package.source_owners.get(&origin),
+            Some(&source_b),
+            "the aggregate owner map records the quantity origin for {name}"
+        );
+    }
+    let checked = package
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let node = checked
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "dimension_equivalence")
+        .expect("the equivalence has a checked node");
+    assert_eq!(
+        node.owner(),
+        Some(&Owner::Source(SourceOwner::from(&source_b)))
+    );
+    for name in ["Distance", "Duration", "dm", "ms"] {
+        let owned = checked
+            .semantic_graph()
+            .nodes()
+            .find(|candidate| {
+                candidate.declaration().is_some_and(|segments| {
+                    segments
+                        .last()
+                        .is_some_and(|segment| segment.as_str() == name)
+                })
+            })
+            .unwrap_or_else(|| panic!("{name} has a checked node"));
+        assert_eq!(
+            owned.owner(),
+            Some(&Owner::Source(SourceOwner::from(&source_b))),
+            "{name} retains the source that declared it"
+        );
+    }
+    let region = checked
+        .region(&Location::root(Origin::TypeDeclaration {
+            name: super::super::lowering::equivalence_origin(0),
+        }))
+        .expect("the equivalence declaration resolves to its source");
+    assert_eq!(region.source(), &source_b);
+    for (kind, name) in [
+        (super::super::lowering::QuantityKind::Dimension, "Distance"),
+        (super::super::lowering::QuantityKind::Dimension, "Duration"),
+        (super::super::lowering::QuantityKind::Unit, "dm"),
+        (super::super::lowering::QuantityKind::Unit, "ms"),
+    ] {
+        let origin = super::super::lowering::quantity_origin(kind, name);
+        let region = checked
+            .region(&Location::root(Origin::TypeDeclaration { name: origin }))
+            .unwrap_or_else(|| panic!("{name}'s type declaration resolves to a region"));
+        assert_eq!(
+            region.source(),
+            &source_b,
+            "{name}'s type declaration region uses its declaring source"
+        );
+    }
 }

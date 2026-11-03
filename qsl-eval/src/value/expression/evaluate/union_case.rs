@@ -244,6 +244,7 @@ fn with_work(work_units: u64) -> ScalarLimits {
 /// FR-322-AC-1: `area` takes the arm of the active member, binding its
 /// payload positionally.
 #[trace("FR-322-AC-1", "TC-831")]
+#[trace("QSpec-FR-146-AC-11", "QSpec-TC-265")]
 #[test]
 fn case_selects_the_active_members_arm_and_binds_its_payload() {
     let world = world();
@@ -261,6 +262,7 @@ fn case_selects_the_active_members_arm_and_binds_its_payload() {
 
 /// FR-322-AC-1: a `case` in an arm body evaluates its own inner arm.
 #[trace("FR-322-AC-1", "TC-831")]
+#[trace("QSpec-FR-146-AC-11", "QSpec-TC-265")]
 #[test]
 fn a_case_in_an_arm_body_evaluates_its_inner_arm() {
     let world = world();
@@ -325,6 +327,7 @@ fn small_sum(nodes: &mut Nodes) -> NodeId {
 /// no arm, and a construction's first stopped argument is its outcome with no
 /// later argument evaluated and no value built.
 #[trace("FR-322-AC-2", "TC-831")]
+#[trace("QSpec-FR-146-AC-13", "QSpec-TC-399")]
 #[test]
 fn a_stopped_scrutinee_or_argument_is_the_outcome_with_nothing_after_it() {
     let world = world();
@@ -417,7 +420,8 @@ fn a_scrutinee_matching_no_arm_is_an_s6a_internal_fault() {
 /// arguments, for the value's occurrences; a `case` charges its scrutinee and
 /// then its selected body and nothing for selection, binding or an unselected
 /// arm; one work unit below the total stops at the body's last work point.
-#[trace("FR-322-AC-3", "TC-832")]
+#[trace("FR-322-AC-3", "TC-832", "QSpec-TC-399", "QSpec-FR-143-AC-14")]
+#[trace("QSpec-FR-146-AC-13", "QSpec-TC-399")]
 #[test]
 fn construction_and_case_charge_exactly_their_accounting_points() {
     let world = world();
@@ -577,7 +581,13 @@ fn elements_of(world: &World, kind: CollectionKind, members: &[(&str, &[i64])]) 
 /// (member identifier bytes, then payload positions) whatever the input
 /// order, a bag keeps both equal values, an ordered set keeps first
 /// occurrences in input order, and a sequence keeps every occurrence.
-#[trace("FR-323-AC-1", "FR-323-AC-2", "TC-833")]
+#[trace(
+    "FR-323-AC-1",
+    "FR-323-AC-2",
+    "TC-833",
+    "QSpec-TC-262",
+    "QSpec-FR-143-AC-12"
+)]
 #[test]
 fn collections_of_unions_order_dedupe_and_count_by_the_union_key() {
     let world = world();

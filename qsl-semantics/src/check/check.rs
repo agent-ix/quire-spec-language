@@ -48,11 +48,12 @@ use qsl_foundation::source::node_table::{
     standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList,
 };
 use quire_checked::node::{
-    Arithmetic, CheckedLiteral, Connective, NodeKind, OrderedKind, RecordField, RecordSlot, Visit,
+    Arithmetic, CheckedLiteral, Connective, ConnectiveOrigin, NodeKind, OrderedKind, RecordField,
+    RecordSlot, Visit,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod native_literal;
 mod typing;
@@ -372,6 +373,15 @@ pub struct PackageDeclarations {
     /// record, tuple and function node key (FR-092). The checked graph carries it on for the lock's
     /// `sources` entry. `check` holds no constant owner.
     pub source: qsl_foundation::source::provenance::RawSourceRef,
+    /// All admitted source references in canonical owner order.
+    pub(crate) sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
+    /// Source owner for each top-level declaration admitted from the
+    /// aggregate unit list. A missing entry means the single-source legacy
+    /// assembly path, whose owner is `source`.
+    pub(crate) source_owners: BTreeMap<String, qsl_foundation::source::provenance::RawSourceRef>,
+    /// Source reference for each ordinary function form, by declaration
+    /// index, retained for owner-aware occurrence regions.
+    pub(crate) function_sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
     /// The package's name: the package manifest's top-level `name`, required
     /// on every compile or check request (FR-091-OQ-3). It is the `package`
     /// of every source-owned declared or derived node key. A unit label
@@ -690,7 +700,10 @@ impl PackageDeclarations {
             selected_exact_identity_rows: (Vec::new(), Vec::new()),
             selected_tuple_declaration_rows: Vec::new(),
             pending_types: None,
-            source,
+            source: source.clone(),
+            sources: vec![source],
+            source_owners: BTreeMap::new(),
+            function_sources: Vec::new(),
             package_name: package_name.into(),
             protocol_profile: None,
             header_layers: Vec::new(),
@@ -947,6 +960,8 @@ pub struct Scope {
     index: ScopeIndex,
     /// Each admitted import by its qualifier (ADR-015 D-5).
     imports: BTreeMap<String, super::AdmittedImport>,
+    /// Predicate calls resolved while this one package is checked.
+    pub(crate) dependency_references: Arc<Mutex<Vec<super::PendingDependencyReference>>>,
 }
 
 qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, model_selections: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
@@ -1149,6 +1164,7 @@ impl Scope {
             symmetric_objects: BTreeMap::new(),
             index,
             imports: BTreeMap::new(),
+            dependency_references: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1369,14 +1385,44 @@ impl Scope {
     }
 
     /// The admitted import whose qualifier is `qualifier`.
-    pub(crate) fn imported(&self, qualifier: &str) -> Option<&super::AdmittedImport> {
+    pub(crate) fn imported<'a>(&'a self, qualifier: &str) -> Option<&'a super::AdmittedImport> {
         self.imports.get(qualifier)
+    }
+
+    pub(crate) fn record_dependency_reference(&self, reference: super::PendingDependencyReference) {
+        self.dependency_references
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(reference);
+    }
+
+    pub(crate) fn take_dependency_references(&self) -> Vec<super::PendingDependencyReference> {
+        std::mem::take(
+            &mut *self
+                .dependency_references
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    pub(crate) fn imported_for_source<'a>(
+        &'a self,
+        source: Option<&qsl_foundation::source::provenance::RawSourceRef>,
+        qualifier: &str,
+    ) -> Option<&'a super::AdmittedImport> {
+        match source {
+            Some(source) => self.imports.get(&source_import_key(source, qualifier)),
+            None => self.imported(qualifier),
+        }
     }
 
     /// Every admitted import, for typed consumers that resolve declarations
     /// by their selected model identity rather than the library alias.
     pub(crate) fn imported_packages(&self) -> impl Iterator<Item = &super::AdmittedImport> {
-        self.imports.values()
+        let mut seen = BTreeSet::new();
+        self.imports
+            .values()
+            .filter(move |import| seen.insert(import.identity.as_str()))
     }
 
     /// Every type `name` binds -- an alias, composite, enum or object type --
@@ -1668,6 +1714,20 @@ impl Scope {
     }
 }
 
+pub(crate) fn source_import_key(
+    source: &qsl_foundation::source::provenance::RawSourceRef,
+    qualifier: &str,
+) -> String {
+    format!(
+        "\0{}:{}{}:{}{}",
+        source.authority().len(),
+        source.authority(),
+        source.identity().len(),
+        source.identity(),
+        qualifier
+    )
+}
+
 /// Every declared function signature, index-aligned with the package's
 /// functions, with a by-name index built once so resolving a call
 /// is a map lookup, not a scan of every signature.
@@ -1772,6 +1832,7 @@ struct Local {
 /// One typing pass over a function or standalone expression.
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
+    source_owner: Option<qsl_foundation::source::provenance::RawSourceRef>,
     complete_value: bool,
     /// The derived StateModel family of a helper function body.
     model_family: bool,
@@ -2046,6 +2107,7 @@ fn node(kind: NodeKind<NodeId>, value_type: ValueType, location: &Location) -> N
         value_type,
         location: location.clone(),
         equality_producer: None,
+        ordering_part: false,
     }
 }
 
@@ -2141,6 +2203,8 @@ enum AliasStep<'e> {
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
         ExprNode::Integer(_)
+        | ExprNode::Float32(_)
+        | ExprNode::Float64(_)
         | ExprNode::Rational(..)
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
@@ -2194,6 +2258,7 @@ impl Typer<'_> {
                     value_type: required.clone(),
                     location,
                     equality_producer: None,
+                    ordering_part: false,
                 })
             }
             _ => Err(mismatch(&node.location)),
@@ -2220,6 +2285,7 @@ impl<'a> Typer<'a> {
     ) -> Self {
         Self {
             scope,
+            source_owner: None,
             complete_value: scope.complete_value,
             model_family: false,
             signatures,
@@ -2241,6 +2307,20 @@ impl<'a> Typer<'a> {
             hyper: None,
             presence_places: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_source_owner(
+        mut self,
+        source: Option<qsl_foundation::source::provenance::RawSourceRef>,
+    ) -> Self {
+        self.source_owner = source;
+        self
+    }
+
+    pub(crate) fn imported(&self, qualifier: &str) -> Option<&'a super::AdmittedImport> {
+        let scope: &'a Scope = self.scope;
+        scope.imported_for_source(self.source_owner.as_ref(), qualifier)
     }
 
     /// The static range of the integer `node` computes (FR-139).
@@ -2318,6 +2398,9 @@ impl<'a> Typer<'a> {
 
     /// Borrow the enclosing family's stage state for nested model checks.
     pub(crate) fn with_context(mut self, cx: crate::family::CheckContext<'a, Scope>) -> Self {
+        if let Some(owner) = cx.source_owner() {
+            self.source_owner = Some(owner.clone());
+        }
         self.context = Some(cx);
         self
     }
@@ -2343,7 +2426,12 @@ impl<'a> Typer<'a> {
         .map(|staged| staged.into_value())
         .map_err(|failure| match failure {
             StageFailure::Refused(refusal) => refusal,
+            StageFailure::RefusedWithPayload(refusal, _) => *refusal,
             StageFailure::Limit(limit) => CheckRefusal {
+                location: location.clone(),
+                cause: super::limit_cause(&limit),
+            },
+            StageFailure::LimitWithPayload(limit, _) => CheckRefusal {
                 location: location.clone(),
                 cause: super::limit_cause(&limit),
             },
@@ -3107,6 +3195,11 @@ impl<'a> Typer<'a> {
         right: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        if matches!(left.value_type, ValueType::Float(_))
+            || matches!(right.value_type, ValueType::Float(_))
+        {
+            return self.float_ordering(operator, left, right, location);
+        }
         let kind = match (&left.value_type, &right.value_type) {
             (l, r) if is_integer(l) && is_integer(r) => OrderedKind::Integers,
             (ValueType::Rational(_), ValueType::Rational(_)) => OrderedKind::Rationals,
@@ -3134,11 +3227,7 @@ impl<'a> Typer<'a> {
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 OrderedKind::Quantities
             }
-            // FR-148 selects IEEE ordering only through the `totalOrder`
-            // intrinsic; the grammar's orderings select none.
-            (ValueType::Float(_), _)
-            | (_, ValueType::Float(_))
-            | (ValueType::Boolean, ValueType::Boolean)
+            (ValueType::Boolean, ValueType::Boolean)
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))
             | (ValueType::Collection(_), ValueType::Collection(_))
@@ -3156,6 +3245,124 @@ impl<'a> Typer<'a> {
             ValueType::Boolean,
             location,
         ))
+    }
+
+    /// FR-397 "Comparison": an ordering over two operands of one float type
+    /// is the IEEE quiet comparison, a Boolean composition of
+    /// `numericEqual` and `totalOrder`. With `N(x)` for `numericEqual(x, x)`,
+    /// `a < b` is `N(a) and N(b) and (totalOrder(a, b) and not
+    /// numericEqual(a, b))` and `a <= b` is `N(a) and N(b) and
+    /// (totalOrder(a, b) or numericEqual(a, b))`; `a > b` and `a >= b` are
+    /// `b < a` and `b <= a` over the same operand nodes.
+    fn float_ordering(
+        &mut self,
+        operator: OrderingOperator,
+        left: Node,
+        right: Node,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let (ValueType::Float(left_type), ValueType::Float(right_type)) =
+            (&left.value_type, &right.value_type)
+        else {
+            return Err(mismatch(location));
+        };
+        if left_type != right_type {
+            return Err(mismatch(location));
+        }
+        // Each operand is evaluated once and read by every part of the
+        // composition: an operand that is not already a slot read or a
+        // literal is bound by a `let` around the composition, the left one
+        // outermost so evaluation keeps source order.
+        let mut bindings = Vec::new();
+        let mut operand = |this: &mut Self, operand: Node| {
+            if matches!(operand.kind, NodeKind::Local(_) | NodeKind::Literal(_)) {
+                return this.push(operand);
+            }
+            let value_type = operand.value_type.clone();
+            let value = this.push(operand);
+            let slot = this.fresh_slot("ieee_operand");
+            bindings.push((slot, value));
+            this.push(node(NodeKind::Local(slot), value_type, location))
+        };
+        let (left, right) = (operand(self, left), operand(self, right));
+        let (lesser, greater, strict) = match operator {
+            OrderingOperator::Less => (left, right, true),
+            OrderingOperator::LessOrEqual => (left, right, false),
+            OrderingOperator::Greater => (right, left, true),
+            OrderingOperator::GreaterOrEqual => (right, left, false),
+        };
+        let boolean = |this: &mut Self, kind| this.push(node(kind, ValueType::Boolean, location));
+        let part = |this: &mut Self, kind| {
+            let mut part = node(kind, ValueType::Boolean, location);
+            part.ordering_part = true;
+            this.push(part)
+        };
+        let lesser_ordinary = part(self, NodeKind::IeeeNumericEquality(lesser, lesser));
+        let greater_ordinary = part(self, NodeKind::IeeeNumericEquality(greater, greater));
+        let both_ordinary = boolean(
+            self,
+            NodeKind::Connective(
+                Connective::And,
+                ConnectiveOrigin::Synthesized,
+                lesser_ordinary,
+                greater_ordinary,
+            ),
+        );
+        let precedes = boolean(
+            self,
+            NodeKind::IeeeTotalOrder(OrderedKind::Float, lesser, greater),
+        );
+        let equal = part(self, NodeKind::IeeeNumericEquality(lesser, greater));
+        let relation = if strict {
+            let apart = boolean(self, NodeKind::Not(equal));
+            boolean(
+                self,
+                NodeKind::Connective(
+                    Connective::And,
+                    ConnectiveOrigin::Synthesized,
+                    precedes,
+                    apart,
+                ),
+            )
+        } else {
+            boolean(
+                self,
+                NodeKind::Connective(
+                    Connective::Or,
+                    ConnectiveOrigin::Synthesized,
+                    precedes,
+                    equal,
+                ),
+            )
+        };
+        let mut composed = node(
+            NodeKind::Connective(
+                Connective::And,
+                ConnectiveOrigin::Synthesized,
+                both_ordinary,
+                relation,
+            ),
+            ValueType::Boolean,
+            location,
+        );
+        for (slot, value) in bindings.into_iter().rev() {
+            let body = self.push(composed);
+            composed = node(
+                NodeKind::Let { slot, value, body },
+                ValueType::Boolean,
+                location,
+            );
+        }
+        Ok(composed)
+    }
+
+    /// A slot that no source name can read, for a value the checker binds
+    /// itself.
+    fn fresh_slot(&mut self, name: &str) -> Slot {
+        let slot = self.slots;
+        self.slots = self.slots.saturating_add(1);
+        self.slot_names.push(format!("{name}_{slot}"));
+        slot
     }
 
     /// `left op right` for `+`, `-`, `*` and `/`, over its two typed
@@ -4457,7 +4664,7 @@ fn catalogued_step(
             ValueType::Integer,
         )
         | (
-            NodeKind::Connective(Connective::And | Connective::Or, left, right),
+            NodeKind::Connective(Connective::And | Connective::Or, _, left, right),
             ValueType::Boolean,
         ) => (*left, *right),
         _ => return false,

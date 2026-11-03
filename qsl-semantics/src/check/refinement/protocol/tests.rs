@@ -868,6 +868,27 @@ fn a_refusal_of_a_row_outside_the_clause_is_reported_beside_a_refused_clause() {
         )),
         "no coverage refusal: {found:?}"
     );
+    // The one-list check reports the protocol's own refusals first, then the
+    // refinement's row refusal, and nothing a later stage adds in
+    // consequence of the refused protocol.
+    let first_row = found
+        .iter()
+        .position(|refused| refused.refinement_or_none().is_some())
+        .expect("the row refusal is reported");
+    assert!(
+        found[..first_row]
+            .iter()
+            .all(|refused| matches!(refused.refusal.cause, CheckCause::ProtocolAnchor(_)))
+            && first_row > 0,
+        "protocol refusals lead: {found:?}"
+    );
+    assert!(
+        found.iter().all(|refused| matches!(
+            refused.refusal.cause,
+            CheckCause::ProtocolAnchor(_) | CheckCause::Refinement(_)
+        )),
+        "no later-stage consequence: {found:?}"
+    );
 }
 
 impl Refused {

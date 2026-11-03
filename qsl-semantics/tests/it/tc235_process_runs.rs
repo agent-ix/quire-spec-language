@@ -462,14 +462,14 @@ fn tc235_m10_population_members_and_frame_creates_name_object_types_only() {
             type_named_mut(document, "Order")["operations"] = json!([open]);
         })
     };
-    let package = admitted(&creating("Fulfilment"), 22);
+    let package = admitted(&creating("Fulfilment"), 23);
     assert_eq!(
         operation_of(&package, "Order/open").effect.creates,
         [key("Fulfilment")]
     );
 
     // The frame entry carries the operation, the entry and its locus.
-    let refusals = normalized_refusals(&creating("OrderStore"), 22);
+    let refusals = normalized_refusals(&creating("OrderStore"), 23);
     assert_eq!(
         refusals.iter().map(seen).collect::<Vec<_>>(),
         [Seen {

@@ -149,15 +149,15 @@ fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
 }
 
 fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> CheckedPackage {
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = types;
+    declarations.functions = functions;
+    declarations.ieee_profile = Some(ieee_profile());
     CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            functions,
-            ieee_profile: Some(ieee_profile()),
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("the fixture functions check"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the fixture functions check"),
     )
 }
 
@@ -337,15 +337,13 @@ const NOT_LOWERED: [&str; 8] = [
 /// Plan rows and names exact missing per-fact witnesses for Text, Enum, and
 /// Quantity schedules.
 ///
-/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
+/// Fails when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
 #[trace("FR-093-AC-13", "TC-416")]
 #[test]
 fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
     let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2/fixtures");
     let cases = cases();
     let mut hit = vec![false; cases.len()];

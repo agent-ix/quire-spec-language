@@ -110,7 +110,10 @@ typed failure without a successful artifact.
 
 Each library source file SHALL count toward `dependent_bytes` by its size,
 with the model and program sources; every unit in an array `program` counts
-as a program source. No limit counts library files.
+as a program source. Each library source and each program unit also counts
+toward FR-026's shared 64-selected-file ceiling under the file category
+`programs`; a request selecting 64 libraries and one program exceeds it
+(FR-027-AC-13).
 
 ## Acceptance Criteria
 

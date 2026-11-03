@@ -247,10 +247,15 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
             body,
         )
     };
-    let declarations = PackageDeclarations {
-        types,
-        models: vec![model],
-        functions: vec![
+    let declarations = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types;
+        declarations.models = vec![model];
+        declarations.functions = vec![
             function("Body", Expression::boolean(true)),
             function("Guard", Expression::call("GuardCheck".to_owned(), vec![])),
             FunctionDeclaration::new(
@@ -260,8 +265,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
                 None,
                 Expression::boolean(true),
             ),
-        ],
-        dispatch_operations: vec![DispatchOperation {
+        ];
+        declarations.dispatch_operations = vec![DispatchOperation {
             receiver_type: owner.clone(),
             member: "step".to_owned(),
             parameters: vec![],
@@ -269,8 +274,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
             selected_operation_owner: owner.clone(),
             selected_operation: "step".to_owned(),
             table: 0,
-        }],
-        dispatch_tables: vec![DispatchTable::new(
+        }];
+        declarations.dispatch_tables = vec![DispatchTable::new(
             vec![(
                 owner.clone(),
                 DispatchCandidate {
@@ -280,12 +285,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
                 },
             )],
             1,
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     };
     qsl_package::CheckedPackage::link(
         declarations
@@ -749,9 +750,13 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
 /// resolves every quantity type, admission matches argument units to
 /// parameter units, and an expression checked against another graph is
 /// refused before evaluation (#2098, FR-049-AC-1). The object-environment
-/// route is open under QSL-1470: a caller-supplied `ObjectEnvironment` or
-/// `ObjectClosure` typed under a different unit is not checked by
-/// `CheckedPackage::evaluate`. The probe drives the machine directly.
+/// route is closed too (QSL-1470, QSL-1565, FR-049-AC-2/AC-3): a call or
+/// expression entry refuses an object environment holding a value that is
+/// not of the declared type under the package's own types,
+/// `invalid_runtime_input`/`wrong-value-kind`, and an attribute read refuses
+/// it on the entries that do not admit the environment
+/// (`equality_matrix.rs`). No caller input reaches this fault, so the probe
+/// drives the machine directly.
 #[test]
 #[trace("TC-917", "FR-090-AC-15")]
 fn an_unresolved_unit_past_admission_is_an_internal_fault() {
@@ -1047,13 +1052,14 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
         &[],
     )
     .unwrap();
-    let graph = qsl_semantics::check::PackageDeclarations {
-        ieee_profile: Some(profile),
-        ..qsl_semantics::check::PackageDeclarations::new(
+    let graph = {
+        let mut declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.ieee_profile = Some(profile);
+        declarations
     }
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .unwrap();
@@ -1107,13 +1113,15 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
             ),
         ]),
     );
-    let graph = qsl_semantics::check::PackageDeclarations {
-        types: quire_semantic_value::declaration::TypeEnvironment::new([declaration], []).unwrap(),
-        ..qsl_semantics::check::PackageDeclarations::new(
+    let graph = {
+        let mut declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types =
+            quire_semantic_value::declaration::TypeEnvironment::new([declaration], []).unwrap();
+        declarations
     }
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .unwrap();
@@ -1139,18 +1147,74 @@ fn object_package(
     let (types, model) = admitted_owner_fixture(vec![
         quire_semantic_value::declaration::FieldDeclaration::new("edge", value_type, presence),
     ]);
-    let graph = qsl_semantics::check::PackageDeclarations {
-        types,
-        models: vec![model],
-        ..qsl_semantics::check::PackageDeclarations::new(
+    let graph = {
+        let mut declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.models = vec![model];
+        declarations
     }
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .unwrap();
     qsl_package::CheckedPackage::link(graph)
+}
+
+/// QSL-1470 (FR-049-AC-2/AC-3): the protocol reader's attribute read and
+/// `reaches`'s edge read take their slot through `admitted_slot`, so a stored
+/// value that is not of the package's declared type refuses instead of
+/// reaching a shape fault or projecting another type.
+#[test]
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+fn the_reader_and_edge_reads_refuse_a_stored_value_of_another_type() {
+    let reference_type = ValueType::Reference(reference().object_type().clone());
+    let field = FieldRef::new(reference().object_type().clone(), "edge");
+    let storage = object_package(ValueType::Boolean, quire_exact::Presence::Optional);
+    let closure = quire_semantic_value::object_closure::ObjectClosure::new(
+        storage.graph().scope().types(),
+        [(
+            reference(),
+            vec![("edge", FieldValue::Present(Value::Boolean(true)))],
+        )],
+        &[],
+    )
+    .unwrap();
+    let package = object_package(reference_type.clone(), quire_exact::Presence::Required);
+    let graph = package.graph();
+    let objects = ObjectEnvironment::new(closure);
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(
+        graph.scope(),
+        graph,
+        &objects,
+        &mut meter,
+        graph.dispatch_tables(),
+    );
+    let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
+    assert!(matches!(
+        machine.edge_targets(literal.root(), &reference(), &field),
+        Err(Halt::Family(FamilyResult::Refused(_)))
+    ));
+    set_frames(
+        &mut machine,
+        vec![vec![Some(Value::Reference(reference()))]],
+    );
+    let read = ReaderRoot {
+        slot: 0,
+        field: qsl_package::ReaderProtocolField::Attribute {
+            owner: field.owner.clone(),
+            name: field.name.to_string(),
+        },
+        optional: false,
+        derefed: false,
+        value_type: reference_type.clone(),
+    };
+    assert!(matches!(
+        machine.eval_reader_read(read),
+        Err(Halt::Family(FamilyResult::Refused(_)))
+    ));
 }
 
 #[test]
@@ -1226,18 +1290,29 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
             &[],
         )
         .unwrap();
+        // The stored slot is read past admission (a mismatched slot is caller
+        // input that `edge_targets` refuses), so the shape sites are probed
+        // on the slot itself.
         let package = object_package(expected, quire_exact::Presence::Required);
-        probe_package!(
-            identifier,
-            m,
-            package,
-            ObjectEnvironment::new(closure),
-            [],
-            {
-                m.edge_targets(literal.root(), &reference(), &field)
-                    .map(|_| ())
-            }
-        );
+        let declared = package
+            .graph()
+            .scope()
+            .types()
+            .attributes(reference().object_type().clone())
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let slot = closure
+            .attribute(storage.graph().scope().types(), &reference(), &field)
+            .unwrap()
+            .clone();
+        let fault = match Machine::slot_edge_targets(declared.field(), &slot) {
+            Err(Halt::Fault(fault)) => fault,
+            _ => panic!("producer was not reached: {identifier}"),
+        };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), identifier);
     }
     for stored in [FieldValue::Absent, FieldValue::Null] {
         let package = object_package(reference_type.clone(), quire_exact::Presence::Optional);
@@ -1402,14 +1477,14 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
 
 #[test]
 #[trace(
-    "TC-918",
-    "FR-096-AC-19",
-    "FR-090-AC-17",
+    "TC-136",
+    "FR-049-AC-2",
+    "FR-049-AC-3",
     "FR-401-AC-9",
     "FR-401-AC-10",
     "TC-1191"
 )]
-fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
+fn an_out_of_type_stored_value_is_refused_at_the_public_call_and_evaluate_entries() {
     use super::super::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::PackageDeclarations;
@@ -1516,104 +1591,100 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                 package.evaluate(&checked, arguments, &objects, &mut meter)
             };
             if stored < 0 {
-                let Err(CallFailure::Fault(fault)) = result else {
-                    panic!("received typed kernel fault");
+                // QSL-1565 (FR-049-AC-2/AC-3): the stored -1 is caller input
+                // outside the declared `Int[0, 9]`, so the entry refuses the
+                // object environment before any charge, rather than reaching
+                // the equality-source fault.
+                let record = match result {
+                    Err(CallFailure::Admission(failure)) => match *failure {
+                        quire_eval::CallAdmissionFailure::Refused(record) => record,
+                        other => panic!("an entry refusal, not {other:?}"),
+                    },
+                    other => panic!("an out-of-type stored value refuses at entry: {other:?}"),
                 };
-                assert_eq!(fault.stage(), "S6a");
-                assert_eq!(fault.invariant(), "checked-program-invariant");
                 assert_eq!(
-                    fault.kernel_cause(),
-                    Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
+                    (record.record.catalog.code(), record.record.catalog.cause()),
+                    ("invalid_runtime_input", "wrong-value-kind")
                 );
-                assert_eq!(
-                    fault.category(),
-                    quire_semantic_value::catalog::Category::InternalFailure
+                assert!(meter.admitted_charges().is_empty());
+                continue;
+            }
+            assert!(matches!(
+                result.unwrap().outcome,
+                quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+            ));
+            if call {
+                let mut denied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                    .with_injected_denial(quire_exact::InjectedDenial {
+                        point: ChargePoint::FunctionCall,
+                        occurrence: std::num::NonZeroU64::new(1).unwrap(),
+                    });
+                let outcome = package
+                    .call(
+                        &QualifiedName::unqualified("Compare").unwrap(),
+                        vec![Value::Reference(reference())],
+                        &objects,
+                        &mut denied,
+                    )
+                    .unwrap();
+                assert!(
+                    matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                    if record.charge_point == ChargePoint::FunctionCall)
                 );
-                let expected: &[ChargePoint] = if call {
-                    &[ChargePoint::FunctionCall]
-                } else {
-                    &[]
-                };
-                assert_eq!(admitted_charge_points(&meter), expected);
-                if call {
-                    let mut denied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
-                        .with_injected_denial(quire_exact::InjectedDenial {
-                            point: ChargePoint::FunctionCall,
-                            occurrence: std::num::NonZeroU64::new(1).unwrap(),
-                        });
+                assert!(denied.admitted_charges().is_empty());
+                for cause in [
+                    quire_exact::CancelCause::Requested,
+                    quire_exact::CancelCause::Deadline,
+                ] {
+                    let cancel = quire_exact::Cancel::new();
+                    cancel.cancel(cause);
+                    let mut stopped = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                        .with_cancel(cancel.clone());
                     let outcome = package
                         .call(
                             &QualifiedName::unqualified("Compare").unwrap(),
                             vec![Value::Reference(reference())],
                             &objects,
-                            &mut denied,
+                            &mut stopped,
                         )
                         .unwrap();
                     assert!(
                         matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
                         if record.charge_point == ChargePoint::FunctionCall)
                     );
-                    assert!(denied.admitted_charges().is_empty());
-                    for cause in [
-                        quire_exact::CancelCause::Requested,
-                        quire_exact::CancelCause::Deadline,
-                    ] {
-                        let cancel = quire_exact::Cancel::new();
-                        cancel.cancel(cause);
-                        let mut stopped = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
-                            .with_cancel(cancel.clone());
-                        let outcome = package
-                            .call(
-                                &QualifiedName::unqualified("Compare").unwrap(),
-                                vec![Value::Reference(reference())],
-                                &objects,
-                                &mut stopped,
-                            )
-                            .unwrap();
-                        assert!(
-                            matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
-                            if record.charge_point == ChargePoint::FunctionCall)
-                        );
-                        assert_eq!(cancel.tripped(), Some(cause));
-                        assert!(stopped.admitted_charges().is_empty());
+                    assert_eq!(cancel.tripped(), Some(cause));
+                    assert!(stopped.admitted_charges().is_empty());
 
-                        // FR-401-AC-10: `call_supplied` under a run over a
-                        // different, uncancelled handle gives the same located
-                        // incomplete result, and leaves the run's handle alone.
-                        let caller = quire_exact::Cancel::new();
-                        let mut run = quire_semantic_value::supplied_stop::SuppliedRun::new(
-                            quire_semantic_value::supplied_stop::SuppliedLimits::default(),
-                            caller.clone(),
+                    // FR-401-AC-10: `call_supplied` under a run over a
+                    // different, uncancelled handle gives the same located
+                    // incomplete result, and leaves the run's handle alone.
+                    let caller = quire_exact::Cancel::new();
+                    let mut run = quire_semantic_value::supplied_stop::SuppliedRun::new(
+                        quire_semantic_value::supplied_stop::SuppliedLimits::default(),
+                        caller.clone(),
+                    )
+                    .unwrap();
+                    let meter_handle = quire_exact::Cancel::new();
+                    meter_handle.cancel(cause);
+                    let mut supplied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                        .with_cancel(meter_handle.clone());
+                    let outcome = package
+                        .call_supplied(
+                            &QualifiedName::unqualified("Compare").unwrap(),
+                            vec![Value::Reference(reference())],
+                            &objects,
+                            &mut supplied,
+                            &mut run,
                         )
                         .unwrap();
-                        let meter_handle = quire_exact::Cancel::new();
-                        meter_handle.cancel(cause);
-                        let mut supplied =
-                            Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
-                                .with_cancel(meter_handle.clone());
-                        let outcome = package
-                            .call_supplied(
-                                &QualifiedName::unqualified("Compare").unwrap(),
-                                vec![Value::Reference(reference())],
-                                &objects,
-                                &mut supplied,
-                                &mut run,
-                            )
-                            .unwrap();
-                        assert!(
-                            matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
-                            if record.charge_point == ChargePoint::FunctionCall)
-                        );
-                        assert!(supplied.admitted_charges().is_empty());
-                        assert_eq!(meter_handle.tripped(), Some(cause));
-                        assert_eq!(caller.tripped(), None);
-                    }
+                    assert!(
+                        matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                        if record.charge_point == ChargePoint::FunctionCall)
+                    );
+                    assert!(supplied.admitted_charges().is_empty());
+                    assert_eq!(meter_handle.tripped(), Some(cause));
+                    assert_eq!(caller.tripped(), None);
                 }
-            } else {
-                assert!(matches!(
-                    result.unwrap().outcome,
-                    quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
-                ));
             }
         }
     }
@@ -1753,7 +1824,9 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
             then: ids[1],
             otherwise: ids[1],
         }),
-        body(|ids| NodeKind::Connective(Connective::And, ids[0], ids[1])),
+        body(|ids| {
+            NodeKind::Connective(Connective::And, ConnectiveOrigin::Authored, ids[0], ids[1])
+        }),
         body(|ids| NodeKind::Pre(ids[0])),
     ] {
         probe!("evaluation-apply-node-invalid", m, [], {

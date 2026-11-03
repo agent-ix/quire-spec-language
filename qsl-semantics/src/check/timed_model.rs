@@ -4612,6 +4612,7 @@ fn state_view<'v>(
     presence_places: &'v [PresencePlace],
 ) -> ClauseView<'v> {
     ClauseView {
+        source_owner: None,
         kind: StateClauseKind::Invariant,
         complete_value,
         context: Some(draft.context.clone()),
@@ -4665,6 +4666,7 @@ fn check_part(
         None => None,
         Some(form) => {
             let view = ClauseView {
+                source_owner: None,
                 kind: StateClauseKind::Precondition,
                 complete_value: super::state_clause::is_complete_value(&clause.selection),
                 context: Some(clause.context.clone()),
@@ -4935,6 +4937,7 @@ pub(crate) fn check(
                                     element_type(checking, &written.context, &path, reset.span)?;
                                 let binders = [(name.clone(), element)];
                                 let view = ClauseView {
+                                    source_owner: None,
                                     kind: StateClauseKind::Precondition,
                                     complete_value: checking.complete_value,
                                     context: Some(written.context.clone()),
@@ -5019,4 +5022,36 @@ pub(crate) fn not_emitted(model: &TimedModel) -> Option<CheckRefusal> {
         },
         TimedOmission::Excluded(form) => TemporalCause::ExcludedClauseForm { model, form, span },
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use qsl_forms::{parse_clause_text, ExpressionForm, ExpressionSpans};
+
+    use super::DataLiteral;
+
+    /// The data literal that the clause text `text` spells.
+    fn literal(text: &str) -> (DataLiteral, bool) {
+        let expression = parse_clause_text(text, qsl_cst::Limits::default()).expect("one clause");
+        let spans = ExpressionSpans::at_point(&expression, 0).expect("spans fit");
+        (
+            DataLiteral::EmptyCollection(ExpressionForm { expression, spans }),
+            true,
+        )
+    }
+
+    /// FR-091-AC-70: two spellings of one text are one data literal, because a
+    /// literal compares by the text it spells and not by its spelling; a
+    /// different text stays a second literal.
+    #[trace("FR-091-AC-70", "TC-1052")]
+    #[test]
+    fn two_spellings_of_one_text_dedup_to_one_data_literal() {
+        let mut same = vec![literal("x = \"\u{e9}\""), literal("x = \"\\u00e9\"")];
+        same.dedup();
+        assert_eq!(same.len(), 1);
+        let mut different = vec![literal("x = \"\u{e9}\""), literal("x = \"e\\u0301\"")];
+        different.dedup();
+        assert_eq!(different.len(), 2);
+    }
 }

@@ -71,7 +71,8 @@ pub(super) enum Window {
 }
 
 impl Window {
-    /// The offsets of a step interval. A timed interval counts time, not
+    /// The offsets of a step interval, or of a finite-window interval in
+    /// ticks. A timed interval of any other profile counts rational time, not
     /// positions, and has no offsets: the timed evaluator reads it
     /// (`temporal::timed`), and a clause holding one is refused before a
     /// step reader sees it.
@@ -87,7 +88,29 @@ impl Window {
                     lower: interval.lower(),
                 },
             },
-            Some(CheckedInterval::Timed(_)) => return Err(fault("step-interval-has-offsets")),
+            // A finite-window clause measures ticks of its clock unit, both
+            // ends inclusive (FR-501): integral closed bounds are offsets.
+            Some(CheckedInterval::Timed(interval)) => {
+                if !interval.lower_closed()
+                    || !interval.upper_closed()
+                    || !interval.lower().is_integer()
+                    || !interval.upper().is_integer()
+                {
+                    return Err(fault("step-interval-has-offsets"));
+                }
+                Self::Closed {
+                    lower: interval
+                        .lower()
+                        .numerator()
+                        .to_u64()
+                        .ok_or_else(|| fault("interval-bound-in-u64"))?,
+                    upper: interval
+                        .upper()
+                        .numerator()
+                        .to_u64()
+                        .ok_or_else(|| fault("interval-bound-in-u64"))?,
+                }
+            }
         })
     }
 }

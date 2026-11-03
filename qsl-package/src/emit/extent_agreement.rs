@@ -162,13 +162,13 @@ fn emit_and_read(types: TypeEnvironment) -> (Value, Box<CheckedPackageV2>, Vec<O
 
 /// The checked, linked package declaring `types`.
 pub(super) fn package_declaring(types: TypeEnvironment) -> CheckedPackage {
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = types;
     CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("the fixture records check"),
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the fixture records check"),
     )
 }
 

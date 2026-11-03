@@ -901,7 +901,13 @@ mod tests {
 
     /// FR-497-AC-1/2: only bounded Int and Decimal forms are carriers; a
     /// bare numeric type and an inverted carrier bound refuse.
-    #[ix_trace_rs::trace("FR-497-AC-1", "FR-497-AC-2", "TC-1287")]
+    #[ix_trace_rs::trace(
+        "FR-497-AC-1",
+        "FR-497-AC-2",
+        "TC-1287",
+        "QSpec-TC-187",
+        "QSpec-FR-142-AC-27"
+    )]
     #[test]
     fn carried_quantity_rejects_unbounded_or_invalid_carriers() {
         let names = OneUnit(UnitId::declared(

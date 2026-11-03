@@ -22,6 +22,7 @@
 use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recovery, TokenClass};
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::abstraction_declaration;
 use super::hybrid_declaration;
@@ -95,6 +96,49 @@ impl ParsedForm {
         self.declared_extent.as_deref()
     }
 
+    /// The form's top-level syntactic declaration name, when it declares one.
+    /// This is source spelling only; it is not a check-time key. Forms whose
+    /// grammar has no single top-level name return `None`.
+    pub fn declared_name(&self) -> Option<&str> {
+        use DeclarationForm as F;
+        match &self.form {
+            F::Union(form) => Some(&form.name.name),
+            F::Abstraction(form) => Some(&form.name.name),
+            F::Function(form) => Some(form.name.as_str()),
+            F::Alias(form) => Some(&form.name.name),
+            F::Record(form) => Some(&form.name.name),
+            F::Tuple(form) => Some(&form.name.name),
+            F::Enum(form) => Some(&form.name.name),
+            F::Dimension(form) => Some(&form.name.name),
+            F::DimensionEquivalence(_) => None,
+            F::Unit(form) => Some(&form.name.name),
+            F::StateClause(form) => Some(&form.name.name),
+            F::OperationBody(form) => Some(&form.label.name),
+            F::PopulationBound(form) => Some(&form.label.name),
+            F::Protocol(form) => Some(&form.name.name),
+            F::Temporal(form) => Some(&form.name.name),
+            F::Terminal(form) => Some(&form.name.name),
+            F::Refinement(form) => Some(&form.name.name),
+            F::HyperBehaviours(form) => Some(&form.name.name),
+            F::HyperFinite(form) => Some(&form.name.name),
+            F::ModelRelation(form) => Some(&form.name.name),
+            F::Random(_) => None,
+            F::Reward(form) => Some(&form.name.name),
+            F::Delay(_) => None,
+            F::Workload(form) => Some(&form.name.name),
+            F::Probabilistic(form) => Some(&form.name.name),
+            F::StateGraphClaim(form) => Some(&form.name.name),
+            F::TimeSource(_) => None,
+            F::TimeInvariant(form) => Some(&form.name.name),
+            F::Urgent(form) => Some(&form.name.name),
+            F::Taskset(form) => Some(&form.name.name),
+            F::Schedulable(form) => Some(&form.name.name),
+            F::Response(form) => Some(&form.name.name),
+            F::Release(_) => None,
+            F::Hybrid(form) => Some(&form.name.name),
+        }
+    }
+
     /// The family-produced declaration form.
     pub fn form(&self) -> &DeclarationForm {
         &self.form
@@ -113,10 +157,85 @@ impl ParsedForm {
 pub struct ParsedUnit {
     edition: Option<String>,
     selections: SourceSelections,
+    /// The source-unit index for each model selection after `combine`.
+    /// Single parsed units carry zeroes; aggregate assembly uses this to
+    /// retain unit-local model aliases while checking aggregate conflicts.
+    model_selection_units: Vec<usize>,
+    /// The source-unit index for each import selection after `combine`.
+    import_selection_units: Vec<usize>,
     forms: Vec<ParsedForm>,
 }
 
+/// One protocol declaration refused while the recovery-aware S2 entry point
+/// continued building its clean siblings.
+#[derive(Clone, Debug)]
+pub struct ProtocolFormsRefusal {
+    /// The authored protocol name.
+    pub declaration: String,
+    /// The enclosing declaration's source span.
+    pub declaration_span: Span,
+    /// The typed forms refusal.
+    pub refusal: FormsRefusal,
+}
+
 impl ParsedUnit {
+    /// Combine source units for package-level assembly. The caller is
+    /// responsible for admitting each source owner and for retaining the
+    /// originating owner of every form; this operation retains the shared
+    /// profile selection once while preserving per-unit imports and forms in
+    /// the supplied canonical order. A model alias repeated by two units for
+    /// the same model identity is one package selection; repetitions within
+    /// one unit remain present for the assembler's duplicate-alias refusal.
+    pub fn combine(units: impl IntoIterator<Item = Self>) -> Self {
+        let mut combined = Self {
+            edition: None,
+            selections: SourceSelections::default(),
+            model_selection_units: Vec::new(),
+            import_selection_units: Vec::new(),
+            forms: Vec::new(),
+        };
+        let mut first = true;
+        let mut combined_models = BTreeSet::new();
+        for (source_unit_index, unit) in units.into_iter().enumerate() {
+            if first {
+                combined.edition = unit.edition;
+                first = false;
+            }
+            for profile in unit.selections.profiles {
+                if !combined.selections.profiles.iter().any(|existing| {
+                    existing.alias == profile.alias && existing.identity == profile.identity
+                }) {
+                    combined.selections.profiles.push(profile);
+                }
+            }
+            combined.selections.imports.extend(unit.selections.imports);
+            combined.import_selection_units.extend(std::iter::repeat_n(
+                source_unit_index,
+                unit.import_selection_units.len(),
+            ));
+            let mut unit_model_alias_counts = BTreeMap::new();
+            for model in &unit.selections.models {
+                *unit_model_alias_counts
+                    .entry(model.alias.clone())
+                    .or_insert(0usize) += 1;
+            }
+            for model in unit.selections.models {
+                let key = (model.alias.clone(), model.identity.clone());
+                let unique_alias_in_unit = unit_model_alias_counts
+                    .get(&model.alias)
+                    .is_some_and(|count| *count == 1);
+                if unique_alias_in_unit && combined_models.contains(&key) {
+                    continue;
+                }
+                combined_models.insert(key);
+                combined.selections.models.push(model);
+                combined.model_selection_units.push(source_unit_index);
+            }
+            combined.forms.extend(unit.forms);
+        }
+        combined
+    }
+
     /// The header's edition, as written.
     pub fn edition(&self) -> Option<&str> {
         self.edition.as_deref()
@@ -127,6 +246,18 @@ impl ParsedUnit {
     /// none of them.
     pub fn selections(&self) -> &SourceSelections {
         &self.selections
+    }
+
+    /// The source-unit index for each model selection, in the same order as
+    /// [`Self::selections`]`().models` after aggregate combination.
+    pub fn model_selection_units(&self) -> &[usize] {
+        &self.model_selection_units
+    }
+
+    /// The source-unit index for each import selection, in the same order as
+    /// [`Self::selections`]`().imports` after aggregate combination.
+    pub fn import_selection_units(&self) -> &[usize] {
+        &self.import_selection_units
     }
 
     /// The parsed forms in source order.
@@ -368,8 +499,167 @@ pub fn build_unit(parsed: &ParsedSource) -> Result<ParsedUnit, FormsRefusal> {
     Ok(ParsedUnit {
         edition: declared_edition(parsed.cst()),
         selections: parsed.selections().clone(),
+        model_selection_units: vec![0; parsed.selections().models.len()],
+        import_selection_units: vec![0; parsed.selections().imports.len()],
         forms,
     })
+}
+
+/// Build every clean declaration while retaining refusals of individual
+/// protocol declarations. A diagnostic/recovery outside one delimited
+/// protocol remains a unit-level S2 refusal.
+pub fn build_unit_with_protocol_results(
+    parsed: &ParsedSource,
+) -> Result<(ParsedUnit, Vec<ProtocolFormsRefusal>), FormsRefusal> {
+    let cst = parsed.cst();
+    let protocol_nodes: Vec<_> = cst
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProtocolClause)
+        .collect();
+    let mut rejected = Vec::new();
+    for diagnostic in parsed.diagnostics() {
+        let Some(diagnostic_span) = diagnostic.byte_span() else {
+            return Err(FormsRefusal {
+                cause: FormsCause::DiagnosedSource(diagnostic.code),
+                span: None,
+                recoveries: Vec::new(),
+            });
+        };
+        let Some(protocol) = protocol_nodes.iter().find(|node| {
+            let span = node.span();
+            span.start < diagnostic_span.start && diagnostic_span.start <= span.end
+        }) else {
+            return Err(FormsRefusal {
+                cause: FormsCause::DiagnosedSource(diagnostic.code),
+                span: Some(diagnostic_span),
+                recoveries: Vec::new(),
+            });
+        };
+        let Some(owner) = declarations(cst).find(|declaration| {
+            declaration.span().start <= protocol.span().start
+                && protocol.span().end <= declaration.span().end
+        }) else {
+            return Err(FormsRefusal {
+                cause: FormsCause::UnexpectedShape {
+                    production: Production::ProtocolClause,
+                },
+                span: Some(protocol.span()),
+                recoveries: Vec::new(),
+            });
+        };
+        rejected.push(ProtocolFormsRefusal {
+            declaration: protocol_name(cst, protocol.span()),
+            declaration_span: owner.span(),
+            refusal: FormsRefusal {
+                cause: FormsCause::DiagnosedSource(diagnostic.code),
+                span: Some(diagnostic_span),
+                recoveries: cst.recoveries().to_vec(),
+            },
+        });
+    }
+    for recovery in cst.recoveries() {
+        let Some(protocol) = protocol_nodes.iter().find(|node| {
+            node.span().start < recovery.span.start && recovery.span.start <= node.span().end
+        }) else {
+            return Err(recovering(cst));
+        };
+        let Some(owner) = declarations(cst).find(|declaration| {
+            declaration.span().start <= protocol.span().start
+                && protocol.span().end <= declaration.span().end
+        }) else {
+            return Err(recovering(cst));
+        };
+        if !rejected
+            .iter()
+            .any(|entry| entry.declaration_span == owner.span())
+        {
+            rejected.push(ProtocolFormsRefusal {
+                declaration: protocol_name(cst, protocol.span()),
+                declaration_span: owner.span(),
+                refusal: recovering(cst),
+            });
+        }
+    }
+    let rejected_spans: Vec<_> = rejected
+        .iter()
+        .map(|entry| entry.declaration_span)
+        .collect();
+    let mut forms = Vec::new();
+    let edition = declared_edition(cst);
+    for node in declarations(cst) {
+        let is_protocol = contains_protocol(cst, node.span());
+        if rejected_spans.contains(&node.span()) {
+            continue;
+        }
+        let spelling = leading_token_spelling(cst, node).unwrap_or_default();
+        let Some(kind) = from_spelling(spelling) else {
+            let refusal = FormsRefusal::at(
+                FormsCause::NoDispatchEntry {
+                    spelling: String::from_utf8_lossy(spelling).into_owned(),
+                },
+                node.span(),
+            );
+            if is_protocol {
+                rejected.push(ProtocolFormsRefusal {
+                    declaration: protocol_name(cst, node.span()),
+                    declaration_span: node.span(),
+                    refusal,
+                });
+                continue;
+            }
+            return Err(refusal);
+        };
+        match dispatch(kind, Construct { cst, node }) {
+            Ok(form) => forms.push(ParsedForm {
+                span: node.span(),
+                edition: edition.clone(),
+                declared_extent: declared_extent(cst, node),
+                form,
+            }),
+            Err(refusal) if is_protocol => {
+                rejected.push(ProtocolFormsRefusal {
+                    declaration: protocol_name(cst, node.span()),
+                    declaration_span: node.span(),
+                    refusal,
+                });
+            }
+            Err(refusal) => return Err(refusal),
+        }
+    }
+    rejected.sort_by_key(|entry| entry.declaration_span.start);
+    Ok((
+        ParsedUnit {
+            edition: declared_edition(cst),
+            selections: parsed.selections().clone(),
+            model_selection_units: vec![0; parsed.selections().models.len()],
+            import_selection_units: vec![0; parsed.selections().imports.len()],
+            forms,
+        },
+        rejected,
+    ))
+}
+
+fn contains_protocol(cst: &LosslessCst, span: Span) -> bool {
+    cst.nodes().iter().any(|node| {
+        node.production() == Production::ProtocolClause
+            && span.start <= node.span().start
+            && node.span().end <= span.end
+    })
+}
+
+fn protocol_name(cst: &LosslessCst, span: Span) -> String {
+    cst.source()
+        .text()
+        .get(span.start..span.end)
+        .and_then(|text| text.find("protocol").map(|index| &text[index + 8..]))
+        .map(str::trim_start)
+        .and_then(|rest| {
+            rest.split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .next()
+        })
+        .unwrap_or("<protocol>")
+        .to_owned()
 }
 
 fn recovering(cst: &LosslessCst) -> FormsRefusal {

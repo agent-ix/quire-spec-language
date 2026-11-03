@@ -615,3 +615,33 @@ fn decimal_arithmetic_rejects_mixed_types_unless_an_operand_is_converted() {
     )
     .expect("same-type operands and an explicit conversion admit");
 }
+
+/// FR-091-AC-70, TC-1052 step 10: two spellings of one text lower to one
+/// literal node of each kind, so the spelling takes no part in node identity
+/// or lowering; `Text` literals share a node only under one slot type.
+#[trace("FR-091-AC-70", "TC-1052")]
+#[test]
+fn the_spelling_of_a_text_literal_takes_no_part_in_node_identity_or_lowering() {
+    let graph = check(
+        "function s1 using v(): String pure { \"\u{e9}\" }\n\
+         function s2 using v(): String pure { \"\\u00e9\" }\n\
+         function s3 using v(): String pure { \"\\u00E9\" }\n\
+         function x1 using v(): Text[0, 8; nfc] pure { Text(\"\u{e9}\") }\n\
+         function x2 using v(): Text[0, 8; nfc] pure { Text(\"\\u00e9\") }\n\
+         function x3 using v(): Text[0, 8; nfc] pure { Text(\"\\u00E9\") }\n\
+         function y1 using v(): Text[0, 8; binary-utf8] pure { Text(\"\u{e9}\") }\n\
+         function y2 using v(): Text[0, 8; binary-utf8] pure { Text(\"\\u00e9\") }",
+    )
+    .expect("every literal checks");
+    let all = nodes(&graph);
+    assert_eq!(
+        literals(&all, "string")
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>(),
+        ["\u{e9}"]
+    );
+    // One `Text` node per slot type: the `nfc` pair shares one and the
+    // `binary-utf8` pair shares one.
+    assert_eq!(literals(&all, "text").len(), 2);
+}

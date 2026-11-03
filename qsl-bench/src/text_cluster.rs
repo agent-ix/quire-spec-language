@@ -127,14 +127,16 @@ fn equality_package(
             Expression::name("b".to_owned()),
         ),
     );
-    PackageDeclarations {
-        types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the records"),
-        functions: vec![eq],
-        ..PackageDeclarations::new(
+    {
+        let mut package_declarations = PackageDeclarations::new(
             source(),
             "qsl-bench",
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        package_declarations.types =
+            TypeEnvironment::new(declarations, []).expect("FR-143 admits the records");
+        package_declarations.functions = vec![eq];
+        package_declarations
     }
 }
 

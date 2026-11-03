@@ -201,17 +201,17 @@ opt-level = 3
 opt-level = 3
 
 # Protocol exploration (QSL-1438: the LT-16 litmus test) spends its time in
-# qsl-eval and in qsl-analyze, where the explorer and the protocol system are
-# instantiated for each memory model; both compile at opt-level 3. Below
-# opt-level 2 a crate reuses the unoptimized generic instances of the
-# opt-level 0 crates it depends on (QSL-1472 measured qsl-eval at opt-level 1
-# at 1.8x LT-16's instructions, qsl-analyze at opt-level 0 or 1 at 1.2x its
-# cycles). qsl-semantics compiles at opt-level 1; qsl-foundation and the
-# dependencies without an explicit level above stay at opt-level 0. Debug
-# assertions stay on.
+# qsl-eval, which compiles at opt-level 3. Its protocol system is generic over
+# the memory model, and a generic function compiles in the crate that
+# instantiates it, so qsl-eval's own `ProtocolSystem::reachable` instantiates
+# the search for its Sc, Tso and Ra models and qsl-analyze and its tests
+# (QSL-1564) stay at opt-level 0. Below opt-level 2 a crate reuses the
+# unoptimized generic instances of the opt-level 0 crates it depends on
+# (QSL-1472 measured qsl-eval at opt-level 1 at 1.8x LT-16's instructions).
+# qsl-semantics compiles at opt-level 1; qsl-foundation and the dependencies
+# without an explicit level above stay at opt-level 0. Debug assertions stay
+# on.
 [profile.dev.package.qsl-semantics]
 opt-level = 1
 [profile.dev.package.qsl-eval]
-opt-level = 3
-[profile.dev.package.qsl-analyze]
 opt-level = 3

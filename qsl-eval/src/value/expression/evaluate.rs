@@ -8,8 +8,8 @@
 //! make no charge.
 
 use quire_checked::node::{
-    Arithmetic, AuthoredBound, CheckedLiteral, Connective, EndSide, IntegerDivisionOperator,
-    NodeKind, OrderedKind, RecordSlot, Visit,
+    Arithmetic, AuthoredBound, CheckedLiteral, Connective, ConnectiveOrigin, EndSide,
+    IntegerDivisionOperator, NodeKind, OrderedKind, RecordSlot, Visit,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
@@ -17,18 +17,20 @@ use std::sync::Arc;
 
 use super::causes::{
     HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
-    ProtocolClauseSnapshot, ProtocolClauseUnsupported,
+    ObjectFieldIllTyped, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
+use super::slot_admission;
 use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_semantics::check::{
     CheckedGraph, CheckedNode, DispatchTable, NodeId, Operator, Scope, Slot,
 };
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
+use qsl_semantics::model::observation::OutOfRange;
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::divide as integer_divide;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
@@ -42,6 +44,9 @@ use quire_eval::{
 };
 use quire_exact::Rational;
 use quire_exact::{
+    compare_ieee, evaluate_ieee, ieee_to_exact, IeeeComparison, IeeeFlags, IeeeOperation,
+};
+use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
     CompositeValue, FieldValue, ObjectReference, OptionValue, Quantity, UnionValue, Value,
     ValueType,
@@ -53,7 +58,6 @@ use quire_exact::{
     OrderingOperator, RationalArithmetic,
 };
 use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
-use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeFlags, IeeeOperation};
 use quire_exact::{
     BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Incomplete, Integer,
     IntegerInterval, LimitKind, Meter, PopulationId,
@@ -63,7 +67,7 @@ use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::catalog::{render_identity, InternalFault};
 use quire_semantic_value::declaration::{
     operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
-    EqualityOperator, FieldRef, TypeEnvironment,
+    EqualityOperator, FieldDeclaration, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -187,9 +191,10 @@ fn construction_fault(site: ConstructionSite, refusal: &ConstructionRefusal) -> 
 /// evaluation's formed units resolve. Checking resolves every quantity type
 /// and admission matches every argument's unit id to its parameter's, so the
 /// checked-expression route no longer reaches this S6a invariant break
-/// (foreign expressions are refused, #2098). A caller-supplied object
-/// environment or closure typed under a different unit still can, and is open
-/// under QSL-1470 (FR-090-AC-15).
+/// (foreign expressions are refused, #2098), and an object environment typed
+/// under a different unit refuses at entry or at the attribute read
+/// (QSL-1470, QSL-1565, FR-049-AC-2). Reaching this is a broken invariant
+/// (FR-090-AC-15).
 fn unresolved_unit() -> Halt {
     Halt::Fault(InternalFault::new(
         "S6a",
@@ -470,9 +475,31 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     Ok(value)
 }
 
+/// An unavailable binder read: the binder, the supplier's cause and the
+/// reading location (`None` for a reader-backed read).
+pub(crate) type UnavailableRead = (
+    quire_exact::NodeKey,
+    quire_semantic_value::catalog::CatalogCode,
+    Option<Location>,
+);
+
+/// The reader-backed root of a protocol slot: the plain data the admitted
+/// graph projects for a record-field, attribute or bare-reference root.
+///
+/// Throwaway until the reader returns canonical `NodeRead`s (FR-390-AC-16,
+/// AC-50); the machine then matches `NodeKind` alone and this is deleted.
+/// It reports no location, because the admitted wire has none for a leaf yet.
+pub(crate) struct ReaderRoot {
+    pub(crate) slot: usize,
+    pub(crate) field: qsl_package::ReaderProtocolField,
+    pub(crate) optional: bool,
+    pub(crate) derefed: bool,
+    pub(crate) value_type: quire_exact::ValueType,
+}
+
 enum Task<'a> {
     Eval(CheckedNode<'a>),
-    ReaderRead(Box<quire_checked::NodeRead<'a, usize>>),
+    ReaderRead(Box<ReaderRoot>),
     Apply(CheckedNode<'a>),
     Branch(CheckedNode<'a>),
     Short(CheckedNode<'a>),
@@ -648,12 +675,9 @@ pub(crate) struct Machine<'a, 'm> {
         ),
     >,
     /// The first unavailable read, recorded by the task loop so the
-    /// protocol-slot API can retain the exact read location.
-    unavailable_read: Option<(
-        quire_exact::NodeKey,
-        quire_semantic_value::catalog::CatalogCode,
-        Location,
-    )>,
+    /// protocol-slot API can retain the exact read location. A reader-backed
+    /// read has no location.
+    unavailable_read: Option<UnavailableRead>,
     tasks: Vec<Task<'a>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
@@ -964,7 +988,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     pub(crate) fn run_protocol_frame(
         mut self,
         root: CheckedNode<'a>,
-        reader_root: Option<quire_checked::NodeRead<'a, usize>>,
+        reader_root: Option<ReaderRoot>,
         frame: Vec<Option<Value>>,
         unavailable: std::collections::BTreeMap<
             Slot,
@@ -973,17 +997,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 quire_semantic_value::catalog::CatalogCode,
             ),
         >,
-    ) -> Result<
-        Result<
-            Evaluation,
-            (
-                quire_exact::NodeKey,
-                quire_semantic_value::catalog::CatalogCode,
-                Location,
-            ),
-        >,
-        InternalFault,
-    > {
+    ) -> Result<Result<Evaluation, UnavailableRead>, InternalFault> {
         self.unavailable_slots = unavailable;
         let provenance = vec![false; frame.len()];
         self.push_frame(frame, provenance);
@@ -1041,30 +1055,25 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Evaluate `root` on the current frame to its outcome: the task loop
     /// [`Self::run`] and FR-268's separation check share.
     fn drive(&mut self, root: CheckedNode<'a>) -> Result<Evaluation, InternalFault> {
-        self.drive_from(root, Task::Eval(root))
+        self.drive_from(root, Task::Eval(root), false)
     }
 
     fn drive_reader_root(
         &mut self,
         root: CheckedNode<'a>,
-        read: quire_checked::NodeRead<'a, usize>,
+        read: ReaderRoot,
     ) -> Result<Evaluation, InternalFault> {
-        self.drive_from(root, Task::ReaderRead(Box::new(read)))
+        self.drive_from(root, Task::ReaderRead(Box::new(read)), true)
     }
 
     fn drive_from(
         &mut self,
         root: CheckedNode<'a>,
         initial: Task<'a>,
+        reader_backed: bool,
     ) -> Result<Evaluation, InternalFault> {
         self.tasks.push(initial);
         while let Some(task) = self.tasks.pop() {
-            // Reader-backed reads carry their own admitted root location.
-            // Never associate their halt path with the source CheckedBody.
-            let reader_location = match &task {
-                Task::ReaderRead(read) => Some(read.location.clone()),
-                _ => None,
-            };
             // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
             // one, never once per task.
@@ -1098,13 +1107,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             );
             if let Err(halt) = self.step(task) {
                 let located = self.imported.first().copied().unwrap_or(located);
-                let reported_location = reader_location
-                    .as_ref()
-                    .unwrap_or_else(|| located.location());
+                // A reader-backed halt reports no location: it is never taken
+                // from the source CheckedBody (FR-390).
+                let reported_location = if reader_backed {
+                    None
+                } else {
+                    Some(located.location())
+                };
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
                     Halt::Unavailable { binder, cause } => {
-                        self.unavailable_read = Some((binder, cause, reported_location.clone()));
+                        self.unavailable_read = Some((binder, cause, reported_location.cloned()));
                         Err(InternalFault::new(
                             "S6a",
                             "protocol-slot-unavailable-source-read",
@@ -1114,17 +1127,22 @@ impl<'a, 'm> Machine<'a, 'm> {
                     // like a `Stop`, at the task that produced it.
                     Halt::Family(result) => Ok(Evaluation {
                         outcome: FamilyOutcome::FamilyEvaluated(result),
-                        location: Some(reported_location.clone()),
+                        location: reported_location.cloned(),
                         losses: Vec::new(),
                     }),
-                    Halt::Stop(stop) => Self::stopped(stop, Some(reported_location)),
+                    Halt::Stop(stop) => Self::stopped(stop, reported_location),
                     // An imported call site still locates at that call.
                     Halt::Located(at) => Self::stopped(
                         at.stop,
-                        Some(self.imported.first().map_or_else(
-                            || reader_location.as_ref().unwrap_or(&at.location),
-                            |call| call.location(),
-                        )),
+                        if reader_backed {
+                            None
+                        } else {
+                            Some(
+                                self.imported
+                                    .first()
+                                    .map_or(&at.location, |call| call.location()),
+                            )
+                        },
                     ),
                 };
             } else if applied {
@@ -1147,13 +1165,15 @@ impl<'a, 'm> Machine<'a, 'm> {
             Err(Halt::Family(result)) => {
                 return Ok(Evaluation {
                     outcome: FamilyOutcome::FamilyEvaluated(result),
-                    location: Some(root.location().clone()),
+                    location: (!reader_backed).then(|| root.location().clone()),
                     losses: Vec::new(),
                 });
             }
-            Err(Halt::Stop(stop)) => return Self::stopped(stop, Some(root.location())),
+            Err(Halt::Stop(stop)) => {
+                return Self::stopped(stop, (!reader_backed).then(|| root.location()));
+            }
             Err(Halt::Located(at)) => {
-                return Self::stopped(at.stop, Some(&at.location));
+                return Self::stopped(at.stop, (!reader_backed).then_some(&at.location));
             }
         };
         if !self.values.is_empty() || !self.value_guard_provenance.is_empty() {
@@ -1621,11 +1641,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Short(node) => {
-                let NodeKind::Connective(connective, _, right) = node.kind() else {
+                let NodeKind::Connective(connective, origin, _, right) = node.kind() else {
                     return Err(invariant("evaluation-connective-node-expected"));
                 };
                 let left = self.pop_boolean()?;
-                self.decide(node, left);
+                // Only a connective the source wrote has a decision (FR-265);
+                // the checker's own composition of a float ordering has none.
+                if matches!(origin, ConnectiveOrigin::Authored) {
+                    self.decide(node, left);
+                }
                 let skipped = match connective {
                     Connective::And => (!left).then_some(false),
                     Connective::Or => left.then_some(true),
@@ -1722,16 +1746,36 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn eval_reader_read(&mut self, read: quire_checked::NodeRead<'a, usize>) -> Result<(), Halt> {
-        match read.operation {
-            NodeKind::Local(slot) => self.eval_local(slot),
-            NodeKind::Attribute {
-                reference,
-                field,
-                optional,
-                derefed,
-            } => {
-                self.eval_local(reference)?;
+    fn eval_reader_read(&mut self, read: ReaderRoot) -> Result<(), Halt> {
+        let ReaderRoot {
+            slot: operand,
+            field,
+            optional,
+            derefed,
+            value_type,
+        } = read;
+        match field {
+            qsl_package::ReaderProtocolField::Local => self.eval_local(operand),
+            qsl_package::ReaderProtocolField::RecordField { declaration, name } => {
+                self.eval_local(operand)?;
+                let Value::Composite(composite) = self.pop()? else {
+                    return Err(invariant("reader-field-composite-value-expected"));
+                };
+                let field = quire_checked::node::RecordField::new(declaration, name);
+                let index = self
+                    .scope
+                    .record_slot(composite.declaration().clone(), &field)
+                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
+                let slot = composite
+                    .slots()
+                    .get(index)
+                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
+                let value = Self::project(self.scope.types(), slot, optional, &value_type, false)?;
+                self.push_value(value, false);
+                Ok(())
+            }
+            qsl_package::ReaderProtocolField::Attribute { owner, name } => {
+                self.eval_local(operand)?;
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant("reader-attribute-reference-is-a-reference"));
                 };
@@ -1739,23 +1783,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                     charge_model_read(self.meter, ChargePoint::ModelDeref)?;
                 }
                 charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
+                let field = quire_semantic_value::declaration::FieldRef::new(owner, name);
                 let objects = self.objects;
-                let slot = objects
-                    .objects()
-                    .attribute(self.scope.types(), &reference, &field)
-                    .ok_or_else(|| invariant("reader-attribute-slot-is-admitted"))?;
-                let witnessed = objects.is_witnessed(self.scope.types(), &reference, &field);
-                let value = Self::project(
-                    self.scope.types(),
-                    slot,
-                    optional,
-                    read.value_type,
-                    witnessed,
-                )?;
+                let (slot, witnessed) = self.admitted_slot(objects, &reference, &field)?;
+                let value =
+                    Self::project(self.scope.types(), slot, optional, &value_type, witnessed)?;
                 self.push_value(value, false);
                 Ok(())
             }
-            _ => Err(invariant("reader-protocol-root-read-is-supported-local")),
         }
     }
 
@@ -1793,7 +1828,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(node.at(*condition)));
                 return Ok(());
             }
-            NodeKind::Connective(_, left, _) => {
+            NodeKind::Connective(_, _, left, _) => {
                 self.tasks.push(Task::Short(node));
                 self.tasks.push(Task::Eval(node.at(*left)));
                 return Ok(());
@@ -2151,6 +2186,45 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 Value::Float(result.value())
             }
+            NodeKind::IeeeFloat32Fma(rounding, ..) | NodeKind::IeeeFloat64Fma(rounding, ..) => {
+                let (Value::Float(addend), Value::Float(right), Value::Float(left)) =
+                    (self.pop()?, self.pop()?, self.pop()?)
+                else {
+                    return Err(invariant("ieee-float-value-expected"));
+                };
+                if self.scope.ieee_profile().is_none() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                let result = outcome_into_stop(
+                    evaluate_ieee(
+                        IeeeOperation::FusedMultiplyAdd(left, right, addend),
+                        *rounding,
+                        self.meter,
+                    )
+                    .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?;
+                if result.flags() != IeeeFlags::EMPTY {
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                }
+                Value::Float(result.value())
+            }
+            NodeKind::IeeeTotalOrder(..) | NodeKind::IeeeBitIdentical(..) => {
+                let comparison = if matches!(node.kind(), NodeKind::IeeeTotalOrder(..)) {
+                    IeeeComparison::TotalOrder
+                } else {
+                    IeeeComparison::BitIdentical
+                };
+                let (Value::Float(right), Value::Float(left)) = (self.pop()?, self.pop()?) else {
+                    return Err(invariant("ieee-float-value-expected"));
+                };
+                if self.scope.ieee_profile().is_none() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                Value::Boolean(outcome_into_stop(
+                    compare_ieee(comparison, left, right, self.meter)
+                        .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?)
+            }
             NodeKind::Quantity(operator, _, _) => {
                 let (Value::Quantity(right), Value::Quantity(left)) = (self.pop()?, self.pop()?)
                 else {
@@ -2217,19 +2291,33 @@ impl<'a, 'm> Machine<'a, 'm> {
                         "typed-ieee-equality-operands-are-not-floats",
                     )));
                 };
-                let same_width = left.width() == right.width();
-                let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
-                    false
+                if !node.is_ordering_part() {
+                    // A standalone `=` or `numericEqual` is the one owned
+                    // core of FR-148: it charges its operands and result.
+                    if self.scope.ieee_profile().is_none() {
+                        return Err(invariant("ieee-profile-unresolved"));
+                    }
+                    Value::Boolean(outcome_into_stop(
+                        compare_ieee(IeeeComparison::NumericEqual, left, right, self.meter)
+                            .map_err(|_| invariant("ieee-operation-rejected"))?,
+                    )?)
                 } else {
-                    let zero = |value: quire_exact::IeeeValue| match value.width() {
-                        quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
-                        quire_exact::IeeeWidth::Binary64 => {
-                            value.bits() & 0x7fff_ffff_ffff_ffff == 0
-                        }
+                    // FR-397 "Evaluate once": the numeric-equality parts of
+                    // an ordering's composition add no charge.
+                    let same_width = left.width() == right.width();
+                    let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
+                        false
+                    } else {
+                        let zero = |value: quire_exact::IeeeValue| match value.width() {
+                            quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
+                            quire_exact::IeeeWidth::Binary64 => {
+                                value.bits() & 0x7fff_ffff_ffff_ffff == 0
+                            }
+                        };
+                        (zero(left) && zero(right)) || left.bits() == right.bits()
                     };
-                    (zero(left) && zero(right)) || left.bits() == right.bits()
-                };
-                Value::Boolean(numeric_equal)
+                    Value::Boolean(numeric_equal)
+                }
             }
             NodeKind::Not(_) => {
                 let operand = self.pop_boolean()?;
@@ -2318,12 +2406,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         ReferenceUnresolved,
                     ))));
                 }
-                let slot = objects
-                    .objects()
-                    .attribute(self.scope.types(), &reference, field)
-                    .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+                let (slot, witnessed) = self.admitted_slot(objects, &reference, field)?;
                 self.log_field_read(node, objects, &reference, field)?;
-                let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
                 } else {
@@ -3471,11 +3555,19 @@ impl<'a, 'm> Machine<'a, 'm> {
             .find(|attribute| attribute.stands_for(edge))
             .ok_or_else(|| invariant("edge-attribute-unresolved"))?;
         let field = attribute.field();
-        let slot = self
-            .objects_for(node)?
-            .objects()
-            .attribute(self.scope.types(), current, edge)
-            .ok_or_else(|| invariant("edge-slot-unresolved"))?;
+        let objects = self.objects_for(node)?;
+        if !objects.objects().contains(current) {
+            return Err(invariant("edge-slot-unresolved"));
+        }
+        let (slot, _) = self.admitted_slot(objects, current, edge)?;
+        Self::slot_edge_targets(field, slot)
+    }
+
+    /// The references an admitted `slot` of the edge field `field` holds.
+    fn slot_edge_targets(
+        field: &FieldDeclaration,
+        slot: &FieldValue,
+    ) -> Result<Vec<ObjectReference>, Halt> {
         match field.value_type() {
             ValueType::Reference(_) => match (slot, field.presence()) {
                 (FieldValue::Present(Value::Reference(reference)), _) => {
@@ -3500,6 +3592,62 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
             }
             _ => Err(invariant("edge-field-type-invalid")),
+        }
+    }
+
+    /// The caller-supplied slot of `reference` for `field`, admitted against
+    /// the evaluating package's own types (FR-049-AC-2/AC-3), and whether it
+    /// holds a witnessed out-of-range integer.
+    ///
+    /// The closure names each slot by its attribute name, so the slot is the
+    /// one the package's attribute for `field` is named, whatever order the
+    /// caller's environment gave the attributes. A call or expression entry
+    /// has already admitted the whole environment
+    /// (`slot_admission::admit_objects`); this read-time check is the
+    /// admission for the protocol, temporal and clause entries, which reach
+    /// the evaluator without it. A missing or ill-typed slot is caller input
+    /// that refuses `invalid_runtime_input`/`wrong-value-kind`, never a fault
+    /// or a misread.
+    fn admitted_slot<'o>(
+        &self,
+        objects: &'o ObjectEnvironment,
+        reference: &ObjectReference,
+        field: &FieldRef,
+    ) -> Result<(&'o FieldValue, bool), Halt> {
+        let types = self.scope.types();
+        let refuse = || {
+            Halt::Family(FamilyResult::Refused(Box::new(ObjectFieldIllTyped {
+                field: field.name.clone(),
+            })))
+        };
+        // An object the closure does not hold is not a layout defect: the
+        // read has nothing to project (a reference a current state tolerates
+        // dangling) and keeps its own fault.
+        if !objects.objects().contains(reference) {
+            return Err(invariant("attribute-slot-unresolved"));
+        }
+        let declared = types
+            .attributes(reference.object_type().clone())
+            .ok_or_else(refuse)?;
+        let attribute = declared
+            .iter()
+            .find(|attribute| attribute.stands_for(field))
+            .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+        let slot = objects
+            .objects()
+            .attribute(types, reference, field)
+            .ok_or_else(refuse)?;
+        let witnesses: Vec<&OutOfRange> = objects.witnesses(types, reference, field).collect();
+        match slot_admission::admits_slot(
+            types,
+            attribute.field(),
+            slot,
+            &witnesses,
+            objects.holds_out_of_range(),
+        ) {
+            Ok(true) => Ok((slot, !witnesses.is_empty())),
+            Ok(false) => Err(refuse()),
+            Err(failure) => Err(invariant(slot_admission::fault_identifier(&failure))),
         }
     }
 
@@ -4408,8 +4556,13 @@ mod tests {
         let context_type = crate::test_ids::effective_id([12]);
         let collection_type =
             quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
-        let graph = PackageDeclarations {
-            types: TypeEnvironment::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.types = TypeEnvironment::new(
                 [],
                 [ObjectTypeDeclaration::new(
                     context_type.clone(),
@@ -4421,12 +4574,8 @@ mod tests {
                     )],
                 )],
             )
-            .unwrap(),
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            .unwrap();
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap();
@@ -4631,10 +4780,15 @@ mod tests {
         .expect("one object type admits cleanly");
         let model = qsl_semantics::check::AdmittedModel::new(&domain_package, &view)
             .expect("the view is the domain package's own");
-        let graph = PackageDeclarations {
-            types,
-            models: vec![model],
-            functions: vec![FunctionDeclaration::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            );
+            declarations.types = types;
+            declarations.models = vec![model];
+            declarations.functions = vec![FunctionDeclaration::new(
                 "F",
                 vec![(
                     "p".to_owned(),
@@ -4648,12 +4802,8 @@ mod tests {
                     TypeForm::name("M::A", SPAN),
                     Expression::name("p".to_owned()),
                 )),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "fixture".to_owned(),
-                qsl_foundation::IdentityLimits::default(),
-            )
+            )];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p)) checks cleanly");
@@ -4936,14 +5086,15 @@ mod tests {
         .expect("one object type with one field admits cleanly");
         let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
             .expect("the view is the domain package's own");
-        let graph = PackageDeclarations {
-            types,
-            models: vec![model],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations.models = vec![model];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("one type with one field checks cleanly");
@@ -5048,14 +5199,15 @@ mod tests {
         .expect("one object type with one field admits cleanly");
         let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
             .expect("the view is the domain package's own");
-        let graph = PackageDeclarations {
-            types,
-            models: vec![model],
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations.models = vec![model];
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("one type with one field checks cleanly");
@@ -5161,13 +5313,14 @@ mod tests {
                 quire_exact::Presence::Required,
             )]),
         );
-        let graph = PackageDeclarations {
-            types: TypeEnvironment::new([record], []).expect("one record admits"),
-            ..PackageDeclarations::new(
+        let graph = {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = TypeEnvironment::new([record], []).expect("one record admits");
+            declarations
         }
         .check(CheckingLimits::default())
         .expect("the record checks");
@@ -5334,5 +5487,177 @@ mod tests {
             fault.kernel_cause(),
             Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
         );
+    }
+    /// FR-265 records a decision for each authored `and`; the connectives a
+    /// float ordering lowers to carry none, so a claim's trail holds exactly
+    /// the authored decision.
+    #[trace("TC-1091", "FR-397-AC-12")]
+    #[test]
+    fn a_float_ordering_records_no_decision_but_an_authored_connective_does() {
+        use qsl_forms::BinaryOperator;
+        use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
+        use quire_exact::{FloatType, IeeeValue, IeeeWidth};
+        let package = qsl_package::CheckedPackage::link(
+            {
+                let mut declarations = PackageDeclarations::new(
+                    qsl_semantics::check::fixture_source(),
+                    "fixture".to_owned(),
+                    qsl_foundation::IdentityLimits::default(),
+                );
+                declarations.ieee_profile = Some(
+                    admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap(),
+                );
+                declarations
+            }
+            .check(CheckingLimits::default())
+            .unwrap(),
+        );
+        let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
+        let ordering =
+            |operator| Expression::binary(operator, Expression::name("f"), Expression::name("g"));
+        let run = |expression: &Expression| {
+            let checked = package
+                .graph()
+                .check_clause_expression(
+                    vec![
+                        ("f".to_owned(), double.clone()),
+                        ("g".to_owned(), double.clone()),
+                    ],
+                    expression,
+                    None,
+                    qsl_forms::ClauseKind::Invariant,
+                    CheckMode::Kernel,
+                    CheckingLimits::default(),
+                )
+                .unwrap();
+            let objects = ObjectEnvironment::default();
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let trail = Trail::new(
+                super::super::s6a::separation::ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "current".to_owned(),
+                    revision_namespace: "ns".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                None,
+            );
+            let (evaluation, trail) = Machine::new(
+                package.graph().scope(),
+                package.graph(),
+                &objects,
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(
+                checked.root(),
+                checked.slots(),
+                vec![
+                    Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000)),
+                    Value::Float(IeeeValue::binary64(0x4000_0000_0000_0000)),
+                ],
+            )
+            .unwrap();
+            assert!(matches!(
+                evaluation.outcome,
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+            ));
+            let mut nodes = vec![checked.root()];
+            let mut decisions = Vec::new();
+            while let Some(node) = nodes.pop() {
+                let children: Vec<_> = match node.kind() {
+                    NodeKind::Connective(_, _, left, right) => vec![*left, *right],
+                    NodeKind::Not(operand) => vec![*operand],
+                    _ => Vec::new(),
+                };
+                if matches!(node.kind(), NodeKind::Connective(..)) {
+                    decisions.push(trail.decision(node.location()));
+                }
+                nodes.extend(children.into_iter().map(|child| node.at(child)));
+            }
+            decisions
+        };
+        // 1.0 < 2.0 and 1.0 <= 2.0: no connective carries a decision.
+        for operator in [BinaryOperator::Less, BinaryOperator::LessOrEqual] {
+            let decisions = run(&ordering(operator));
+            assert!(!decisions.is_empty(), "the ordering lowers to connectives");
+            assert!(decisions.iter().all(Option::is_none), "{decisions:?}");
+        }
+        // An authored `and` over two orderings records exactly its own
+        // decision, the value of its left operand.
+        let authored = Expression::binary(
+            BinaryOperator::And,
+            ordering(BinaryOperator::Less),
+            ordering(BinaryOperator::Less),
+        );
+        let decisions = run(&authored);
+        assert_eq!(decisions.iter().flatten().count(), 1, "{decisions:?}");
+        assert!(decisions.contains(&Some(true)));
+    }
+    /// FR-265: whether a connective records a decision is read from its
+    /// origin, not from where it sits. Every node of this body has one
+    /// location, so an authored connective shares its left operand's.
+    #[trace("TC-1091", "FR-397-AC-12")]
+    #[test]
+    fn a_connective_records_a_decision_by_its_origin_not_its_location() {
+        use qsl_semantics::check::CheckedBody;
+        let package = qsl_package::CheckedPackage::link(
+            PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+            .check(CheckingLimits::default())
+            .unwrap(),
+        );
+        let decision = |origin| {
+            let literal = || {
+                (
+                    NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                    ValueType::Boolean,
+                )
+            };
+            let body = CheckedBody::from_nodes(vec![
+                literal(),
+                literal(),
+                (
+                    NodeKind::Connective(
+                        Connective::And,
+                        origin,
+                        CheckedBody::id_at(0),
+                        CheckedBody::id_at(1),
+                    ),
+                    ValueType::Boolean,
+                ),
+            ]);
+            assert_eq!(
+                body.root().at(CheckedBody::id_at(0)).location(),
+                body.root().location()
+            );
+            let objects = ObjectEnvironment::default();
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let trail = Trail::new(
+                super::super::s6a::separation::ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "current".to_owned(),
+                    revision_namespace: "ns".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                None,
+            );
+            let (_, trail) = Machine::new(
+                package.graph().scope(),
+                package.graph(),
+                &objects,
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(body.root(), 0, Vec::new())
+            .unwrap();
+            trail.decision(body.root().location())
+        };
+        assert_eq!(decision(ConnectiveOrigin::Authored), Some(true));
+        assert_eq!(decision(ConnectiveOrigin::Synthesized), None);
     }
 }

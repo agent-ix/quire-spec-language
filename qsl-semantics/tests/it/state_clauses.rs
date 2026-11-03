@@ -262,7 +262,7 @@ fn subtype_reachability_refuses_an_unrelated_target_type() {
     );
 }
 
-#[trace("FR-091-AC-39", "TC-394")]
+#[trace("FR-091-AC-39", "TC-394", "QSpec-TC-192", "QSpec-FR-147-AC-11")]
 #[test]
 fn a_complete_function_does_not_enable_integer_operators_in_a_state_only_clause() {
     let document = config_version_document(

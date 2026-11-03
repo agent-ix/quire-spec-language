@@ -6,6 +6,7 @@ use quire_semantic_value::catalog::Category;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
@@ -195,6 +196,88 @@ fn request(
 
 fn input(parameter: NodeKey, value: i64) -> ReplaySource {
     typed_input(parameter, WitnessValue::Integer(i128::from(value)))
+}
+
+fn static_subject_after_recompile(wire: ReplayRequestWire) -> crate::spine::StaticSubject {
+    let limits = ReplayLimits::default();
+    let request = ReplayRequest::decode(wire, limits).expect("request decodes");
+    let caller = request_limits(request.stage_limits(), request.accounting_limits(), limits)
+        .expect("request limits are valid");
+    let recompiled =
+        recompile_with_temporal_selections(&request, &caller, &[]).expect("request recompiles");
+    let checked = recompiled
+        .checked
+        .static_subject()
+        .expect("successful replay recompile has a static subject")
+        .clone();
+    assert_eq!(
+        &checked,
+        recompiled
+            .emitted
+            .static_subject()
+            .expect("emitted replay unit retains a static subject")
+    );
+    checked
+}
+
+#[trace("FR-510-AC-2", "TC-1305")]
+#[test]
+fn static_subject_is_stable_across_replay_runtime_variants() {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}function seq using v(xs: Sequence<Boolean>[0, 64]): Boolean pure {{ false }}\n"
+    );
+    let compiled = spine(&source, &BTreeMap::new());
+    let sequence = parameter(&compiled, "seq", 0);
+    let make_wire = |length: usize, population_maximum: u64, window_maximum: u64, backend: &str| {
+        let trace_value = WitnessValue::Sequence(vec![WitnessValue::Boolean(true); length]);
+        let transcript = format!(
+            "<<<assertion|seq|c|{}={}>>>",
+            crate::pn(&sequence),
+            trace_value
+                .to_value_text()
+                .expect("sequence has value text")
+        );
+        let mut wire = request(
+            source.as_bytes(),
+            &compiled,
+            name(&["seq"]),
+            ReplaySource::Witness(Witness::parse(transcript).expect("witness trace parses")),
+        );
+        let collection = ProofBound::new(
+            DomainKey::Node {
+                node: sequence.clone(),
+                path: vec![0],
+            },
+            Some(DomainKind::Collection),
+            FiniteBound::cardinality(window_maximum),
+        )
+        .expect("a sequence window bound");
+        let population = ProofBound::new(
+            DomainKey::Population {
+                member_type: crate::fixture_node(3),
+                ordinal: 0,
+            },
+            Some(DomainKind::Population),
+            FiniteBound::cardinality(population_maximum),
+        )
+        .expect("a population bound");
+        wire.declared_domains = vec![
+            crate::identity::DeclaredDomain::new(collection),
+            crate::identity::DeclaredDomain::new(population),
+        ];
+        wire.backend = backend.to_owned();
+        wire
+    };
+    let first = make_wire(1, 2, 2, "backend-a");
+    let initial = static_subject_after_recompile(first.clone());
+    for wire in [first, make_wire(3, 5, 4, "backend-b")] {
+        let before = static_subject_after_recompile(wire.clone());
+        assert_eq!(initial, before);
+        replay(wire.clone(), ReplayLimits::default()).expect("runtime variant replays");
+        let after = static_subject_after_recompile(wire);
+        assert_eq!(initial, after);
+        assert!(initial.differences(&after).is_empty());
+    }
 }
 
 fn typed_input(parameter: NodeKey, value: WitnessValue) -> ReplaySource {
@@ -1612,8 +1695,8 @@ fn every_received_kernel_cause_survives_both_replay_fault_adapters() {
 }
 
 #[test]
-#[trace("TC-918", "FR-096-AC-19")]
-fn real_public_package_equality_fault_propagates_into_replay_failure() {
+#[trace("TC-136", "FR-049-AC-2")]
+fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_replay() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{AdmittedModel, PackageDeclarations};
@@ -1669,28 +1752,26 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
     let span = qsl_foundation::Span { start: 0, end: 0 };
     let operand = || Expression::field(Expression::deref(Expression::name("receiver")), "number");
     let source = Expression::binary(BinaryOperator::Equal, operand(), operand());
-    let declarations = PackageDeclarations {
-        types: types(ValueType::Int(
-            IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap(),
-        )),
-        models: vec![model],
-        functions: vec![FunctionDeclaration::new(
-            "Compare",
-            vec![(
-                "receiver".to_owned(),
-                TypeForm::builtin(BuiltinType::Reference, span)
-                    .with_arguments(vec![TypeForm::name("Owner", span)]),
-            )],
-            TypeForm::builtin(BuiltinType::Boolean, span),
-            None,
-            source.clone(),
+    let mut declarations = PackageDeclarations::new(
+        qsl_semantics::check::fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.types = types(ValueType::Int(
+        IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap(),
+    ));
+    declarations.models = vec![model];
+    declarations.functions = vec![FunctionDeclaration::new(
+        "Compare",
+        vec![(
+            "receiver".to_owned(),
+            TypeForm::builtin(BuiltinType::Reference, span)
+                .with_arguments(vec![TypeForm::name("Owner", span)]),
         )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    };
+        TypeForm::builtin(BuiltinType::Boolean, span),
+        None,
+        source.clone(),
+    )];
     let package =
         qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
     let expression = package
@@ -1720,7 +1801,7 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
     for call in [false, true] {
         let mut meter = Meter::new(UNLIMITED);
         let arguments = vec![Value::Reference(reference.clone())];
-        let failure = if call {
+        let result = if call {
             package.call(
                 &QualifiedName::unqualified("Compare").unwrap(),
                 arguments,
@@ -1729,28 +1810,33 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
             )
         } else {
             package.evaluate(&expression, arguments, &objects, &mut meter)
-        }
-        .expect_err("real checked equality source violation");
+        };
+        // QSL-1565 (FR-049-AC-2/AC-3): the stored -1 is caller input outside
+        // the declared `Int[0, 9]`; the entry refuses the object environment
+        // before any charge, so no equality-source fault reaches replay from
+        // caller input.
+        let failure = result.expect_err("an out-of-type stored value refuses at entry");
+        assert_eq!(admitted_charge_points(&meter), &[] as &[ChargePoint]);
+        // Replay reports it as the typed object-environment refusal, not an
+        // internal fault (FR-049-AC-2).
         let refusal = call_failure_to_replay_refusal(failure);
-        let ReplayRefusal::Fault(fault) = &refusal else {
-            panic!("received kernel fault became a refusal");
+        let ReplayRefusal::ObjectEnvironment(
+            super::object_environment::ObjectEnvironmentFailure::Admission(
+                qsl_semantics::model::observation::AdmissionFailure::Refused(record),
+            ),
+        ) = &refusal
+        else {
+            panic!("a typed object-environment refusal, not {refusal:?}");
         };
-        assert_eq!(fault.stage(), "S6a");
-        assert_eq!(fault.invariant(), "checked-program-invariant");
         assert_eq!(
-            fault.kernel_cause(),
-            Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
+            (record.catalog.code(), record.catalog.cause()),
+            ("invalid_runtime_input", "wrong-value-kind")
         );
-        assert_eq!(refusal.code(), Code::RuntimeInvariant);
-        let terminal = TerminalValue::from_replay_refusal(&refusal);
-        assert!(matches!(terminal, TerminalValue::Failed));
-        assert_eq!(terminal.category(), Category::InternalFailure);
-        let expected: &[ChargePoint] = if call {
-            &[ChargePoint::FunctionCall]
-        } else {
-            &[]
-        };
-        assert_eq!(admitted_charge_points(&meter), expected);
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some("number")
+        );
+        assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
     }
 }
 
@@ -1829,28 +1915,26 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
             .with_arguments(vec![TypeForm::name("M::A", span)]),
         Expression::name("population"),
     ));
-    let declarations = PackageDeclarations {
-        types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(owner, "M::A", vec![])])
-            .unwrap(),
-        models: vec![AdmittedModel::new(&domain, &view).unwrap()],
-        functions: vec![FunctionDeclaration::new(
-            "Count",
-            vec![(
-                "population".to_owned(),
-                TypeForm::new(TypeFormHead::Population, span)
-                    .with_arguments(vec![TypeForm::name("M::A", span)])
-                    .with_bounds(vec!["1".to_owned()]),
-            )],
-            TypeForm::builtin(BuiltinType::Integer, span),
-            None,
-            source.clone(),
+    let mut declarations = PackageDeclarations::new(
+        qsl_semantics::check::fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.types =
+        TypeEnvironment::new([], [ObjectTypeDeclaration::new(owner, "M::A", vec![])]).unwrap();
+    declarations.models = vec![AdmittedModel::new(&domain, &view).unwrap()];
+    declarations.functions = vec![FunctionDeclaration::new(
+        "Count",
+        vec![(
+            "population".to_owned(),
+            TypeForm::new(TypeFormHead::Population, span)
+                .with_arguments(vec![TypeForm::name("M::A", span)])
+                .with_bounds(vec!["1".to_owned()]),
         )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    };
+        TypeForm::builtin(BuiltinType::Integer, span),
+        None,
+        source.clone(),
+    )];
     let package =
         qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
     let expression = package
@@ -1954,20 +2038,19 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
         Expression::name("left"),
         Expression::name("right"),
     );
-    let declarations = PackageDeclarations {
-        enums: vec![binding],
-        functions: vec![FunctionDeclaration::new(
-            "Compare",
-            vec![
-                ("left".to_owned(), TypeForm::name("State", span)),
-                ("right".to_owned(), TypeForm::name("State", span)),
-            ],
-            TypeForm::builtin(BuiltinType::Boolean, span),
-            None,
-            source.clone(),
-        )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(), "fixture", limits)
-    };
+    let mut declarations =
+        PackageDeclarations::new(qsl_semantics::check::fixture_source(), "fixture", limits);
+    declarations.enums = vec![binding];
+    declarations.functions = vec![FunctionDeclaration::new(
+        "Compare",
+        vec![
+            ("left".to_owned(), TypeForm::name("State", span)),
+            ("right".to_owned(), TypeForm::name("State", span)),
+        ],
+        TypeForm::builtin(BuiltinType::Boolean, span),
+        None,
+        source.clone(),
+    )];
     let package =
         qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
     let expression = package

@@ -178,9 +178,15 @@ impl Shape {
         };
         let represented = trace.represented().ok_or(TemporalRefusal::TraceTooLong)?;
         let mode = match (profile, trace) {
+            // The finite-window profile reads time stamps, which a position
+            // trace does not carry: `evaluate_finite_window` is its evaluator
+            // (FR-501), and a `Finite` or `Lasso` trace is refused.
+            (TemporalProfile::TimestampedEventFiniteWindow, _) => {
+                return Err(TemporalRefusal::TraceCarriesNoStamps { profile })
+            }
             // The timed profile reads time stamps: `evaluate_timed_at` is its
             // evaluator (FR-234).
-            (TemporalProfile::TimestampedEventFiniteWindow | TemporalProfile::Timed, _) => {
+            (TemporalProfile::Timed, _) => {
                 return Err(TemporalRefusal::ProfileNotEvaluated { profile })
             }
             (

@@ -33,12 +33,10 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
     });
     let types = TypeEnvironment::new(records, []).expect("the cycle types admit");
     let limits = CheckingLimits::new(500_000).with_work_budget(u64::MAX);
-    let checked = PackageDeclarations {
-        types,
-        ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
-    }
-    .check(limits)
-    .unwrap_or_else(|refusals| {
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.types = types;
+    let checked = declarations.check(limits).unwrap_or_else(|refusals| {
         panic!(
             "caller budget admits the cycle; checker returned {} refusals",
             refusals.len()

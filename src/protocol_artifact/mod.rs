@@ -7,6 +7,23 @@
 //! source compiler produced them. Native family emission requires its own
 //! completed compilation authority and is not provided by `encode_candidate`.
 //!
+//! The checked predicate and the temporal subject are read from a checked
+//! package by `qsl_package::checked_views` (FR-515, TC-1310 row 9); the
+//! modules of the same names that lived here were retired and do not resolve.
+//! The control compiles, so each failure below is the missing path:
+//!
+//! ```
+//! use quire_spec_language::protocol_artifact::wire;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use quire_spec_language::protocol_artifact::checked_predicate;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use quire_spec_language::protocol_artifact::temporal_subject;
+//! ```
+//!
 //! [contract]: https://github.com/agent-ix/quire-spec-language/blob/main/docs/compiled-protocol-v1.md
 
 mod decode;

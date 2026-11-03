@@ -36,7 +36,9 @@
 
 mod engine;
 pub mod evidence;
+mod finite_window;
 mod input;
+mod ledger;
 mod letters;
 mod observed;
 mod observed_window;
@@ -44,19 +46,41 @@ mod outcome;
 mod plan;
 mod position;
 mod steps;
+mod tick_monitor;
+mod tick_shape;
 mod timed;
 mod tuple;
 mod window;
 
 pub use engine::{unrolling, Unrolling};
+pub use finite_window::{
+    evaluate_finite_window, Assessment, Basis, ClockCover, Containment, IndeterminateReason,
+    LowerBoundary, OrderKey, Premises, ResultIdentity, SupportPair, TimestampedObservation,
+    TimestampedTrace, Valuation, Watermark, WindowClock, WindowEvaluation, WindowProgress,
+    WindowVerdict,
+};
 pub use input::TemporalTrace;
+pub use ledger::{
+    ContradictedDimension, CoveredPositionsLimitReached, LedgerBinding, LedgerEntry, LedgerRefusal,
+    ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
+    ProgressContradiction, ProgressLedger, ProgressValue, COVERED_POSITIONS_SETTING,
+    DEFAULT_COVERED_POSITIONS,
+};
 pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
-pub use observed::{evaluate_observed, evaluate_observed_at, HoldsStop, ObservedRun};
+pub use observed::{
+    evaluate_observed, evaluate_observed_at, evaluate_observed_finite_window, HoldsStop,
+    ObservedRun, ObservedWindowRun, WindowValuations,
+};
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};
 pub use outcome::{
     InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
 };
 pub use position::{PositionRefusal, TemporalPosition};
+pub use tick_monitor::{
+    definitely_before, within_bound, TickBound, TickMonitorReference, TickMonitorSpec, TickOutcome,
+    TickResult, TickStep, TickStepError,
+};
+pub use tick_shape::{operator_parts, temporal_leaves, NodeShape, TickShape};
 pub use timed::{evaluate_timed_at, TimedTrace};
 pub use tuple::{
     evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,

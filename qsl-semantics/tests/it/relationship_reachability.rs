@@ -467,7 +467,7 @@ fn c07_a_name_matching_neither_is_missing() {
 
 /// FR-365-AC-3 (C08): an operand of another object type, and a scalar
 /// operand, refuse `ill_typed`/`operator-ineligible` at the form.
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c08_an_operand_that_does_not_conform_to_the_near_end_is_ineligible() {
     for operation in ["toPerson", "toCode"] {
@@ -486,7 +486,7 @@ fn c08_an_operand_that_does_not_conform_to_the_near_end_is_ineligible() {
 
 /// FR-365-AC-3 (C09): the inverse of a `source-to-target` relationship is
 /// refused for its direction.
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c09_the_inverse_end_of_a_source_to_target_relationship_is_ineligible() {
     assert_refused(
@@ -499,7 +499,7 @@ fn c09_the_inverse_end_of_a_source_to_target_relationship_is_ineligible() {
 
 /// FR-365-AC-3 (C10): a destination of another type, single-valued or finite
 /// multi-valued, refuses `ill_typed`/`operator-ineligible`.
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c10_a_foreign_destination_is_ineligible() {
     for role in ["owner", "manyOwners"] {
@@ -515,7 +515,7 @@ fn c10_a_foreign_destination_is_ineligible() {
 /// FR-365-AC-1 (C17): a finite multi-valued destination of the near end's own
 /// type, `Set`-shaped (`kids`) or `Bag`-shaped (`litter`), checks `Boolean`
 /// with the same node shape as a single-valued end.
-#[trace("TC-1046", "FR-365-AC-1")]
+#[trace("TC-1046", "FR-365-AC-1", "QSpec-TC-197", "QSpec-FR-152-AC-11")]
 #[test]
 fn c17_a_finite_multi_valued_destination_checks_boolean() {
     for role in ["kids", "litter"] {
@@ -535,7 +535,7 @@ fn c17_a_finite_multi_valued_destination_checks_boolean() {
 /// FR-365-AC-3 (C18): the operand check runs first, so a second operand that
 /// does not conform to the near end's type refuses `operator-ineligible` even
 /// when the destination is also unbounded (`expression-form` otherwise).
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c18_the_operand_check_is_reported_before_direction_and_multiplicity() {
     assert_refused(
@@ -548,7 +548,7 @@ fn c18_the_operand_check_is_reported_before_direction_and_multiplicity() {
 
 /// FR-365-AC-3 (C11): an unbounded, an ordered and a multiplicity-less
 /// destination each refuse `unsupported_construct`/`expression-form`.
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c11_an_unbounded_ordered_or_undeclared_destination_is_unsupported() {
     for role in ["crowd", "ranked", "bare"] {
@@ -564,7 +564,7 @@ fn c11_an_unbounded_ordered_or_undeclared_destination_is_unsupported() {
 /// FR-365-AC-3 (C12): `back`, a forward traversal of a `target-to-source`
 /// relationship with an unbounded destination, is a direction refusal, not an
 /// `expression-form`.
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c12_direction_is_reported_before_multiplicity() {
     assert_refused(
@@ -577,7 +577,7 @@ fn c12_direction_is_reported_before_multiplicity() {
 
 /// FR-365-AC-3 (C13): `reaches` in a `Value` function body refuses
 /// `ill_typed`/`operator-ineligible` at the form.
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c13_a_function_body_has_no_observation_to_traverse() {
     assert_refused(
@@ -656,7 +656,7 @@ fn the_context_population_is_not_added_twice() {
 
 /// FR-365-AC-3 (C16): `loose`'s destination fails both the multiplicity and
 /// the type check, and the multiplicity is reported first.
-#[trace("TC-1046", "FR-365-AC-3")]
+#[trace("TC-1046", "FR-365-AC-3", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn c16_multiplicity_is_reported_before_destination_type() {
     assert_refused(

@@ -111,7 +111,7 @@ fn exact_backend() -> qsl_route::BackendDescriptor {
     .expect("a well-formed exact backend")
 }
 
-fn registry() -> Registry {
+pub(crate) fn registry() -> Registry {
     let mut registry = Registry::new();
     registry
         .register(
@@ -122,7 +122,7 @@ fn registry() -> Registry {
     registry
 }
 
-fn candidate_ids(item: &RequirementItem) -> Vec<String> {
+pub(crate) fn candidate_ids(item: &RequirementItem) -> Vec<String> {
     match item.candidates() {
         CandidateOutcome::Candidates(set) => set
             .candidates()

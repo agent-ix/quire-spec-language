@@ -83,6 +83,12 @@ const CLAUSES: &[(&str, &str)] = &[
         "forall(n in ints(sequence[0, count<Zero>(m in ints(sequence[self.versionNumber]): m > 0)]): \
          n < 500)",
     ),
+    ("FloatOrder", "fl(ONE) < fl(TWO)"),
+    ("FloatNot", "not (fl(ONE) < fl(TWO))"),
+    ("FloatLet", "let k = 500 in fl(ONE) < fl(TWO)"),
+    ("FloatOrOperand", "self.versionNumber = 0 or fl(ONE) < fl(TWO)"),
+    ("FloatAndOperand", "self.versionNumber > 0 and fl(ONE) < fl(TWO)"),
+    ("FloatImpliesOperand", "self.versionNumber > 0 implies fl(ONE) < fl(TWO)"),
     (
         "NoneSelected",
         "forall(n in filter(m in ints(sequence[0, self.versionNumber]): m > 900): n < 0)",
@@ -102,9 +108,13 @@ fn witness_unit_text() -> String {
         "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] pure { xs }\n\
          function refs using v(xs: Sequence<Config::ConfigVersion>[0, 2]): \
          Sequence<Config::ConfigVersion>[0, 2] pure { xs }\n\
-         type Zero = Int[0, 0];\n",
+         type Zero = Int[0, 0];\n\
+         function fl using v(x: Float64[nearest-even]): Float64[nearest-even] pure { x }\n",
     );
     for (name, body) in CLAUSES {
+        let body = body
+            .replace("ONE", "float64(bits: 0x3ff0000000000000)")
+            .replace("TWO", "float64(bits: 0x4000000000000000)");
         unit.push_str(&format!(
             "invariant {name} using v on Config::ConfigVersion at current {{ {body} }}\n"
         ));
@@ -1031,6 +1041,62 @@ fn tc_740_a_satisfied_exists_or_negated_forall_derives_a_decisive_witness() {
         "its forall stopped"
     );
     assert_eq!(derive(&unit, "EqualsAll", Snapshot::High, "mid"), closed());
+}
+
+/// FR-265: a float ordering lowers to connectives the checker synthesized,
+/// which record no decision; the decision path ends there with
+/// `closed-scope`.
+fn a_float_ordering_ends_the_path(clause: &str, truth: bool) {
+    let unit = witness_unit();
+    let (_, evaluation, _) = evaluate(&unit, clause, Snapshot::High, "mid", 1_000_000);
+    let quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+        settled,
+    ))) = &evaluation.evaluation.outcome
+    else {
+        panic!("{clause} completes a Boolean");
+    };
+    assert_eq!(*settled, truth, "{clause}");
+    assert_eq!(
+        derive(&unit, clause, Snapshot::High, "mid"),
+        closed(),
+        "{clause}"
+    );
+}
+
+#[trace("TC-740", "FR-265-AC-3")]
+#[test]
+fn tc_740_a_float_ordering_clause_ends_the_path_at_closed_scope() {
+    a_float_ordering_ends_the_path("FloatOrder", true);
+}
+
+#[trace("TC-740", "FR-265-AC-3")]
+#[test]
+fn tc_740_a_float_ordering_under_not_ends_the_path_at_closed_scope() {
+    a_float_ordering_ends_the_path("FloatNot", false);
+}
+
+#[trace("TC-740", "FR-265-AC-3")]
+#[test]
+fn tc_740_a_float_ordering_under_let_ends_the_path_at_closed_scope() {
+    a_float_ordering_ends_the_path("FloatLet", true);
+}
+
+#[trace("TC-740", "FR-265-AC-3")]
+#[test]
+fn tc_740_a_float_ordering_as_a_walked_or_operand_ends_the_path_at_closed_scope() {
+    a_float_ordering_ends_the_path("FloatOrOperand", true);
+}
+
+#[trace("TC-740", "FR-265-AC-3")]
+#[test]
+fn tc_740_a_float_ordering_as_a_walked_and_operand_ends_the_path_at_closed_scope() {
+    a_float_ordering_ends_the_path("FloatAndOperand", true);
+}
+
+#[trace("TC-740", "FR-265-AC-3")]
+#[test]
+fn tc_740_a_float_ordering_as_an_implies_consequent_ends_the_path_at_closed_scope() {
+    a_float_ordering_ends_the_path("FloatImpliesOperand", true);
 }
 
 /// TC-740 step 3 (FR-265-AC-3): the decision path through `implies`, `let`
@@ -2205,16 +2271,16 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
     )
     .expect("the unit graph admits");
     let units = quire_semantic_value::quantity::UnitTable::declared(&graph);
-    let graph = qsl_semantics::check::PackageDeclarations {
-        types: quire_semantic_value::declaration::TypeEnvironment::default().with_units(units),
-        ..qsl_semantics::check::PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    }
-    .check(quire_semantic_value::checking::CheckingLimits::default())
-    .expect("the unit table checks");
+    let mut declarations = qsl_semantics::check::PackageDeclarations::new(
+        qsl_semantics::check::fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.types =
+        quire_semantic_value::declaration::TypeEnvironment::default().with_units(units);
+    let graph = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the unit table checks");
     (
         qsl_package::CheckedPackage::link(graph),
         quire_exact::UnitId::declared(metre_key),

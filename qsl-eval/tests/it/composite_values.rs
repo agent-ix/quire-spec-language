@@ -838,15 +838,16 @@ mod checked {
         aliases: Vec<(String, ValueType)>,
         functions: Vec<FunctionDeclaration>,
     ) -> Result<CheckedPackage, Vec<CheckRefusal>> {
-        PackageDeclarations {
-            types,
-            aliases,
-            functions,
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations.aliases = aliases;
+            declarations.functions = functions;
+            declarations
         }
         .check(CheckingLimits::default())
         // ADR-013 T-1 (FR-087): the S4 link step, over an

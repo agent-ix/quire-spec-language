@@ -115,6 +115,15 @@ pub struct AssemblyRun<'a> {
     pub execution_points: BTreeMap<String, quire_contract_model::ExecutionPoint>,
 }
 
+/// The sources an assembly reads: the primary source that owns the package,
+/// every admitted source, and the source that owns each declaration when
+/// several units were combined.
+struct SourceUnits {
+    primary: RawSourceRef,
+    sources: Vec<RawSourceRef>,
+    source_owners: BTreeMap<String, RawSourceRef>,
+}
+
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssemblyLimits {
@@ -193,6 +202,8 @@ pub enum TopologyFault {
 /// refuses in these cases").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssemblyCause {
+    /// The aggregate assembler was given no admitted source units.
+    EmptyUnitList,
     /// A qualified type name names no declaration of the unit and nothing
     /// in an admitted domain package.
     UnresolvedTypeName {
@@ -509,6 +520,7 @@ impl AssemblyCause {
     /// This cause's catalog code (FR-091 "Catalog codes").
     pub fn code(&self) -> Code {
         match self {
+            Self::EmptyUnitList => Code::InvalidPackage,
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
             | Self::UnresolvedOperation { .. }
@@ -601,6 +613,7 @@ impl AssemblyCause {
     /// ADR-013 O-17).
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
+            Self::EmptyUnitList => "established-invariant-broken",
             Self::UnresolvedTypeName { .. }
             | Self::UnresolvedOperation { .. }
             | Self::UnresolvedTerminalModel { .. }
@@ -3067,6 +3080,92 @@ pub struct AdmittedImport {
 qsl_foundation::debug_with_struct!(AdmittedImport, "AdmittedImport" { identity: plain, view: with, graph: with });
 
 impl PackageDeclarations {
+    /// Assemble an admitted set of source units as one declaration namespace.
+    /// Units are sorted by their `(authority, identity)` source reference
+    /// before forms are combined; declaration names retain the source that
+    /// contributed them so S3 can key nodes and source regions under that
+    /// owner. Admission of empty, duplicate, and colliding owners belongs to
+    /// the spine's FR-480 preflight stage.
+    pub fn assemble_units(
+        package_name: String,
+        mut units: Vec<(RawSourceRef, ParsedUnit)>,
+        models: impl Into<SelectedModels>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+        cancel: &Cancel,
+    ) -> Result<Self, AssemblyRefusal> {
+        units.sort_by(|(left, _), (right, _)| left.cmp(right));
+        let Some((source, _)) = units.first() else {
+            return Err(AssemblyRefusal {
+                errors: vec![AssemblyError {
+                    cause: AssemblyCause::EmptyUnitList,
+                    span: Span { start: 0, end: 0 },
+                }],
+            });
+        };
+        let source = source.clone();
+        let mut source_owners = BTreeMap::new();
+        let sources: Vec<_> = units.iter().map(|(source, _)| source.clone()).collect();
+        let mut state_clause_index = 0usize;
+        for (source, unit) in &units {
+            for form in unit.forms() {
+                if matches!(form.form(), qsl_forms::DeclarationForm::StateClause(_)) {
+                    source_owners
+                        .insert(format!("state_clause:{state_clause_index}"), source.clone());
+                    state_clause_index += 1;
+                }
+                match form.form() {
+                    qsl_forms::DeclarationForm::DimensionEquivalence(equivalence) => {
+                        source_owners
+                            .insert(equivalence::source_owner_key(equivalence), source.clone());
+                    }
+                    qsl_forms::DeclarationForm::Dimension(dimension) => {
+                        source_owners.insert(dimension.name.name.clone(), source.clone());
+                        source_owners.insert(
+                            super::lowering::quantity_origin(
+                                super::lowering::QuantityKind::Dimension,
+                                &dimension.name.name,
+                            ),
+                            source.clone(),
+                        );
+                    }
+                    qsl_forms::DeclarationForm::Unit(unit) => {
+                        source_owners.insert(unit.name.name.clone(), source.clone());
+                        source_owners.insert(
+                            super::lowering::quantity_origin(
+                                super::lowering::QuantityKind::Unit,
+                                &unit.name.name,
+                            ),
+                            source.clone(),
+                        );
+                    }
+                    _ => {
+                        if let Some(name) = form.declared_name() {
+                            source_owners.insert(name.to_owned(), source.clone());
+                        }
+                    }
+                }
+            }
+        }
+        let combined = ParsedUnit::combine(units.into_iter().map(|(_, unit)| unit));
+        Self::assemble_with_execution_points_and_cancel_and_owners(
+            package_name,
+            combined,
+            models,
+            imports,
+            limits,
+            AssemblyRun {
+                cancel,
+                execution_points: BTreeMap::new(),
+            },
+            SourceUnits {
+                primary: source,
+                sources,
+                source_owners,
+            },
+        )
+    }
+
     /// FR-091's assembler: the package declared by `unit`, the S2 output of
     /// the source unit `source` names, whose authority and identity are the
     /// owner of every declared node (ADR-013 O-04), over `models`, the
@@ -3153,10 +3252,41 @@ impl PackageDeclarations {
         limits: AssemblyLimits,
         run: AssemblyRun<'_>,
     ) -> Result<Self, AssemblyRefusal> {
+        Self::assemble_with_execution_points_and_cancel_and_owners(
+            package_name,
+            unit,
+            models,
+            imports,
+            limits,
+            run,
+            SourceUnits {
+                primary: source.clone(),
+                sources: vec![source],
+                source_owners: BTreeMap::new(),
+            },
+        )
+    }
+
+    fn assemble_with_execution_points_and_cancel_and_owners(
+        package_name: String,
+        unit: ParsedUnit,
+        models: impl Into<SelectedModels>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+        run: AssemblyRun<'_>,
+        source_units: SourceUnits,
+    ) -> Result<Self, AssemblyRefusal> {
+        let SourceUnits {
+            primary: source,
+            sources,
+            source_owners,
+        } = source_units;
         let AssemblyRun {
             cancel,
             execution_points,
         } = run;
+        let model_selection_units = unit.model_selection_units().to_vec();
+        let import_selection_units = unit.import_selection_units().to_vec();
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -3168,7 +3298,11 @@ impl PackageDeclarations {
             .models
             .iter()
             .filter_map(|selection| {
-                let model = models.iter().find(|model| model.alias == selection.alias)?;
+                let model = models.iter().find(|model| {
+                    model.alias == selection.alias
+                        && model.view.domain_package().model_selection.identity
+                            == selection.identity
+                })?;
                 Some(
                     AdmittedModel::from_view(&model.view)
                         .with_alias(&selection.alias)
@@ -3182,7 +3316,22 @@ impl PackageDeclarations {
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
-        let quantity_owners = OwnerSelection::new([owner.node_owner(&package_name)]);
+        let source_node_owners: BTreeMap<String, SourceOwner> = source_owners
+            .iter()
+            .map(|(key, source)| (key.clone(), SourceOwner::from(source)))
+            .collect();
+        let mut admitted_source_owners: Vec<_> = source_owners
+            .values()
+            .map(|source| SourceOwner::from(source).node_owner(&package_name))
+            .collect();
+        admitted_source_owners.push(owner.node_owner(&package_name));
+        let quantity_owners = OwnerSelection::new(admitted_source_owners);
+        let source_owner_for = |name: &str| {
+            source_owners
+                .get(name)
+                .map(SourceOwner::from)
+                .unwrap_or_else(|| owner.clone())
+        };
         // The selected packages' dimensions, which a source dimension's
         // terms may name.
         let imported = units::Imported::new(
@@ -3190,7 +3339,11 @@ impl PackageDeclarations {
                 .models
                 .iter()
                 .filter_map(|selection| {
-                    let model = models.iter().find(|model| model.alias == selection.alias)?;
+                    let model = models.iter().find(|model| {
+                        model.alias == selection.alias
+                            && model.view.domain_package().model_selection.identity
+                                == selection.identity
+                    })?;
                     Some((
                         AdmittedModel::from_view(&model.view).with_alias(&selection.alias),
                         selection.span,
@@ -3203,6 +3356,7 @@ impl PackageDeclarations {
             &unit.units,
             &imported,
             &owner,
+            &source_node_owners,
             &package_name,
             limits,
         );
@@ -3225,8 +3379,12 @@ impl PackageDeclarations {
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
         let mut type_invariants = Vec::new();
+        let mut materialized_model_identities = BTreeSet::new();
         for selection in &selections.models {
-            let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
+            let Some(model) = models.iter().find(|model| {
+                model.alias == selection.alias
+                    && model.view.domain_package().model_selection.identity == selection.identity
+            }) else {
                 errors.push(AssemblyError {
                     cause: AssemblyCause::UnadmittedModel {
                         alias: selection.alias.clone(),
@@ -3235,47 +3393,75 @@ impl PackageDeclarations {
                 });
                 continue;
             };
-            match model_object_types(
-                &selection.alias,
-                model,
-                selection.span,
-                &mut operations,
-                &model_units,
-            ) {
-                Ok(types) => {
-                    for declaration in &types.objects {
-                        object_spans.insert(declaration.name().to_owned(), selection.span);
+            if materialized_model_identities.insert(selection.identity.clone()) {
+                match model_object_types(
+                    &selection.alias,
+                    model,
+                    selection.span,
+                    &mut operations,
+                    &model_units,
+                ) {
+                    Ok(types) => {
+                        for declaration in &types.objects {
+                            object_spans.insert(declaration.name().to_owned(), selection.span);
+                        }
+                        object_types.extend(types.objects);
+                        model_composites.extend(types.composites);
+                        model_variant_types.extend(types.variant_types);
+                        model_scalars.extend(types.scalars);
+                        model_records.extend(types.model_records);
+                        model_relationships.extend(types.relationships);
+                        let handles = types.handles;
+                        match operation_clause_declarations(&selection.alias, model, &operations) {
+                            Ok(resolved) => operation_clauses.extend(resolved),
+                            Err(cause) => errors.push(AssemblyError {
+                                cause,
+                                span: selection.span,
+                            }),
+                        }
+                        match type_invariant_declarations(&selection.alias, model, &handles) {
+                            Ok(resolved) => type_invariants.extend(resolved),
+                            Err(cause) => errors.push(AssemblyError {
+                                cause,
+                                span: selection.span,
+                            }),
+                        }
                     }
-                    object_types.extend(types.objects);
-                    model_composites.extend(types.composites);
-                    model_variant_types.extend(types.variant_types);
-                    model_scalars.extend(types.scalars);
-                    model_records.extend(types.model_records);
-                    model_relationships.extend(types.relationships);
-                    let handles = types.handles;
-                    match operation_clause_declarations(&selection.alias, model, &operations) {
-                        Ok(resolved) => operation_clauses.extend(resolved),
-                        Err(cause) => errors.push(AssemblyError {
-                            cause,
-                            span: selection.span,
-                        }),
-                    }
-                    match type_invariant_declarations(&selection.alias, model, &handles) {
-                        Ok(resolved) => type_invariants.extend(resolved),
-                        Err(cause) => errors.push(AssemblyError {
-                            cause,
-                            span: selection.span,
-                        }),
-                    }
+                    Err(refused) => errors.extend(refused),
                 }
-                Err(refused) => errors.extend(refused),
             }
             admitted.push(AdmittedModel::from_view(&model.view).with_alias(&selection.alias));
         }
-        let object_names: BTreeMap<String, EffectiveId> = object_types
+        let mut object_names: BTreeMap<String, EffectiveId> = object_types
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
+        // Keep every source-local alias spelling for a shared model identity
+        // while retaining one structural type declaration in the graph.
+        for selection in &selections.models {
+            let Some(model) = models.iter().find(|model| {
+                model.alias == selection.alias
+                    && model.view.domain_package().model_selection.identity == selection.identity
+            }) else {
+                continue;
+            };
+            let identities = model.view.type_identities();
+            for declaration in &object_types {
+                if !identities
+                    .values()
+                    .any(|identity| identity == &declaration.key())
+                {
+                    continue;
+                }
+                let Some((_, artifact)) = declaration.name().split_once("::") else {
+                    continue;
+                };
+                object_names.insert(
+                    format!("{}::{artifact}", selection.alias),
+                    declaration.key(),
+                );
+            }
+        }
         // A model composite or a variant type is a declared type name; `M::T`
         // is no source declaration of the unit.
         let model_composite_names: BTreeSet<String> = model_composites
@@ -3291,44 +3477,75 @@ impl PackageDeclarations {
 
         // Selection aliases are unique within a unit, and a `using` alias
         // names one of its profile selections.
-        let mut aliases: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
-        for (alias, span) in selections
-            .profiles
-            .iter()
-            .map(|profile| (profile.alias.as_str(), profile.span))
-            .chain(
-                selections
-                    .imports
-                    .iter()
-                    .filter_map(|import| Some((import.alias.as_deref()?, import.span))),
-            )
-            .chain(
-                selections
-                    .models
-                    .iter()
-                    .map(|model| (model.alias.as_str(), model.span)),
-            )
+        let mut aliases: BTreeMap<&str, Vec<(Span, Option<usize>)>> = BTreeMap::new();
+        for (alias, span, source_unit) in
+            selections
+                .profiles
+                .iter()
+                .map(|profile| (profile.alias.as_str(), profile.span, None))
+                .chain(
+                    selections
+                        .imports
+                        .iter()
+                        .zip(&import_selection_units)
+                        .filter_map(|(import, source_unit)| {
+                            Some((import.alias.as_deref()?, import.span, Some(*source_unit)))
+                        }),
+                )
+                .chain(selections.models.iter().zip(&model_selection_units).map(
+                    |(model, source_unit)| (model.alias.as_str(), model.span, Some(*source_unit)),
+                ))
         {
-            aliases.entry(alias).or_default().push(span);
+            aliases.entry(alias).or_default().push((span, source_unit));
         }
-        for (alias, spans) in &aliases {
-            if let [_, second, ..] = spans.as_slice() {
+        for (alias, entries) in &aliases {
+            let model_aliases_only = entries.iter().all(|(_, source_unit)| source_unit.is_some());
+            let duplicate = if model_aliases_only {
+                let mut spans_by_unit = BTreeMap::<usize, Vec<Span>>::new();
+                for (span, source_unit) in entries {
+                    spans_by_unit
+                        .entry(source_unit.expect("model aliases have a source unit"))
+                        .or_default()
+                        .push(*span);
+                }
+                spans_by_unit
+                    .into_values()
+                    .find(|spans| spans.len() > 1)
+                    .map(|spans| (spans.clone(), spans[1]))
+            } else if entries.len() > 1 {
+                Some((
+                    entries.iter().map(|(span, _)| *span).collect(),
+                    entries[1].0,
+                ))
+            } else {
+                None
+            };
+            if let Some((spans, second)) = duplicate {
                 errors.push(AssemblyError {
                     cause: AssemblyCause::DuplicateAlias {
                         alias: (*alias).to_owned(),
-                        spans: spans.clone(),
+                        spans,
                     },
-                    span: *second,
+                    span: second,
                 });
             }
         }
         let mut qualified = BTreeMap::new();
-        for import in &selections.imports {
+        for (index, import) in selections.imports.iter().enumerate() {
             let admitted = imports
                 .iter()
                 .find(|admitted| admitted.identity.as_str() == import.identity);
             if let (Some(admitted), Some(alias)) = (admitted, &import.alias) {
                 qualified.insert(alias.clone(), admitted.clone());
+                if let Some(source) = import_selection_units
+                    .get(index)
+                    .and_then(|source_unit| sources.get(*source_unit))
+                {
+                    qualified.insert(
+                        super::check::source_import_key(source, alias),
+                        admitted.clone(),
+                    );
+                }
             }
             if admitted.is_none() {
                 errors.push(AssemblyError {
@@ -3504,8 +3721,11 @@ impl PackageDeclarations {
                     &unit.equivalences,
                     equivalence::SourceView::Admitted(&quantities),
                     &admitted,
-                    &owner,
-                    &package_name,
+                    equivalence::Ownership {
+                        owner: &owner,
+                        source_owners: &source_node_owners,
+                        package_name: &package_name,
+                    },
                     limits,
                     equivalence::Phase::All,
                 )
@@ -3520,8 +3740,11 @@ impl PackageDeclarations {
                     &unit.equivalences,
                     equivalence::SourceView::Provisional(&refused.provisional),
                     &admitted,
-                    &owner,
-                    &package_name,
+                    equivalence::Ownership {
+                        owner: &owner,
+                        source_owners: &source_node_owners,
+                        package_name: &package_name,
+                    },
                     limits,
                     equivalence::Phase::Base,
                 )
@@ -3698,7 +3921,8 @@ impl PackageDeclarations {
         // and its members' keys are minted here (FB-13).
         let mut enums = Vec::with_capacity(unit.enums.len());
         for enumeration in &unit.enums {
-            match admit_enum(enumeration, &owner, &package_name, &owners) {
+            let declaration_owner = source_owner_for(&enumeration.name.name);
+            match admit_enum(enumeration, &declaration_owner, &package_name, &owners) {
                 Ok(binding) => {
                     names
                         .types
@@ -3715,7 +3939,8 @@ impl PackageDeclarations {
         }
         let mut handles = Vec::with_capacity(unit.composites.len());
         for composite in &unit.composites {
-            match owner
+            let declaration_owner = source_owner_for(&composite.name.name);
+            match declaration_owner
                 .node_owner(&package_name)
                 .declared_type_handle(&composite.name.name)
             {
@@ -3963,6 +4188,8 @@ impl PackageDeclarations {
         // with a bad state clause and a bad attempt reports both in one
         // refusal (clause errors first, then attempt errors).
         let resolve = Resolve {
+            source: &source,
+            source_owners: &source_owners,
             profiles: &selections.profiles,
             object_names: &object_names,
             types: &types,
@@ -4093,6 +4320,8 @@ impl PackageDeclarations {
         }
 
         let mut package = PackageDeclarations::new(source, package_name, limits.identity);
+        package.sources = sources;
+        package.source_owners = source_owners;
         package.execution_point_keys = execution_points.keys().cloned().collect();
         package.types = types;
         package.operations = operations;
@@ -4139,13 +4368,32 @@ impl PackageDeclarations {
             package.units = quantities.graph;
             package.nominal_spans = quantities.spans;
         }
-        for equivalence in &equivalences {
+        for (index, equivalence) in equivalences.iter().enumerate() {
             package
                 .nominal_spans
                 .insert(equivalence.key.clone(), equivalence.span);
+            if let Ok(source) = RawSourceRef::new(
+                equivalence.owner.authority().to_owned(),
+                equivalence.owner.identity().to_owned(),
+            ) {
+                package
+                    .source_owners
+                    .insert(super::lowering::equivalence_origin(index), source);
+            }
         }
         package.dimension_equivalences = equivalences;
         package.functions = unit.functions;
+        package.function_sources = package
+            .functions
+            .iter()
+            .map(|function| {
+                package
+                    .source_owners
+                    .get(&function.name)
+                    .cloned()
+                    .unwrap_or_else(|| package.source.clone())
+            })
+            .collect();
         package.function_selections = function_selections;
         declared_type_spans.extend(state_clauses.iter().enumerate().map(|(index, clause)| {
             (
@@ -4197,6 +4445,32 @@ impl PackageDeclarations {
         for (index, clause) in unit.temporal_clauses.iter().enumerate() {
             use super::lowering::{temporal_site, TemporalSite};
             let form = &clause.form;
+            let temporal_owner = package.source_owners.get(&form.name.name).cloned();
+            let mut temporal_sites = vec![TemporalSite::Claim, TemporalSite::Over];
+            if let qsl_forms::ActivationForm::Each { when, .. } = &form.activation {
+                temporal_sites.push(TemporalSite::Trigger);
+                if when.is_some() {
+                    temporal_sites.push(TemporalSite::Guard);
+                }
+            }
+            for (capture, _) in form.captures.iter().enumerate() {
+                temporal_sites.push(TemporalSite::Capture(capture));
+                temporal_sites.push(TemporalSite::CaptureValue(capture));
+            }
+            for (id, node) in form.formula.iter() {
+                temporal_sites.push(TemporalSite::Node(id.index()));
+                if matches!(node, qsl_forms::TemporalNodeForm::Holds { .. }) {
+                    temporal_sites.push(TemporalSite::Condition(id.index()));
+                }
+            }
+            temporal_sites.extend((0..form.fairness.len()).map(TemporalSite::Fairness));
+            if let Some(owner) = temporal_owner {
+                for site in temporal_sites {
+                    package
+                        .source_owners
+                        .insert(temporal_site(index, site), owner.clone());
+                }
+            }
             declared_type_spans.insert(temporal_site(index, TemporalSite::Claim), form.name.span);
             declared_type_spans.insert(
                 temporal_site(index, TemporalSite::Over),
@@ -4403,6 +4677,8 @@ impl PackageDeclarations {
 /// over them, and the selected models.
 #[derive(Clone, Copy)]
 struct Resolve<'a> {
+    source: &'a RawSourceRef,
+    source_owners: &'a BTreeMap<String, RawSourceRef>,
     profiles: &'a [qsl_foundation::selection::ProfileSelection],
     object_names: &'a BTreeMap<String, EffectiveId>,
     types: &'a TypeEnvironment,
@@ -4426,6 +4702,8 @@ fn state_clauses(
     execution_points: &BTreeMap<String, quire_contract_model::ExecutionPoint>,
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
+        source,
+        source_owners,
         profiles,
         object_names,
         types,
@@ -4435,7 +4713,7 @@ fn state_clauses(
     let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();
     let mut clauses = Vec::with_capacity(forms.len());
-    for form in forms {
+    for (index, form) in forms.into_iter().enumerate() {
         let error = |cause, span| AssemblyError { cause, span };
         let selection = profiles
             .iter()
@@ -4550,6 +4828,10 @@ fn state_clauses(
         let Some(selection) = selection else {
             continue;
         };
+        let source_owner = source_owners
+            .get(&format!("state_clause:{index}"))
+            .cloned()
+            .unwrap_or_else(|| source.clone());
         let name = form.name.name;
         let execution_point = execution_points
             .get(&name)
@@ -4562,6 +4844,7 @@ fn state_clauses(
                 .as_ref()
                 .map(|operation| operation.name.clone()),
             name,
+            source_owner: Some(source_owner),
             name_span: form.name.span,
             selection,
             context,
@@ -5077,7 +5360,14 @@ fn operation_key_of(
     declaring: EffectiveId,
     name: &str,
 ) -> Option<DeclarationKey> {
-    let model = models.iter().find(|model| model.alias == alias)?;
+    let model = models.iter().find(|model| {
+        model.alias == alias
+            && model
+                .view
+                .type_identities()
+                .values()
+                .any(|identity| identity == &declaring)
+    })?;
     let owner = model
         .view
         .type_identities()
@@ -5119,6 +5409,7 @@ fn operation_bodies(
         types,
         operations,
         selected,
+        ..
     } = *resolve;
     let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();

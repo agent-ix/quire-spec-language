@@ -2,6 +2,7 @@
 //! Integration tests that reach `qsl-replay` through its public facade only.
 
 mod admitted_record_chain;
+mod aggregate_dispatch;
 mod category_facade;
 mod checked_body_failure;
 mod compile_ieee_profile;
@@ -33,5 +34,6 @@ mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod script_search;
+mod static_subject;
 mod vault_world;
 mod witness_entry_name;

@@ -614,7 +614,7 @@ fn invoice(package: &CheckedPackage, total: Value) -> Value {
 /// FR-359-AC-4: `==` and `!=` over two `Money`-typed operands, one a
 /// `TaxedMoney`, give `false` and `true` in either order, never a
 /// checked-invariant refusal; equal effective fields are equal.
-#[trace("FR-359-AC-4", "TC-999")]
+#[trace("FR-359-AC-4", "TC-999", "QSpec-TC-194", "QSpec-FR-149-AC-17")]
 #[test]
 fn equality_over_a_child_at_a_parent_typed_slot_is_a_boolean() {
     let package = package(EQUALITY);
@@ -685,7 +685,7 @@ fn equality_over_a_child_at_a_parent_typed_slot_is_a_boolean() {
 /// FR-359-AC-5: equality reaches a child inside another value by the same
 /// rule: a record field, an `Option`, a `Sequence`, a `Set`, a `Bag`, an
 /// `OrderedSet` and a tuple position.
-#[trace("FR-359-AC-5", "TC-999")]
+#[trace("FR-359-AC-5", "TC-999", "QSpec-TC-194", "QSpec-FR-149-AC-17")]
 #[test]
 fn equality_reaches_a_child_inside_another_value_by_the_same_rule() {
     let package = package(EQUALITY);
@@ -831,6 +831,7 @@ fn an_optional_field_holding_a_child_reads_back_the_same_child() {
 /// fields has two elements, ordered by declaration key bytes in either
 /// source order, an `OrderedSet` and a `Sequence` keep their own order.
 #[trace("FR-359-AC-7", "TC-1000")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-15")]
 #[test]
 fn collections_of_the_parent_hold_children_and_order_by_declaration_key() {
     let package = package(
@@ -886,13 +887,28 @@ fn collections_of_the_parent_hold_children_and_order_by_declaration_key() {
             .expect("the child is kept");
         assert!(same_value(&held, &child));
     }
+
+    // QSpec FR-144-AC-15: two `TaxedMoney` of equal fields are one member of
+    // a `Set<Money>`, and two that differ in `tax_minor` are two.
+    let members = |first: Value, second: Value| {
+        let built = completed(&package, "sequenceOf", vec![first, second]);
+        elements(&field_of(&package, &built, "tags")).len()
+    };
+    assert_eq!(
+        members(taxed(&package, 100, 20), taxed(&package, 100, 20)),
+        1
+    );
+    assert_eq!(
+        members(taxed(&package, 100, 20), taxed(&package, 100, 21)),
+        2
+    );
 }
 
 /// FR-359-AC-11: two units that select the same model under different
 /// aliases give the same declaration keys, so a `Set<Money>` orders its
 /// elements the same way and a value built in one unit equals the value
 /// built in the other.
-#[trace("FR-359-AC-11", "TC-1000")]
+#[trace("FR-359-AC-11", "TC-1000", "QSpec-TC-188", "QSpec-FR-143-AC-17")]
 #[test]
 fn two_aliases_of_one_model_agree_on_keys_order_and_equality() {
     let build = |alias: &str| {
@@ -973,7 +989,7 @@ fn two_aliases_of_one_model_agree_on_keys_order_and_equality() {
 /// comparison. A `StampedTicket` and a `Ticket` with the same `label` are
 /// unequal, where an implementation that compared the parent's text leaves
 /// first would call them equal.
-#[trace("FR-359-AC-5", "TC-999")]
+#[trace("FR-359-AC-5", "TC-999", "QSpec-TC-194", "QSpec-FR-149-AC-17")]
 #[test]
 fn a_mixed_pair_with_equal_text_leaves_is_unequal() {
     let document = fixture::document_with_native_leaves();

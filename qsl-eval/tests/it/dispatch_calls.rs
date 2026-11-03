@@ -281,10 +281,15 @@ fn one_candidate_package(
         )],
         1,
     );
-    PackageDeclarations {
-        types: types(receiver_type.clone()),
-        functions,
-        dispatch_operations: vec![DispatchOperation {
+    {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types(receiver_type.clone());
+        declarations.functions = functions;
+        declarations.dispatch_operations = vec![DispatchOperation {
             receiver_type: receiver_type.clone(),
             member: "size".to_owned(),
             parameters: Vec::new(),
@@ -292,15 +297,11 @@ fn one_candidate_package(
             selected_operation_owner: receiver_type,
             selected_operation: "size".to_owned(),
             table: 0,
-        }],
-        dispatch_tables: vec![table],
-        models: vec![receiver_model()],
-        model_clauses,
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        }];
+        declarations.dispatch_tables = vec![table];
+        declarations.models = vec![receiver_model()];
+        declarations.model_clauses = model_clauses;
+        declarations
     }
 }
 
@@ -850,20 +851,21 @@ fn synthesized_dispatch_candidate_is_not_callable_by_name() {
 #[trace("QSpec-TC-196")]
 #[test]
 fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup() {
-    let graph = PackageDeclarations {
-        functions: vec![FunctionDeclaration::clause(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.functions = vec![FunctionDeclaration::clause(
             "internal_guard",
             vec![],
             crate::support::type_form::type_form(&ValueType::Boolean),
             None,
             Expression::boolean(true),
             DeclaredClauseKind::Body,
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .expect("a single clause-kind function with no dispatch table checks cleanly");
@@ -1428,10 +1430,15 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
         )],
         1,
     );
-    let package = PackageDeclarations {
-        types: types(receiver_type.clone()),
-        functions,
-        dispatch_operations: vec![
+    let package = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types(receiver_type.clone());
+        declarations.functions = functions;
+        declarations.dispatch_operations = vec![
             DispatchOperation {
                 receiver_type: receiver_type.clone(),
                 member: "size".to_owned(),
@@ -1450,18 +1457,14 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
                 selected_operation: "weight".to_owned(),
                 table: 0,
             },
-        ],
-        dispatch_tables: vec![table],
-        models: vec![receiver_model()],
-        model_clauses: BTreeMap::from([
+        ];
+        declarations.dispatch_tables = vec![table];
+        declarations.models = vec![receiver_model()];
+        declarations.model_clauses = BTreeMap::from([
             (0, size_clause(DeclaredClauseKind::Body)),
             (1, size_clause(DeclaredClauseKind::Precondition)),
-        ]),
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        ]);
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -2252,6 +2255,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     let add_invariant = |name: &str, body: Expression| StateClauseDeclaration {
         kind: StateClauseKind::Invariant,
         name: name.to_owned(),
+        source_owner: None,
         name_span: Span { start: 0, end: 0 },
         authored_operation: None,
         selection: ProfileSelection {

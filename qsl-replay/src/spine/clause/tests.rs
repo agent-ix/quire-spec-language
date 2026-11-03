@@ -4847,7 +4847,7 @@ fn s4_state_package_reads_back_through_i2() {
 
 /// FR-147-AC-16 (TC-552 step 16): a dependency whose own protocol check
 /// refuses prevents the importing unit from reaching S3.
-#[trace("TC-552", "FR-147-AC-16")]
+#[trace("TC-552", "FR-147-AC-16", "FR-503-AC-4", "TC-1298")]
 #[test]
 fn a_refused_dependency_protocol_precedes_the_importing_units_s3_check() {
     let document = domain_document();
@@ -4875,6 +4875,14 @@ fn a_refused_dependency_protocol_precedes_the_importing_units_s3_check() {
         )
         .into_bytes(),
     };
+    let dependency_source = qsl_foundation::source::provenance::RawSourceRef::new(
+        "agent-ix",
+        "test:protocol-dependency",
+    )
+    .expect("valid dependency source reference");
+    let importer_source =
+        qsl_foundation::source::provenance::RawSourceRef::new("agent-ix", "test:importer")
+            .expect("valid importer source reference");
     let dependencies = DependencyInput::new(vec![dependency]).expect("one dependency is supplied");
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -4905,6 +4913,11 @@ fn a_refused_dependency_protocol_precedes_the_importing_units_s3_check() {
         matches!(refusal.as_ref(), CompileRefusal::Check { .. }),
         "{refusal:?}"
     );
+    let locus = refusal
+        .region()
+        .expect("the protocol check refusal names its declaration");
+    assert_eq!(locus.source(), &dependency_source);
+    assert_ne!(locus.source(), &importer_source);
 }
 
 mod call_site;

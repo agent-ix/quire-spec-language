@@ -34,13 +34,14 @@ fn call(name: &str, arguments: Vec<Expression>) -> Expression {
 }
 
 fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
-    PackageDeclarations {
-        functions,
-        ..PackageDeclarations::new(
+    {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.functions = functions;
+        declarations
     }
 }
 

@@ -6,12 +6,15 @@ use num_integer::Integer as _;
 use num_traits::{One, ToPrimitive};
 use quire_exact::{Integer as ExactInteger, Rational};
 
+use qsl_eval::temporal::{TickBound, TickShape};
+
+use crate::monitor_entries::spec_from_plan;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
-    MonitorSubject, MonitorTarget, SubformulaId, TickInterval, TimedMonitorPlan, TimingObligation,
-    TimingObligationSettings,
+    MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
+    TimingObligation, TimingObligationSettings,
 };
 use qsl_semantics::check::{CheckedInterval, CheckedTemporalClause, FormulaNode};
 use qsl_semantics::library::LibraryName;
@@ -117,6 +120,7 @@ pub fn produce(
     };
     let mut intervals = Vec::new();
     let mut buffers = Vec::new();
+    let mut tick_bounds = std::collections::BTreeMap::new();
     for operator in clause.operators() {
         let Some(CheckedInterval::Timed(interval)) = &operator.interval else {
             continue;
@@ -130,9 +134,24 @@ pub fn produce(
             upper.clone(),
             interval.upper_closed(),
         );
-        let window = upper.sub(&lower);
+        tick_bounds.insert(
+            operator.node.index(),
+            TickBound {
+                lower,
+                lower_closed: interval.lower_closed(),
+                upper,
+                upper_closed: interval.upper_closed(),
+            },
+        );
         intervals.push((id, tick_interval));
-        buffers.push((id, buffer_capacity(&rate_limit, &window)?));
+    }
+    let shape = TickShape::of(clause.formula(), &tick_bounds, &target.uncertainty);
+    for (id, _) in &intervals {
+        let retention = shape
+            .node(id.index())
+            .map(|node| node.retention.clone())
+            .ok_or(MonitorPlanRefusal::InvalidBufferInputs)?;
+        buffers.push((*id, buffer_capacity(&rate_limit, &retention)?));
     }
 
     let formula = clause.formula();
@@ -171,9 +190,56 @@ pub fn produce(
         intervals,
         buffers,
         rate_limit,
+        target.max_activations,
     );
+    plan.root_premises()
+        .validate()
+        .map_err(MonitorPlanRefusal::Premise)?;
+    // FR-251 "Fault boundary": a clause with no complete program derives no
+    // plan, so the shape the entries are generated from is checked here.
+    spec_from_plan(&plan)?;
     let obligations = plan_obligations(&plan, settings);
     Ok((plan, obligations))
+}
+
+/// Why admission refused a candidate plan.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PlanAdmissionRefusal {
+    /// The selected clause and target yield no plan.
+    #[error("the selection derives no plan: {0}")]
+    Underivable(MonitorPlanRefusal),
+    /// The candidate is not the plan derived from the selected clause and
+    /// target (an altered atom, operand, interval, buffer, activation or
+    /// target premise).
+    #[error("the candidate is not the plan derived from the selection")]
+    NotDerivedFromSelection,
+}
+
+/// Driver admission (FR-251 "Build inputs and identity"): re-derive the
+/// plan from the independently selected checked clause and target and admit
+/// `candidate` only when it equals the derived plan in every field. Matching
+/// subformula numbers of another subject never alias, because the subject is
+/// part of the compared plan. Returns the admitted plan's identity.
+pub fn admit(
+    package: &CheckedPackage,
+    library: LibraryName,
+    clause: &CheckedTemporalClause,
+    target: &MonitorTarget,
+    candidate: &TimedMonitorPlan,
+) -> Result<PlanId, PlanAdmissionRefusal> {
+    let (derived, _) = produce(
+        package,
+        library,
+        clause,
+        target,
+        &TimingObligationSettings::default(),
+    )
+    .map_err(PlanAdmissionRefusal::Underivable)?;
+    if &derived == candidate && derived.id() == candidate.id() {
+        Ok(derived.id())
+    } else {
+        Err(PlanAdmissionRefusal::NotDerivedFromSelection)
+    }
 }
 
 #[cfg(test)]
@@ -197,6 +263,9 @@ mod tests {
     #[test]
     fn event_buffer_capacity_rounds_up_then_adds_one() {
         assert_eq!(buffer_capacity(&ratio(2, 1), &ratio(10, 1)), Ok(21));
+        // FR-251-AC-2 and AC-13: 1 MHz ticks, 2 events per ms.
+        let window = ratio(10_001, 1);
+        assert_eq!(buffer_capacity(&ratio(2, 1000), &window), Ok(22));
         assert_eq!(buffer_capacity(&ratio(1, 3), &ratio(10, 1)), Ok(5));
     }
 

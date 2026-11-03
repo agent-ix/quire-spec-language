@@ -7,11 +7,11 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::num::NonZeroUsize;
 
 use ix_trace_rs::trace;
-use qsl_eval::simulation::protocol::{MemoryModel, ProtocolSystem, Ra, Sc, Tso};
+use qsl_eval::simulation::protocol::{ProtocolSystem, Ra, Sc, Tso};
 use qsl_eval::simulation::{StateKey, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 
-use crate::fill::{reachable, reachable_with_workers};
+use crate::fill::{reachable, reachable_with_workers, Explored};
 use crate::litmus::sb_unit;
 use crate::rc11_support::{self as rc11, Op, Order};
 use crate::weak_memory::{litmus_run, outcomes, register, select, steps, Case};
@@ -42,11 +42,12 @@ fn case_of(threads: &[Vec<Op>]) -> Case {
     Case::with_three_cells(&sb_unit(&litmus_run(&branches, "")))
 }
 
-fn under<M>(case: &Case, model: MemoryModelName, memory: M, select_it: bool) -> BTreeSet<Vec<i64>>
-where
-    M: MemoryModel + Sync,
-    M::Component: Send + Sync,
-{
+fn under<M: Explored>(
+    case: &Case,
+    model: MemoryModelName,
+    memory: M,
+    select_it: bool,
+) -> BTreeSet<Vec<i64>> {
     let selection = [select("SB::Main::Both", model)];
     let selection: &[_] = if select_it { &selection } else { &[] };
     outcomes(&case.system(selection, memory).expect("builds"))
@@ -244,6 +245,7 @@ fn lt12_reaches_its_weak_outcome_under_ra_only() {
 
 /// The parallel `reachable` explorer admits states in the order a sequential
 /// FIFO search would: the same indices, steps and edges on LT-12 under `ra`.
+#[trace("TC-668")]
 #[test]
 fn the_parallel_explorer_matches_a_sequential_fifo_search() {
     let case = case_of(&lt12());
@@ -297,7 +299,7 @@ fn the_parallel_explorer_matches_a_sequential_fifo_search() {
 
     assert_eq!(parallel.len(), keys.len(), "state count");
     for (index, reached) in parallel.iter().enumerate() {
-        assert_eq!(reached.key, keys[index], "state {index} key");
+        assert_eq!(reached.key.as_bytes(), keys[index], "state {index} key");
         let steps: Vec<usize> = reached.steps.iter().map(|(_, next)| *next).collect();
         assert_eq!(steps, edges[index], "state {index} successor indices");
     }
@@ -531,18 +533,14 @@ fn mp(
 #[trace("TC-453", "FR-101-AC-2")]
 #[test]
 fn the_written_state_key_is_the_encoded_key_envelope() {
-    fn written_is_encoded<M>(system: &ProtocolSystem<'_, M>)
-    where
-        M: MemoryModel + Sync,
-        M::Component: Send + Sync,
-    {
+    fn written_is_encoded<M: Explored>(system: &ProtocolSystem<'_, M>) {
         for reached in reachable(system) {
             let encoded = quire_canonical::to_vec(
                 &TransitionSystem::key(system, &reached.state),
                 quire_canonical::Limits::new(u64::MAX),
             )
             .expect("the key encodes");
-            assert_eq!(reached.key, encoded);
+            assert_eq!(reached.key.as_bytes(), encoded.as_slice());
         }
     }
     let case = case_of(&lt12());
