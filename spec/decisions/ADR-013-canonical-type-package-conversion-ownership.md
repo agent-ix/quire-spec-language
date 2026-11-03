@@ -1463,6 +1463,16 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
 | Timed-refund worktree | Proceeds against O-02 and O-23. |
 | Checked-package V2 application operation identity | Revised against O-06 and O-09; feeds #217. |
 
+## Amendments
+
+- 2026-11-03: FR-001 admits a source by its two labels, authority and
+  identity; the revision namespace and revision labels are dropped
+  (FR-001-AC-6 to AC-12). S-4b's "four-label `SourceIdentity`" and "each
+  carrying the four labels" now read "two-label" and "the two labels"; the
+  `RawSourceRef` S0 mints from the identity is unchanged. This amends the
+  wording only: the rows' decisions stand. The code still carries four labels
+  until the follow-up named in FR-001 "Code still carrying four labels" lands.
+
 ## Consequences
 
 - Every object in #211's list has one owner per layer, one implementing ticket

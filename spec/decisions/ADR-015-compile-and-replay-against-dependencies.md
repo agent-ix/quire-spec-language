@@ -30,7 +30,7 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
 `import`:
 
 1. How spine `compile`, the CLI and `replay` are given dependency sources,
-   and the four FR-001 labels that name them. The labels fix each
+   and the FR-001 labels that name them (four when this record was written; two since the FR-001 amendment, see Amendments). The labels fix each
    dependency's `SourceOwner` and so its `sources` row.
 2. How an import names its library. An import names the library by
    identity alone; the library is bound by the identity, version and `package_id`
@@ -303,6 +303,14 @@ stays acyclic.
   against the admitted dependency packages (QSpec FR-322-AC-36). CG's replay
   adapter fills the request's `dependencies` (ADR-013 C-12, QSpec
   FR-323-AC-7).
+
+## Amendments
+
+- 2026-11-03: FR-001 admits a source by its two labels, authority and identity;
+  the revision namespace and revision labels it once carried are dropped
+  (FR-001-AC-6 to AC-12). Where this record says "four FR-001 labels" it now
+  reads "two": D-1's labels that name a dependency source are its authority and
+  identity. The decision itself is unchanged.
 
 ## References
 

@@ -88,7 +88,7 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   the invocation's pre snapshot, `self` and parameters; for a postcondition
   selected by `Invocation`, the pre and post observations, the self object, the parameter values, the result value or
   none, and the admitted invocation delta. The value also names the selected
-  invocation by its four identity labels, whatever kind `self` is, for a
+  invocation by its two identity labels, whatever kind `self` is, for a
   postcondition and for a precondition selected by `Invocation`, and none for
   an invariant over a current snapshot and for a precondition selected by
 `PreCall`. FR-107 roots
@@ -276,8 +276,8 @@ Snapshot, format `quire.state.snapshot/v1`:
   when `observation` is `current`: the named initialization or handler
   observation the snapshot was taken at (`kind` `initialization` or
   `handler`), as QSpec's state contract requires of an invariant.
-- `invocation` is optional on a `pre` or `post` snapshot: the four identity
-  labels (`authority`, `identity`, `revision_namespace`, `revision`) of the
+- `invocation` is optional on a `pre` or `post` snapshot: the two identity
+  labels (`authority`, `identity`) of the
   invocation document the snapshot observes. A snapshot without it
   is unbound to any invocation.
 - `population` and `type` are declaration identities of the selected
@@ -714,7 +714,7 @@ Invocation, format `quire.state.invocation/v1`:
 observation: `Current { snapshot: DocumentRef, anchor, self: ObjectRef }`,
 `PreCall { snapshot: DocumentRef, self: ObjectRef, parameters }` or
 `Invocation { invocation: DocumentRef }` or `Context { invocation:
-DocumentRef, side }`, where `DocumentRef` is the four
+DocumentRef, side }`, where `DocumentRef` is the two
 FR-001 labels, `side` is `pre` or `post`, `anchor` is `{kind, name}`, and
 `parameters` maps each declared parameter name to a value in the snapshot
 value form, as an invocation's `parameters` member does. `Context` selects the
@@ -877,7 +877,7 @@ required; check 10 settles it.
    `wrong-invocation`. An invariant names no operation, so `Context`
    accepts any effective operation of the machine (QSpec FR-208-AC-10: every
    invocation of every operation). If a `pre` or `post` snapshot of the invocation
-   names an `invocation` whose four labels differ from the selected
+   names an `invocation` whose two labels differ from the selected
    invocation's own identity, then admission SHALL refuse `wrong_snapshot`/
    `wrong-invocation`, naming that snapshot, the selected invocation's
    identity and the one the snapshot names, `pre` before `post`. A snapshot

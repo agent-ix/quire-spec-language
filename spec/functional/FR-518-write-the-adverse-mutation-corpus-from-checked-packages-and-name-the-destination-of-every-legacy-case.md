@@ -181,4 +181,5 @@ self-check returns `CaseMismatch`, so no corpus ships that the reader admits. Th
   emission side of rows 9 to 12 and 17 to 21 is covered there), Contract IR
   FR-038 (temporal binding rows), QSL-1270.
 - **Successors:** rows 14 and 15 are carried by rows 12 and 29 and by rows 14b and 15b; row 28 is carried by row 28m, gated on IR-1273.
+- **Source claims:** [FR-528](FR-528-write-a-source-integrity-claim-on-every-source-reference-of-an-emitted-checked-package.md): the emitter writes the `source_integrity` claim of every source reference of the packages this writer emits, and case 28m changes one byte of the bytes the reader is handed.
 - **Contract IR:** IR-1273, source-byte integrity on `CheckedSourceRef` (row 28m); IR-1278, the checked package carries no temporal clause name (FR-518-AC-11).

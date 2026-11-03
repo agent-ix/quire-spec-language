@@ -41,7 +41,7 @@ in which `qsl-replay` is built with its feature `quire-extraction` (for the
 
 ## Inputs
 
-In process: the original Markdown `Source`, with its four FR-001 labels and
+In process: the original Markdown `Source`, with its two FR-001 labels and
 the raw bytes the caller supplies; FR-030's `Selection` (the authored
 clause id, the authored package and the body's own `SourceIdentity`);
 FR-030's `Limits` for the original document; and the other
