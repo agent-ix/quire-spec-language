@@ -750,9 +750,11 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
 /// resolves every quantity type, admission matches argument units to
 /// parameter units, and an expression checked against another graph is
 /// refused before evaluation (#2098, FR-049-AC-1). The object-environment
-/// route is closed too (QSL-1470, FR-049-AC-2/AC-3): an attribute read
-/// refuses a stored value that is not of the declared type under the
-/// package's own types, `invalid_runtime_input`/`wrong-value-kind`
+/// route is closed too (QSL-1470, QSL-1565, FR-049-AC-2/AC-3): a call or
+/// expression entry refuses an object environment holding a value that is
+/// not of the declared type under the package's own types,
+/// `invalid_runtime_input`/`wrong-value-kind`, and an attribute read refuses
+/// it on the entries that do not admit the environment
 /// (`equality_matrix.rs`). No caller input reaches this fault, so the probe
 /// drives the machine directly.
 #[test]
@@ -1589,104 +1591,100 @@ fn an_out_of_type_stored_value_is_refused_at_the_public_call_and_evaluate_entrie
                 package.evaluate(&checked, arguments, &objects, &mut meter)
             };
             if stored < 0 {
-                // QSL-1470 (FR-049-AC-2/AC-3): the stored -1 is caller input
-                // outside the declared `Int[0, 9]`, so the read refuses it
-                // rather than reaching the equality-source fault.
-                let FamilyOutcome::FamilyEvaluated(quire_eval::FamilyResult::Refused(cause)) =
-                    result.unwrap().outcome
-                else {
-                    panic!("an out-of-type stored value refuses");
+                // QSL-1565 (FR-049-AC-2/AC-3): the stored -1 is caller input
+                // outside the declared `Int[0, 9]`, so the entry refuses the
+                // object environment before any charge, rather than reaching
+                // the equality-source fault.
+                let record = match result {
+                    Err(CallFailure::Admission(failure)) => match *failure {
+                        quire_eval::CallAdmissionFailure::Refused(record) => record,
+                        other => panic!("an entry refusal, not {other:?}"),
+                    },
+                    other => panic!("an out-of-type stored value refuses at entry: {other:?}"),
                 };
-                let code = cause.catalog_code();
                 assert_eq!(
-                    (code.code(), code.cause()),
+                    (record.record.catalog.code(), record.record.catalog.cause()),
                     ("invalid_runtime_input", "wrong-value-kind")
                 );
-                let expected: &[ChargePoint] = if call {
-                    &[ChargePoint::FunctionCall]
-                } else {
-                    &[]
-                };
-                assert_eq!(admitted_charge_points(&meter), expected);
-                if call {
-                    let mut denied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
-                        .with_injected_denial(quire_exact::InjectedDenial {
-                            point: ChargePoint::FunctionCall,
-                            occurrence: std::num::NonZeroU64::new(1).unwrap(),
-                        });
+                assert!(meter.admitted_charges().is_empty());
+                continue;
+            }
+            assert!(matches!(
+                result.unwrap().outcome,
+                quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+            ));
+            if call {
+                let mut denied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                    .with_injected_denial(quire_exact::InjectedDenial {
+                        point: ChargePoint::FunctionCall,
+                        occurrence: std::num::NonZeroU64::new(1).unwrap(),
+                    });
+                let outcome = package
+                    .call(
+                        &QualifiedName::unqualified("Compare").unwrap(),
+                        vec![Value::Reference(reference())],
+                        &objects,
+                        &mut denied,
+                    )
+                    .unwrap();
+                assert!(
+                    matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                    if record.charge_point == ChargePoint::FunctionCall)
+                );
+                assert!(denied.admitted_charges().is_empty());
+                for cause in [
+                    quire_exact::CancelCause::Requested,
+                    quire_exact::CancelCause::Deadline,
+                ] {
+                    let cancel = quire_exact::Cancel::new();
+                    cancel.cancel(cause);
+                    let mut stopped = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                        .with_cancel(cancel.clone());
                     let outcome = package
                         .call(
                             &QualifiedName::unqualified("Compare").unwrap(),
                             vec![Value::Reference(reference())],
                             &objects,
-                            &mut denied,
+                            &mut stopped,
                         )
                         .unwrap();
                     assert!(
                         matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
                         if record.charge_point == ChargePoint::FunctionCall)
                     );
-                    assert!(denied.admitted_charges().is_empty());
-                    for cause in [
-                        quire_exact::CancelCause::Requested,
-                        quire_exact::CancelCause::Deadline,
-                    ] {
-                        let cancel = quire_exact::Cancel::new();
-                        cancel.cancel(cause);
-                        let mut stopped = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
-                            .with_cancel(cancel.clone());
-                        let outcome = package
-                            .call(
-                                &QualifiedName::unqualified("Compare").unwrap(),
-                                vec![Value::Reference(reference())],
-                                &objects,
-                                &mut stopped,
-                            )
-                            .unwrap();
-                        assert!(
-                            matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
-                            if record.charge_point == ChargePoint::FunctionCall)
-                        );
-                        assert_eq!(cancel.tripped(), Some(cause));
-                        assert!(stopped.admitted_charges().is_empty());
+                    assert_eq!(cancel.tripped(), Some(cause));
+                    assert!(stopped.admitted_charges().is_empty());
 
-                        // FR-401-AC-10: `call_supplied` under a run over a
-                        // different, uncancelled handle gives the same located
-                        // incomplete result, and leaves the run's handle alone.
-                        let caller = quire_exact::Cancel::new();
-                        let mut run = quire_semantic_value::supplied_stop::SuppliedRun::new(
-                            quire_semantic_value::supplied_stop::SuppliedLimits::default(),
-                            caller.clone(),
+                    // FR-401-AC-10: `call_supplied` under a run over a
+                    // different, uncancelled handle gives the same located
+                    // incomplete result, and leaves the run's handle alone.
+                    let caller = quire_exact::Cancel::new();
+                    let mut run = quire_semantic_value::supplied_stop::SuppliedRun::new(
+                        quire_semantic_value::supplied_stop::SuppliedLimits::default(),
+                        caller.clone(),
+                    )
+                    .unwrap();
+                    let meter_handle = quire_exact::Cancel::new();
+                    meter_handle.cancel(cause);
+                    let mut supplied = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                        .with_cancel(meter_handle.clone());
+                    let outcome = package
+                        .call_supplied(
+                            &QualifiedName::unqualified("Compare").unwrap(),
+                            vec![Value::Reference(reference())],
+                            &objects,
+                            &mut supplied,
+                            &mut run,
                         )
                         .unwrap();
-                        let meter_handle = quire_exact::Cancel::new();
-                        meter_handle.cancel(cause);
-                        let mut supplied =
-                            Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
-                                .with_cancel(meter_handle.clone());
-                        let outcome = package
-                            .call_supplied(
-                                &QualifiedName::unqualified("Compare").unwrap(),
-                                vec![Value::Reference(reference())],
-                                &objects,
-                                &mut supplied,
-                                &mut run,
-                            )
-                            .unwrap();
-                        assert!(
-                            matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
-                            if record.charge_point == ChargePoint::FunctionCall)
-                        );
-                        assert!(supplied.admitted_charges().is_empty());
-                        assert_eq!(meter_handle.tripped(), Some(cause));
-                        assert_eq!(caller.tripped(), None);
-                    }
+                    assert!(
+                        matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                        if record.charge_point == ChargePoint::FunctionCall)
+                    );
+                    assert!(supplied.admitted_charges().is_empty());
+                    assert_eq!(meter_handle.tripped(), Some(cause));
+                    assert_eq!(caller.tripped(), None);
                 }
-            } else {
-                assert!(matches!(
-                    result.unwrap().outcome,
-                    quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
-                ));
             }
         }
     }

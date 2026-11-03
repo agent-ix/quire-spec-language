@@ -544,6 +544,11 @@ pub struct FrameEvaluation {
 /// depth for a `Value::Population` the type checker's own structural
 /// argument-type matching would otherwise have already ruled out at every
 /// nested call site.
+///
+/// FR-049-AC-2: `objects` is admitted whole after the arguments
+/// (`slot_admission::admit_objects`): an object of a type the package does not
+/// declare, a missing, surplus or ill-typed attribute refuses here, before any
+/// charge, as `invalid_runtime_input`/`wrong-value-kind`.
 pub fn admit_arguments(
     parameters: &[(String, ValueType)],
     arguments: &[Value],
@@ -621,7 +626,9 @@ pub fn admit_arguments(
             }
         }
     }
-    Ok(())
+    // FR-049-AC-2: the object environment is caller input too, admitted
+    // whole against the package's own declarations before any charge.
+    slot_admission::admit_objects(objects, types)
 }
 
 /// The evaluation environment `evaluate_declaration` runs `identity`

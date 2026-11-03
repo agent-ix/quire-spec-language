@@ -108,7 +108,7 @@ same member. Observe typed results and ensure no fabricated payload is returned.
 
 Only the exact checked expression enters evaluation; raw bytes, free wire
 records, foreign handles and each single-axis type/authority mutation are
-rejected at the owning admission boundary; a caller-built object closure that cannot be walked at entry refuses `invalid_runtime_input`/`wrong-value-kind` at the first read of any attribute of an object whose stored value, record member or layout mismatches the package instead. Duplicate full storage keys refuse;
+rejected at the owning admission boundary. Duplicate full storage keys refuse;
 distinct observation occurrences remain distinct storage entries; identity
 comparison projects only the occurrence when the checked operator permits it,
 while reads retain the full key. A missing target in a complete domain is

@@ -191,9 +191,10 @@ fn construction_fault(site: ConstructionSite, refusal: &ConstructionRefusal) -> 
 /// evaluation's formed units resolve. Checking resolves every quantity type
 /// and admission matches every argument's unit id to its parameter's, so the
 /// checked-expression route no longer reaches this S6a invariant break
-/// (foreign expressions are refused, #2098). A caller-supplied object
-/// environment or closure typed under a different unit still can, and is open
-/// under QSL-1470 (FR-090-AC-15).
+/// (foreign expressions are refused, #2098), and an object environment typed
+/// under a different unit refuses at entry or at the attribute read
+/// (QSL-1470, QSL-1565, FR-049-AC-2). Reaching this is a broken invariant
+/// (FR-090-AC-15).
 fn unresolved_unit() -> Halt {
     Halt::Fault(InternalFault::new(
         "S6a",
@@ -3598,13 +3599,15 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// the evaluating package's own types (FR-049-AC-2/AC-3), and whether it
     /// holds a witnessed out-of-range integer.
     ///
-    /// The closure stores slots in the order of the type environment it was
-    /// admitted under and records no names, so the package's attribute
-    /// positions are the only way to find one. Every attribute the package
-    /// declares must have a slot, and the slot read must be of the declared
-    /// type: anything else is caller input that refuses
-    /// `invalid_runtime_input`/`wrong-value-kind`, never a fault or a misread.
-    /// A same-typed reordering is not detectable here.
+    /// The closure names each slot by its attribute name, so the slot is the
+    /// one the package's attribute for `field` is named, whatever order the
+    /// caller's environment gave the attributes. A call or expression entry
+    /// has already admitted the whole environment
+    /// (`slot_admission::admit_objects`); this read-time check is the
+    /// admission for the protocol, temporal and clause entries, which reach
+    /// the evaluator without it. A missing or ill-typed slot is caller input
+    /// that refuses `invalid_runtime_input`/`wrong-value-kind`, never a fault
+    /// or a misread.
     fn admitted_slot<'o>(
         &self,
         objects: &'o ObjectEnvironment,
@@ -3626,45 +3629,26 @@ impl<'a, 'm> Machine<'a, 'm> {
         let declared = types
             .attributes(reference.object_type().clone())
             .ok_or_else(refuse)?;
-        // Slots are stored by position, so the last declared attribute
-        // having a slot proves the layout is long enough.
-        let mut last = None;
-        let mut read = None;
-        for attribute in declared {
-            if attribute.stands_for(field) {
-                read = Some((attribute.identity(), attribute.field().value_type()));
-            }
-            last = Some(attribute.identity());
-        }
-        let lookup = |identity: &FieldRef| {
-            objects
-                .objects()
-                .attribute(types, reference, identity)
-                .ok_or_else(refuse)
-        };
-        if let Some(last) = &last {
-            lookup(last)?;
-        }
-        let (identity, value_type) = read.ok_or_else(|| invariant("attribute-slot-unresolved"))?;
-        let slot = lookup(&identity)?;
+        let attribute = declared
+            .iter()
+            .find(|attribute| attribute.stands_for(field))
+            .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+        let slot = objects
+            .objects()
+            .attribute(types, reference, field)
+            .ok_or_else(refuse)?;
         let witnesses: Vec<&OutOfRange> = objects.witnesses(types, reference, field).collect();
-        let witnessed = !witnesses.is_empty();
-        if let FieldValue::Present(value) = slot {
-            match slot_admission::admits(types, value_type, value, &witnesses) {
-                Ok(true) => {}
-                Ok(false) => return Err(refuse()),
-                Err(EnvironmentFailure::Allocation(_)) => {
-                    return Err(invariant("object-field-admission-allocation-denied"))
-                }
-                Err(EnvironmentFailure::Capacity(_)) => {
-                    return Err(invariant("object-field-admission-capacity-overflow"))
-                }
-                Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
-                    return Err(invariant("object-field-admission-contract-broken"))
-                }
-            }
+        match slot_admission::admits_slot(
+            types,
+            attribute.field(),
+            slot,
+            &witnesses,
+            objects.holds_out_of_range(),
+        ) {
+            Ok(true) => Ok((slot, !witnesses.is_empty())),
+            Ok(false) => Err(refuse()),
+            Err(failure) => Err(invariant(slot_admission::fault_identifier(&failure))),
         }
-        Ok((slot, witnessed))
     }
 
     /// `witnessed`: the slot holds a value FR-106 check 6.5 admitted
