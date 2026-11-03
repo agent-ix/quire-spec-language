@@ -1079,6 +1079,63 @@ fn tc134_timed_fixture_binds_every_compensation_node_and_temporal_declaration() 
     );
 }
 
+/// FR-322-AC-305, FR-322-AC-361, FR-322-AC-364: each `compensate` node has
+/// one binding row per `declaration` occurrence it carries, whose `occurrence`
+/// is that occurrence's ordinal and whose name is the template clock text.
+#[trace("FR-322-AC-305", "FR-322-AC-361", "FR-322-AC-364", "TC-134")]
+#[test]
+fn tc134_compensation_rows_are_one_per_declaration_occurrence() {
+    let graph = tc134_timed_graph();
+    let selections = tc134_selections(&graph);
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &CheckedPackage::link(graph),
+        &selections,
+    )
+    .expect("the timed package emits with its selections");
+    let wire = wire(&emission);
+    let rows = wire["temporal_bindings"].as_array().expect("bindings");
+    let mut expected = 0;
+    for node in nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "compensation")
+    {
+        let ordinals: Vec<u64> = node["occurrences"]
+            .as_array()
+            .expect("occurrences")
+            .iter()
+            .filter(|occurrence| occurrence["role"] == "declaration")
+            .map(|occurrence| occurrence["ordinal"].as_u64().expect("ordinal"))
+            .collect();
+        assert!(!ordinals.is_empty());
+        let mut written: Vec<(u64, String)> = rows
+            .iter()
+            .filter(|row| row["declaration"] == node["node_id"])
+            .map(|row| {
+                (
+                    row["occurrence"].as_u64().expect("occurrence"),
+                    row["clock_name"].as_str().expect("name").to_owned(),
+                )
+            })
+            .collect();
+        written.sort();
+        assert_eq!(
+            written,
+            ordinals
+                .iter()
+                .map(|ordinal| (*ordinal, "refund-clock".to_owned()))
+                .collect::<Vec<_>>()
+        );
+        expected += ordinals.len();
+    }
+    assert!(expected >= 2);
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row["clock_name"] == "refund-clock")
+            .count(),
+        expected
+    );
+}
+
 /// FR-322-AC-305: the strict reader admits a `temporal_bindings` row keyed by
 /// a compensation node. The emitted package reads back admitted, and its
 /// rows are the written ones: one per selection, each `compensate` node's

@@ -75,6 +75,7 @@ temporal Recent using p over (h: Braking2) clock "model-steps" on origin {
 struct Checked {
     models: Vec<CheckedHybridModel>,
     claims: Vec<CheckedHybridClaim>,
+    sites: Vec<qsl_semantics::check::ClauseSite>,
 }
 
 /// `declarations` through S1, S2, the assembler, check, link and the v2
@@ -125,6 +126,7 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
     let checked = Checked {
         models: graph.hybrid_models().to_vec(),
         claims: graph.hybrid_claims().to_vec(),
+        sites: graph.hybrid_claim_sites().to_vec(),
     };
     let emission = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
@@ -986,4 +988,34 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
     }));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
     assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
+}
+
+/// FR-322-AC-344, FR-322-AC-346: a hybrid claim's node carries one name row at
+/// its `claim` occurrence's ordinal with the declared name, and the claim has
+/// no clock binding because its profile selects no clock.
+#[trace("TC-233", "FR-322-AC-344", "FR-322-AC-346")]
+#[test]
+fn a_hybrid_claim_has_one_name_row_and_no_binding() {
+    let (emission, wire, checked) =
+        compile_checked(&format!("{}{}", braking(FLOW), slow_enough("t", BODY)));
+    let [site] = checked.sites.as_slice() else {
+        panic!("one hybrid claim site");
+    };
+    assert_eq!(site.name, "SlowEnough");
+    let clause: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "temporal_clause")
+        .collect();
+    let [clause] = clause.as_slice() else {
+        panic!("one temporal_clause node");
+    };
+    let names = wire["temporal_clause_names"].as_array().expect("names");
+    let [row] = names.as_slice() else {
+        panic!("one name row: {names:?}");
+    };
+    assert_eq!(row["declaration"], clause["node_id"]);
+    assert_eq!(row["occurrence"].as_u64(), Some(site.claim.ordinal()));
+    assert_eq!(row["name"], "SlowEnough");
+    assert!(wire.get("temporal_bindings").is_none());
+    admitted(&emission);
 }
