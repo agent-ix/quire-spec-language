@@ -218,12 +218,7 @@ fn with_population_package<T>(
         "pop",
         parameters,
         TypeForm::builtin(BuiltinType::Boolean, span),
-        CheckedPackageSidecarsRef {
-            checked_term_data: base.checked_term_data(),
-            temporal_bindings: base.temporal_bindings(),
-            schedulability_claims: base.schedulability_claim_rows(),
-            operation_effects: base.operation_effect_rows(),
-        },
+        None,
         Expression::boolean(true),
     );
     let packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE])
@@ -440,7 +435,12 @@ fn retarget(
             source_map: base.source_map(),
             refinement_step_rows: base.refinement_step_rows(),
         },
-        None,
+        CheckedPackageSidecarsRef {
+            checked_term_data: base.checked_term_data(),
+            temporal_bindings: base.temporal_bindings(),
+            schedulability_claims: base.schedulability_claim_rows(),
+            operation_effects: base.operation_effect_rows(),
+        },
         base.capability_report(),
         base.diagnostics(),
         limits,
