@@ -22,7 +22,7 @@ Scope: FR-488-AC-24 and FR-488-AC-25.
 2. Compile two structurally equal hyper clauses with different names, then rename one.
 3. Compile under event-position false-extension with a declared clock, then with the clock selection absent, unused and profile-mismatched; compile under infinite-trace.
 
-Tag the tests `#[trace("TC-1327", "FR-488-AC-24", "FR-488-AC-25", "FR-322-AC-344", "FR-322-AC-361")]`.
+Tag the tests `#[trace("TC-1327", "FR-488-AC-24", "FR-488-AC-25", "FR-322-AC-343", "FR-322-AC-344", "FR-322-AC-361")]`.
 
 ## Expected Results
 

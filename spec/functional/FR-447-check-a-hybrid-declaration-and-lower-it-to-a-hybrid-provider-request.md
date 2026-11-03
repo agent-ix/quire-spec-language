@@ -600,8 +600,7 @@ per-occurrence rows of QSpec FR-322-AC-342 to FR-322-AC-370 and FR-337
   emitted NodeId, `occurrence` is the ordinal of its `claim` occurrence and
   `name` is the declared claim name. Two claims that share a node carry one
   row each at their own ordinals.
-- A hybrid claim writes no `temporal_bindings` row when its profile is not
-  clock-configured. The claim's `clock` member selects `ModelTime` or
+- A hybrid claim writes no `temporal_bindings` row. The claim's `clock` member selects `ModelTime` or
   `ModelSteps` (see "Hybrid claims"), which is read by the claim's checked
   record and the provider request and is not a `ClockConfiguration`, so a
   hybrid claim has a name row and no binding, and a package whose only
