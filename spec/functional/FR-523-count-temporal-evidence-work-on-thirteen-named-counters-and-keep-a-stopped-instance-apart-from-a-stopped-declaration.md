@@ -64,9 +64,10 @@ or the library builder `TemporalEvidenceLimits`, and the call's `Meter` (FR-516)
 
 `usage`: the thirteen counters' measured values (FR-516).
 
-On a stop, `Incomplete(LimitReached{limit, value, setting})` with `limit` the limit
-kind of FR-255, `value` the ceiling, `setting` the counter's setting name, the
-assessed instance (when the stop is at the instance) and no truth value.
+On a stop, an `Incomplete(LimitReached{limit, value, setting})` result (FR-516: `Ok`
+with `activation = Unavailable` and `incomplete` set, never an error) with `limit`
+the limit kind of FR-255, `value` the ceiling, `setting` the counter's setting name,
+the assessed instance (when the stop is at the instance) and no truth value.
 
 ## Behavior
 
@@ -82,7 +83,7 @@ at each eligible position and one scan per position).
 | `formula_nodes` | peak | a distinct node of the clause's formula reachable from its root; a node shared by two parents counts once | `formula_nodes` |
 | `positions` | cumulative | one scan charge of FR-501: one position read by one temporal operator node at one activation | `positions` |
 | `valuations` | cumulative | one atomic `holds` lookup, including one that finds no valuation | `valuations` |
-| `instances` | peak | one instance created from a delivery or an origin, the greatest number created by the call (FR-524) | NFR-008 `instances` |
+| `instances` | peak | one instance created from a delivery or an origin in this call, the greatest number created by the call (FR-524); a retained instance, a delivery with a false guard and an instance whose activation faulted are not created and charge nothing | NFR-008 `instances` |
 | `captures` | cumulative | one capture record retained, across all instances | `captures` |
 | `support` | peak | the greatest number of `(position, atom)` pairs an unsettled activation retains, and the number of pairs in a settled decision support | `support`; NFR-008 `retention` |
 | `history_span` | peak | the greatest interval upper bound of the clause, in ticks (FR-326 horizon) | `history_span`; NFR-008 `horizon` |
@@ -94,6 +95,11 @@ at each eligible position and one scan per position).
 | `member_bytes` | peak | one byte of the longest single opaque member | `string_bytes` |
 
 - The evaluator SHALL charge a counter only for work it performs.
+- The evaluator SHALL charge a lookup at a silent sample (FR-504) to the call's
+  meter and SHALL NOT charge it to the `evaluation_steps` counter.
+- The evaluator SHALL keep the counters at thirteen: no counter is added for
+  silent samples or for evicted records, whose visit is one hit charged on
+  `evaluation_steps` and `visited` (FR-524).
 - A refused charge SHALL NOT raise the counter's usage.
 - When a call's usage of a counter equals its ceiling, the evaluator SHALL
   complete.
@@ -129,7 +135,7 @@ at each eligible position and one scan per position).
 
 - The counters `formula_nodes` and `history_span` and the tick arithmetic are
   properties of the clause and its anchor. When one stops the call, the evaluator
-  SHALL assess no instance.
+  SHALL assess no instance and SHALL return the `Incomplete` result, not an error.
 - When another counter reaches its ceiling while the evaluator assesses the
   instance, the evaluator SHALL stop that instance with the `Incomplete`.
 - The `Incomplete` SHALL name the assessed instance.
@@ -164,14 +170,17 @@ at each eligible position and one scan per position).
 | FR-523-AC-9 | A refused charge leaves the counter's usage at its last successful value. | Test (TC-1318) |
 | FR-523-AC-10 | The charge log of a call whose ceiling is one below the exact usage equals the log of the successful prefix of the full call. | Test (TC-1318) |
 | FR-523-AC-11 | A retry of the AC-3 call after an AC-5 stop, with sufficient ceilings from the same inputs, returns the result of a call that never stopped, byte for byte. | Test (TC-1318) |
-| FR-523-AC-12 | A clause whose `history_span` exceeds its ceiling stops the call before the instance is assessed, and the call returns no result for it. | Test (TC-1318) |
-| FR-523-AC-13 | A clause whose `formula_nodes` exceeds its ceiling stops the call before the instance is assessed, and the call returns no result for it. | Test (TC-1318) |
+| FR-523-AC-12 | A clause whose `history_span` exceeds its ceiling stops the call before the instance is assessed, and the call returns an `Incomplete` result naming `history_span` with `activation = Unavailable` and no truth. | Test (TC-1318) |
+| FR-523-AC-13 | A clause whose `formula_nodes` exceeds its ceiling stops the call before the instance is assessed, and the call returns an `Incomplete` result naming `formula_nodes` with `activation = Unavailable` and no truth. | Test (TC-1318) |
 | FR-523-AC-14 | Two calls for instances `t1` and `t2` of **R**'s `on each` clause share one `Meter` whose work-unit ceiling is the first call's usage plus one: the first call returns its result with its truth, basis and support, and the second returns `Incomplete` at the `temporal.visit` charge point naming `t2`. | Test (TC-1318) |
 | FR-523-AC-15 | With `evaluation_steps` at 1000 and the meter's work-unit ceiling one below the call's `temporal.visit` usage, the `Incomplete` is at the `temporal.visit` charge point; with the meter unbounded and `evaluation_steps` one below, it names `evaluation_steps`. | Test (TC-1318) |
 | FR-523-AC-16 | A stamp for which `t0 + Hf + m` exceeds `u64::MAX` returns `Incomplete` naming `history_span` before any position is visited (the charge log is empty), and a stamp whose sum is `u64::MAX` evaluates. | Test (TC-1318) |
 | FR-523-AC-17 | A formula nested 100,000 deep evaluates with `formula_nodes` and `evaluation_steps` raised to fit it, on a thread with a 512 KiB stack. | Test (TC-1318) |
 | FR-523-AC-18 | The `usage` of a call reports all thirteen counters, and two requests that differ only in one ceiling give distinct `result_identity` values (FR-522-AC-17). | Test (TC-1318) |
 | FR-523-AC-19 | After the second call of AC-14 stopped, the first call replayed with a fresh `Meter` returns a result equal to the first call's result. | Test (TC-1318) |
+| FR-523-AC-20 | A call with a ledger holding `t1`, a redelivery of `t1`, one new healthy delivery and one new faulted delivery reports `instances` usage 1. | Test (TC-1318) |
+| FR-523-AC-21 | Over a fixed-sample clause that reads silent samples, the lookups at silent samples raise the meter's work-unit usage and leave `evaluation_steps` unchanged, and `usage` holds the same thirteen counters. | Test (TC-1318) |
+| FR-523-AC-22 | Every stop of AC-5, AC-12, AC-13 and AC-16 is an `Ok` result with `activation = Unavailable`, `incomplete` naming the counter and no truth, and none is an `Err`. | Test (TC-1318) |
 
 ## Dependencies
 

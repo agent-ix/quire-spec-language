@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-524-AC-1 to FR-524-AC-31. The vectors are the FR-044 cases and TC-123 and TC-1278, re-stated on the spine activation function. Captures are `Int` values at the delivery anchor.
+Verify FR-524-AC-1 to FR-524-AC-36. The vectors are the FR-044 cases and TC-123 and TC-1278, re-stated on the spine activation function. Captures are `Int` values at the delivery anchor.
 
 ## Test Procedure
 
@@ -26,7 +26,7 @@ Verify FR-524-AC-1 to FR-524-AC-31. The vectors are the FR-044 cases and TC-123 
 | 8 | 8 | `on origin`: origins `o1`, `o2`; `o1` re-evaluated | two instances; no split |
 | 9 | 9 | `on origin`: `o1` twice with two payloads | contradiction naming `o1` |
 | 10 | 10 | guard `Some(false)`; closed scope with every guard false | no instance, no refusal; `Inactive` |
-| 11 | 11 | guarded clause, delivery with `guard` `None` | `ActivationFault` naming the guard, `Missing`, no instance |
+| 11 | 11 | guarded clause, delivery with `guard` `None` | `ActivationFault` naming the guard, `Missing`; no activation; the instance listed `Unavailable` |
 | 12 | 12 | `Missing` capture; `Null` capture; evicted capture | `ActivationFault` naming the capture, `Missing`; no position evaluated |
 | 13 | 13 | one capture too few | `ActivationFault` naming the first capture not supplied, `Missing` |
 | 14 | 14 | `WrongType`; `Stale` | `ActivationFault`, `Refused`, naming the capture |
@@ -47,8 +47,13 @@ Verify FR-524-AC-1 to FR-524-AC-31. The vectors are the FR-044 cases and TC-123 
 | 29 | 29 | closed scope with an incomplete trigger record | `Unknown(open)` with incomplete completeness |
 | 30 | 30 | rows 27 to 29 | no truth value; no position evaluated |
 | 31 | 31 | rows 12, 14 and 27 to 28 through `evaluate_temporal_evidence` | `Unavailable` for the faulted assessed instance; the dispositions of rows 27 and 28 |
+| 32 | 32 | `on origin` with one capture: an origin with one `Value`; with none; with `WrongType` | one instance holding the capture; `Missing` naming the capture; `Refused` |
+| 33 | 33 | a delivery with one capture fact too many; an origin with one too many; each through `activate` and `evaluate_temporal_evidence` | surplus-capture refusal naming the identity and surplus index; `Err(CallFailure::Admission)`, empty charge log; no instance created |
+| 34 | 34 | deliveries `t1` (guard `None`), `t2` (`Some(false)`), `t3` (healthy), guarded clause | `instances` lists `t1` `Unavailable` and `t3` `Active`, not `t2` |
+| 35 | 35 | ledger holding `t1`; redelivery of `t1`; new healthy `t2`; new faulted `t3` | `instances` charge 1; three instances listed |
+| 36 | 36 | two evicted captures of one instance; a valuation lookup matching one evicted record; one matching none | one `evicted` visit; one; none |
 
-Tag the test `#[trace("FR-524-AC-1", ..., "FR-524-AC-31", "TC-1319")]`.
+Tag the test `#[trace("FR-524-AC-1", ..., "FR-524-AC-36", "TC-1319")]`.
 
 ## Expected Results
 

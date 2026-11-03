@@ -35,8 +35,10 @@ FR-515-AC-17. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 15 | 15 | a clause named by no protocol `requirements` entry; a clause named by one | empty; the protocol clause's node id |
 | 16 | 16 | `checked_predicate` of an activation guard | `source_span` is an entry of the guard node |
 | 17 | 17 | `checked_predicate` of a `ClauseLeaf` that is neither a `holds` operand nor the guard | `source_span` inside the formula root's source regions |
+| 18 | 18 | the in-memory package before emit vs the read-back package, each of **R**'s clauses | equal `profile()` and `clock()` |
+| 19 | 19 | two clauses of different nodes and clock rows | each node's `clock()` is its own row by ordinal, in both packages |
 
-Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-17", "TC-1310")]` for the criteria each row covers.
+Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-19", "TC-1310")]` for the criteria each row covers.
 
 ## Expected Results
 

@@ -72,8 +72,9 @@ the predecessor.
 `relation` echoed with `prev`. `input_identity`. The updated `ledger`.
 
 Each refusal below is `Err(CallFailure::Admission)` with an empty charge log, no
-result and the `cause` named in the criterion. A lineage stop is `Incomplete`
-(FR-523).
+result and the `cause` named in the criterion. A lineage stop is an `Incomplete`
+result (FR-516: `Ok`, `activation = Unavailable`, `incomplete` naming `lineage`,
+no truth), not an error (FR-523).
 
 ## Behavior
 
@@ -97,7 +98,8 @@ result and the `cause` named in the criterion. A lineage stop is `Incomplete`
   refuse the relation with cause `correspondence-changed`.
 - The evaluator SHALL compute `lineage` with checked `u64` arithmetic.
 - When the sum does not fit or exceeds the `lineage` ceiling (FR-523), the
-  evaluator SHALL return `Incomplete` naming `lineage`.
+  evaluator SHALL return an `Incomplete` result naming `lineage`, and SHALL NOT
+  record a ledger entry for it.
 - When a call succeeds, the evaluator SHALL record the result's entry as the
   latest for its key, including for `Original`.
 - The evaluator SHALL leave every earlier result and the replaced entry's value as
@@ -126,7 +128,7 @@ result and the `cause` named in the criterion. A lineage stop is `Incomplete`
 | FR-526-AC-9 | A request for another clause of the same package naming `r1`, and a request for the same clause in another package naming `r1`, each return `Err(CallFailure::Admission)` with cause `predecessor-unknown`. | Test (TC-1321) |
 | FR-526-AC-10 | A request whose trigger identity differs from `r1`'s in one byte, naming `r1`, returns `Err(CallFailure::Admission)` with cause `predecessor-unknown`. | Test (TC-1321) |
 | FR-526-AC-11 | A request whose `correspondence` differs from `r1`'s, naming `r1`, returns `Err(CallFailure::Admission)` with cause `correspondence-changed`. | Test (TC-1321) |
-| FR-526-AC-12 | With the `lineage` ceiling set to 2, the third correction of a chain (lineage 3) returns `Incomplete` naming `lineage` with no truth, and with the ceiling set to 3 it completes. | Test (TC-1321) |
+| FR-526-AC-12 | With the `lineage` ceiling set to 2, the third correction of a chain (lineage 3) returns an `Ok` `Incomplete` result naming `lineage` with `activation = Unavailable` and no truth, the returned ledger holding no entry for it, and with the ceiling set to 3 it completes. | Test (TC-1321) |
 | FR-526-AC-13 | The evaluator computes `lineage` from the predecessor entry's lineage with checked `u64` arithmetic, which has no wrapping or saturating form, so an entry at `u64::MAX` (unreachable by calls) cannot yield a smaller lineage. | Inspection |
 | FR-526-AC-14 | A chain of three corrections `r1`, `r2`, `r3` returns `lineage` 1, 2, 3, each naming its direct predecessor, with `r1` and `r2` unchanged after `r3`. | Test (TC-1321) |
 | FR-526-AC-15 | An `Original` request over a ledger that holds an entry for its key returns `lineage` 0 and replaces that entry. | Test (TC-1321) |

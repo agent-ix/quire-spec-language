@@ -34,7 +34,10 @@ The spine temporal evaluator SHALL create one instance per distinct semantic
 trigger identity or admitted execution-origin identity. The evaluator evaluates
 the clause's captures once at the activation anchor and keeps them unchanged,
 including across calls through the retained instance table. For an activation
-that cannot be established, it reports the fault and the input the fault names.
+that cannot be established, it keeps the instance in the call's `instances` as
+`Unavailable`, with the fault and the input the fault names. An activation is
+never left unset: every resolved instance is `Active` or `Unavailable`, and every
+call result holds one of the four activation states (FR-516).
 For a trigger scope that creates no instance it reports one of four
 dispositions, and none of the four carries a truth value.
 
@@ -70,14 +73,18 @@ that call.
 (FR-515: `Origin`, or `Each { trigger, guard }`) and its ordered captures, with an
 `ActivationInput`:
 
-- `scope`: the trigger scope's closure (`Closed` or `Open`) and its trigger
-  evidence (`Admitted`, `Missing` or `Refused`), independent of the decision
+- `scope`: the trigger scope's closure (`Closed` or `Open`), its trigger
+  evidence (`Admitted`, `Missing` or `Refused`) and the completeness of its
+  trigger record (`Complete` or `Incomplete`), independent of the decision
   scope;
+- `execution`: the surrounding execution's disposition (`Completed` or `Failed`),
+  which an `Unknown` disposition carries;
 - `deliveries`: for `Each`, an ordered `Vec<TriggerDelivery>`, each `{ identity:
   SemanticTriggerIdentity, receipt, anchor, payload, guard: Option<bool>,
   captures: Vec<CaptureFact> }`;
 - `origins`: for `Origin`, an ordered `Vec<ExecutionOrigin>`, each `{ identity,
-  payload }`;
+  payload, captures: Vec<CaptureFact> }`, so that a clause `on origin` with
+  captures establishes them from the origin's facts exactly as a delivery does;
 - `anchor`: the evaluation anchor;
 - `evicted`: the retained records the caller reports as no longer available, each
   an instance and a capture, or a valuation;
@@ -122,6 +129,13 @@ An `Activation`: a `disposition`, the `instances` and the updated `ledger`.
 - A contradiction refusal: `invalid_runtime_input`/`invalid-value` carrying
   `contradicted_identity` (the trigger or origin identity bytes). The evidence
   call reports it as `Err(CallFailure::Admission)` with an empty charge log.
+- A surplus-capture refusal: `invalid_runtime_input`/`invalid-value` carrying
+  `surplus_capture_identity` (the delivery or origin identity bytes) and the index
+  of the first capture fact beyond the clause's declared captures. It is malformed
+  input, not a fault of an activation, and the evidence call reports it as
+  `Err(CallFailure::Admission)` with an empty charge log.
+- A counter or meter stop while establishing instances is not an error and not a
+  fault: the evidence call reports it as an `Incomplete` result (FR-516, FR-523).
 
 No output holds a truth value.
 
@@ -145,6 +159,8 @@ No output holds a truth value.
 - The evaluator SHALL identify a whole-execution-origin instance by the clause and
   the admitted execution-origin identity.
 - The evaluator SHALL create exactly one instance per origin identity.
+- The evaluator SHALL establish an origin's captures from the origin's own
+  `captures`, in authored order, once, as it does for a delivery.
 - When two origins carry one identity and different payloads, the evaluator SHALL
   return the contradiction refusal naming that identity.
 
@@ -156,8 +172,10 @@ No output holds a truth value.
   instance.
 - The evaluator SHALL NOT report a refusal for a false guard.
 - When the clause has a guard and a delivery's `guard` is `None`, the evaluator
-  SHALL report an `ActivationFault` naming the guard with `non_value.kind`
-  `Missing`.
+  SHALL keep the delivery's instance in `instances` as `Unavailable` with an
+  `ActivationFault` naming the guard with `non_value.kind` `Missing`, and the
+  delivery has no activation.
+- A delivery with a false guard SHALL NOT appear in `instances`.
 - The evaluator SHALL NOT read an unestablished guard as false.
 
 ### Captures
@@ -166,10 +184,18 @@ No output holds a truth value.
   once, at the delivery's anchor.
 - The evaluator SHALL retain for each capture its declared name, type, value,
   source binding and anchor.
-- The evaluator SHALL examine a delivery's faults in this order: a redelivery
-  contradiction, the guard, the number of captures, the delivery anchor, then each
-  capture in authored order, an evicted record before the capture's fact.
+- The evaluator SHALL refuse a delivery or an origin that carries more capture
+  facts than the clause declares captures, with the surplus-capture refusal, and
+  SHALL NOT ignore the surplus facts.
+- The evaluator SHALL examine the refusals of the whole call before it charges
+  anything, in list order: a redelivery contradiction, then a surplus capture.
+- The evaluator SHALL examine a delivery's faults in this order: the guard, the
+  number of captures, the delivery anchor, then each capture in authored order, an
+  evicted record before the capture's fact.
 - The evaluator SHALL report the first fault found in that order.
+- When an origin supplies fewer captures than the clause declares, the evaluator
+  SHALL report an `ActivationFault` naming the first capture it does not supply,
+  with `non_value.kind` `Missing`.
 - When the delivery supplies fewer captures than the clause declares, the
   evaluator SHALL report an `ActivationFault` naming the first capture the
   delivery does not supply, with `non_value.kind` `Missing`.
@@ -207,7 +233,8 @@ No output holds a truth value.
 ### Retained valuations
 
 - When a valuation an unsettled activation still requires is in `evicted`, the
-  evaluator SHALL report `Incomplete` naming the evicted subject.
+  evaluator SHALL report an `Incomplete` result (FR-516) naming the evicted
+  subject.
 - The evaluator SHALL NOT narrow the evaluated interval to the valuations that
   remain.
 
@@ -215,10 +242,17 @@ No output holds a truth value.
 
 - The evaluator SHALL charge one `temporal.visit` (`evaluation_steps`) for each
   delivery or origin it resolves.
-- The evaluator SHALL charge one `temporal.visit` for each capture it establishes
-  and for each evicted record it consults.
-- The evaluator SHALL charge one `instances` unit for each instance it creates and
-  one `captures` unit for each capture it retains (FR-523).
+- The evaluator SHALL charge one `temporal.visit` for each capture it establishes.
+- The evaluator SHALL charge one `evicted` visit for each hit: each evicted record
+  it finds to match a capture or a valuation it consults. A consultation that finds
+  no matching record charges nothing, and a fault or stop at the first hit ends the
+  consultation, so an instance or an evaluation charges at most one.
+- The evaluator SHALL charge one `instances` unit for each instance it creates in
+  the call and one `captures` unit for each capture it retains (FR-523). An
+  instance that the ledger already retains, a delivery with a false guard and an
+  instance whose activation faulted are not created in the call and charge no
+  `instances` unit, although the call's `instances` output lists the retained and
+  the faulted ones.
 
 ### Dispositions of a scope with no instance
 
@@ -250,7 +284,7 @@ No output holds a truth value.
 | FR-524-AC-8 | Over a clause `on origin`, two admitted origins `o1` and `o2` create two instances that do not alias, and re-evaluating `o1` does not split it. | Test (TC-1319) |
 | FR-524-AC-9 | Two origins `o1` with different payloads return the contradiction refusal naming `o1`. | Test (TC-1319) |
 | FR-524-AC-10 | A delivery whose `guard` is `Some(false)` creates no instance and no refusal, and a closed scope whose every delivery has a false guard reports `Inactive`. | Test (TC-1319) |
-| FR-524-AC-11 | A guarded clause with a delivery whose `guard` is `None` reports an `ActivationFault` naming the guard, `non_value.kind` `Missing`, and no instance for that delivery. | Test (TC-1319) |
+| FR-524-AC-11 | A guarded clause with a delivery whose `guard` is `None` reports an `ActivationFault` naming the guard, `non_value.kind` `Missing`, and no activation for that delivery: its instance is listed in `instances` as `Unavailable`. | Test (TC-1319) |
 | FR-524-AC-12 | A `Missing` capture, a `Null` capture and an evicted capture each report an `ActivationFault` naming that capture with `Missing`, and the instance evaluates no position. | Test (TC-1319) |
 | FR-524-AC-13 | A delivery with one capture too few reports an `ActivationFault` naming the first capture it does not supply, with `Missing`. | Test (TC-1319) |
 | FR-524-AC-14 | A `WrongType` capture and a `Stale` capture each report an `ActivationFault` with `Refused` naming that capture. | Test (TC-1319) |
@@ -271,6 +305,11 @@ No output holds a truth value.
 | FR-524-AC-29 | A closed scope with an incomplete trigger record and no instance reports `Unknown(open)` with incomplete completeness. | Test (TC-1319) |
 | FR-524-AC-30 | No disposition of AC-27 to AC-29 carries a truth value or evaluates a position. | Test (TC-1319) |
 | FR-524-AC-31 | Through `evaluate_temporal_evidence` with no delivery, no origin and `trigger` `None`, the activation states of FR-516-AC-2 equal the dispositions of AC-27 and AC-28, and a faulted assessed instance reports `Unavailable`. | Test (TC-1319) |
+| FR-524-AC-32 | Over a clause `on origin` with one capture, an origin that supplies one `Value` capture creates one instance with that capture in its environment, an origin that supplies none reports an `ActivationFault` naming the capture with `Missing`, and an origin whose capture is `WrongType` reports `Refused`. | Test (TC-1319) |
+| FR-524-AC-33 | A delivery or an origin that supplies one capture fact more than the clause declares returns the surplus-capture refusal naming its identity and the index of the surplus fact, through `activate` and through `evaluate_temporal_evidence` as `Err(CallFailure::Admission)` with an empty charge log, and no instance of the call is created. | Test (TC-1319) |
+| FR-524-AC-34 | A call with a guard-`None` delivery `t1`, a guard-`Some(false)` delivery `t2` and a healthy delivery `t3` lists `t1` as `Unavailable` and `t3` as `Active` in `instances`, and does not list `t2`. | Test (TC-1319) |
+| FR-524-AC-35 | A call with a ledger holding `t1`, a redelivery of `t1`, one healthy new delivery `t2` and one faulted new delivery `t3` charges `instances` 1, and lists three instances. | Test (TC-1319) |
+| FR-524-AC-36 | An instance whose first capture and second capture are both in `evicted` charges one `evicted` visit, and a retained-valuation lookup that matches one evicted record charges one `evicted` visit, and one that matches none charges none. | Test (TC-1319) |
 
 ## Dependencies
 

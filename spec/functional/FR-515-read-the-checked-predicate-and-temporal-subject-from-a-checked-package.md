@@ -153,6 +153,18 @@ only when one is written.
   shared node (`invalid_package`/`timed-node-reference`), so that case has no
   admitted package until the Contract IR decision (IR-1279, FR-515-AC-13) lands.
 
+### The in-process package
+
+The in-memory checked package that QSL's I2 write holds before the lock is
+emitted answers both views with the facts the read-back package answers them
+with. It carries, at construction, each clause's `profile_selections` row and one
+`TemporalBinding` row per clause occurrence, and a `CheckedNodeId` pairs with its
+clause's occurrence by ordinal: occurrence `k` of a node pairs with the `k`-th
+clock row of that node in declaration order, so the pairing needs no emitted lock.
+Two clauses with different nodes never read each other's rows. A view over the
+in-memory package therefore equals the view over the package read back from its
+bytes.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -174,6 +186,8 @@ only when one is written.
 | FR-515-AC-15 | `requirements()` of a temporal clause that no protocol `requirements` entry names is empty, and of a clause that a protocol's `requirements` entry names holds that protocol clause's node id. | Test (TC-1310) |
 | FR-515-AC-16 | `checked_predicate` of an activation guard returns a view whose `source_span` is one of the source map entries of the guard node. | Test (TC-1310) |
 | FR-515-AC-17 | `checked_predicate` of a `ClauseLeaf` returns a view whose `source_span` is the entry of the leaf node whose regions lie inside the source regions of the clause's formula root node. | Test (TC-1310) |
+| FR-515-AC-18 | Over the in-memory package of the I2 write before emit, `temporal_subject` returns the `profile()` and `clock()` equal to those of the package read back from the emitted bytes, for each of **R**'s clauses. | Test (TC-1310) |
+| FR-515-AC-19 | In a package with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row by ordinal, in the in-memory and the read-back package alike. | Test (TC-1310) |
 
 ## Dependencies
 
