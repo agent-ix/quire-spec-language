@@ -522,21 +522,38 @@ pub enum StepLabelForm {
 
 /// A quoted text literal: the decoded Unicode scalar sequence and the exact
 /// quoted spelling it was decoded from. Two spellings of one sequence, such as
-/// a raw `é` and `\u00e9`, are distinct literals that decode to one value
-/// (QSpec FR-141: the source spelling stays provenance).
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// a raw `é` and `\u00e9`, decode to one value (QSpec FR-141) and stay
+/// distinct provenance.
+///
+/// Equality is the decoded text's: a form compares by the value it spells,
+/// never by its spelling. [`Self::spelling`] reads the spelling for
+/// provenance.
+#[derive(Clone, Debug, Eq)]
 pub struct StringLiteral {
     text: String,
     spelling: String,
 }
 
+impl PartialEq for StringLiteral {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+    }
+}
+
 impl StringLiteral {
-    /// The literal that decodes from `spelling` to `text`.
-    pub fn new(text: impl Into<String>, spelling: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            spelling: spelling.into(),
-        }
+    /// The literal a quoted `spelling` writes, or `None` when `spelling` is
+    /// not one well-formed quoted text.
+    pub fn from_spelling(spelling: impl Into<String>) -> Option<Self> {
+        let spelling = spelling.into();
+        let text = qsl_cst::token::decode_quoted(&spelling)?;
+        Some(Self { text, spelling })
+    }
+
+    /// The literal of `text`, spelled as its canonical quoted text.
+    pub fn from_text(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let spelling = qsl_cst::token::encode_quoted(&text);
+        Self { text, spelling }
     }
 
     /// The decoded Unicode scalar sequence.
@@ -1362,9 +1379,7 @@ impl Expression {
     /// A quoted text literal holding the decoded scalar sequence `text`,
     /// spelled as the canonical quoted text of `text`.
     pub fn string(text: impl Into<String>) -> Self {
-        let text = text.into();
-        let spelling = qsl_cst::token::encode_quoted(&text);
-        Self::single(ExprNode::String(StringLiteral::new(text, spelling)))
+        Self::single(ExprNode::String(StringLiteral::from_text(text)))
     }
 
     /// `rational(numerator, denominator)`.

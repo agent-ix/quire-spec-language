@@ -1748,10 +1748,9 @@ impl<'c> Mapping<'c> {
                 TokenKind::Text => {
                     // The lexer admitted the token, so its JSON decoding
                     // cannot fail; a refusal here is an unexpected shape.
-                    let spelling = text(token, node)?;
-                    let decoded =
-                        qsl_cst::token::decode_quoted(&spelling).ok_or_else(|| unexpected(node))?;
-                    self.leaf(Shape::String(StringLiteral::new(decoded, spelling)), &task)
+                    let literal = StringLiteral::from_spelling(text(token, node)?)
+                        .ok_or_else(|| unexpected(node))?;
+                    self.leaf(Shape::String(literal), &task)
                 }
                 TokenKind::Identifier
                     if node.production() == Production::HyperPrimary

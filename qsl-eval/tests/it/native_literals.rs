@@ -48,8 +48,8 @@ const FUNCTIONS: &str = "\
     function t using v(t: Timestamp): Boolean pure { t = Timestamp(5) }\n\
     function zero using v(): Boolean pure { Timestamp(0) = Timestamp(-0) }\n\
     function one using v(): Boolean pure { Timestamp(0) = Timestamp(1) }\n\
-    function rawText using v(): Text[0, 8; binary-utf8] pure { Text(\"é\") }\n\
-    function escapedText using v(): Text[0, 8; binary-utf8] pure { Text(\"\\u00e9\") }\n\
+    function isE using v(t: Text[0, 8; binary-utf8]): Boolean pure { t = Text(\"é\") }\n\
+    function isEscapedE using v(t: Text[0, 8; binary-utf8]): Boolean pure { t = Text(\"\\u00e9\") }\n\
     function ends using v(): Boolean pure { Timestamp(-170141183460469231731687303715884105728) = Timestamp(170141183460469231731687303715884105727) }\n";
 
 struct Fixture {
@@ -58,9 +58,13 @@ struct Fixture {
 }
 
 fn fixture() -> Fixture {
+    fixture_of(FUNCTIONS)
+}
+
+fn fixture_of(functions: &str) -> Fixture {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n{FUNCTIONS}"
+         profile v = \"quire.value.complete/v1\";\n{functions}"
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
@@ -208,22 +212,96 @@ fn completed(fixture: &Fixture, name: &str) -> Value {
     }
 }
 
-/// FR-091-AC-69, QSpec TC-186 T06b: a raw `é` and the escaped `\u00e9` in
-/// `Text("...")` hold the same payload bytes `c3 a9` and keep their different
-/// source spellings as provenance.
-#[trace("FR-091-AC-69", "TC-1052", "QSpec-TC-186", "QSpec-FR-141-AC-4")]
+/// Each group is one text, written in each of its spellings.
+const SPELLING_GROUPS: [(&str, &[&str]); 6] = [
+    ("\u{e9}", &["\"\u{e9}\"", "\"\\u00e9\"", "\"\\u00E9\""]),
+    ("\n", &["\"\\n\"", "\"\\u000a\""]),
+    ("\u{1f600}", &["\"\u{1f600}\"", "\"\\ud83d\\ude00\""]),
+    ("a/b", &["\"a/b\"", "\"a\\/b\""]),
+    ("e\u{301}", &["\"e\\u0301\"", "\"e\u{301}\""]),
+    ("abc", &["\"abc\"", "\"abc\""]),
+];
+
+/// FR-091-AC-70, QSpec TC-186 T06b: under a scalar profile and a normalizing
+/// one, every spelling of a text holds that text's payload bytes and carries
+/// its own quoted spelling as provenance; equal spellings carry equal
+/// provenance and distinct spellings distinct provenance.
+#[trace("FR-091-AC-70", "TC-1052", "QSpec-TC-186", "QSpec-FR-141-AC-4")]
 #[test]
 fn text_literals_keep_their_source_spelling_as_provenance() {
-    let fixture = fixture();
-    for (name, spelling) in [("rawText", "\"\u{e9}\""), ("escapedText", "\"\\u00e9\"")] {
-        let Value::Text(text) = completed(&fixture, name) else {
+    let mut functions = String::new();
+    let mut expected = Vec::new();
+    for profile in ["binary-utf8", "nfc"] {
+        for (group, (text, spellings)) in SPELLING_GROUPS.iter().enumerate() {
+            for (index, spelling) in spellings.iter().enumerate() {
+                let name = format!("lit_{profile}_{group}_{index}").replace('-', "_");
+                functions.push_str(&format!(
+                    "function {name} using v(): Text[0, 8; {profile}] pure {{ Text({spelling}) }}\n"
+                ));
+                expected.push((name, *text, *spelling, group));
+            }
+        }
+    }
+    let fixture = fixture_of(&functions);
+    let mut seen: Vec<(usize, &str, TextProvenance)> = Vec::new();
+    for (name, text, spelling, group) in &expected {
+        let Value::Text(value) = completed(&fixture, name) else {
             panic!("{name}: a Text value");
         };
-        assert_eq!(text.payload().bytes(), [0xc3, 0xa9], "{name}");
+        assert_eq!(value.payload().as_str(), *text, "{name}");
+        assert_eq!(value.payload().bytes(), text.as_bytes(), "{name}");
+        let provenance = value.payload().provenance().clone();
         assert_eq!(
-            text.payload().provenance(),
-            &TextProvenance::SourceLiteral(spelling.into()),
+            provenance,
+            TextProvenance::SourceLiteral((*spelling).into()),
             "{name}"
         );
+        seen.push((*group, spelling, provenance));
     }
+    for (group, spelling, provenance) in &seen {
+        for (other_group, other_spelling, other) in &seen {
+            if group == other_group {
+                assert_eq!(
+                    spelling == other_spelling,
+                    provenance == other,
+                    "{spelling}"
+                );
+            }
+        }
+    }
+}
+
+/// QSpec TC-186 T06b: the values written `Text("\u{e9}")` and
+/// `Text("\u00e9")` and the runtime payload bytes `c3 a9` compare equal
+/// to each other, whichever side the literal is on.
+#[trace("FR-091-AC-70", "TC-1052", "QSpec-TC-186", "QSpec-FR-141-AC-4")]
+#[test]
+fn raw_escaped_and_runtime_text_compare_equal() {
+    let fixture = fixture();
+    let binary = quire_exact::TextType::new(0, 8, quire_exact::TextProfile::BinaryUtf8)
+        .expect("a Text type");
+    let admit = |payload: quire_exact::TextPayload| {
+        let Outcome::Completed(text) =
+            quire_exact::admit_text(&payload, &binary, &mut Meter::new(UNLIMITED))
+        else {
+            panic!("the payload is admitted");
+        };
+        Value::Text(text)
+    };
+    let runtime = admit(quire_exact::TextPayload::from_utf8(&[0xc3, 0xa9]).expect("UTF-8"));
+    let raw = admit(quire_exact::TextPayload::from_source_literal(
+        "\u{e9}",
+        "\"\u{e9}\"",
+    ));
+    let escaped = admit(quire_exact::TextPayload::from_source_literal(
+        "\u{e9}",
+        "\"\\u00e9\"",
+    ));
+    for argument in [&runtime, &raw, &escaped] {
+        assert!(truth(&fixture, "isE", vec![argument.clone()]));
+        assert!(truth(&fixture, "isEscapedE", vec![argument.clone()]));
+    }
+    let other = admit(quire_exact::TextPayload::from_utf8(b"e").expect("UTF-8"));
+    assert!(!truth(&fixture, "isE", vec![other.clone()]));
+    assert!(!truth(&fixture, "isEscapedE", vec![other]));
 }

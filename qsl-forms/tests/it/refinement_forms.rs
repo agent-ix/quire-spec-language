@@ -365,10 +365,10 @@ fn history_literals_and_a_strong_fairness_row_build_as_written() {
     );
     assert_eq!(*boolean, &HistoryLiteralForm::Boolean(true));
     assert_eq!(*none, &HistoryLiteralForm::None);
-    assert_eq!(
-        *string,
-        &HistoryLiteralForm::Text(qsl_forms::StringLiteral::new("a", "\"a\""))
-    );
+    let HistoryLiteralForm::Text(string) = string else {
+        panic!("a text literal: {string:?}");
+    };
+    assert_eq!((string.text(), string.spelling()), ("a", "\"a\""));
     let HistoryLiteralForm::Exact(exact) = exact else {
         panic!("an exact literal: {exact:?}");
     };

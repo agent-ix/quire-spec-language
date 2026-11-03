@@ -39,10 +39,26 @@ pub fn decode_quoted(spelling: &str) -> Option<String> {
 }
 
 /// The canonical quoted spelling of `text`: the JSON quoted text that
-/// [`decode_quoted`] decodes back to `text`.
+/// [`decode_quoted`] decodes back to `text`. Only `"`, `\` and the controls
+/// below U+0020 are escaped; every other scalar is written raw.
 pub fn encode_quoted(text: &str) -> String {
-    // Serializing a `str` cannot fail; the empty spelling is unreachable.
-    serde_json::to_string(text).unwrap_or_default()
+    let mut quoted = String::with_capacity(text.len() + 2);
+    quoted.push('"');
+    for scalar in text.chars() {
+        match scalar {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            '\t' => quoted.push_str("\\t"),
+            control if control < '\u{20}' => {
+                quoted.push_str(&format!("\\u{:04x}", u32::from(control)));
+            }
+            other => quoted.push(other),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// Whether `value` is entirely lexer-skipped whitespace (spaces, tabs,

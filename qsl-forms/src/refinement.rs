@@ -608,12 +608,9 @@ fn history_literal(
             (_, b"false") => Ok(HistoryLiteralForm::Boolean(false)),
             (_, b"none") => Ok(HistoryLiteralForm::None),
             (TokenKind::Text, _) => {
-                let spelling = text(token, literal)?;
-                let decoded =
-                    qsl_cst::token::decode_quoted(&spelling).ok_or_else(|| unexpected(literal))?;
-                Ok(HistoryLiteralForm::Text(StringLiteral::new(
-                    decoded, spelling,
-                )))
+                let quoted = StringLiteral::from_spelling(text(token, literal)?)
+                    .ok_or_else(|| unexpected(literal))?;
+                Ok(HistoryLiteralForm::Text(quoted))
             }
             _ => Err(unexpected(literal)),
         },

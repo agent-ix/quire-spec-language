@@ -1245,9 +1245,6 @@ fn body_root(text: &str) -> ExprNode {
 #[trace("FR-091-AC-41", "TC-1052")]
 #[test]
 fn a_quoted_literal_builds_one_string_form_with_the_decoded_scalars() {
-    let scalars = |text: &str, spelling: &str| {
-        ExprNode::String(qsl_forms::StringLiteral::new(text, spelling))
-    };
     for (source, expected) in [
         (r#""abc""#, "abc"),
         (r#""""#, ""),
@@ -1259,9 +1256,34 @@ fn a_quoted_literal_builds_one_string_form_with_the_decoded_scalars() {
         (r#""\u0000""#, "\u{0}"),
         (r#""a\"b\\c\/d""#, "a\"b\\c/d"),
     ] {
-        assert_eq!(body_root(source), scalars(expected, source), "{source}");
+        assert_eq!(
+            string_parts(&body_root(source)),
+            (expected, source),
+            "{source}"
+        );
     }
     assert_ne!(body_root(r#""é""#), body_root(r#""é""#), "no normalization");
+}
+
+/// FR-091-AC-70: two spellings of one text build forms that are equal (the
+/// form compares by its decoded text) and still hold their own spelling.
+#[trace("FR-091-AC-70", "TC-1052")]
+#[test]
+fn two_spellings_of_one_text_build_equal_forms_that_keep_their_spelling() {
+    let raw = body_root("\"\u{e9}\"");
+    let escaped = body_root(r#""\u00e9""#);
+    assert_eq!(raw, escaped);
+    assert_eq!(string_parts(&raw), ("\u{e9}", "\"\u{e9}\""));
+    assert_eq!(string_parts(&escaped), ("\u{e9}", r#""\u00e9""#));
+    assert_ne!(raw, body_root(r#""e\u0301""#));
+}
+
+/// The decoded text and the quoted spelling of a `String` form.
+fn string_parts(node: &ExprNode) -> (&str, &str) {
+    let ExprNode::String(literal) = node else {
+        panic!("a String form, not {node:?}");
+    };
+    (literal.text(), literal.spelling())
 }
 
 /// FR-091-AC-41, TC-1052 step 1: `UUID("...")` and `Timestamp(n)` build the
@@ -1275,11 +1297,11 @@ fn uuid_and_timestamp_literals_build_ordinary_calls() {
     };
     assert_eq!(name.name, "UUID");
     assert_eq!(
-        function.body.at(arguments[0]).node(),
-        &ExprNode::String(qsl_forms::StringLiteral::new(
+        string_parts(function.body.at(arguments[0]).node()),
+        (
             "00112233-4455-6677-8899-aabbccddeeff",
             "\"00112233-4455-6677-8899-aabbccddeeff\""
-        ))
+        )
     );
     let (_, function) = body("Timestamp(-1)");
     let ExprNode::Call { name, arguments } = function.body.root_node() else {
@@ -1316,8 +1338,8 @@ fn text_calls_build_ordinary_calls_with_one_string_argument() {
         assert!(!name.is_qualified(), "{source}");
         assert_eq!(arguments.len(), 1, "{source}");
         assert_eq!(
-            function.body.at(arguments[0]).node(),
-            &ExprNode::String(qsl_forms::StringLiteral::new(expected, spelling)),
+            string_parts(function.body.at(arguments[0]).node()),
+            (expected, spelling),
             "{source}"
         );
     }
