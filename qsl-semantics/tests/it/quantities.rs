@@ -686,15 +686,12 @@ fn patched(base: &Value, patch: &Value) -> Value {
 /// FR-142-AC-8: the published `quire.value.compound-unit/v1` vectors are
 /// schema-valid and each authored noncanonical mutation, including a `-0`
 /// exponent, is refused by exactly the check it names (`schema`: the
-/// preimage reader; `semantic`: the unit graph's term check). Skipped (and
-/// passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
+/// preimage reader; `semantic`: the unit graph's term check). Fails when
+/// `QSPEC_DIR` is unset; `make conformance` sets it.
 #[trace("QSpec-TC-233", "QSpec-FR-142-AC-8")]
 #[test]
 fn published_compound_unit_vectors_admit_and_each_mutation_is_refused_by_its_named_check() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
     let path = std::path::Path::new(&qspec)
         .join("proposals/quire-v1/definitions/value-compound-unit-vectors.json");
     let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("reading {path:?}: {error}"));

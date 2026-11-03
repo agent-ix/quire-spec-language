@@ -2568,13 +2568,7 @@ fn quantity_literals(wire: &Value) -> (Vec<(String, Value)>, BTreeMap<String, Va
 /// lowers to a `value`/`literal` node of `value_kind` `quantity` typed by its
 /// unit's node, equal literals in one unit share one node, a rational is
 /// never emitted for one, and IR's strict v2 reader admits each package.
-#[trace(
-    "FR-093-AC-33",
-    "FR-094",
-    "TC-483",
-    "QSpec-TC-187",
-    "QSpec-FR-142-AC-14"
-)]
+#[trace("FR-093-AC-33", "FR-094", "TC-483")]
 #[test]
 fn quantity_literals_lower_to_shared_quantity_literal_nodes_the_strict_reader_admits() {
     // (functions beside f, expected (value, unit) literals in order)

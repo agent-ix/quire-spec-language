@@ -2709,7 +2709,7 @@ fn each_unit_graph_topology_error_refuses_alone() {
 /// `L` anchors it; a unitless base dimension no unit carries, a derived
 /// dimension without a unit, and the dimensionless `N = L / L` with its
 /// own unit all assemble.
-#[trace("FR-091-AC-45", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-16")]
+#[trace("FR-091-AC-45", "TC-483")]
 #[test]
 fn the_base_dimension_rule_refuses_an_unanchored_base_dimension() {
     let area = "dimension L; dimension A = L ^ 2; unit m2 : A = rational(1, 1);";
@@ -2857,15 +2857,23 @@ fn a_quantity_result_checks_and_a_converted_result_of_another_unit_is_a_mismatch
         .check(CheckingLimits::default())
         .expect_err("a Quantity<s> result is not a Quantity<ms>");
     let returned = last(&text, "convert<Quantity<s>>(d)");
-    assert!(
-        refusals.iter().any(|refusal| {
-            regions.region(&refusal.location).is_some_and(|region| {
-                (region.start(), region.end()) == (returned.start as u64, returned.end as u64)
-            }) && refusal
-                .cause
-                .catalog_code()
-                .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")
-        }),
+    let [refusal] = refusals.as_slice() else {
+        panic!("exactly the one result mismatch, not {refusals:?}")
+    };
+    let region = regions
+        .region(&refusal.location)
+        .expect("the refusal names a source region");
+    assert_eq!(
+        (
+            region.start(),
+            region.end(),
+            refusal.cause.catalog_code().map(|code| code.to_string())
+        ),
+        (
+            returned.start as u64,
+            returned.end as u64,
+            Some("ill_typed/type-mismatch".to_owned())
+        ),
         "the mismatch is located at the returned expression: {refusals:?}"
     );
 }
