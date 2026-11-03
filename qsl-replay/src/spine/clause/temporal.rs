@@ -41,6 +41,20 @@ pub enum TraceInput {
     /// A finite trace: a closed trace under a bounded profile, a finite
     /// prefix under the infinite-trace profile.
     Finite(Vec<DocumentRef>),
+    /// A finite event-position or fixed-sample trace with progress (FR-504).
+    Progressed {
+        /// The admitted observations.
+        trace: Vec<DocumentRef>,
+        /// The progress assertion for this request.
+        progress: ProgressAssertion,
+    },
+    /// A timestamped-event trace with progress (FR-501).
+    Timestamped {
+        /// The observations and their timestamp ordering data.
+        observations: Vec<TimestampedObservation>,
+        /// The progress assertion for this request.
+        progress: ProgressAssertion,
+    },
     /// A lasso: `prefix`, then `repeat` forever. Its last position re-enters
     /// the first position of `repeat`.
     Lasso {
@@ -58,24 +72,69 @@ impl TraceInput {
     /// the whole infinite behavior and a finite trace is its own closure.
     fn carries_progress(&self) -> bool {
         match self {
+            Self::Progressed { .. } | Self::Timestamped { .. } => true,
             Self::Finite(_) | Self::Lasso { .. } => false,
         }
     }
 
+    /// The progress assertion and position identities carried by this trace.
+    fn progress(&self) -> Option<(ProgressAssertion, Vec<ObservedPosition>)> {
+        match self {
+            Self::Progressed { trace, progress } => {
+                let positions = trace
+                    .iter()
+                    .enumerate()
+                    .map(|(index, document)| {
+                        Some(ObservedPosition {
+                            identity: document_identity(document),
+                            stamp: u64::try_from(index).ok()?,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some((*progress, positions))
+            }
+            Self::Timestamped {
+                observations,
+                progress,
+            } => Some((
+                *progress,
+                observations
+                    .iter()
+                    .map(|observation| ObservedPosition {
+                        identity: document_identity(&observation.document),
+                        stamp: observation.stamp,
+                    })
+                    .collect(),
+            )),
+            Self::Finite(_) | Self::Lasso { .. } => None,
+        }
+    }
+
     /// Every observation, in position order.
-    fn documents(&self) -> impl Iterator<Item = &DocumentRef> {
-        let (prefix, repeat): (&[DocumentRef], &[DocumentRef]) = match self {
-            Self::Finite(positions) => (positions, &[]),
-            Self::Lasso { prefix, repeat } => (prefix, repeat),
-        };
-        prefix.iter().chain(repeat)
+    fn documents(&self) -> Box<dyn Iterator<Item = &DocumentRef> + '_> {
+        match self {
+            Self::Finite(positions)
+            | Self::Progressed {
+                trace: positions, ..
+            } => Box::new(positions.iter()),
+            Self::Timestamped { observations, .. } => {
+                Box::new(observations.iter().map(|observation| &observation.document))
+            }
+            Self::Lasso { prefix, repeat } => Box::new(prefix.iter().chain(repeat)),
+        }
     }
 
     /// The trace's shape, or `None` when its length exceeds `u64`.
     fn shape(&self) -> Option<TemporalTrace> {
         match self {
-            Self::Finite(positions) => Some(TemporalTrace::Finite {
+            Self::Finite(positions)
+            | Self::Progressed {
+                trace: positions, ..
+            } => Some(TemporalTrace::Finite {
                 len: u64::try_from(positions.len()).ok()?,
+            }),
+            Self::Timestamped { observations, .. } => Some(TemporalTrace::Finite {
+                len: u64::try_from(observations.len()).ok()?,
             }),
             Self::Lasso { prefix, repeat } => Some(TemporalTrace::Lasso {
                 prefix: u64::try_from(prefix.len()).ok()?,
@@ -83,6 +142,31 @@ impl TraceInput {
             }),
         }
     }
+}
+
+fn document_identity(document: &DocumentRef) -> String {
+    format!(
+        "{}:{}{}:{}{}:{}{}:{}",
+        document.authority.len(),
+        document.authority,
+        document.identity.len(),
+        document.identity,
+        document.revision_namespace.len(),
+        document.revision_namespace,
+        document.revision.len(),
+        document.revision,
+    )
+}
+
+/// One timestamped observation in a progress-carrying trace.
+#[derive(Clone, Debug)]
+pub struct TimestampedObservation {
+    /// The admitted snapshot identity.
+    pub document: DocumentRef,
+    /// The non-negative tick stamp.
+    pub stamp: u64,
+    /// An optional order key for equal-stamp positions.
+    pub order_key: Option<String>,
 }
 
 /// FR-330 Inputs: the `{population, key}` object the clause's `over`
@@ -247,6 +331,21 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     };
     let clause = node.clause();
 
+    let trace_matches_profile = match trace {
+        TraceInput::Progressed { .. } => matches!(
+            clause.profile(),
+            TemporalProfile::EventPositionFalseExtension
+                | TemporalProfile::FixedSampleFalseExtension
+        ),
+        TraceInput::Timestamped { .. } => {
+            clause.profile() == TemporalProfile::TimestampedEventFiniteWindow
+        }
+        TraceInput::Finite(_) | TraceInput::Lasso { .. } => true,
+    };
+    if !trace_matches_profile {
+        return early(refused("invalid-value", BTreeMap::new()));
+    }
+
     // A ledger retains progress; a trace that asserts none has nothing to
     // retain (FR-502 Behavior).
     if ledger.is_some()
@@ -346,6 +445,54 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         ));
     };
 
+    let mut accepted_ledger = None;
+    if let Some(ledger) = ledger {
+        let Some((assertion, positions)) = trace.progress() else {
+            return early(refused("invalid-value", BTreeMap::new()));
+        };
+        let Some(package_identity) = run.sources.first().map(|source| source.identity().clone())
+        else {
+            return late(ClauseDisposition::EvaluateFault(
+                quire_semantic_value::catalog::InternalFault::new(
+                    "temporal-progress",
+                    "missing-package-source-identity",
+                ),
+            ));
+        };
+        let binding = LedgerBinding {
+            package: package_identity,
+            clause: node.identity(),
+            clock: clause.clock().to_owned(),
+            profile: clause.profile().identity().to_owned(),
+        };
+        accepted_ledger = match admit_progress(
+            ledger,
+            &binding,
+            assertion,
+            &positions,
+            run.progress_capacity,
+        ) {
+            Ok(updated) => Some(updated),
+            Err(disposition) => return late(*disposition),
+        };
+    }
+
+    if matches!(trace, TraceInput::Progressed { .. }) {
+        // FR-504's progress-aware outcome rules are not part of the current
+        // evaluator API. Keep the accepted ledger, but do not pass progress
+        // assertions to the closed-finite-trace evaluator as if they were
+        // equivalent.
+        let mut report = late(ClauseDisposition::TemporalRefusal(
+            TemporalTraceRefusal::ProfileNotEvaluated {
+                profile: clause.profile(),
+            },
+        ));
+        if accepted_ledger.is_some() {
+            report.ledger = accepted_ledger;
+        }
+        return report;
+    }
+
     let mut meter = Meter::new(run.accounting);
     let observed = evaluate_observed(
         run.package,
@@ -375,7 +522,16 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
         (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
     };
-    report(disposition, ClauseRunUsage::from_meter(&meter, admitted))
+    let accepted = !matches!(
+        disposition.category(),
+        quire_semantic_value::catalog::Category::Refusal
+            | quire_semantic_value::catalog::Category::InternalFailure
+    );
+    let mut report = report(disposition, ClauseRunUsage::from_meter(&meter, admitted));
+    if accepted {
+        report.ledger = accepted_ledger.or_else(|| ledger.cloned());
+    }
+    report
 }
 
 /// The spine's own form of the evaluator's outcome (FR-100-AC-8).

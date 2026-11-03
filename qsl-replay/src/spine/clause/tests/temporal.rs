@@ -1137,27 +1137,48 @@ fn a_guarded_on_each_clause_over_a_finite_trace_is_evaluated_at_its_guard() {
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 1 });
 }
 
-/// A ledger holding `binding` at watermark 100, complete through 100.
-fn retained_ledger() -> (crate::spine::LedgerBinding, crate::spine::ProgressLedger) {
-    let binding = crate::spine::LedgerBinding {
-        package: "pkg".to_owned(),
-        clause: "Bounded".to_owned(),
-        clock: "ms".to_owned(),
-        profile: "quire.temporal.timestamped-event.finite-window/v1".to_owned(),
+fn with_progress(
+    mut request: ClauseRunRequest,
+    watermark: u64,
+    completeness: crate::spine::ProgressCompleteness,
+    carried: &crate::spine::ProgressLedger,
+) -> ClauseRunRequest {
+    let ClauseRunSelection::Temporal { trace, ledger, .. } = &mut request.selection else {
+        panic!("a temporal selection");
     };
-    let ledger = crate::spine::ProgressLedger::new()
-        .admit(
-            &binding,
-            crate::spine::ProgressAssertion {
-                watermark: 100,
-                completeness: crate::spine::ProgressCompleteness::Complete { through: 100 },
-                scope: crate::spine::ProgressClosure::Open,
-                execution: crate::spine::ProgressClosure::Open,
-            },
-            &[],
-            1000,
-        )
-        .expect("the first assertion of a binding is accepted");
+    let documents = match trace {
+        TraceInput::Finite(documents) => documents.clone(),
+        _ => panic!("a finite source trace"),
+    };
+    *trace = TraceInput::Progressed {
+        trace: documents,
+        progress: crate::spine::ProgressAssertion {
+            watermark,
+            completeness,
+            scope: crate::spine::ProgressClosure::Open,
+            execution: crate::spine::ProgressClosure::Open,
+        },
+    };
+    *ledger = Some(carried.clone());
+    request
+}
+
+/// A ledger returned by an accepted `run_clause` progress request.
+fn retained_ledger() -> (crate::spine::LedgerBinding, crate::spine::ProgressLedger) {
+    let report = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &crate::spine::ProgressLedger::new(),
+    ));
+    let ledger = report
+        .ledger
+        .expect("an accepted request returns its updated ledger");
+    let binding = ledger
+        .bindings()
+        .next()
+        .expect("the request retained one binding")
+        .clone();
     (binding, ledger)
 }
 
@@ -1229,30 +1250,55 @@ fn a_request_without_a_ledger_evaluates_its_trace_and_returns_none() {
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
 }
 
-#[trace("FR-502-AC-1", "FR-330-AC-9", "TC-1296")]
+#[trace("FR-502-AC-1", "FR-502-AC-6", "FR-330-AC-9", "TC-1296")]
 #[test]
-fn a_regressing_watermark_reports_stage_evaluate_refusal_with_its_fields() {
-    let (binding, ledger) = retained_ledger();
-    let regressing = crate::spine::ProgressAssertion {
-        watermark: 60,
-        completeness: crate::spine::ProgressCompleteness::Complete { through: 100 },
-        scope: crate::spine::ProgressClosure::Open,
-        execution: crate::spine::ProgressClosure::Open,
-    };
-    let disposition = crate::spine::admit_progress(&ledger, &binding, regressing, &[], 1000)
-        .expect_err("a regressing watermark is refused");
-    assert_eq!(disposition.stage(), ClauseRunStage::Evaluate);
-    assert_eq!(disposition.category(), Category::Refusal);
-    let ClauseDisposition::ProgressContradiction(refusal) = *disposition else {
-        panic!("expected a progress contradiction");
+fn run_clause_returns_the_updated_ledger_and_preserves_it_on_regression() {
+    let first = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &crate::spine::ProgressLedger::new(),
+    ));
+    assert_eq!(first.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(first.disposition.category(), Category::Unsupported);
+    assert!(matches!(
+        &first.disposition,
+        ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::ProfileNotEvaluated { .. })
+    ));
+    let ledger = first
+        .ledger
+        .expect("the accepted run returns its updated ledger");
+    let binding = ledger
+        .bindings()
+        .next()
+        .expect("the accepted run retained its binding");
+    assert_eq!(
+        ledger.entry(binding).map(|entry| entry.watermark()),
+        Some(100)
+    );
+
+    let second = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        60,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &ledger,
+    ));
+    assert_eq!(second.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(second.disposition.category(), Category::Refusal);
+    assert_eq!(second.ledger, Some(ledger));
+    let ClauseDisposition::ProgressContradiction(refusal) = &second.disposition else {
+        panic!(
+            "expected a progress contradiction, got {:?}",
+            second.disposition
+        );
     };
     assert_eq!(refusal.record.catalog.code(), "invalid_runtime_input");
     assert_eq!(refusal.record.catalog.cause(), "invalid-value");
     assert_eq!(
-        refusal.record.fields,
+        refusal.record.fields.clone(),
         std::collections::BTreeMap::from([
             ("contradicted_dimension", "Watermark".to_owned()),
-            ("clock", "ms".to_owned()),
+            ("clock", "model-steps".to_owned()),
             ("retained", "100".to_owned()),
             ("asserted", "60".to_owned()),
         ])

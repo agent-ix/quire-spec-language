@@ -83,7 +83,8 @@ pub use clause::{
     ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
     ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLimitReached,
     ProgressRefusal, ProgressValue, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedObservation,
+    TraceInput,
 };
 mod refinement;
 pub use refinement::{

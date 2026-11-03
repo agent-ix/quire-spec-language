@@ -30,9 +30,9 @@ const COVERED_POSITIONS_LIMIT: &str = "node count";
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LedgerBinding {
     /// The checked package identity.
-    pub package: String,
+    pub package: qsl_foundation::SourceIdentity,
     /// The checked clause identity.
-    pub clause: String,
+    pub clause: quire_exact::NodeKey,
     /// The clock binding name.
     pub clock: String,
     /// The selected profile identity.
@@ -341,11 +341,29 @@ mod tests {
 
     fn binding() -> LedgerBinding {
         LedgerBinding {
-            package: "pkg".to_owned(),
-            clause: "Refund".to_owned(),
+            package: package_identity("pkg", "1"),
+            clause: clause_identity("Refund", 0),
             clock: "ms".to_owned(),
             profile: "finite-window".to_owned(),
         }
+    }
+
+    fn package_identity(identity: &str, revision: &str) -> qsl_foundation::SourceIdentity {
+        qsl_foundation::SourceIdentity {
+            authority: "test".to_owned(),
+            identity: identity.to_owned(),
+            revision_namespace: "git".to_owned(),
+            revision: revision.to_owned(),
+        }
+    }
+
+    fn clause_identity(name: &str, ordinal: u64) -> quire_exact::NodeKey {
+        quire_exact::NodeKey::new(
+            "pkg",
+            vec![quire_exact::PathSegment::Text(name.to_owned())],
+            ordinal,
+        )
+        .expect("test clause identity is valid")
     }
 
     fn at(identity: &str, stamp: u64) -> ObservedPosition {
@@ -548,11 +566,11 @@ mod tests {
         let before = base.entry(&binding()).cloned();
         let variants = [
             LedgerBinding {
-                package: "other".to_owned(),
+                package: package_identity("other", "1"),
                 ..binding()
             },
             LedgerBinding {
-                clause: "Other".to_owned(),
+                clause: clause_identity("Other", 0),
                 ..binding()
             },
             LedgerBinding {

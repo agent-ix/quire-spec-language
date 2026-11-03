@@ -33,7 +33,7 @@ use temporal::TemporalRun;
 pub use temporal::{
     admit_progress, LedgerBinding, ObservedPosition, OverObject, ProgressAssertion,
     ProgressClosure, ProgressCompleteness, ProgressContradiction, ProgressLedger,
-    ProgressLimitReached, ProgressRefusal, ProgressValue, TraceInput,
+    ProgressLimitReached, ProgressRefusal, ProgressValue, TimestampedObservation, TraceInput,
 };
 
 use super::call::{convert_call_failure, convert_outcome, select};
@@ -925,6 +925,7 @@ pub fn run_clause_with_temporal_selections(
         accounting: request.accounting,
         package,
         sources: &sources,
+        progress_capacity: request.limits.progress.covered_positions,
     };
     match request.selection {
         ClauseRunSelection::Clause(ref selection) => {
@@ -981,6 +982,8 @@ pub(crate) struct CompiledRun<'a> {
     pub(crate) package: &'a qsl_package::CheckedPackage,
     /// The unit's and every resolved library's source, for loci.
     pub(crate) sources: &'a [Source],
+    /// The covered-position capacity for temporal progress admission.
+    pub(crate) progress_capacity: u64,
 }
 
 impl CompiledRun<'_> {
