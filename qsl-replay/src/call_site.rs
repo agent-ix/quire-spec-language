@@ -561,6 +561,10 @@ impl From<CompileRefusal> for CallSiteRefusal {
                 code,
             },
             CompileRefusal::DependencyInput(input) => Self::DependencyInput(input),
+            CompileRefusal::UnitList(refusal) => Self::Compile {
+                code,
+                message: refusal.to_string(),
+            },
             CompileRefusal::Import { refusal, .. } => Self::Import {
                 code,
                 message: refusal.to_string(),

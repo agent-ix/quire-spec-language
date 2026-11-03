@@ -107,7 +107,7 @@ fn written_side<'a>(body: CheckedNode<'a>, field: &str) -> Option<CheckedNode<'a
     let mut pending = vec![body];
     while let Some(node) = pending.pop() {
         match node.kind() {
-            NodeKind::Connective(Connective::And, left, right) => {
+            NodeKind::Connective(Connective::And, _, left, right) => {
                 pending.push(node.at(*right));
                 pending.push(node.at(*left));
             }

@@ -2755,6 +2755,11 @@ pub enum CheckCause {
     /// profile:
     /// `invalid_package`.
     IeeeProfileNotAdmitted,
+    /// `invalid_package` / `conflicting-definition` (FR-397-AC-16): a
+    /// supplied library exports a declaration under the reserved IEEE
+    /// intrinsic identity the call names; a declaration never replaces or
+    /// shadows an intrinsic.
+    ReservedIntrinsicConflict(String),
     /// A derived collection bound exceeds the representable cardinality range.
     UnrepresentableBound,
     /// `invalid_package` / `definition-cycle` (FR-151, TC-196 D08): an
@@ -3242,6 +3247,7 @@ impl CheckCause {
             Self::SumCase(cause) => cause.code(),
             Self::ResourceExhausted(_) => Code::StageLimitExceeded,
             Self::IeeeProfileNotAdmitted
+            | Self::ReservedIntrinsicConflict(_)
             | Self::DefinitionCycle { .. }
             | Self::InvalidDispatchDeclaration(_)
             | Self::NodePreimage(_) => Code::InvalidPackage,
@@ -3338,6 +3344,7 @@ impl CheckCause {
                 Some(Setting::IdentityInputBytes.kind().catalog_cause())
             }
             Self::Identity(IdentityRefusal::Allocation { .. }) => Some("allocation-failed"),
+            Self::ReservedIntrinsicConflict(_) => Some("conflicting-definition"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
                 None
             }

@@ -117,6 +117,7 @@ impl CompileRefusal {
     /// `runtime_invariant` cause, as [`Self::code`] does.
     pub fn causes(&self) -> Vec<RefusalCause> {
         match self {
+            Self::UnitList(refusal) => vec![RefusalCause::new(refusal.code(), refusal.cause())],
             Self::Source(diagnostic) => {
                 vec![
                     RefusalCause::new(diagnostic.code, None).reaching(diagnostic.limit().map(
@@ -341,6 +342,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::SumCase(_)
         | CheckCause::UnprovedDecrease { .. }
         | CheckCause::IeeeProfileNotAdmitted
+        | CheckCause::ReservedIntrinsicConflict(_)
         | CheckCause::UnrepresentableBound
         | CheckCause::DefinitionCycle { .. }
         | CheckCause::InvalidDispatchDeclaration(_)
@@ -424,6 +426,7 @@ fn group(refusal: &CompileRefusal) -> Group {
             UnitIntakeCause::Refused(_) | UnitIntakeCause::Invariant => Group::Setup,
         },
         CompileRefusal::Profile { .. }
+        | CompileRefusal::UnitList(_)
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Dependency { .. } => Group::Setup,
         CompileRefusal::Import { refusal, .. } => match refusal {

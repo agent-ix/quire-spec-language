@@ -789,6 +789,7 @@ mod tests {
             value_type: ValueType::Integer,
             location: Location::root(Origin::Expression),
             equality_producer: None,
+            ordering_part: false,
         }
     }
 
@@ -823,6 +824,7 @@ mod tests {
                                 value_type: ValueType::Integer,
                                 location: local(0).location,
                                 equality_producer: None,
+                                ordering_part: false,
                             }),
                         )
                     }

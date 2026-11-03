@@ -749,9 +749,11 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
 /// resolves every quantity type, admission matches argument units to
 /// parameter units, and an expression checked against another graph is
 /// refused before evaluation (#2098, FR-049-AC-1). The object-environment
-/// route is open under QSL-1470: a caller-supplied `ObjectEnvironment` or
-/// `ObjectClosure` typed under a different unit is not checked by
-/// `CheckedPackage::evaluate`. The probe drives the machine directly.
+/// route is closed too (QSL-1470, FR-049-AC-2/AC-3): an attribute read
+/// refuses a stored value that is not of the declared type under the
+/// package's own types, `invalid_runtime_input`/`wrong-value-kind`
+/// (`equality_matrix.rs`). No caller input reaches this fault, so the probe
+/// drives the machine directly.
 #[test]
 #[trace("TC-917", "FR-090-AC-15")]
 fn an_unresolved_unit_past_admission_is_an_internal_fault() {
@@ -1153,6 +1155,62 @@ fn object_package(
     qsl_package::CheckedPackage::link(graph)
 }
 
+/// QSL-1470 (FR-049-AC-2/AC-3): the protocol reader's attribute read and
+/// `reaches`'s edge read take their slot through `admitted_slot`, so a stored
+/// value that is not of the package's declared type refuses instead of
+/// reaching a shape fault or projecting another type.
+#[test]
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+fn the_reader_and_edge_reads_refuse_a_stored_value_of_another_type() {
+    let reference_type = ValueType::Reference(reference().object_type().clone());
+    let field = FieldRef::new(reference().object_type().clone(), "edge");
+    let storage = object_package(ValueType::Boolean, quire_exact::Presence::Optional);
+    let closure = quire_semantic_value::object_closure::ObjectClosure::new(
+        storage.graph().scope().types(),
+        [(
+            reference(),
+            vec![("edge", FieldValue::Present(Value::Boolean(true)))],
+        )],
+        &[],
+    )
+    .unwrap();
+    let package = object_package(reference_type.clone(), quire_exact::Presence::Required);
+    let graph = package.graph();
+    let objects = ObjectEnvironment::new(closure);
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(
+        graph.scope(),
+        graph,
+        &objects,
+        &mut meter,
+        graph.dispatch_tables(),
+    );
+    let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
+    assert!(matches!(
+        machine.edge_targets(literal.root(), &reference(), &field),
+        Err(Halt::Family(FamilyResult::Refused(_)))
+    ));
+    set_frames(
+        &mut machine,
+        vec![vec![Some(Value::Reference(reference()))]],
+    );
+    let location = Location::root(Origin::Expression);
+    let read = quire_checked::NodeRead {
+        operation: NodeKind::Attribute {
+            reference: 0,
+            field,
+            optional: false,
+            derefed: false,
+        },
+        value_type: &reference_type,
+        location: &location,
+    };
+    assert!(matches!(
+        machine.eval_reader_read(read),
+        Err(Halt::Family(FamilyResult::Refused(_)))
+    ));
+}
+
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
@@ -1226,18 +1284,29 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
             &[],
         )
         .unwrap();
+        // The stored slot is read past admission (a mismatched slot is caller
+        // input that `edge_targets` refuses), so the shape sites are probed
+        // on the slot itself.
         let package = object_package(expected, quire_exact::Presence::Required);
-        probe_package!(
-            identifier,
-            m,
-            package,
-            ObjectEnvironment::new(closure),
-            [],
-            {
-                m.edge_targets(literal.root(), &reference(), &field)
-                    .map(|_| ())
-            }
-        );
+        let declared = package
+            .graph()
+            .scope()
+            .types()
+            .attributes(reference().object_type().clone())
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let slot = closure
+            .attribute(storage.graph().scope().types(), &reference(), &field)
+            .unwrap()
+            .clone();
+        let fault = match Machine::slot_edge_targets(declared.field(), &slot) {
+            Err(Halt::Fault(fault)) => fault,
+            _ => panic!("producer was not reached: {identifier}"),
+        };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), identifier);
     }
     for stored in [FieldValue::Absent, FieldValue::Null] {
         let package = object_package(reference_type.clone(), quire_exact::Presence::Optional);
@@ -1402,14 +1471,14 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
 
 #[test]
 #[trace(
-    "TC-918",
-    "FR-096-AC-19",
-    "FR-090-AC-17",
+    "TC-136",
+    "FR-049-AC-2",
+    "FR-049-AC-3",
     "FR-401-AC-9",
     "FR-401-AC-10",
     "TC-1191"
 )]
-fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
+fn an_out_of_type_stored_value_is_refused_at_the_public_call_and_evaluate_entries() {
     use super::super::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::PackageDeclarations;
@@ -1516,18 +1585,18 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                 package.evaluate(&checked, arguments, &objects, &mut meter)
             };
             if stored < 0 {
-                let Err(CallFailure::Fault(fault)) = result else {
-                    panic!("received typed kernel fault");
+                // QSL-1470 (FR-049-AC-2/AC-3): the stored -1 is caller input
+                // outside the declared `Int[0, 9]`, so the read refuses it
+                // rather than reaching the equality-source fault.
+                let FamilyOutcome::FamilyEvaluated(quire_eval::FamilyResult::Refused(cause)) =
+                    result.unwrap().outcome
+                else {
+                    panic!("an out-of-type stored value refuses");
                 };
-                assert_eq!(fault.stage(), "S6a");
-                assert_eq!(fault.invariant(), "checked-program-invariant");
+                let code = cause.catalog_code();
                 assert_eq!(
-                    fault.kernel_cause(),
-                    Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
-                );
-                assert_eq!(
-                    fault.category(),
-                    quire_semantic_value::catalog::Category::InternalFailure
+                    (code.code(), code.cause()),
+                    ("invalid_runtime_input", "wrong-value-kind")
                 );
                 let expected: &[ChargePoint] = if call {
                     &[ChargePoint::FunctionCall]
@@ -1753,7 +1822,9 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
             then: ids[1],
             otherwise: ids[1],
         }),
-        body(|ids| NodeKind::Connective(Connective::And, ids[0], ids[1])),
+        body(|ids| {
+            NodeKind::Connective(Connective::And, ConnectiveOrigin::Authored, ids[0], ids[1])
+        }),
         body(|ids| NodeKind::Pre(ids[0])),
     ] {
         probe!("evaluation-apply-node-invalid", m, [], {

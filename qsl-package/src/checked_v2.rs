@@ -117,7 +117,9 @@ pub(crate) fn read_v2(
             }
         }
         Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
+        Err(StageFailure::RefusedWithPayload(refusal, _)) => Read::Refused(refusal),
         Err(StageFailure::Limit(limit)) => Read::Limit(limit),
+        Err(StageFailure::LimitWithPayload(limit, _)) => Read::Limit(limit),
         Err(StageFailure::Cancelled(cause)) => Read::Cancelled(cause),
         Err(StageFailure::Fault(fault)) => Read::Fault(fault),
     }
@@ -775,7 +777,9 @@ pub enum ImportViewRefusal {
 fn read_message(refusal: &StageFailure<V2ReadRefusal>) -> String {
     match refusal {
         StageFailure::Refused(refusal) => refusal.to_string(),
+        StageFailure::RefusedWithPayload(refusal, _) => refusal.to_string(),
         StageFailure::Limit(limit) => limit.to_string(),
+        StageFailure::LimitWithPayload(limit, _) => limit.to_string(),
         StageFailure::Cancelled(cause) => format!("cancelled ({cause:?})"),
         StageFailure::Fault(fault) => {
             format!("internal fault ({}, {})", fault.stage(), fault.invariant())
@@ -795,7 +799,9 @@ impl ImportViewRefusal {
             Self::UnheldDependency { .. } | Self::Evidence { .. } => Code::RuntimeInvariant,
             Self::Read { refusal, .. } => match refusal.as_ref() {
                 StageFailure::Refused(refusal) => refusal.code(),
+                StageFailure::RefusedWithPayload(refusal, _) => refusal.code(),
                 StageFailure::Limit(_) => Code::StageLimitExceeded,
+                StageFailure::LimitWithPayload(_, _) => Code::StageLimitExceeded,
                 StageFailure::Cancelled(_) => Code::Cancelled,
                 StageFailure::Fault(_) => Code::RuntimeInvariant,
             },

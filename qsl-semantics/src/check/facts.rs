@@ -830,7 +830,7 @@ impl<'a> Definedness<'a> {
                     children.push(DefinedNode::Walk(node.at(*otherwise), when_false));
                 }
             }
-            NodeKind::Connective(connective, left, right) => {
+            NodeKind::Connective(connective, _, left, right) => {
                 let (when_true, when_false) = self.outcomes(node.at(*left), facts);
                 let under = match connective {
                     Connective::And | Connective::Implies => when_true,
@@ -1133,7 +1133,7 @@ impl<'n> quire_walk::Walk for DefinednessWalk<'_, '_, 'n> {
                 NodeKind::If {
                     condition: first, ..
                 }
-                | NodeKind::Connective(_, first, _)
+                | NodeKind::Connective(_, _, first, _)
                 | NodeKind::Let { value: first, .. } => {
                     children.push(DefinedNode::Walk(node.at(*first), Rc::clone(&facts)));
                     children.push(DefinedNode::Branch(node, facts));
@@ -1327,7 +1327,7 @@ impl<'n> quire_walk::Walk for OutcomeWalk<'_, '_, 'n> {
                     children.push(OutcomeNode::Evaluate(node.at(*operand), facts));
                     ControlFlow::Continue(OutcomeFrame::Done)
                 }
-                NodeKind::Connective(connective, left, right) => {
+                NodeKind::Connective(connective, _, left, right) => {
                     children.push(OutcomeNode::Evaluate(node.at(*left), facts));
                     children.push(OutcomeNode::Right(*connective, node.at(*right)));
                     ControlFlow::Continue(OutcomeFrame::Connective(*connective))
