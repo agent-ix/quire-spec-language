@@ -547,21 +547,6 @@ fn renamed_timestamp_unit(v: &Value) -> Option<Made> {
     rename_member(v, "timestamp_unit", "timestampUnit")
 }
 
-/// Row 28m: the package bytes stay as they are; the mutation is one byte of
-/// the source a `CheckedSourceRef` names. Contract IR's reader takes no source
-/// bytes yet (IR-1273), so the case carries the base bytes and the self-check
-/// reports the reader's admission.
-fn original_bytes_moved(v: &Value) -> Option<Made> {
-    ok(
-        clone(v),
-        reader(
-            "invalid_package",
-            Some("source-integrity"),
-            "/lock/sources/0".into(),
-        ),
-    )
-}
-
 fn clock_name_differs(v: &Value) -> Option<Made> {
     let mut w = clone(v);
     *row_mut(&mut w, 0)?.get_mut("clock_name")? = json!("other-clock");
@@ -573,8 +558,6 @@ fn clock_name_empty(v: &Value) -> Option<Made> {
     *row_mut(&mut w, 0)?.get_mut("clock_name")? = json!("");
     ok(w, malformed("/temporal_bindings/0/clock_name".into()))
 }
-
-const MOVED: &str = "definition-original-bytes-moved";
 
 /// The corpus table, in table order.
 fn table() -> Vec<Case> {
@@ -728,12 +711,6 @@ fn table() -> Vec<Case> {
             renamed_timestamp_unit,
         ),
         c(
-            MOVED,
-            "definition.original_bytes",
-            EVENT,
-            original_bytes_moved,
-        ),
-        c(
             "definition-artifact-wire-identity",
             "definition.authority",
             EVENT,
@@ -874,13 +851,6 @@ fn verify(
     evidence: &CheckedPackageEvidence,
     environment: &dyn Environment,
 ) -> Result<(), Error> {
-    if case.identity == MOVED {
-        // The reader reads no source bytes yet, so it admits this case.
-        return match environment.source_integrity() {
-            Some(refusal) if made.expected == Expected::Reader(refusal.clone()) => Ok(()),
-            _ => Err(mismatch(case.identity)),
-        };
-    }
     if bytes == base {
         return Err(mismatch(case.identity));
     }

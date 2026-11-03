@@ -14,7 +14,7 @@ use quire_contract_model::{
 };
 use quire_spec_language::checked_handoff::{
     evidence, write, write_with, CheckedHandoffRequest, Corpus, Environment, Error, ErrorCode,
-    ReaderRefusal, RealEnvironment, Selection, SelectionAxis, SelectionRefusal,
+    RealEnvironment, Selection, SelectionAxis, SelectionRefusal,
 };
 use quire_spec_language::emit_checked_v2::{self, ClockSelection, Request};
 use serde_json::Value;
@@ -153,8 +153,6 @@ struct Double {
     wrong_case_refusal: bool,
     /// Give every read the refusal `other_refusal`.
     refuse_reads: bool,
-    /// A reader that verifies source bytes (IR-1273) refuses case 28m.
-    source_integrity: bool,
     /// Read these bytes instead of the first package read: an admitted
     /// package that is not the one the unit compiled to.
     substitute_first_read: Option<Vec<u8>>,
@@ -187,14 +185,6 @@ impl Environment for Double {
         package: &CheckedPackageV2,
     ) -> Result<(), SelectionRefusal> {
         selection.check(package)
-    }
-
-    fn source_integrity(&self) -> Option<ReaderRefusal> {
-        self.source_integrity.then(|| ReaderRefusal {
-            code: "invalid_package".into(),
-            cause: Some("source-integrity".into()),
-            pointer: "/lock/sources/0".into(),
-        })
     }
 
     fn write_file(&self, index: usize, path: &Path, contents: &[u8]) -> std::io::Result<()> {
@@ -595,7 +585,7 @@ fn a_refusal_or_difference_writes_nothing() {
     assert_eq!(error.code(), ErrorCode::Reader);
     // The read-back comparison fails for real: the reader admits a package
     // whose sequence authority is not the one the unit compiled to.
-    let (_holder, corpus) = written("event_position", Corpus::Standard, &ir_1273());
+    let (_holder, corpus) = written("event_position", Corpus::Standard, &Double::default());
     let other = tree(&corpus)["mutations/clock-sequence-authority.json"].clone();
     let differs = Double {
         substitute_first_read: Some(other),
@@ -771,10 +761,9 @@ const TIMED: Option<&str> = Some("timed-node-reference");
 const EP: &str = "event_position";
 const FS: &str = "fixed_sample";
 const TS: &str = "timestamped_event";
-const MOVED: &str = "definition-original-bytes-moved";
 const LAW: &str = "/semantic_graph/nodes/*/body/operation/laws/0/definition";
 
-/// FR-518's table, written by hand in table order (31 cases).
+/// FR-518's table, written by hand in table order (30 cases).
 fn table() -> Vec<Row> {
     vec![
         reader(
@@ -912,13 +901,6 @@ fn table() -> Vec<Row> {
             None,
             "/temporal_bindings/0/clock",
         ),
-        reader(
-            MOVED,
-            EP,
-            "invalid_package",
-            Some("source-integrity"),
-            "/lock/sources/0",
-        ),
         selection(
             "definition-artifact-wire-identity",
             EP,
@@ -954,29 +936,21 @@ fn pointer_matches(declared: &str, actual: &str) -> bool {
     }
 }
 
-/// A reader that verifies source bytes refuses case 28m.
-fn ir_1273() -> Double {
-    Double {
-        source_integrity: true,
-        ..Double::default()
-    }
-}
-
 fn manifest_of(out: &Path) -> Value {
     serde_json::from_slice(&tree(out)["mutations/manifest.json"]).expect("manifest is JSON")
 }
 
 /// FR-518-AC-1 over the readers of today: the manifest has the format, the
 /// table order, unique identities, stages and non-empty files, and the three
-/// packages together hold the 31 cases including 14b, 15b and 28m.
+/// packages together hold the 30 cases including 14b and 15b.
 #[trace("FR-518-AC-1", "TC-1313")]
 #[test]
 fn the_manifest_lists_every_case_in_table_order() {
     let table = table();
-    assert_eq!(table.len(), 31);
+    assert_eq!(table.len(), 30);
     let mut listed = Vec::new();
     for kind in KINDS {
-        let (_holder, out) = written(kind, Corpus::Standard, &ir_1273());
+        let (_holder, out) = written(kind, Corpus::Standard, &Double::default());
         let manifest = manifest_of(&out);
         assert_eq!(manifest["format"], "quire.checked-handoff.mutations/1");
         assert_eq!(manifest["base_package"], "checked-package.json");
@@ -1006,11 +980,10 @@ fn the_manifest_lists_every_case_in_table_order() {
     let mut unique = listed.clone();
     unique.sort();
     unique.dedup();
-    assert_eq!(unique.len(), 31);
+    assert_eq!(unique.len(), 30);
     for identity in [
         "definition-artifact-digest-closed-shape",
         "definition-artifact-digest-domain-closed-shape",
-        MOVED,
     ] {
         assert!(listed.iter().any(|listed| listed == identity));
     }
@@ -1026,7 +999,7 @@ fn every_case_gets_the_refusal_of_its_row() {
     let mut reader_cases = 0;
     let mut selection_cases = 0;
     for kind in KINDS {
-        let (_holder, out) = written(kind, Corpus::Standard, &ir_1273());
+        let (_holder, out) = written(kind, Corpus::Standard, &Double::default());
         let files = tree(&out);
         let held = evidence(&request(kind, Corpus::Standard)).unwrap();
         let selection = Selection::read(&files["selection.json"]).unwrap();
@@ -1036,9 +1009,6 @@ fn every_case_gets_the_refusal_of_its_row() {
         );
         for case in manifest_of(&out)["cases"].as_array().unwrap() {
             let identity = case["identity"].as_str().unwrap();
-            if identity == MOVED {
-                continue;
-            }
             let row = table.iter().find(|row| row.identity == identity).unwrap();
             let bytes = &files[case["input"]["file"].as_str().unwrap()];
             let result = read_checked_package(bytes, CheckedPackageReadLimits::bounded(), &held);
@@ -1066,7 +1036,7 @@ fn every_case_gets_the_refusal_of_its_row() {
             }
         }
     }
-    // Rows 1 to 31 without 28m, whose reader refusal needs IR-1273.
+    // Rows 1 to 31 without 28, which has no successor: 30 cases.
     assert_eq!((reader_cases, selection_cases), (20, 10));
 }
 
@@ -1077,7 +1047,7 @@ fn every_case_gets_the_refusal_of_its_row() {
 #[trace("FR-518-AC-4", "TC-1313")]
 #[test]
 fn the_definition_cases_are_refused_on_identity_and_authority() {
-    let (_holder, out) = written("event_position", Corpus::Standard, &ir_1273());
+    let (_holder, out) = written("event_position", Corpus::Standard, &Double::default());
     let files = tree(&out);
     let held = evidence(&request("event_position", Corpus::Standard)).unwrap();
     let selection = Selection::read(&files["selection.json"]).unwrap();
@@ -1105,11 +1075,11 @@ fn the_definition_cases_are_refused_on_identity_and_authority() {
     );
 }
 
-/// FR-518-AC-5: a stage that gives another refusal, and a case whose bytes
-/// equal the base, each make `write` return `CaseMismatch` and write nothing.
+/// FR-518-AC-5: a stage that gives another refusal makes `write` return
+/// `CaseMismatch` and write nothing.
 #[trace("FR-518-AC-5", "TC-1313")]
 #[test]
-fn a_wrong_refusal_or_an_unchanged_case_is_a_mismatch() {
+fn a_wrong_refusal_is_a_mismatch() {
     let fresh = tempfile::tempdir().unwrap();
     let target = fresh.path().join("handoff");
     let wrong = Double {
@@ -1126,17 +1096,6 @@ fn a_wrong_refusal_or_an_unchanged_case_is_a_mismatch() {
         panic!("{error:?}")
     };
     assert_eq!(identity, "header-wire-version-substitution");
-    // The source-integrity case carries the base bytes: an unchanged case.
-    let error = write_with(
-        &request("event_position", Corpus::Standard),
-        &target,
-        &Double::default(),
-    )
-    .unwrap_err();
-    let Error::CaseMismatch { identity } = error else {
-        panic!("{error:?}")
-    };
-    assert_eq!(identity, MOVED);
     assert_eq!(entries(fresh.path()), Vec::<String>::new());
 }
 
@@ -1145,8 +1104,8 @@ fn a_wrong_refusal_or_an_unchanged_case_is_a_mismatch() {
 #[test]
 fn the_corpus_is_deterministic() {
     for kind in KINDS {
-        let (_a, first) = written(kind, Corpus::Standard, &ir_1273());
-        let (_b, second) = written(kind, Corpus::Standard, &ir_1273());
+        let (_a, first) = written(kind, Corpus::Standard, &Double::default());
+        let (_b, second) = written(kind, Corpus::Standard, &Double::default());
         assert_eq!(tree(&first), tree(&second));
     }
 }
@@ -1157,7 +1116,7 @@ fn the_corpus_is_deterministic() {
 #[test]
 fn expected_values_name_no_digest_seal_or_legacy_string() {
     for kind in KINDS {
-        let (_holder, out) = written(kind, Corpus::Standard, &ir_1273());
+        let (_holder, out) = written(kind, Corpus::Standard, &Double::default());
         for case in manifest_of(&out)["cases"].as_array().unwrap() {
             // The pointer of the closed-shape cases names the member they add.
             let expected = format!(
@@ -1179,7 +1138,7 @@ fn expected_values_name_no_digest_seal_or_legacy_string() {
 #[test]
 fn files_and_cases_correspond_one_to_one() {
     for kind in KINDS {
-        let (_holder, out) = written(kind, Corpus::Standard, &ir_1273());
+        let (_holder, out) = written(kind, Corpus::Standard, &Double::default());
         let files = tree(&out);
         let manifest = manifest_of(&out);
         let named: Vec<&str> = manifest["cases"]
@@ -1209,37 +1168,6 @@ fn files_and_cases_correspond_one_to_one() {
     assert!(constants
         .iter()
         .all(|line| !line.contains("CASE") && !line.contains("IDENT")));
-}
-
-/// FR-518-AC-1 and AC-9 against a reader that implements IR-1273: `write`
-/// with the real reader returns a corpus that includes 28m refused with
-/// `invalid_package`/`source-integrity`.
-// FR-518-AC-9 is not tagged: no running test covers it until IR-1273 lands.
-#[trace("FR-518-AC-1", "TC-1313")]
-#[test]
-#[ignore = "gated on IR-1273: the reader takes no source bytes and admits case 28m"]
-fn the_real_reader_refuses_the_moved_source_case() {
-    let fresh = tempfile::tempdir().unwrap();
-    write(
-        &request("event_position", Corpus::Standard),
-        &fresh.path().join("handoff"),
-    )
-    .expect("a corpus the reader refuses");
-}
-
-/// FR-518-AC-10: a reader that admits 28m makes `write` return
-/// `CaseMismatch` naming it and write nothing.
-#[trace("FR-518-AC-10", "TC-1313")]
-#[test]
-fn a_reader_that_admits_the_moved_case_gets_no_corpus() {
-    let fresh = tempfile::tempdir().unwrap();
-    let target = fresh.path().join("handoff");
-    let error = write(&request("event_position", Corpus::Standard), &target).unwrap_err();
-    match error {
-        Error::CaseMismatch { identity } => assert_eq!(identity, "definition-original-bytes-moved"),
-        other => panic!("{other:?}"),
-    }
-    assert_eq!(entries(fresh.path()), Vec::<String>::new());
 }
 
 /// The package and sidecar of the event-position handoff, with the sidecar as
