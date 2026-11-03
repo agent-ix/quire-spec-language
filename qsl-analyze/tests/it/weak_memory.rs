@@ -41,7 +41,7 @@ use qsl_semantics::check::{AccessClass, FormulaNodeId};
 use quire_exact::{Cancel, Meter};
 use serde_json::{json, Value as Json};
 
-use crate::fill::{reachable, Reached};
+use crate::fill::{reachable, Explored, Reached};
 use crate::litmus::{
     attempt, contracts, core, document, field, key, package, protocol, protocol_profiled_package,
     protocol_with, sb_run, sb_unit, unit_text_with, Documents, NO_BOTH_ZERO, PROTOCOL_PROFILE,
@@ -3008,11 +3008,7 @@ fn forbidden_litmus() -> Vec<(&'static str, String, &'static Forbid)> {
 }
 
 /// The core's registers at every terminal state of `system`.
-pub(crate) fn outcomes<M>(system: &ProtocolSystem<'_, M>) -> BTreeSet<Vec<i64>>
-where
-    M: MemoryModel + Sync,
-    M::Component: Send + Sync,
-{
+pub(crate) fn outcomes<M: Explored>(system: &ProtocolSystem<'_, M>) -> BTreeSet<Vec<i64>> {
     reachable(system)
         .iter()
         .filter(|state| state.steps.is_empty())
