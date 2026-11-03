@@ -892,7 +892,7 @@ fn n03_equal_shaped_members_from_distinct_originals_stay_distinct_effective_decl
 }
 
 #[trace("TC-238", "FR-081-AC-7")]
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-4")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-4", "QSpec-FR-150-AC-7")]
 #[test]
 fn n07_record_order_does_not_affect_identity_or_view() {
     let ordered = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);

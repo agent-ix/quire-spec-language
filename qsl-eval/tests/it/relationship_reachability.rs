@@ -709,7 +709,14 @@ fn row_8_a_subtype_start_reaches_through_the_base_typed_relationship() {
 
 /// TC-1048 row 9: a repeated link charges one edge per occurrence and
 /// discovers its target once.
-#[trace("TC-1048", "FR-365-AC-8", "FR-365-AC-9", "FR-047-AC-5")]
+#[trace(
+    "TC-1048",
+    "FR-365-AC-8",
+    "FR-365-AC-9",
+    "FR-047-AC-5",
+    "QSpec-TC-197",
+    "QSpec-FR-152-AC-11"
+)]
 #[test]
 fn row_9_a_repeated_link_charges_each_occurrence_and_is_discovered_once() {
     let orders = Orders::new(Shape {
@@ -821,7 +828,15 @@ fn row_1(
 /// Rows 11 to 14 are partial evidence for FR-049-AC-7 and NFR-009-AC-2: they
 /// cover only the three counters graph reachability charges (`work_units`,
 /// `value_occurrences`, `result_units`), not all ten accounting counters.
-#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
+#[trace(
+    "TC-1048",
+    "FR-365-AC-9",
+    "FR-047-AC-7",
+    "FR-049-AC-7",
+    "NFR-009-AC-2",
+    "QSpec-TC-197",
+    "QSpec-FR-152-AC-11"
+)]
 #[test]
 fn row_11_work_units_complete_at_five_and_stop_at_the_next_charge_below() {
     let orders = Orders::base();
@@ -857,7 +872,15 @@ fn row_11_work_units_complete_at_five_and_stop_at_the_next_charge_below() {
 }
 
 /// TC-1048 row 12: value-occurrence budgets 2 and 1 over row 1.
-#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
+#[trace(
+    "TC-1048",
+    "FR-365-AC-9",
+    "FR-047-AC-7",
+    "FR-049-AC-7",
+    "NFR-009-AC-2",
+    "QSpec-TC-197",
+    "QSpec-FR-152-AC-11"
+)]
 #[test]
 fn row_12_value_occurrences_complete_at_two_and_stop_at_the_second_expand_below() {
     let orders = Orders::base();
@@ -883,7 +906,15 @@ fn row_12_value_occurrences_complete_at_two_and_stop_at_the_second_expand_below(
 }
 
 /// TC-1048 row 13: result-unit budgets 1 and 0 over row 1.
-#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
+#[trace(
+    "TC-1048",
+    "FR-365-AC-9",
+    "FR-047-AC-7",
+    "FR-049-AC-7",
+    "NFR-009-AC-2",
+    "QSpec-TC-197",
+    "QSpec-FR-152-AC-11"
+)]
 #[test]
 fn row_13_result_units_complete_at_one_and_stop_at_retain_at_zero() {
     let orders = Orders::base();
@@ -977,7 +1008,7 @@ fn row_15_repeated_runs_are_equal_and_leave_the_observation_unchanged() {
 
 /// TC-1048 row 16: an incomplete or unlisted extent is incomplete after the
 /// start's expand, never `true` from a known link.
-#[trace("TC-1048", "FR-365-AC-10")]
+#[trace("TC-1048", "FR-365-AC-10", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn row_16_an_unlisted_or_incomplete_extent_is_incomplete_after_the_start_expand() {
     let orders = Orders::base();
@@ -1024,7 +1055,7 @@ fn row_16_an_unlisted_or_incomplete_extent_is_incomplete_after_the_start_expand(
 }
 
 /// TC-1048 row 17: no neighbour count is compared with a bound.
-#[trace("TC-1048", "FR-365-AC-12")]
+#[trace("TC-1048", "FR-365-AC-12", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn row_17_a_neighbour_count_outside_the_end_bound_refuses_nothing() {
     for target in [(0, 1), (1, 1)] {
@@ -1139,7 +1170,7 @@ const UNDECIDABLE: (&str, &str) = ("incomplete_population", "incomplete-scope");
 
 /// TC-1048 row 20: a dangling neighbour refuses before its edge charge,
 /// including when it is the target.
-#[trace("TC-1048", "FR-365-AC-11")]
+#[trace("TC-1048", "FR-365-AC-11", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn row_20_a_dangling_neighbour_refuses_before_its_edge_charge_even_as_the_target() {
     let orders = Orders::base();
@@ -1161,7 +1192,7 @@ fn row_20_a_dangling_neighbour_refuses_before_its_edge_charge_even_as_the_target
 }
 
 /// TC-1048 row 21: the first neighbour in order that is not present decides.
-#[trace("TC-1048", "FR-365-AC-11")]
+#[trace("TC-1048", "FR-365-AC-11", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn row_21_the_first_neighbour_in_order_that_is_not_present_decides() {
     let orders = Orders::base();
@@ -1208,7 +1239,7 @@ fn row_21_the_first_neighbour_in_order_that_is_not_present_decides() {
 }
 
 /// TC-1048 row 22: a dangling or undecidable start decides before any charge.
-#[trace("TC-1048", "FR-365-AC-11")]
+#[trace("TC-1048", "FR-365-AC-11", "QSpec-TC-197", "QSpec-FR-152-AC-12")]
 #[test]
 fn row_22_a_missing_start_decides_before_any_charge() {
     let orders = Orders::base();

@@ -463,7 +463,7 @@ fn composition_links(orders: &Orders, pumps: &[&str]) -> Vec<Link> {
 /// TC-1034 row 1: the set in reference-key order, the exact schedule, and a
 /// work limit equal to the schedule completes while one fewer is incomplete
 /// at `collection.result-retain`.
-#[trace("TC-1034", "FR-364-AC-5")]
+#[trace("TC-1034", "FR-364-AC-5", "QSpec-TC-197", "QSpec-FR-152-AC-7")]
 #[test]
 fn a_multi_valued_end_returns_the_set_after_the_navigate_visit_bound_retain_schedule() {
     let orders = Orders::new(Shape::BASE);
@@ -568,7 +568,7 @@ fn a_dangling_target_refuses_before_the_count_bound_after_the_visits_before_it()
 }
 
 /// TC-1034 row 5: a single-valued end is the reference after one navigate.
-#[trace("TC-1034", "FR-364-AC-7")]
+#[trace("TC-1034", "FR-364-AC-7", "QSpec-TC-197", "QSpec-FR-152-AC-7")]
 #[test]
 fn a_single_valued_end_returns_its_reference_after_model_navigate_alone() {
     let orders = Orders::new(Shape::BASE);
@@ -639,7 +639,7 @@ fn a_traversal_from_the_target_end_reads_the_sources_of_the_extent() {
 }
 
 /// TC-1034 row 7: below the minimum, single-valued and multi-valued.
-#[trace("TC-1034", "FR-364-AC-6")]
+#[trace("TC-1034", "FR-364-AC-6", "QSpec-TC-197", "QSpec-FR-152-AC-10")]
 #[test]
 fn a_count_below_the_lower_bound_refuses_below_minimum_at_the_same_point() {
     let orders = Orders::new(Shape::BASE);
@@ -680,7 +680,7 @@ fn a_count_below_the_lower_bound_refuses_below_minimum_at_the_same_point() {
 
 /// TC-1034 row 8: an optional end is `none` for no instance, the present
 /// option for one.
-#[trace("TC-1034", "FR-364-AC-7")]
+#[trace("TC-1034", "FR-364-AC-7", "QSpec-TC-197", "QSpec-FR-152-AC-7")]
 #[test]
 fn an_optional_end_is_none_for_no_instance_and_the_present_option_for_one() {
     let orders = Orders::new(Shape {
@@ -709,7 +709,7 @@ fn an_optional_end_is_none_for_no_instance_and_the_present_option_for_one() {
 
 /// TC-1034 row 9: an incomplete and an unlisted extent are incomplete after
 /// one navigate; a complete empty extent is the empty collection and `none`.
-#[trace("TC-1034", "FR-364-AC-9")]
+#[trace("TC-1034", "FR-364-AC-9", "QSpec-TC-197", "QSpec-FR-152-AC-10")]
 #[test]
 fn an_incomplete_or_unlisted_extent_is_incomplete_scope_and_an_empty_one_is_empty() {
     let orders = Orders::new(Shape::BASE);
@@ -809,7 +809,7 @@ fn an_undecidable_target_is_incomplete_scope_before_the_count_bound() {
 
 /// TC-1034 row 11: a non-unique end holding a target twice is the bag with
 /// that target twice.
-#[trace("TC-1034", "FR-364-AC-5")]
+#[trace("TC-1034", "FR-364-AC-5", "QSpec-TC-197", "QSpec-FR-152-AC-7")]
 #[test]
 fn a_non_unique_end_returns_the_bag_with_a_repeated_target_twice() {
     let orders = Orders::new(Shape {

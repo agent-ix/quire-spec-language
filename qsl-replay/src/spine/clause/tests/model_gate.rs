@@ -139,7 +139,7 @@ fn gate(
 /// `body` refuses once at the body declaration, retaining the family, the
 /// owning declaration, the selected layers and the required layer; the same
 /// unit under the model profile compiles and the operation has its body.
-#[trace("FR-361-AC-1", "TC-1012")]
+#[trace("FR-361-AC-1", "TC-1012", "QSpec-TC-198", "QSpec-FR-153-AC-11")]
 #[test]
 fn an_operation_body_needs_the_model_profile() {
     let (refusal, located) = gate(&[("v", VALUE)], BODY);
@@ -167,7 +167,7 @@ fn an_operation_body_needs_the_model_profile() {
 /// refuses once at the call with the family `dispatch-call`, and one that
 /// holds `lookup<T>(p, r) absent m` refuses once at the expression with the
 /// family `lookup`; under the model profile both compile.
-#[trace("FR-361-AC-2", "TC-1013")]
+#[trace("FR-361-AC-2", "TC-1013", "QSpec-TC-198", "QSpec-FR-153-AC-11")]
 #[test]
 fn a_dispatched_call_and_a_lookup_need_the_model_profile() {
     let (call_refusal, located) = gate(&[("v", VALUE)], CALL);
@@ -209,6 +209,25 @@ fn a_dispatched_call_and_a_lookup_need_the_model_profile() {
     compile(&[("v", MODEL)], LOOKUP)
         .1
         .expect("the model profile admits the lookup");
+}
+
+/// QSpec FR-153-AC-11: a value-profile unit is refused for the model
+/// constructs (AC-1 to AC-3 above) and for no `Population<T>[N]` type, no
+/// `allInstances<T>(p)` call and no field navigation: the same declarations
+/// compile under the value profile and the model profile alike.
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-11", "FR-361-AC-4", "TC-1015")]
+#[test]
+fn population_types_all_instances_and_field_navigation_need_no_model_profile() {
+    let declarations =
+        "function cardinality using v(p: Population<Config::ConfigVersion>[2]): Integer pure \
+                        { size(allInstances<Config::ConfigVersion>(p)) }\n\
+                        invariant N using v on Config::ConfigVersion at current \
+                        { self.versionNumber >= 0 }";
+    for identity in [VALUE, MODEL] {
+        compile(&[("v", identity)], declarations)
+            .1
+            .unwrap_or_else(|refusal| panic!("{identity} refuses a population form: {refusal:?}"));
+    }
 }
 
 /// FR-361-AC-5: a unit with a `model` declaration and `pre`, `post` and
