@@ -24,7 +24,8 @@ use quire_contract_model::source_obligation::{
     SourceInventoryIdentity, SourceInventoryIncompleteReason, SourceInventoryOutcome,
     SourceInventoryOutcomeError, SourceInventoryOwner, SourceInventoryRow, SourceInventoryScope,
     SourceObligationSite, SourcePendingObligationId, SourcePendingObligationKind,
-    SourceRequirementOccurrenceId, SourceTypeExhaustion, SourceTypeWorkDimension, SourceUnitHandle,
+    SourceRequirementOccurrenceId, SourceTypeExhaustion, SourceTypeExhaustionSite,
+    SourceTypeWorkDimension, SourceUnitHandle,
 };
 use quire_contract_model::{CheckedNodeId, SourceIdentity};
 
@@ -60,14 +61,28 @@ fn dimension(dimension: Dimension) -> SourceTypeWorkDimension {
     }
 }
 
-fn exhaustion(exhaustion: &Exhaustion) -> SourceTypeExhaustion {
-    SourceTypeExhaustion {
+/// A measured amount widened to the IR's `u128` charge fields.
+fn widen(amount: usize) -> u128 {
+    u128::try_from(amount).unwrap_or(u128::MAX)
+}
+
+/// The composed lane's exhaustion: it measures a prior charge, a requested
+/// increment and a native site, and reports no owner stage, setting name or
+/// observed counter, so those fields are absent rather than invented.
+fn exhaustion(exhaustion: &Exhaustion) -> Box<SourceTypeExhaustion> {
+    Box::new(SourceTypeExhaustion {
+        stage: None,
+        setting: None,
         dimension: dimension(exhaustion.dimension),
-        limit: exhaustion.limit,
-        prior: exhaustion.prior,
-        requested: exhaustion.requested,
-        site: site(&exhaustion.site),
-    }
+        limit: u64::try_from(exhaustion.limit).unwrap_or(u64::MAX),
+        observed: None,
+        prior: Some(widen(exhaustion.prior)),
+        requested: Some(widen(exhaustion.requested)),
+        site: SourceTypeExhaustionSite {
+            native: Some(site(&exhaustion.site)),
+            region: None,
+        },
+    })
 }
 
 fn kind(kind: ObligationKind) -> SourcePendingObligationKind {

@@ -14,13 +14,14 @@
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus, StageFailure, Staged};
 use qsl_semantics::check::wire_id::structural_id;
 use quire_contract_model::source_obligation::{
-    SourceDeclarationHandle, SourceInventoryEnumerator, SourceInventoryIdentity,
+    SourceByteRegion, SourceDeclarationHandle, SourceInventoryEnumerator, SourceInventoryIdentity,
     SourceInventoryIncompleteReason, SourceInventoryOutcome, SourceInventoryOutcomeError,
     SourceInventoryOwner, SourceInventoryRow, SourceInventoryScope, SourceObligationSite,
-    SourcePendingObligationId, SourcePendingObligationKind, SourceRequirementOccurrenceId,
-    SourceTypeExhaustion, SourceTypeWorkDimension, SourceUnitHandle,
+    SourcePendingObligationId, SourcePendingObligationKind, SourceRequirementFormId,
+    SourceRequirementOccurrenceId, SourceTypeExhaustion, SourceTypeExhaustionSite,
+    SourceTypeWorkDimension, SourceUnitHandle,
 };
-use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment, SourceIdentity};
+use quire_contract_model::SourceIdentity;
 
 use crate::spine::{CheckedUnit, FrontEndFailure, ParsedUnitSource, PendingObligation};
 
@@ -31,6 +32,10 @@ pub enum InventoryRefusal {
     /// unit was refused, cancelled or faulted, so there are no rows.
     #[error("the check outcome is neither a checked unit nor a stage limit")]
     NoInventory,
+    /// No declaration of the unit's type report holds a pending
+    /// obligation's source span, so it has no owning declaration to report.
+    #[error("no declaration of the type report holds a pending obligation's span")]
+    UnownedObligation,
     /// The enumeration was inconsistent, which IR's outcome constructor
     /// reports.
     #[error("the source inventory enumeration was inconsistent: {0}")]
@@ -96,36 +101,39 @@ fn dimension(kind: LimitKind) -> Option<SourceTypeWorkDimension> {
     }
 }
 
-/// The cause IR's `TypeWorkExhausted` retains for a reached stage limit: the
-/// kind as a dimension, the configured bound as the limit, the bound as the
-/// charged usage and the excess past it as the unpaid increment, at the
-/// limit's source region when it has one. `None` when the limit's kind is
-/// not a type-admission stage limit (see [`dimension`]).
+/// The cause IR's `TypeWorkExhausted` retains for a reached stage limit
+/// (FR-514): the owning stage and FR-255 setting names, the kind as a
+/// dimension, the configured bound as the limit and the counter value that
+/// reached it as the observed amount, at the limit's source region when it
+/// has one. The spine charges no amount before the refused step and holds no
+/// declaration, unit or expression handle for the limit, so `prior`,
+/// `requested` and the native site are absent. `None` when the limit's kind
+/// is not a type-admission stage limit (see [`dimension`]).
 fn exhaustion(limit: &LimitExceeded) -> Option<SourceInventoryIncompleteReason> {
     let dimension = dimension(limit.kind())?;
-    let bound = usize::try_from(limit.configured_bound()).unwrap_or(usize::MAX);
-    let reached = usize::try_from(limit.actual()).unwrap_or(usize::MAX);
-    let (start, end) = match limit.locus() {
-        Some(Locus::Region(region)) => (
-            usize::try_from(region.start()).unwrap_or(usize::MAX),
-            usize::try_from(region.end()).unwrap_or(usize::MAX),
-        ),
-        _ => (0, 0),
+    let region = match limit.locus() {
+        Some(Locus::Region(region)) => Some(SourceByteRegion {
+            authority: region.source().authority().into(),
+            identity: region.source().identity().into(),
+            start: region.start(),
+            end: region.end(),
+        }),
+        _ => None,
     };
     Some(SourceInventoryIncompleteReason::TypeWorkExhausted(
-        SourceTypeExhaustion {
+        Box::new(SourceTypeExhaustion {
+            stage: Some(limit.setting().stage().into()),
+            setting: Some(limit.setting().name().into()),
             dimension,
-            limit: bound,
-            prior: bound,
-            requested: reached.saturating_sub(bound),
-            site: SourceObligationSite {
-                declaration: SourceDeclarationHandle(0),
-                unit: SourceUnitHandle(0),
-                expression: None,
-                start,
-                end,
+            limit: limit.configured_bound(),
+            observed: Some(limit.actual()),
+            prior: None,
+            requested: None,
+            site: SourceTypeExhaustionSite {
+                native: None,
+                region,
             },
-        },
+        }),
     ))
 }
 
@@ -137,35 +145,33 @@ fn requirement(key: &qsl_foundation::source::provenance::OccurrenceKey) -> Sourc
     })
 }
 
-/// The identity of one pending obligation: its report position as the
-/// declaration handle and its source span as the site. IR's kind vocabulary
-/// has no member for QSL's capability kinds, so every obligation carries the
-/// one fixed kind and the site alone tells obligations apart.
-fn obligation(position: usize, pending: &PendingObligation) -> SourceInventoryIdentity {
+/// The identity of one pending obligation (FR-514): its exact capability
+/// kind name, the ordinal of its owning declaration in the report's
+/// declaration list (the smallest declaration holding its span), unit 0 and
+/// its source span. `None` when no declaration holds the span.
+fn obligation(pending: &PendingObligation) -> Option<SourceInventoryIdentity> {
+    let declaration = pending.declaration_ordinal()?;
     let span = pending.span();
-    SourceInventoryIdentity::PendingObligation(SourcePendingObligationId {
-        site: SourceObligationSite {
-            declaration: SourceDeclarationHandle(position),
-            unit: SourceUnitHandle(0),
-            expression: None,
-            start: span.start,
-            end: span.end,
+    Some(SourceInventoryIdentity::PendingObligation(
+        SourcePendingObligationId {
+            site: SourceObligationSite {
+                declaration: SourceDeclarationHandle(declaration),
+                unit: SourceUnitHandle(0),
+                expression: None,
+                start: span.start,
+                end: span.end,
+            },
+            kind: SourcePendingObligationKind::CapabilityKind(pending.capability_kind().into()),
         },
-        kind: SourcePendingObligationKind::GraphClosure,
-    })
+    ))
 }
 
-/// The identity of the `index`th S2 requirement form: a requirement row
-/// before any checked node exists, in the role `form`.
+/// The identity of the `index`th S2 requirement form: its source-order
+/// ordinal and declared name, naming no checked node.
 fn form_requirement(index: usize, name: Option<&str>) -> SourceInventoryIdentity {
-    SourceInventoryIdentity::RequirementRecord(SourceRequirementOccurrenceId {
-        node: CheckedNodeId {
-            package: "".into(),
-            path: vec![CheckedNodePathSegment::Name(name.unwrap_or("").into())],
-            ordinal: u64::try_from(index).unwrap_or(u64::MAX),
-        },
-        role: "form".into(),
+    SourceInventoryIdentity::RequirementForm(SourceRequirementFormId {
         ordinal: u64::try_from(index).unwrap_or(u64::MAX),
+        declared_name: name.map(Into::into),
     })
 }
 
@@ -216,18 +222,14 @@ pub fn qsl_inventory(
     let (rows, stop): (Vec<SourceInventoryIdentity>, _) = match outcome {
         Ok(staged) => {
             let report = staged.value().type_report();
-            let rows = report
+            let mut rows: Vec<_> = report
                 .requirements()
                 .iter()
                 .map(|required| requirement(required.occurrence()))
-                .chain(
-                    report
-                        .obligations()
-                        .iter()
-                        .enumerate()
-                        .map(|(position, pending)| obligation(position, pending)),
-                )
                 .collect();
+            for pending in report.obligations() {
+                rows.push(obligation(pending).ok_or(InventoryRefusal::UnownedObligation)?);
+            }
             (rows, None)
         }
         Err(StageFailure::Limit(limit) | StageFailure::LimitWithPayload(limit, _)) => {
@@ -351,6 +353,16 @@ mod tests {
         matches!(identity, SourceInventoryIdentity::PendingObligation(_))
     }
 
+    fn type_work_cause(outcome: &SourceInventoryOutcome) -> &SourceTypeExhaustion {
+        let SourceInventoryCompleteness::Incomplete(
+            SourceInventoryIncompleteReason::TypeWorkExhausted(cause),
+        ) = outcome.completeness()
+        else {
+            panic!("a stage limit is the type-work exhaustion cause");
+        };
+        cause
+    }
+
     /// What `unit` alone must report: its report's requirements, then its
     /// report's obligations.
     fn expected_rows(unit: &CheckedUnit) -> Vec<SourceInventoryIdentity> {
@@ -363,8 +375,7 @@ mod tests {
                 report
                     .obligations()
                     .iter()
-                    .enumerate()
-                    .map(|(position, pending)| obligation(position, pending)),
+                    .map(|pending| obligation(pending).expect("an owned obligation")),
             )
             .collect()
     }
@@ -407,6 +418,71 @@ mod tests {
         let distinct: std::collections::BTreeSet<_> =
             rows.iter().map(|row| format!("{row:?}")).collect();
         assert_eq!(distinct.len(), 4, "every row is a distinct identity");
+        for (row, pending) in rows[2..].iter().zip(report.obligations()) {
+            let SourceInventoryIdentity::PendingObligation(id) = row else {
+                panic!("an obligation row");
+            };
+            assert_eq!(
+                id.kind,
+                SourcePendingObligationKind::CapabilityKind(pending.capability_kind().into()),
+                "the exact capability-kind label, not a type-level kind"
+            );
+            assert_eq!(id.site.start, pending.span().start);
+            assert_eq!(id.site.end, pending.span().end);
+            assert_eq!(id.site.unit, SourceUnitHandle(0));
+            assert_eq!(id.site.expression, None);
+            assert_eq!(id.site.declaration, SourceDeclarationHandle(0));
+        }
+        assert_eq!(
+            report.obligations()[0].capability_kind(),
+            "value-validity",
+            "the measured label of a guarded application claim"
+        );
+    }
+
+    /// FR-514-AC-8 (TC-1309 row 13): each obligation row names the ordinal of
+    /// the declaration that holds its span, so obligations of two functions
+    /// carry two declaration handles.
+    #[trace("FR-514-AC-8", "TC-1309")]
+    #[test]
+    fn an_obligation_row_names_the_declaration_that_holds_its_span() {
+        let parsed = parse_text(
+            &native("unit:main"),
+            &format!("{HEADER}{GUARDED}\n{GUARDED_G}\n"),
+            SpineLimits::default(),
+        );
+        let checked = run_check(&parsed, SpineLimits::default());
+        let unit = checked.as_ref().expect("the fixture checks").value();
+        let declarations = unit.type_report().declarations();
+        let ordinal_of = |name: &str| {
+            declarations
+                .iter()
+                .position(|declaration| format!("{:?}", declaration.node()).contains(name))
+                .expect("the declaration is in the report")
+        };
+        let (f, g) = (ordinal_of("\"f\""), ordinal_of("\"g\""));
+        assert_ne!(f, g);
+        let outcome =
+            qsl_inventory(Some(&parsed), &checked, &formal("NativeTypes0")).expect("an inventory");
+        let handles: Vec<_> = identities(&outcome)
+            .into_iter()
+            .filter_map(|row| match row {
+                SourceInventoryIdentity::PendingObligation(id) => {
+                    Some((id.site.declaration, id.site.start))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(handles.len(), 4);
+        let text = unit.source().text();
+        for (handle, start) in handles {
+            let expected = if start < text.find("function g").expect("g is present") {
+                f
+            } else {
+                g
+            };
+            assert_eq!(handle, SourceDeclarationHandle(expected));
+        }
     }
 
     /// FR-362-AC-4 (TC-1026): a unit that declares no claim site reports
@@ -471,22 +547,83 @@ mod tests {
         let outcome =
             qsl_inventory(Some(&parsed), &stopped, &formal("NativeTypes0")).expect("an inventory");
         let rows = identities(&outcome);
-        assert_eq!(rows.len(), 2, "the two functions are requirement forms");
-        assert!(rows
-            .iter()
-            .all(|row| matches!(row, SourceInventoryIdentity::RequirementRecord(_))));
-        assert!(!rows.iter().any(is_obligation));
-        assert_eq!(outcome.observed_count(), 2);
-        let SourceInventoryCompleteness::Incomplete(
-            SourceInventoryIncompleteReason::TypeWorkExhausted(cause),
-        ) = outcome.completeness()
-        else {
-            panic!("a stage limit is the type-work exhaustion cause");
-        };
-        assert_eq!(cause.dimension, SourceTypeWorkDimension::Constraints);
         assert_eq!(
-            cause.limit,
-            usize::try_from(limit.configured_bound()).expect("a small bound")
+            rows,
+            vec![
+                SourceInventoryIdentity::RequirementForm(SourceRequirementFormId {
+                    ordinal: 0,
+                    declared_name: Some("f".into()),
+                }),
+                SourceInventoryIdentity::RequirementForm(SourceRequirementFormId {
+                    ordinal: 1,
+                    declared_name: Some("g".into()),
+                }),
+            ],
+            "the two functions are requirement forms; the record is none"
+        );
+        assert_eq!(outcome.observed_count(), 2);
+        let cause = type_work_cause(&outcome);
+        assert_eq!(cause.stage.as_deref(), Some("S3"));
+        assert_eq!(cause.setting.as_deref(), Some("s3.work_units"));
+        assert_eq!(cause.dimension, SourceTypeWorkDimension::Constraints);
+        assert_eq!(cause.limit, limit.configured_bound());
+        assert_eq!(cause.observed, Some(limit.actual()));
+        assert!(cause.observed > Some(u128::from(cause.limit)));
+        assert_eq!(cause.prior, None);
+        assert_eq!(cause.requested, None);
+        assert_eq!(cause.site.native, None);
+    }
+
+    /// FR-514-AC-7 (TC-1309): a requirement form never equals a complete
+    /// requirement record, even when its ordinal and name match.
+    #[trace("FR-514-AC-7", "TC-1309")]
+    #[test]
+    fn a_requirement_form_identity_is_distinct_from_a_requirement_record() {
+        let form = form_requirement(0, Some("f"));
+        let unnamed = form_requirement(0, None);
+        assert_ne!(form, unnamed);
+        assert_ne!(form, form_requirement(1, Some("f")));
+        assert_eq!(form, form_requirement(0, Some("f")));
+        let parsed = parse_text(
+            &native("unit:main"),
+            &format!("{HEADER}{GUARDED}\n"),
+            SpineLimits::default(),
+        );
+        let checked = run_check(&parsed, SpineLimits::default());
+        let rows = expected_rows(checked.as_ref().expect("checks").value());
+        assert!(rows.iter().all(|row| row != &form));
+    }
+
+    /// FR-514-AC-9 (TC-1309 row 14): an observed amount above `u64::MAX`
+    /// survives unchanged and a region keeps its source authority and
+    /// identity.
+    #[trace("FR-514-AC-9", "TC-1309")]
+    #[test]
+    fn a_wide_observed_amount_and_the_source_region_survive_unchanged() {
+        let region = qsl_foundation::source::provenance::SourceRegion::new(
+            qsl_foundation::source::provenance::RawSourceRef::new("auth", "doc:1")
+                .expect("a source ref"),
+            3,
+            9,
+        )
+        .expect("a region");
+        let actual = u128::from(u64::MAX) + 7;
+        let limit =
+            LimitExceeded::new(Setting::S3WorkUnits, 4, actual).at(Some(Locus::Region(region)));
+        let Some(SourceInventoryIncompleteReason::TypeWorkExhausted(cause)) = exhaustion(&limit)
+        else {
+            panic!("a work-budget limit is a type-work cause");
+        };
+        assert_eq!(cause.observed, Some(actual));
+        assert_eq!(cause.limit, 4);
+        assert_eq!(
+            cause.site.region,
+            Some(SourceByteRegion {
+                authority: "auth".into(),
+                identity: "doc:1".into(),
+                start: 3,
+                end: 9,
+            })
         );
     }
 
@@ -534,6 +671,7 @@ mod tests {
             panic!("the node ceiling is a stage limit");
         };
         assert_eq!(limit.setting(), Setting::S1Nodes);
+        let observed = limit.actual();
         let outcome = qsl_inventory(
             None,
             &Err::<Staged<CheckedUnit>, _>(failure),
@@ -541,14 +679,13 @@ mod tests {
         )
         .expect("an inventory");
         assert!(outcome.items().is_empty());
-        let SourceInventoryCompleteness::Incomplete(
-            SourceInventoryIncompleteReason::TypeWorkExhausted(cause),
-        ) = outcome.completeness()
-        else {
-            panic!("a stage limit is the type-work exhaustion cause");
-        };
+        let cause = type_work_cause(&outcome);
+        assert_eq!(cause.stage.as_deref(), Some("S1"));
+        assert_eq!(cause.setting.as_deref(), Some("s1.nodes"));
         assert_eq!(cause.dimension, SourceTypeWorkDimension::Expressions);
         assert_eq!(cause.limit, 1);
+        assert_eq!(cause.observed, Some(observed));
+        assert!(cause.observed > Some(1));
     }
 
     /// FR-514-AC-4 (TC-1309 row 7): the formal identity is the inventory's

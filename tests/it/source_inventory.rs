@@ -234,16 +234,27 @@ fn exhausted_type_work_keeps_its_native_fields() {
             assert_eq!(reported.dimension, SourceTypeWorkDimension::Normalization);
             assert_eq!(
                 (reported.limit, reported.prior, reported.requested),
-                (native.limit, native.prior, native.requested)
+                (
+                    u64::try_from(native.limit).expect("a small limit"),
+                    Some(u128::try_from(native.prior).expect("a small charge")),
+                    Some(u128::try_from(native.requested).expect("a small request")),
+                )
             );
             assert_eq!(
-                reported.site.declaration,
+                (&reported.stage, &reported.setting, reported.observed),
+                (&None, &None, None),
+                "the composed lane measures no stage, setting or observed value"
+            );
+            let site = reported.site.native.expect("the composed lane has a site");
+            assert_eq!(
+                site.declaration,
                 SourceDeclarationHandle(id(binding, "Fraction").index())
             );
             assert_eq!(
-                (reported.site.start, reported.site.end),
+                (site.start, site.end),
                 (native.site.span.start, native.site.span.end)
             );
+            assert_eq!(reported.site.region, None);
         },
     );
 }
