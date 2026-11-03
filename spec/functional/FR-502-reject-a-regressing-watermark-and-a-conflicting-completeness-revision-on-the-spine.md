@@ -56,11 +56,15 @@ On acceptance: the outcome of FR-501 and the updated ledger, which FR-330's
 `ClauseRunReport` returns. Each entry retains the watermark, the completeness
 assertion, the scope closure and the surrounding-execution closure, and the
 **covered position set**: the identities of the positions each retained
-completeness assertion covered, so that "a position the retained assertion did
+completeness assertion covered (a position's identity is the identity of its
+admitted observation, FR-106), so that "a position the retained assertion did
 not cover" is decidable. On contradiction: `invalid_runtime_input`/`invalid-value` carrying a
 `contradicted_dimension` (`Watermark`, `Completeness` or `Closure`), the
 binding's clock name, the retained value and the asserted value; no outcome,
-no truth value, and the ledger unchanged.
+no truth value, and the ledger unchanged: the report of a refused request
+returns the ledger the request supplied, equal to it, and returns none when the
+request supplied none. The same holds for a request that returns
+`Incomplete(LimitReached{...})` below.
 
 ## Behavior
 
@@ -95,10 +99,16 @@ no truth value, and the ledger unchanged.
   at stage `admit`, `invalid_runtime_input`/`invalid-value`. Those traces carry
   no progress assertion: a lasso is the whole infinite behavior, and a finite
   prefix under infinite-trace is `Pending` by construction (FR-328).
-- The covered position set SHALL be bounded by the ledger capacity, the FR-255
-  setting `progress.covered_positions`. When recording a position would exceed
-  it, the evaluator SHALL return `Incomplete(LimitReached{limit, value,
+- The evaluator SHALL bound the covered position sets by one ledger capacity,
+  the FR-255 setting `progress.covered_positions`, counted over every entry of
+  the ledger together and not per binding. When recording a position would make
+  the covered identities of all entries together exceed it, the evaluator SHALL return `Incomplete(LimitReached{limit, value,
   setting})` with `limit` the kind (node count) and `setting` the name, and the ledger is unchanged.
+- The evaluator SHALL decide whether a position is one that "the retained
+  assertion did not cover" from the position's identity and its stamp: the stamp
+  of a position in the supplied trace says whether it falls at or before the
+  retained `through`, and the covered set, which holds identities only, says
+  whether the retained assertion covered that identity.
 - A later trace that omits a position an earlier assertion covered is accepted:
   the ledger keeps the omitted position as covered and does not treat its absence
   as a contradiction; only a position that was not covered and now appears at or
@@ -131,3 +141,6 @@ no truth value, and the ledger unchanged.
 | FR-502-AC-6 | Evaluation with no ledger accepts a `W` 100 call followed by a `W` 60 call and reports each from its own trace; evaluation with a ledger refuses the second. The report of an accepted request returns the updated ledger, and passing it to the next request gives the same outcome as one request sequence replayed from the same initial ledger. | Test (TC-1296) |
 | FR-502-AC-7 | After a request retaining `Complete { through: 100 }` over positions 0 to 3, a later request whose trace adds a position stamped 80 that was not among positions 0 to 3 is refused `Completeness`, and one adding a position stamped 120 is accepted; the returned ledger lists positions 0 to 3 (and the new one) as covered. | Test (TC-1296) |
 | FR-502-AC-8 | With `progress.covered_positions` set to 3, a request covering 4 positions returns `Incomplete(LimitReached{limit: node count, value: 3, setting: progress.covered_positions})` and leaves the ledger unchanged; a later trace that omits two earlier covered positions and adds one new position beyond `through` is accepted and the ledger still lists the omitted positions as covered. | Test (TC-1296) |
+| FR-502-AC-9 | With `progress.covered_positions` set to 3, a ledger holding two covered positions under B, and a request under a second binding B2 covering two positions, the request returns `Incomplete(LimitReached{limit: node count, value: 3, setting: progress.covered_positions})` and the ledger is unchanged; a request under B2 covering one position is accepted. | Test (TC-1296) |
+| FR-502-AC-10 | After `Complete { through: 100 }` is retained under B over a position of identity `p1` stamped 80, a later trace holding a position of another identity stamped 80 is refused `Completeness`, and one holding identity `p1` stamped 80 is accepted. | Test (TC-1296) |
+| FR-502-AC-11 | The report of a request refused by FR-502 returns the ledger the request supplied, equal to it, and the report of a refused request that supplied no ledger returns none. | Test (TC-1296) |

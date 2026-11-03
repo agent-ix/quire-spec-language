@@ -76,7 +76,7 @@ QSL-858's train.
 | FR-043-AC-9 omitted interior history interval is incomplete, never false padding | FR-501-AC-2 and AC-5 (a stamp gap is an empty window, and an incomplete input never reads it as false); FR-504-AC-4 | PORT (FR-501, FR-504) |
 | FR-043-AC-10 four independent axes; no caller basis | FR-501-AC-15; FR-516-AC-1, AC-5 | PORT (FR-501) and QSL-1545 |
 | FR-043-AC-11 watermark settles a silent deadline; event-position does not | FR-501-AC-3, AC-6; FR-504-AC-1, AC-2 | PORT (FR-501, FR-504) |
-| FR-043-AC-12 regressing watermark, conflicting completeness | FR-502-AC-1 to AC-8 | PORT (FR-502) |
+| FR-043-AC-12 regressing watermark, conflicting completeness | FR-502-AC-1 to AC-11 | PORT (FR-502) |
 | FR-043-AC-13 one identity per input set | FR-522-AC-15 to AC-23; FR-501-AC-16 | PORT QSL-1502 |
 | FR-043-AC-14 `/2` authenticated clock configuration and report | FR-522-AC-4, AC-6, AC-9, AC-12 | PORT QSL-1502 |
 | FR-043-AC-14 `/1` entry points: parameter mutations not refused, no authenticated binding | none | RETIRE with the `/1` lane (structural reason: no caller of the `/1` entry points exists; Contract IR FR-350 and quire-protocol IT-001 consume the `/2` entry points; successor FR-522-AC-9, the authenticated form) |
@@ -102,11 +102,13 @@ QSL-858's train.
 | FR-045-AC-1 every table row reachable | FR-527-AC-1, AC-5, AC-6 | PORT QSL-1504 |
 | FR-045-AC-2 finite window, mixed direction, past operators | FR-527-AC-2, AC-3 | PORT QSL-1504 |
 | FR-045-AC-3 unsupported retains subject, profile, activation | FR-527-AC-8 | PORT QSL-1504 |
+| FR-045-AC-3 the retained native subject names the clause | FR-527-AC-24, gated on IR-1278 | PORT QSL-1504 |
 | FR-045-AC-4 every unmatched dimension | FR-527-AC-4 | PORT QSL-1504 |
 | FR-045-AC-5 supported names target and premises | FR-527-AC-9, AC-10 | PORT QSL-1504 |
-| FR-045-AC-6 authenticated selection | FR-527-AC-13 to AC-17 | PORT QSL-1504 |
+| FR-045-AC-6 authenticated selection | FR-527-AC-13 to AC-17, AC-21 | PORT QSL-1504 |
 | FR-045-AC-6 `/1` classification retains no selection | none | RETIRE with the `/1` lane (structural reason as above; successor FR-527-AC-13) |
-| `Unmatched::TimedProfile` (exact rational time) | FR-527-AC-18: a profile outside the four admitted is refused at check | PORT QSL-1504 |
+| `Unmatched::TimedProfile` (exact rational time) | FR-527-AC-22, AC-23: the timed profile is `Unsupported` naming `TimedProfile` | PORT QSL-1504 |
+| a profile outside the admitted set | FR-527-AC-18: a profile outside the five admitted is refused at check; FR-527-AC-16: a view naming one returns `NoProfileSelection` | PORT QSL-1504 |
 | `Operators::of` out-of-range index reaches nothing | FR-527-AC-17: the view lists only the clause's operators | PORT QSL-1504 |
 | FR-052-AC-9 no supplied truth | FR-516-AC-1 | PORT QSL-1545 |
 | FR-052-AC-10 independent facts, no default | FR-516-AC-3, AC-5; FR-524-AC-31 | PORT QSL-1545 |
@@ -119,8 +121,8 @@ QSL-858's train.
 | `ProtocolLedger` identifier space exhausted | FR-526-AC-13 (lineage overflow) | PORT QSL-1503 |
 | `ProtocolLedger` trigger identity count mismatch | FR-516: the deliveries are a list, each with its identity, so no count can differ | RETIRE (structural reason: the request carries the deliveries as a list, each with its identity, so no count can differ; successor FR-516-AC-10) |
 | `ProtocolLedger` activation-mapping checks (control to temporal declaration) | FR-516-AC-15, AC-16 | PORT QSL-1503 |
-| FR-052-AC-13 | FR-502-AC-1 to AC-8 | PORT (FR-502) |
-| FR-052-AC-14 | FR-501-AC-1 to AC-21 | PORT (FR-501) |
+| FR-052-AC-13 | FR-502-AC-1 to AC-11 | PORT (FR-502) |
+| FR-052-AC-14 | FR-501-AC-1 to AC-25 | PORT (FR-501) |
 | FR-053-AC-7, AC-8 distinct identities stay distinct | FR-524-AC-1, AC-7; FR-516-AC-4 | PORT QSL-1503 |
 | FR-053-AC-9 empty identity | FR-516-AC-4; FR-526-AC-18 | PORT QSL-1503 |
 | FR-053-AC-9 mismatched or stale identity | FR-524-AC-20; FR-526-AC-8, AC-10 | PORT QSL-1503 |

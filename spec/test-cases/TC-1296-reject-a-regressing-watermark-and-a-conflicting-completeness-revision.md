@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-502-AC-1 to AC-8 and FR-052-AC-13: the spine ledger refuses a
+Verify FR-502-AC-1 to AC-11 and FR-052-AC-13: the spine ledger refuses a
 contradicting progress assertion, keeps the retained progress and earlier
 results unchanged, and keeps foreign bindings apart.
 
@@ -39,6 +39,9 @@ and the earlier result bytes.
 | 9 | W 100 then W 60 with no ledger | both evaluated from their own traces; with a ledger the second is refused; the returned ledger passed to the next request gives the outcomes of the same sequence replayed from the same initial ledger |
 | 10 | row 1 through `run_clause` with the ledger | stage `evaluate`, category `refusal`, same record |
 | 11 | retain C(100) over positions 0 to 3; add a position stamped 80 not among them; then one stamped 120 | refused `Completeness`; accepted; the returned ledger lists the covered positions |
+| 13 | `progress.covered_positions` 3; B holds two covered positions; a request under a second binding covering two positions, then one covering one | `Incomplete(LimitReached{limit: node count, value: 3, setting: progress.covered_positions})`, ledger unchanged; accepted |
+| 14 | retain C(100) over identity `p1` stamped 80; a trace with another identity stamped 80; then `p1` stamped 80 | refused `Completeness`; accepted |
+| 15 | any refused request of rows 1, 3, 5, 8 and 12, with and without a supplied ledger | the report returns the supplied ledger, equal to it; none when none was supplied |
 
 ## Expected Results
 

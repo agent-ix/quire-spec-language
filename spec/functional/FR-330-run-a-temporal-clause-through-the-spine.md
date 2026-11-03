@@ -55,10 +55,17 @@ FR-109's `ClauseRunRequest`, with the selection
   completeness, scope closure, surrounding-execution closure and lower boundary,
   or `TraceInput::Timestamped{
   observations: Vec<{document: DocumentRef, stamp, order_key}>, watermark,
-  completeness, scope, lower_boundary}` (FR-501), the trace of a clause under the
+  completeness, scope, execution, lower_boundary, cover}` (FR-501), the trace of a clause under the
   timestamped-event finite-window profile, with an optional `ledger`
   (`ProgressLedger`, FR-502) on the selection; each `DocumentRef` names a
   snapshot in the request's snapshot provision by identity (FR-106);
+- `execution`: the surrounding-execution closure (`Closed` or `Open`) of a
+  `Timestamped` trace, the closure FR-501 lists beside `scope`, which is the
+  decision-scope closure;
+- `cover`: `Exact` (the default) or `Counter { uncertainty }`, how a `Timestamped`
+  trace's stamps cover time (FR-501). The checked clause's clock configuration
+  `TimestampedEvent` names only the timestamp unit, so the cover has no source
+  in the package and the request supplies it, beside the stamps it describes;
 - `binding`: a `TraceBinding` (FR-522), a required member of `Timestamped` and
   `Progressed`, which the entry compares with the clause's profile and clock rows
   before it evaluates; a `Timestamped` or `Progressed` request without it is
@@ -71,7 +78,8 @@ FR-109's `ClauseRunRequest`, with the selection
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
 the usage; for a `Timestamped` trace it also returns the updated `ledger`
 (FR-502) and FR-501's result report (basis, decision support, premises and
-result identity). Its `category` adds `pending` (a pending result, with the pending clause ids in its body)
+result identity); a request refused by FR-502 returns the ledger it supplied,
+unchanged. Its `category` adds `pending` (a pending result, with the pending clause ids in its body)
 and `unsupported` (a missing fairness premise). Its `disposition` for a
 `violation` (`Completed(false)` or an `Undefined` that is a violation)
 carries the failing `TemporalPosition` and the refutation's
@@ -90,6 +98,12 @@ FR-267 writer writes these as the report holds them and derives none.
 
 ## Behavior
 
+- The entry SHALL take a `Timestamped` trace's cover from the trace input.
+- The entry SHALL treat a `Timestamped` input that omits the cover as `Exact`.
+- The entry SHALL accept `TraceInput::Timestamped` from a library caller only.
+- The request reader SHALL refuse a `timestamped` trace, because FR-312's request
+  file has no member that carries a stamp, an order key, a progress assertion or
+  a cover.
 - The entry SHALL compile and report
   compile results exactly as FR-109 states.
 - The entry SHALL resolve the name in the compiled package's temporal
@@ -119,7 +133,8 @@ FR-267 writer writes these as the report holds them and derives none.
   `Timestamped` trace for any other profile, at stage `admit`,
   `invalid_runtime_input`/`invalid-value`. FR-501's `Pending` reports
   `pending` (the exit of FR-285's row for a supplied-trace clause pending when the trace ends) and its `Indeterminate` reports `indeterminate` (exit 11)
-  with its reason as the cause, no `truth` and no counterexample. A progress
+  with its reason as the cause, no `truth` and no counterexample. FR-285's
+  interim mapping governs both labels until IR-1281. A progress
   contradiction (FR-502) reports stage `evaluate`, category `refusal`, with its
   record.
 - A refused `holds` condition (FR-327 "Refused condition") SHALL report
