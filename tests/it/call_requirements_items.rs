@@ -476,7 +476,7 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
 
 /// TC-1308 rows 11 and 16: query records retain their checked declaration,
 /// binder/type/unit selections, and replay is separately executed below.
-#[trace("TC-1308", "FR-046-AC-4", "FR-046-AC-8", "FR-513-AC-5", "FR-513-AC-7")]
+#[trace("TC-1308", "FR-046-AC-4", "FR-513-AC-5")]
 #[test]
 fn empty_collection_queries_return_their_defined_identity_on_the_spine() {
     let unit = concat!(
