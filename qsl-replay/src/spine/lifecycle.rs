@@ -940,6 +940,49 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
         })
         .collect();
     for protocol in graph.protocols() {
+        if let Some(keys) = graph.protocol_node_keys(&protocol.name) {
+            for control in protocol
+                .controls
+                .controls
+                .iter()
+                .filter(|control| control.kind == qsl_forms::ProtocolNodeKind::Check)
+            {
+                let Some(node) = keys.nodes.get(&control.node) else {
+                    continue;
+                };
+                let Some(body) = protocol
+                    .slots
+                    .bodies
+                    .iter()
+                    .find(|body| body.node == control.node)
+                else {
+                    continue;
+                };
+                let location = body.body.root().location();
+                let Some(region) = graph.region(location) else {
+                    continue;
+                };
+                if region.source() != source {
+                    continue;
+                }
+                let Some(start) = usize::try_from(region.start()).ok() else {
+                    continue;
+                };
+                let Some(end) = usize::try_from(region.end()).ok() else {
+                    continue;
+                };
+                let occurrence =
+                    qsl_foundation::source::provenance::OccurrenceKey::declaration(node.clone());
+                obligations.push(PendingObligation {
+                    node: node.clone(),
+                    occurrence,
+                    capability_kind: qsl_semantics::check::Capability::GlobalConformance
+                        .to_wire()
+                        .to_owned(),
+                    span: qsl_foundation::Span { start, end },
+                });
+            }
+        }
         for requirement in &protocol.requirements {
             let Some(temporal) = graph.temporal_clauses().get(requirement.temporal) else {
                 continue;

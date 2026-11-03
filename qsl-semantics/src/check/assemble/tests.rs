@@ -3867,8 +3867,8 @@ fn aggregate_dimension_equivalence_keeps_its_declaring_source_owner() {
         "dimension Length; dimension Time; unit m : Length = rational(1, 1); unit s : Time = rational(1, 1);",
     );
     let b_text = text(
-        "",
-        "dimension Distance; dimension Duration; unit dm : Distance = rational(1, 1); unit ms : Duration = rational(1, 1); dimension Distance ~ Length by 1 dm = 1 m;",
+        PROFILE_V,
+        "dimension Distance; dimension Duration; unit dm : Distance = rational(1, 1); unit ms : Duration = rational(1, 1); dimension Distance ~ Length by 1 dm = 1 m;\nfunction later using v(x: Quantity<dm>, y: Quantity<ms>): Boolean pure { true }",
     );
     let (source_a, unit_a) = parsed_unit_as("repo", "a", &a_text);
     let (source_b, unit_b) = parsed_unit_as("repo", "b", &b_text);
@@ -3881,6 +3881,26 @@ fn aggregate_dimension_equivalence_keeps_its_declaring_source_owner() {
         &Cancel::new(),
     )
     .expect("the cross-unit dimensions and units resolve");
+    for name in ["Distance", "Duration", "dm", "ms"] {
+        assert_eq!(
+            package.source_owners.get(name),
+            Some(&source_b),
+            "the aggregate owner map records {name} under its bare declaration name"
+        );
+    }
+    for (kind, name) in [
+        (super::super::lowering::QuantityKind::Dimension, "Distance"),
+        (super::super::lowering::QuantityKind::Dimension, "Duration"),
+        (super::super::lowering::QuantityKind::Unit, "dm"),
+        (super::super::lowering::QuantityKind::Unit, "ms"),
+    ] {
+        let origin = super::super::lowering::quantity_origin(kind, name);
+        assert_eq!(
+            package.source_owners.get(&origin),
+            Some(&source_b),
+            "the aggregate owner map records the quantity origin for {name}"
+        );
+    }
     let checked = package
         .check(CheckingLimits::default())
         .expect("the package checks");

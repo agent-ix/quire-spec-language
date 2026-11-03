@@ -3104,6 +3104,26 @@ impl PackageDeclarations {
                         source_owners
                             .insert(equivalence::source_owner_key(equivalence), source.clone());
                     }
+                    qsl_forms::DeclarationForm::Dimension(dimension) => {
+                        source_owners.insert(dimension.name.name.clone(), source.clone());
+                        source_owners.insert(
+                            super::lowering::quantity_origin(
+                                super::lowering::QuantityKind::Dimension,
+                                &dimension.name.name,
+                            ),
+                            source.clone(),
+                        );
+                    }
+                    qsl_forms::DeclarationForm::Unit(unit) => {
+                        source_owners.insert(unit.name.name.clone(), source.clone());
+                        source_owners.insert(
+                            super::lowering::quantity_origin(
+                                super::lowering::QuantityKind::Unit,
+                                &unit.name.name,
+                            ),
+                            source.clone(),
+                        );
+                    }
                     _ => {
                         if let Some(name) = form.declared_name() {
                             source_owners.insert(name.to_owned(), source.clone());
@@ -4324,6 +4344,32 @@ impl PackageDeclarations {
         for (index, clause) in unit.temporal_clauses.iter().enumerate() {
             use super::lowering::{temporal_site, TemporalSite};
             let form = &clause.form;
+            let temporal_owner = package.source_owners.get(&form.name.name).cloned();
+            let mut temporal_sites = vec![TemporalSite::Claim, TemporalSite::Over];
+            if let qsl_forms::ActivationForm::Each { when, .. } = &form.activation {
+                temporal_sites.push(TemporalSite::Trigger);
+                if when.is_some() {
+                    temporal_sites.push(TemporalSite::Guard);
+                }
+            }
+            for (capture, _) in form.captures.iter().enumerate() {
+                temporal_sites.push(TemporalSite::Capture(capture));
+                temporal_sites.push(TemporalSite::CaptureValue(capture));
+            }
+            for (id, node) in form.formula.iter() {
+                temporal_sites.push(TemporalSite::Node(id.index()));
+                if matches!(node, qsl_forms::TemporalNodeForm::Holds { .. }) {
+                    temporal_sites.push(TemporalSite::Condition(id.index()));
+                }
+            }
+            temporal_sites.extend((0..form.fairness.len()).map(TemporalSite::Fairness));
+            if let Some(owner) = temporal_owner {
+                for site in temporal_sites {
+                    package
+                        .source_owners
+                        .insert(temporal_site(index, site), owner.clone());
+                }
+            }
             declared_type_spans.insert(temporal_site(index, TemporalSite::Claim), form.name.span);
             declared_type_spans.insert(
                 temporal_site(index, TemporalSite::Over),

@@ -29,9 +29,10 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     admit_parsed_unit_list, check, check_units, check_with_refinement_internals, execute,
-    failure_of, package, parse, preflight_unit_list, refusal_or_fault, select, select_units,
-    temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest,
-    FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
+    failure_of, package, package_with_temporal_selections, parse, preflight_unit_list,
+    refusal_or_fault, select, select_units, temporal_selections_for_source, AdmittedModels,
+    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
+    ParsedUnitSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -691,17 +692,17 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
          model M = \"acme/orders\";\n\
          function g using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
          function f using v(x: Int[0, 9]): Int[0, 10] pure {{ g(x) }}\n\
+         post Keep using v on M::Widget::touch {{ true }}\n\
          temporal Due using inf over (input: M::Widget) clock \"model-steps\" on origin {{ always holds(true) }}\n\
          protocol Fill using Complete over (input: M::Widget) on origin {{\n\
            role R on M::Widget;\n\
            requires temporal Due;\n\
-           run sequence Main {{ }}\n\
+           run sequence Main {{ check After using v {{ true }}; }}\n\
            finish End as (outcome: Boolean) {{ true }};\n\
          }}"
     );
     let parsed = parse_named(source, text.as_bytes());
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
-        .expect("fixture model package input");
+    let (_, packages) = widget_with_touch(&[]);
     let models = select(
         &parsed,
         &packages,
@@ -718,23 +719,41 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
         SpineLimits::default(),
         &Cancel::new(),
     )
-    .expect("function checks")
+    .expect("function, post-claim, and protocol checks")
     .into_value();
-    assert_eq!(checked.type_report().declarations().len(), 2);
-    let declaration = checked
-        .type_report()
-        .declarations()
+    let declarations = checked.type_report().declarations();
+    assert!(declarations
+        .windows(2)
+        .all(|pair| pair[0].node() < pair[1].node()));
+    let functions: Vec<_> = declarations
         .iter()
-        .find(|declaration| declaration.kind() == NodeTag::Function)
-        .expect("the function declaration is retained");
-    assert_eq!(declaration.kind(), NodeTag::Function);
-    assert!(declaration.value_type().is_some());
+        .filter(|declaration| declaration.kind() == NodeTag::Function)
+        .collect();
+    assert_eq!(
+        functions.len(),
+        2,
+        "both function declarations are retained"
+    );
+    assert!(functions
+        .iter()
+        .all(|declaration| declaration.value_type().is_some()));
     assert!(!checked.type_report().requirements().is_empty());
     assert!(checked
         .type_report()
         .requirements()
         .iter()
         .all(|requirement| requirement.span().start < requirement.span().end));
+    assert_eq!(
+        checked.type_report().requirements().len(),
+        checked
+            .type_report()
+            .requirements()
+            .iter()
+            .map(|requirement| requirement.occurrence())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        "each checked requirement occurrence has one report row"
+    );
     assert!(checked
         .type_report()
         .requirements()
@@ -748,6 +767,29 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
             .get(span.start..span.end)
             .expect("report spans index the source unit")
     };
+    let post_start = source_text
+        .find("post Keep")
+        .expect("the post claim is present");
+    let post_end = source_text
+        .find("temporal Due")
+        .expect("the temporal claim follows the post claim");
+    let check_start = source_text
+        .find("check After")
+        .expect("the protocol check claim is present");
+    let check_end = source_text
+        .find("finish End")
+        .expect("the protocol finish follows the check claim");
+    let exact_body_span = |range: std::ops::Range<usize>| {
+        let relative = source_text[range.clone()]
+            .find("true")
+            .expect("the claim body contains true");
+        qsl_foundation::Span {
+            start: range.start + relative,
+            end: range.start + relative + "true".len(),
+        }
+    };
+    let post_claim_span = exact_body_span(post_start..post_end);
+    let protocol_check_span = exact_body_span(check_start..check_end);
     assert!(checked
         .type_report()
         .requirements()
@@ -761,6 +803,22 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
         .obligations()
         .iter()
         .any(|obligation| obligation.capability_kind() == "value-validity"));
+    assert!(
+        checked
+            .type_report()
+            .obligations()
+            .iter()
+            .any(|obligation| {
+                obligation.capability_kind() == "operation-contract"
+                    && obligation.span() == post_claim_span
+            }),
+        "the post claim has one operation-contract obligation at its exact span"
+    );
+    assert!(checked
+        .type_report()
+        .obligations()
+        .iter()
+        .all(|obligation| obligation.state() == super::ObligationState::Pending));
     let temporal_requirements: Vec<_> = checked
         .type_report()
         .obligations()
@@ -781,6 +839,35 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
             .map(|obligation| report_slice(obligation.span()))
             .collect::<Vec<_>>()
     );
+    let true_spans: Vec<_> = checked
+        .type_report()
+        .obligations()
+        .iter()
+        .filter(|obligation| report_slice(obligation.span()) == "true")
+        .map(|obligation| obligation.span())
+        .collect();
+    assert!(
+        true_spans.iter().any(|span| {
+            (post_start..post_end).contains(&span.start)
+                && (post_start..post_end).contains(&span.end)
+        }),
+        "the post claim's pending obligation is located in its own body"
+    );
+    assert!(
+        true_spans.iter().any(|span| {
+            (check_start..check_end).contains(&span.start)
+                && (check_start..check_end).contains(&span.end)
+        }),
+        "the protocol check's pending obligation is located in its own body"
+    );
+    let global_conformance: Vec<_> = checked
+        .type_report()
+        .obligations()
+        .iter()
+        .filter(|obligation| obligation.capability_kind() == "global-conformance")
+        .collect();
+    assert_eq!(global_conformance.len(), 1);
+    assert_eq!(global_conformance[0].span(), protocol_check_span);
 }
 
 /// FR-480-AC-2/AC-8 and FR-514-AC-2: aggregate type resolution returns two
@@ -843,9 +930,9 @@ fn aggregate_check_returns_source_bound_units_and_reports() {
     );
 }
 
-/// FR-480-AC-2: each source unit's admitted profile alias remains available
+/// FR-480-AC-4: each source unit's admitted profile alias remains available
 /// while the aggregate namespace checks declarations from later units.
-#[trace("FR-480-AC-2")]
+#[trace("FR-480-AC-4")]
 #[test]
 fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
     static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
@@ -893,10 +980,10 @@ fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
         .all(|unit| unit.type_report().declarations().len() == 1));
 }
 
-/// FR-480-AC-2: I1 has a public composition path for all model selections in
+/// FR-480-AC-1: I1 has a public composition path for all model selections in
 /// an admitted list, preserving every unit's alias and admitting the shared
 /// identity once through the aggregate meter.
-#[trace("FR-480-AC-2")]
+#[trace("FR-480-AC-1")]
 #[test]
 fn aggregate_model_selection_admits_selections_from_every_unit() {
     static SOURCE_A: OnceLock<SourceIdentity> = OnceLock::new();
@@ -976,13 +1063,14 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
     });
     let header =
         format!("{HEADER}profile ev = \"quire.temporal.event-position.false-extension/v1\";\n");
-    let a = parse_named(
-        source_a,
-        format!("{header}record Point {{ x: Int[0, 9]; }}").as_bytes(),
-    );
-    let b_text = format!(
+    let a_text = format!(
         "{header}model M = \"acme/orders\";\n\
-         temporal Due using ev over (input: M::Widget) clock \"events\" on origin {{ eventually[0,1] holds(true) }}"
+         record Point {{ x: Int[0, 9]; }}\n\
+         temporal Root using ev over (input: M::Widget) clock \"events\" on origin {{ eventually[0,1] holds(true) }}"
+    );
+    let a = parse_named(source_a, a_text.as_bytes());
+    let b_text = format!(
+        "{header}temporal Due using ev over (input: M::Widget) clock \"events\" on origin {{ eventually[0,1] holds(true) }}"
     );
     let b = parse_named(source_b, b_text.as_bytes());
     let temporal_span = b
@@ -991,6 +1079,13 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
         .iter()
         .find(|form| matches!(form.form(), DeclarationForm::Temporal(_)))
         .expect("the later source contains Due")
+        .span();
+    let first_temporal_span = a
+        .unit()
+        .forms()
+        .iter()
+        .find(|form| matches!(form.form(), DeclarationForm::Temporal(_)))
+        .expect("the first source contains Root")
         .span();
     let dependencies = DependencyInput::default();
     let admitted = admit_parsed_unit_list(vec![b, a], &dependencies)
@@ -1017,22 +1112,53 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
     .expect("the aggregate temporal clause checks")
     .into_value();
     assert_eq!(checked[0].source().identity(), source_a);
+    let first_selection = TemporalClockSelection {
+        source: checked[0].source().reference().clone(),
+        declaration_span: first_temporal_span,
+        clock: ClockConfiguration::EventPosition {
+            sequence_authority: "aggregate-events".into(),
+        },
+    };
     let selection = TemporalClockSelection {
         source: checked[1].source().reference().clone(),
         declaration_span: temporal_span,
         clock: ClockConfiguration::EventPosition {
-            sequence_authority: "aggregate-events".to_owned(),
+            sequence_authority: "aggregate-events".into(),
         },
     };
     let emitted = package_with_temporal_selections(
         &checked[0],
-        &[selection],
+        &[first_selection, selection],
         PackageLimits::default(),
         &Cancel::new(),
     )
     .expect("a selection for a later root source is not surplus")
     .into_value();
     assert!(!emitted.package().bytes().is_empty());
+
+    let uncompiled = TemporalClockSelection {
+        source: qsl_foundation::source::provenance::RawSourceRef::new(
+            "test:lifecycle:uncompiled",
+            "uncompiled:1",
+        )
+        .expect("the uncompiled source reference is valid"),
+        declaration_span: temporal_span,
+        clock: ClockConfiguration::EventPosition {
+            sequence_authority: "aggregate-events".into(),
+        },
+    };
+    let refusal = package_with_temporal_selections(
+        &checked[0],
+        &[uncompiled],
+        PackageLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("a selection for a source outside the checked package is refused");
+    let refusal = refusal_or_fault(refusal).expect("the surplus selection is a refusal");
+    assert!(matches!(
+        &*refusal,
+        CompileRefusal::Emit(qsl_package::EmitRefusal::SurplusTemporalClockSelection { .. })
+    ));
 }
 
 /// FR-503-AC-3 (TC-1298 row 4): the compile continuation emits clean

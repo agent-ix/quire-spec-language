@@ -2568,9 +2568,15 @@ impl<'a> Lowering<'a> {
             // declares carries its name as its `declaration` and its
             // `SourceOwner`. The unit table holds no other node.
             let (declaration, owner, model_alias) = if key.package() == self.package_name {
+                let declaration_name = qualified.join(".");
                 (
                     Some(identifiers(qualified.iter().map(String::as_str), &site)?),
-                    Owner::Source(self.owner.clone()),
+                    Owner::Source(
+                        self.source_owners
+                            .get(&declaration_name)
+                            .cloned()
+                            .unwrap_or_else(|| self.owner.clone()),
+                    ),
                     None,
                 )
             } else {
