@@ -108,7 +108,10 @@ capacities (buffer and activation), is part of the root's key (QSpec FR-487-AC-6
 gives a different plan. The tick intervals of the logical fields above are
 not bindings: each is derived from the clause's interval bounds and the unit
 scales (QSpec FR-487). Every entry, atom body and type the root needs is a
-dependency of the root, so its content key (QSpec FR-322) selects the
+dependency of the root, and the root's key also covers the body roots of the
+declared helper functions its entries, atoms and guard call (the call closure of
+QSpec FR-487; a helper stays a declared node keyed by its name for call
+identity), so its content key (QSpec FR-322) selects the
 complete immutable plan and no second identity scheme is introduced. The
 logical Rust record above is the producer's in-memory view of that node; the
 wire node, not a QSL-owned Rust type, is what IR reads and the driver admits.
@@ -163,7 +166,13 @@ premise or capacity requires a newly admitted plan and a fresh monitor;
 live state SHALL NOT be rebound. [FR-252](FR-252-hand-timing-obligations-to-code-generation.md)'s
 `PlanId` identifies this complete immutable plan in the driver's ownership
 scope, including its executable program and target premises, never just its
-buffer table. No new persistent identity scheme is introduced.
+buffer table. It covers the checked body of every atom and of the activation
+guard, every entry body, and the body of every declared helper function that an
+entry, an atom or the guard calls, directly or through another helper (the call
+closure of QSpec FR-487-AC-13), so replacing any one of those bodies, including
+through a public plan constructor, gives a different `PlanId`; a name, a
+declaration path or a node index alone is not a body. No new persistent identity
+scheme is introduced.
 
 ### Fault boundary
 
@@ -205,19 +214,85 @@ may repair such a disagreement by inventing another evaluation rule.
   bound SHALL decide true or false only when every pair of instants in the
   operands' intervals agrees; otherwise the obligation SHALL stay pending or
   indeterminate as QSpec FR-160 states.
-- **Buffers.** For each past-time or bounded-future interval operator
-  `[a, b]`, the plan SHALL set the buffer capacity to the maximum event rate
-  (events per tick) times the upper bound `b` plus the tick cover (one tick,
-  plus `2u`, the widening of QSpec FR-160 at each end of the cover by the declared uncertainty `u`), all in ticks, rounded up, plus
-  one, because entries are kept until the end of the window at `b`; the lower
-  bound `a` does not shorten it. For an interval operator nested under other
-  interval operators, the retention is the sum of the upper bounds along the
-  nesting path from the outermost operator to it, plus one tick cover
-  (`1 + 2u` ticks) per level of that path, because an inner entry must
-  survive until every enclosing operator can still consult it; the capacity
-  is the maximum event rate times that retention, rounded up, plus one. A
-  single operator is the one-level case. The rate SHALL be an ADR-014 B-2 run
-  limit of the monitor.
+- **Buffers.** For each past-time or bounded-future interval operator `n`
+  with upper bound `b`, the plan SHALL set the buffer capacity to
+  `ceil(rate x R(n)) + 1`, where `rate` is the maximum event rate in events per
+  tick and `R(n)`, the **retention** in ticks, is
+
+  `R(n) = L(n) + b + (d(n) + 1) x (1 + 2u)`
+
+  - `b` is the operator's own upper bound (the lower bound `a` does not
+    shorten it, because entries are kept until the end of the window at `b`);
+  - `L(n)` is the **operand-lookahead term**: the sum of the upper bounds of the
+    interval operators that enclose `n`, outermost to innermost, each of which
+    consults `n`'s entries over a window of its own upper bound, so an entry
+    of `n` must survive until every enclosing operator can still consult it
+    (`L` is 0 for an operator with no enclosing interval operator);
+  - `d(n)` is the number of enclosing interval operators, and `1 + 2u` is one
+    **tick cover** (one tick plus `2u`, the widening of QSpec FR-160 at each
+    end of the cover by the declared uncertainty `u`), counted once for `n` and
+    once for each enclosing operator.
+
+  A single operator is the case `L = 0`, `d = 0`, giving
+  `ceil(rate x (b + 1 + 2u)) + 1`. The rate SHALL be an ADR-014 B-2 run limit of
+  the monitor.
+- **Unbounded past operators.** `once`, `historically`, `since` and
+  `triggered` written without an interval (and so with no upper bound) are
+  decided with **sound but incomplete** semantics: never a wrong definite
+  verdict, and a typed unknown outcome where the finite memory cannot decide.
+  Plan derivation SHALL NOT refuse these clauses, nor an unbounded operator over
+  an unbounded one (below); no operator is typed "unsupported" for want of an
+  interval.
+  - **Buffer.** The operator keeps a **cover-width buffer**: its capacity is
+    `ceil(rate x R(n)) + 1` with `b` taken as 0, that is
+    `ceil(rate x (L(n) + (d(n) + 1) x (1 + 2u))) + 1`, so an unnested operator has
+    capacity `ceil(rate x (1 + 2u)) + 1`. The buffer holds the entries of the
+    last tick cover, plus the lookahead of any enclosing operator.
+  - **Summary cell.** The `buffer_<n>` sequence of such an operator holds one
+    additional **summary cell**, its first element, in `State`'s own field (the
+    fields of `State` do not change). The summary cell is not counted in the
+    capacity: the capacity formula's `+ 1` is its own slack and the sequence
+    holds at most the capacity of entries and the one summary cell, so the cell
+    can never overflow the buffer. An entry **ages out** when its age, the newest admitted reading's tick minus the entry's tick, is at least `L(n) + (d(n) + 1) x (1 + 2u)` ticks: its widened tick cover then lies wholly before the widened cover of the newest reading and no enclosing operator can still consult it (for an unnested operator, `1 + 2u` ticks). As an entry ages out it is folded into the
+    summary cell and removed from the sequence, in tick order, and the folded
+    accumulator is stored in the cell: the three-valued disjunction of the
+    operand's value at the folded entries for `once`, the conjunction for
+    `historically`, and for `since` and `triggered` the left fold, in tick
+    order, of the declarative definition of QSpec FR-092 over the folded entries
+    (the value of the operator restricted to the folded prefix). An entry that has aged out
+    is ordered definitely before every instant the operator is later evaluated
+    at (no interval bound can make it undecided), so the fold loses no
+    information: the operator's value is the declarative one over the folded
+    prefix and the buffered entries together.
+  - **Unknown outcomes.** Two things make the result less than definite, both
+    typed and replayable. (1) An event that would exceed the buffer settles
+    `Incomplete(LimitReached{limit: event_buffer, value: <capacity>,
+    setting: monitor.max_event_rate})` for the affected obligations as in
+    "Overflow", with no event dropped and the summary cell unchanged. (2) After a
+    counter gap `on_gap` drops every history buffer and its summary cell is
+    reset to the empty accumulator with `history_start` at the faulting reading:
+    the unbounded window reaches before `history_start` for ever, so `once`
+    is `true` once an operand true is seen after `history_start` and otherwise
+    `indeterminate`, never `false`; `historically` is `false` once an operand
+    false is seen after it and otherwise `indeterminate`, never `true`; `since`
+    and `triggered` follow their own definite witnesses the same way. Before any
+    gap the history begins at the monitor's baseline and the operators are
+    decided without that cap. Each such result retains the subformula, origin,
+    `history_start` and, for the first case, `value` and `setting`, as every
+    result retains its subject and premises, so a replay of the same admitted
+    inputs gives the same outcome.
+  - **Unbounded over unbounded.** `always eventually p`, `eventually always p`
+    and any unbounded future operator whose operand holds an unbounded future
+    operator keep no history buffer: each live instance of the inner operator
+    holds its constant-size accumulator in `activations` and counts against
+    the one shared activation capacity (the same rule as an unbounded operator
+    nested under a bounded one). The outer unbounded operator folds the settled
+    results of its inner instances into its one outcome per activation; an inner
+    instance beyond the capacity is not started and settles
+    `Incomplete(LimitReached{limit: activation, value: <capacity>,
+    setting: monitor.max_activations})`, never a silent drop. On an open trace
+    such an operator stays `Pending` until a witness decides it and is never
+    decided `true` by the absence of a counterexample alone.
 - **Overflow.** An event that would exceed a buffer SHALL never be dropped:
   the obligations it affects SHALL settle `Incomplete(LimitReached{limit, value, setting})`
   with `limit` the monitor limit kind `EventBuffer`, written `event_buffer`,
@@ -298,10 +373,10 @@ may repair such a disagreement by inventing another evaluation rule.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-251-AC-1 | For `always (holds(req) implies eventually[0 ms, 3 ms] holds(ack))` on a 20-bit 1 MHz counter with uncertainty 0: `req` at tick 0 and `ack` at tick 2998 decides true; `ack` first at tick 3001 decides false; `ack` first at tick 3000 stays indeterminate. With uncertainty 2 µs, `ack` at 2998 stays indeterminate. These hold under the half-open cover: with `req` at 0 covering `[0, 1)`, `ack` at 3001 covers `[3001, 3002)` and the difference lies in `(3000, 3002)`, all above the bound 3000, so false; `ack` at 3000 gives `(2999, 3001)`, which straddles 3000, so indeterminate; `ack` at 2998 gives `(2997, 2999)`, all within the bound, so true; with 2 ticks of uncertainty the `ack` at 2998 difference is `(2993, 3003)`, indeterminate. | Test (TC-706) |
-| FR-251-AC-2 | On a 1 MHz counter with uncertainty 0, `once[0 ms, 10 ms] holds(p)` with `max_event_rate` 2 events per ms (0.002 per tick) gets buffer capacity ceil(0.002 x (10000 + 1)) + 1 = 22; a trace with 23 events inside one 10 ms window settles the affected obligation `Incomplete(LimitReached{limit, value, setting})` with `limit` `event_buffer`, `value` 22 and `setting` `monitor.max_event_rate`, and drops no event. | Test (TC-706) |
+| FR-251-AC-2 | On a 1 MHz counter with uncertainty 0, `once[0 ms, 10 ms] holds(p)` with `max_event_rate` 2 events per ms (0.002 per tick) gets buffer capacity ceil(0.002 x (10000 + 1)) + 1 = 21 + 1 = 22, so 22 entries fit and the 23rd event inside one 10 ms window is the first that does not; a trace with 23 events inside one 10 ms window settles the affected obligation `Incomplete(LimitReached{limit, value, setting})` with `limit` `event_buffer`, `value` 22 and `setting` `monitor.max_event_rate`, and drops no event. | Test (TC-706) |
 | FR-251-AC-3 | With a 16-bit counter and `max_reading_gap` 100: readings `65530` then `4` give a difference of 10 ticks; readings `65530` then `65500` give a modular difference of 65,506, so RT detects the gap and calls `on_gap` (AC-11); every obligation instance still open across it settles `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}`, with no verdict. A 16-bit target with `max_reading_gap` 65,536 refuses `GapExceedsWidth`. | Test (TC-706) |
 | FR-251-AC-4 | AC-1's admitted plan alone builds a monitor after the producer/preparation objects are dropped. Its closed program contains both atom bodies, the ordered implication/eventually/always topology, activation and capture bindings, state initializers and executable event/watermark transitions. No source parsing, clause argument, atom callback or RT temporal translation occurs. Removing a transition body refuses admission with no initialization or monitor. | Test (TC-1081) |
-| FR-251-AC-5 | Replace an atom, operand reference, entry body, `init` body, interval association, buffer owner, activation binding, uncertainty, counter, tick unit, event rate or maximum gap independently with one from a different selected clause/target while retaining the original selection: each candidate refuses admission without initialization. Matching numeric subformula IDs from two subjects do not alias. A correctly derived plan for the changed target is admitted as a distinct plan. | Test (TC-1081) |
+| FR-251-AC-5 | Replace an atom, the activation guard body, a helper called by an entry, operand reference, entry body, `init` body, interval association, buffer owner, activation binding, uncertainty, counter, tick unit, event rate or maximum gap independently with one from a different selected clause/target while retaining the original selection: each candidate refuses admission without initialization. Matching numeric subformula IDs from two subjects do not alias. A correctly derived plan for the changed target is admitted as a distinct plan. | Test (TC-1081) |
 | FR-251-AC-6 | Build two monitors from the same plan; a request observed only by the first does not activate an obligation in the second. Attempts to rebind either live monitor to another program/target fail without changing either state. Each emitted result retains its selected subject, target premises and obligation origin. | Test (TC-1081) |
 | FR-251-AC-7 | Executing the plan's transition entries and the QSL reference evaluator on the same admitted inputs gives identical per-obligation outcomes for AC-1 through AC-3, a clause with reversed implication operands, an activation guard that is false, and open versus closed interval endpoints. A progress assertion past a deadline settles according to QSpec FR-094/FR-160; polling the counter without that assertion adds no event and settles no deadline. | Test (TC-1081) |
 | FR-251-AC-8 | An unsupported predicate/instruction yields `Unsupported` and no monitor; failed state allocation yields build failure and no monitor; an event missing a required admitted value is rejected without state change; an executor invariant failure yields `Failed` with no verdict and prevents further input. None of these controls returns `false` as a property result. | Test (TC-1081) |
@@ -318,6 +393,11 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-19 | For `once[0 ms, 10 ms] eventually holds(ack)` (the `eventually` unbounded, nested under a bounded `once`) with `activation_capacity` 2, when `ack` has not occurred and events at ticks 0, 1000 and 2000 (a 1 MHz counter) each start an `eventually` instance under the `once`, the third start finds two live instances, is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`, counted against the same capacity as an unbounded root's instances, with no new plan-root binding. | Test (TC-1081) |
 | FR-251-AC-20 | Two sibling operators `once[0 ms, 10 ms] holds(p)` (lower `subformula` id) and `once[0 ms, 10 ms] holds(q)`, each capacity 22 under the AC-2 premises, both overflow at the 23rd event: that position yields two `Incomplete(LimitReached{limit: event_buffer, value: 22, setting: monitor.max_event_rate})` results, the lower-id operator's first, each with its own `instance.subformula`, and neither is dropped; the order is the same under any evaluation order of the entry. | Test (TC-706) |
 | FR-251-AC-21 | The retention rule holds for mixed-direction nesting (sum of upper bounds plus one cover per level; no direction-specific tightening). On a 1 MHz counter, uncertainty 0, rate 2 events per ms (0.002 per tick): `once[0 ms, 10 ms] eventually[0 ms, 5 ms] holds(p)` and `eventually[0 ms, 5 ms] once[0 ms, 10 ms] holds(p)` each give the inner operator retention 10000 + 5000 + 2 covers = 15002 ticks and capacity ceil(0.002 x 15002) + 1 = 32; the outer operator of the first is the `once` with capacity 22, of the second the `eventually` with capacity ceil(0.002 x 5001) + 1 = 12. With `p` at tick 0 and 30 events at the rate across ticks 0 to 14999, the inner buffer still holds the tick-0 entry at tick 14999 and every operator reads it for the decision that needs it, no `Incomplete` is produced, and the tick-0 entry expires only after tick 15002. | Test (TC-1081) |
+| FR-251-AC-22 | On a 1 MHz counter with uncertainty 0 and rate 2 events per ms (0.002 per tick), `once holds(p)` (no interval) is planned, not refused, with capacity ceil(0.002 x (0 + 1 x (1 + 0))) + 1 = 1 + 1 = 2 and a `buffer_<n>` holding at most 2 entries and its summary cell (3 elements); with uncertainty 2 ticks the capacity is ceil(0.002 x 5) + 1 = 2. With `p` true at tick 0 and an event at tick 5000, the tick-0 entry has aged out and is folded into the summary cell, the buffer holds only the tick-5000 entry and the cell, and `once holds(p)` at tick 5000 is `true`, as the declarative semantics of QSpec FR-092 gives; `historically holds(p)` with `p` true at tick 0 and false at tick 100 is `false` at tick 5000 through the folded accumulator, and the same operators over the entries still inside the cover decide as the reference evaluator does (AC-7). The summary cell is not counted in the capacity. | Test (TC-1081) |
+| FR-251-AC-23 | Under the premises of AC-22, three events inside one tick cover (the third at the same tick) settle the affected `once holds(p)` obligations `Incomplete(LimitReached{limit: event_buffer, value: 2, setting: monitor.max_event_rate})`, with no event dropped and the summary cell unchanged; the sequence never holds more than 2 entries plus the cell. Nested as `once[0 ms, 10 ms] once holds(p)` the inner operator has capacity ceil(0.002 x (10000 + 1 x 1 + 1 x 1)) + 1 = 21 + 1 = 22 (lookahead term 10000, two covers). | Test (TC-706) |
+| FR-251-AC-24 | On the 16-bit target of AC-3 after `on_gap` the summary cell of `once holds(p)` and of `historically holds(p)` is the empty accumulator and `history_start` is the faulting reading's tick: with `p` true before the gap and never after it, `once holds(p)` is `indeterminate`, not `false` and not `true`; with `p` true after it, `true`; `historically holds(p)` with `p` true before and after it is `indeterminate`, never `true`, and `false` as soon as `p` is false after it. Each result retains the subformula, `history_start` and origin, and a replay of the same inputs gives the same results. | Test (TC-1081) |
+| FR-251-AC-25 | `always eventually holds(p)` and `eventually always holds(p)` are planned, not refused, keep no history buffer, and hold one constant-size accumulator per live inner instance in `activations`; with `activation_capacity` 2 and three positions before any `p`, the third inner instance is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`, none dropped silently, and the first `p` settles the two live instances `true`; on an open trace `always eventually holds(p)` is `Pending`, never decided `true` by the absence of a counterexample. | Test (TC-1081) |
+| FR-251-AC-26 | Two plans for AC-1's clause that differ only in the checked body of one atom, of the activation guard, or of a declared helper function that an entry calls (directly or through another helper) have different `PlanId`s and different plan-root keys, while the helper keeps its declaration path as its call identity and stays a declared node; building `TimedMonitorPlan` through its public constructor with one atom body swapped gives an unequal `PlanId`, and an equal-bodied plan gives an equal one. | Test (TC-1081) |
 
 ## Dependencies
 
