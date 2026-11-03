@@ -112,7 +112,7 @@ fn assemble_under(
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-597", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-597"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

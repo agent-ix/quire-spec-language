@@ -27,7 +27,7 @@ pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
         units = crate::monitor_plan::TIME_UNITS
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

@@ -725,7 +725,7 @@ pub enum DependencySelectionsCause {
 /// #     function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(
-/// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     SourceIdentity::new("a", "u"),
 /// #     "fixture".to_owned(),
 /// #     "u",
 /// #     unit.as_bytes(),
@@ -787,7 +787,7 @@ pub enum DependencySelectionsCause {
 /// #     function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(
-/// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     SourceIdentity::new("a", "u"),
 /// #     "fixture".to_owned(),
 /// #     "u",
 /// #     unit.as_bytes(),
@@ -1651,14 +1651,9 @@ fn one_source(references: &[DefinitionSourceRef]) -> Result<&DefinitionSourceRef
     }
 }
 
-/// A source reference's four FR-001 labels.
+/// A source reference's two FR-001 labels.
 fn labels(reference: &DefinitionSourceRef) -> SourceIdentity {
-    SourceIdentity::new(
-        reference.authority(),
-        reference.identity(),
-        reference.revision_namespace(),
-        reference.revision(),
-    )
+    SourceIdentity::new(reference.authority(), reference.identity())
 }
 
 /// What a replay claims of the function it selects.

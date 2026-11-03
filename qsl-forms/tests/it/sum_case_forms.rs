@@ -15,7 +15,7 @@ const HEADER: &str =
 fn parse(declarations: &str) -> (String, ParsedSource) {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "union.native",
         text.as_bytes(),
         qsl_cst::Limits::default()
@@ -482,7 +482,7 @@ fn default_frontend_limits_admit_a_thousand_nested_cases_and_charge_binder_nodes
         ))
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "case.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -511,7 +511,7 @@ fn wide_arm_binders_are_admitted_or_refused_by_the_existing_s1_node_budget() {
         .join(",");
     let (text, parsed, _) = build(&body(&format!("case s {{ A({binders}): x0; }}")));
     let nodes = parsed.cst().nodes().len();
-    let identity = || SourceIdentity::new("a", "u", "git", "1");
+    let identity = || SourceIdentity::new("a", "u");
     let exact = qsl_cst::parse(
         identity(),
         "union.native",

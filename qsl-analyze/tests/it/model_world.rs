@@ -246,7 +246,7 @@ impl World {
             });
         let declarations = |text: &str| {
             let parsed = qsl_cst::parse(
-                SourceIdentity::new("agent-ix", "safety", "git", "1"),
+                SourceIdentity::new("agent-ix", "safety"),
                 "safety.native",
                 text.as_bytes(),
                 qsl_cst::Limits::default(),
@@ -314,8 +314,7 @@ impl World {
         let header = json!({"identity": self.domain.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
-                "revision": "fixture:1"},
+            "identity": {"authority": "test", "identity": "s0"},
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": self.domain.node(self.domain.population),
@@ -330,8 +329,6 @@ impl World {
         DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }
     }
 

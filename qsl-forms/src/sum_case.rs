@@ -50,7 +50,7 @@ mod tests {
             .join(",");
         let source = format!("language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; union U {{ A({}Integer{}) }} function f using v(s: U): Integer pure {{ case s {{ A({binders}): {}s{}; }} }}", "Option<".repeat(depth), ">".repeat(depth), "case s { A(x): ".repeat(depth), "; }".repeat(depth));
         let parsed = qsl_cst::parse(
-            SourceIdentity::new("test", "stacks", "git", "1"),
+            SourceIdentity::new("test", "stacks"),
             "case.native",
             source.as_bytes(),
             qsl_cst::Limits::default(),

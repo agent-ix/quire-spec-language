@@ -37,8 +37,6 @@ fn parses_on_a_small_stack(text: String) {
                 SourceIdentity {
                     authority: "test".into(),
                     identity: "test:deep".into(),
-                    revision_namespace: "test".into(),
-                    revision: "1".into(),
                 },
                 "deep.native",
                 text.as_bytes(),

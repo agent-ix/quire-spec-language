@@ -65,14 +65,6 @@ impl SuppliedObservation {
                 "identity.identity",
                 identity.and_then(|id| id.get("identity")),
             )?,
-            revision_namespace: text(
-                "identity.revision_namespace",
-                identity.and_then(|id| id.get("revision_namespace")),
-            )?,
-            revision: text(
-                "identity.revision",
-                identity.and_then(|id| id.get("revision")),
-            )?,
         };
         let role = root.get("observation").and_then(|node| match node.node() {
             Node::String(value) => Some(value.to_owned()),
@@ -1020,8 +1012,6 @@ mod tests {
         let reference = DocumentRef {
             authority: "a".into(),
             identity: "i".into(),
-            revision_namespace: "n".into(),
-            revision: "r".into(),
         };
         BTreeMap::from([(
             "pre".to_owned(),

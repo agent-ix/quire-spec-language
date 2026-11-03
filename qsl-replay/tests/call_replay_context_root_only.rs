@@ -57,7 +57,7 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
         supplied: SuppliedLimits::default(),
     };
     let result = run_with_replay_context(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),

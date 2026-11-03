@@ -29,7 +29,7 @@ const RPC: &str = "time Rpc dense unit ms;\n\
 
 fn parse(text: &str) -> qsl_cst::ParsedSource {
     qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

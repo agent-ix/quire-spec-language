@@ -74,7 +74,7 @@ fn obligation_model() -> crate::model::intake::SelectedModel {
 
 fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -307,7 +307,7 @@ fn workers(lifetime: &str) -> String {
 /// The id of the node `name` of the one protocol `text` declares.
 fn node_id(text: &str, name: &str) -> ProtocolNodeId {
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

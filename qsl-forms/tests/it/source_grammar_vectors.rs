@@ -11,7 +11,7 @@ const PREDICATE: &str = "predicate P using v(x: Boolean): Boolean { x }\n";
 
 fn parse(text: &str) -> ParsedSource {
     qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

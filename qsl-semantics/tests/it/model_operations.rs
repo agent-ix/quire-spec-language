@@ -954,7 +954,7 @@ pub(super) fn admit_and_assemble_with_profiles(
     })
     .unwrap_or_else(|failure| panic!("a kept operation clause does not parse: {failure:?}"));
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-459"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -1356,7 +1356,7 @@ pub(super) fn config_version_document_with_population(
 
 pub(super) fn parse_and_build(unit: &str) -> qsl_forms::ParsedUnit {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-458", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-458"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -1397,7 +1397,7 @@ pub(super) fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations,
     )
     .map_err(|refusal| format!("I1 refused: {refusal:?}"))?;
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-458", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-458"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

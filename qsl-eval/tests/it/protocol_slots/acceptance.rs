@@ -61,7 +61,7 @@ fn fixture_from_document(
     qsl_semantics::model::normalize::EffectiveView,
 ) {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("protocol", "acceptance", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("protocol", "acceptance"),
         "acceptance.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -319,8 +319,6 @@ fn ep_observation_state<'a>(
     let selected = DocumentRef {
         authority: "test".to_owned(),
         identity: "ep-current".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     };
     let object = |key: &str, pop: &str| {
         let next = if key == "ghost" && pop == "otherSpare" {
@@ -360,7 +358,7 @@ fn ep_observation_state<'a>(
     }
     let snapshot = serde_json::json!({
         "format":"quire.state.snapshot/v1",
-        "identity":{"authority":selected.authority, "identity":selected.identity, "revision_namespace":selected.revision_namespace, "revision":selected.revision},
+        "identity":{"authority":selected.authority, "identity":selected.identity},
         "observation":"current", "model":{"identity":model::PACKAGE,"version":"1.0.0","digest":"set at admission"},
         "populations":populations,
         "relationships":[{"relationship":model::id("relationship/otherLinks"),"complete":true,"instances":relationship_target.map(|(population,key)| vec![serde_json::json!({"source":{"population":model::id("otherSpare"),"key":"ghost"},"target":{"population":model::id(population),"key":key}})]).unwrap_or_default()}]
@@ -1007,8 +1005,6 @@ fn observation_through_view<'a>(
     let selected = DocumentRef {
         authority: "test".to_owned(),
         identity: "current".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     };
     let objects: Vec<_> = keys
         .iter()
@@ -1026,9 +1022,7 @@ fn observation_through_view<'a>(
         "identity": {
             "authority": selected.authority.clone(),
             "identity": selected.identity.clone(),
-            "revision_namespace": selected.revision_namespace.clone(),
-            "revision": selected.revision.clone(),
-        },
+            },
         "observation": "current",
         "model": {"identity": model::PACKAGE, "version": "1.0.0", "digest": "set at admission"},
         "populations": [{"population": model::id("nodes"), "complete": complete, "objects": objects}],
@@ -3479,8 +3473,6 @@ fn another_model_snapshot_returns_the_original_qsv_refusal() {
     let selected = DocumentRef {
         authority: "test".to_owned(),
         identity: "foreign".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     };
     let local_bytes = serde_json::to_vec(&document()).unwrap();
     let foreign_bytes = String::from_utf8(local_bytes.clone())
@@ -3497,9 +3489,7 @@ fn another_model_snapshot_returns_the_original_qsv_refusal() {
         "identity": {
             "authority": selected.authority.clone(),
             "identity": selected.identity.clone(),
-            "revision_namespace": selected.revision_namespace.clone(),
-            "revision": selected.revision.clone(),
-        },
+            },
         "observation": "current",
         "model": {"identity": "test/foreign", "version": "1.0.0", "digest": "set at admission"},
         "populations": [{

@@ -454,7 +454,7 @@ impl CallSiteRefusal {
 /// #     function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 /// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
 /// let site = call_site(
-///     SourceIdentity::new("a", "u", "git", "1"),
+///     SourceIdentity::new("a", "u"),
 ///     "fixture".to_owned(),
 ///     "u",
 ///     unit.as_bytes(),
@@ -476,7 +476,7 @@ impl CallSiteRefusal {
 /// #     function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 /// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
 /// let site = call_site(
-///     SourceIdentity::new("a", "u", "git", "1"),
+///     SourceIdentity::new("a", "u"),
 ///     "fixture".to_owned(),
 ///     "u",
 ///     unit.as_bytes(),
@@ -874,7 +874,7 @@ mod tests {
         function: &str,
     ) -> Result<CallSite<FunctionSite>, Box<CallSiteRefusal>> {
         call_site(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "fixture".to_owned(),
             "unit.native",
             bytes,
@@ -912,12 +912,7 @@ mod tests {
         ReplayRequestWire {
             package_name: "fixture".to_owned(),
             profile_selections: vec![],
-            sources: vec![(
-                "a".to_owned(),
-                "u".to_owned(),
-                "git".to_owned(),
-                "1".to_owned(),
-            )],
+            sources: vec![("a".to_owned(), "u".to_owned())],
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(function, declaration),
             source: ReplaySource::Input(assignments),
@@ -982,7 +977,7 @@ mod tests {
         .unwrap();
         for selection in [name("nope"), name("F"), qualified] {
             let refusal = call_site(
-                SourceIdentity::new("a", "u", "git", "1"),
+                SourceIdentity::new("a", "u"),
                 "fixture".to_owned(),
                 "unit.native",
                 UNIT.as_bytes(),

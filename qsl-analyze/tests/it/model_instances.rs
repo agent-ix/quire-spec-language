@@ -193,8 +193,7 @@ fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
         .collect();
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": "s0"},
         "observation": "current",
         "model": {"identity": PACKAGE},
         "anchor": {"kind": "initialization", "name": "start"},
@@ -212,8 +211,6 @@ fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
         initial: vec![DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
         }],
         document,
         package,

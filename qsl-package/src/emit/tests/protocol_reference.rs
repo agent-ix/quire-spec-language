@@ -194,7 +194,7 @@ fn a_later_attempt_protocol_lowers_after_an_earlier_refusal() {
          model Config = \"example/config-version\";\n{broken}{later}"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-1497", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-1497"),
         "program.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

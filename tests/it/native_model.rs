@@ -191,22 +191,10 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
             "mutation {mutation}"
         );
     }
-    let relocated =
-        native_rule_model::from_text(native_rule_model::fixture(), "another/path", "draft:1")
-            .unwrap()
-            .model();
-    assert_eq!(original.artifact_bytes(), relocated.artifact_bytes());
-    assert_ne!(
-        original.artifact_bytes(),
-        native_rule_model::from_text(
-            native_rule_model::fixture(),
-            "native-rule-model.json",
-            "draft:2"
-        )
+    let relocated = native_rule_model::from_text(native_rule_model::fixture(), "another/path")
         .unwrap()
-        .model()
-        .artifact_bytes()
-    );
+        .model();
+    assert_eq!(original.artifact_bytes(), relocated.artifact_bytes());
 }
 
 #[test]

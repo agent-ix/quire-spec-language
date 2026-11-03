@@ -96,10 +96,7 @@ const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 /// The fixture unit admitted as (`a`, `u`, `git`, `1`): its owner `(a, u)`
 /// is the one FR-092's golden vectors are keyed under.
 pub(super) fn source() -> RawSourceRef {
-    qsl_semantics::check::admitted_source(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-        TEXT,
-    )
+    qsl_semantics::check::admitted_source(qsl_foundation::SourceIdentity::new("a", "u"), TEXT)
 }
 
 /// Places every occurrence at the whole fixture unit.
@@ -1922,7 +1919,7 @@ fn f_calls_g(call: qsl_foundation::Span) -> (FunctionDeclaration, FunctionDeclar
 /// `g`/`f`'s own source, distinct from [`source`]'s [`TEXT`] fixture.
 fn call_source() -> RawSourceRef {
     qsl_semantics::check::admitted_source(
-        qsl_foundation::SourceIdentity::new("a", "call-occurrence", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "call-occurrence"),
         CALL_TEXT,
     )
 }
@@ -2085,7 +2082,7 @@ fn inc_read_from_text() -> FunctionDeclaration {
 #[test]
 fn generated_nodes_are_placed_at_their_enclosing_declaration() {
     let source = qsl_semantics::check::admitted_source(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         INT_TEXT,
     );
     let mut declarations =
@@ -2146,7 +2143,7 @@ const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 #[test]
 fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         SPINE_TEXT.as_bytes(),
         qsl_cst::Limits::default(),
@@ -2493,7 +2490,7 @@ fn try_package_from_text(declarations: &str) -> Result<CheckedPackage, Vec<Check
          {declarations}"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -2668,7 +2665,7 @@ fn the_strict_reader_decides_every_text_literal_vector_as_specified() {
 fn spine_compile_package() -> CheckedPackage {
     const FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/spine-compile.native");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine"),
         "program.native",
         FIXTURE,
         qsl_cst::Limits::default(),
@@ -2697,7 +2694,7 @@ fn assemble_with_models(
     packages: &qsl_semantics::model::intake::PackageInput,
 ) -> Result<PackageDeclarations, String> {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unit,
         qsl_cst::Limits::default(),
@@ -2938,7 +2935,7 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
     let unknown = fixture.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
     let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unknown.as_bytes(),
         qsl_cst::Limits::default(),
@@ -2984,7 +2981,7 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
 /// `unit`'s S2 selections.
 fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection> {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3005,7 +3002,7 @@ fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection>
 fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
     let fixture = spine_model::unit();
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         fixture.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3567,16 +3564,8 @@ fn check_attempt_unit(
     unit: &str,
     with_sub: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
-    check_attempt_unit_revision(unit, with_sub, "fixture:1")
-}
-
-fn check_attempt_unit_revision(
-    unit: &str,
-    with_sub: bool,
-    revision: &str,
-) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", revision),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3632,7 +3621,7 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309"),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3641,12 +3630,7 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
     let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX)
         .expect("the admitted attempt formats");
     let reparsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new(
-            "agent-ix",
-            "test:qsl-309",
-            "fixture",
-            "fixture:1-formatted",
-        ),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309"),
         "program.native",
         formatted.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3657,7 +3641,7 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         formatted,
         "attempt second-pass bytes"
     );
-    let formatted_graph = check_attempt_unit_revision(&formatted, with_sub, "fixture:1-formatted")
+    let formatted_graph = check_attempt_unit(&formatted, with_sub)
         .unwrap_or_else(|refusals| panic!("formatted attempt refuses: {refusals:?}"));
     let formatted_emission = emit_checked(&CheckedPackage::link(formatted_graph))
         .expect("the formatted attempt emits through public S4");
@@ -3997,7 +3981,7 @@ pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) 
          {declarations}"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

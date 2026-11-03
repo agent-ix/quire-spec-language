@@ -931,7 +931,7 @@ mod tests {
     const FUNCTIONS: &str = "function f using v(x: Int[0, 9]): Integer pure { x }\nfunction g using v(x: Int[0, 9]): Integer pure { f(x) }\n";
 
     fn identity(name: &str) -> SourceIdentity {
-        SourceIdentity::new("a", name, "git", "1")
+        SourceIdentity::new("a", name)
     }
     fn acquire(text: &str, dependencies: &DependencyInput) -> CheckedClosureCompilation {
         acquire_checked_closure(
@@ -1681,7 +1681,7 @@ mod tests {
         let valid = format!("{HEADER}{FUNCTIONS}");
         let same_owner = DependencyInput::new([SuppliedLibrary {
             identity: "test/same".to_owned(),
-            source: SourceIdentity::new("a", "unit", "git", "2"),
+            source: SourceIdentity::new("a", "unit"),
             path: "same.native".to_owned(),
             bytes: HEADER.as_bytes().to_vec(),
         }])

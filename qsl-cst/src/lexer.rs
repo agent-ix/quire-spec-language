@@ -303,7 +303,7 @@ mod tests {
         const DEPTH: usize = 100_000;
         let text = format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
         let source = Source::read(
-            SourceIdentity::new("agent-ix", "test:lexer", "git", "1"),
+            SourceIdentity::new("agent-ix", "test:lexer"),
             "deep.native",
             text.as_bytes(),
             usize::MAX,

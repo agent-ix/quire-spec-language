@@ -22,8 +22,6 @@ fn source(text: &str) -> FormalSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:located-json".into(),
-            revision_namespace: "test".into(),
-            revision: "draft:1".into(),
         },
         "occurrences.json",
         text.as_bytes(),

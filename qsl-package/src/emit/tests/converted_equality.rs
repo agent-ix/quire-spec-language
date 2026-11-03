@@ -19,7 +19,7 @@ const RAT: &str = "Rational[-100, 100; 1, 1]";
 fn checked_graph(declarations: &str) -> qsl_semantics::check::CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:conv-eq", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:conv-eq"),
         "program.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -1515,7 +1515,7 @@ fn a_guard_over_an_integer_conversion_bounds_only_what_it_states() {
         let text =
             format!("{HEADER}function g using v(x: Int[-5,5]): Int[0,3] pure {{ {body} }}\n");
         let parsed = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("agent-ix", "test:guard", "fixture", "fixture:1"),
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:guard"),
             "program.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),

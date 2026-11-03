@@ -31,7 +31,7 @@ fn with_closure<T>(refinement: &str, body: impl FnOnce(&CheckedClosureHandle, &W
     let text = unit_text(&documents, refinement, Variant::CAS);
     let compiled = acquire_checked_closure(
         qsl_replay::CompileUnit {
-            source: SourceIdentity::new("agent-ix", "refinement", "git", "1"),
+            source: SourceIdentity::new("agent-ix", "refinement"),
             package_name: "fixture".to_owned(),
             path: "refinement.native",
             bytes: text.as_bytes(),

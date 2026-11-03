@@ -49,8 +49,6 @@ fn checked_v2_case_with_source_limits(
             let identity = SourceIdentity::new(
                 inputs.sources[0].identity().authority.clone(),
                 inputs.sources[0].identity().identity.clone(),
-                inputs.sources[0].identity().revision_namespace.clone(),
-                inputs.sources[0].identity().revision.clone(),
             );
             let checked = checked_fr050_unit_with_identity_and_limits(
                 inputs,

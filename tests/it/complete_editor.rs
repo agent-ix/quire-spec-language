@@ -18,18 +18,16 @@ fn ugly(profile: &str) -> String {
     )
 }
 
-fn identity(revision: &str) -> SourceIdentity {
+fn identity() -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: "test:editor".into(),
-        revision_namespace: "test".into(),
-        revision: revision.into(),
     }
 }
 
-fn binding(revision: &str, profile: &str) -> DocumentBinding {
+fn binding(profile: &str) -> DocumentBinding {
     DocumentBinding {
-        source: identity(revision),
+        source: identity(),
         profile: profile.to_owned(),
     }
 }
@@ -58,7 +56,7 @@ fn the_header_profile_catalog_admits_the_temporal_layer() {
     )
     .as_bytes();
     let parsed = complete::parse_with_catalog(
-        identity("temporal"),
+        identity(),
         "temporal.native",
         source,
         &catalog,
@@ -74,41 +72,24 @@ fn formatting_is_idempotent_and_preserves_semantic_tokens() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
     let parsed = parse(
-        identity("r1"),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
     )
     .unwrap();
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let first = format_document(
-        &parsed,
-        binding("r1", &profile),
-        &catalog,
-        Limits::default(),
-    )
-    .unwrap();
+    let first = format_document(&parsed, binding(&profile), &catalog, Limits::default()).unwrap();
     assert_eq!(first.edits.len(), 1);
-    let formatted = complete::apply_edits(
-        &parsed,
-        "r1",
-        identity("r2"),
-        &first.edits,
-        Limits::default(),
-    )
-    .unwrap();
+    let formatted =
+        complete::apply_edits(&parsed, identity(), &first.edits, Limits::default()).unwrap();
     assert!(formatted.is_admissible(), "{:?}", formatted.diagnostics());
     assert!(formatted.source().text().contains("nearest-even"));
     assert!(!formatted.source().text().contains("nearest - even"));
     assert!(formatted.source().text().contains("0x7fc00001"));
     assert!(!formatted.source().text().contains("0x 7"));
-    let second = format_document(
-        &formatted,
-        binding("r2", &profile),
-        &catalog,
-        Limits::default(),
-    )
-    .unwrap();
+    let second =
+        format_document(&formatted, binding(&profile), &catalog, Limits::default()).unwrap();
     assert!(second.edits.is_empty());
 }
 
@@ -118,50 +99,32 @@ fn lf_crlf_and_absent_final_newline_retain_format_correspondence() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
     let ugly = parse(
-        identity("seed"),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
     )
     .unwrap();
-    let seed = format_document(
-        &ugly,
-        binding("seed", &profile),
-        &catalog,
-        Limits::default(),
-    )
-    .unwrap();
+    let seed = format_document(&ugly, binding(&profile), &catalog, Limits::default()).unwrap();
     let canonical = seed.edits[0].replacement.clone();
     let variants = [
         canonical.clone(),
         canonical.replace('\n', "\r\n"),
         canonical.trim_end_matches('\n').to_string(),
     ];
-    for (index, source) in variants.into_iter().enumerate() {
-        let revision = format!("variant-{index}");
+    for source in variants {
         let parsed = parse(
-            identity(&revision),
+            identity(),
             "editor.native",
             source.as_bytes(),
             Limits::default(),
         )
         .unwrap();
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-        let response = format_document(
-            &parsed,
-            binding(&revision, &profile),
-            &catalog,
-            Limits::default(),
-        )
-        .unwrap();
-        let formatted = complete::apply_edits(
-            &parsed,
-            &revision,
-            identity(&format!("{revision}-formatted")),
-            &response.edits,
-            Limits::default(),
-        )
-        .unwrap();
+        let response =
+            format_document(&parsed, binding(&profile), &catalog, Limits::default()).unwrap();
+        let formatted =
+            complete::apply_edits(&parsed, identity(), &response.edits, Limits::default()).unwrap();
         for mapping in response.correspondence {
             assert_eq!(
                 parsed.source().slice(mapping.original),
@@ -177,7 +140,7 @@ fn incremental_and_full_reparse_publish_identical_language_outputs() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
     let parsed = parse(
-        identity("r1"),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
@@ -186,8 +149,7 @@ fn incremental_and_full_reparse_publish_identical_language_outputs() {
     let record = source.find("record Reading").unwrap();
     let incremental = complete::apply_edit(
         &parsed,
-        "r1",
-        identity("r2"),
+        identity(),
         SourceEdit {
             range: Span {
                 start: record - 1,
@@ -200,17 +162,17 @@ fn incremental_and_full_reparse_publish_identical_language_outputs() {
     .unwrap();
     assert!(incremental.is_incremental_result());
     let full = parse(
-        identity("r2"),
+        identity(),
         "editor.native",
         incremental.source().text().as_bytes(),
         Limits::default(),
     )
     .unwrap();
     assert_eq!(
-        analyze_document(&incremental, binding("r2", &profile), false, &catalog).unwrap(),
-        analyze_document(&full, binding("r2", &profile), false, &catalog).unwrap()
+        analyze_document(&incremental, binding(&profile), false, &catalog).unwrap(),
+        analyze_document(&full, binding(&profile), false, &catalog).unwrap()
     );
-    let snapshot = analyze_document(&full, binding("r2", &profile), false, &catalog).unwrap();
+    let snapshot = analyze_document(&full, binding(&profile), false, &catalog).unwrap();
     assert!(!snapshot.navigation.is_empty());
     assert!(snapshot
         .completions
@@ -228,18 +190,17 @@ fn non_lexical_whitespace_falls_back_and_matches_full_reparse() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
     let parsed = parse(
-        identity("r1"),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
     )
     .unwrap();
     let record = source.find("record Reading").unwrap();
-    for (revision, replacement) in [("nbsp", "\u{00a0}"), ("bare-cr", "\r")] {
+    for (_case, replacement) in [("nbsp", "\u{00a0}"), ("bare-cr", "\r")] {
         let edited = complete::apply_edit(
             &parsed,
-            "r1",
-            identity(revision),
+            identity(),
             SourceEdit {
                 range: Span {
                     start: record - 1,
@@ -252,15 +213,15 @@ fn non_lexical_whitespace_falls_back_and_matches_full_reparse() {
         .unwrap();
         assert!(!edited.is_incremental_result());
         let full = parse(
-            identity(revision),
+            identity(),
             "editor.native",
             edited.source().text().as_bytes(),
             Limits::default(),
         )
         .unwrap();
         assert_eq!(
-            analyze_document(&edited, binding(revision, &profile), false, &catalog).unwrap(),
-            analyze_document(&full, binding(revision, &profile), false, &catalog).unwrap()
+            analyze_document(&edited, binding(&profile), false, &catalog).unwrap(),
+            analyze_document(&full, binding(&profile), false, &catalog).unwrap()
         );
     }
 }
@@ -271,14 +232,14 @@ fn lowered_parse_limits_force_full_incremental_validation() {
     let (_, profile) = catalog();
     let source = ugly(&profile);
     let parsed = parse(
-        identity("r1"),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
     )
     .unwrap();
     let record = source.find("record Reading").unwrap();
-    for (revision, limits) in [
+    for (_case, limits) in [
         (
             "node-limit",
             Limits {
@@ -301,17 +262,10 @@ fn lowered_parse_limits_force_full_incremental_validation() {
             },
             replacement: " ".into(),
         };
-        let incremental =
-            complete::apply_edit(&parsed, "r1", identity(revision), edit, limits).unwrap_err();
+        let incremental = complete::apply_edit(&parsed, identity(), edit, limits).unwrap_err();
         let mut candidate = source.clone();
         candidate.insert(record - 1, ' ');
-        let full = parse(
-            identity(revision),
-            "editor.native",
-            candidate.as_bytes(),
-            limits,
-        )
-        .unwrap_err();
+        let full = parse(identity(), "editor.native", candidate.as_bytes(), limits).unwrap_err();
         assert_eq!(incremental.code, full.code);
         assert_eq!(incremental.region, full.region);
     }
@@ -323,14 +277,15 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
     let parsed = parse(
-        identity("r1"),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
     )
     .unwrap();
-    let unbound =
-        analyze_document(&parsed, binding("stale", &profile), false, &catalog).unwrap_err();
+    let mut stale = binding(&profile);
+    stale.source.identity = "test:stale".into();
+    let unbound = analyze_document(&parsed, stale, false, &catalog).unwrap_err();
     assert_eq!(
         (unbound.code, unbound.cause),
         (
@@ -339,7 +294,7 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
         )
     );
     assert_eq!(unbound.region, None);
-    let mut wrong_profile = binding("r1", &profile);
+    let mut wrong_profile = binding(&profile);
     wrong_profile.profile = "unknown".to_owned();
     let unknown = format_document(&parsed, wrong_profile, &catalog, Limits::default()).unwrap_err();
     assert_eq!(
@@ -349,7 +304,7 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
             CompleteCause::UnsupportedSelection
         )
     );
-    let cancelled = analyze_document(&parsed, binding("r1", &profile), true, &catalog).unwrap_err();
+    let cancelled = analyze_document(&parsed, binding(&profile), true, &catalog).unwrap_err();
     assert_eq!(
         (cancelled.code, cancelled.cause),
         (CompleteCode::Cancelled, CompleteCause::CallerCancelled)
@@ -361,7 +316,7 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
     let parsed = parse(
-        identity("r1"),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
@@ -370,7 +325,7 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let refusal = format_document(
         &parsed,
-        binding("r1", &profile),
+        binding(&profile),
         &catalog,
         Limits {
             source_bytes: source.len(),
@@ -405,7 +360,7 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
         1,
     );
     let parsed = parse(
-        identity(revision),
+        identity(),
         "editor.native",
         source.as_bytes(),
         Limits::default(),
@@ -430,19 +385,14 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
     };
 
     assert_failure(
-        analyze_document(&parsed, binding(revision, &profile), false, &catalog)
+        analyze_document(&parsed, binding(&profile), false, &catalog)
             .unwrap_err()
             .as_ref(),
     );
     assert_failure(
-        format_document(
-            &parsed,
-            binding(revision, &profile),
-            &catalog,
-            Limits::default(),
-        )
-        .unwrap_err()
-        .as_ref(),
+        format_document(&parsed, binding(&profile), &catalog, Limits::default())
+            .unwrap_err()
+            .as_ref(),
     );
 
     let record = source.find(" record Reading").unwrap() + 1;
@@ -456,8 +406,7 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
     assert_failure(
         complete::apply_edit_with_catalog(
             &parsed,
-            revision,
-            identity(&format!("{revision}-next")),
+            identity(),
             edit.clone(),
             &catalog,
             Limits::default(),
@@ -466,16 +415,9 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
         .as_ref(),
     );
     assert_failure(
-        complete::apply_edit_with_catalog(
-            &parsed,
-            "superseded-revision",
-            identity(&format!("{revision}-other")),
-            edit,
-            &catalog,
-            Limits::default(),
-        )
-        .unwrap_err()
-        .as_ref(),
+        complete::apply_edit_with_catalog(&parsed, identity(), edit, &catalog, Limits::default())
+            .unwrap_err()
+            .as_ref(),
     );
 }
 
@@ -491,27 +433,21 @@ fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
         ),
     ] {
         let parsed = parse(
-            identity(revision),
+            identity(),
             "editor.native",
             source.as_bytes(),
             Limits::default(),
         )
         .unwrap();
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-        let unrestricted = format_document(
-            &parsed,
-            binding(revision, &profile),
-            &catalog,
-            Limits::default(),
-        )
-        .unwrap();
+        let unrestricted =
+            format_document(&parsed, binding(&profile), &catalog, Limits::default()).unwrap();
         let formatted = &unrestricted.edits[0].replacement;
         let exact = Limits {
             source_bytes: formatted.len(),
             ..Limits::default()
         };
-        let exact_response =
-            format_document(&parsed, binding(revision, &profile), &catalog, exact).unwrap();
+        let exact_response = format_document(&parsed, binding(&profile), &catalog, exact).unwrap();
         assert_eq!(
             exact_response.edits[0].replacement, *formatted,
             "{revision}"
@@ -519,7 +455,7 @@ fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
 
         let one_short = format_document(
             &parsed,
-            binding(revision, &profile),
+            binding(&profile),
             &catalog,
             Limits {
                 source_bytes: formatted.len() - 1,

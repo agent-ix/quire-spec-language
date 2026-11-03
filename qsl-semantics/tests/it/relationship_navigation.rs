@@ -287,7 +287,7 @@ pub(crate) fn check_declarations(
     .expect("the model admits");
     let built = crate::model_operations::parse_and_build(&unit);
     let raw = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "tc-1031", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "tc-1031"),
         "unit.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),

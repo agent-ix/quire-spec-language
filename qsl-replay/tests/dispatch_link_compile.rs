@@ -145,7 +145,7 @@ fn compile(
     limits: SpineLimits,
 ) -> Result<CheckedUnit, Box<CompileRefusal>> {
     let (text, packages) = unit(document, declarations);
-    let source = SourceIdentity::new("a", "u", "git", "1");
+    let source = SourceIdentity::new("a", "u");
     let cancel = Cancel::new();
     let refusal = |failure| {
         spine::refusal_or_fault(failure).expect("the front end does not fault on this source")
@@ -192,7 +192,7 @@ fn compile_text_with_execution_points(
     execution_points: &spine::StateClauseExecutionPoints,
     limits: SpineLimits,
 ) -> Result<CheckedUnit, Box<CompileRefusal>> {
-    let source = SourceIdentity::new("a", "u", "git", "1");
+    let source = SourceIdentity::new("a", "u");
     let cancel = Cancel::new();
     let refusal = |failure| {
         spine::refusal_or_fault(failure).expect("the front end does not fault on this source")
@@ -876,7 +876,7 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     let emit = || {
         qsl_replay::compile_package(
             qsl_replay::CompileUnit {
-                source: SourceIdentity::new("a", "u", "git", "1"),
+                source: SourceIdentity::new("a", "u"),
                 package_name: "fixture".to_owned(),
                 path: "unit.native",
                 bytes: text.as_bytes(),
@@ -1366,8 +1366,6 @@ fn run_pre(
             identity: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "pre".to_owned(),
-                revision_namespace: "ns".to_owned(),
-                revision: "1".to_owned(),
             },
             environment,
             populations: BTreeMap::new(),
@@ -1473,7 +1471,7 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
         supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
     };
     let result = qsl_replay::run_with_requirements(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
@@ -1503,7 +1501,7 @@ fn a_synthesized_owners_application_item_is_not_replayable() {
     );
     let document = add_package();
     let (text, packages) = unit(&document, &declarations);
-    let source = SourceIdentity::new("a", "u", "git", "1");
+    let source = SourceIdentity::new("a", "u");
     let cancel = Cancel::new();
     let limits = SpineLimits::default();
     let parsed = spine::parse(

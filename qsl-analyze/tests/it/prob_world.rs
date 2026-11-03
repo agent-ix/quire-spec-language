@@ -343,7 +343,7 @@ impl World {
             model.body
         );
         let parsed = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("test", "fr-188", "fixture", "1"),
+            qsl_foundation::SourceIdentity::new("test", "fr-188"),
             "fr-188.native",
             unit.as_bytes(),
             qsl_cst::Limits::default(),
@@ -378,8 +378,7 @@ impl World {
             let identity = format!("s{index}");
             let snapshot = json!({
                 "format": "quire.state.snapshot/v1",
-                "identity": {"authority": "test", "identity": identity,
-                    "revision_namespace": "fixture", "revision": "fixture:1"},
+                "identity": {"authority": "test", "identity": identity},
                 "observation": "current", "model": header,
                 "anchor": {"kind": "initialization", "name": "start"},
                 "populations": [{"population": model.ident(model.population), "complete": true,
@@ -399,8 +398,6 @@ impl World {
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
                 identity,
-                revision_namespace: "fixture".to_owned(),
-                revision: "fixture:1".to_owned(),
             });
         }
         let population = quire_checked::key::DeclarationKey {

@@ -49,12 +49,7 @@ fn population_identity() -> String {
 /// against it (`tests/it/config_version_spine.rs`'s step 6 tests). One
 /// function, not three copies of the same literal (SR-768 FND-005).
 pub fn unit_identity() -> qsl_foundation::SourceIdentity {
-    qsl_foundation::SourceIdentity::new(
-        "agent-ix",
-        "ix://example/config-version/spine/unit",
-        "example",
-        "1",
-    )
+    qsl_foundation::SourceIdentity::new("agent-ix", "ix://example/config-version/spine/unit")
 }
 
 /// FR-108's own `1-draft` unit text ([`unit::unit_text`]) selecting
@@ -65,10 +60,8 @@ pub fn unit_text() -> String {
 
 fn identity_json(case: Case, role: &str) -> Value {
     json!({
-        "authority": "agent-ix",
-        "identity": format!("ix://example/config-version/spine/{role}/{}", case.id()),
-        "revision_namespace": "example",
-        "revision": "1",
+    "authority": "agent-ix",
+    "identity": format!("ix://example/config-version/spine/{role}/{}", case.id()),
     })
 }
 
@@ -76,8 +69,6 @@ fn document_ref(identity: &Value) -> DocumentRef {
     DocumentRef {
         authority: identity["authority"].as_str().unwrap().to_owned(),
         identity: identity["identity"].as_str().unwrap().to_owned(),
-        revision_namespace: identity["revision_namespace"].as_str().unwrap().to_owned(),
-        revision: identity["revision"].as_str().unwrap().to_owned(),
     }
 }
 
@@ -123,10 +114,8 @@ fn snapshot_bytes(case: Case, role: &str, rows: &[Row], complete: bool) -> Vec<u
 /// modifies exactly `versionNumber`; `created`/`deleted` are always empty
 /// (no case creates or deletes an object).
 fn invocation_bytes(case: Case, self_key: &str, pre: &DocumentRef, post: &DocumentRef) -> Vec<u8> {
-    let identity = |label: &DocumentRef| {
-        json!({"authority": label.authority, "identity": label.identity,
-            "revision_namespace": label.revision_namespace, "revision": label.revision})
-    };
+    let identity =
+        |label: &DocumentRef| json!({"authority": label.authority, "identity": label.identity});
     json!({
         "format": "quire.state.invocation/v1",
         "identity": identity_json(case, "invocation"),

@@ -27,7 +27,7 @@ use super::request_builder::{check, package, registry, HEADER};
 fn try_assemble(declarations: &str) -> Result<PackageDeclarations, AssemblyRefusal> {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -115,12 +115,7 @@ fn config_graph(declaration: &str) -> CheckedGraph {
          {declaration}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new(
-            "agent-ix",
-            "test:fr334-type-vectors",
-            "fixture",
-            "fixture:1",
-        ),
+        SourceIdentity::new("agent-ix", "test:fr334-type-vectors"),
         "types.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -245,7 +240,7 @@ fn an_inverted_bound_refuses_and_a_non_numeric_bound_fails_at_s1() {
 
     let text = format!("{HEADER}function f using v(s: Set<Integer>[0, x]): Integer pure {{ 0 }}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

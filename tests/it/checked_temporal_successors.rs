@@ -45,7 +45,7 @@ fn try_checked_activation(
             .expect("checked model fixture");
     let source = temporal_source_with_activation(body, temporal::EVENT_POSITION, activation);
     crate::support::front_end::checked(
-        SourceIdentity::new("agent-ix", identity, "fixture", "1"),
+        SourceIdentity::new("agent-ix", identity),
         "checked-temporal-activation.native",
         source.as_bytes(),
         &packages,
@@ -62,7 +62,7 @@ fn checked_named(identity: &str, body: &str, profile: &str) -> qsl_replay::spine
         qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
             .expect("checked model fixture");
     crate::support::front_end::checked(
-        SourceIdentity::new("agent-ix", identity, "fixture", "1"),
+        SourceIdentity::new("agent-ix", identity),
         "checked-temporal.native",
         temporal_source(body, profile).as_bytes(),
         &packages,
@@ -91,7 +91,7 @@ temporal Due using t over (view: Config::ConfigVersion) clock "model-time" on or
 }
 "#;
     crate::support::front_end::checked(
-        SourceIdentity::new("agent-ix", "test:checked-timed-mapping", "fixture", "1"),
+        SourceIdentity::new("agent-ix", "test:checked-timed-mapping"),
         "checked-timed-mapping.native",
         source.as_bytes(),
         &packages,

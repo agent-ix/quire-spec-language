@@ -33,7 +33,7 @@ struct Unit {
 }
 
 fn identity() -> qsl_foundation::SourceIdentity {
-    qsl_foundation::SourceIdentity::new("agent-ix", "bind-fixture", "git", "1")
+    qsl_foundation::SourceIdentity::new("agent-ix", "bind-fixture")
 }
 
 fn compile_source(source: String, packages: qsl_semantics::model::intake::PackageInput) -> Unit {
@@ -924,7 +924,7 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
 fn tc_1053_step_1_a_unit_importing_a_library_binds() {
     let geometry = crate::spine::SuppliedLibrary {
         identity: "test/geometry".to_owned(),
-        source: qsl_foundation::SourceIdentity::new("a", "geometry", "git", "1"),
+        source: qsl_foundation::SourceIdentity::new("a", "geometry"),
         path: "geometry.native".to_owned(),
         bytes: format!("{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n")
             .into_bytes(),

@@ -90,8 +90,6 @@ fn query_model_with_denominator(maximum: u32, denominator: u32) -> NativeModel {
         SourceIdentity {
             authority: "test".into(),
             identity: "model:query-domains".into(),
-            revision_namespace: "test".into(),
-            revision: "authored".into(),
         },
         "query-domains.json",
         &bytes,
@@ -604,7 +602,6 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
     );
     assert_eq!(cause.diagnostic.phase, qsl_foundation::Phase::Link);
     assert_eq!(cause.diagnostic.source.identity, "model:ExcessQueryMaximum");
-    assert_eq!(cause.diagnostic.source.revision, "authored");
     assert_eq!(cause.diagnostic.path, "ExcessQueryMaximum.json");
     assert_eq!(
         &cause.diagnostic.source,

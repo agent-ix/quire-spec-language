@@ -11,7 +11,7 @@ fn source(body: &str) -> String {
 
 fn parse(text: &str, limits: Limits) -> ParsedSource {
     qsl_cst::parse(
-        SourceIdentity::new("test", "model-syntax", "test", "1"),
+        SourceIdentity::new("test", "model-syntax"),
         "model-syntax.native",
         text.as_bytes(),
         limits,
@@ -274,7 +274,7 @@ fn model_sources_keep_the_existing_budget_refusals() {
         Limits::default().with_work_units(0),
     ] {
         let diagnostic = match qsl_cst::parse(
-            SourceIdentity::new("test", "model-syntax", "test", "1"),
+            SourceIdentity::new("test", "model-syntax"),
             "model-syntax.native",
             text.as_bytes(),
             limits,
@@ -290,7 +290,7 @@ fn model_sources_keep_the_existing_budget_refusals() {
         assert!(diagnostic.limit().is_some());
     }
     let refusal = qsl_cst::parse(
-        SourceIdentity::new("test", "model-syntax", "test", "1"),
+        SourceIdentity::new("test", "model-syntax"),
         "model-syntax.native",
         text.as_bytes(),
         Limits::default().with_source_bytes(text.len() - 1),

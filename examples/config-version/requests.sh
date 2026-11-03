@@ -10,7 +10,7 @@ set -eu
 dir=$1
 clause=${2:-ParentOrder}
 ref() {
-  printf '{"file":"%s","authority":"agent-ix","identity":"example:%s","revision_namespace":"fixture","revision":"1","document":"%s","formal_revision":1}' \
+  printf '{"file":"%s","authority":"agent-ix","identity":"example:%s","document":"%s","formal_revision":1}' \
     "$1" "$1" "$2"
 }
 models="[{\"format\":\"semantic-ir/2.0.0\",\"source\":$(ref spine-model.semantic-ir.json SpineModel)}]"

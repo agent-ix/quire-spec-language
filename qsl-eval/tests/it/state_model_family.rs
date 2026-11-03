@@ -147,7 +147,7 @@ fn declarations_over(
     let selection = view.model_selection();
     let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nprofile p = \"quire.protocol.finite-global/v1\";\nmodel M = {:?};\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity);
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "sm1"),
         "sm1.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -510,7 +510,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
         selection.identity,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "sm1"),
         "sm1.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -700,8 +700,7 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
     let bytes = serde_json::to_vec(&serde_json::json!({
         "format": "quire.state.snapshot/v1",
         "identity": {
-            "authority": "test", "identity": "sm1-snapshot",
-            "revision_namespace": "fixture", "revision": "1"
+            "authority": "test", "identity": "sm1-snapshot"
         },
         "observation": "pre",
         "model": {
@@ -722,8 +721,6 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
     let snapshot = DocumentRef {
         authority: "test".to_owned(),
         identity: "sm1-snapshot".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     };
     let snapshots = BTreeMap::from([(
         qsl_semantics::model::observation::document_reference(&bytes)
@@ -868,7 +865,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
         selection.identity,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
+        qsl_foundation::SourceIdentity::new("test", "sm1"),
         "sm1.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

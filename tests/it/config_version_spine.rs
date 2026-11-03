@@ -207,7 +207,6 @@ fn current_clause_request() -> Value {
         json!({
             "file": file,
             "authority": "agent-ix", "identity": format!("test:fr-312:{file}"),
-            "revision_namespace": "fixture", "revision": "1",
             "document": document, "formal_revision": 1
         })
     };

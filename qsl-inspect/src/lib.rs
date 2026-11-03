@@ -409,7 +409,7 @@ mod tests {
     fn emitted_spine_package() -> (qsl_package::CheckedPackage, qsl_package::Emission) {
         const FIXTURE: &[u8] = include_bytes!("../../tests/fixtures/spine-compile.native");
         let parsed = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("agent-ix", "test:inspect", "fixture", "fixture:1"),
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:inspect"),
             "program.native",
             FIXTURE,
             qsl_cst::Limits::default(),

@@ -831,10 +831,8 @@ mod tests {
 
     /// The whole fixture unit, as the claim declaration's region.
     fn claim_region() -> qsl_foundation::source::provenance::SourceRegion {
-        let source = crate::check::admitted_source(
-            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-            b"claim",
-        );
+        let source =
+            crate::check::admitted_source(qsl_foundation::SourceIdentity::new("a", "u"), b"claim");
         qsl_foundation::source::provenance::SourceRegion::new(source, 0, 5).unwrap()
     }
 

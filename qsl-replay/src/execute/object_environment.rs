@@ -196,8 +196,6 @@ pub(super) fn admit(
     let selected = DocumentRef {
         authority: labels.authority.clone(),
         identity: labels.identity.clone(),
-        revision_namespace: labels.revision_namespace.clone(),
-        revision: labels.revision.clone(),
     };
     let held: Vec<ObjectReference> = references
         .iter()

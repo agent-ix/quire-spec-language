@@ -212,7 +212,7 @@ impl qsl_foundation::SettingLimits for ObservationLimits {
 // Document identity and selection
 // ---------------------------------------------------------------------------
 
-/// FR-001's four source labels, naming one admitted document (FR-106's
+/// FR-001's two source labels, naming one admitted document (FR-106's
 /// `DocumentRef`). A document is addressed by these labels alone.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DocumentRef {
@@ -220,10 +220,6 @@ pub struct DocumentRef {
     pub authority: String,
     /// The `identity` label.
     pub identity: String,
-    /// The `revision_namespace` label.
-    pub revision_namespace: String,
-    /// The `revision` label.
-    pub revision: String,
 }
 
 /// The anchor an invariant's current snapshot names: `{kind, name}`.

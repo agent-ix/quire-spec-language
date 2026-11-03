@@ -160,15 +160,11 @@ impl TraceInput {
 
 fn document_identity(document: &DocumentRef) -> String {
     format!(
-        "{}:{}{}:{}{}:{}{}:{}",
+        "{}:{}{}:{}",
         document.authority.len(),
         document.authority,
         document.identity.len(),
         document.identity,
-        document.revision_namespace.len(),
-        document.revision_namespace,
-        document.revision.len(),
-        document.revision,
     )
 }
 
@@ -243,13 +239,10 @@ pub struct TimestampedObservation {
     pub order_key: Option<TimestampedOrderKey>,
 }
 
-/// The identity of an observation's document for ordering (FR-106): its four
+/// The identity of an observation's document for ordering (FR-106): its two
 /// labels joined by NUL, which orders as the labels do field by field.
 pub(super) fn observation_identity(document: &DocumentRef) -> String {
-    format!(
-        "{}\0{}\0{}\0{}",
-        document.authority, document.identity, document.revision_namespace, document.revision
-    )
+    format!("{}\0{}", document.authority, document.identity)
 }
 
 /// FR-501 "Canonical order": ascending stamp, then ascending order-authority

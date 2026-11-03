@@ -20,8 +20,6 @@ fn parse(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:protocol-memory-refinement".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "protocol.native",
         text.as_bytes(),

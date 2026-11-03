@@ -18,8 +18,6 @@ fn parse(text: &str) -> ParsedSource {
         SourceIdentity {
             authority: "test".into(),
             identity: "test:taskset".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
         },
         "taskset.native",
         text.as_bytes(),

@@ -14,77 +14,51 @@ pub struct SourceEdit {
     pub replacement: String,
 }
 
-/// Apply one edit and reparse under a new exact source revision.
+/// Apply one edit and reparse under the source's own identity.
 pub fn apply_edit(
     parsed: &ParsedSource,
-    expected_revision: &str,
     new_identity: SourceIdentity,
     edit: SourceEdit,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    apply_edits_selected(
-        parsed,
-        expected_revision,
-        new_identity,
-        &[edit],
-        limits,
-        None,
-    )
+    apply_edits_selected(parsed, new_identity, &[edit], limits, None)
 }
 
 /// Apply one edit and reparse with the same exact definition catalog used to
 /// validate selected profiles.
 pub fn apply_edit_with_catalog(
     parsed: &ParsedSource,
-    expected_revision: &str,
     new_identity: SourceIdentity,
     edit: SourceEdit,
     catalog: &ProfileCatalog,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    apply_edits_selected(
-        parsed,
-        expected_revision,
-        new_identity,
-        &[edit],
-        limits,
-        Some(catalog),
-    )
+    apply_edits_selected(parsed, new_identity, &[edit], limits, Some(catalog))
 }
 
-/// Apply ordered, non-overlapping edits and reparse under a new revision.
+/// Apply ordered, non-overlapping edits and reparse under the source's own identity.
 pub fn apply_edits(
     parsed: &ParsedSource,
-    expected_revision: &str,
     new_identity: SourceIdentity,
     edits: &[SourceEdit],
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    apply_edits_selected(parsed, expected_revision, new_identity, edits, limits, None)
+    apply_edits_selected(parsed, new_identity, edits, limits, None)
 }
 
 /// Apply ordered edits and reparse with exact profile-catalog validation.
 pub fn apply_edits_with_catalog(
     parsed: &ParsedSource,
-    expected_revision: &str,
     new_identity: SourceIdentity,
     edits: &[SourceEdit],
     catalog: &ProfileCatalog,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    apply_edits_selected(
-        parsed,
-        expected_revision,
-        new_identity,
-        edits,
-        limits,
-        Some(catalog),
-    )
+    apply_edits_selected(parsed, new_identity, edits, limits, Some(catalog))
 }
 
 fn apply_edits_selected(
     parsed: &ParsedSource,
-    expected_revision: &str,
     new_identity: SourceIdentity,
     edits: &[SourceEdit],
     limits: Limits,
@@ -105,22 +79,15 @@ fn apply_edits_selected(
             message,
         )
     };
-    // An edit keeps the source's authority, identity and revision
-    // namespace, and names a different revision (FR-001's four labels).
-    let old = source.identity();
-    if old.revision != expected_revision
-        || new_identity.authority != old.authority
-        || new_identity.identity != old.identity
-        || new_identity.revision_namespace != old.revision_namespace
-        || (&new_identity.revision_namespace, &new_identity.revision)
-            == (&old.revision_namespace, &old.revision)
-    {
+    // An edit is made against the one `Source` it names and reparses under
+    // that source's own two labels (FR-001-AC-12).
+    if new_identity != *source.identity() {
         return Err(qsl_cst::diagnostic::error_without_region(
             source,
             CompleteCode::InvalidSourceMap,
             CompleteCause::Host(HostCause::EditPredecessor),
             Phase::SourceMap,
-            "incremental edit revision does not match the exact source predecessor",
+            "incremental edit identity does not match the exact source predecessor",
         ));
     }
     let mut previous = None;

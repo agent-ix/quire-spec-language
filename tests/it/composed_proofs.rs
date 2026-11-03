@@ -536,7 +536,6 @@ fn source_labels_revision_and_path_are_part_of_exact_correspondence() {
         |types, bindings| {
             for (changed, expected) in [
                 ("identity", CorrespondenceError::MissingSource),
-                ("revision", CorrespondenceError::MissingSource),
                 ("path", CorrespondenceError::ForeignSource),
             ] {
                 let mut offered = bindings.to_vec();
@@ -545,7 +544,6 @@ fn source_labels_revision_and_path_are_part_of_exact_correspondence() {
                 let mut path = original.path().to_owned();
                 match changed {
                     "identity" => identity.identity.push_str(":different"),
-                    "revision" => identity.revision.push_str(":different"),
                     "path" => path.push_str(".different"),
                     _ => unreachable!(),
                 }
@@ -955,8 +953,6 @@ fn composed_discharge_does_not_upgrade_the_historical_model_boundary() {
             SourceIdentity {
                 authority: "test".into(),
                 identity: "test:historical-proof-boundary".into(),
-                revision_namespace: "test".into(),
-                revision: "1".into(),
             },
             "historical.native",
             text.as_bytes(),

@@ -18,7 +18,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 fn parse(declarations: &str) -> (String, ParsedSource) {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -706,7 +706,7 @@ fn s1_bounds_the_body_and_s2_builds_it() {
     let nodes = parsed.cst().nodes().len();
     let text = format!("{HEADER}{declaration}\n");
     let refusal = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default().with_nodes(nodes - 1),
@@ -1161,7 +1161,7 @@ fn deep_bodies_build_clone_compare_format_and_drop_on_a_small_stack() {
                     "{HEADER}function f using v(a: Boolean, x: Integer): Integer pure {{ {body} }}\n"
                 );
                 let parsed = qsl_cst::parse(
-                    SourceIdentity::new("a", "u", "git", "1"),
+                    SourceIdentity::new("a", "u"),
                     "unit.native",
                     text.as_bytes(),
                     qsl_cst::Limits::default()
@@ -1202,7 +1202,7 @@ fn a_deep_parameter_type_builds_clones_compares_formats_and_drops_on_a_small_sta
                 ">".repeat(DEPTH)
             );
             let parsed = qsl_cst::parse(
-                SourceIdentity::new("a", "u", "git", "1"),
+                SourceIdentity::new("a", "u"),
                 "unit.native",
                 text.as_bytes(),
                 qsl_cst::Limits::default()

@@ -71,8 +71,6 @@ fn labelled(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "tc235".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 

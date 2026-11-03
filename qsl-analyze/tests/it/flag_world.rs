@@ -338,8 +338,7 @@ impl World {
                 .collect();
             let document = json!({
                 "format": "quire.state.snapshot/v1",
-                "identity": {"authority": "test", "identity": name,
-                    "revision_namespace": "fixture", "revision": "fixture:1"},
+                "identity": {"authority": "test", "identity": name},
                 "observation": "current", "model": header,
                 "anchor": {"kind": "initialization", "name": "start"},
                 "populations": [
@@ -359,8 +358,6 @@ impl World {
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
                 identity: name,
-                revision_namespace: "fixture".to_owned(),
-                revision: "fixture:1".to_owned(),
             });
         }
         Self {

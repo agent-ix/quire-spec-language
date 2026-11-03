@@ -57,7 +57,7 @@ fn view_of(
 fn library(identity: &str, name: &str, body: &str) -> SuppliedLibrary {
     SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new("a", name, "git", "1"),
+        source: SourceIdentity::new("a", name),
         path: format!("{name}.native"),
         bytes: format!("{HEADER}{body}").into_bytes(),
     }
@@ -74,7 +74,7 @@ fn compile_as(
     dependencies: &DependencyInput,
 ) -> Result<ComposedUnit, Box<CompileRefusal>> {
     compose(
-        SourceIdentity::new("a", identity, "git", "1"),
+        SourceIdentity::new("a", identity),
         &format!("{identity}.native"),
         source.as_bytes(),
         &BTreeMap::new(),
@@ -139,14 +139,13 @@ fn selection_and_dependency_input_refusals() {
         twice,
         DependencyInputRefusal::DuplicateIdentity {
             identity: lib("test/geometry"),
-            first: Box::new(SourceIdentity::new("a", "geometry", "git", "1")),
-            second: Box::new(SourceIdentity::new("a", "geometry-2", "git", "1")),
+            first: Box::new(SourceIdentity::new("a", "geometry")),
+            second: Box::new(SourceIdentity::new("a", "geometry-2")),
         }
     );
 
-    // Two libraries whose sources share one owner, at different revisions.
-    let mut same_owner = library("test/other", "geometry", H);
-    same_owner.source.revision = "2".to_owned();
+    // Two libraries whose sources share one owner.
+    let same_owner = library("test/other", "geometry", H);
     let shared = DependencyInput::new(vec![geometry.clone(), same_owner])
         .expect_err("one owner per compile");
     assert_eq!(shared.cause(), Some("conflicting-definition"));
@@ -397,7 +396,7 @@ fn compile_under(
     dependencies: DependencyLimits,
 ) -> Result<ComposedUnit, Box<CompileRefusal>> {
     compose(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "u.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -550,7 +549,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
         import("test/other", "o"),
     ));
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "u.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -656,7 +655,7 @@ fn an_imported_name_whose_signature_is_package_dependent_refuses() {
     };
     let declaration = import("test/geometry", "g");
     let dependencies = input(vec![geometry]);
-    let u = SourceIdentity::new("a", "u", "git", "1");
+    let u = SourceIdentity::new("a", "u");
     for (callee, body) in [
         (
             "g::mk",

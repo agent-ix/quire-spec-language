@@ -888,8 +888,6 @@ fn observation(snapshot: Snapshot) -> ObservationIdentity {
     ObservationIdentity {
         authority: "test".to_owned(),
         identity: snapshot.identity().to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 

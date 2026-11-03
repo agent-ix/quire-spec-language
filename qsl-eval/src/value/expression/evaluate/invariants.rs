@@ -164,8 +164,6 @@ fn claim_level(machine: &mut Machine<'_, '_>) {
         super::super::s6a::separation::ObservationIdentity {
             authority: "test".to_owned(),
             identity: "producer-probe".to_owned(),
-            revision_namespace: "test".to_owned(),
-            revision: "1".to_owned(),
         },
         None,
     ));
@@ -582,7 +580,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
     let span = qsl_foundation::Span { start: 0, end: 4 };
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::admitted_source(
-            qsl_foundation::SourceIdentity::new("a", "callable", "git", "1"),
+            qsl_foundation::SourceIdentity::new("a", "callable"),
             b"true",
         ),
         "fixture:callable".to_owned(),
@@ -834,8 +832,6 @@ fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantif
             ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "producer-probe".to_owned(),
-                revision_namespace: "test".to_owned(),
-                revision: "1".to_owned(),
             },
             reference(),
             "items".to_owned(),

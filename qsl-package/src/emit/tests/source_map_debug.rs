@@ -158,7 +158,7 @@ fn source_package_for_debug(body: &str) -> CheckedPackage {
          function f using v(a: Boolean, x: Integer): Integer pure {{ {body} }}\n"
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

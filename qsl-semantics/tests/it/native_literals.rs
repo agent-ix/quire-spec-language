@@ -29,7 +29,7 @@ const MAX: &str = "170141183460469231731687303715884105727";
 fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "literals", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "literals"),
         "literals.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

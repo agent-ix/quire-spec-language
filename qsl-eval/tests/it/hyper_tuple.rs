@@ -56,7 +56,7 @@ fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str)
          forall trace a of M forall trace b of M {alignment} {{ {body} }}\n",
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

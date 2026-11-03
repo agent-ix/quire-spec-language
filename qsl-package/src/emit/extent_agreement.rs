@@ -581,7 +581,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2>) {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

@@ -50,7 +50,7 @@ fn fixture_with_raised_limits(body: &str) -> Fixture {
         ..SpineLimits::default()
     };
     let compiled = compose(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         IDENTITY,
         source.as_bytes(),
         &BTreeMap::new(),
@@ -1089,7 +1089,7 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
     );
     let admitted = crate::compile_admitted(
         crate::CompileUnit {
-            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            source: SourceIdentity::new(AUTHORITY, IDENTITY),
             package_name: "fixture".to_owned(),
             path: IDENTITY,
             bytes: fixture.source.as_bytes(),
@@ -1144,7 +1144,7 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
     );
     let admitted = crate::compile_admitted(
         crate::CompileUnit {
-            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            source: SourceIdentity::new(AUTHORITY, IDENTITY),
             package_name: "fixture".to_owned(),
             path: IDENTITY,
             bytes: fixture.source.as_bytes(),
@@ -1192,7 +1192,7 @@ fn admitted_unit_ids_are_the_units_replay_converts_against() {
     );
     let admitted = crate::compile_admitted(
         crate::CompileUnit {
-            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            source: SourceIdentity::new(AUTHORITY, IDENTITY),
             package_name: "fixture".to_owned(),
             path: IDENTITY,
             bytes: fixture.source.as_bytes(),

@@ -37,7 +37,7 @@ fn assemble_document(document: &Value, alias: &str, declarations: &str) -> Packa
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "child-composite", "fixture", "fixture:1"),
+        SourceIdentity::new("test", "child-composite"),
         "child-composite.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -558,15 +558,12 @@ fn admit_order_usage(
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "orders".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     };
     let text = serde_json::to_string(&json!({
         "format": "quire.state.snapshot/v1",
         "identity": {
             "authority": label.authority, "identity": label.identity,
-            "revision_namespace": label.revision_namespace, "revision": label.revision,
-        },
+            },
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {

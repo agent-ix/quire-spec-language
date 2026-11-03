@@ -29,8 +29,6 @@ fn identity() -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: "test:deep".into(),
-        revision_namespace: "test".into(),
-        revision: "1".into(),
     }
 }
 
@@ -232,7 +230,7 @@ fn cli_parse_takes_caller_limits() {
     .expect("write source");
     let parse = |extra: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-            .args(["parse", "test", "test:deep", "test", "1"])
+            .args(["parse", "test", "test:deep"])
             .arg(&file)
             .args(extra)
             .output()

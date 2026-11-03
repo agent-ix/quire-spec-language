@@ -87,8 +87,6 @@ fn refused_parameter(stopped: &argument::Stopped) -> Option<usize> {
 
 const AUTHORITY: &str = "agent-ix";
 const IDENTITY: &str = "test:replay";
-const NAMESPACE: &str = "git";
-const REVISION: &str = "r1";
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -105,7 +103,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 
 fn spine(source: &str, packages: &qsl_semantics::model::intake::PackageInput) -> ComposedUnit {
     compose(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         IDENTITY,
         source.as_bytes(),
         packages,
@@ -169,12 +167,7 @@ fn request(
     ReplayRequestWire {
         profile_selections: vec![],
         package_name: "fixture".to_owned(),
-        sources: vec![(
-            AUTHORITY.to_owned(),
-            IDENTITY.to_owned(),
-            NAMESPACE.to_owned(),
-            REVISION.to_owned(),
-        )],
+        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),
@@ -410,7 +403,7 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package() {
     let source = proved();
     let limits = SpineLimits::default();
     let cancel = quire_exact::Cancel::new();
-    let identity = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+    let identity = SourceIdentity::new(AUTHORITY, IDENTITY);
     let packages = BTreeMap::new();
     let parsed = crate::spine::parse(
         &crate::spine::ParseRequest {
@@ -1003,12 +996,8 @@ fn tc_444_a_blank_label_refuses_at_the_source_stage() {
 fn tc_444_the_package_reference_names_one_source() {
     let other = b"language \"ix:native\" edition \"1-draft\";\n".to_vec();
     let mut two = small(7);
-    two.sources.push((
-        AUTHORITY.to_owned(),
-        "test:other".to_owned(),
-        NAMESPACE.to_owned(),
-        REVISION.to_owned(),
-    ));
+    two.sources
+        .push((AUTHORITY.to_owned(), "test:other".to_owned()));
     two.byte_provision
         .push((AUTHORITY.to_owned(), "test:other".to_owned(), other));
     assert!(matches!(
@@ -1056,15 +1045,9 @@ fn units_source(body: &str) -> String {
 
 const BIG: &str = "function big using v(x: Int[0, 9]): Boolean pure { x > 5 }\n";
 
-/// A source reference in wire shape under (`agent-ix`,
-/// `identity`, `git`, `revision`).
-fn source_ref(identity: &str, revision: &str) -> crate::identity::SourceRefWire {
-    (
-        AUTHORITY.to_owned(),
-        identity.to_owned(),
-        NAMESPACE.to_owned(),
-        revision.to_owned(),
-    )
+/// A source reference in wire shape under (`agent-ix`, `identity`).
+fn source_ref(identity: &str) -> crate::identity::SourceRefWire {
+    (AUTHORITY.to_owned(), identity.to_owned())
 }
 
 /// A `dependencies` entry naming `identity`, with `sources`.
@@ -1098,13 +1081,13 @@ impl Importing {
         let dependencies =
             crate::spine::DependencyInput::new(vec![crate::spine::SuppliedLibrary {
                 identity: "test/units".to_owned(),
-                source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+                source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY),
                 path: UNITS_IDENTITY.to_owned(),
                 bytes: units.clone().into_bytes(),
             }])
             .unwrap();
         let compiled = compose(
-            SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            SourceIdentity::new(AUTHORITY, IDENTITY),
             IDENTITY,
             unit.as_bytes(),
             &BTreeMap::new(),
@@ -1155,7 +1138,7 @@ impl Importing {
 
     /// The `test/units` entry, from the unit's own source.
     fn units_entry(&self) -> crate::request::DependencyEntryWire {
-        entry("test/units", vec![source_ref(UNITS_IDENTITY, REVISION)])
+        entry("test/units", vec![source_ref(UNITS_IDENTITY)])
     }
 }
 
@@ -1190,7 +1173,7 @@ fn transitive_only_library_source_reaches_replay() {
     );
     let library = |identity: &str, source_identity: &str, bytes: &String| SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new(AUTHORITY, source_identity, NAMESPACE, REVISION),
+        source: SourceIdentity::new(AUTHORITY, source_identity),
         path: source_identity.to_owned(),
         bytes: bytes.as_bytes().to_vec(),
     };
@@ -1203,7 +1186,7 @@ fn transitive_only_library_source_reaches_replay() {
     ])
     .expect("B and C are supplied");
     let compiled = compose(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         IDENTITY,
         a.as_bytes(),
         &BTreeMap::new(),
@@ -1229,8 +1212,8 @@ fn transitive_only_library_source_reaches_replay() {
         input(parameter(&compiled, "q", 0), 3),
     );
     wire.dependencies = vec![
-        entry("test/b", vec![source_ref("test:b", REVISION)]),
-        entry("test/c", vec![source_ref("test:c", REVISION)]),
+        entry("test/b", vec![source_ref("test:b")]),
+        entry("test/c", vec![source_ref("test:c")]),
     ];
     for (identity, bytes) in [("test:b", b.as_bytes()), ("test:c", c.as_bytes())] {
         wire.byte_provision
@@ -1264,7 +1247,7 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
     let importing = Importing::new();
     let locate = |dependencies: &crate::DependencyInput| {
         crate::call_site(
-            SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            SourceIdentity::new(AUTHORITY, IDENTITY),
             "fixture".to_owned(),
             IDENTITY,
             importing.unit.as_bytes(),
@@ -1275,7 +1258,7 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
     };
     let dependencies = crate::DependencyInput::new(vec![crate::SuppliedLibrary {
         identity: "test/units".to_owned(),
-        source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+        source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY),
         path: UNITS_IDENTITY.to_owned(),
         bytes: importing.units.clone().into_bytes(),
     }])
@@ -1322,7 +1305,7 @@ fn locate_q_with_units(
     }])
     .expect("one library under one identity");
     crate::call_site(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         "fixture".to_owned(),
         IDENTITY,
         importing.unit.as_bytes(),
@@ -1341,7 +1324,7 @@ fn call_site_refuses_a_library_sharing_the_units_owner_as_dependency_input() {
     let importing = Importing::new();
     let refusal = locate_q_with_units(
         &importing,
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         importing.units.as_bytes(),
     )
     .expect_err("test/units has the unit's own owner");
@@ -1370,7 +1353,7 @@ fn call_site_refuses_a_library_that_does_not_compile_as_dependency() {
     let importing = Importing::new();
     let refusal = locate_q_with_units(
         &importing,
-        SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, UNITS_IDENTITY),
         b"language \"ix:native\" edition \"1-draft\";\nfunction {\n",
     )
     .expect_err("test/units does not parse");
@@ -1387,7 +1370,7 @@ fn call_site_refuses_a_library_that_does_not_compile_as_dependency() {
 #[trace("TC-516", "FR-121-AC-14")]
 #[test]
 fn call_site_refusal_codes_are_the_replay_refusal_codes() {
-    let unit_source = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+    let unit_source = SourceIdentity::new(AUTHORITY, IDENTITY);
 
     // AC-2's `UnknownFunction`: `missing_declaration`, as `replay` gives
     // a selection naming no function of the same package.
@@ -1472,7 +1455,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     // AC-10's `DependencyInput`: the library's source has the unit's owner.
     let refusal = locate_q_with_units(
         &importing,
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         units_bytes,
     )
     .expect_err("test/units has the unit's own owner");
@@ -1481,7 +1464,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
         "{refusal:?}"
     );
     let mut shared = importing.units_entry();
-    shared.sources = vec![source_ref(IDENTITY, REVISION)];
+    shared.sources = vec![source_ref(IDENTITY)];
     let replayed = replay(
         importing.request(vec![shared], &[units_bytes]),
         ReplayLimits::default(),
@@ -1497,7 +1480,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     let unparsed: &[u8] = b"language \"ix:native\" edition \"1-draft\";\nfunction {\n";
     let refusal = locate_q_with_units(
         &importing,
-        SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, UNITS_IDENTITY),
         unparsed,
     )
     .expect_err("test/units does not parse");
@@ -1506,7 +1489,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
         "{refusal:?}"
     );
     let mut broken_units = importing.units_entry();
-    broken_units.sources = vec![source_ref(UNITS_IDENTITY, REVISION)];
+    broken_units.sources = vec![source_ref(UNITS_IDENTITY)];
     let replayed = replay(
         importing.request(vec![broken_units], &[unparsed]),
         ReplayLimits::default(),
@@ -1528,7 +1511,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let units = importing.units_entry();
     let units_bytes = importing.units.as_bytes();
     let extra_bytes = units_source("function spare using v(): Boolean pure { true }\n");
-    let extra = entry("test/zzz", vec![source_ref("test:zzz", REVISION)]);
+    let extra = entry("test/zzz", vec![source_ref("test:zzz")]);
     let provision: &[&[u8]] = &[units_bytes, extra_bytes.as_bytes()];
 
     // An extra entry no import reaches: refused after the recompile.
@@ -1571,7 +1554,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
 
     // An entry whose source has test/units's authority and identity.
     let mut same_owner = extra.clone();
-    same_owner.sources = vec![source_ref(UNITS_IDENTITY, "r2")];
+    same_owner.sources = vec![source_ref(UNITS_IDENTITY)];
     let refused = replay(
         importing.request(vec![units.clone(), same_owner], provision),
         ReplayLimits::default(),
@@ -1591,7 +1574,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     // An entry whose source has the proved unit's authority and identity:
     // refused as the dependency input (rule 3), not as the recompile.
     let mut unit_owner = units.clone();
-    unit_owner.sources = vec![source_ref(IDENTITY, "r2")];
+    unit_owner.sources = vec![source_ref(IDENTITY)];
     let refused = replay(
         importing.request(vec![unit_owner], provision),
         ReplayLimits::default(),
@@ -1629,7 +1612,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
 
     // The entry naming a second source.
     let mut two = units.clone();
-    two.sources.push(source_ref("test:zzz", REVISION));
+    two.sources.push(source_ref("test:zzz"));
     let refused = replay(
         importing.request(vec![two], provision),
         ReplayLimits::default(),
@@ -2144,7 +2127,7 @@ fn parity_request(function: &str, bind: impl FnOnce(NodeKey) -> ReplaySource) ->
 /// replay refuses before the identity is read.
 fn minted_identity(source: &str, function: &str) -> crate::ObligationIdentity {
     let site = crate::call_site(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        SourceIdentity::new(AUTHORITY, IDENTITY),
         "fixture".to_owned(),
         IDENTITY,
         source.as_bytes(),

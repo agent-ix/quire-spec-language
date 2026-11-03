@@ -30,7 +30,7 @@ const GUARDED: &str =
 
 /// The labels `setup::source("main", ..)` gives its unit.
 fn matching_graph() -> CheckedGraph {
-    graph(SourceIdentity::new("test", "unit:main", "test", "authored"))
+    graph(SourceIdentity::new("test", "unit:main"))
 }
 
 fn graph(identity: SourceIdentity) -> CheckedGraph {

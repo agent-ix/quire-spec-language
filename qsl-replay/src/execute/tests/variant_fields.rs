@@ -34,7 +34,7 @@ fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "variant-fields"),
         "variant-fields.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),

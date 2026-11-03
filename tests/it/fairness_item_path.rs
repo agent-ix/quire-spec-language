@@ -26,7 +26,7 @@ pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
          on origin {{ {body} }}\n"
     );
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "test:fairness", "fixture", "fixture:1"),
+        SourceIdentity::new("agent-ix", "test:fairness"),
         "program.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

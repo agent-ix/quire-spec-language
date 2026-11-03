@@ -103,8 +103,6 @@ fn label(name: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     }
 }
 
@@ -132,8 +130,7 @@ fn snapshot(
     let reference = label("start");
     let mut document = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": reference.authority, "identity": reference.identity,
-            "revision_namespace": reference.revision_namespace, "revision": reference.revision},
+        "identity": {"authority": reference.authority, "identity": reference.identity},
         "observation": observation, "model": fixture.header,
         "populations": [{"population": POPULATION, "complete": complete, "objects": objects}],
     });
@@ -618,8 +615,7 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
         let reference = label("start");
         let document = json!({
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": reference.authority, "identity": reference.identity,
-                "revision_namespace": reference.revision_namespace, "revision": reference.revision},
+            "identity": {"authority": reference.authority, "identity": reference.identity},
             "observation": "current", "model": fixture.header,
             "anchor": initial_anchor(),
             "populations": [{"population": POPULATION, "complete": true, "objects": two_objects()}],

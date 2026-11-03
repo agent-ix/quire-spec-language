@@ -95,10 +95,6 @@ fn a_received_record_and_an_own_attempt_record_supply_one_combined_partition() {
                     inputs.sources[source_index].identity().identity
                 );
                 assert_eq!(source.text, inputs.sources[source_index].text());
-                assert_eq!(
-                    source.native.revision,
-                    inputs.sources[source_index].identity().revision
-                );
             }
             assert_eq!(
                 package.declarations[ready as usize].execution,

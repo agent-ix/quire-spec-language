@@ -1072,8 +1072,6 @@ fn a_part_with_another_key_is_refused_before_it_can_classify_anything() {
         origin: ObservationOrigin::Document(DocumentRef {
             authority: "agent-ix".to_owned(),
             identity: "another".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "1".to_owned(),
         }),
         ..selected.clone()
     };

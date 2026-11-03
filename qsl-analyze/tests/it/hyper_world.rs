@@ -310,7 +310,7 @@ fn other_document(document: &[u8]) -> Vec<u8> {
 fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
     let packages = package_input(documents.iter().copied()).unwrap();
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("agent-ix", "hyper", "git", "1"),
+        SourceIdentity::new("agent-ix", "hyper"),
         "hyper.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -374,8 +374,7 @@ fn snapshot(
         .collect();
     let body = json!({
         "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-            "revision": "fixture:1"},
+        "identity": {"authority": "test", "identity": name},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": populations,
@@ -389,8 +388,6 @@ fn snapshot(
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "fixture:1".to_owned(),
     }
 }
 

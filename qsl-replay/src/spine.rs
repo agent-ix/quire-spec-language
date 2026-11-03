@@ -2471,7 +2471,7 @@ mod tests {
             function g using v(): Boolean pure { true }\n\
             function f using v(): Boolean pure { not not not true }\n";
         let refusal = compose(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             UNIT.as_bytes(),
             &BTreeMap::new(),
@@ -2518,7 +2518,7 @@ mod tests {
             finish End as (outcome: Boolean) { true };\n\
             }\n";
         let refusal = compose(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             unit.as_bytes(),
             &BTreeMap::new(),
@@ -2552,7 +2552,7 @@ mod tests {
             probabilistic C using ev on Reading under Steady on origin \
             { probability >= 0.9 [ holds(true) ] }\n";
         let refusal = compose(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             unit.as_bytes(),
             &BTreeMap::new(),
@@ -2581,7 +2581,7 @@ mod tests {
             probabilistic C using ev on Service under Steady on origin \
             { probability >= 1 [ holds(true) ] }\n";
         let refusal = compose(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             unit.as_bytes(),
             &BTreeMap::new(),
@@ -2692,7 +2692,7 @@ mod tests {
             finish End as (outcome: Boolean) { 1 + true };\n\
             }\n";
         let refusal = compose(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             unit.as_bytes(),
             &BTreeMap::new(),
@@ -2727,7 +2727,7 @@ mod tests {
              function f using v(): Boolean pure {{ true }}\n"
         );
         compose(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             unit.as_bytes(),
             &BTreeMap::new(),
@@ -2874,7 +2874,7 @@ mod tests {
              import \"test/units\" as u;\n\
              function f using v(): Boolean pure { true }\n";
         let refusal = compose(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u"),
             "unit.native",
             unit.as_bytes(),
             &BTreeMap::new(),

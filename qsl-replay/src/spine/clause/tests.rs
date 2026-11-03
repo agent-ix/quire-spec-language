@@ -68,8 +68,7 @@ fn compose(
         .expect("the admitted private fixture formats");
     let mut formatted_limits = limits;
     formatted_limits.source.source_bytes = limits.source.source_bytes.max(formatted.len());
-    let mut formatted_identity = identity;
-    formatted_identity.revision.push_str("-formatted");
+    let formatted_identity = identity;
     let reparsed = qsl_cst::parse(
         formatted_identity.clone(),
         path,
@@ -255,7 +254,7 @@ fn unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
 }
 
 fn source() -> qsl_foundation::SourceIdentity {
-    qsl_foundation::SourceIdentity::new("agent-ix", "clause-run-fixture", "git", "1")
+    qsl_foundation::SourceIdentity::new("agent-ix", "clause-run-fixture")
 }
 
 fn compiled() -> ComposedUnit {
@@ -282,8 +281,6 @@ fn document_identity_json(label: &DocumentRef) -> serde_json::Value {
     json!({
         "authority": label.authority,
         "identity": label.identity,
-        "revision_namespace": label.revision_namespace,
-        "revision": label.revision,
     })
 }
 
@@ -389,8 +386,6 @@ fn no_cycle_observations(
             identity: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "snap".to_owned(),
-                revision_namespace: "ns".to_owned(),
-                revision: "1".to_owned(),
             },
             environment,
             populations: BTreeMap::from([(population_identity(), true)]),
@@ -771,8 +766,6 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, chain);
     let selection = no_cycle_selection(label.clone(), "a");
@@ -915,8 +908,6 @@ fn run_clause_reports_missing_name_for_an_unknown_clause() {
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[("a", None)]);
     let mut selection = no_cycle_selection(label, "a");
@@ -945,8 +936,6 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[]);
 
@@ -983,8 +972,6 @@ fn run_clause_evaluates_a_function_selection_with_a_reference_argument() {
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[("a", Some("b")), ("b", None)]);
 
@@ -1024,8 +1011,6 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[("a", None)]);
 
@@ -1069,8 +1054,6 @@ fn run_clause_reports_not_a_predicate_for_an_integer_function() {
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[]);
 
@@ -1105,8 +1088,6 @@ fn run_clause_refuses_an_empty_source() {
         snapshot: DocumentRef {
             authority: "test".to_owned(),
             identity: "snap".to_owned(),
-            revision_namespace: "ns".to_owned(),
-            revision: "1".to_owned(),
         },
     });
     request.source = ClauseRunSource::Program {
@@ -1129,8 +1110,6 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let mut request = request(ClauseRunSelection::Function {
         name: "seven".to_owned(),
@@ -1169,8 +1148,6 @@ fn run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling() {
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     let selection = || ClauseRunSelection::Function {
         name: "seven".to_owned(),
@@ -1232,8 +1209,6 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     };
     // Hand-written text, not `serde_json::json!` + `.to_string()`: without
     // the crate-wide `preserve_order` feature (deliberately off, see
@@ -1242,13 +1217,14 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
     // insertion order, destroying the very ordering this test exercises.
     let bytes = r#"{
             "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": "snap", "revision_namespace": "ns", "revision": "1"},
+            "identity": {"authority": "test", "identity": "snap"},
             "observation": "current",
             "model": {"identity": "test/nodes", "version": "1.0.0"},
             "populations": [],
             "zzz_unknown": true,
             "aaa_unknown": true
-        }"#.to_string()
+        }"#
+    .to_string()
     .into_bytes();
     let selection = no_cycle_selection(label, "a");
 
@@ -1667,8 +1643,6 @@ fn config_version_document_ref(identity: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: identity.to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
@@ -1862,7 +1836,6 @@ fn run_clause_refuses_a_dangling_parent_reference() {
         "format": "quire.state.snapshot/v1",
         "identity": {
             "authority": label.authority, "identity": label.identity,
-            "revision_namespace": label.revision_namespace, "revision": label.revision,
         },
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},
@@ -1919,7 +1892,6 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
         "format": "quire.state.snapshot/v1",
         "identity": {
             "authority": label.authority, "identity": label.identity,
-            "revision_namespace": label.revision_namespace, "revision": label.revision,
         },
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},
@@ -3294,11 +3266,11 @@ mod extracted {
     const QUIRE_PACKAGE: &str = "example/clause-run";
 
     pub(super) fn original_identity() -> SourceIdentity {
-        SourceIdentity::new("agent-ix", "ix://example/clause-run/spec", "git", "7")
+        SourceIdentity::new("agent-ix", "ix://example/clause-run/spec")
     }
 
     pub(super) fn body_identity() -> SourceIdentity {
-        SourceIdentity::new("agent-ix", "clause-run-body", "git", "7")
+        SourceIdentity::new("agent-ix", "clause-run-body")
     }
 
     /// The authored Markdown document whose one fence under the `no_cycle`
@@ -4855,12 +4827,7 @@ fn a_refused_dependency_protocol_precedes_the_importing_units_s3_check() {
         .expect("the dependency domain package is admitted");
     let dependency = SuppliedLibrary {
         identity: "test/protocol-dependency".to_owned(),
-        source: qsl_foundation::SourceIdentity::new(
-            "agent-ix",
-            "test:protocol-dependency",
-            "fixture",
-            "fixture:1",
-        ),
+        source: qsl_foundation::SourceIdentity::new("agent-ix", "test:protocol-dependency"),
         path: "dependency.native".to_owned(),
         bytes: format!(
             "language \"ix:native\" edition \"1-draft\";\n\
@@ -4894,7 +4861,7 @@ fn a_refused_dependency_protocol_precedes_the_importing_units_s3_check() {
          refinement CasTwice using inf abstract Spec::Twice concrete Spec {{}}\n"
     );
     let refusal = compose(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:importer", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:importer"),
         "importer.native",
         unit.as_bytes(),
         &packages,

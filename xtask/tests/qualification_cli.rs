@@ -84,12 +84,7 @@ fn qualify_compiles_a_language_vector_through_the_public_entry_point() {
     let corpus = copy_fixture(&temp);
     let source_path = corpus.join("inputs/native.native");
     let source_bytes = fs::read(&source_path).unwrap();
-    let identity = qsl_foundation::SourceIdentity::new(
-        "agent-ix",
-        "inputs/native.native",
-        "qualification",
-        "1",
-    );
+    let identity = qsl_foundation::SourceIdentity::new("agent-ix", "inputs/native.native");
     let compiled = qsl_replay::compile_package(
         qsl_replay::CompileUnit {
             source: identity,

@@ -16,7 +16,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 fn build(declaration: &str) -> (String, StateGraphClaimForm) {
     let text = format!("{HEADER}{declaration}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -293,7 +293,7 @@ fn a_predicate_that_derives_as_an_expression_is_read_as_one() {
 fn error_offset(declaration: &str) -> (String, usize) {
     let text = format!("{HEADER}{declaration}\n");
     let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

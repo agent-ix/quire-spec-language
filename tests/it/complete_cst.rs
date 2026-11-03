@@ -28,12 +28,10 @@ const SOURCE: &str = concat!(
     "verify Portfolio using Complete { check Safety claim M::Claim method M::Method domain M::Domain depends [Earlier] bound 10; }",
 );
 
-fn identity(revision: &str) -> SourceIdentity {
+fn identity() -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: "test:complete-cst".into(),
-        revision_namespace: "test".into(),
-        revision: revision.into(),
     }
 }
 
@@ -41,7 +39,7 @@ fn identity(revision: &str) -> SourceIdentity {
 #[test]
 fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -50,8 +48,7 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     let start = SOURCE.find("if true then").unwrap() + 3;
     let edited = complete::apply_edit(
         &parsed,
-        "r1",
-        identity("r2"),
+        identity(),
         SourceEdit {
             range: Span {
                 start,
@@ -97,7 +94,7 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
 #[test]
 fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -113,8 +110,7 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
         .unwrap();
     let inserted = complete::apply_edit(
         &parsed,
-        "r1",
-        identity("r2"),
+        identity(),
         SourceEdit {
             range: Span {
                 start: record_start,
@@ -161,7 +157,7 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
 #[test]
 fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -178,8 +174,7 @@ fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
     let label = SOURCE.find("label: Option").unwrap();
     let edited = complete::apply_edit(
         &parsed,
-        "r1",
-        identity("r2"),
+        identity(),
         SourceEdit {
             range: Span {
                 start: label - 1,
@@ -221,7 +216,7 @@ fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
 #[test]
 fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -234,8 +229,10 @@ fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
     assert_eq!(
         complete::apply_edits(
             &parsed,
-            "stale",
-            identity("r2"),
+            SourceIdentity {
+                identity: "test:stale".into(),
+                ..identity()
+            },
             std::slice::from_ref(&edit),
             Limits::default(),
         )
@@ -246,8 +243,7 @@ fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
     assert_eq!(
         complete::apply_edits(
             &parsed,
-            "r1",
-            identity("r2"),
+            identity(),
             &[edit.clone(), edit],
             Limits::default(),
         )
@@ -261,14 +257,14 @@ fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
 fn invalid_caller_edit_ranges_refuse_without_panicking() {
     let text = format!("{SOURCE}\r\n// 😀");
     let parsed = qsl_cst::parse(
-        identity("invalid-ranges"),
+        identity(),
         "complete.native",
         text.as_bytes(),
         Limits::default(),
     )
     .unwrap();
     let scalar = text.find('😀').unwrap();
-    for (revision, range) in [
+    for (_case, range) in [
         (
             "split-scalar",
             Span {
@@ -293,8 +289,7 @@ fn invalid_caller_edit_ranges_refuse_without_panicking() {
     ] {
         let refusal = complete::apply_edit(
             &parsed,
-            "invalid-ranges",
-            identity(revision),
+            identity(),
             SourceEdit {
                 range,
                 replacement: String::new(),
@@ -317,7 +312,7 @@ fn invalid_caller_edit_ranges_refuse_without_panicking() {
 #[test]
 fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
     let parsed = qsl_cst::parse(
-        identity("bounded-edits"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -329,8 +324,7 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
     };
     let single = complete::apply_edit(
         &parsed,
-        "bounded-edits",
-        identity("single-too-large"),
+        identity(),
         SourceEdit {
             range: Span { start: 0, end: 0 },
             replacement: "x".into(),
@@ -344,8 +338,7 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
 
     let aggregate = complete::apply_edits(
         &parsed,
-        "bounded-edits",
-        identity("aggregate-too-large"),
+        identity(),
         &[
             SourceEdit {
                 range: Span { start: 0, end: 0 },
@@ -366,7 +359,7 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
 #[test]
 fn insertion_inside_crlf_falls_back_to_full_lexing() {
     let parsed = qsl_cst::parse(
-        identity("crlf-r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -375,8 +368,7 @@ fn insertion_inside_crlf_falls_back_to_full_lexing() {
     let between = SOURCE.find("\r\n").unwrap() + 1;
     let edited = complete::apply_edit(
         &parsed,
-        "crlf-r1",
-        identity("crlf-r2"),
+        identity(),
         SourceEdit {
             range: Span {
                 start: between,
@@ -389,7 +381,7 @@ fn insertion_inside_crlf_falls_back_to_full_lexing() {
     .unwrap();
     assert!(!edited.is_incremental_result());
     let full = qsl_cst::parse(
-        identity("crlf-r2"),
+        identity(),
         "complete.native",
         edited.source().text().as_bytes(),
         Limits::default(),
@@ -406,10 +398,8 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
         ("leading", format!(" {SOURCE}"), 0, "\t"),
         ("trailing", format!("{SOURCE}\n"), SOURCE.len() + 1, "\n"),
     ] {
-        let original_revision = format!("{case}-r1");
-        let edited_revision = format!("{case}-r2");
         let parsed = qsl_cst::parse(
-            identity(&original_revision),
+            identity(),
             "complete.native",
             source.as_bytes(),
             Limits::default(),
@@ -417,8 +407,7 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
         .unwrap();
         let edited = complete::apply_edit(
             &parsed,
-            &original_revision,
-            identity(&edited_revision),
+            identity(),
             SourceEdit {
                 range: Span { start: at, end: at },
                 replacement: replacement.into(),
@@ -428,7 +417,7 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
         .unwrap();
         assert!(edited.is_incremental_result(), "{case}");
         let full = qsl_cst::parse(
-            identity(&edited_revision),
+            identity(),
             "complete.native",
             edited.source().text().as_bytes(),
             Limits::default(),
@@ -452,7 +441,7 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
 #[test]
 fn adjacent_half_open_edits_are_not_overlaps() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -460,8 +449,7 @@ fn adjacent_half_open_edits_are_not_overlaps() {
     .unwrap();
     let edited = complete::apply_edits(
         &parsed,
-        "r1",
-        identity("r2"),
+        identity(),
         &[
             SourceEdit {
                 range: Span { start: 0, end: 1 },
@@ -478,14 +466,13 @@ fn adjacent_half_open_edits_are_not_overlaps() {
     assert_eq!(edited.source().text(), SOURCE);
 }
 
-/// FR-001: an edit keeps the source's authority, identity and revision
-/// namespace; one that changes the authority or the namespace, or names the
-/// same (namespace, revision), refuses as a foreign predecessor.
+/// FR-001: an edit keeps the source's authority and identity; one that
+/// changes either refuses as a foreign predecessor.
 #[trace("TC-424", "FR-001-AC-5")]
 #[test]
 fn an_edit_that_changes_a_source_label_refuses() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -498,18 +485,16 @@ fn an_edit_that_changes_a_source_label_refuses() {
     for next in [
         SourceIdentity {
             authority: "other".into(),
-            ..identity("r2")
+            ..identity()
         },
         SourceIdentity {
-            revision_namespace: "other".into(),
-            ..identity("r2")
+            identity: "test:other".into(),
+            ..identity()
         },
-        identity("r1"),
     ] {
         assert_eq!(
             complete::apply_edits(
                 &parsed,
-                "r1",
                 next.clone(),
                 std::slice::from_ref(&edit),
                 Limits::default(),
@@ -522,22 +507,21 @@ fn an_edit_that_changes_a_source_label_refuses() {
     }
     assert!(complete::apply_edits(
         &parsed,
-        "r1",
-        identity("r2"),
+        identity(),
         std::slice::from_ref(&edit),
         Limits::default(),
     )
     .is_ok());
 }
 
-/// FR-001-AC-12: an edit whose expected revision is not the source's refuses
-/// `invalid_source_map`, keeps the `EditPredecessor` cause and names no
+/// FR-001-AC-12: an edit whose expected source identity is not the source's
+/// refuses `invalid_source_map`, keeps the `EditPredecessor` cause and names no
 /// region.
 #[trace("TC-424", "FR-001-AC-12")]
 #[test]
 fn a_stale_edit_predecessor_refuses_as_a_source_map_with_no_region() {
     let parsed = qsl_cst::parse(
-        identity("r1"),
+        identity(),
         "complete.native",
         SOURCE.as_bytes(),
         Limits::default(),
@@ -549,8 +533,10 @@ fn a_stale_edit_predecessor_refuses_as_a_source_map_with_no_region() {
     };
     let refused = complete::apply_edits(
         &parsed,
-        "stale",
-        identity("r2"),
+        SourceIdentity {
+            identity: "test:stale".into(),
+            ..identity()
+        },
         std::slice::from_ref(&edit),
         Limits::default(),
     )

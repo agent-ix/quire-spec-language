@@ -625,12 +625,7 @@ fn load_unit(
         .ok_or_else(|| format!("profile identity {identity:?} is not a header-selectable layer"))?;
     let reference = source_reference(&source)?;
     let input = UnitInput {
-        identity: SourceIdentity::new(
-            source.authority,
-            source.identity,
-            "refinement-layering",
-            "run",
-        ),
+        identity: SourceIdentity::new(source.authority, source.identity),
         path: source.path,
         bytes,
         packages: packages.to_vec(),
@@ -662,12 +657,7 @@ fn load_entry(directory: &Path) -> Result<LoadedEntry, String> {
         .map(|dependency| {
             Ok(SuppliedLibrary {
                 identity: dependency.library,
-                source: SourceIdentity::new(
-                    dependency.authority,
-                    dependency.identity,
-                    "refinement-layering",
-                    "run",
-                ),
+                source: SourceIdentity::new(dependency.authority, dependency.identity),
                 path: dependency.path.clone(),
                 bytes: read_entry_file(&root, &dependency.path)?,
             })

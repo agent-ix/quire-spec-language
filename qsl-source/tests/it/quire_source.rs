@@ -21,8 +21,6 @@ fn identity() -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
         identity: "ix://example/runtime-rules/spec".into(),
-        revision_namespace: "test".into(),
-        revision: "draft:7".into(),
     }
 }
 
@@ -47,8 +45,6 @@ fn selection() -> Selection {
         body: SourceIdentity {
             authority: "test".into(),
             identity: "test:quire-body".into(),
-            revision_namespace: "test".into(),
-            revision: "body:7".into(),
         },
     }
 }

@@ -1911,7 +1911,7 @@ mod tests {
     fn case_source(body: &str) -> Expression {
         let text = format!("language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(x: U): Integer pure {{ {body} }}");
         let parsed = qsl_cst::parse(
-            qsl_foundation::SourceIdentity::new("test", "case", "git", "1"),
+            qsl_foundation::SourceIdentity::new("test", "case"),
             "case.native",
             text.as_bytes(),
             qsl_cst::Limits::default(),

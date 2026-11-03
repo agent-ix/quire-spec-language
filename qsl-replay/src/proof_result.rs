@@ -2656,8 +2656,6 @@ mod tests {
                 observation: qsl_foundation::witness::ObservationIdentity {
                     authority: "source".to_owned(),
                     identity: "item".to_owned(),
-                    revision_namespace: "revision".to_owned(),
-                    revision: "1".to_owned(),
                 },
                 subject: ValuePathSubject::Built(occurrence),
                 steps: vec![ValuePathStep::Member("x".repeat(DEFAULT_INPUT_BYTES + 1))],
@@ -2782,8 +2780,6 @@ mod tests {
                     observation: qsl_foundation::witness::ObservationIdentity {
                         authority: "a".to_owned(),
                         identity: "i".to_owned(),
-                        revision_namespace: "n".to_owned(),
-                        revision: "r".to_owned(),
                     },
                     subject: ValuePathSubject::Built(quantifier),
                     steps: vec![ValuePathStep::Member("m".to_owned())],
@@ -2895,12 +2891,6 @@ mod tests {
             }),
             ("observation identity String", |record| {
                 record.value_path.observation.identity.push('x');
-            }),
-            ("observation namespace String", |record| {
-                record.value_path.observation.revision_namespace.push('x');
-            }),
-            ("observation revision String", |record| {
-                record.value_path.observation.revision.push('x');
             }),
             ("subject role String", |record| {
                 record.value_path.subject = ValuePathSubject::Built(OccurrenceKey::new(

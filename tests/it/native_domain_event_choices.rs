@@ -157,7 +157,6 @@ fn admitted(
                     .iter()
                     .find(|selected| selected.identity().identity == source.native.identity)
                     .expect("every emitted source keeps an original authored identity");
-                assert_eq!(source.native.revision, original.identity().revision);
                 assert_eq!(source.text, original.text());
             }
             let owner = package

@@ -169,7 +169,7 @@ fn package() -> CheckedPackage {
         package = k2::PACKAGE,
     );
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("test", "witnessed", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("test", "witnessed"),
         "witnessed.native",
         source.as_bytes(),
         qsl_cst::Limits::default(),
@@ -202,15 +202,12 @@ fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
     }
 }
 
 fn identity_json(reference: &DocumentRef) -> Json {
     json!({
-        "authority": reference.authority, "identity": reference.identity,
-        "revision_namespace": reference.revision_namespace, "revision": reference.revision,
+    "authority": reference.authority, "identity": reference.identity,
     })
 }
 

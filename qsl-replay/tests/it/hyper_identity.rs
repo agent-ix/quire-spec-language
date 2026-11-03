@@ -206,10 +206,7 @@ fn a_missing_or_foreign_subject_names_its_alias() {
 fn a_package_with_no_emission_names_product_identity() {
     let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
     let graph = PackageDeclarations::new(
-        admitted_source(
-            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-            b"",
-        ),
+        admitted_source(qsl_foundation::SourceIdentity::new("a", "u"), b""),
         "fixture",
         qsl_foundation::IdentityLimits::default(),
     )

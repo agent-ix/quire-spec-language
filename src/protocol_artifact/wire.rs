@@ -353,16 +353,12 @@ record! { /// Selected model artifact and exports, naming its domain package dir
         domain_package: Nullable<DomainPackage>
     }
 }
-record! { /// The native source's four FR-001 labels; these are not formal revisions.
+record! { /// The native source's two FR-001 labels; these are not formal revisions.
     NativeSource {
         /// The authority that issues the native source's identity.
         authority: String,
         /// The native source's own identity label.
-        identity: String,
-        /// The revision system the native revision belongs to.
-        revision_namespace: String,
-        /// The native source's own editable revision label.
-        revision: String
+        identity: String
     }
 }
 record! { /// Original source text, retained for source mapping/loci and never reparsed here.

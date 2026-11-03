@@ -38,7 +38,7 @@ pub(super) fn prepare(
         report.issues.push(InventoryIssue::EmptyInventory);
     }
 
-    // FR-001: a source is named by all four of its labels.
+    // FR-001: a source is named by its two labels.
     let mut expected = BTreeMap::<&SourceIdentity, Vec<usize>>::new();
     for (index, entry) in inventory.units.iter().enumerate() {
         work.charge(Dimension::Units, 1)?;
@@ -48,8 +48,6 @@ pub(super) fn prepare(
                 &entry.authority,
                 &entry.identity.authority,
                 &entry.identity.identity,
-                &entry.identity.revision_namespace,
-                &entry.identity.revision,
             ],
         )?;
         if entry.authority.trim().is_empty() || !entry.identity.is_named() {
@@ -68,8 +66,6 @@ pub(super) fn prepare(
             &[
                 &source.identity().authority,
                 &source.identity().identity,
-                &source.identity().revision_namespace,
-                &source.identity().revision,
                 source.path(),
                 source.text(),
             ],

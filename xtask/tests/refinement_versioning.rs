@@ -114,9 +114,7 @@ fn snapshot(name: &str, rows: &[(&str, i64, Option<&str>)]) -> Value {
         "identity": {
             "authority": "agent-ix",
             "identity": format!("ix://example/config-version/spine/current/{name}"),
-            "revision_namespace": "example",
-            "revision": "1",
-        },
+            },
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {

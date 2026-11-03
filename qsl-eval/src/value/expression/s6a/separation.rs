@@ -35,8 +35,6 @@ pub(crate) fn observation_identity(document: &DocumentRef) -> ObservationIdentit
     ObservationIdentity {
         authority: document.authority.clone(),
         identity: document.identity.clone(),
-        revision_namespace: document.revision_namespace.clone(),
-        revision: document.revision.clone(),
     }
 }
 

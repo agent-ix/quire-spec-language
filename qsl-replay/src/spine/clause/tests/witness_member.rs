@@ -199,8 +199,6 @@ fn history_path(report: &super::super::ClauseRunReport, identity: &str) -> Runti
         observation: ObservationIdentity {
             authority: "test".to_owned(),
             identity: identity.to_owned(),
-            revision_namespace: "ns".to_owned(),
-            revision: "1".to_owned(),
         },
         subject: witness.value_path.subject.clone(),
         steps: vec![ValuePathStep::Member("history".to_owned())],

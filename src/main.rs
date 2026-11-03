@@ -136,7 +136,7 @@ fn syntax(
             path: display_path.as_ref(),
             span: None,
             identity_cause: Some(SourceReadCause::BlankLabel { label }),
-            message: "source authority, identity, revision namespace and revision must be explicit",
+            message: "source authority and identity must be explicit",
         }
         .render());
     }

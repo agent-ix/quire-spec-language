@@ -118,10 +118,6 @@ fn all_two_atom_visible_and_guard_functions_match_output_determinacy() {
                         package.sources[0].native.identity,
                         inputs.sources[0].identity().identity
                     );
-                    assert_eq!(
-                        package.sources[0].native.revision,
-                        inputs.sources[0].identity().revision
-                    );
                     original_roots(proofs, package);
                     let emitted = native::emit(&admitted, Limits::default())
                         .into_result()

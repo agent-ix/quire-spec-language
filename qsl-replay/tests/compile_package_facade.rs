@@ -21,7 +21,7 @@ const LIST: &str = "record List { next: List?; }\n";
 const TREE: &str = "record Tree { kids: Sequence<Tree>[0, 3]; }\n";
 
 fn identity() -> SourceIdentity {
-    SourceIdentity::new("a", "u", "git", "1")
+    SourceIdentity::new("a", "u")
 }
 
 fn limits(source_bytes: u64) -> StageLimits {
@@ -123,7 +123,7 @@ fn a_malformed_source_refuses_as_the_spine_does() {
 fn a_library_with_the_units_owner_refuses() {
     let library = SuppliedLibrary {
         identity: "lib".to_owned(),
-        source: SourceIdentity::new("a", "u", "git", "2"),
+        source: SourceIdentity::new("a", "u"),
         path: "lib.native".to_owned(),
         bytes: HEADER.as_bytes().to_vec(),
     };

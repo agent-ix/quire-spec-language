@@ -31,7 +31,7 @@ fn checked(
     limits: SpineLimits,
     libraries: Vec<SuppliedLibrary>,
 ) -> spine::CheckedUnit {
-    let identity = SourceIdentity::new("test", "unit", "git", "1");
+    let identity = SourceIdentity::new("test", "unit");
     let cancel = Cancel::new();
     let parsed = spine::parse(
         &ParseRequest {
@@ -66,7 +66,7 @@ fn checked(
 fn library(identity: &str, name: &str) -> SuppliedLibrary {
     SuppliedLibrary {
         identity: identity.to_owned(),
-        source: SourceIdentity::new("test", name, "git", "1"),
+        source: SourceIdentity::new("test", name),
         path: format!("{name}.native"),
         bytes: b"language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\npredicate from_library using v (x: Integer): Boolean { x > 0 }\n".to_vec(),
     }
@@ -294,8 +294,8 @@ fn imported_predicate_reference_retains_the_exact_library_target() {
 #[trace("FR-510-AC-3", "TC-1305")]
 #[test]
 fn aggregate_units_keep_sibling_imports_and_references_out_of_each_subject() {
-    let source_a = SourceIdentity::new("test", "unit-a", "git", "1");
-    let source_b = SourceIdentity::new("test", "unit-b", "git", "1");
+    let source_a = SourceIdentity::new("test", "unit-a");
+    let source_b = SourceIdentity::new("test", "unit-b");
     let unit_a = SOURCE
         .replace(
             "profile v = \"quire.value.complete/v1\";\n",
@@ -598,7 +598,7 @@ fn a_refused_check_produces_no_static_subject() {
     let bad_source = SOURCE
         .replace("function answer", "function broken")
         .replace("{ 1 }", "{ unknown }");
-    let identity = SourceIdentity::new("test", "bad", "git", "1");
+    let identity = SourceIdentity::new("test", "bad");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let parsed = spine::parse(

@@ -17,17 +17,15 @@ const EDITION: &str = "1-draft";
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 profile S = \"test:unresolved-profile\";\n";
 
-/// The source authority and revision namespace every source here is read
-/// under; each is charged as its own metadata string.
+/// The source authority every source here is read under; it is charged as
+/// its own metadata string.
 const LABEL: &str = "test";
 
-fn source(identity: &str, revision: &str, path: &str, text: &str) -> Source {
+fn source(identity: &str, path: &str, text: &str) -> Source {
     Source::read(
         SourceIdentity {
             authority: LABEL.into(),
             identity: identity.into(),
-            revision_namespace: LABEL.into(),
-            revision: revision.into(),
         },
         path,
         text.as_bytes(),
@@ -76,17 +74,15 @@ fn token_span(text: &str, token: &str) -> Span {
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-7")]
 fn exact_input_accounting_admits_without_discovering_external_sources() {
     const ID: &str = "test:source-α";
-    const REVISION: &str = "selected:β";
     const AUTHORITY: &str = "editable:γ";
     const PATH: &str = "/not-supplied-by-filesystem/δ.native";
     let text = predicates(&["First", "Second"]);
-    let supplied = source(ID, REVISION, PATH, &text);
+    let supplied = source(ID, PATH, &text);
     let selected = inventory(&[(AUTHORITY, &supplied)]);
     // Each literal occurrence below is a distinct charged metadata component;
     // lengths count UTF-8 bytes, including non-ASCII identity and path text.
     let bytes = [
-        LANGUAGE, EDITION, AUTHORITY, LABEL, ID, LABEL, REVISION, LABEL, ID, LABEL, REVISION, PATH,
-        &text,
+        LANGUAGE, EDITION, AUTHORITY, LABEL, ID, LABEL, ID, PATH, &text,
     ]
     .iter()
     .map(|part| part.len())
@@ -125,8 +121,8 @@ fn exact_input_accounting_admits_without_discovering_external_sources() {
 #[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-2")]
 fn reordered_sources_match_exact_selections_without_using_paths_as_identity() {
-    let first = source("test:first", "r1", "same.native", &predicates(&["First"]));
-    let second = source("test:second", "r2", "same.native", &predicates(&["Second"]));
+    let first = source("test:first", "same.native", &predicates(&["First"]));
+    let second = source("test:second", "same.native", &predicates(&["Second"]));
     let selected = inventory(&[("editable:first", &first), ("editable:second", &second)]);
     let supplied = [second, first];
     let report = admit(&selected, &supplied);
@@ -156,8 +152,8 @@ fn reordered_sources_match_exact_selections_without_using_paths_as_identity() {
 #[test]
 #[trace("TC-114", "FR-036-AC-2")]
 fn missing_and_unexpected_sources_refuse_the_closed_namespace() {
-    let first = source("test:first", "r1", "a.native", &predicates(&["First"]));
-    let second = source("test:second", "r1", "b.native", &predicates(&["Second"]));
+    let first = source("test:first", "a.native", &predicates(&["First"]));
+    let second = source("test:second", "b.native", &predicates(&["Second"]));
     let selected_both = inventory(&[("a", &first), ("b", &second)]);
     let selected_first = inventory(&[("a", &first)]);
     let supplied_first = [first.clone()];
@@ -180,15 +176,12 @@ fn missing_and_unexpected_sources_refuse_the_closed_namespace() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-2")]
-fn identity_and_revision_substitutions_refuse_independently() {
+fn an_identity_substitution_refuses() {
     let text = predicates(&["Selected"]);
-    let original = source("test:selected", "r1", "selected.native", &text);
+    let original = source("test:selected", "selected.native", &text);
     let selected = inventory(&[("selected", &original)]);
-    for replacement in [
-        source("test:foreign", "r1", "selected.native", &text),
-        source("test:selected", "r2", "selected.native", &text),
-    ] {
-        let supplied = [replacement];
+    {
+        let supplied = [source("test:foreign", "selected.native", &text)];
         let report = admit(&selected, &supplied);
         assert!(report.namespace().is_none());
         assert_eq!(report.issues().len(), 2);
@@ -208,7 +201,7 @@ fn identity_and_revision_substitutions_refuse_independently() {
 #[test]
 #[trace("TC-114", "FR-036-AC-2")]
 fn duplicate_expected_and_offered_source_selections_retain_all_candidates() {
-    let original = source("test:unit", "r1", "one.native", &predicates(&["Only"]));
+    let original = source("test:unit", "one.native", &predicates(&["Only"]));
     let selected = inventory(&[("one", &original)]);
     let mut repeated = selected.clone();
     repeated.units.push(repeated.units[0].clone());
@@ -227,7 +220,7 @@ fn duplicate_expected_and_offered_source_selections_retain_all_candidates() {
     assert_eq!(report.usage().units, 3);
 
     // A different display path cannot make the same exact source unique.
-    let another_path = source("test:unit", "r1", "two.native", original.text());
+    let another_path = source("test:unit", "two.native", original.text());
     let supplied = [original, another_path];
     let report = admit(&selected, &supplied);
     assert!(report.namespace().is_none());
@@ -250,7 +243,7 @@ fn empty_inventory_and_blank_editable_authority_do_not_establish_a_namespace() {
     let report = admit(&empty, &[]);
     assert!(report.namespace().is_none());
     assert!(matches!(report.issues(), [InventoryIssue::EmptyInventory]));
-    let unit = source("test:one", "r1", "one.native", &predicates(&["One"]));
+    let unit = source("test:one", "one.native", &predicates(&["One"]));
     let selected = inventory(&[("  ", &unit)]);
     let supplied = [unit];
     let report = admit(&selected, &supplied);
@@ -275,7 +268,7 @@ fn a_runtime_expression_argument_to_a_rational_literal_is_refused() {
         let text = format!(
             "{HEADER}predicate Literal using S (input: M::Node): Boolean {{ input.fraction = {argument} }}"
         );
-        let unit = source("test:runtime", "r1", "runtime.native", &text);
+        let unit = source("test:runtime", "runtime.native", &text);
         let selected = inventory(&[("runtime", &unit)]);
         let supplied = [unit];
         let report = admit(&selected, &supplied);
@@ -296,8 +289,8 @@ fn a_runtime_expression_argument_to_a_rational_literal_is_refused() {
 #[trace("TC-114", "FR-036-AC-2")]
 fn malformed_source_retains_its_diagnostic_and_the_other_successful_parse() {
     let bad_text = format!("{HEADER}predicate Broken using S (): Boolean {{ }}");
-    let bad = source("test:bad", "r1", "bad.native", &bad_text);
-    let good = source("test:good", "r1", "good.native", &predicates(&["Good"]));
+    let bad = source("test:bad", "bad.native", &bad_text);
+    let good = source("test:good", "good.native", &predicates(&["Good"]));
     let selected = inventory(&[("bad", &bad), ("good", &good)]);
     let supplied = [bad, good];
     let report = admit(&selected, &supplied);
@@ -332,8 +325,8 @@ fn malformed_source_retains_its_diagnostic_and_the_other_successful_parse() {
 #[trace("TC-114", "FR-036-AC-1")]
 fn mixed_historical_and_composed_headers_refuse_with_original_token_spans() {
     let historical = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"test:model\"; invariant Old on M::Thing at current { true }";
-    let old = source("test:old", "r1", "old.native", historical);
-    let new = source("test:new", "r1", "new.native", &predicates(&["New"]));
+    let old = source("test:old", "old.native", historical);
+    let new = source("test:new", "new.native", &predicates(&["New"]));
     let selected = inventory(&[("old", &old), ("new", &new)]);
     let supplied = [old, new];
     let report = admit(&selected, &supplied);
@@ -367,8 +360,8 @@ fn mixed_historical_and_composed_headers_refuse_with_original_token_spans() {
 #[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-2")]
 fn inventory_language_or_edition_conflict_retains_every_matching_header() {
-    let first = source("test:first", "r1", "a.native", &predicates(&["First"]));
-    let second = source("test:second", "r1", "b.native", &predicates(&["Second"]));
+    let first = source("test:first", "a.native", &predicates(&["First"]));
+    let second = source("test:second", "b.native", &predicates(&["Second"]));
     let matching = inventory(&[("a", &first), ("b", &second)]);
     let supplied = [first, second];
     assert!(admit(&matching, &supplied).namespace().is_some());
@@ -420,11 +413,10 @@ fn inventory_language_or_edition_conflict_retains_every_matching_header() {
 fn duplicate_native_names_retain_every_locus_and_unrelated_declarations() {
     let first = source(
         "test:first",
-        "r1",
         "a.native",
         &predicates(&["Shared", "Independent"]),
     );
-    let second = source("test:second", "r1", "b.native", &predicates(&["Shared"]));
+    let second = source("test:second", "b.native", &predicates(&["Shared"]));
     let selected = inventory(&[("a", &first), ("b", &second)]);
     let supplied = [first, second];
     let report = admit(&selected, &supplied);
@@ -462,14 +454,9 @@ fn duplicate_native_names_retain_every_locus_and_unrelated_declarations() {
 #[test]
 #[trace("TC-114", "FR-036-AC-2")]
 fn duplicate_editable_authority_refuses_its_sources_without_erasing_the_third() {
-    let first = source("test:first", "r1", "a.native", &predicates(&["First"]));
-    let second = source("test:second", "r1", "b.native", &predicates(&["Second"]));
-    let third = source(
-        "test:third",
-        "r1",
-        "c.native",
-        &predicates(&["Independent"]),
-    );
+    let first = source("test:first", "a.native", &predicates(&["First"]));
+    let second = source("test:second", "b.native", &predicates(&["Second"]));
+    let third = source("test:third", "c.native", &predicates(&["Independent"]));
     let selected = inventory(&[
         ("same-authority", &first),
         ("same-authority", &second),
@@ -515,16 +502,15 @@ fn duplicate_editable_authority_refuses_its_sources_without_erasing_the_third() 
 #[trace("TC-114", "FR-036-AC-7")]
 fn byte_unit_and_declaration_boundaries_refuse_before_work_and_retry_immutably() {
     const ID: &str = "test:budget";
-    const REVISION: &str = "r1";
     const AUTHORITY: &str = "editable";
     const PATH: &str = "budget.native";
     let text = predicates(&["First", "Second"]);
-    let unit = source(ID, REVISION, PATH, &text);
+    let unit = source(ID, PATH, &text);
     let selected = inventory(&[(AUTHORITY, &unit)]);
     let original_inventory = selected.clone();
     let supplied = [unit];
     let header_bytes = LANGUAGE.len() + EDITION.len();
-    let labels = LABEL.len() * 2 + ID.len() + REVISION.len();
+    let labels = LABEL.len() + ID.len();
     let expected_bytes = header_bytes + AUTHORITY.len() + labels;
     let metadata_bytes = expected_bytes + labels + PATH.len();
     let all_bytes = metadata_bytes + text.len();
@@ -641,7 +627,6 @@ fn byte_unit_and_declaration_boundaries_refuse_before_work_and_retry_immutably()
         assert_eq!(selected, original_inventory);
         assert_eq!(supplied[0].text(), text);
         assert_eq!(supplied[0].identity().identity, ID);
-        assert_eq!(supplied[0].identity().revision, REVISION);
         assert_eq!(supplied[0].path(), PATH);
     }
 }
@@ -649,7 +634,7 @@ fn byte_unit_and_declaration_boundaries_refuse_before_work_and_retry_immutably()
 #[test]
 #[trace("TC-114", "FR-036-AC-7")]
 fn parser_budget_exhaustion_keeps_its_distinct_source_bound_cause() {
-    let unit = source("test:parser", "r1", "parser.native", &predicates(&["One"]));
+    let unit = source("test:parser", "parser.native", &predicates(&["One"]));
     let selected = inventory(&[("parser", &unit)]);
     let supplied = [unit];
     let parser = Limits {

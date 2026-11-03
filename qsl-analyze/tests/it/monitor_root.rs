@@ -42,7 +42,7 @@ pub(crate) fn root_of(
     let domain = Domain::config_version();
     let packages =
         qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
-    let source = SourceIdentity::new("agent-ix", "monitor-root", "git", "1");
+    let source = SourceIdentity::new("agent-ix", "monitor-root");
     let name = LibraryName::new("fixture").unwrap();
     emit_plan_root(
         &PlanRootRequest {

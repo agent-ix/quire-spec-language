@@ -10,8 +10,6 @@ fn source(id: &str, text: &str) -> Source {
         SourceIdentity {
             authority: "test".into(),
             identity: id.into(),
-            revision_namespace: "test".into(),
-            revision: "fixture:1".into(),
         },
         format!("{id}.txt"),
         text.as_bytes(),
@@ -58,8 +56,6 @@ fn source_byte_ceiling_is_a_stage_limit() {
     let id = SourceIdentity {
         authority: "test".into(),
         identity: "original".into(),
-        revision_namespace: "test".into(),
-        revision: "1".into(),
     };
     Source::read(id.clone(), "x", b"abc", 100).unwrap();
     // The source's own byte ceiling is a stage limit
@@ -80,8 +76,6 @@ fn a_caller_raised_byte_limit_is_enforced_as_given() {
     let id = SourceIdentity {
         authority: "test".into(),
         identity: "raised".into(),
-        revision_namespace: "test".into(),
-        revision: "1".into(),
     };
     let raised = MAX_SOURCE_BYTES + 16;
     let at_raised = vec![b'a'; raised];
@@ -285,7 +279,7 @@ fn omitted_keywords_internal_whitespace_and_newlines_refuse() {
 
 #[trace("TC-014", "QSpec-TC-184", "FR-004-AC-3", "QSpec-FR-134-AC-3")]
 #[test]
-fn original_and_body_identity_revision_and_bytes_must_match() {
+fn original_and_body_identity_and_bytes_must_match() {
     let body = source("body", "abc");
     let map = SourceMap::verify(
         source("original", "abc"),
@@ -305,19 +299,6 @@ fn original_and_body_identity_revision_and_bytes_must_match() {
     );
     let foreign = source("other", "abc");
     assert!(map.map_span(&foreign, Span { start: 0, end: 1 }).is_err());
-    let revision = Source::read(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "body".into(),
-            revision_namespace: "test".into(),
-            revision: "fixture:2".into(),
-        },
-        "body.txt",
-        b"abc",
-        100,
-    )
-    .unwrap();
-    assert!(map.map_span(&revision, Span { start: 0, end: 1 }).is_err());
     let path = Source::read(body.identity().clone(), "other.txt", b"abc", 100).unwrap();
     assert!(map.map_span(&path, Span { start: 0, end: 1 }).is_err());
 }

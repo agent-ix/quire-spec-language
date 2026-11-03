@@ -76,8 +76,7 @@ fn assert_format_identity(
     let mut formatted_limits = limits;
     formatted_limits.source.source_bytes =
         formatted_limits.source.source_bytes.max(formatted.len());
-    let mut formatted_source = source;
-    formatted_source.revision.push_str("-formatted");
+    let formatted_source = source;
     {
         let reparsed = qsl_cst::parse(
             formatted_source.clone(),
@@ -207,11 +206,10 @@ pub fn dependency_fixture_identity(
     text: &str,
     libraries: Vec<SuppliedLibrary>,
 ) {
-    let format = |mut source: SourceIdentity, path: &str, bytes: &[u8]| {
+    let format = |source: SourceIdentity, path: &str, bytes: &[u8]| {
         let parsed =
             qsl_cst::parse(source.clone(), path, bytes, qsl_cst::Limits::default()).unwrap();
         let formatted = qsl_cst::format::format(&parsed).unwrap();
-        source.revision.push_str("-formatted");
         let reparsed = qsl_cst::parse(
             source,
             path,
@@ -229,8 +227,7 @@ pub fn dependency_fixture_identity(
     let formatted_libraries: Vec<_> = libraries
         .iter()
         .map(|library| {
-            let mut source = library.source.clone();
-            source.revision.push_str("-formatted");
+            let source = library.source.clone();
             SuppliedLibrary {
                 identity: library.identity.clone(),
                 source,
@@ -244,8 +241,7 @@ pub fn dependency_fixture_identity(
     let formatted_text = format(source.clone(), path, text.as_bytes());
     let packages = BTreeMap::new();
     let limits = SpineLimits::default();
-    let mut formatted_source = source.clone();
-    formatted_source.revision.push_str("-formatted");
+    let formatted_source = source.clone();
     // The two sides are independent: check them on two threads.
     let (original, formatted) = std::thread::scope(|scope| {
         let original = scope.spawn(|| {
