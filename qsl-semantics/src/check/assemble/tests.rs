@@ -3005,10 +3005,10 @@ fn a_dimension_reaching_a_defect_runs_its_own_unit_rows_first() {
     // U11z3a and U11z3b.
     let cycle = "dimension E = A; dimension A = B; dimension B = A;";
     assert_eq!(
-        first_defect(&format!(
+        first_defect(
             "dimension E = A; unit e : E = rational(0, 1); \
              dimension A = B; dimension B = A;"
-        )),
+        ),
         ("invalid_package/invalid-value".to_owned(), "e".to_owned())
     );
     let (text, found) = errors(cycle);
