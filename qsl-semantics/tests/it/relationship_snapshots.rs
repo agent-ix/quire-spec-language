@@ -739,7 +739,7 @@ fn check_6_6_refuses_a_malformed_entry() {
 }
 
 /// TC-1035 rows 9 and 10: check 6.7.
-#[trace("TC-1035", "TC-1308", "FR-106-AC-24", "FR-513-AC-14")]
+#[trace("TC-1035", "TC-1308", "FR-106-AC-24")]
 #[test]
 fn check_6_7_refuses_a_non_navigation_relationship_and_a_second_entry() {
     for named in [identity("Sys"), identity("relationship/Nope-x-Pump")] {
@@ -764,7 +764,7 @@ fn check_6_7_refuses_a_non_navigation_relationship_and_a_second_entry() {
 }
 
 /// TC-1035 rows 11 to 13: check 6.8.
-#[trace("TC-1035", "TC-1308", "FR-106-AC-24", "FR-513-AC-14")]
+#[trace("TC-1035", "TC-1308", "FR-106-AC-24")]
 #[test]
 fn check_6_8_refuses_a_malformed_instance_and_an_end_of_the_wrong_type() {
     let composition = identity(&format!("relationship/{COMPOSITION}"));
@@ -888,14 +888,7 @@ fn checks_run_entry_by_entry_and_instance_by_instance() {
 }
 
 /// TC-1035 rows 17 to 19 (and TC-1041 row 19): closure and completeness.
-#[trace(
-    "TC-1035",
-    "TC-1308",
-    "FR-106-AC-25",
-    "FR-364-AC-13",
-    "FR-513-AC-14",
-    "TC-1041"
-)]
+#[trace("TC-1035", "TC-1308", "FR-106-AC-25", "FR-364-AC-13", "TC-1041")]
 #[test]
 fn a_dangling_instance_end_is_refused_at_check_8_and_an_incomplete_one_at_check_7() {
     // Row 17: housing p2-t9, t9 listed nowhere.

@@ -1296,16 +1296,7 @@ fn assert_error<T>(report: &artifact::Report<T>, expected: Error) {
 }
 
 /// TC-143: FR-054-AC-1 through FR-054-AC-4.
-#[trace(
-    "TC-143",
-    "TC-1308",
-    "FR-054-AC-1",
-    "FR-054-AC-2",
-    "FR-054-AC-3",
-    "FR-054-AC-4",
-    "FR-513-AC-11",
-    "FR-513-AC-15"
-)]
+#[trace("TC-143", "FR-054-AC-1", "FR-054-AC-2", "FR-054-AC-3", "FR-054-AC-4")]
 #[test]
 fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
@@ -2504,7 +2495,7 @@ fn binding(side: v2::InventorySide, cause: v2::BindingCause) -> Error {
     v2_refusal(v2::Refusal::Binding { side, cause })
 }
 
-#[trace("TC-138", "TC-1308", "FR-050-AC-2", "FR-050-AC-3", "FR-513-AC-15")]
+#[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
 #[test]
 fn public_v2_refusal_codes_are_injective_across_every_declared_axis() {
     let mut refusals = Vec::new();
@@ -2788,14 +2779,7 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
     });
 }
 
-#[trace(
-    "TC-138",
-    "TC-150",
-    "TC-1308",
-    "FR-050-AC-2",
-    "FR-050-AC-3",
-    "FR-513-AC-15"
-)]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3")]
 #[test]
 fn producer_requires_one_exact_source_definition_and_clock_selection() {
     with_v2(|inputs, proofs, selected, temporal, _| {
@@ -2920,15 +2904,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
     });
 }
 
-#[trace(
-    "TC-138",
-    "TC-150",
-    "TC-1308",
-    "FR-050-AC-2",
-    "FR-050-AC-3",
-    "FR-050-AC-4",
-    "FR-513-AC-9"
-)]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
 #[test]
 fn strict_reader_rejects_structural_and_identity_substitutions() {
     with_v2(|inputs, proofs, _, temporal, emitted| {

@@ -3914,7 +3914,7 @@ fn tc465_row22_null_result_for_an_operation_with_a_result_refuses_missing_member
 
 /// Row 23 (check 7; SR-750 FND-001): `complete: false`, `child.parent`
 /// naming `missing` -- `Incomplete`, no dangling record.
-#[trace("TC-465", "TC-1308", "FR-106-AC-4", "FR-513-AC-14")]
+#[trace("TC-465", "TC-1308", "FR-106-AC-4")]
 #[test]
 fn tc465_row23_incomplete_population_with_a_dangling_target_is_incomplete_not_refused() {
     let document = tc465_document();
@@ -3927,7 +3927,7 @@ fn tc465_row23_incomplete_population_with_a_dangling_target_is_incomplete_not_re
 
 /// Row 24 (check 8; SR-750 FND-001): row 23 with `complete: true` --
 /// `dangling_reference`, naming `missing` and `config_history`.
-#[trace("TC-465", "TC-1308", "FR-106-AC-4", "FR-513-AC-14")]
+#[trace("TC-465", "TC-1308", "FR-106-AC-4")]
 #[test]
 fn tc465_row24_dangling_target_in_a_complete_population_refuses_dangling_reference() {
     let document = tc465_document();

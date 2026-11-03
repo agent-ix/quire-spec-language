@@ -959,29 +959,44 @@ pub(in crate::emit::tests) fn tc134_selections(
     graph: &qsl_semantics::check::CheckedGraph,
 ) -> Vec<crate::emit::TemporalClockSelection> {
     let source = graph.source().clone();
-    let temporal = graph.temporal_clauses().iter().map(|t| t.clause().span());
-    let hyper = graph.hyper_clauses().iter().map(|h| h.span());
-    let compensations = graph.protocols().iter().flat_map(|protocol| {
-        protocol
-            .obligations
-            .compensations
-            .iter()
-            .filter(|template| {
-                matches!(
-                    template.temporal_profile,
-                    Some(
-                        qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
-                            | qsl_semantics::check::TemporalProfile::FixedSampleFalseExtension
-                            | qsl_semantics::check::TemporalProfile::TimestampedEventFiniteWindow
-                    )
+    let mut selections = Vec::new();
+    for temporal in graph.temporal_clauses() {
+        selections.push((
+            crate::emit::tests::node_id(temporal.identity()),
+            temporal.clause().span(),
+        ));
+    }
+    for hyper in graph.hyper_clauses() {
+        let Some(occurrence) = hyper.assembled_occurrence() else {
+            continue;
+        };
+        selections.push((crate::emit::tests::node_id(occurrence.node()), hyper.span()));
+    }
+    for protocol in graph.protocols() {
+        let Some(keys) = graph.protocol_node_keys(&protocol.name) else {
+            continue;
+        };
+        for (index, template) in protocol.obligations.compensations.iter().enumerate() {
+            if !matches!(
+                template.temporal_profile,
+                Some(
+                    qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
+                        | qsl_semantics::check::TemporalProfile::FixedSampleFalseExtension
+                        | qsl_semantics::check::TemporalProfile::TimestampedEventFiniteWindow
                 )
-            })
-            .map(|template| template.span)
-    });
-    temporal
-        .chain(hyper)
-        .chain(compensations)
-        .map(|span| crate::emit::TemporalClockSelection {
+            ) {
+                continue;
+            }
+            let Some(key) = keys.compensations.get(index) else {
+                continue;
+            };
+            selections.push((crate::emit::tests::node_id(key), template.span));
+        }
+    }
+    selections.sort_by(|left, right| left.0.cmp(&right.0));
+    selections
+        .into_iter()
+        .map(|(_, span)| crate::emit::TemporalClockSelection {
             source: source.clone(),
             declaration_span: span,
             clock: tc134_clock(),

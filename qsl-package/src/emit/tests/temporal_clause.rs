@@ -66,7 +66,7 @@ pub(super) struct Compiled {
 /// emitter, with nothing omitted.
 pub(super) fn compile(unit: &str) -> Compiled {
     let graph = check_graph(unit);
-    let selections = graph
+    let mut selections: Vec<_> = graph
         .temporal_clauses()
         .iter()
         .filter_map(|temporal| {
@@ -77,6 +77,13 @@ pub(super) fn compile(unit: &str) -> Compiled {
             })
         })
         .collect::<Vec<_>>();
+    selections.sort_by_key(|selection| {
+        graph
+            .temporal_clauses()
+            .iter()
+            .find(|temporal| temporal.clause().span() == selection.declaration_span)
+            .map(|temporal| super::node_id(temporal.identity()))
+    });
     let clauses = graph.temporal_clauses().to_vec();
     let emission = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
@@ -344,10 +351,16 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
         },
         ..event_selection.clone()
     };
+    let wrong_profile_span = wrong_profile.declaration_span;
+    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_profile])
+        .expect_err("a clock configuration must match its checked profile");
     assert!(matches!(
-        crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_profile]),
-        Err(crate::emit::EmitRefusal::TemporalClockProfileMismatch { .. })
+        &refusal,
+        crate::emit::EmitRefusal::TemporalClockProfileMismatch { span, .. }
+            if *span == wrong_profile_span
     ));
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("timed-node-reference"));
 
     let wrong_source = crate::emit::TemporalClockSelection {
         source: qsl_foundation::source::provenance::RawSourceRef::new(
@@ -355,12 +368,243 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
             "different-source",
         )
         .expect("valid fixture source"),
-        ..event_selection
+        ..event_selection.clone()
     };
+    let wrong_source_span = wrong_source.declaration_span;
+    let wrong_source_ref = wrong_source.source.clone();
+    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_source])
+        .expect_err("a selection cannot name a different source document");
     assert!(matches!(
-        crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_source]),
-        Err(crate::emit::EmitRefusal::MissingTemporalClockSelection { .. })
+        &refusal,
+        crate::emit::EmitRefusal::SurplusTemporalClockSelection { source_ref, span }
+            if *span == wrong_source_span && source_ref == &wrong_source_ref
     ));
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("timed-node-reference"));
+
+    let out_of_range = crate::emit::TemporalClockSelection {
+        declaration_span: qsl_foundation::Span { start: 0, end: 1 },
+        ..event_selection.clone()
+    };
+    let out_of_range_span = out_of_range.declaration_span;
+    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &[out_of_range])
+        .expect_err("an out-of-range declaration locus is a bad node reference");
+    assert!(matches!(
+        &refusal,
+        crate::emit::EmitRefusal::SurplusTemporalClockSelection { span, .. }
+            if *span == out_of_range_span
+    ));
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("timed-node-reference"));
+}
+
+/// FR-050-AC-2 / TC-1308: the emitter rejects temporal selections that do
+/// not follow the structural declaration identity order.
+#[trace("TC-1308", "FR-050-AC-2", "FR-513-AC-9")]
+#[test]
+fn temporal_clock_selections_must_follow_node_reference_order() {
+    use crate::emit::{EmitRefusal, TemporalClockSelection};
+
+    let source = unit(
+        EVENT,
+        &format!(
+            "{} {}",
+            declared("Alpha", "eventually[0,1] holds(c.versionNumber = 2)"),
+            declared("Zeta", "eventually[0,1] holds(c.versionNumber = 3)")
+        ),
+    );
+    let graph = check_graph(&source);
+    let mut selections: Vec<_> = graph
+        .temporal_clauses()
+        .iter()
+        .map(|temporal| {
+            (
+                node_id(temporal.identity()),
+                TemporalClockSelection {
+                    source: graph.source().clone(),
+                    declaration_span: temporal.clause().span(),
+                    clock: fixture_clock(temporal.clause().profile())
+                        .expect("event profile selection"),
+                },
+            )
+        })
+        .collect();
+    assert_eq!(selections.len(), 2);
+    selections.sort_by(|left, right| left.0.cmp(&right.0));
+    let reversed: Vec<_> = selections
+        .into_iter()
+        .rev()
+        .map(|(_, selection)| selection)
+        .collect();
+    let out_of_order_span = reversed[1].declaration_span;
+    let package = CheckedPackage::link(graph);
+    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &reversed)
+        .expect_err("selection order is part of the emitter contract");
+    assert!(matches!(
+        &refusal,
+        EmitRefusal::InvalidTemporalClockReference { span, .. }
+            if *span == out_of_order_span
+    ));
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("timed-node-reference"));
+}
+
+/// FR-050-AC-3 / TC-1308: the producer refuses malformed or out-of-range
+/// clock names and typed clock fields before it returns an emitted package.
+#[trace("TC-1308", "FR-050-AC-3", "FR-513-AC-9")]
+#[test]
+fn malformed_temporal_clock_values_refuse_emission_at_the_field() {
+    use crate::emit::{EmitRefusal, TemporalClockSelection};
+    use quire_contract_model::{ClockConfiguration as C, ClockExactNumber as N};
+
+    fn selection(graph: &qsl_semantics::check::CheckedGraph, clock: C) -> TemporalClockSelection {
+        let temporal = &graph.temporal_clauses()[0];
+        TemporalClockSelection {
+            source: graph.source().clone(),
+            declaration_span: temporal.clause().span(),
+            clock,
+        }
+    }
+
+    fn refuses_field(package: &CheckedPackage, selected: &TemporalClockSelection, field: &str) {
+        let refusal =
+            crate::emit::emit_checked_with_temporal_selections(package, &[selected.clone()])
+                .expect_err("an invalid clock value cannot produce a package");
+        assert!(matches!(
+            &refusal,
+            EmitRefusal::InvalidTemporalClockValue { field: actual, .. } if *actual == field
+        ));
+        assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+        assert_eq!(refusal.cause(), Some("invalid-value"));
+    }
+
+    let event_graph = check_graph(&unit(
+        EVENT,
+        &declared("Bound", "eventually[0,1] holds(c.versionNumber = 2)"),
+    ));
+    let event_selection = selection(
+        &event_graph,
+        C::EventPosition {
+            sequence_authority: "valid-authority".into(),
+        },
+    );
+    let event_package = CheckedPackage::link(event_graph);
+    for authority in [
+        String::new(),
+        "a".repeat(qsl_foundation::selection::MAX_SELECTION_IDENTITY_BYTES + 1),
+    ] {
+        let mut selected = event_selection.clone();
+        selected.clock = C::EventPosition {
+            sequence_authority: authority.into(),
+        };
+        refuses_field(&event_package, &selected, "sequence_authority");
+    }
+
+    let fixed_graph = check_graph(&unit(
+        "quire.temporal.fixed-sample.false-extension/v1",
+        &declared("Bound", "eventually[0,5] holds(c.versionNumber = 2)"),
+    ));
+    let fixed = |epoch: N, period: N, unit: String| C::FixedSample {
+        epoch,
+        period,
+        unit: unit.into(),
+    };
+    let integer = |decimal: &str| N::Integer {
+        decimal: decimal.into(),
+    };
+    let rational = |numerator: &str, denominator: &str| N::Rational {
+        numerator: numerator.into(),
+        denominator: denominator.into(),
+    };
+    let fixed_selection = selection(
+        &fixed_graph,
+        fixed(integer("0"), rational("1", "10"), "test-ms".into()),
+    );
+    let fixed_package = CheckedPackage::link(fixed_graph);
+    for (clock, field) in [
+        (
+            fixed(rational("2", "2"), rational("1", "10"), "test-ms".into()),
+            "epoch",
+        ),
+        (
+            fixed(integer("0"), integer("0"), "test-ms".into()),
+            "period",
+        ),
+        (
+            fixed(integer("0"), integer("-1"), "test-ms".into()),
+            "period",
+        ),
+        (
+            fixed(integer("0"), rational("2", "2"), "test-ms".into()),
+            "period",
+        ),
+        (
+            fixed(
+                integer("0"),
+                integer("9223372036854775808"),
+                "test-ms".into(),
+            ),
+            "period",
+        ),
+        (
+            fixed(integer("0"), rational("1", "10"), String::new()),
+            "unit",
+        ),
+        (
+            fixed(
+                integer("0"),
+                rational("1", "10"),
+                "u".repeat(qsl_foundation::selection::MAX_SELECTION_IDENTITY_BYTES + 1),
+            ),
+            "unit",
+        ),
+    ] {
+        let mut selected = fixed_selection.clone();
+        selected.clock = clock;
+        refuses_field(&fixed_package, &selected, field);
+    }
+
+    let timestamp_graph = check_graph(&unit(
+        "quire.temporal.timestamped-event.finite-window/v1",
+        &declared("Bound", "always[1,9] holds(c.versionNumber >= 1)"),
+    ));
+    let timestamp_selection = selection(
+        &timestamp_graph,
+        C::TimestampedEvent {
+            timestamp_unit: "test-rfc3339".into(),
+        },
+    );
+    let timestamp_package = CheckedPackage::link(timestamp_graph);
+    for timestamp_unit in [
+        String::new(),
+        "t".repeat(qsl_foundation::selection::MAX_SELECTION_IDENTITY_BYTES + 1),
+    ] {
+        let mut selected = timestamp_selection.clone();
+        selected.clock = C::TimestampedEvent {
+            timestamp_unit: timestamp_unit.into(),
+        };
+        refuses_field(&timestamp_package, &selected, "timestamp_unit");
+    }
+
+    for clock_name in [
+        String::new(),
+        "c".repeat(qsl_foundation::selection::MAX_SELECTION_IDENTITY_BYTES + 1),
+    ] {
+        let text = unit(
+            EVENT,
+            &declared("Bound", "eventually[0,1] holds(c.versionNumber = 2)"),
+        )
+        .replace("clock \"model-steps\"", &format!("clock \"{clock_name}\""));
+        let graph = check_graph(&text);
+        let selected = selection(
+            &graph,
+            C::EventPosition {
+                sequence_authority: "test-order-events".into(),
+            },
+        );
+        let package = CheckedPackage::link(graph);
+        refuses_field(&package, &selected, "clock_name");
+    }
 }
 
 /// The I2 evidence for a ConfigVersion package: its required features and

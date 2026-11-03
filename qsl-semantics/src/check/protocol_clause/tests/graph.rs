@@ -16,7 +16,7 @@ use crate::check::{CheckRefusal, CheckedAwait, CheckedDeadline, CheckedGraph};
 fn flow(members: &str, run: &str) -> String {
     format!(
         "record Plain {{ ready: Boolean; done: Boolean; }}\n\
-         protocol Flow using pp over (input: Boolean) on origin {{\n\
+         protocol Flow using pp over (input: M::Actor) on origin {{\n\
          role R on M::Actor;\n\
          role S on M::Actor;\n\
          {members}\n\
@@ -736,7 +736,7 @@ fn located_causes(source: &str) -> Vec<(ProtocolAnchorCause, String)> {
 /// a discarded `let` that reads a fact still needs the fact listed; a read
 /// of the `over` input refuses `ill_typed`/`operator-ineligible` at the read,
 /// naming the guard; a read of a protocol capture checks without listing.
-#[trace("TC-1056", "TC-1308", "FR-218-AC-17", "FR-513-AC-12")]
+#[trace("TC-1056", "FR-218-AC-17", "FR-218-AC-18")]
 #[test]
 fn a_decision_reads_only_listed_facts_of_its_owner() {
     let graph = checks(&received(&pick(
@@ -839,6 +839,42 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
         [read("rx", ObservationReason::OtherRole, "rx.ready")],
         "a short-circuited operand cannot read another role's fact"
     );
+    let skipped_sibling_binder = flow(
+        &channel("ch", "Plain"),
+        "parallel Both { \
+         branch left sequence Left { event Early by R as (rx: Plain) { true }; } \
+         branch right sequence Right { send Tx via ch as (tx: Plain) { true }; \
+         receive Rx via ch of Tx as (incoming: Plain) { true }; \
+         choice Pick by S visible () { case yes when { true or rx.ready } sequence Yes { } \
+         case no when { false } sequence No { } } } } join all [left, right];",
+    );
+    let sibling_refusals = located_causes(&skipped_sibling_binder);
+    assert!(
+        sibling_refusals.iter().any(|(cause, at)| {
+            at == "rx" && matches!(cause,
+                ProtocolAnchorCause::SlotClause { cause, .. }
+                    if matches!(cause.as_ref(), crate::check::CheckCause::MissingName(name) if name == "rx"))
+        }),
+        "a sibling branch binder in a skipped guard operand is refused: {sibling_refusals:?}"
+    );
+
+    let same_spelled_other_owner = flow(
+        &channel("ch", "Plain"),
+        "parallel Both { \
+         branch left sequence Left { event Early by R as (rx: Plain) { true }; } \
+         branch right sequence Right { send Tx via ch as (tx: Plain) { true }; \
+         receive Rx via ch of Tx as (rx: Plain) { true }; \
+         choice Pick by R visible () { case yes when { true or rx.ready } sequence Yes { } \
+         case no when { false } sequence No { } } } } join all [left, right];",
+    );
+    let same_name_refusals = located_causes(&same_spelled_other_owner);
+    assert!(
+        same_name_refusals.iter().any(|(cause, at)| {
+            at == "rx"
+                && matches!(cause, ProtocolAnchorCause::Shadow { name, .. } if name == "rx")
+        }),
+        "the duplicate same-spelled binder is refused before guard checking: {same_name_refusals:?}"
+    );
     for (binder, node) in [
         (
             "applied",
@@ -903,13 +939,13 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
         )]
     );
 
-    let over = located_causes(&received(&pick("S", "", "input", "not input")));
+    let over = located_causes(&received(&pick("S", "", "input.ready", "not input.ready")));
     let [(ProtocolAnchorCause::SlotModelState { node, slot, .. }, at), _] = over.as_slice() else {
         panic!("two model-state refusals, got {over:?}");
     };
     assert_eq!(
         (node.as_str(), *slot, at.as_str()),
-        ("Pick", SlotKind::Guard, "input")
+        ("Pick", SlotKind::Guard, "input.ready")
     );
 
     // A `finish` record, and a read both out of scope and unlisted, refuse
@@ -953,7 +989,7 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
 
     let captured = received(&pick("S", "", "kept", "not kept")).replacen(
         "role R on",
-        "capture kept: Boolean = input;\nrole R on",
+        "capture kept: Boolean = input.ready;\nrole R on",
         1,
     );
     checks(&captured);
