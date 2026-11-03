@@ -773,9 +773,16 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
     assert!(temporal_requirements
         .iter()
         .all(|obligation| { obligation.span().start < obligation.span().end }));
-    assert!(temporal_requirements
-        .iter()
-        .any(|obligation| report_slice(obligation.span()) == "requires temporal Due;"));
+    assert!(
+        temporal_requirements
+            .iter()
+            .any(|obligation| report_slice(obligation.span()) == "requires temporal Due;"),
+        "temporal obligation spans: {:?}",
+        temporal_requirements
+            .iter()
+            .map(|obligation| report_slice(obligation.span()))
+            .collect::<Vec<_>>()
+    );
 }
 
 /// FR-480-AC-2/AC-8 and FR-514-AC-2: aggregate type resolution returns two
