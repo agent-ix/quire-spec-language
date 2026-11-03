@@ -1002,6 +1002,15 @@ impl AdmittedModel {
         &self.selection
     }
 
+    /// Whether `other` admits the same package content, whatever alias
+    /// selects it.
+    pub(crate) fn same_package(&self, other: &Self) -> bool {
+        self.records == other.records
+            && self.dimensions == other.dimensions
+            && self.units == other.units
+            && self.types == other.types
+    }
+
     /// Every object type of this package: its declaration key and its
     /// effective identity.
     pub(crate) fn object_types(&self) -> impl Iterator<Item = (&DeclarationKey, EffectiveId)> {

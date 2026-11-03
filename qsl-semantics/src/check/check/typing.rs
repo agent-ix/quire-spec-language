@@ -1427,7 +1427,7 @@ impl<'a> Typer<'a> {
                     };
                     if let Callee::Value(application) = &application {
                         if let Some(target) = application.pending_dependency_target() {
-                            self.scope().record_dependency_reference(
+                            self.record_dependency_reference(
                                 super::super::PendingDependencyReference {
                                     name: name.name.clone(),
                                     site: location.clone(),

@@ -24,9 +24,26 @@ pub struct Diagnostic {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DiagnosticSink {
     entries: Vec<Diagnostic>,
+    /// The predicate calls resolved while one package is checked, appended
+    /// through the same explicit stage state and drained once the package's
+    /// clauses are all typed.
+    dependency_references: Vec<crate::check::PendingDependencyReference>,
 }
 
 impl DiagnosticSink {
+    pub(crate) fn record_dependency_reference(
+        &mut self,
+        reference: crate::check::PendingDependencyReference,
+    ) {
+        self.dependency_references.push(reference);
+    }
+
+    pub(crate) fn take_dependency_references(
+        &mut self,
+    ) -> Vec<crate::check::PendingDependencyReference> {
+        std::mem::take(&mut self.dependency_references)
+    }
+
     pub(crate) fn record(&mut self, scope: &ScopeStack, message: impl Into<String>) {
         self.entries.push(Diagnostic {
             scope: scope.path(),

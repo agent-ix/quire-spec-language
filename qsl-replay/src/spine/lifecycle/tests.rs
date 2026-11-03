@@ -1232,8 +1232,8 @@ fn syntax_refusal_does_not_suppress_clean_protocol_emission() {
 fn a_continued_protocol_refusal_has_no_subject_or_partial_reference_rows() {
     let unit = format!(
         "{HEADER}model M = \"acme/orders\";\n\
-         function helper(): Boolean pure {{ true }}\n\
-         function answer using v(): Boolean pure {{ helper() }}\n\
+         function base using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
+         function answer using v(x: Int[0, 9]): Int[0, 10] pure {{ base(x) }}\n\
          {}\n\
          {}",
         protocol_source("W", true),
