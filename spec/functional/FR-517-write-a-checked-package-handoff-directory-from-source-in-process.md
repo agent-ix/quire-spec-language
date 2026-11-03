@@ -133,10 +133,10 @@ ported recipe is **R**; its elements and their spine requirements:
 | --- | --- |
 | `model.json` scalars `ObjectId` (text, 128), `Amount` 1..20, `Total` 0..100, `Tally` 0..5, `Wide` (signed 64-bit) | one domain package document with the same bounds, selected by a `model` declaration; `Amount` and `Total` carry no unit (FR-517-AC-13) |
 | scalars `Ratio` and `Exact` (bounded rationals) | none (FR-517-AC-12) |
-| records `Workflow`, `Notice`, `Provider`; sequence `receipts` (maximum 5); the compensations' `attempts`, `retry` and `recover` binders typed by the object type `Workflow` | the same records and bounded sequence, `Workflow` kept as the `over`, role and forward-binder type; the `attempts` type and the `retry` binders are the record value type `Attempt` (field `tally`), and the `recover` binder the record value type `Recovery` (field `receipts`) |
+| records `Workflow`, `Notice`, `Provider`; sequence `receipts` (maximum 5); the compensations' `attempts`, `retry` and `recover` binders typed by the object type `Workflow` | the object types `Workflow` and `Provider`, the record value type `Notice` and the bounded sequence `receipts`; `Workflow` stays the `over`, role and forward-binder type; the `attempts` type and the `retry` binders are the record value type `Attempt` (field `tally`), and the `recover` binder the record value type `Recovery` (field `receipts`) |
 | `predicates` and `state` bodies: cross-unit calls, bounded `sum`/`size` queries, the extrema literals `-9223372036854775808` and `9223372036854775807` | predicates and functions in a library unit imported by the main unit, with the same literals |
 | `temporal` bodies, three clock kinds: event position, fixed sample, timestamped event | four `temporal` clauses, each under a `profile` selection; clock configurations are given in the request (QSL-1557); `temporal_bindings` holds one row per temporal clause and per compensation template, in ascending `NodeRef` order |
-| `workflow` body: roles `Service` and `Provider`, channel `Decisions` with two `Notice` receives and an all-branch join, `Outcome` choice with complementary Boolean guards, `Workflow::apply` with pre and post, and the compensations `Full` (commit `Main::Committed`) and `Partial` (commit `never`) | one `protocol` with the same roles, channel, join, choice, effect and two `compensate` templates (FR-383), whose `recover` conditions test `size` of the receipts (FR-517-AC-14) |
+| `workflow` body: roles `Service` and `Provider`, channel `Decisions` with two `Notice` receives and an all-branch join, `Outcome` choice with complementary Boolean guards, `Workflow::apply` with pre and post, and the compensations `Full` (commit `Main::Committed`) and `Partial` (commit `never`) | one `protocol` with the same roles, channel, join, choice, effect and two `compensate` templates (FR-383), whose `recover` conditions compare the receipt sum with the captured target (FR-517-AC-14); until a `sum` query binder is admitted inside `recover` (QSL-1555), **R** substitutes a `size` bound on the receipts and a test of the captured target |
 
 The legacy recipe's `Workflow` attempt and recovery binders are not portable,
 and **R** replaces their type rather than the element. An attempt record is a
@@ -148,8 +148,12 @@ model state, and a field read of an object-typed binder is a model-state read
 model state"), so `earlier.tally` and `recovered.receipts` over `Workflow`
 binders are refused. The compensations keep every stage, bound and retry
 relation of the legacy recipe over the record value types `Attempt` and
-`Recovery`, and their `recover` conditions are those of FR-517-AC-14
-(QSL-1556).
+`Recovery`, and their `recover` conditions are those of FR-517-AC-14, with the
+`size` substitute above until QSL-1555 (QSL-1556). A `recover` condition that
+reads its recovery binder is checked and emitted, and analysis of **R**
+reports that compensation item `unsupported` with cause
+`recovery-view{predicate}` (QSpec FR-427): no rule derives a recovery view
+from a model state, so this is the expected result, not a defect of **R**.
 
 **R** is three packages, one per clock kind, because the emitter admits one
 temporal profile selection per unit and the checker refuses a unit that selects

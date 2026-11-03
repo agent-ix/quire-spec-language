@@ -41,7 +41,7 @@ protocol Flow using p over (view: M::Workflow) on origin {
         within [0,30]; attempts 3 of M::Attempt;
         retry (earlierFull: M::Attempt, laterFull: M::Attempt) {
             earlierFull.tally < 3 and laterFull.tally = earlierFull.tally + 1
-            and not activatedFull
+            and targetFull >= 0 and not activatedFull
         };
         commit Main::Committed;
         recover (recoveredFull: M::Recovery) {
@@ -61,7 +61,7 @@ protocol Flow using p over (view: M::Workflow) on origin {
         within [0,30]; attempts 3 of M::Attempt;
         retry (earlierPartial: M::Attempt, laterPartial: M::Attempt) {
             earlierPartial.tally < 3 and laterPartial.tally = earlierPartial.tally + 1
-            and not activatedPartial
+            and targetPartial >= 0 and not activatedPartial
         };
         commit never;
         recover (recoveredPartial: M::Recovery) {
