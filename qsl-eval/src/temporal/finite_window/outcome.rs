@@ -80,6 +80,13 @@ pub enum WindowVerdict {
         /// The first tick whose establishment would resolve it.
         deadline: u64,
     },
+    /// An event-position activation whose verdict only a further observation
+    /// can resolve (FR-504): its deadline is `NextEvent`, because event
+    /// position does not advance in silence.
+    PendingNextEvent {
+        /// The activation's anchor position.
+        at: TemporalPosition,
+    },
     /// The window is closed and the evidence still leaves the verdict open.
     Indeterminate {
         /// The activation's anchor position.
