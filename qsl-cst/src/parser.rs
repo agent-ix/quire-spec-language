@@ -101,7 +101,6 @@ pub(super) fn parse(
             Ok(forest) => Some(forest),
             Err(failure) => {
                 if let Some((forest, recovered, span)) = recover_at_protocol_delimiter(
-                    &source,
                     &grammar,
                     &significant,
                     limits,
@@ -226,7 +225,6 @@ pub(super) fn parse(
 /// declaration is recoverable; header, selection and EOF errors stay at the
 /// unit boundary.
 fn recover_at_protocol_delimiter(
-    source: &Source,
     grammar: &Grammar,
     significant: &[Significant],
     limits: Limits,
@@ -234,19 +232,19 @@ fn recover_at_protocol_delimiter(
     failure_position: usize,
 ) -> Option<(Forest, Vec<Significant>, Span)> {
     let is_protocol = |token: &Significant| token.kind == Some(Kind::Protocol);
-    let owner = significant
-        .iter()
-        .enumerate()
-        .take(failure_position.saturating_add(1))
-        .filter(|(_, token)| is_protocol(token))
-        .map(|(index, _)| index)
-        .last()?;
     let next = significant
         .iter()
         .enumerate()
-        .skip(failure_position.saturating_add(1))
+        .skip(failure_position)
         .find(|(_, token)| is_protocol(token))
         .map(|(index, _)| index)?;
+    let owner = significant
+        .iter()
+        .enumerate()
+        .take(next)
+        .filter(|(_, token)| is_protocol(token))
+        .map(|(index, _)| index)
+        .last()?;
     let mut depth = 0_usize;
     for token in significant.get(owner..next)? {
         match token.kind {
