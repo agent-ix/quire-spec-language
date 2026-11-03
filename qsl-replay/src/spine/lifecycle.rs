@@ -399,6 +399,8 @@ pub struct ParseRequest<'a> {
 pub struct ParsedUnitSource {
     syntax: qsl_cst::ParsedSource,
     unit: ParsedUnit,
+    protocol_results: Vec<super::ProtocolResult>,
+    protocol_forms_refusal: Option<FormsRefusal>,
 }
 
 /// S3-ready admitted source units. Units are held in FR-480 canonical owner
@@ -613,6 +615,12 @@ impl ParsedUnitSource {
     pub fn unit(&self) -> &ParsedUnit {
         &self.unit
     }
+
+    /// Per-protocol results retained through S2 for a caller that continues
+    /// the unit after an attributable protocol refusal.
+    pub fn protocol_results(&self) -> &[super::ProtocolResult] {
+        &self.protocol_results
+    }
 }
 
 /// The domain packages a unit's `model` declarations selected, admitted at
@@ -728,10 +736,29 @@ pub fn parse(
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
+    parse_operation(request, limits, cancel, false)
+}
+
+/// S1 and S2 for the compiler's continuation path: an attributable protocol
+/// refusal stays in the parsed value so clean protocols can continue.
+pub(crate) fn parse_for_continuation(
+    request: &ParseRequest<'_>,
+    limits: SourceLimits,
+    cancel: &Cancel,
+) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
+    parse_operation(request, limits, cancel, true)
+}
+
+fn parse_operation(
+    request: &ParseRequest<'_>,
+    limits: SourceLimits,
+    cancel: &Cancel,
+    continue_protocol_refusals: bool,
+) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
     let source_len =
         |identity: &SourceIdentity| (identity == request.source).then_some(request.bytes.len());
     stage(cancel, &source_len, |work| {
-        charged(cancel, &mut work.s1, || {
+        let parsed = charged(cancel, &mut work.s1, || {
             parse_unit(
                 request.source.clone(),
                 request.path,
@@ -739,7 +766,35 @@ pub fn parse(
                 limits,
                 cancel,
             )
-        })
+        })?;
+        if !continue_protocol_refusals && !parsed.protocol_results.is_empty() {
+            let refusal = parsed
+                .syntax
+                .diagnostics()
+                .first()
+                .map(|diagnostic| Box::new(CompileRefusal::Source(Box::new(diagnostic.clone()))))
+                .or_else(|| {
+                    parsed.protocol_forms_refusal.clone().map(|failure| {
+                        Box::new(CompileRefusal::Forms {
+                            region: failure
+                                .span
+                                .and_then(|span| region(parsed.source().reference(), span)),
+                            failure,
+                        })
+                    })
+                })
+                .ok_or_else(|| {
+                    Box::new(CompileRefusal::Check {
+                        refusals: Vec::new(),
+                        region: None,
+                    })
+                })?;
+            return Err(StageError::with_protocol_results(
+                refusal,
+                parsed.protocol_results.clone(),
+            ));
+        }
+        Ok(parsed)
     })
 }
 
@@ -1076,33 +1131,92 @@ fn parse_unit(
 ) -> Result<ParsedUnitSource, StageError> {
     let parsed = qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
         .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
-    if let Some(first) = parsed.diagnostics().first() {
-        let refusal = Box::new(CompileRefusal::Source(Box::new(first.clone())));
-        if let Some(results) = syntax_protocol_results(&parsed, first) {
-            return Err(StageError::with_protocol_results(refusal, results));
-        }
-        return Err(refusal.into());
-    }
     let raw = parsed.source().reference().clone();
-    let unit = build_unit(&parsed).map_err(|failure| {
-        Box::new(CompileRefusal::Forms {
-            region: failure.span.and_then(|span| region(&raw, span)),
-            failure,
-        })
-    })?;
+    let (unit, forms_refusals) = match qsl_forms::build_unit_with_protocol_results(&parsed) {
+        Ok(built) => built,
+        Err(failure) => {
+            if let Some(diagnostic) = parsed.diagnostics().first() {
+                return Err(Box::new(CompileRefusal::Source(Box::new(diagnostic.clone()))).into());
+            }
+            return Err(Box::new(CompileRefusal::Forms {
+                region: failure.span.and_then(|span| region(&raw, span)),
+                failure,
+            })
+            .into());
+        }
+    };
+    let protocol_results = syntax_protocol_results(&parsed, parsed.diagnostics().first())
+        .or_else(|| forms_protocol_results(&parsed, &forms_refusals))
+        .unwrap_or_default();
+    let protocol_forms_refusal = forms_refusals
+        .first()
+        .map(|failure| failure.refusal.clone());
     Ok(ParsedUnitSource {
         syntax: parsed,
         unit,
+        protocol_results,
+        protocol_forms_refusal,
     })
+}
+
+fn forms_protocol_results(
+    parsed: &qsl_cst::ParsedSource,
+    refusals: &[qsl_forms::ProtocolFormsRefusal],
+) -> Option<Vec<super::ProtocolResult>> {
+    use qsl_cst::Production;
+    let clauses: Vec<_> = parsed
+        .cst()
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProtocolClause)
+        .collect();
+    if clauses.is_empty() {
+        return None;
+    }
+    clauses
+        .into_iter()
+        .map(|node| {
+            let span = node.span();
+            let declaration = parsed
+                .source()
+                .text()
+                .get(span.start..span.end)?
+                .strip_prefix("protocol")?
+                .trim_start()
+                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .next()?
+                .to_owned();
+            Some(
+                refusals
+                    .iter()
+                    .find(|failure| failure.declaration == declaration)
+                    .map_or_else(
+                        || super::ProtocolResult::Cleared {
+                            declaration: declaration.clone(),
+                            stage: super::SpineStage::Forms,
+                        },
+                        |failure| super::ProtocolResult::Refused {
+                            declaration,
+                            source_index: 0,
+                            declaration_span: failure.declaration_span,
+                            code: failure.refusal.catalog_code(),
+                            cause: format!("{:?}", failure.refusal.cause),
+                            locus: None,
+                        },
+                    ),
+            )
+        })
+        .collect()
 }
 
 /// The declarations delimited by S1 when one syntax diagnostic belongs to
 /// exactly one protocol. Returns `None` for a unit-level error.
 fn syntax_protocol_results(
     parsed: &qsl_cst::ParsedSource,
-    diagnostic: &qsl_cst::CompleteDiagnostic,
+    diagnostic: Option<&qsl_cst::CompleteDiagnostic>,
 ) -> Option<Vec<super::ProtocolResult>> {
     use qsl_cst::Production;
+    let diagnostic = diagnostic?;
     let diagnostic_span = diagnostic.byte_span()?;
     let clauses: Vec<_> = parsed
         .cst()
@@ -1128,7 +1242,7 @@ fn syntax_protocol_results(
         if source_index == owner {
             results.push(super::ProtocolResult::Refused {
                 declaration,
-                source_index,
+                source_index: 0,
                 declaration_span: span,
                 code: diagnostic.code,
                 cause: format!("{:?}", diagnostic.cause),
