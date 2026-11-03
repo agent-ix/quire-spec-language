@@ -458,7 +458,11 @@ Three outcome families exist, each with one owner. They are distinct and never
 converted into one another except by the maps in the table below. #213 adds
 one QSL type in F `diagnostic`, the outcome category, which is the target of
 every map below and of each family map (Q210-3, answered in ADR-012 §13.5). It
-has the eight values in the first column. It is not a kernel type.
+has the ten values in the first column (the eight of #213, plus `pending` and
+`indeterminate`, which FR-285 names as categories of their own: `pending` is the
+exit-0 category of a supplied-trace clause still pending when the trace ends,
+not a status of `inconclusive`, whose exit is 22; `indeterminate` is a finite-
+window clause whose closed evidence stays unresolved, FR-501). It is not a kernel type.
 
 | Family | Owner and type | Serialized authority |
 | --- | --- | --- |
@@ -476,6 +480,8 @@ Category mapping. Every source value has exactly one row.
 | refusal | `Refused(Refusal)` → refusal; S6a `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` → refusal | `invalid-request` | `Refused`, `InvalidInput`, `IncompleteInput` → one FR-331 result with a typed refusal cause and a `DeclineCode`; the result value is QC-9. `DeclineCode` carries a QSL catalog code (`Qsl`) or a STD-001 registry code (`Std001`, IR's `kani_*` codes among them). A code is never remapped from one registry onto the other, the `Std001` arm records no issuer, and it refuses no unregistered code |
 | unsupported | not an evaluation outcome | `unsupported` or `requires-bound` | `Unavailable` (solver or backend absent after negotiation) → one FR-331 result with a typed unavailability cause; the result value is QC-9 |
 | incomplete (timeout, cancellation, bound exhaustion) | `Incomplete` with its charge point and limit → incomplete | not applicable | `TimedOut`, `Cancelled`, `ResourceExhausted` → result `incomplete`, cause kept |
+| pending | S6a `Pending` of a finite-prefix clause (FR-328) and FR-501's `Pending` → pending | not applicable | not produced |
+| indeterminate | FR-501's `Indeterminate` (a closed finite-window clause whose evidence stays unresolved) → indeterminate | not applicable | not produced |
 | inconclusive | not an evaluation outcome | not applicable | `Inconclusive` → result `inconclusive`. A vacuous `Proved` (a `Proved` run with zero SUCCESS checks in the obligation) stays `TerminalValue::Proved { basis: Checks { success_checks: 0 }, certification: Certified }`, which keeps its check count (C-09; `TerminalValue` has no separate vacuous variant and `Proved` carries no `NonZero` count). `TerminalValue::category` puts it in `inconclusive`, and its typed cause `kani_vacuous_proof` is `TerminalValue::vacuous_proof_cause` (Remaining work: agent-ix/quire-specification#141). Separately, a ValueValidity check whose premises admit no assignment settles `TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof)` with the same `kani_vacuous_proof` cause, as QSpec FR-483 requires; this does not change the zero-check Kani `Proved` value. A `Counterexample` whose E9 replay settles `Inconclusive` (an FR-072 `WitnessArmResult` carrying a `DisagreementCause`: the replayed verdict differs from the proved one, or the replay completed no value) maps to result `inconclusive` with the typed cause `replay_parity`, never to `refuted`. A `Counterexample` whose E9 replay refuses (a `ReplayRefusal` other than a fault: an identity mismatch, a decode refusal, a limit reached) maps to result `inconclusive` with the typed cause `replay_refused`, carrying the refusal's catalog code (`ReplayRefusal::code`), never to `refuted` or `proved`. Amended by ADR-024 SV-3: a result `measured` with decision Undecided is inconclusive, its cause kept. |
 | internal failure | not a kernel outcome; the executor produces `failed` when a runtime invariant breaks (`runtime_invariant`/`established-invariant-broken`, FR-323-AC-1) | not applicable | an IR invariant breaking while mapping → result `failed`; a `Counterexample` whose E9 replay faults (`ReplayRefusal::Fault`, or `ReplayRefusal::Admission` with `AdmissionFailure::Fault`: an `InternalFault`) → result `failed` (`TerminalValue::Failed`) |
 
@@ -1314,7 +1320,7 @@ Questions for #210, answered in ADR-012 §13.5:
 | --- | --- | --- |
 | Q210-1 | Does a selected capability travel in the counterexample packet or replay request, or only in FR-331 negotiation? | Only in FR-331 negotiation. The packet and request carry the `backend` member, not a capability. |
 | Q210-2 | Do the ADR-012 §1.1 selection mechanics need a representation beyond O-20 once #222 fixes the mode vocabulary (Q222-3) and probabilistic evidence-kind matching? | Yes. Requirement records and backend descriptors carry the evidence kind(s), and candidates match the exact item evidence kind; no other selection rule changes. |
-| Q210-3 | How does each family result (including the simulation lane) map to the eight O-16 categories? | By O-16's columns; `Relation` has no S6a result, because S6a's input type admits no `Relation` (O-16, owner ruling on FR-090-OQ-2). No family adds a category. |
+| Q210-3 | How does each family result (including the simulation lane) map to the O-16 categories? | By O-16's columns; `Relation` has no S6a result, because S6a's input type admits no `Relation` (O-16, owner ruling on FR-090-OQ-2). No family adds a category. |
 | Q210-4 | Do family witness payloads use the QSpec FR-351 record unchanged? | Yes; a family adds only its witness binding schema, so O-25 needs no family-specific envelope. |
 
 Questions for #222:

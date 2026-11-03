@@ -754,6 +754,64 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-498
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-499
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-500
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-501
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-502
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-503
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-504
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-505
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-506
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-507
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-508
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-509
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-510
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-511
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-512
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-513
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-514
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-515
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-516
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-517
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-518
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-519
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-520
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-521
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-522
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-523
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-524
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-525
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-526
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-527
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1291,6 +1349,35 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-496](functional/FR-496-emit-model-operation-effects-into-checked-packages.md) | FR |
 | [FR-497](functional/FR-497-check-and-emit-carried-quantities-and-their-conversion.md) | FR |
 | [FR-498](functional/FR-498-carry-a-probabilistic-claim-s-checked-package-identity.md) | FR |
+| [FR-499](functional/FR-499-delete-each-retired-family-only-behind-its-named-successor.md) | FR |
+| [FR-500](functional/FR-500-map-each-fr-042-criterion-to-its-checked-package-successor.md) | FR |
+| [FR-501](functional/FR-501-evaluate-a-temporal-clause-under-the-timestamped-event-finite-window-profile.md) | FR |
+| [FR-502](functional/FR-502-reject-a-regressing-watermark-and-a-conflicting-completeness-revision-on-the-spine.md) | FR |
+| [FR-503](functional/FR-503-confine-a-protocol-declaration-s-refusal-to-that-declaration-at-every-stage.md) | FR |
+| [FR-504](functional/FR-504-carry-progress-on-event-position-and-fixed-sample-traces.md) | FR |
+| [FR-505](functional/FR-505-admit-bounded-rational-value-types-and-refuse-inconsistent-bounds.md) | FR |
+| [FR-506](functional/FR-506-bound-model-admission-by-named-spine-limits.md) | FR |
+| [FR-507](functional/FR-507-apply-each-capability-kind-to-its-declaration-family-only.md) | FR |
+| [FR-508](functional/FR-508-admit-a-profile-only-at-the-use-sites-of-its-kind.md) | FR |
+| [FR-509](functional/FR-509-declare-a-channel-s-delivery-count-interval.md) | FR |
+| [FR-510](functional/FR-510-compare-the-static-subject-of-two-checked-units.md) | FR |
+| [FR-511](functional/FR-511-keep-the-exact-protocol-number-codec-as-a-root-module.md) | FR |
+| [FR-512](functional/FR-512-keep-operation-names-parameters-and-frame-entries-unique-at-intake.md) | FR |
+| [FR-513](functional/FR-513-name-the-successor-or-keep-of-each-retained-criterion-that-rides-a-retired-path.md) | FR |
+| [FR-514](functional/FR-514-specify-the-spine-type-report-the-inventory-on-exhaustion-and-the-multi-unit-cycle-refusals.md) | FR |
+| [FR-515](functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md) | FR |
+| [FR-516](functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md) | FR |
+| [FR-517](functional/FR-517-write-a-checked-package-handoff-directory-from-source-in-process.md) | FR |
+| [FR-518](functional/FR-518-write-the-adverse-mutation-corpus-from-checked-packages-and-name-the-destination-of-every-legacy-case.md) | FR |
+| [FR-519](functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md) | FR |
+| [FR-520](functional/FR-520-evaluate-state-and-compensation-expressions-through-the-checked-package-evaluation-entry-points.md) | FR |
+| [FR-521](functional/FR-521-gate-the-deletions-behind-quire-protocol-on-the-checked-package-and-name-each-behavior-it-relies-on.md) | FR |
+| [FR-522](functional/FR-522-bind-a-temporal-trace-to-the-checked-clause-s-profile-and-clock-and-report-the-authenticated-clock.md) | FR |
+| [FR-523](functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-instance-apart-from-a-stopped-declaration.md) | FR |
+| [FR-524](functional/FR-524-create-one-temporal-instance-per-trigger-or-origin-with-immutable-captures-and-name-every-capture-fault.md) | FR |
+| [FR-525](functional/FR-525-map-each-legacy-temporal-evaluator-criterion-to-its-spine-successor.md) | FR |
+| [FR-526](functional/FR-526-chain-a-temporal-evidence-result-to-its-direct-predecessor-and-refuse-a-relation-that-changes-nothing.md) | FR |
+| [FR-527](functional/FR-527-classify-native-to-tl-mapping-support-from-the-checked-temporal-clause-node.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |

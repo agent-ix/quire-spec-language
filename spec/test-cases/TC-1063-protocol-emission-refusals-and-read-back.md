@@ -11,10 +11,11 @@ relationships:
 ## Description
 
 Verify that S4 refuses a stale bound key and a missing temporal profile with existing catalog pairs and no package, that a protocol
-with an S3 refusal emits nothing, that QSL's I2 reader returns the emitted
+with an S3 refusal emits no node of its own and no package for the unit while
+the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
-limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21.
+limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-60.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
 when its temporal profile is missing, a
@@ -36,7 +37,7 @@ Compile or read one unit or graph per row and assert the stated result.
 | 2 | the same with the model relationship key, then with an attempt's operation anchor key | `missing_declaration`/`missing-name` at the relationship member, then at the attempt; no package |
 | 3 | **W** with an `await`, then a unit with only a `compensate`, in a package that selects no `temporal_profile` | `missing_declaration`/`missing-selection` at the first such construct; no package |
 | 4 | **W** in a unit that selects no protocol profile | no protocol node and no refusal for the declaration |
-| 5 | a unit holding **W** and a protocol whose join names a missing branch | the S3 refusal (`missing_declaration`/`missing-name` at the label); no protocol node of either protocol; **W** alone emits |
+| 5 | a unit holding **W** and a protocol **X** whose join names a missing branch | **X** `Refused` with `missing_declaration`/`missing-name` at the label; **W** `Emitted` with nodes byte-identical to **W** alone; the aggregate `Refused` with no package and no `package_id`; **W** alone emits a package (FR-383-AC-18; the full procedure is TC-1297) |
 
 ### Read-back
 
@@ -65,6 +66,40 @@ admits each positive package through QSL's I2 reader and refuses each
 mutation with the recorded code and locus. It copies no vector. The test is
 traced only once that file exists.
 
+### Protocol term locations
+
+| # | Unit or graph | Expected |
+| --- | --- | --- |
+| L1 | **W**, fixture E and protocol L (TC-1070) emitted and read through QSL's I2 reader | for every slot, the rows under its site name for an application number that application's visits in the slot's walk (FR-383-AC-32) |
+| L1a | row L1's package | no row under a slot's site name names an application the slot's walk does not visit (AC-33) |
+| L1b | row L1's package | the retry origin of `Refund` holds one `earlier.tally` node with two rows; the retry origin of `Partial` one `partialEarlier.tally` node with two of its own (AC-34) |
+| L2 | row L1's package | each row's `Location` equals the checked clause's `Location` of the term at the position it numbers (AC-35) |
+| L2a | row L1's package | the two `earlier.tally` rows differ, the first that of the term in `earlier.tally < 3` (AC-36) |
+| L3 | a unit with no protocol slot expression | `protocol_locations` empty (AC-37) |
+| L3a | a package with no checked-term data | `checked_term_data` absent (AC-38) |
+| L4 | fixtures E, L and E-C emitted | every row of every slot that holds an application is under a type-declaration origin whose `name` is that slot's site name (AC-39) |
+| L4b | fixtures E, L and E-C emitted | no two slots have the same site name (AC-40) |
+| L4c | fixtures E, L and E-C emitted | no row has a `protocol_attempt` origin (AC-41) |
+| L4a | Inspection of the emitter | no row derived from a source region, node order or operand position, and none defaulted (AC-42) |
+| L5 | row L1's package with the highest-`term_ordinal` retry-origin `earlier.tally` row of `Refund` removed | admitted by the reader (AC-43) |
+| L6 | row L1's package with the ordinal-zero retry-origin `earlier.tally` row removed | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-44) |
+| L6a | row L1's package with the second retry-origin `earlier.tally` row's `term_ordinal` changed from 1 to 2 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-45) |
+| L6b | row L1's package with a retry-origin `earlier.tally` row duplicated next to the original | refused `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (AC-46) |
+| L7 | fixture E-C emitted and read back | per-slot row counts equal the walk's visits, with `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll`, once in `Composed.let` (AC-47) |
+| L7a | fixture E-C emitted and read back | each row's `Location` equals the checked clause's (AC-48) |
+| L7b | fixture E-C emitted and read back | the unselected arms of `Composed.if` and `Composed.case` have rows with the checked clause's `Location` values (AC-49) |
+| L8 | fixture E's package | the `earlier.tally` rows share one occurrence key with `term_ordinal` 0 and 1 (AC-50) |
+| L8a | fixture E emitted | `target >= 0` is one node held by `Refund`'s retry relation and trigger guard (AC-51) |
+| L8b | fixture E emitted | its group holds one retry-origin row and one trigger-guard-origin row (AC-52) |
+| L8c | fixture E emitted | the retry-origin row has `term_ordinal` 0 and the trigger-guard row 1 (AC-53) |
+| L8d | fixture E emitted | each of the two rows carries the location of the term in its own slot (AC-54) |
+| L8e | fixture E-C emitted | `order >= 0` is one node held by the constraints of `Tried` and `Picked` (AC-55) |
+| L8f | fixture E-C emitted | its group holds one row of `protocol Composed run Main Picked body` and one of `protocol Composed run Main Tried body` (AC-56) |
+| L8g | fixture E-C emitted | the `Picked` row has `term_ordinal` 0 and the `Tried` row 1 (AC-57) |
+| L7c | fixture E-C emitted | no row names a `Local` read, a literal, a `let`, a conditional or a case node (AC-59) |
+| L7d | fixture E-C emitted | each arm of `Composed.case` holds exactly one row (AC-60) |
+| L9 | **W**, fixtures E, L and E-C emitted | for every application and slot, the (occurrence ordinal, `term_ordinal`) pairs along the slot walk's visits strictly increase (AC-58) |
+
 ### Limits and nesting
 
 | # | Unit | Expected |
@@ -77,5 +112,5 @@ traced only once that file exists.
 
 - Each row asserts code, cause, locus and retained members as fields, never
   message text.
-- Rows 1 to 3 and 5 produce no package. Row 4 produces a package without a protocol
+- Rows 1 to 3 and 5 produce no package (row 5 still reports **W**'s result). Row 4 produces a package without a protocol
   node.

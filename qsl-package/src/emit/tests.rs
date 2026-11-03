@@ -39,6 +39,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod abstraction;
 mod admission_corpus;
+mod checked_views;
 mod child_composite;
 mod clock_places;
 mod control_node;
@@ -50,6 +51,7 @@ mod hybrid;
 mod hyper_clause;
 mod large_cycle;
 mod navigation;
+mod operation_effects;
 mod option_value;
 mod owner_model;
 mod owners;
@@ -1631,6 +1633,8 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         SurplusTemporalClockSelection,
         DuplicateTemporalClockSelection,
         TemporalClockProfileMismatch,
+        ProtocolResultInvariant,
+        ProtocolResultsRequired,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
         match result {
@@ -1662,6 +1666,8 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::TemporalClockProfileMismatch { .. }) => {
                 Seen::TemporalClockProfileMismatch
             }
+            Err(EmitRefusal::ProtocolResultInvariant) => Seen::ProtocolResultInvariant,
+            Err(EmitRefusal::ProtocolResultsRequired) => Seen::ProtocolResultsRequired,
             Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")
             }

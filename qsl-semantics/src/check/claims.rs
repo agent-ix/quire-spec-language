@@ -80,6 +80,15 @@ const SCALAR_FAMILIES: [&str; 8] = [
     "quire.op.enum.",
 ];
 
+/// The IEEE relations. Each yields a `Boolean` over operands that carry no
+/// unbounded domain, and an ordering lowers to several of them at one
+/// location, so none is a claim site.
+const IEEE_RELATIONS: [&str; 3] = [
+    "quire.op.ieee.numeric_equal",
+    "quire.op.ieee.total_order",
+    "quire.op.ieee.bit_identical",
+];
+
 /// The role a lowered application's operation identity plays in claim
 /// classification (ADR-012 section 9). This is a classification mark, not a
 /// one-time conversion: [`operation_role`] re-derives it from the identity
@@ -107,6 +116,8 @@ enum OperationRole {
 fn operation_role(identity: &str) -> OperationRole {
     if identity == NARROW {
         OperationRole::Narrow
+    } else if IEEE_RELATIONS.contains(&identity) {
+        OperationRole::Other
     } else if SCALAR_FAMILIES
         .iter()
         .any(|family| identity.starts_with(family))
@@ -432,7 +443,8 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::DecimalNegate(..)
         | NodeKind::Ieee(..)
         | NodeKind::IeeeSquareRoot(..)
-        | NodeKind::IeeeNumericEquality(..)
+        | NodeKind::IeeeFloat32Fma(..)
+        | NodeKind::IeeeFloat64Fma(..)
         | NodeKind::Quantity(..)
         | NodeKind::ConvertDecimal(..)
         | NodeKind::Order(..)
@@ -441,7 +453,10 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
             scalar_conversion_target(target, node.at(*operand).value_type()).is_some()
         }
         NodeKind::Equality(_, _, left, _) => scalar_equality(node.at(*left).value_type()),
-        NodeKind::Literal(_)
+        NodeKind::IeeeNumericEquality(..)
+        | NodeKind::IeeeTotalOrder(..)
+        | NodeKind::IeeeBitIdentical(..)
+        | NodeKind::Literal(_)
         | NodeKind::Coerce(..)
         | NodeKind::Local(_)
         | NodeKind::Let { .. }
@@ -705,7 +720,7 @@ impl<'n> ClaimsWalk<'n, '_> {
                     &frame.first_objects,
                 );
             }
-            (NodeKind::Connective(connective, left, _), 1) => {
+            (NodeKind::Connective(connective, _, left, _), 1) => {
                 let holds = !matches!(connective, Connective::Or);
                 guard_on(
                     node.at(*left).location(),

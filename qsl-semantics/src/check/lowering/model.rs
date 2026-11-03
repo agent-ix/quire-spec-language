@@ -19,7 +19,10 @@ use quire_exact::{
     ValueType,
 };
 
-use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
+use super::{
+    generated_location, identifiers, refuse, require_admitted, type_declaration, Lowering,
+    NodeContent,
+};
 use crate::check::assemble::DimensionEquivalence;
 use crate::check::family::OccurrenceRole;
 
@@ -424,6 +427,30 @@ impl AdmittedModel {
             );
             included.then_some((owner, operation))
         })
+    }
+
+    /// The declarations FR-496's rows name, which FR-094 roots: each
+    /// operation's declaring owner and the subjects of its frame, a written
+    /// field by its declaring node. Read from the admitted records alone, so
+    /// the set does not depend on whether the carrier can be formed
+    /// (FR-496-AC-5).
+    pub(crate) fn operation_effect_declarations(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.operation_effect_inputs()
+            .flat_map(move |(_, operation)| {
+                let effect = &operation.effect;
+                let written = effect.written_fields().filter_map(move |member| {
+                    match self.records.get(member)? {
+                        DomainPackageRecord::FieldMember(field) => Some(&field.owner),
+                        DomainPackageRecord::Relationship(_) => Some(member),
+                        _ => None,
+                    }
+                });
+                std::iter::once(&operation.owner)
+                    .chain(written)
+                    .chain(&effect.creates)
+                    .chain(&effect.deletes)
+            })
+            .filter(|declaration| self.model_node_key(declaration).is_some())
     }
 
     /// The declared member name carried by the selected source identity.
@@ -2036,29 +2063,27 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
 }
 
 impl<'a> Lowering<'a> {
-    /// Add the selected model's declaration nodes when it declares an
-    /// operation whose effect is projected. The checked graph must retain
-    /// the complete declaration view independently of both authored clauses
-    /// and whether the optional sidecar can be formed; this also keeps graph
-    /// identities stable when FR-496's carrier is absent. A model admitted
-    /// without a `model` alias (a dispatch bridge's view) projects rows too
-    /// (QSpec FR-322-AC-303), so its declaring nodes are retained as well,
-    /// located under its selected document identity.
+    /// Root the nodes FR-496's `operation_effects` rows name, a further
+    /// FR-094 reachability root: QSpec FR-322-AC-303's reader refuses a row
+    /// whose `declaring` node or effect subject has no node. For each
+    /// operation with a row, its declaring owner, the declaring node of each
+    /// written field or the written relationship, and each `creates` and
+    /// `deletes` subject, whether or not the carrier is emitted
+    /// (FR-496-AC-5). A model admitted without a `model` alias (a dispatch
+    /// bridge's view) projects rows too; it has no declaration site, so its
+    /// nodes take the `generated` fallback location.
     pub(crate) fn operation_effect_nodes(&mut self) -> Result<(), CheckRefusal> {
         let mut declarations = BTreeMap::new();
         for model in self.models {
-            let location =
-                type_declaration(model.alias().unwrap_or_else(|| model.selected_document()));
-            let has_projected_operations = model.operation_effect_inputs().next().is_some();
-            if has_projected_operations {
-                declarations.extend(
-                    model
-                        .record_keys()
-                        .filter(|declaration| model.model_node_key(declaration).is_some())
-                        .cloned()
-                        .map(|declaration| (declaration, location.clone())),
-                );
-            }
+            let location = model
+                .alias()
+                .map_or_else(generated_location, type_declaration);
+            declarations.extend(
+                model
+                    .operation_effect_declarations()
+                    .cloned()
+                    .map(|declaration| (declaration, location.clone())),
+            );
         }
         for (declaration, location) in declarations {
             let key = self.model_node(&declaration, &location)?;

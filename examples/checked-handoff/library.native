@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+model M = "agent-ix/checked-handoff";
+
+// The signed-64 extrema, authored so the emitted package carries them as
+// M::Wide values.
+predicate WideBounded using v (wide: M::Wide): Boolean {
+    wide >= -9223372036854775808 and wide <= 9223372036854775807
+}
+
+predicate Ready using v (ready: Boolean): Boolean {
+    ready
+}

@@ -94,9 +94,12 @@ fn emit_document(document: Value, operations: &[&str]) -> Emitted {
     Emitted { wire, evidence }
 }
 
-fn emit_without_operation_posts(operations: &[&str]) -> Emitted {
-    let document =
-        serde_json::to_vec(&fixture::document(operations, &[])).expect("the fixture serializes");
+/// The package holding `operations` of `Counter` with the frames of
+/// `overrides`, under a unit whose only clause is a function that names no
+/// model declaration.
+fn emit_without_operation_posts(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
+    let document = serde_json::to_vec(&fixture::document(operations, overrides))
+        .expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -361,13 +364,58 @@ fn selected_operation_effects_are_complete_canonical_and_readable() {
 #[trace("FR-496-AC-1", "FR-496-AC-2", "FR-496-AC-5", "TC-1286")]
 #[test]
 fn selected_operation_effects_do_not_require_unit_operation_clauses() {
-    let emitted = emit_without_operation_posts(&["noop"]);
+    let emitted = emit_without_operation_posts(&["noop"], &[]);
     assert_eq!(
         emitted.wire["operation_effects"].as_array().unwrap().len(),
         1
     );
     let read = emitted.read();
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// Emits `Counter.noop` with `frame` under a unit with no clause, so only the
+/// frame's subject names `Gauge`; asserts that FR-094 roots `Gauge`'s node
+/// for the row and that IR's v2 reader admits the package.
+fn frame_subject_is_rooted(frame: Value) {
+    let emitted = emit_without_operation_posts(&["noop"], &[("noop", frame)]);
+    let gauge = super::owners::node_where(&emitted.wire, "model", "object_type")
+        .into_iter()
+        .filter(|node| node["owner"]["node"] == fixture::id("Gauge"))
+        .count();
+    assert_eq!(gauge, 1, "Gauge's object_type node is emitted");
+    let read = emitted.read();
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// FR-496-AC-1, FR-094, TC-1286: a row whose frame modifies the field
+/// `Gauge/d`, which no unit clause names, roots the field's declaring node
+/// `Gauge`.
+#[trace("FR-496-AC-1", "TC-1286")]
+#[test]
+fn a_rows_written_field_roots_its_declaring_node() {
+    frame_subject_is_rooted(json!({
+        "modifies": [fixture::id("Gauge/d")], "creates": [], "deletes": [],
+    }));
+}
+
+/// FR-496-AC-1, FR-094, TC-1286: a row whose frame creates `Gauge`, which no
+/// unit clause names, roots `Gauge`.
+#[trace("FR-496-AC-1", "TC-1286")]
+#[test]
+fn a_rows_created_type_is_rooted() {
+    frame_subject_is_rooted(json!({
+        "modifies": [], "creates": [fixture::id("Gauge")], "deletes": [],
+    }));
+}
+
+/// FR-496-AC-1, FR-094, TC-1286: a row whose frame deletes `Gauge`
+/// type-wide, which no unit clause names, roots `Gauge`.
+#[trace("FR-496-AC-1", "TC-1286")]
+#[test]
+fn a_rows_deleted_type_is_rooted() {
+    frame_subject_is_rooted(json!({
+        "modifies": [], "creates": [], "deletes": [fixture::id("Gauge")],
+    }));
 }
 
 /// FR-496-AC-1..5, TC-1286: the Ledger `pay` and `payTaxed` rows survive the

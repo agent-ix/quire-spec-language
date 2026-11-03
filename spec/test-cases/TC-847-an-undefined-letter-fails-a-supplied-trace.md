@@ -110,7 +110,7 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   The same-position `Undefined` values with a different locus or a different
   cause each settle `inconclusive`, `ReplayParity`, retaining that actual
   typed value. O-16 categories are `violation` for false and undefined,
-  `success` for true, `inconclusive` for pending, `undefined` for insufficient data,
+  `success` for true, `pending` for pending, `undefined` for insufficient data,
   `incomplete` for exhausted Work and `unsupported` for missing fairness.
 - Step 6: `InsufficientData{where: 2, count: 0, min_count: 1}`, category
   `undefined`; `Completed(false)` at 1; `Completed(false)` at 2;

@@ -1432,7 +1432,8 @@ impl<'c> Mapping<'c> {
             | Production::AggregateAtom
             | Production::AggregateTerm
             | Production::AggregateKind
-            | Production::PastWindow => Err(unexpected(node)),
+            | Production::PastWindow
+            | Production::QuantifiedClockBound => Err(unexpected(node)),
         }
     }
 
@@ -2135,7 +2136,8 @@ impl<'c> Mapping<'c> {
             | Production::AggregateAtom
             | Production::AggregateTerm
             | Production::AggregateKind
-            | Production::PastWindow => Err(unexpected(child)),
+            | Production::PastWindow
+            | Production::QuantifiedClockBound => Err(unexpected(child)),
         }
     }
 

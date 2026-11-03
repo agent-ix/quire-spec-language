@@ -17,8 +17,14 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-105
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-042
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-218
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-503
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-264
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-337
@@ -188,6 +194,119 @@ arguments. `P` is the protocol's qualified name.
 
 ## Behavior
 
+### Protocol term locations
+
+A *slot walk* is the sequence of positions a pre-order walk visits in the
+checked expression tree of one protocol slot expression, from the slot's root.
+The tree is the checked clause's tree held in memory: a node reached through two parents
+is one graph node but two positions, each walked in full. Children are taken in
+the operand order of the node's FR-400 `NodeKind` (a `let`'s value before its
+body, a conditional's condition, then-branch and else-branch, a case's scrutinee
+and then its arms in the emitted arm order), never in the order of the node's
+`dependencies` array. The walk takes every branch and arm whether or not any
+input evaluates it, so a branch a short-circuit never reaches still holds its
+positions. A reference to a `let` binder or other local (`Local`) is a leaf
+position and does not walk the bound application again; a literal is a leaf.
+A *term* is a position whose node is an `expression`/`application` node of QSpec
+FR-322-AC-291 (an application, such as a connective, comparison, arithmetic
+operation, field read, dereference, call or collection query). Every other
+position, namely a leaf (a literal, a `Local` or another reference) and an
+expression form FR-322 does not call an application (a `let`, a conditional),
+is not a term.
+
+The origin of a row is the closed origin of QSpec FR-322: a named type
+declaration (`kind` `type_declaration`, `name`) or a protocol attempt (`kind`
+`protocol_attempt`, `protocol` position, `attempt` position). Every
+slot expression of a protocol is located at the root of a type-declaration
+origin whose `name` is the slot's site name, a spaced string that names the
+protocol and the slot, one distinct name per slot (QSpec FR-322-AC-313 to
+AC-318). A `protocol_attempt` origin identifies one attempt's own root and is the
+origin of no slot expression (FR-322-AC-316). The forms of QSpec FR-322's
+site-name registry that a slot expression can have are:
+
+| Slot | Site name |
+| --- | --- |
+| activation guard | `protocol <P> activation guard` |
+| capture initializer | `protocol <P> capture <name> initializer` |
+| registration capture, trigger guard, activation capture, retry relation, recovery predicate of a compensation `<N>` | `protocol <P> compensate <N> <stage> <index>`, the stage being `registration-capture`, `trigger-guard`, `activation-capture`, `retry` or `recovery`, and the index the capture's position (zero for the other three) |
+| constraint or condition of the control at path `<path>` | `protocol <P> run <path> body`, the path from the run root with the root's name first, joined by spaces |
+| `related` end, `visible` entry, case guard | `protocol <P> run <path> related <start> <end>` or `... decision <start>..<end>`, by source span |
+| `finish` constraint, `terminal when` condition, role `until`, channel key | `protocol <P> finish <name> body`, `protocol <P> terminal body`, `protocol <P> role <role> until`, `protocol <P> channel <channel> key` |
+
+The emitter SHALL write each slot's rows under that slot's own site name as the
+origin `name`, and no two slots of a package share a site name. *Origin order*
+is the ascending order of the `name` in UTF-8 byte order.
+
+The emitter SHALL write, in the `checked_term_data.protocol_locations` array of
+QSpec FR-322, one row for every term of every protocol slot expression it
+emits.
+
+Each row SHALL carry the application node, the term's semantic location as the
+checker assigned it to that position, its origin (above), the child-index path
+of the position and a zero-based `term_ordinal`.
+
+The emitter SHALL take each slot's origin name from the site at which the
+checker located that slot, and SHALL NOT invent a name. A `repeat`'s
+`proof.invariant` and `proof.variant` are not slots (FR-390), and the emitter
+writes no row for them.
+
+The *visit number* `k` of a term is the zero-based count of earlier positions of
+the same application in its slot's walk.
+
+A row's *occurrence* is the source occurrence key (`node_id`, role, ordinal) of
+QSpec FR-322 that the emitter keys the term to, and its *occurrence ordinal* is
+the third component of that key. The group of FR-322-AC-291 is the rows of one
+application and one occurrence, and its `term_ordinal` values run consecutively
+from zero across every origin the group holds, because an application can be held
+by several slots; they do not restart for each origin. Within a group the
+emitter SHALL write the rows of the origins in origin order, and within one
+origin in visit order.
+
+For each application and slot, the number of rows of the slot's origin SHALL
+equal the number of visits of that application in the slot's walk; no row is
+dropped, repeated or padded. The emitter SHALL key the visits of one application
+in a slot's walk to the application's occurrences in non-decreasing occurrence
+ordinal (document order of the occurrences), and within one occurrence give
+consecutive `term_ordinal` values in visit order, so that the ascending
+(occurrence ordinal, `term_ordinal`) order of that origin's rows of the
+application is the order of its visits: the row at that order's index `k`
+belongs to the visit numbered `k`. A node with one occurrence is the case in
+which every visit takes that occurrence.
+
+The emitter SHALL NOT derive a row's location from a source region, a node
+order, an operand position or a default value.
+
+WHEN a unit holds no protocol slot expression, the emitter SHALL write the
+array empty; WHEN a package has no checked-term data, the emitter SHALL keep the
+sidecar absent as before.
+
+In TC-1070 fixture E the retry relation of `Refund` (origin `protocol Refunds
+compensate Refund retry 0`, the *retry origin* of `Refund`) holds one
+`earlier.tally` application node reached at two positions, in `earlier.tally < 3`
+(visit 0) and in `earlier.tally + 1` (visit 1). No other slot holds it, so it has
+two rows of the retry origin: the first carries the location of the term in
+`earlier.tally < 3` and the second that in `earlier.tally + 1`. The node has the
+one occurrence of its `expression` role, so both rows share its key, with
+`term_ordinal` 0 and 1.
+
+In the same fixture the trigger guard (origin `protocol Refunds compensate Refund
+trigger-guard 0`) and the retry relation both read the capture `target`, so
+`target >= 0` is one application node held by two slots. Its group holds one row
+of each origin. In origin order the retry origin precedes the trigger-guard
+origin (`retry` before `trigger-guard`), so the retry row has `term_ordinal` 0
+and the trigger-guard row `term_ordinal` 1.
+
+Assumption A1 (non-term locations, one place): a position that is not a term
+has no row and takes its location from its own admitted node. For a leaf this is
+QSpec FR-322-AC-310 to AC-312: `protocol_locations` is application-only, a leaf
+takes its location from its own admitted node and never from an enclosing
+application's row, and a row naming a leaf is refused `invalid_package`/
+`invalid-value` at the row's `application` member. A row naming any other
+non-application node stays under FR-322-AC-291. FR-322 states the leaf rule only;
+this text extends the same location source to a `let` and a conditional, which
+FR-322 does not call applications. Every clause of this and the reader's text
+that depends on A1 refers to it.
+
 ### Cyclic reference components
 
 A protocol node that
@@ -319,8 +438,10 @@ emissions.
 ### Refusals
 
 The emitter refuses with typed code, cause and member from the existing
-catalog, and produces no package for a refused protocol (all or nothing,
-FR-105).
+catalog. The package is all or nothing for the unit (FR-105): a unit with any
+refused protocol produces no package. The protocols are independent of one
+another (FR-042-AC-8): each protocol has its own result, and one protocol's
+refusal changes no other protocol's result (see "Per-protocol results").
 
 - A key bound at S3 that no node of the emitted graph carries (a required
   temporal clause, a model relationship, an operation anchor, a state clause)
@@ -335,10 +456,58 @@ FR-105).
 - A requirement cycle between a protocol and a temporal clause is refused at S3
   (FR-218). S4 treats it as unreachable and asserts that the emitted graph is
   acyclic.
-- A protocol with any S3 refusal emits no protocol node (FR-113).
+- A protocol with an S3 refusal emits no protocol node of its own (FR-113).
+  It does not suppress the nodes of any other protocol of the unit, which
+  keep their own results (see "Per-protocol results").
 - The emitter adds no limit of its own, and a protocol of any size and nesting
   depth emits. The node count is bounded when the package is read, by the
   `i2.*` limits (FR-264).
+
+### Per-protocol results
+
+- The protocols are processed in source order. S1 to S4 SHALL produce exactly
+  one `ProtocolResult` for each protocol declaration the parser delimited, in
+  declaration order: `Emitted { declaration, clause key, nodes }`, `Refused {
+  declaration, code, cause, locus }` whose locus pairs the source index and span
+  of the owning declaration (FR-042-AC-8), or `Incomplete { declaration, limit }`
+  carrying the typed limit refusal (`StageFailure::Limit`, `stage_limit_exceeded`)
+  that names `s3.work_units`. An operation that stops before S4 (`parse`,
+  `check`; FR-503) reports `Cleared { declaration, stage }` for a declaration
+  that passed every stage it ran, and only `compile` produces `Emitted`.
+- Independence SHALL hold at every stage whose work is per protocol: a refusal
+  at S1, S2, S3 or S4 that the stage attributes to one protocol declaration
+  gives that protocol a `Refused` result and changes no result of a protocol that
+  does not reach it. A refusal that the stage cannot attribute to one protocol
+  (a syntax error the parser cannot confine to one declaration, the unit
+  header, a profile selection or a model import) refuses the unit with no
+  per-protocol results.
+- A protocol that reaches a `Refused` protocol X, by reference or requirement,
+  SHALL be `Refused` `missing_declaration`/`missing-name` at the reference. The
+  catalog has no dependency cause, so the record SHALL carry the field
+  `refused_dependency`, naming X and its own code and cause, and the field
+  `consequence` set true; the record says the declaration exists and was
+  refused, not that it is missing.
+- The shared `s3.work_units` budget is consumed in source order. When a protocol
+  exhausts it, that protocol and every later protocol SHALL be `Incomplete`, and
+  every earlier result stands. Declaration order therefore changes results
+  only when the budget decides them; every non-budget outcome is independent of
+  declaration order.
+- The unit aggregate SHALL be `Refused` when any result is `Refused`,
+  `Incomplete` when none is `Refused` and any is `Incomplete`, and `Emitted`
+  otherwise. Only an `Emitted` aggregate carries a package and a `package_id`.
+  A `Refused` aggregate is carried as `StageFailure::Refused` whose code, cause
+  and locus are those of the first `Refused` result in declaration order and
+  whose payload holds every `ProtocolResult`, so the results of the protocols
+  that did emit remain readable. An `Incomplete` aggregate is carried as
+  `StageFailure::Limit` with the same payload. The aggregate never reports a
+  unit with a refused or incomplete protocol as admitted.
+- The unit's diagnostics SHALL list one record (code, cause, locus) for each
+  `Refused` result in declaration order and none for an `Emitted` result. The
+  exit is FR-285's: the items are the per-protocol results, and the multi-item
+  rule of FR-285-AC-2 decides the unit's exit, so a unit with a refused
+  protocol never exits 0.
+- A protocol refused `unsupported_construct`/`not-yet-implemented` (the
+  `NoOwnerModel` case) has the same standing as an S3 refusal.
 
 ### Reading the nodes back
 
@@ -377,7 +546,7 @@ FR-105).
 | FR-383-AC-15 | Emitting **W** twice, and in a unit that declares an unrelated protocol before it and one after it, gives the same protocol nodes and bytes for **W**; the clause node changes when, and only when, any node it reaches changes. | Test (TC-1062) |
 | FR-383-AC-16 | No emitted node carries a causal edge, a relationship alias, a runtime subject, an instance, an ordinal, a delivery or clock observation or an `internal`/`external` member. The causal relation derived from **W**'s emitted nodes by QSpec FR-464's rules holds the same (source port, target port) pairs as the compiled edge relation of **W**'s checked clause, back edges of the `repeat` included. | Test (TC-1062) |
 | FR-383-AC-17 | A graph in which **W**'s required temporal clause key, its model relationship key or an attempt's operation anchor key is bound to a key no emitted node carries refuses `missing_declaration`/`missing-name` at the construct that bound it, naming the bound key, with no protocol node and no package; **W** with an `await` in a package that selects no `temporal_profile` refuses `missing_declaration`/`missing-selection` at the `await`, and so does a `compensate`; a unit that selects no protocol profile emits no protocol node and no refusal for the declaration; a requirement cycle never reaches S4 (FR-218-AC-25). | Test (TC-1063) |
-| FR-383-AC-18 | A protocol with an S3 refusal (a join naming a missing branch) in a unit that also holds a good protocol emits no node of either protocol and no package; emitting the good protocol alone succeeds. | Test (TC-1063) |
+| FR-383-AC-18 | A unit that holds a good protocol **W** and a protocol **X** whose join names a missing branch has two results in declaration order: **W** `Emitted` with nodes and clause key byte-identical to those of emitting **W** alone, and **X** `Refused` with `missing_declaration`/`missing-name` at the label, locus the source index and span of **X**'s declaration. The aggregate is `Refused`, with no package and no `package_id`, and the results of both protocols stay readable from it. Emitting **W** alone succeeds with a package. | Test (TC-1063, TC-1297) |
 | FR-383-AC-19 | Reading **W**'s package through QSL's I2 reader admits it and returns every protocol node with the key, tag, form, type, declaration, body, dependencies and occurrences emitted; the protocol rebuilt from the read-back nodes equals the protocol rebuilt from the in-process checked clause in keys, set order, ordered lists, binder levels, channel premises, queue bounds and derived causal relation. | Test (TC-1063) |
 | FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending node-id order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of the QSpec protocol vectors file `protocol-node-vectors.json`. | Test (TC-1063) |
 | FR-383-AC-21 | A protocol whose controls outnumber `i2.nodes`, emitted with the limit raised, reads back under the default limit as `StageFailure::Limit` of kind node count with setting `i2.nodes`, and verifies when the setting is raised; a protocol with a `parallel` inside a `repeat` inside a branch of another `parallel`, three levels, and a `sequence` of 5,000 children each emit with no limit or depth refusal at S4. | Test (TC-1063) |
@@ -387,7 +556,39 @@ FR-105).
 | FR-383-AC-25 | SCC discovery is iterative and O(V + E), does not merge groups quadratically, computes each completed group's identity once, and uses no global lock on the emit path. There is no fixed recursion depth, group size, node count or group count cap: the only applicable work bound is the caller's shared `s3.work_units` budget, and exhaustion produces the existing typed limit refusal naming `s3.work_units`. A 100,000-node cycle group emits and reads back within the supplied budget without native stack overflow; the budget refuses at zero and one unit short and succeeds at the exact measured work; permuting authored node order leaves group identity unchanged. | Test (TC-1062) |
 | FR-383-AC-26 | Each protocol clause's node-level `owner_model` is the exact local model declaration node bound by the checker for its `over` subject, enters its application-node key preimage and exact dependencies, and is read back unchanged. Two clauses over different selected models have distinct owner edges; retargeting one changes its clause key. The edge is derived from the object type `over`'s `Reference` input names (QSpec FR-464), and a clause whose `over` names none has no edge to write (AC-27). | Test (TC-1062, TC-1063) |
 | FR-383-AC-27 | A protocol whose `over` input is `Boolean`, `Integer`, `Option<M::T>` or `Sequence<M::T>` is refused once with `unsupported_construct`/`not-yet-implemented` naming `NoOwnerModel` (QSL-1147) and, with the emission gate open, writes no `protocol_clause` node; the same protocol over `M::T` writes the clause. Over the emitted package, a clause without the edge, an edge on another node, an external edge and an edge omitted from `dependencies` each refuse as IR's reader does (`malformed_wire`, `malformed_wire`, `malformed_wire`, `invalid_semantic_graph`), a non-model target refuses `invalid_model_binding`/`malformed-declaration` at the edge (QSpec FR-464-AC-20), and retargeting only the edge refuses `invalid_package`/`stale-node-key` until the key and `package_id` are rebuilt. | Test (TC-1063) |
-
+| FR-383-AC-28 | In AC-18's unit the diagnostics hold exactly one record, **X**'s, and none for **W**; the unit exits as FR-285-AC-2 gives for the items {0, 20}, which is 20, and never 0. Declaring **X** before **W** gives the same two results and the same records. A protocol **Y** whose predicate-join function names **X** is `Refused` `missing_declaration`/`missing-name` at the reference with `refused_dependency` naming **X** (`missing_declaration`/`missing-name`) and `consequence` true, **W** is unchanged, and the aggregate is `Refused` with **X**'s code, cause and locus as the `StageFailure::Refused` primary. | Test (TC-1297) |
+| FR-383-AC-29 | Removing **X** from AC-18's unit changes **W**'s result in no byte. Removing **W** leaves **X**'s refusal identity unchanged: the refusal code, typed cause and declaration/reference names are equal, while `source_index`, declaration span and any cause span remain relative to the containing unit and reflect its new declaration order and source layout. An `unsupported_construct`/`not-yet-implemented` refusal (`NoOwnerModel`, AC-27) of one protocol beside a good one gives the same independence and the same `Refused` aggregate. | Test (TC-1297) |
+| FR-383-AC-30 | **W**, **Z** and **V** are three renamed copies of one protocol with equal measured work `n`. With an `s3.work_units` budget of exactly `n` and the source order **W**, **Z**, **V**, the results are **W** `Emitted`, **Z** `Incomplete` naming `s3.work_units` and **V** `Incomplete` naming `s3.work_units`; the aggregate is `Incomplete` (`StageFailure::Limit`) and exits 22. With the source order **Z**, **W**, **V** the results are **Z** `Emitted`, then **W** and **V** `Incomplete`. With a budget of `3n` all three are `Emitted` in either order. | Test (TC-1297) |
+| FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. FR-503 owns the stage obligations. | Test (TC-1297, TC-1298) |
+| FR-383-AC-32 | For every slot of **W**, of TC-1070 fixture E and of protocol L (fixture L), the number of `protocol_locations` rows under the slot's site name for an application equals the number of that application's visits in the slot's walk. | Test (TC-1063) |
+| FR-383-AC-33 | No `protocol_locations` row under a slot's site name names an application that slot's walk does not visit. | Test (TC-1063) |
+| FR-383-AC-34 | In fixture E, the retry origin of `Refund` holds one `earlier.tally` application node with exactly two rows, and the retry origin of `Partial` one `partialEarlier.tally` node with exactly two rows of its own. | Test (TC-1063) |
+| FR-383-AC-35 | Each row, read back through QSL's I2 reader, has a `Location` equal to the `Location` of the term at the position it numbers in the checked clause held in memory. | Test (TC-1063) |
+| FR-383-AC-36 | The two retry-origin `earlier.tally` rows of `Refund` carry different `Location` values, the first that of the term in `earlier.tally < 3` and the second that in `earlier.tally + 1`. | Test (TC-1063) |
+| FR-383-AC-37 | A unit with no protocol slot expression writes `protocol_locations` as an empty array. | Test (TC-1063) |
+| FR-383-AC-38 | A package with no checked-term data keeps `checked_term_data` absent. | Test (TC-1063) |
+| FR-383-AC-39 | In fixtures E, L and E-C every slot that holds an application has its rows under a type-declaration origin whose `name` is that slot's site name. | Test (TC-1063) |
+| FR-383-AC-40 | In fixtures E, L and E-C no two slots have the same site name. | Test (TC-1063) |
+| FR-383-AC-41 | In fixtures E, L and E-C no row has a `protocol_attempt` origin. | Test (TC-1063) |
+| FR-383-AC-42 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
+| FR-383-AC-43 | Removing the highest-`term_ordinal` retry-origin `earlier.tally` row of `Refund` from fixture E's emitted package (leaving a lone ordinal-zero row) leaves a package QSL's I2 reader admits. | Test (TC-1063) |
+| FR-383-AC-44 | Removing the ordinal-zero retry-origin `earlier.tally` row of `Refund` (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-45 | Changing the second retry-origin `earlier.tally` row's `term_ordinal` from 1 to 2 (ordinals 0 and 2) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-46 | Duplicating a retry-origin `earlier.tally` row (same key, written next to the original) is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
+| FR-383-AC-47 | For fixture E-C, every table slot's row count for an application equals its visits in the slot walk (each table slot has its own site name and shares no application with another slot), including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
+| FR-383-AC-48 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
+| FR-383-AC-49 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
+| FR-383-AC-50 | In fixture E the two retry-origin `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
+| FR-383-AC-51 | In fixture E, `target >= 0` is one graph node that `Refund`'s retry relation and trigger guard both hold. | Test (TC-1063) |
+| FR-383-AC-52 | In fixture E the group of `target >= 0` holds exactly one row of the retry origin and one of the trigger-guard origin of `Refund`. | Test (TC-1063) |
+| FR-383-AC-53 | In fixture E the retry-origin row of `target >= 0` has `term_ordinal` 0 and the trigger-guard row `term_ordinal` 1. | Test (TC-1063) |
+| FR-383-AC-54 | In fixture E each of the two rows of `target >= 0` carries the `Location` of the term in its own slot. | Test (TC-1063) |
+| FR-383-AC-55 | In fixture E-C, `order >= 0` is one graph node that the constraints of `Tried` and of `Picked` both hold. | Test (TC-1063) |
+| FR-383-AC-56 | In fixture E-C the group of `order >= 0` holds exactly one row of the `Picked` constraint's origin (`protocol Composed run Main Picked body`) and one of the `Tried` constraint's origin (`protocol Composed run Main Tried body`). | Test (TC-1063) |
+| FR-383-AC-57 | In fixture E-C the `Picked` row of `order >= 0` has `term_ordinal` 0 and the `Tried` row `term_ordinal` 1 (`Picked` before `Tried` in UTF-8 byte order of the names). | Test (TC-1063) |
+| FR-383-AC-58 | For every application of **W** and fixtures E, L and E-C, the (occurrence ordinal, `term_ordinal`) pairs of a slot's rows of that application, taken along the slot walk's visits, strictly increase. | Test (TC-1063) |
+| FR-383-AC-59 | In fixture E-C no `protocol_locations` row names a `Local` read (`x`, `b`, `c`), a literal, a `let`, a conditional or a case node. | Test (TC-1063) |
+| FR-383-AC-60 | In fixture E-C each arm of `Composed.case` holds exactly one row (`x >= 1` and `not b`). | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.

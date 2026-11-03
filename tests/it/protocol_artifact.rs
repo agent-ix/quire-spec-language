@@ -773,9 +773,40 @@ fn every_zero_limit_refuses_without_disabling_the_limit_and_fresh_retry_is_clean
     ] {
         set_limit(&mut requested, dimension, usize::MAX);
     }
+    // FR-042: a limit above its default is used as given, up to each
+    // dimension's documented hard maximum (`Limits` field docs), so an
+    // unbounded request is reported at those maxima rather than the defaults.
     let bounded = fixture.read(&bytes, &selected, requested);
-    assert_eq!(bounded.limits(), Limits::default());
+    let mib = 1_048_576;
+    let defaults = Limits::default();
+    assert_eq!(
+        bounded.limits(),
+        Limits {
+            payload_bytes: 64 * mib,
+            output_bytes: 64 * mib,
+            source_bytes: defaults.source_bytes,
+            content_bytes: 64 * mib,
+            sources: defaults.sources,
+            dependencies: defaults.dependencies,
+            definitions: defaults.definitions,
+            models: defaults.models,
+            declarations: defaults.declarations,
+            entries: 10_000_000,
+            references: defaults.references,
+            byte_work: 512 * mib,
+            depth: 1_000_000,
+            ..defaults
+        }
+    );
     assert!(bounded.result().is_ok());
+    // A raise below the hard maximum is used exactly as given.
+    let mut raised = Limits::default();
+    set_limit(&mut raised, Dimension::PayloadBytes, 16 * mib);
+    set_limit(&mut raised, Dimension::Entries, 200_000);
+    set_limit(&mut raised, Dimension::Depth, 128);
+    let accepted = fixture.read(&bytes, &selected, raised);
+    assert_eq!(accepted.limits(), raised);
+    assert!(accepted.result().is_ok());
 }
 
 #[test]

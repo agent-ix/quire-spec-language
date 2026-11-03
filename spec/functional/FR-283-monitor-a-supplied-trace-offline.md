@@ -157,7 +157,7 @@ in the place of `holds`, under ADR-014 A-4:
 | `Violated` | `Completed(false)`, finite or lasso | `position`, `counterexample`, `witness` | violation | 10 |
 | `Undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample`, `cause` (`UndefinedEvaluation{where, cause}`) | violation | 10 |
 | `InsufficientData` | FR-327's insufficient-data outcome, `InsufficientData{where, atom, count, min_count}` (a window aggregate short of data, QSpec FR-414), not an `Undefined` | `position`, `count`, `min_count` | undefined, with the label `undefined` and reason `insufficient-data` | 10 |
-| `Pending` | `Pending`, finite trace | none | inconclusive | 0 |
+| `Pending` | `Pending`, finite trace | none | pending | 0 |
 | `Tested` | `Completed(true)` | none | success | 0 |
 | `MissingFairnessPremise` | `MissingFairnessPremise`, a clause with a non-empty fairness set | `constraint`, the first constraint of the fairness set | unsupported | 21 |
 | `Incomplete` | `Incomplete` | the charge point and limit | incomplete | 22 |
@@ -248,7 +248,7 @@ record.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-283-AC-1 | Over a three-position finite trace whose `p` is false at position 2, `always p` reports a violation at position 2 with its `counterexample`, category violation. The same clause over a trace whose `p` is true at every position reports pending, category inconclusive, and FR-285 maps it to exit 0. | Test (TC-765) |
+| FR-283-AC-1 | Over a three-position finite trace whose `p` is false at position 2, `always p` reports a violation at position 2 with its `counterexample`, category violation. The same clause over a trace whose `p` is true at every position reports pending, category pending, and FR-285 maps it to exit 0 and records the status and the pending clause ids. | Test (TC-765) |
 | FR-283-AC-2 | Over a lasso of a two-position prefix and a two-position loop, `always eventually q`, whose fairness set is empty, reports `tested` when `q` holds at a loop position and a violation when `q` holds at no loop position. | Test (TC-765) |
 | FR-283-AC-3 | A trace whose second position's snapshot fails FR-106 admission is refused with that admission cause and position index 1, and the outcome holds no clause record. A lasso with an empty loop is refused with `invalid_runtime_input`/`invalid-value`, and the outcome holds no clause record. | Test (TC-766) |
 | FR-283-AC-4 | For each AC-1 and AC-2 trace, the verdict `monitor` reports equals the verdict layer-6 replay's trace evaluation reports for the same clause and trace. | Test (TC-766) |

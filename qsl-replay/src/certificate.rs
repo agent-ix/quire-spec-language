@@ -13,6 +13,7 @@
 //! and product-state, query or proof-step locus independently of any checker
 //! implementation.
 
+pub use quire_contract_model::CertificateMember;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 use qsl_eval::simulation::StateKey;
@@ -163,91 +164,6 @@ pub enum CertificateLocus {
         /// The component's index.
         component: u64,
     },
-}
-
-/// The certificate members QSpec FR-331's certificate-member locus names,
-/// each variant with its FR-331 spelling, in the schema enum's order
-/// (FR-331-AC-46). One table is the enum, its spellings and
-/// [`CertificateMember::ALL`].
-macro_rules! certificate_members {
-    ($($variant:ident => $name:literal,)*) => {
-        /// A certificate member QSpec FR-331's certificate-member locus
-        /// names: a member, at any depth, of the FR-412 or FR-418
-        /// certificate. The locus names the member and carries no path.
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        pub enum CertificateMember {
-            $(
-                #[doc = concat!("`", $name, "`.")]
-                $variant,
-            )*
-        }
-
-        impl CertificateMember {
-            /// Every member, in FR-331's order.
-            pub const ALL: &'static [Self] = &[$(Self::$variant,)*];
-
-            /// The member's FR-331 spelling.
-            pub fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $name,)*
-                }
-            }
-        }
-    };
-}
-
-certificate_members! {
-    Identity => "identity",
-    NodeId => "node_id",
-    Model => "model",
-    Ordinal => "ordinal",
-    Objective => "objective",
-    Kind => "kind",
-    Values => "values",
-    Ranking => "ranking",
-    Policy => "policy",
-    Components => "components",
-    Scale => "scale",
-    Bounds => "bounds",
-    Nodes => "nodes",
-    Edges => "edges",
-    Reasons => "reasons",
-    Divergence => "divergence",
-    Initials => "initials",
-    Admitted => "admitted",
-    Refinement => "refinement",
-    RefinementNode => "refinement_node",
-    ConcretePackage => "concrete_package",
-    AbstractPackage => "abstract_package",
-    Positions => "positions",
-    Taken => "taken",
-    Locked => "locked",
-    Start => "start",
-    Nested => "nested",
-    TaskProduct => "task_product",
-    AbstractStates => "abstract_states",
-    Automaton => "automaton",
-    Bias => "bias",
-    Bound => "bound",
-    Choice => "choice",
-    Clock => "clock",
-    Concrete => "concrete",
-    Constraint => "constraint",
-    Gain => "gain",
-    History => "history",
-    Lower => "lower",
-    Node => "node",
-    Rank => "rank",
-    Set => "set",
-    State => "state",
-    Strict => "strict",
-    Target => "target",
-    Transition => "transition",
-    Transitions => "transitions",
-    Type => "type",
-    Upper => "upper",
-    Value => "value",
-    Zone => "zone",
 }
 
 impl Serialize for CertificateLocus {

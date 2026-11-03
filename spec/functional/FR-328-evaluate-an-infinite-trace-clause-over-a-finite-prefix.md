@@ -52,7 +52,7 @@ never reads as a guarantee.
 
 - `Completed(false)` (violation) with the `TemporalPosition` of the
   activation that the bad prefix falsifies; `Undefined` (violation) as
-  FR-327 states; or `Pending` (O-16 inconclusive); or
+  FR-327 states; or `Pending` (category pending); or
   `MissingFairnessPremise{constraint}` (O-16 unsupported); or `Incomplete`
   with its charge point.
 
@@ -84,7 +84,7 @@ never reads as a guarantee.
 - A past operator, with or without an interval, SHALL read every atomic
   predicate as false before position 0 (ADR-018 IV-2, QSpec FR-092's
   complete-history rule).
-- `Pending` SHALL map to O-16 inconclusive and `Completed(false)` to
+- `Pending` SHALL map to the category pending (FR-285) and `Completed(false)` to
   violation (QSpec FR-324-AC-2). The evaluator SHALL return neither `proved`
   nor `tested` over a finite prefix.
 - The evaluator SHALL charge and exhaust work as FR-327 states.
@@ -96,7 +96,7 @@ never reads as a guarantee.
 | FR-328-AC-1 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace: `always holds(c.value <= 1)` is `Completed(false)` at position 0; `always holds(c.value <= 5)` is `Pending`; `eventually holds(c.value = 2)` and `eventually holds(c.value = 9)` are each `Pending`. | Test (TC-838) |
 | FR-328-AC-2 | Over the same prefix, `always (holds(c.value = 1) implies eventually[0,1] holds(c.value = 3))` is `Completed(false)` at position 0 (positions 1 and 2 are both present and neither has value 3); `always (holds(c.value = 2) implies eventually[0,1] holds(c.value = 3))` is `Pending` (position 3 is unknown). | Test (TC-838) |
 | FR-328-AC-3 | Over the same prefix, `always (holds(c.value = 0) implies once[1,1] holds(c.value = 9))` is `Completed(false)` at position 0, because `once[1,1]` at position 0 reads before position 0, where atoms are false. | Test (TC-838) |
-| FR-328-AC-4 | No clause in AC-1 to AC-3 yields `tested` or `proved`; each `Pending` maps to O-16 inconclusive. | Test (TC-838) |
+| FR-328-AC-4 | No clause in AC-1 to AC-3 yields `tested` or `proved`; each `Pending` maps to the category pending. | Test (TC-838) |
 | FR-328-AC-5 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace, `eventually holds(3 mod (2 - c.value) = 2)`, outside the safety fragment, returns `Undefined{where: 2, cause: division-by-zero}`, not `Pending`. | Test (TC-847) |
 | FR-328-AC-6 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace, `always holds(c.value <= 1)` with the fairness set `fair weak inc` returns `MissingFairnessPremise` naming `fair weak whole inc`, O-16 unsupported, and evaluates no position; with an empty fairness set it is `Completed(false)` at position 0. | Test (TC-848) |
 

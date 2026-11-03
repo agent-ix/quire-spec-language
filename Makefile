@@ -288,7 +288,7 @@ endif
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
 	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
-	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
+	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/spine-compile.native
 
 # NFR-015: each no_std-capable crate builds with `std` off. A closure-tier row
 # builds for the governed target (its sysroot has no `std`); a `std` path added

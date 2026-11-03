@@ -54,7 +54,8 @@ pub use abstraction_declaration::{
 };
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
-    build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
+    build_unit, build_unit_with_protocol_results, FormsCause, FormsRefusal, LeadingTokenKind,
+    ParsedForm, ParsedUnit, ProtocolFormsRefusal,
 };
 pub use hyper_clause::{
     AlignSkipForm, ExecutionBindingForm, HyperBehavioursForm, HyperFiniteForm, ModelRelationForm,
@@ -89,19 +90,19 @@ pub use syntax::{
     OperationBodyForm, OperatorInterval, ParameterForm, PastWindowForm, PolicyForm,
     PopulationBoundForm, PopulationForm, PriorityForm, ProbabilisticBody, ProbabilisticForm,
     ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
-    ProtocolNodeDeclaration, ProtocolNodeKind, QuantityForm, RandomForm, RatioNumberForm,
-    RatioNumberKind, RatioTermForm, RecordFieldForm, RecordForm, RelatedForm, RelationshipForm,
-    ReleaseForm, ReplicatedRoleForm, RequirementForm, ResponseForm, RewardForm, RoleForm,
-    RoleLifetime, SchedulableForm, SchedulerForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
-    ShapeChanged, SignedQuantityForm, Spellings, StateClauseForm, StateClauseKind,
-    StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm, StepLabelForm, TaskForm,
-    TasksetForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
-    TemporalOperator, TemporalOperatorForm, TemporalOperatorUse, TermOperator,
-    TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm,
-    TimeSourceSyntax, TimedIntervalForm, TimedUpper, TransitionForm, TreeRefusal, TupleForm,
-    TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm, UrgentTarget,
-    UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm, WorkloadForm,
-    WorkloadWeightForm,
+    ProtocolNodeDeclaration, ProtocolNodeKind, QuantifiedClockBoundForm, QuantityForm, RandomForm,
+    RatioNumberForm, RatioNumberKind, RatioTermForm, RecordFieldForm, RecordForm, RelatedForm,
+    RelationshipForm, ReleaseForm, ReplicatedRoleForm, RequirementForm, ResponseForm, RewardForm,
+    RoleForm, RoleLifetime, SchedulableForm, SchedulerForm, ScopeEntry, ScopeId, ScopeName,
+    ScopedAnchorForm, ShapeChanged, SignedQuantityForm, Spellings, StateClauseForm,
+    StateClauseKind, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
+    StepLabelForm, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
+    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TemporalOperatorUse,
+    TermOperator, TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantBoundForm,
+    TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedIntervalForm, TimedUpper,
+    TransitionForm, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm,
+    UnitForm, UrgentForm, UrgentTarget, UsingAlias, WeightedDelayForm, WeightedValueForm,
+    WeightingForm, WorkloadForm, WorkloadWeightForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

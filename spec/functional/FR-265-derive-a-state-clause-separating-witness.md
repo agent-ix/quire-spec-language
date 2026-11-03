@@ -71,6 +71,22 @@ record the same way.
   `decisive-counterexample` for `false`, `decisive-witness` for `true`.
 - If the walk ends at a quantifier occurrence that has a stop report, then
   the derivation SHALL build the record from that occurrence's stop report.
+- A connective node SHALL record a decision for its left operand if and
+  only if its origin is `Authored`. A `Synthesized` connective, such as the
+  composition the checker builds for a Float ordering (`<`, `<=`, `>`,
+  `>=`, QSL FR-397), therefore records none.
+- If the walk ends at a connective whose origin is `Synthesized`, then the
+  derivation SHALL settle basis `closed-scope` with no record, because the
+  connective's operands were not decided by anything the source wrote.
+- The derivation SHALL read the origin of a connective from the checked
+  node (`quire_checked::NodeKind::Connective(connective, origin, left,
+  right)` with `ConnectiveOrigin::{Authored, Synthesized}`, quire-eval
+  FR-002).
+- The derivation SHALL NOT infer the origin of a connective from source
+  locations or operand shape.
+- A package read from `quire.checked-package/v2` bytes carries no
+  connective origin (Contract IR IR-1276 added no wire marker), so the
+  derivation runs over the native checked clause only.
 - If the walk ends at a node that is not a stopped quantifier occurrence,
   then the derivation SHALL settle basis `closed-scope` with no record. A
   quantifier that visited every element (a `true` `forall`, a `false`
@@ -117,6 +133,14 @@ claim:
 - `NoneSelected`: `forall(n in filter(m in [0, self.versionNumber]: m >
   900): n < 0)`.
 
+The Float criteria add to the unit the IEEE profile, the pure function
+`fl using v(x: Float64[nearest-even]): Float64[nearest-even] { x }`, and
+the Float64 constants `ONE` (`float64(bits: 0x3ff0000000000000)`) and `TWO`
+(`float64(bits: 0x4000000000000000)`), and use these clauses:
+
+- `FloatOrder`: `fl(ONE) < fl(TWO)`;
+- `FloatAndOperand`: `self.versionNumber > 0 and fl(ONE) < fl(TWO)`.
+
 The member criteria add to `ConfigVersion` the member `history`, an ordered
 sequence of up to three `VersionNumber`s, and the optional member
 `maybeHistory` of the same type, and use these clauses:
@@ -145,6 +169,9 @@ criteria `self` is `mid`, its `history` is given with each criterion, and
 | FR-265-AC-5 | Computed domains: `FilteredAll` over `high` names 600 with `index` 2, its position in the built list, not the position 1 it holds in the filtered collection. `MappedAll` over `high` holds `deciding_element` 601, the mapped value, and `index` 1. Both value paths are rooted at the built list's occurrence and end in an index step for that index (QSpec FR-207-AC-9). | Test (TC-740) |
 | FR-265-AC-6 | No Boolean, no record: `AllBelow` over `high` with an evaluation budget of zero completes `incomplete`, and the derivation yields no basis and no record. `NoneSelected` over `low`, whose filtered domain is empty, derives `closed-scope`, no record. | Test (TC-740) |
 | FR-265-AC-7 | Member domains: `MemberAll` with `history` `[0, 600, 700]` names 600 at `index` 1, with a value path rooted at `mid` in the current observation whose one step selects the member `history`. `ConvertedAll` with `history` `[700, 0, 600]` names 600 at `index` 2, its position in the stored member, on the same path. `MaybeAll` with `[0, 600, 700]` names 600 at `index` 1 on the path whose steps select the member `maybeHistory` and then the option's value. `MemberPre` over a pre-call observation, and over an invocation, derives the same record, whose path names the pre observation, not the invocation's post one. | Test (TC-740) |
+| FR-265-AC-8 | `FloatOrder` over `high` evaluates `true` and derives basis `closed-scope` and no record. | Test (TC-740) |
+| FR-265-AC-9 | `FloatAndOperand` over `high` with `self` `mid` evaluates `true`; its authored `and` stopped on the right operand, the walk ends at the Float ordering's synthesized connective, and the derivation yields basis `closed-scope` and no record. | Test (TC-740) |
+| FR-265-AC-10 | Two checked trees with the same source locations that differ only in the `ConnectiveOrigin` of their root `and` connective, whose left operand is `true`, evaluated over one observation, record the decision `true` for the left operand when the origin is `Authored` and record no decision when it is `Synthesized`. | Test (TC-740) |
 
 ## Dependencies
 
@@ -155,6 +182,8 @@ criteria `self` is `mid`, its `history` is given with each criterion, and
   (the admitted observation),
   [FR-108](FR-108-run-the-configversion-spine-corpus.md) (the `Config`
   domain package).
+- quire-eval FR-002 (`ConnectiveOrigin` on the checked `Connective` node);
+  QSL FR-397 (the Float ordering whose composition is synthesized).
 - QSpec FR-041 (decisive occurrence and source binding), FR-243 (basis
   labels), QSpec FR-351 (the record), FR-207 AC-9 to AC-11 (the runtime value
   path) and QSpec FR-351-AC-7 (the deciding-quantifier component).

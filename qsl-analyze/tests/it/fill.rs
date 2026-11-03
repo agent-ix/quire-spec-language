@@ -7,8 +7,8 @@
 //! that selects it as `M` with their contracts, protocols over it, and the
 //! snapshots and protocol subjects the protocol tests build from it.
 
-use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
@@ -16,10 +16,10 @@ use qsl_eval::simulation::model::{
     TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
+    MemoryModel, ProtocolState, ProtocolSystem, Ra, Reachable, ReachedState, ResolvedMemory, Sc,
+    StepKind, Tso,
 };
-use qsl_eval::simulation::StateKey;
-use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::SubjectSystem;
 use qsl_foundation::SourceIdentity;
 use qsl_package::{CheckedPackage, ClockConfiguration, TemporalClockSelection};
 use qsl_semantics::check::{PackageDeclarations, TemporalProfile};
@@ -584,14 +584,9 @@ fn compiled_with(
     )
 }
 
-/// One reachable state of a protocol system: its key state key, the state, and
-/// each successor's identity and index.
-pub(crate) struct Reached<M: MemoryModel = Sc> {
-    pub(crate) state: ProtocolState<M>,
-    /// The state's canonical key bytes.
-    pub(crate) key: Vec<u8>,
-    pub(crate) steps: Vec<(ProtocolTransition, usize)>,
-}
+/// One reachable state of a protocol system: the state, its canonical state
+/// key, and each successor's transition and index.
+pub(crate) type Reached<M = Sc> = ReachedState<M>;
 
 /// The terminal class of `state` (FR-124, ADR-027 PD-1, PD-2, AE-4), read
 /// from its bounded expansion.
@@ -603,134 +598,47 @@ pub(crate) fn class_of<M: MemoryModel>(
     SubjectSystem::terminal_class(system, state, &expansion, cut).expect("a class")
 }
 
-/// One expanded state's successors in transition-identity order, each with
-/// its canonical state key.
-type Expanded<M> = Vec<(ProtocolTransition, ProtocolState<M>, StateKey)>;
-
-/// The successors of `state` sorted by transition identity, each with its
-/// canonical state key.
-fn expand<M: MemoryModel>(system: &ProtocolSystem<'_, M>, state: &ProtocolState<M>) -> Expanded<M> {
-    let expansion = system.successors(state).expect("the state expands");
-    let mut successors: Vec<(Vec<u8>, ProtocolTransition, ProtocolState<M>)> = expansion
-        .successors
-        .into_iter()
-        .map(|(transition, state)| {
-            (
-                system.transition_key(&transition).expect("an identity"),
-                transition,
-                state,
-            )
-        })
-        .collect();
-    successors.sort_by(|left, right| left.0.cmp(&right.0));
-    successors
-        .into_iter()
-        .map(|(_, transition, state)| {
-            let key = SubjectSystem::canonical_state_key(system, &state).expect("a key");
-            (transition, state, key)
-        })
-        .collect()
+/// A memory model whose protocol systems `qsl-eval` explores with
+/// [`ProtocolSystem::reachable`].
+pub(crate) trait Explored: MemoryModel + Sized {
+    /// `system`'s reachable states with at most `worker_limit` workers per
+    /// breadth-first level.
+    fn reach(system: &ProtocolSystem<'_, Self>, worker_limit: NonZeroUsize) -> Reachable<Self>;
 }
 
-/// Expands every state of `frontier` across the available cores, returning
-/// each expansion at its frontier position.
-fn expand_level<M>(
-    system: &ProtocolSystem<'_, M>,
-    reached: &[Reached<M>],
-    frontier: &[usize],
-) -> Vec<Expanded<M>>
-where
-    M: MemoryModel + Sync,
-    M::Component: Send + Sync,
-{
-    let workers = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(frontier.len());
-    if workers <= 1 {
-        return frontier
-            .iter()
-            .map(|&at| expand(system, &reached[at].state))
-            .collect();
-    }
-    let next = AtomicUsize::new(0);
-    let mut expanded: Vec<Option<Expanded<M>>> = std::iter::repeat_with(|| None)
-        .take(frontier.len())
-        .collect();
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..workers)
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut done = Vec::new();
-                    loop {
-                        let position = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(&at) = frontier.get(position) else {
-                            return done;
-                        };
-                        done.push((position, expand(system, &reached[at].state)));
-                    }
-                })
-            })
-            .collect();
-        for handle in handles {
-            for (position, successors) in handle.join().expect("an expansion worker") {
-                expanded[position] = Some(successors);
+macro_rules! explored {
+    ($($model:ty),+) => {$(
+        impl Explored for $model {
+            fn reach(
+                system: &ProtocolSystem<'_, Self>,
+                worker_limit: NonZeroUsize,
+            ) -> Reachable<Self> {
+                system.reachable(worker_limit).expect("the reachable states")
             }
         }
-    });
-    expanded
-        .into_iter()
-        .map(|successors| successors.expect("every frontier state expanded"))
-        .collect()
+    )+};
 }
+
+explored!(Sc, Tso, Ra);
 
 /// Every reachable state of `system`, breadth-first from its initial states,
-/// each once by its state key, successors in transition-identity order. Each
-/// breadth-first level expands in parallel and is admitted in frontier
-/// order, so indices and steps equal a sequential FIFO search's.
-pub(crate) fn reachable<M>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>>
-where
-    M: MemoryModel + Sync,
-    M::Component: Send + Sync,
-{
-    // State identity is the full canonical key, so equality cannot collapse
-    // distinct states through a state key collision.
-    let mut known: HashMap<StateKey, usize> = HashMap::new();
-    let mut reached: Vec<Reached<M>> = Vec::new();
-    let mut frontier = Vec::new();
-    let mut admit = |state: ProtocolState<M>,
-                     key: StateKey,
-                     reached: &mut Vec<Reached<M>>,
-                     frontier: &mut Vec<usize>|
-     -> usize {
-        if let Some(index) = known.get(&key) {
-            return *index;
-        }
-        let index = reached.len();
-        let bytes = key.as_bytes().to_vec();
-        known.insert(key, index);
-        reached.push(Reached {
-            state,
-            key: bytes,
-            steps: Vec::new(),
-        });
-        frontier.push(index);
-        index
-    };
-    for state in system.initial() {
-        let key = SubjectSystem::canonical_state_key(system, &state).expect("a key");
-        admit(state, key, &mut reached, &mut frontier);
-    }
-    while !frontier.is_empty() {
-        let level = std::mem::take(&mut frontier);
-        let expanded = expand_level(system, &reached, &level);
-        for (at, successors) in level.into_iter().zip(expanded) {
-            for (transition, state, key) in successors {
-                let next = admit(state, key, &mut reached, &mut frontier);
-                reached[at].steps.push((transition, next));
-            }
-        }
-    }
-    reached
+/// each once by its state key, successors in transition-identity order, with
+/// up to the available worker count per level.
+pub(crate) fn reachable<M: Explored>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
+    let workers = std::thread::available_parallelism()
+        .unwrap_or_else(|_| NonZeroUsize::new(1).expect("one is nonzero"));
+    reachable_with_workers(system, workers).0
+}
+
+/// Explore every reachable state using at most `worker_limit` workers per
+/// breadth-first level. Returns the greatest number of workers spawned for
+/// one level so callers can verify that the requested parallelism was used.
+pub(crate) fn reachable_with_workers<M: Explored>(
+    system: &ProtocolSystem<'_, M>,
+    worker_limit: NonZeroUsize,
+) -> (Vec<Reached<M>>, usize) {
+    let reached = M::reach(system, worker_limit);
+    (reached.states, reached.workers)
 }
 
 /// Every maximal behaviour's projection onto its event steps (ADR-027

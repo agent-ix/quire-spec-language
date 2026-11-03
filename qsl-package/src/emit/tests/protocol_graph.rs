@@ -1027,6 +1027,550 @@ fn parallel_flow(parallel: &str) -> String {
     )
 }
 
+fn checked_protocols_with_budget(
+    protocols: &str,
+    work_budget: u64,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>> {
+    let document = model();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
+        .expect("the test model admits");
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+         model M = \"acme/orders\";\n\
+         function baseline using v(): Boolean pure {{ true }}\n{protocols}"
+    );
+    assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check_with_protocol_results(CheckingLimits::default().with_work_budget(work_budget))
+}
+
+fn minimum_protocol_work_budget(protocols: &str) -> u64 {
+    let mut low = 0;
+    let mut high = CheckingLimits::default().work_budget();
+    let complete = |budget| {
+        checked_protocols_with_budget(protocols, budget)
+            .is_ok_and(|graph| graph.protocol_refusals().is_empty())
+    };
+    assert!(complete(high), "the bounded test unit admits");
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if complete(middle) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    low
+}
+
+/// FR-383-AC-18, AC-28 and AC-29 (TC-1297): a refused protocol leaves
+/// independent protocol results readable and makes the aggregate inadmissible.
+#[trace("FR-383-AC-18", "FR-383-AC-28", "FR-383-AC-29", "TC-1297")]
+#[test]
+fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
+    let good = parallel_flow(
+        "parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, b];",
+    );
+    let broken = good
+        .replace("protocol Flow", "protocol Broken")
+        .replace("join all [a, b]", "join all [a, ghost]");
+    let unit = |protocols: &str| {
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+             model M = \"acme/orders\";\n{protocols}"
+        )
+    };
+    let check = |protocols: &str| {
+        let document = model();
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
+            .expect("the test model admits");
+        assemble_with_models(unit(protocols).as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check_with_protocol_results(CheckingLimits::default())
+            .expect("unit-level checks succeed")
+    };
+    let standalone = CheckedPackage::link(check(&good));
+    let standalone = emit_checked_with_protocol_results(&standalone).expect("Flow emits");
+    assert!(
+        standalone.emission().is_some(),
+        "Flow alone emits a package"
+    );
+    let ProtocolEmissionResult::Emitted {
+        clause_key: baseline_clause_key,
+        nodes: baseline,
+        ..
+    } = standalone.results().first().expect("one protocol result")
+    else {
+        panic!("Flow emits independently: {:?}", standalone.results());
+    };
+
+    let combined_source = unit(&format!("{good}\n{broken}"));
+    let expected_broken_span = combined_source.find("protocol Broken").unwrap() + "protocol ".len();
+    let combined_graph = check(&format!("{good}\n{broken}"));
+    assert_eq!(
+        combined_graph.protocol_order(),
+        ["Flow", "Broken"],
+        "protocol results retain declaration order"
+    );
+    assert_eq!(combined_graph.protocol_refusals().len(), 1);
+    assert_eq!(combined_graph.protocol_refusals()[0].declaration, "Broken");
+    let combined_package = CheckedPackage::link(combined_graph);
+    let combined = emit_checked_with_protocol_results(&combined_package)
+        .expect("the good protocol's nodes can still be emitted");
+    let ProtocolEmissionAggregate::Refused { primary } = combined.aggregate() else {
+        panic!("a refused protocol makes the aggregate refused")
+    };
+    assert!(
+        combined.emission().is_none(),
+        "a refused aggregate has no package"
+    );
+    assert_eq!(combined.exit_code(), 20);
+    assert_eq!(combined.diagnostics().count(), 1);
+    assert_eq!(combined.results().len(), 2);
+    let ProtocolEmissionResult::Emitted {
+        declaration,
+        nodes: emitted_good,
+        ..
+    } = &combined.results()[0]
+    else {
+        panic!("Flow's result stays emitted: {:?}", combined.results());
+    };
+    assert_eq!(declaration, "Flow");
+    assert_eq!(
+        emitted_good, baseline,
+        "Flow's nodes are byte-for-byte stable"
+    );
+    let ProtocolEmissionResult::Emitted { clause_key, .. } = &combined.results()[0] else {
+        unreachable!("the preceding assertion checked Flow's result")
+    };
+    assert_eq!(clause_key, baseline_clause_key);
+    let ProtocolEmissionResult::Refused {
+        declaration,
+        source_index,
+        declaration_span,
+        refusal,
+    } = &combined.results()[1]
+    else {
+        panic!("Broken's result is refused: {:?}", combined.results());
+    };
+    assert_eq!(declaration, "Broken");
+    assert_eq!(*source_index, 1);
+    assert_eq!(declaration_span.start, expected_broken_span);
+    assert_eq!(declaration_span.end, expected_broken_span + "Broken".len());
+    assert_eq!(
+        primary, refusal,
+        "Broken is the aggregate's primary refusal"
+    );
+    assert!(matches!(
+        &refusal.cause,
+        qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), qsl_semantics::check::ProtocolAnchorCause::Missing { segment, .. } if segment == "ghost")
+    ));
+    assert_eq!(
+        combined
+            .results()
+            .iter()
+            .filter(|result| matches!(result, ProtocolEmissionResult::Refused { .. }))
+            .count(),
+        1,
+        "one diagnostic result is retained for the refused protocol"
+    );
+    assert!(matches!(
+        emit_checked(&combined_package),
+        Err(EmitRefusal::ProtocolResultsRequired)
+    ));
+    for (entrypoint, result) in [
+        (
+            "emit_checked_with_cancel",
+            emit_checked_with_cancel(&combined_package, &quire_exact::Cancel::new()),
+        ),
+        (
+            "emit_checked_with_temporal_selections",
+            emit_checked_with_temporal_selections(&combined_package, &[]),
+        ),
+        (
+            "emit_checked_with_temporal_selections_and_cancel",
+            emit_checked_with_temporal_selections_and_cancel(
+                &combined_package,
+                &[],
+                &quire_exact::Cancel::new(),
+            ),
+        ),
+        ("emit_package", emit_package(&combined_package, whole_unit)),
+        (
+            "emit_package_with_temporal_selections",
+            emit_package_with_temporal_selections(&combined_package, whole_unit, &[]),
+        ),
+    ] {
+        assert!(
+            matches!(result, Err(EmitRefusal::ProtocolResultsRequired)),
+            "{entrypoint} must require the per-protocol result API: {result:?}"
+        );
+    }
+    assert!(combined_package.remembered_emission().is_none());
+
+    let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
+        "{broken}\n{good}"
+    ))))
+    .expect("the reordered good protocol's nodes can still be emitted");
+    let ProtocolEmissionResult::Refused {
+        refusal: reversed_refusal,
+        ..
+    } = &reversed.results()[0]
+    else {
+        panic!("Broken remains refused: {:?}", reversed.results());
+    };
+    assert!(
+        matches!(
+            (&reversed_refusal.cause, &refusal.cause),
+            (
+                qsl_semantics::check::CheckCause::ProtocolAnchor(reversed),
+                qsl_semantics::check::CheckCause::ProtocolAnchor(original)
+            ) if matches!(
+                (reversed.as_ref(), original.as_ref()),
+                (
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: reversed_segment,
+                        ..
+                    },
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: original_segment,
+                        ..
+                    }
+                ) if reversed_segment == original_segment && reversed_segment == "ghost"
+            )
+        ),
+        "the refusal reason is independent of declaration order"
+    );
+    let ProtocolEmissionResult::Emitted {
+        nodes: reversed_good,
+        ..
+    } = &reversed.results()[1]
+    else {
+        panic!("Flow remains emitted: {:?}", reversed.results());
+    };
+    assert_eq!(reversed_good, baseline, "Flow remains byte-for-byte stable");
+
+    let third_good = good.replace("protocol Flow", "protocol ThirdGood");
+    let standalone_third =
+        emit_checked_with_protocol_results(&CheckedPackage::link(check(&third_good)))
+            .expect("ThirdGood emits alone");
+    let ProtocolEmissionResult::Emitted {
+        clause_key: third_clause_key,
+        nodes: third_baseline,
+        ..
+    } = &standalone_third.results()[0]
+    else {
+        panic!("ThirdGood emits alone: {:?}", standalone_third.results());
+    };
+    let three_results = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
+        "{good}\n{broken}\n{third_good}"
+    ))))
+    .expect("the result API retains good protocols on both sides of a refusal");
+    let [ProtocolEmissionResult::Emitted {
+        declaration: first,
+        nodes: first_nodes,
+        clause_key: first_key,
+    }, ProtocolEmissionResult::Refused {
+        declaration: refused,
+        ..
+    }, ProtocolEmissionResult::Emitted {
+        declaration: third,
+        nodes: third_nodes,
+        clause_key: third_key,
+    }] = three_results.results()
+    else {
+        panic!("unexpected result order: {:?}", three_results.results());
+    };
+    assert_eq!(first, "Flow");
+    assert_eq!(refused, "Broken");
+    assert_eq!(third, "ThirdGood");
+    assert_eq!(
+        first_nodes, baseline,
+        "Flow differs from its standalone nodes"
+    );
+    assert_eq!(first_key, baseline_clause_key);
+    assert_eq!(
+        third_nodes, third_baseline,
+        "ThirdGood differs from standalone nodes"
+    );
+    assert_eq!(third_key, third_clause_key);
+
+    let only_broken = emit_checked_with_protocol_results(&CheckedPackage::link(check(&broken)))
+        .expect("a refused protocol result is available without Flow");
+    let ProtocolEmissionResult::Refused {
+        source_index: standalone_source_index,
+        declaration_span: standalone_declaration_span,
+        refusal: standalone_refusal,
+        ..
+    } = &only_broken.results()[0]
+    else {
+        panic!("Broken remains refused alone: {:?}", only_broken.results());
+    };
+    assert!(
+        matches!(
+            (&standalone_refusal.cause, &refusal.cause),
+            (
+                qsl_semantics::check::CheckCause::ProtocolAnchor(standalone),
+                qsl_semantics::check::CheckCause::ProtocolAnchor(combined)
+            ) if matches!(
+                (standalone.as_ref(), combined.as_ref()),
+                (
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: standalone_segment,
+                        ..
+                    },
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: combined_segment,
+                        ..
+                    }
+                ) if standalone_segment == combined_segment && standalone_segment == "ghost"
+            )
+        ),
+        "removing Flow does not change Broken's refusal reason"
+    );
+    let padded_without_flow = format!("{}\n{broken}", " ".repeat(good.len()));
+    let padded_without_flow =
+        emit_checked_with_protocol_results(&CheckedPackage::link(check(&padded_without_flow)))
+            .expect("Broken refuses without Flow");
+    let ProtocolEmissionResult::Refused {
+        source_index: padded_source_index,
+        declaration_span: padded_declaration_span,
+        refusal: padded_refusal,
+        ..
+    } = &padded_without_flow.results()[0]
+    else {
+        panic!(
+            "Broken remains refused without Flow: {:?}",
+            padded_without_flow.results()
+        );
+    };
+    assert_eq!(padded_refusal, refusal);
+    assert_eq!(*standalone_source_index, 0);
+    assert_eq!(*padded_source_index, 0);
+    assert_eq!(padded_declaration_span, declaration_span);
+    assert_eq!(
+        padded_declaration_span.start,
+        standalone_declaration_span.start + good.len() + 1
+    );
+    assert_eq!(
+        padded_declaration_span.end,
+        standalone_declaration_span.end + good.len() + 1
+    );
+    assert_eq!(*source_index, 1);
+    assert_eq!(padded_refusal.cause.code(), standalone_refusal.cause.code());
+    assert_eq!(
+        padded_refusal.cause.cause(),
+        standalone_refusal.cause.cause()
+    );
+    assert_eq!(padded_refusal.location, standalone_refusal.location);
+    assert!(matches!(
+        (&padded_refusal.cause, &standalone_refusal.cause),
+        (
+            qsl_semantics::check::CheckCause::ProtocolAnchor(padded),
+            qsl_semantics::check::CheckCause::ProtocolAnchor(standalone)
+        ) if matches!(
+            (padded.as_ref(), standalone.as_ref()),
+            (
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segments: padded_segments,
+                    segment: padded_segment,
+                    scope: padded_scope,
+                    ..
+                },
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segments: standalone_segments,
+                    segment: standalone_segment,
+                    scope: standalone_scope,
+                    ..
+                }
+            ) if padded_segments == standalone_segments
+                && padded_segment == standalone_segment
+                && padded_scope == standalone_scope
+        )
+    ));
+    assert_eq!(
+        *padded_source_index, 0,
+        "source index is relative to the containing unit after removing Flow"
+    );
+
+    let no_owner = flow_over("Boolean", "on origin", "role Buyer on M::Order;");
+    let no_owner_pair = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
+        "{good}\n{}",
+        no_owner.replace("protocol Flow", "protocol NoOwner")
+    ))))
+    .expect("Flow emits beside an unsupported protocol");
+    assert!(matches!(
+        no_owner_pair.aggregate(),
+        ProtocolEmissionAggregate::Refused { .. }
+    ));
+    assert_eq!(no_owner_pair.exit_code(), 21);
+    assert_eq!(no_owner_pair.diagnostics().count(), 1);
+    let ProtocolEmissionResult::Emitted { nodes, .. } = &no_owner_pair.results()[0] else {
+        panic!(
+            "Flow remains emitted beside NoOwner: {:?}",
+            no_owner_pair.results()
+        );
+    };
+    assert_eq!(nodes, baseline);
+    let ProtocolEmissionResult::Refused { refusal, .. } = &no_owner_pair.results()[1] else {
+        panic!("NoOwner is refused: {:?}", no_owner_pair.results());
+    };
+    assert!(matches!(
+        refusal.cause,
+        qsl_semantics::check::CheckCause::ProtocolReference(ref cause)
+            if cause.construct() == Some(ProtocolConstruct::NoOwnerModel)
+    ));
+
+    let dependent = good
+        .replace("protocol Flow", "protocol Dependent")
+        .replace("join all [a, b]", "join predicate(Broken) [a, b]");
+    let dependent_source = format!("{good}\n{broken}\n{dependent}");
+    let check_prefix = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+         model M = \"acme/orders\";\n"
+    );
+    let dependent_reference_start = check_prefix.len()
+        + dependent_source
+            .find("predicate(Broken)")
+            .expect("dependent predicate reference")
+        + "predicate(".len();
+    let dependent_results =
+        emit_checked_with_protocol_results(&CheckedPackage::link(check(&dependent_source)))
+            .expect("a refused predicate dependency retains the independent results");
+    assert_eq!(dependent_results.diagnostics().count(), 2);
+    assert!(
+        matches!(
+            dependent_results.results(),
+            [
+                ProtocolEmissionResult::Emitted {
+                    declaration: first,
+                    nodes: first_nodes,
+                    ..
+                },
+                ProtocolEmissionResult::Refused {
+                    declaration: refused,
+                    refusal: primary,
+                    ..
+                },
+                ProtocolEmissionResult::Refused {
+                    declaration: dependent_name,
+                    refusal: dependent_refusal,
+                    ..
+                }
+            ] if first == "Flow"
+                && refused == "Broken"
+                && dependent_name == "Dependent"
+                && first_nodes == baseline
+                && matches!(
+                    &dependent_results.aggregate(),
+                    ProtocolEmissionAggregate::Refused { primary: aggregate_primary }
+                        if aggregate_primary == primary
+                )
+                && matches!(
+                    &dependent_refusal.cause,
+                    qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+                        if matches!(
+                            cause.as_ref(),
+                            qsl_semantics::check::ProtocolAnchorCause::RefusedDependency {
+                                function,
+                                refused_dependency,
+                                consequence: true,
+                                span,
+                            } if function == "Broken"
+                                && refused_dependency.declaration == "Broken"
+                                && refused_dependency.code == qsl_foundation::diagnostic::Code::MissingDeclaration
+                                && refused_dependency.cause == "missing-name"
+                                && span.start == dependent_reference_start
+                                && span.end == dependent_reference_start + "Broken".len()
+                        )
+                )
+                && dependent_refusal.cause.code() == qsl_foundation::diagnostic::Code::MissingDeclaration
+                && dependent_refusal.cause.cause() == Some("missing-name")
+        ),
+        "the dependent refusal locus is the predicate's Broken reference"
+    );
+}
+
+/// FR-383-AC-30 (TC-1297 rows 9–10): the shared S3 work budget is consumed in
+/// source order; every protocol has equal work and no fixed per-protocol cap.
+#[trace("FR-383-AC-30", "TC-1297")]
+#[test]
+fn protocol_results_mark_only_budget_exhaustion_incomplete_in_source_order() {
+    let protocol = parallel_flow(
+        "parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, b];",
+    );
+    let renamed = |name: &str| protocol.replace("Flow", name);
+    let empty_budget = minimum_protocol_work_budget("");
+    let one_budget = minimum_protocol_work_budget(&protocol);
+    let protocol_work = one_budget - empty_budget;
+    let three = format!("{}\n{}\n{}", protocol, renamed("Flaw"), renamed("Flew"));
+    let exact = checked_protocols_with_budget(&three, empty_budget + protocol_work)
+        .expect("the work limit is scoped to its protocols");
+    let exact = emit_checked_with_protocol_results(&CheckedPackage::link(exact))
+        .expect("the first protocol's nodes are retained");
+    assert!(matches!(
+        exact.aggregate(),
+        ProtocolEmissionAggregate::Incomplete { .. }
+    ));
+    assert_eq!(exact.exit_code(), 22);
+    assert!(exact.emission().is_none());
+    assert!(matches!(
+        exact.results(),
+        [
+            ProtocolEmissionResult::Emitted { declaration, .. },
+            ProtocolEmissionResult::Incomplete { declaration: second, limit },
+            ProtocolEmissionResult::Incomplete { declaration: third, limit: third_limit }
+        ] if declaration == "Flow"
+            && second == "Flaw"
+            && third == "Flew"
+            && limit.kind == qsl_semantics::check::CheckingLimitKind::WorkBudget
+            && third_limit.kind == qsl_semantics::check::CheckingLimitKind::WorkBudget
+    ));
+
+    let reversed_protocols = format!("{}\n{}\n{}", renamed("Flaw"), protocol, renamed("Flew"));
+    let reversed = checked_protocols_with_budget(&reversed_protocols, empty_budget + protocol_work)
+        .expect("reordered protocol checks complete as individual results");
+    let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(reversed))
+        .expect("the first protocol's nodes are retained");
+    assert!(matches!(
+        reversed.results(),
+        [
+            ProtocolEmissionResult::Emitted { declaration, .. },
+            ProtocolEmissionResult::Incomplete { declaration: second, .. },
+            ProtocolEmissionResult::Incomplete { declaration: third, .. }
+        ] if declaration == "Flaw" && second == "Flow" && third == "Flew"
+    ));
+
+    let sufficient = checked_protocols_with_budget(&three, empty_budget + 3 * protocol_work)
+        .expect("three equal protocols fit three times the measured work");
+    let sufficient = emit_checked_with_protocol_results(&CheckedPackage::link(sufficient))
+        .expect("all protocol results are emitted");
+    assert!(matches!(
+        sufficient.aggregate(),
+        ProtocolEmissionAggregate::Emitted
+    ));
+    assert_eq!(sufficient.exit_code(), 0);
+
+    let reversed_sufficient =
+        checked_protocols_with_budget(&reversed_protocols, empty_budget + 3 * protocol_work)
+            .expect("three equal protocols fit three times the measured work in either order");
+    let reversed_sufficient =
+        emit_checked_with_protocol_results(&CheckedPackage::link(reversed_sufficient))
+            .expect("all reversed results are emitted");
+    assert!(matches!(
+        reversed_sufficient.results(),
+        [
+            ProtocolEmissionResult::Emitted { declaration: first, .. },
+            ProtocolEmissionResult::Emitted { declaration: second, .. },
+            ProtocolEmissionResult::Emitted { declaration: third, .. }
+        ] if first == "Flaw" && second == "Flow" && third == "Flew"
+    ));
+}
+
 /// The `control` node of `wire` whose declaration is `path`.
 fn control_at<'w>(wire: &'w Value, path: &[&str]) -> &'w Value {
     nodes(wire)

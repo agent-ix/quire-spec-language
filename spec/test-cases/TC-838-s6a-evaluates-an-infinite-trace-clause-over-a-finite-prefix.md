@@ -32,4 +32,4 @@ Tag the tests `#[trace("TC-838", "FR-328-AC-n")]`.
 - Step 1: `false` at 0; `Pending`; `Pending`; `Pending`.
 - Step 2: `false` at 0; `Pending`.
 - Step 3: `false` at 0.
-- Step 4: violation or inconclusive only; no `tested`, no `proved`.
+- Step 4: violation or pending only; no `tested`, no `proved`.

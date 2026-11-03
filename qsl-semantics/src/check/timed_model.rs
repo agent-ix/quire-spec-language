@@ -249,6 +249,9 @@ pub struct ClockConstraint {
     clock: ClockId,
     via: Vec<PlaceStep>,
     slots: Vec<SlotRef>,
+    /// The slot selector introduced by a quantified read, when present.
+    /// Each selector is also a typed `parameter` binder on its guard part.
+    binding: Option<ElementBinding>,
     op: ClockOp,
     bound: Rational,
     span: Span,
@@ -285,6 +288,11 @@ impl ClockConstraint {
     /// slot of a family.
     pub fn slots(&self) -> &[SlotRef] {
         &self.slots
+    }
+
+    /// The quantifier binding that supplies this constraint's slot terms.
+    pub fn binding(&self) -> Option<&ElementBinding> {
+        self.binding.as_ref()
     }
 
     /// The comparison.
@@ -384,6 +392,11 @@ pub struct ConvexPart {
     data: Option<CheckedTimedPredicate>,
     presences: Vec<(ClockId, bool)>,
     elements: Vec<ElementBinding>,
+    binders: Vec<ElementBinding>,
+    /// This part includes the size-zero branch of a bounded universal
+    /// collection read, which is enabled vacuously when the collection is
+    /// empty even though it has no clock constraint.
+    empty_collection_branch: bool,
     clocks: Vec<ClockConstraint>,
     families: Vec<QuantifiedFamily>,
 }
@@ -432,6 +445,7 @@ impl ClockGuard {
                 && part.presences.is_empty()
                 && part.elements.is_empty()
                 && part.families.is_empty()
+                && !part.empty_collection_branch
                 && !part.clocks.is_empty()
                 && part.clocks.iter().all(|constraint| {
                     constraint.op == ClockOp::GreaterOrEqual && constraint.bound.is_zero()
@@ -460,6 +474,12 @@ impl ConvexPart {
         &self.elements
     }
 
+    /// The typed slot binders for quantified clock constraints, in the same
+    /// order as their slot terms.
+    pub fn binders(&self) -> &[ElementBinding] {
+        &self.binders
+    }
+
     /// The part's clock constraints, in source order.
     pub fn clocks(&self) -> &[ClockConstraint] {
         &self.clocks
@@ -485,9 +505,6 @@ pub struct ClockGuard {
     pub(crate) context: EffectiveId,
     /// The precondition's declaration span.
     span: Span,
-    /// The first quantifier over a clock collection the precondition
-    /// reads, which no `clock_guard` part has a binder for (STD-554).
-    quantifier: Option<Span>,
     /// Whether the precondition is bound to an execution point.
     point: bool,
 }
@@ -715,6 +732,7 @@ pub struct TimeInvariant {
     context: EffectiveId,
     alternatives: Vec<StateAlternative>,
     bounds: Vec<ClockConstraint>,
+    binders: Vec<ElementBinding>,
     /// The declaration's span: the `time invariant` declaration, or the
     /// time declaration for a bound of a `max` constraint on clocks.
     span: Span,
@@ -852,6 +870,11 @@ impl TimeInvariant {
     /// The upper bounds, each `<` or `<=`, in declared order.
     pub fn bounds(&self) -> &[ClockConstraint] {
         &self.bounds
+    }
+
+    /// The quantified slot parameters whose live places are bounded.
+    pub fn binders(&self) -> &[ElementBinding] {
+        &self.binders
     }
 
     /// The declaration's span.
@@ -994,6 +1017,8 @@ impl std::fmt::Debug for GuardNodes {
 pub struct PartNodes {
     /// The part's Boolean `expression` node.
     pub predicate: NodeKey,
+    /// The typed slot parameters quantified by this part, in slot order.
+    pub binders: Vec<NodeKey>,
     /// The part's constraints, in source order.
     pub constraints: Vec<ConstraintNodes>,
 }
@@ -1002,10 +1027,12 @@ impl DebugWith for PartNodes {
     fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             predicate,
+            binders,
             constraints,
         } = self;
         f.debug_struct("PartNodes")
             .field("predicate", &NodeKeyDebug(predicate, table))
+            .field("binders", &NodeList(binders.iter(), table))
             .field("constraints", &constraints)
             .finish()
     }
@@ -1180,6 +1207,8 @@ impl std::fmt::Debug for ResetTargetNodes {
 pub struct InvariantNodes {
     /// The Boolean `expression` node where the bounds hold.
     pub predicate: NodeKey,
+    /// The typed slot parameters that scope this invariant, in path order.
+    pub binders: Vec<NodeKey>,
     /// The upper bounds, in declared order.
     pub bounds: Vec<ConstraintNodes>,
     /// The declaration's span.
@@ -1190,11 +1219,13 @@ impl DebugWith for InvariantNodes {
     fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             predicate,
+            binders,
             bounds,
             span,
         } = self;
         f.debug_struct("InvariantNodes")
             .field("predicate", &NodeKeyDebug(predicate, table))
+            .field("binders", &NodeList(binders.iter(), table))
             .field("bounds", &bounds)
             .field("span", &span)
             .finish()
@@ -1374,9 +1405,6 @@ impl TimedModel {
         use TimedOmission::{Excluded, Unwritten};
         use UnwrittenTimedMember as Member;
         for (at, guard) in self.guards.iter().enumerate() {
-            if let Some(span) = guard.quantifier {
-                return Some((Unwritten(Member::QuantifiedClause), span));
-            }
             if guard.point {
                 return Some((Unwritten(Member::PointQualifiedClause), guard.span));
             }
@@ -1391,7 +1419,7 @@ impl TimedModel {
                 {
                     return Some((Unwritten(Member::ElementPresence), guard.span));
                 }
-                if part.clocks.is_empty() && !guard.covered() {
+                if part.clocks.is_empty() && !guard.covered() && !part.empty_collection_branch {
                     // Located at the disjunct: its data predicate's site.
                     let site = guard_part_site(&self.model, at, index);
                     let span = self
@@ -1456,12 +1484,13 @@ impl TimedModel {
             }
         }
         for invariant in &self.invariants {
-            if let Some(member) = invariant
-                .bounds
-                .iter()
-                .find_map(|bound| self.unwritten_constraint(bound))
-            {
-                return Some((Unwritten(member), invariant.span));
+            if invariant.bounds.iter().any(|bound| {
+                self.unwritten_constraint(bound).is_some()
+                    && !bound
+                        .binding()
+                        .is_some_and(|binding| invariant.binders.contains(binding))
+            }) {
+                return Some((Unwritten(Member::QuantifiedClause), invariant.span));
             }
             if invariant
                 .alternatives
@@ -1487,7 +1516,10 @@ impl TimedModel {
         if constraint.parameter.is_some() {
             return None;
         }
-        (!constraint.slots.is_empty()).then_some(UnwrittenTimedMember::QuantifiedClause)
+        constraint
+            .slots
+            .contains(&SlotRef::Family)
+            .then_some(UnwrittenTimedMember::QuantifiedClause)
     }
 
     /// The site of each guard part's and time invariant's predicate S3
@@ -1563,6 +1595,7 @@ struct PartDraft {
     presences: Vec<(ClockId, bool)>,
     /// Each element the data predicate reads, with its quantifier's span.
     elements: Vec<(ElementBinding, Span)>,
+    empty_collection_branch: bool,
     clocks: Vec<ClockConstraint>,
     /// Each quantifier family the part conjoins: its field, whether every
     /// slot must enable a part, and its template parts.
@@ -1604,6 +1637,7 @@ struct InvariantDraft {
     name: String,
     alternatives: Vec<AlternativeDraft>,
     bounds: Vec<ClockConstraint>,
+    binders: Vec<ElementBinding>,
     span: Span,
     from_bound: bool,
 }
@@ -1619,9 +1653,8 @@ struct ModelDraft {
     clocks: Vec<ClockField>,
     clock_parameters: Vec<ClockParameterRange>,
     dimensions: Vec<(EffectiveId, Option<u64>)>,
-    /// Each guarded precondition, by its index among the unit's state
-    /// clauses, with the first quantifier over a clock collection it reads.
-    guards: Vec<(usize, Vec<PartDraft>, Option<Span>)>,
+    /// Each guarded precondition, by its index among the unit's state clauses.
+    guards: Vec<(usize, Vec<PartDraft>)>,
     resets: Vec<ResetsDraft>,
     invariants: Vec<InvariantDraft>,
     urgency: Vec<UrgencyDraft>,
@@ -2342,10 +2375,28 @@ impl<'f> Located<'f> {
             // traversal's binder (`e.n`, `e.x`): a clock or a clock-bearing
             // value is a read no constraint takes; a data part reads none.
             if let Some(path) = element_path(form, id, &parents) {
+                // When the binder is the receiver of a field read, classify
+                // the whole field path below. Treating `e` as a read of the
+                // clock-bearing element first would also mark a data field
+                // such as `e.n` as a clock read.
+                let binder_is_field_receiver = matches!(node.node(), ExprNode::Name(_))
+                    && parents
+                        .get(id.index())
+                        .copied()
+                        .flatten()
+                        .is_some_and(|parent| {
+                            matches!(
+                                form.expression.get(parent).map(|node| node.node()),
+                                Some(ExprNode::Field { operand, .. }) if *operand == id
+                            )
+                        });
                 // A clock field of an object an element of a reference
                 // collection names (`c.v` of `c in self.peers`) is another
                 // object's place, as through any other path.
-                if clocks.reaches(&path, context) || clocks.foreign(form, id, context, &parents) {
+                if !binder_is_field_receiver
+                    && (clocks.reaches(&path, context)
+                        || clocks.foreign(form, id, context, &parents))
+                {
                     first[id.index()] = spans.get(id.index()).copied();
                 }
                 continue;
@@ -2556,6 +2607,11 @@ enum DataLiteral {
     /// body, read at the call: its parameters replaced by the call's
     /// arguments, every node located at the call.
     Formed(std::rc::Rc<ExpressionForm>),
+    /// The `size(collection) = 0` branch of a bounded universal read. Its
+    /// data expression is ordinary, but its empty clock body is valid by
+    /// vacuous truth and must not be rejected as an arbitrary data-only
+    /// disjunct.
+    EmptyCollection(ExpressionForm),
     /// A data predicate of a quantifier's body read at one slot: the binder
     /// renamed to the element binding's name.
     /// The span is the quantifier's.
@@ -2574,6 +2630,7 @@ impl DataLiteral {
         match self {
             Self::Site(_) | Self::Family(_) | Self::Presence(_) => None,
             Self::Formed(form) | Self::Element(form, ..) => Some(form),
+            Self::EmptyCollection(form) => Some(form),
         }
     }
 }
@@ -2583,6 +2640,9 @@ impl PartialEq for DataLiteral {
         match (self, other) {
             (Self::Site(left), Self::Site(right)) => left == right,
             (Self::Formed(left), Self::Formed(right)) => std::rc::Rc::ptr_eq(left, right),
+            (Self::EmptyCollection(left), Self::EmptyCollection(right)) => {
+                left.expression == right.expression
+            }
             // One element's literal: the same binding and the same
             // predicate over it. Two literals of one slot are distinct.
             (Self::Element(left, left_binding, _), Self::Element(right, right_binding, _)) => {
@@ -2874,6 +2934,7 @@ fn part_predicate(
             let cut = match &literal {
                 DataLiteral::Site(id) => located.form.cut(*id, &BTreeMap::new())?,
                 DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => (**form).clone(),
+                DataLiteral::EmptyCollection(form) => form.clone(),
                 // A family and a presence bit are read at the state, not by
                 // the data predicate.
                 DataLiteral::Family(_) | DataLiteral::Presence(_) => return None,
@@ -2922,6 +2983,9 @@ fn draft_part(
     let (families, literals): (Vec<_>, Vec<_>) = literals
         .into_iter()
         .partition(|(literal, _)| matches!(literal, DataLiteral::Family(_)));
+    let empty_collection_branch = literals
+        .iter()
+        .any(|(literal, _)| matches!(literal, DataLiteral::EmptyCollection(_)));
     let data = if literals.is_empty() {
         None
     } else {
@@ -2962,6 +3026,7 @@ fn draft_part(
         data,
         presences,
         elements,
+        empty_collection_branch,
         clocks,
         families,
     })
@@ -2973,7 +3038,7 @@ enum ClauseClocks {
     None,
     /// A precondition's guard parts, and the first quantifier over a clock
     /// collection it reads.
-    Guard(Vec<PartDraft>, Option<Span>),
+    Guard(Vec<PartDraft>),
     /// A postcondition's resets.
     Resets(Box<ResetCut>),
 }
@@ -3013,7 +3078,7 @@ struct ResetCut {
 /// requirement.
 fn unwritten_presence(
     resets: &[ResetsDraft],
-    guards: &[(usize, Vec<PartDraft>, Option<Span>)],
+    guards: &[(usize, Vec<PartDraft>)],
     state_clauses: &[StateClauseDeclaration],
 ) -> Result<(), TemporalCause> {
     for written in resets {
@@ -3027,7 +3092,7 @@ fn unwritten_presence(
             if !present || writes {
                 continue;
             }
-            let absent = guards.iter().any(|(index, parts, _)| {
+            let absent = guards.iter().any(|(index, parts)| {
                 let same = state_clauses
                     .get(*index)
                     .and_then(|clause| clause.operation.as_ref())
@@ -3718,8 +3783,7 @@ fn read_clause(
                 .into_iter()
                 .map(|(id, positive)| (id, ExprNode::Boolean(positive)))
                 .collect();
-            let quantifier = quantified::first(&located, clocks, &clause.context);
-            (leaves, ClauseClocks::Guard(parts, quantifier))
+            (leaves, ClauseClocks::Guard(parts))
         }
         StateClauseKind::Postcondition => {
             let mut cut = resets(&located, clause, clocks).map_err(timed)?;
@@ -3814,37 +3878,61 @@ fn time_invariant(
     population: Option<PopulationDomain>,
     budget: &mut PartBudget,
 ) -> Result<InvariantDraft, CheckCause> {
+    let has_ordinary_bound = form
+        .bounds
+        .iter()
+        .any(|bound| matches!(bound, qsl_forms::TimeInvariantBoundForm::Clock(_)));
+    let has_quantified_bound = form
+        .bounds
+        .iter()
+        .any(|bound| matches!(bound, qsl_forms::TimeInvariantBoundForm::Quantified(_)));
+    if has_ordinary_bound && has_quantified_bound {
+        return Err(timed(TemporalCause::TimeInvariantShape { span: form.span }));
+    }
     let alternatives = state_alternatives(&form.guard, clocks, context, population, budget)?;
-    let bounds =
-        form.bounds
-            .iter()
-            .map(|bound| {
+    let mut bounds = Vec::with_capacity(form.bounds.len());
+    let mut binders = Vec::new();
+    for form_bound in &form.bounds {
+        match form_bound {
+            qsl_forms::TimeInvariantBoundForm::Clock(bound) => {
                 let root = bound.clock.expression.root_id();
-                let clock = clocks.read(&bound.clock, root, context).ok_or(
-                    TemporalCause::UnknownClock {
+                let clock = clocks
+                    .read(&bound.clock, root, context)
+                    .ok_or(TemporalCause::UnknownClock {
                         span: bound
                             .clock
                             .spans
                             .span(bound.clock.spans.root())
                             .unwrap_or(bound.span),
-                    },
-                )?;
-                Ok(ClockConstraint {
+                    })
+                    .map_err(timed)?;
+                bounds.push(ClockConstraint {
                     parameter: None,
                     clock,
                     via: Vec::new(),
                     slots: Vec::new(),
+                    binding: None,
                     op: if bound.strict {
                         ClockOp::Less
                     } else {
                         ClockOp::LessOrEqual
                     },
-                    bound: clocks.quantity(&bound.bound)?,
+                    bound: clocks.quantity(&bound.bound).map_err(timed)?,
                     span: bound.span,
-                })
-            })
-            .collect::<Result<Vec<_>, TemporalCause>>()
-            .map_err(timed)?;
+                });
+            }
+            qsl_forms::TimeInvariantBoundForm::Quantified(bound) => {
+                if bound.quantifier == qsl_forms::QuantifierKind::Exists {
+                    return Err(timed(TemporalCause::TimeInvariantShape { span: form.span }));
+                }
+                let (binding, constraint) = quantified::invariant_bound(bound, clocks, context)?;
+                if !binders.contains(&binding) {
+                    binders.push(binding);
+                }
+                bounds.push(constraint);
+            }
+        }
+    }
     // FR-230 "Guarded places": `when P { value(p) <= c }` bounds `p` where
     // `P` establishes `present(p)`.
     if let Some(unproved) = bounds.iter().find(|bound| {
@@ -3864,6 +3952,7 @@ fn time_invariant(
         name: form.name.name.clone(),
         alternatives,
         bounds,
+        binders,
         span: form.span,
         from_bound: false,
     })
@@ -3988,6 +4077,7 @@ fn clock_bounds(
                     clock: ClockId(index),
                     via: Vec::new(),
                     slots,
+                    binding: None,
                     op: ClockOp::LessOrEqual,
                     bound: bound.value.clone(),
                     span,
@@ -4016,6 +4106,7 @@ fn clock_bounds(
                     },
                 }],
                 bounds,
+                binders: Vec::new(),
                 span,
                 from_bound: true,
             });
@@ -4282,7 +4373,7 @@ fn prepare_models(
             }
             match read_clause(clause, &clocks, parameters, &mut budget)? {
                 ClauseClocks::None => {}
-                ClauseClocks::Guard(parts, quantifier) => {
+                ClauseClocks::Guard(parts) => {
                     let first = parts
                         .iter()
                         .flat_map(|part| &part.clocks)
@@ -4293,7 +4384,7 @@ fn prepare_models(
                             .entry(key.clone())
                             .or_insert_with(|| clock.name.clone());
                     }
-                    guards.push((index, parts, quantifier));
+                    guards.push((index, parts));
                 }
                 ClauseClocks::Resets(cut) => {
                     let cut = *cut;
@@ -4556,6 +4647,12 @@ fn check_part(
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<ConvexPart, CheckRefusal> {
+    let mut clock_binders = Vec::new();
+    for binding in part.clocks.iter().filter_map(ClockConstraint::binding) {
+        if !clock_binders.contains(binding) {
+            clock_binders.push(binding.clone());
+        }
+    }
     let binders = part
         .elements
         .iter()
@@ -4613,6 +4710,8 @@ fn check_part(
             .into_iter()
             .map(|(binding, _)| binding)
             .collect(),
+        binders: clock_binders,
+        empty_collection_branch: part.empty_collection_branch,
         clocks: part.clocks,
         families,
     })
@@ -4633,7 +4732,7 @@ pub(crate) fn check(
         };
         let mut sites = Vec::new();
         let mut guards = Vec::with_capacity(draft.guards.len());
-        for (index, parts, quantifier) in draft.guards {
+        for (index, parts) in draft.guards {
             let Some(clause) = checking.state_clauses.get(index) else {
                 continue;
             };
@@ -4670,7 +4769,6 @@ pub(crate) fn check(
                 index,
                 context: clause.context.clone(),
                 span: clause.spans.declaration,
-                quantifier,
                 point: clause.execution_point.is_some(),
             });
         }
@@ -4719,6 +4817,7 @@ pub(crate) fn check(
                 context,
                 alternatives,
                 bounds: invariant.bounds,
+                binders: invariant.binders,
                 span: invariant.span,
                 from_bound: invariant.from_bound,
             });
@@ -4760,8 +4859,8 @@ pub(crate) fn check(
                         )?);
                     }
                     let alternatives = typed;
-                    // A presence read of a quantified element has no binder
-                    // form until STD-554.
+                    // A presence read of a quantified element has no
+                    // producer form in this slice.
                     let written = alternatives
                         .iter()
                         .all(|alternative| {

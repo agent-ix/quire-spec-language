@@ -48,7 +48,8 @@ use qsl_foundation::source::node_table::{
     standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList,
 };
 use quire_checked::node::{
-    Arithmetic, CheckedLiteral, Connective, NodeKind, OrderedKind, RecordField, RecordSlot, Visit,
+    Arithmetic, CheckedLiteral, Connective, ConnectiveOrigin, NodeKind, OrderedKind, RecordField,
+    RecordSlot, Visit,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
@@ -2046,6 +2047,7 @@ fn node(kind: NodeKind<NodeId>, value_type: ValueType, location: &Location) -> N
         value_type,
         location: location.clone(),
         equality_producer: None,
+        ordering_part: false,
     }
 }
 
@@ -2141,6 +2143,8 @@ enum AliasStep<'e> {
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
         ExprNode::Integer(_)
+        | ExprNode::Float32(_)
+        | ExprNode::Float64(_)
         | ExprNode::Rational(..)
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
@@ -2194,6 +2198,7 @@ impl Typer<'_> {
                     value_type: required.clone(),
                     location,
                     equality_producer: None,
+                    ordering_part: false,
                 })
             }
             _ => Err(mismatch(&node.location)),
@@ -2343,7 +2348,12 @@ impl<'a> Typer<'a> {
         .map(|staged| staged.into_value())
         .map_err(|failure| match failure {
             StageFailure::Refused(refusal) => refusal,
+            StageFailure::RefusedWithPayload(refusal, _) => refusal,
             StageFailure::Limit(limit) => CheckRefusal {
+                location: location.clone(),
+                cause: super::limit_cause(&limit),
+            },
+            StageFailure::LimitWithPayload(limit, _) => CheckRefusal {
                 location: location.clone(),
                 cause: super::limit_cause(&limit),
             },
@@ -3107,6 +3117,11 @@ impl<'a> Typer<'a> {
         right: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        if matches!(left.value_type, ValueType::Float(_))
+            || matches!(right.value_type, ValueType::Float(_))
+        {
+            return self.float_ordering(operator, left, right, location);
+        }
         let kind = match (&left.value_type, &right.value_type) {
             (l, r) if is_integer(l) && is_integer(r) => OrderedKind::Integers,
             (ValueType::Rational(_), ValueType::Rational(_)) => OrderedKind::Rationals,
@@ -3134,11 +3149,7 @@ impl<'a> Typer<'a> {
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 OrderedKind::Quantities
             }
-            // FR-148 selects IEEE ordering only through the `totalOrder`
-            // intrinsic; the grammar's orderings select none.
-            (ValueType::Float(_), _)
-            | (_, ValueType::Float(_))
-            | (ValueType::Boolean, ValueType::Boolean)
+            (ValueType::Boolean, ValueType::Boolean)
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))
             | (ValueType::Collection(_), ValueType::Collection(_))
@@ -3156,6 +3167,124 @@ impl<'a> Typer<'a> {
             ValueType::Boolean,
             location,
         ))
+    }
+
+    /// FR-397 "Comparison": an ordering over two operands of one float type
+    /// is the IEEE quiet comparison, a Boolean composition of
+    /// `numericEqual` and `totalOrder`. With `N(x)` for `numericEqual(x, x)`,
+    /// `a < b` is `N(a) and N(b) and (totalOrder(a, b) and not
+    /// numericEqual(a, b))` and `a <= b` is `N(a) and N(b) and
+    /// (totalOrder(a, b) or numericEqual(a, b))`; `a > b` and `a >= b` are
+    /// `b < a` and `b <= a` over the same operand nodes.
+    fn float_ordering(
+        &mut self,
+        operator: OrderingOperator,
+        left: Node,
+        right: Node,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let (ValueType::Float(left_type), ValueType::Float(right_type)) =
+            (&left.value_type, &right.value_type)
+        else {
+            return Err(mismatch(location));
+        };
+        if left_type != right_type {
+            return Err(mismatch(location));
+        }
+        // Each operand is evaluated once and read by every part of the
+        // composition: an operand that is not already a slot read or a
+        // literal is bound by a `let` around the composition, the left one
+        // outermost so evaluation keeps source order.
+        let mut bindings = Vec::new();
+        let mut operand = |this: &mut Self, operand: Node| {
+            if matches!(operand.kind, NodeKind::Local(_) | NodeKind::Literal(_)) {
+                return this.push(operand);
+            }
+            let value_type = operand.value_type.clone();
+            let value = this.push(operand);
+            let slot = this.fresh_slot("ieee_operand");
+            bindings.push((slot, value));
+            this.push(node(NodeKind::Local(slot), value_type, location))
+        };
+        let (left, right) = (operand(self, left), operand(self, right));
+        let (lesser, greater, strict) = match operator {
+            OrderingOperator::Less => (left, right, true),
+            OrderingOperator::LessOrEqual => (left, right, false),
+            OrderingOperator::Greater => (right, left, true),
+            OrderingOperator::GreaterOrEqual => (right, left, false),
+        };
+        let boolean = |this: &mut Self, kind| this.push(node(kind, ValueType::Boolean, location));
+        let part = |this: &mut Self, kind| {
+            let mut part = node(kind, ValueType::Boolean, location);
+            part.ordering_part = true;
+            this.push(part)
+        };
+        let lesser_ordinary = part(self, NodeKind::IeeeNumericEquality(lesser, lesser));
+        let greater_ordinary = part(self, NodeKind::IeeeNumericEquality(greater, greater));
+        let both_ordinary = boolean(
+            self,
+            NodeKind::Connective(
+                Connective::And,
+                ConnectiveOrigin::Synthesized,
+                lesser_ordinary,
+                greater_ordinary,
+            ),
+        );
+        let precedes = boolean(
+            self,
+            NodeKind::IeeeTotalOrder(OrderedKind::Float, lesser, greater),
+        );
+        let equal = part(self, NodeKind::IeeeNumericEquality(lesser, greater));
+        let relation = if strict {
+            let apart = boolean(self, NodeKind::Not(equal));
+            boolean(
+                self,
+                NodeKind::Connective(
+                    Connective::And,
+                    ConnectiveOrigin::Synthesized,
+                    precedes,
+                    apart,
+                ),
+            )
+        } else {
+            boolean(
+                self,
+                NodeKind::Connective(
+                    Connective::Or,
+                    ConnectiveOrigin::Synthesized,
+                    precedes,
+                    equal,
+                ),
+            )
+        };
+        let mut composed = node(
+            NodeKind::Connective(
+                Connective::And,
+                ConnectiveOrigin::Synthesized,
+                both_ordinary,
+                relation,
+            ),
+            ValueType::Boolean,
+            location,
+        );
+        for (slot, value) in bindings.into_iter().rev() {
+            let body = self.push(composed);
+            composed = node(
+                NodeKind::Let { slot, value, body },
+                ValueType::Boolean,
+                location,
+            );
+        }
+        Ok(composed)
+    }
+
+    /// A slot that no source name can read, for a value the checker binds
+    /// itself.
+    fn fresh_slot(&mut self, name: &str) -> Slot {
+        let slot = self.slots;
+        self.slots = self.slots.saturating_add(1);
+        self.slot_names.push(format!("{name}_{slot}"));
+        slot
     }
 
     /// `left op right` for `+`, `-`, `*` and `/`, over its two typed
@@ -4457,7 +4586,7 @@ fn catalogued_step(
             ValueType::Integer,
         )
         | (
-            NodeKind::Connective(Connective::And | Connective::Or, left, right),
+            NodeKind::Connective(Connective::And | Connective::Or, _, left, right),
             ValueType::Boolean,
         ) => (*left, *right),
         _ => return false,

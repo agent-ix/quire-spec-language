@@ -1,0 +1,810 @@
+{
+  "contractVersion": "2.0.0",
+  "canonicalization": {
+    "algorithm": "rfc8785-v1"
+  },
+  "source": {
+    "identity": "ix://agent-ix/checked-handoff/spec",
+    "version": "1.0.0",
+    "dialect": "spec-bundle"
+  },
+  "package": {
+    "identity": "agent-ix/checked-handoff",
+    "version": "1.0.0",
+    "mappingVersions": [],
+    "profileVersions": []
+  },
+  "occurrences": [],
+  "extensions": [],
+  "constructs": [
+    {
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "object_type"
+      },
+      "moduleVersion": "1.0.0",
+      "construct": {
+        "identity": "none",
+        "shape": "record",
+        "members": {
+          "identityFields": "required"
+        },
+        "meaning": "quire.meaning.model.object-type/v1"
+      }
+    },
+    {
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "record"
+      },
+      "moduleVersion": "1.0.0",
+      "construct": {
+        "identity": "none",
+        "shape": "record",
+        "members": {
+          "identityFields": "optional"
+        },
+        "meaning": "quire.meaning.model.record-value-type/v1"
+      }
+    },
+    {
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "moduleVersion": "1.0.0",
+      "construct": {
+        "identity": "none",
+        "shape": "record",
+        "members": {},
+        "meaning": "quire.meaning.model.value-type/v1"
+      }
+    },
+    {
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "population"
+      },
+      "moduleVersion": "1.0.0",
+      "construct": {
+        "identity": "none",
+        "shape": "record",
+        "members": {},
+        "meaning": "quire.meaning.model.population/v1"
+      }
+    }
+  ],
+  "types": [
+    {
+      "identity": "ix://agent-ix/checked-handoff/ObjectId",
+      "displayName": "ix://agent-ix/checked-handoff/ObjectId",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/ObjectId",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/ObjectId"
+          ]
+        }
+      },
+      "constraints": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/ObjectId/constraints/minLength",
+          "keyword": "minLength",
+          "operands": {
+            "value": 0
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/ObjectId",
+          "diagnosticCode": "text.minLength",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/ObjectId",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/ObjectId"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/ObjectId/constraints/maxLength",
+          "keyword": "maxLength",
+          "operands": {
+            "value": 128
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/ObjectId",
+          "diagnosticCode": "text.maxLength",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/ObjectId",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/ObjectId"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/ObjectId/constraints/format",
+          "keyword": "format",
+          "operands": {
+            "name": "text-profile:nfc"
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/ObjectId",
+          "diagnosticCode": "text.format",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/ObjectId",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/ObjectId"
+              ]
+            }
+          }
+        }
+      ],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "scalar": "string"
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Amount",
+      "displayName": "ix://agent-ix/checked-handoff/Amount",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Amount",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Amount"
+          ]
+        }
+      },
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "scalar": "integer",
+      "constraints": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Amount/constraints/min",
+          "keyword": "min",
+          "operands": {
+            "value": "1"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.min",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Amount",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Amount"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Amount/constraints/max",
+          "keyword": "max",
+          "operands": {
+            "value": "20"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.max",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Amount",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Amount"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Total",
+      "displayName": "ix://agent-ix/checked-handoff/Total",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Total",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Total"
+          ]
+        }
+      },
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "scalar": "integer",
+      "constraints": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Total/constraints/min",
+          "keyword": "min",
+          "operands": {
+            "value": "0"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.min",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Total",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Total"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Total/constraints/max",
+          "keyword": "max",
+          "operands": {
+            "value": "100"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.max",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Total",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Total"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Tally",
+      "displayName": "ix://agent-ix/checked-handoff/Tally",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Tally",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Tally"
+          ]
+        }
+      },
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "scalar": "integer",
+      "constraints": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Tally/constraints/min",
+          "keyword": "min",
+          "operands": {
+            "value": "0"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.min",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Tally",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Tally"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Tally/constraints/max",
+          "keyword": "max",
+          "operands": {
+            "value": "5"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.max",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Tally",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Tally"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Wide",
+      "displayName": "ix://agent-ix/checked-handoff/Wide",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Wide",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Wide"
+          ]
+        }
+      },
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "scalar": "integer",
+      "constraints": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Wide/constraints/min",
+          "keyword": "min",
+          "operands": {
+            "value": "-9223372036854775808"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.min",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Wide",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Wide"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Wide/constraints/max",
+          "keyword": "max",
+          "operands": {
+            "value": "9223372036854775807"
+          },
+          "appliesTo": "ix://quire/native/Integer",
+          "diagnosticCode": "bound.max",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Wide",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Wide"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Notice",
+      "displayName": "ix://agent-ix/checked-handoff/Notice",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "record"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Notice",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Notice"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
+      "fields": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Notice/ready",
+          "name": "ready",
+          "typeRef": "ix://quire/native/Boolean",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Notice/ready",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Notice/ready"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Attempt",
+      "displayName": "ix://agent-ix/checked-handoff/Attempt",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "record"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Attempt",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Attempt"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
+      "fields": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Attempt/tally",
+          "name": "tally",
+          "typeRef": "ix://agent-ix/checked-handoff/Tally",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Attempt/tally",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Attempt/tally"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Recovery",
+      "displayName": "ix://agent-ix/checked-handoff/Recovery",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "record"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Recovery",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Recovery"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
+      "fields": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Recovery/receipts",
+          "name": "receipts",
+          "typeRef": "ix://agent-ix/checked-handoff/Amount",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 0,
+            "upper": 5,
+            "ordered": true,
+            "unique": false
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Recovery/receipts",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Recovery/receipts"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Workflow",
+      "displayName": "ix://agent-ix/checked-handoff/Workflow",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "object_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Workflow"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
+      "identityFields": [
+        "ix://agent-ix/checked-handoff/Workflow/id"
+      ],
+      "fields": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Workflow/id",
+          "name": "id",
+          "typeRef": "ix://agent-ix/checked-handoff/ObjectId",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow/id",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Workflow/id"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Workflow/ready",
+          "name": "ready",
+          "typeRef": "ix://quire/native/Boolean",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow/ready",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Workflow/ready"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Workflow/receipts",
+          "name": "receipts",
+          "typeRef": "ix://agent-ix/checked-handoff/Amount",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 0,
+            "upper": 5,
+            "ordered": true,
+            "unique": false
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow/receipts",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Workflow/receipts"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Workflow/total",
+          "name": "total",
+          "typeRef": "ix://agent-ix/checked-handoff/Total",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow/total",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Workflow/total"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Workflow/tally",
+          "name": "tally",
+          "typeRef": "ix://agent-ix/checked-handoff/Tally",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow/tally",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Workflow/tally"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Workflow/wide",
+          "name": "wide",
+          "typeRef": "ix://agent-ix/checked-handoff/Wide",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow/wide",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Workflow/wide"
+              ]
+            }
+          }
+        }
+      ],
+      "operations": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Workflow/apply",
+          "name": "apply",
+          "params": [
+            {
+              "identity": "ix://agent-ix/checked-handoff/Workflow/apply/amount",
+              "name": "amount",
+              "typeRef": "ix://agent-ix/checked-handoff/Amount",
+              "presence": "required",
+              "nullable": false,
+              "defaultKind": "none",
+              "multiplicity": {
+                "lower": 1,
+                "upper": 1,
+                "ordered": false,
+                "unique": true
+              },
+              "origin": {
+                "generated": {
+                  "generatorIdentity": "ix://agent-ix/checked-handoff/Workflow/apply/amount",
+                  "generatorVersion": "1.0.0",
+                  "inputIdentities": [
+                    "ix://agent-ix/checked-handoff/Workflow/apply/amount"
+                  ]
+                }
+              }
+            }
+          ],
+          "returns": {
+            "typeRef": "ix://quire/native/Boolean",
+            "multiplicity": {
+              "lower": 1,
+              "upper": 1,
+              "ordered": false,
+              "unique": true
+            },
+            "nullable": false
+          },
+          "pre": [],
+          "post": [],
+          "origin": {
+            "source": {
+              "sourceIdentity": "ix://agent-ix/checked-handoff/spec",
+              "path": "spec.qspec",
+              "startLine": 1,
+              "startColumn": 1
+            }
+          },
+          "frame": {
+            "modifies": [
+              "ix://agent-ix/checked-handoff/Workflow/total",
+              "ix://agent-ix/checked-handoff/Workflow/receipts",
+              "ix://agent-ix/checked-handoff/Workflow/tally"
+            ],
+            "creates": [],
+            "deletes": []
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Provider",
+      "displayName": "ix://agent-ix/checked-handoff/Provider",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "object_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Provider",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Provider"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
+      "identityFields": [
+        "ix://agent-ix/checked-handoff/Provider/id"
+      ],
+      "fields": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Provider/id",
+          "name": "id",
+          "typeRef": "ix://agent-ix/checked-handoff/ObjectId",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": true
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Provider/id",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Provider/id"
+              ]
+            }
+          }
+        }
+      ],
+      "operations": []
+    }
+  ],
+  "populations": []
+}

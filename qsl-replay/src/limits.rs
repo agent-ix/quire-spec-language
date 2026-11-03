@@ -479,6 +479,7 @@ mod tests {
         mapped.set_bound(Setting::FormatOutputBytes, 36);
         mapped.set_bound(Setting::RenderOutputBytes, 38);
         mapped.set_bound(Setting::InspectMaxViewEntries, 41);
+        mapped.set_bound(Setting::ProgressCoveredPositions, 42);
         mapped.set_bound(Setting::PrepareCompileWorkUnits, 39);
         mapped.set_bound(Setting::PrepareCodeBytes, 40);
         let built = CallerLimits {
@@ -507,6 +508,9 @@ mod tests {
                 model: qsl_semantics::model::accounting::ModelNormalizationLimits {
                     intake: qsl_foundation::IntakeLimits::default().with_input_bytes(35),
                     ..SpineLimits::default().model
+                },
+                progress: crate::spine::ProgressLimits {
+                    covered_positions: 42,
                 },
                 ..SpineLimits::default()
             },

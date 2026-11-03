@@ -15,7 +15,7 @@ Verify FR-265's derivation over FR-265's `witness` unit: a decisive
 quantifier, element, index and value path; every other path yields
 `closed-scope`; an incomplete evaluation yields no basis.
 
-Scope: FR-265-AC-1 to FR-265-AC-7.
+Scope: FR-265-AC-1 to FR-265-AC-10.
 
 ## Test Procedure
 
@@ -41,6 +41,11 @@ reports and the observation to the derivation.
    `MemberPre` over a pre-call observation with
    `history` `[0, 600, 700]`, and over an invocation whose pre and post
    snapshots hold that `history`.
+8. `FloatOrder` over `high`.
+9. `FloatAndOperand` over `high` with `self` `mid`.
+10. Two checked trees of one `and` whose left operand is `true`, with equal
+    locations, one `Authored` and one `Synthesized`, run once each over one
+    observation; read the recorded decisions of the root.
 
 Tag the tests `#[trace("TC-740", "FR-265-AC-n")]`.
 
@@ -68,3 +73,7 @@ Tag the tests `#[trace("TC-740", "FR-265-AC-n")]`.
   `mid` / member `maybeHistory` / option value; for `MemberPre`, equal
   records in both runs, 600 at index 1, the path naming the pre
   observation.
+- Step 8: `true`, basis `closed-scope`, no record.
+- Step 9: `true`, basis `closed-scope`, no record.
+- Step 10: the `Authored` tree records the decision `true` for the left
+  operand; the `Synthesized` tree records none.

@@ -216,6 +216,29 @@ impl CatalogCoded for NavigationRefusal {
     }
 }
 
+/// FR-049-AC-2/AC-3: a caller-supplied object environment holds, for an
+/// attribute the expression reads, a value that is not of the attribute's
+/// declared type under the evaluating package's own types (a foreign or
+/// differently-typed unit, a wrong kind). The environment is caller input, so
+/// the read refuses `invalid_runtime_input`/`wrong-value-kind` -- the pair the
+/// argument admission uses for an ill-typed value -- and never completes or
+/// faults.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ObjectFieldIllTyped {
+    /// The attribute's name.
+    pub(crate) field: String,
+}
+
+impl CatalogCoded for ObjectFieldIllTyped {
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("invalid_runtime_input", "wrong-value-kind")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("field", self.field.clone())]))
+    }
+}
+
 /// FR-391 "Evaluation": a clause or a `holds` atom names a population the
 /// observation's snapshot does not list `complete`. FR-106 requires every
 /// population a clause names, so the read stops `incomplete_population`/

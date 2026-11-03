@@ -76,10 +76,11 @@ A setting name follows QSpec FR-461's naming rule. The table is the set of
 names QSL accepts at every entry point, and lists every limit of the
 requirements named below. Each row's default is the published default a
 caller gets when it does not configure the limit (ADR-014 §2, "inherited").
-Every limit has no ceiling: a caller raises or lowers it, and the value is
-used as given. The requirement that owns each limit defines its counter:
+Every limit has no ceiling beyond the width of the quantity it bounds: a
+caller raises or lowers it, and the value is used as given (a limit over a
+`u32` quantity, `model.sequence_maximum`, takes at most `u32::MAX`; FR-506). The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`), FR-297 (`inspect.*`), FR-298 (`render.*`),
-NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
+NFR-012 and FR-506 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-523 (`temporal_evidence.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
 FR-003 (`format.*`), FR-294 (`prepare.*`), and FR-101 (`explore.*`). Analysis
 engine limits and the typed inspection operation's limit have their own table
@@ -100,6 +101,7 @@ engine limits and the typed inspection operation's limit have their own table
 | `environment.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |
 | `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes | 67108864 bytes |
 | `model.declaration_records` | model normalization | node count | `ModelNormalizationLimitsV1` declaration_records | 100000 records |
+| `model.sequence_maximum` | model intake | collection maximum | the largest declared collection maximum model intake admits (FR-506) | 10000 items |
 | `model.derivation_facts` | model normalization | node count | `ModelNormalizationLimitsV1` derivation_facts | 1600000 facts |
 | `model.effective_declarations` | model normalization | node count | `ModelNormalizationLimitsV1` effective_declarations | 1600000 declarations |
 | `model.dispatch_candidates` | model normalization | node count | `ModelNormalizationLimitsV1` dispatch_candidates | 1600000 candidates |
@@ -107,6 +109,20 @@ engine limits and the typed inspection operation's limit have their own table
 | `model.work_units` | model normalization | work budget | `ModelNormalizationLimitsV1` work_units | 16777216 units |
 | `model.ancestor_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` ancestor_steps | 16777216 edges |
 | `model.family_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` family_steps | 16777216 edges |
+| `progress.covered_positions` | progress ledger | node count | the `ProgressLedger` capacity for covered positions (FR-502) | 1000000 positions |
+| `temporal_evidence.formula_nodes` | temporal evidence call | node count | `TemporalEvidenceLimits` formula nodes | 100000 nodes |
+| `temporal_evidence.instances` | temporal evidence call | node count | `TemporalEvidenceLimits` instances | 10000 instances |
+| `temporal_evidence.positions` | temporal evidence call | node count | `TemporalEvidenceLimits` positions inspected | 1000000 positions |
+| `temporal_evidence.valuations` | temporal evidence call | node count | `TemporalEvidenceLimits` valuation lookups | 1000000 lookups |
+| `temporal_evidence.captures` | temporal evidence call | node count | `TemporalEvidenceLimits` retained captures | 100000 captures |
+| `temporal_evidence.support` | temporal evidence call | node count | `TemporalEvidenceLimits` retained support | 1000000 pairs |
+| `temporal_evidence.history_span` | temporal evidence call | tick count | `TemporalEvidenceLimits` history span | 18446744073709551615 ticks |
+| `temporal_evidence.evaluation_steps` | temporal evidence call | work budget | `TemporalEvidenceLimits` evaluation steps (`temporal.visit`) | 1000000 units |
+| `temporal_evidence.lineage` | temporal evidence call | node count | `TemporalEvidenceLimits` result lineage | 1024 results |
+| `temporal_evidence.visited` | temporal evidence call | work budget | `TemporalEvidenceLimits` visited units | 2000000 units |
+| `temporal_evidence.request_bytes` | temporal evidence call | input bytes | `TemporalEvidenceLimits` request bytes | 8388608 bytes |
+| `temporal_evidence.result_bytes` | temporal evidence call | input bytes | `TemporalEvidenceLimits` result bytes | 8388608 bytes |
+| `temporal_evidence.member_bytes` | temporal evidence call | input bytes | `TemporalEvidenceLimits` longest member bytes | 1048576 bytes |
 | `admission.population_members` | population admission | node count | `PopulationAdmissionLimitsV1` population_members | 100000 members |
 | `admission.work_units` | population admission | work budget | `PopulationAdmissionLimitsV1` work_units | 16777216 units |
 | `admission.ancestor_steps` | population admission | edge count | `PopulationAdmissionLimitsV1` ancestor_steps | 16777216 edges |
@@ -298,6 +314,7 @@ these names through the same operand grammar as the stage settings
    | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes`, `inspect.max_view_entries`, `render.output_bytes` |
    | the supplied-value limits type (pre-call phase budgets) | no catalog code: the phase-marked pre-call limit record of FR-277 (replay: `inconclusive`/`NoValue`), never a kernel charge point | FR-277's `supplied.admission_work_units` and `supplied.conversion_work_units`, which are not setting-table rows |
    | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
+   | `TemporalEvidenceLimits` and the progress ledger capacity (FR-523, FR-502) | no catalog code: the call returns `Incomplete(LimitReached{limit, value, setting})` with `limit` one of `node count`, `work budget`, `input bytes` or `tick count` (the kind of `temporal_evidence.history_span`) and the call's stop scope as FR-523 states | `temporal_evidence.*`, `progress.covered_positions` |
    | an engine's limits type | no catalog code: the engine stops and the item settles `incomplete`, `LimitReached{limit, value, setting}` (FR-127 V-7, QSpec FR-461 Behavior 5) | the engine table's names |
    | `PrepareLimits`, an execution backend's prepare limits (FR-294) | `stage_limit_exceeded`, carried as `PrepareFailure::Limit` and, from `execute`, as `CallFailure::Limit(PrepareLimitReached)` | `prepare.compile_work_units`, `prepare.code_bytes` |
 

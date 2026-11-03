@@ -240,6 +240,7 @@ pub fn replay_state_clause(
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
         sources: &sources,
+        progress_capacity: qsl_eval::temporal::DEFAULT_COVERED_POSITIONS,
     };
     let ClauseCheck {
         report,
@@ -302,6 +303,7 @@ pub fn replay_state_clause(
         | ClauseDisposition::ArgumentRefusal(_)
         | ClauseDisposition::Temporal(_)
         | ClauseDisposition::TemporalRefusal(_)
+        | ClauseDisposition::ProgressContradiction(_)
         | ClauseDisposition::FrameViolation(_) => {
             return fault("clause-check-reports-admission-or-evaluation")
         }

@@ -864,7 +864,7 @@ fn the_sc_event_graph_stays_within_the_live_messages() {
 fn keys(system: &ProtocolSystem<'_, Ra>) -> Vec<Vec<u8>> {
     reachable(system)
         .into_iter()
-        .map(|state| state.key)
+        .map(|state| state.key.as_bytes().to_vec())
         .collect()
 }
 

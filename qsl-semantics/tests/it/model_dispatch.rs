@@ -567,20 +567,21 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
     }
 }
 
-/// A linear redefinition chain `model.A.op0 <- model.A.op1 <- ... <-
-/// model.A.op{edges}` (`op{i}` redefines `op{i-1}`): exactly `edges`
+/// A linear redefinition chain `model.A/op0 <- model.A/op1 <- ... <-
+/// model.A/op{edges}` (`op{i}` redefines `op{i-1}`): exactly `edges`
 /// `redefines` edges. Every operation is owned by `model.A`, so every
 /// dispatch/dominance conformance check is the trivial `s == t` case and
 /// only `family_steps` is exercised. Only the last operation has a body, so
 /// `model.A` has exactly one applicable candidate. Each operation is a
 /// query (a declared result, an empty effect), so the chain also passes the
-/// checked-dispatch bridge.
+/// checked-dispatch bridge. Each identity is `<owner>/<member>`, the form
+/// the bridge reads a member's name from (FR-083).
 fn redefinition_chain(edges: u64) -> Vec<DomainPackageRecord> {
     (0..=edges)
         .map(|i| {
-            let redefines = i.checked_sub(1).map(|parent| format!("model.A.op{parent}"));
+            let redefines = i.checked_sub(1).map(|parent| format!("model.A/op{parent}"));
             query_operation(
-                &format!("model.A.op{i}"),
+                &format!("model.A/op{i}"),
                 "model.A",
                 i == edges,
                 redefines.as_deref(),
@@ -620,7 +621,7 @@ fn link_chain(
 ) -> LinkCheckOutcome {
     link_dispatch(
         &effective_view(domain_package),
-        &DeclarationKey::fixture("model.A.op0"),
+        &DeclarationKey::fixture("model.A/op0"),
         GeneralizationClosure::Closed,
         &mut Meter::new(limits),
     )
@@ -654,7 +655,7 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limi
     const EDGES: u64 = 130;
     assert_links_model_a_to(
         link_chain(&chain_package(EDGES), ModelNormalizationLimits::UNLIMITED),
-        &format!("model.A.op{EDGES}"),
+        &format!("model.A/op{EDGES}"),
     );
 }
 
@@ -670,10 +671,10 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
     let domain_package = chain_package(EDGES);
     let view = effective_view(&domain_package);
     let mut clauses = OperationClauses::default();
-    let root = DeclarationKey::fixture("model.A.op0");
+    let root = DeclarationKey::fixture("model.A/op0");
     clauses.member.insert(root.clone(), "op".to_owned());
     for i in 0..=EDGES {
-        let key = DeclarationKey::fixture(format!("model.A.op{i}"));
+        let key = DeclarationKey::fixture(format!("model.A/op{i}"));
         clauses
             .parameters
             .insert(key.clone(), vec![("self".to_owned(), ValueType::Boolean)]);
@@ -720,7 +721,7 @@ fn a_ten_thousand_long_redefines_chain_links_on_a_small_stack() {
             };
             assert_links_model_a_to(
                 link_chain(&chain_package(EDGES), limits),
-                &format!("model.A.op{EDGES}"),
+                &format!("model.A/op{EDGES}"),
             );
         })
         .expect("spawn a 512 KiB thread")
@@ -745,10 +746,10 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
     let domain_package = chain_package(EDGES);
     let view = effective_view(&domain_package);
     let mut clauses = OperationClauses::default();
-    let root = DeclarationKey::fixture(format!("model.A.op{ROOT}"));
+    let root = DeclarationKey::fixture(format!("model.A/op{ROOT}"));
     clauses.member.insert(root.clone(), "op".to_owned());
     for i in 0..=EDGES {
-        let key = DeclarationKey::fixture(format!("model.A.op{i}"));
+        let key = DeclarationKey::fixture(format!("model.A/op{i}"));
         clauses
             .parameters
             .insert(key.clone(), vec![("self".to_owned(), ValueType::Boolean)]);
@@ -814,15 +815,15 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
 
     assert_links_model_a_to(
         link_chain(&chain_package(BOUND), limits),
-        &format!("model.A.op{BOUND}"),
+        &format!("model.A/op{BOUND}"),
     );
 
     let mut over = chain_package(BOUND);
     over.records.push(query_operation(
-        &format!("model.A.op{}", BOUND + 1),
+        &format!("model.A/op{}", BOUND + 1),
         "model.A",
         true,
-        Some(&format!("model.A.op{BOUND}")),
+        Some(&format!("model.A/op{BOUND}")),
     ));
     assert!(
         matches!(
@@ -836,7 +837,7 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::family_steps(DeclarationKey::fixture("model.A.op0"), BOUND)
+                ModelRefusalCause::family_steps(DeclarationKey::fixture("model.A/op0"), BOUND)
             );
             let exceeded = refusal
                 .cause

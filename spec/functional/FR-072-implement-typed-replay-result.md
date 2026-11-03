@@ -100,7 +100,7 @@ type for consumers such as #217's function-application exemplar.
   remain a distinct result type from both `Witness` and `Input` arms.
 - The observed temporal value SHALL use a closed typed representation of the
   existing temporal outcome. `Holds` maps to O-16 success; `Violated` and
-  `Undefined` map to O-16 violation; `Pending` maps to O-16 inconclusive;
+  `Undefined` map to O-16 violation; `Pending` maps to the category pending;
   `InsufficientData` maps to O-16 undefined; and incomplete outcomes retain
   their category and typed charge point assigned by FR-327, FR-328 and
   FR-329. The result SHALL preserve the undefined value's own position,

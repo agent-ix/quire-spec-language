@@ -46,7 +46,10 @@ to a correction relation actually carried by that route.
 
 These obligations specify behavior on checked-package protocol evaluation
 (FR-390) and its Layer-4 activation mapping (FR-449). They do not require a
-separate native-temporal request/result document or prescribe a new public API.
+separate native-temporal request/result document. The typed request and result
+that carry them for quire-protocol are FR-516's; they are Rust values with no
+document, schema or QSL-computed content digest (the observation owner's
+identifiers on `EvidenceRef` are opaque and echoed).
 FR-043 owns temporal meaning; FR-044 owns activation and captures. The retired
 M-6d request/result API criteria remain historical and do not retire these
 behaviors.
@@ -59,6 +62,8 @@ behaviors.
 | FR-052-AC-10 | For each independent activation, capture, anchor, profile/clock, progress, closure, execution and completeness fact present on the route, the result retains that fact distinctly; missing required evidence yields a typed non-truth outcome and never a false/default/closed/complete value. | Test |
 | FR-052-AC-11 | Missing, inconsistent, unsupported or over-budget evidence produces the corresponding typed outcome with no partial truth, while an independently settled sibling retains its FR-043 result. | Test |
 | FR-052-AC-12 | Where the route accepts a correction relation, a valid correction names its exact direct predecessor and changed evaluation input; self, non-direct, cross-obligation or identity-mismatched predecessors refuse, and the predecessor result remains unchanged. | Test |
+| FR-052-AC-13 | Where the route carries a progress ledger, a regressing watermark or a conflicting completeness revision under one binding is refused as FR-502 states, leaves the retained progress and every earlier result unchanged, and a foreign clock, clause, package or profile settles nothing for the binding (the spine successor of FR-043-AC-12). | Test (TC-144, TC-1296) |
+| FR-052-AC-14 | A checked temporal obligation selected under the timestamped-event finite-window profile is evaluated as FR-501 states and is never refused for its profile. | Test (TC-144, TC-1295) |
 
 ## Dependencies
 

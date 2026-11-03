@@ -458,10 +458,10 @@ pub use refusal::{
     DispatchSubtypeFailure, ExcludedClauseForm, ExecutionPointRefusal, IdentityForm, IdentityNode,
     IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
     MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
-    ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, ProvedInterval,
-    QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
-    StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause, TimedConstruct,
-    TimedOmission, UnwrittenTimedMember,
+    ProtocolAnchorCause, ProtocolCheckRefusal, ProtocolConstruct, ProtocolReferenceCause,
+    ProvedInterval, QualifiedCandidate, RefusedProtocolDependency, RelatedEnd, ShadowedDeclaration,
+    SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause,
+    TimeUnitCause, TimedConstruct, TimedOmission, UnwrittenTimedMember,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -773,6 +773,15 @@ pub struct CheckedGraph {
     abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-383: the unit's protocol names in authored declaration order,
+    /// including declarations that have a scoped refusal.
+    protocol_order: Vec<String>,
+    /// FR-383: protocol declarations refused by their own checks while
+    /// independent declarations continued through checking.
+    protocol_refusals: Vec<ProtocolCheckRefusal>,
+    /// Unit-level state-clause refusals retained by the protocol continuation
+    /// path so independent protocols can still be emitted.
+    unit_refusals: Vec<CheckRefusal>,
     /// Checked protocol classes retained for importing refinements (FR-147).
     protocol_classes: BTreeMap<String, refinement::ImportedProtocolClasses>,
     /// FR-390: emitted protocol node keys mapped back to their one S3
@@ -903,6 +912,9 @@ impl DebugWith for CheckedGraph {
             model_names,
             abstraction,
             protocols,
+            protocol_order,
+            protocol_refusals,
+            unit_refusals,
             protocol_classes,
             protocol_node_keys,
             temporal_clauses,
@@ -986,6 +998,9 @@ impl DebugWith for CheckedGraph {
             .field("model_names", &model_names)
             .field("abstraction", &Maybe(abstraction, table))
             .field("protocols", &Seq(protocols, table))
+            .field("protocol_order", protocol_order)
+            .field("protocol_refusals", protocol_refusals)
+            .field("unit_refusals", unit_refusals)
             .field(
                 "protocol_classes",
                 &ValueMap(protocol_classes.iter(), table),
@@ -1477,6 +1492,17 @@ impl PackageDeclarations {
         self.check_with_cancel(limits, &Cancel::new())
     }
 
+    /// Check the unit while preserving refusals that belong to individual
+    /// protocol declarations in the returned graph (FR-383 per-protocol
+    /// results). Unit-level refusals still prevent a graph from being
+    /// returned.
+    pub fn check_with_protocol_results(
+        self,
+        limits: CheckingLimits,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_with_protocol_results_and_cancel(limits, &Cancel::new())
+    }
+
     /// [`Self::check`] under a caller-owned [`Cancel`] handle (FR-276): the
     /// contract meter, the measure pass and the typer's node charge poll it
     /// at every charge, so a cancelled handle stops the check at its next
@@ -1484,9 +1510,76 @@ impl PackageDeclarations {
     /// refusal list like a reached work budget; a caller that holds the
     /// handle reads [`Cancel::tripped`] to tell the two apart.
     pub fn check_with_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        let mut protocol_refusals = Vec::new();
+        let outcome = self.check_retaining_protocols(
+            limits,
+            cancel,
+            false,
+            false,
+            &mut protocol_refusals,
+        );
+        let flatten = |results: &[ProtocolCheckRefusal]| -> Vec<CheckRefusal> {
+            results
+                .iter()
+                .flat_map(|result| result.refusals.iter().cloned())
+                .collect()
+        };
+        match outcome {
+            Ok(graph) if graph.protocol_refusals.is_empty() => Ok(graph),
+            Ok(graph) => Err(flatten(&graph.protocol_refusals)),
+            // The check stopped after the refinements, so the protocol
+            // refusals lead the list, in the order they were found. A
+            // cancelled check already carries them in its list.
+            Err(refusals) if cancel.tripped().is_some() => Err(refusals),
+            Err(refusals) => {
+                let mut all = flatten(&protocol_refusals);
+                all.extend(refusals);
+                Err(all)
+            }
+        }
+    }
+
+    /// [`Self::check_with_protocol_results`] under a caller-owned
+    /// [`Cancel`] handle.
+    pub fn check_with_protocol_results_and_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_retaining_protocols(limits, cancel, true, false, &mut Vec::new())
+    }
+
+    /// Continue through a unit-level state-clause refusal so independent
+    /// protocol declarations can still be checked and reported by the
+    /// compiler. Public strict and protocol-results entry points keep their
+    /// established stop behavior.
+    pub fn check_with_protocol_continuation_and_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_retaining_protocols(limits, cancel, true, true, &mut Vec::new())
+    }
+
+    /// The check proper. `protocol_check_refusals` receives every refusal a
+    /// protocol declaration's own checks produced, including when a later
+    /// unit-level refusal prevents a graph from being returned.
+    /// `independent_protocols` lets the stages after the refinements run past
+    /// a refused protocol so the other protocols keep their results (FR-383);
+    /// without it the check ends there and reports the refusals found so far,
+    /// since the later stages would only add consequences of the refusal (an
+    /// unkeyed reference to the protocol, a work budget it already spent).
+    fn check_retaining_protocols(
         mut self,
         limits: CheckingLimits,
         cancel: &Cancel,
+        independent_protocols: bool,
+        continue_state_clause_refusals: bool,
+        protocol_check_refusals: &mut Vec<ProtocolCheckRefusal>,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-230: S2 retains every timed declaration independent of header
         // selection. S3 owns the facet gate and keeps incomplete timed
@@ -1818,6 +1911,7 @@ impl PackageDeclarations {
             })
         };
         let mut refusals = Vec::new();
+        let mut unit_refusals = Vec::new();
         // QSL FR-246: the task sets and the claims over them. They are timed
         // forms, so FR-230's facet gate admits them; every defect is reported.
         let mut checked_task_sets = CheckedTaskSets::default();
@@ -2644,6 +2738,13 @@ impl PackageDeclarations {
                     });
                     return Err(refusals);
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&limit),
+                    });
+                    return Err(refusals);
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2659,6 +2760,13 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
             }
         }
         if !refusals.is_empty() {
@@ -2668,7 +2776,7 @@ impl PackageDeclarations {
         // family's own contract once every function signature is known (a
         // clause body may call a function), against the same package-wide
         // node total and contract meter.
-        let state_clause_forms = self.state_clauses;
+        let mut state_clause_forms = self.state_clauses;
         let mut typed_clauses = Vec::with_capacity(state_clause_forms.len());
         // FR-185: every read of an operation parameter by a checked
         // precondition, so a read of a random parameter refuses.
@@ -2727,6 +2835,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2736,6 +2853,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
@@ -3140,7 +3264,22 @@ impl PackageDeclarations {
                 .iter()
                 .flat_map(|(_, pending)| pending.refusals().iter().cloned())
                 .collect();
-            return Err(with_deferred(refusals, &prechecked_deferred));
+            if continue_state_clause_refusals
+                && refusals
+                    .iter()
+                    .all(|refusal| matches!(refusal.location.origin, Origin::StateClause { .. }))
+            {
+                unit_refusals.append(&mut refusals);
+                // The continuation graph is only used to finish independent
+                // protocol checks. Do not carry a refused clause without its
+                // typed/lowered counterpart into requirement keying below.
+                // The package is refused at the unit boundary, so omitting
+                // these clauses from this temporary graph cannot emit them.
+                state_clause_forms.clear();
+                typed_clauses.clear();
+            } else {
+                return Err(with_deferred(refusals, &prechecked_deferred));
+            }
         }
         // FR-220: the model's views, for the symbolic footprints the access
         // classification of a protocol's `parallel` attempts reads.
@@ -3490,28 +3629,96 @@ impl PackageDeclarations {
                         }
                         Err(control_refusals) => refusals.extend(control_refusals),
                     }
-                    if refusals.len() > refusals_before {
+                    let protocol_refused = refusals.len() > refusals_before;
+                    if protocol_refused {
                         refused_protocols.insert(protocol.name.name.as_str());
+                        protocol_check_refusals.push(ProtocolCheckRefusal {
+                            declaration: protocol.name.name.clone(),
+                            source_index: index,
+                            declaration_span: protocol.name.span,
+                            refusals: refusals.split_off(refusals_before),
+                        });
+                        protocol_places.push(None);
+                    } else {
+                        protocol_bindings.push(bound);
+                        protocol_places.push(Some(checked_protocols.len()));
+                        checked_protocols.push(checked);
                     }
-                    protocol_bindings.push(bound);
-                    protocol_places.push(Some(checked_protocols.len()));
-                    checked_protocols.push(checked);
                 }
                 Err(protocol_refusals) => {
                     protocol_places.push(None);
-                    refusals.extend(protocol_refusals);
+                    let mut owned_refusals = protocol_refusals;
                     if let protocol_obligation::Obligations::Refused(obligation_refusals) =
                         obligations
                     {
-                        refusals.extend(obligation_refusals);
+                        owned_refusals.extend(obligation_refusals);
                     }
+                    protocol_check_refusals.push(ProtocolCheckRefusal {
+                        declaration: protocol.name.name.clone(),
+                        source_index: index,
+                        declaration_span: protocol.name.span,
+                        refusals: owned_refusals,
+                    });
                 }
             }
-            protocol_refused.push(refusals.len() > refusals_before);
+            protocol_refused.push(protocol_places.last().is_some_and(Option::is_none));
             if cancel.tripped().is_some() {
-                return Err(with_deferred(refusals, &deferred));
+                let mut cancelled = refusals;
+                cancelled.extend(
+                    protocol_check_refusals
+                        .iter()
+                        .flat_map(|result| result.refusals.iter().cloned()),
+                );
+                return Err(with_deferred(cancelled, &deferred));
             }
         }
+        // A predicate join naming a protocol that was refused above is a
+        // consequence of that refusal, not an ill-typed join target. Keep
+        // both the missing-name reference locus and the target's original
+        // typed refusal pair in the structured cause.
+        let refused_protocol_causes: BTreeMap<String, _> = protocol_check_refusals
+            .iter()
+            .filter_map(|result| {
+                let refusal = result.refusals.first()?;
+                Some((
+                    result.declaration.clone(),
+                    (refusal.cause.code(), refusal.cause.cause()?),
+                ))
+            })
+            .collect();
+        for result in protocol_check_refusals.iter_mut() {
+            for refusal in &mut result.refusals {
+                let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+                    continue;
+                };
+                let ProtocolAnchorCause::JoinFunctionKind { function, span, .. } = cause.as_ref()
+                else {
+                    continue;
+                };
+                let Some((code, dependency_cause)) =
+                    refused_protocol_causes.get(function.as_str()).copied()
+                else {
+                    continue;
+                };
+                refusal.cause =
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::RefusedDependency {
+                        function: function.clone(),
+                        refused_dependency: Box::new(RefusedProtocolDependency {
+                            declaration: function.clone(),
+                            code,
+                            cause: dependency_cause,
+                        }),
+                        consequence: true,
+                        span: *span,
+                    }));
+            }
+        }
+        let original_protocol_index = |checked_index: usize| {
+            protocol_places
+                .iter()
+                .position(|place| *place == Some(checked_index))
+                .unwrap_or(checked_index)
+        };
         // FR-147: the refinements whose abstract side is a protocol subject,
         // now that every protocol clause of the unit is checked (FR-136
         // "Order of the checks"). A clause refused by its own checks
@@ -3680,6 +3887,9 @@ impl PackageDeclarations {
             checked.concrete_subject_node =
                 concrete_model.and_then(|model| root_of(model.selection()));
         }
+        if !independent_protocols && !protocol_check_refusals.is_empty() {
+            return Err(refusals);
+        }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
@@ -3725,6 +3935,9 @@ impl PackageDeclarations {
             let body_refused = match &outcome {
                 Ok(staged) => !temporal_clause::is_emitted(staged.value()),
                 Err(StageFailure::Refused(refusal)) => {
+                    temporal_clause::refuses_after_activation(&clause.form, refusal)
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
                 Err(_) => false,
@@ -3855,6 +4068,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -3864,6 +4086,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
             }
         }
         // FR-185: the `random`, `reward` and `workload` declarations,
@@ -3953,6 +4176,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -3962,6 +4194,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
@@ -4068,6 +4307,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4077,6 +4325,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
             }
         }
         // The nodes the hyper conditions checked count against the package's
@@ -4127,6 +4376,10 @@ impl PackageDeclarations {
                     callees.extend(measure.root().callees());
                     protocols.extend(measure.root().protocol_references());
                 }
+                let protocols = protocols
+                    .into_iter()
+                    .filter_map(|source| protocol_places.get(source).copied().flatten())
+                    .collect();
                 (callees, protocols)
             })
             .collect();
@@ -4200,7 +4453,7 @@ impl PackageDeclarations {
                 &[]
             }
         };
-        lowering.begin_protocols(protocol_list.len());
+        lowering.begin_protocols(self.protocols.len());
         let temporal_positions: BTreeMap<usize, usize> = checked_temporal
             .iter()
             .enumerate()
@@ -4209,7 +4462,11 @@ impl PackageDeclarations {
         let mut protocol_edges: Vec<(Vec<usize>, Vec<usize>, Vec<usize>)> = protocol_list
             .iter()
             .map(|protocol| {
-                let (functions, protocols, required) = protocol.dependencies();
+                let (functions, source_protocols, required) = protocol.dependencies();
+                let protocols = source_protocols
+                    .into_iter()
+                    .filter_map(|source| protocol_places.get(source).copied().flatten())
+                    .collect();
                 let required = required
                     .iter()
                     .filter_map(|source| temporal_positions.get(source).copied())
@@ -4238,7 +4495,11 @@ impl PackageDeclarations {
                 for condition in conditions.all() {
                     let root = condition.body.root();
                     functions.extend(root.callees());
-                    protocols.extend(root.protocol_references());
+                    protocols.extend(
+                        root.protocol_references()
+                            .into_iter()
+                            .filter_map(|source| protocol_places.get(source).copied().flatten()),
+                    );
                 }
                 for (fairness, _) in checked.protocol_fairness() {
                     if let Some(index) = protocol_list
@@ -4279,22 +4540,32 @@ impl PackageDeclarations {
             })
             .collect();
         let order = lowering::dependency_order(&function_edges, &protocol_edges, &temporal_edges);
-        let lower_protocol = |lowering: &mut lowering::Lowering<'_>,
-                              refusals: &mut Vec<CheckRefusal>,
-                              index: usize,
-                              cyclic: bool| {
+        let mut lower_protocol = |lowering: &mut lowering::Lowering<'_>,
+                                  _refusals: &mut Vec<CheckRefusal>,
+                                  index: usize,
+                                  cyclic: bool| {
             let Some(protocol) = protocol_list.get(index) else {
                 return;
             };
-            match lowering.protocol_node_step(index, protocol, cyclic) {
+            match lowering.protocol_node_step(protocol.source_index, protocol, cyclic) {
                 // The refusal of a protocol with an unwritten construct is
                 // this check's emission gate, as the refinement's is.
                 Ok(unsupported) => {
-                    if !self.emit_unwritten_protocols {
-                        refusals.extend(unsupported);
+                    if !self.emit_unwritten_protocols && !unsupported.is_empty() {
+                        protocol_check_refusals.push(ProtocolCheckRefusal {
+                            declaration: protocol.form.name.name.clone(),
+                            source_index: protocol.source_index,
+                            declaration_span: protocol.form.name.span,
+                            refusals: unsupported,
+                        });
                     }
                 }
-                Err(refusal) => refusals.push(refusal),
+                Err(refusal) => protocol_check_refusals.push(ProtocolCheckRefusal {
+                    declaration: protocol.form.name.name.clone(),
+                    source_index: protocol.source_index,
+                    declaration_span: protocol.form.name.span,
+                    refusals: vec![refusal],
+                }),
             }
         };
         let lower_functions = |lowering: &mut lowering::Lowering<'_>,
@@ -4384,7 +4655,12 @@ impl PackageDeclarations {
                         .iter()
                         .flat_map(|group| group.members.iter().copied())
                         .collect();
-                    lowering.begin_mixed_cycle(protocols, &function_indices);
+                    let source_protocols: Vec<usize> = protocols
+                        .iter()
+                        .filter_map(|index| protocol_list.get(*index))
+                        .map(|protocol| protocol.source_index)
+                        .collect();
+                    lowering.begin_mixed_cycle(&source_protocols, &function_indices);
                     for index in protocols {
                         lower_protocol(&mut lowering, &mut refusals, *index, true);
                     }
@@ -4446,10 +4722,11 @@ impl PackageDeclarations {
             .iter()
             .enumerate()
             .map(|(protocol_index, bindings)| {
+                let source_protocol_index = original_protocol_index(protocol_index);
                 (0..bindings.len())
                     .map(|attempt_index| {
                         root(Origin::ProtocolAttempt {
-                            protocol: protocol_index,
+                            protocol: source_protocol_index,
                             attempt: attempt_index,
                         })
                     })
@@ -4460,9 +4737,13 @@ impl PackageDeclarations {
             .iter()
             .enumerate()
             .map(|(protocol_index, bindings)| {
+                let source_protocol_index = original_protocol_index(protocol_index);
                 (0..bindings.len())
                     .map(|attempt_index| {
-                        lowering::protocol_attempt_operation_location(protocol_index, attempt_index)
+                        lowering::protocol_attempt_operation_location(
+                            source_protocol_index,
+                            attempt_index,
+                        )
                     })
                     .collect()
             })
@@ -4593,10 +4874,11 @@ impl PackageDeclarations {
             .zip(&attempt_reference_locations)
             .enumerate()
         {
+            let source_protocol_index = original_protocol_index(protocol_index);
             for ((bound, location), reference) in bindings.iter().zip(locations).zip(references) {
                 let source_order = self
                     .protocols
-                    .get(protocol_index)
+                    .get(source_protocol_index)
                     .and_then(|protocol| protocol.declarations.get(bound.declaration))
                     .map_or(usize::MAX, |declaration| declaration.name.span.start);
                 source_ordered_anchors.push((
@@ -4782,9 +5064,10 @@ impl PackageDeclarations {
             .map(|(index, form)| (form.spans.declaration.start, Lowerable::Clause(index)))
             .collect();
         for (protocol_index, bindings) in protocol_bindings.iter().enumerate() {
+            let source_protocol_index = original_protocol_index(protocol_index);
             let declarations = self
                 .protocols
-                .get(protocol_index)
+                .get(source_protocol_index)
                 .map(|protocol| protocol.declarations.as_slice())
                 .unwrap_or_default();
             for (attempt_index, bound) in bindings.iter().enumerate() {
@@ -4796,9 +5079,10 @@ impl PackageDeclarations {
             }
         }
         for (protocol_index, checked) in checked_protocols.iter().enumerate() {
+            let source_protocol_index = original_protocol_index(protocol_index);
             let forms = self
                 .protocols
-                .get(protocol_index)
+                .get(source_protocol_index)
                 .map(|protocol| protocol.compensations.as_slice())
                 .unwrap_or_default();
             for template_index in 0..checked.obligations.compensations.len() {
@@ -5598,9 +5882,13 @@ impl PackageDeclarations {
             );
             let mut access_refusals = Vec::new();
             for (index, protocol) in self.protocols.iter().enumerate() {
-                let (Some(checked), Some(bound)) =
-                    (checked_protocols.get(index), protocol_bindings.get(index))
-                else {
+                let Some(checked_index) = protocol_places.get(index).copied().flatten() else {
+                    continue;
+                };
+                let (Some(checked), Some(bound)) = (
+                    checked_protocols.get(checked_index),
+                    protocol_bindings.get(checked_index),
+                ) else {
                     continue;
                 };
                 let classified = protocol_memory::classify(protocol, checked, bound, |binding| {
@@ -6255,9 +6543,16 @@ impl PackageDeclarations {
         let protocol_classes = self
             .protocols
             .iter()
-            .zip(&protocol_bindings)
-            .zip(&checked_protocols)
-            .map(|((form, attempts), checked)| {
+            .enumerate()
+            .filter_map(|(source_index, form)| {
+                let checked_index = protocol_places.get(source_index).copied().flatten()?;
+                Some((
+                    form,
+                    protocol_bindings.get(checked_index)?,
+                    checked_protocols.get(checked_index)?,
+                ))
+            })
+            .map(|(form, attempts, checked)| {
                 let mut classes =
                     refinement::ProtocolClasses::of(form, checked, attempts, scope.types());
                 if let Some(keys) = lowered_protocol_members
@@ -6348,6 +6643,13 @@ impl PackageDeclarations {
             model_names,
             protocol_classes,
             protocols: checked_protocols,
+            protocol_order: self
+                .protocols
+                .iter()
+                .map(|protocol| protocol.name.name.clone())
+                .collect(),
+            protocol_refusals: std::mem::take(protocol_check_refusals),
+            unit_refusals,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
                 .map(|(name, members)| {
@@ -6871,19 +7173,21 @@ fn checked_model_operation_effects(
                     member: operation.key.node.as_str().into(),
                 },
             };
-            rows.push((document.to_owned(), declaring_key, row));
+            rows.push(row);
         }
     }
-    rows.sort_by(
-        |(left_document, left_key, left), (right_document, right_key, right)| {
-            left_document
-                .as_bytes()
-                .cmp(right_document.as_bytes())
-                .then_with(|| left_key.cmp(right_key))
-                .then_with(|| left.operation.as_bytes().cmp(right.operation.as_bytes()))
-        },
-    );
-    (!rows.is_empty()).then(|| rows.into_iter().map(|(_, _, row)| row).collect())
+    // QSpec FR-322 and FR-496: `document` as UTF-8 bytes, then `declaring` by
+    // structural identity, then `operation` as UTF-8 bytes. The declaring
+    // `DeclarationKey` order is not that order: the structural path leads
+    // with the declaration's form.
+    rows.sort_by(|left, right| {
+        left.document
+            .as_bytes()
+            .cmp(right.document.as_bytes())
+            .then_with(|| left.declaring.cmp(&right.declaring))
+            .then_with(|| left.operation.as_bytes().cmp(right.operation.as_bytes()))
+    });
+    (!rows.is_empty()).then_some(rows)
 }
 
 fn effect_modification_key(
@@ -7453,6 +7757,23 @@ impl CheckedGraph {
     /// FR-113: the checked protocol declared `name`, or `None`.
     pub fn protocol(&self, name: &str) -> Option<&CheckedProtocol> {
         self.protocols.iter().find(|protocol| protocol.name == name)
+    }
+
+    /// FR-383: typed refusals attributed to individual protocol declarations.
+    pub fn protocol_refusals(&self) -> &[ProtocolCheckRefusal] {
+        &self.protocol_refusals
+    }
+
+    /// Unit-level state-clause refusals preserved by the protocol
+    /// continuation check. Ordinary check operations still return these as
+    /// primary refusals.
+    pub fn unit_refusals(&self) -> &[CheckRefusal] {
+        &self.unit_refusals
+    }
+
+    /// FR-383: protocol names in declaration order, including refused ones.
+    pub fn protocol_order(&self) -> &[String] {
+        &self.protocol_order
     }
 
     /// FR-390's keyed protocol member identities, read by the selected

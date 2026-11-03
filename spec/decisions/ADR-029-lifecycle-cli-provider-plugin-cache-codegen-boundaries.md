@@ -280,11 +280,11 @@ and denies `clippy::wildcard_enum_match_arm` (ADR-011 §5):
 | unsupported | 21 |
 | incomplete (limit, cancellation, deadline, budget) | 22 |
 | inconclusive: a proof or `analyze` item (incomplete under QSpec FR-301) | 22 |
-| inconclusive: a supplied-trace clause pending when the trace ends (completed without violation) | 0 |
+| pending: a supplied-trace clause pending when the trace ends (completed without violation) | 0 |
 | internal failure (including tool failure) | 30 |
 
 A multi-item outcome exits with the most severe code present, in QSpec
-FR-301's order: 30, 20, 21, 22, 10, 0. `StageFailure::Refused` takes the O-16
+FR-301's order: 30, 20, 21, 22, 10, 0 (FR-285 adds 11 for an indeterminate finite-window clause, ranked below 10). `StageFailure::Refused` takes the O-16
 category of its cause, so a profile-gated construct is unsupported (21) and
 any other refusal is refusal (20). `StageFailure::Limit` and
 `StageFailure::Cancelled` are incomplete (22). `StageFailure::Fault` is
@@ -393,7 +393,7 @@ A-4).
 - **Terminal records.** A violation is category violation (exit 10). An
   evaluation undefined at a position is a violation there, with cause
   `UndefinedEvaluation{where, cause}` (exit 10). Pending at the trace's end
-  is inconclusive and exits 0: no violation was observed. `tested` is success (0) and is evidence for that trace only, never
+  is the category pending and exits 0: no violation was observed. `tested` is success (0) and is evidence for that trace only, never
   `proved`. A supplied trace carries no enabledness, so a clause with a
   non-empty fairness set settles unsupported, cause
   `unsupported_projection`/`missing-fairness-premise` (21), as QSpec FR-362

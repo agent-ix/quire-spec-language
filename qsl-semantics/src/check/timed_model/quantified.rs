@@ -18,7 +18,9 @@ use std::rc::Rc;
 
 use qsl_forms::{
     BinaryOperator, BinderQuery, ExprId, ExprNode, Expression, ExpressionForm, ExpressionSpans,
+    QuantifiedClockBoundForm, QuantifierKind,
 };
+use qsl_foundation::Span;
 
 use super::reading::free_occurrences;
 use super::{
@@ -39,7 +41,7 @@ struct Quantifier<'f> {
     path: Vec<String>,
     shape: CollectionShape,
     body: ExprId,
-    /// The quantifier's span.
+    /// The quantifier's span, used to locate the selected data predicate.
     span: qsl_foundation::Span,
 }
 
@@ -193,12 +195,19 @@ pub(super) fn read(
             ),
             Expression::integer(count),
         );
-        let spans = ExpressionSpans::at_point(&expression, span.start)
+        let body_span = located.span(quantifier.body);
+        let generated_span = Span {
+            start: span.start.min(body_span.start),
+            end: body_span.start,
+        };
+        let spans = expression_spans_at(&expression, generated_span)
             .map_err(|_| timed(located.outside(id)))?;
-        Ok(DataLiteral::Formed(Rc::new(ExpressionForm {
-            expression,
-            spans,
-        })))
+        let form = ExpressionForm { expression, spans };
+        if operator == BinaryOperator::Equal && count == 0 {
+            Ok(DataLiteral::EmptyCollection(form))
+        } else {
+            Ok(DataLiteral::Formed(Rc::new(form)))
+        }
     };
     // `size(self.f) = s` conjoined with `pick(j)` of each slot below `s`.
     let each =
@@ -236,6 +245,147 @@ pub(super) fn read(
         BinderQuery::Forall => (each(&positive, budget)?, some(&negative, budget)?),
         _ => (some(&positive, budget)?, each(&negative, budget)?),
     }))
+}
+
+/// Read one S2 quantified invariant bound, keeping its slot selector as a
+/// family term so it applies to every currently live element.
+pub(super) fn invariant_bound(
+    form: &QuantifiedClockBoundForm,
+    clocks: &Clocks<'_>,
+    context: &EffectiveId,
+) -> Result<(ElementBinding, ClockConstraint), CheckCause> {
+    if form.quantifier != QuantifierKind::Forall {
+        return Err(timed(TemporalCause::TimeInvariantShape { span: form.span }));
+    }
+    let collection = Located::of(&form.collection, clocks, context)
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let collection_path = self_path(&form.collection, collection.root())
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let shape = clocks
+        .fields
+        .iter()
+        .find_map(|clock| {
+            if !clocks.model.conforms(context.clone(), clock.owner.clone())
+                || !clock.path.starts_with(&collection_path)
+            {
+                return None;
+            }
+            match clock.path.get(collection_path.len()) {
+                Some(PlaceStep::Slot(shape)) => Some(*shape),
+                _ => None,
+            }
+        })
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let path = collection_path
+        .into_iter()
+        .map(|step| match step {
+            PlaceStep::Field(name) => Some(name),
+            PlaceStep::Slot(_) | PlaceStep::Union(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let binding = ElementBinding {
+        name: form.binder.name.clone(),
+        path: path.clone(),
+        slot: SlotRef::Family,
+    };
+    let quantifier = Quantifier {
+        query: BinderQuery::Forall,
+        binder: &form.binder.name,
+        path,
+        shape,
+        body: form.clock.expression.root_id(),
+        span: form.span,
+    };
+    let located = Located::of(&form.clock, clocks, context)
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let clock = element_clock(&located, quantifier.body, &quantifier, clocks)
+        .ok_or_else(|| timed(located.outside(quantifier.body)))?;
+    Ok((
+        binding.clone(),
+        ClockConstraint {
+            parameter: None,
+            clock,
+            via: Vec::new(),
+            slots: vec![SlotRef::Family],
+            binding: Some(binding),
+            op: if form.strict {
+                ClockOp::Less
+            } else {
+                ClockOp::LessOrEqual
+            },
+            bound: clocks.quantity(&form.bound).map_err(timed)?,
+            span: form.span,
+        },
+    ))
+}
+
+/// The generated cardinality expression belongs to the written quantifier.
+/// Divide that source range among its nodes so each expression occurrence
+/// produced by typing the synthetic size read has a non-empty provenance
+/// region. A quantifier located at a point (read through a clock-reading
+/// declaration, located at its call) has no range to divide: every node of
+/// the expression is then an empty span at that point.
+fn expression_spans_at(
+    expression: &Expression,
+    span: Span,
+) -> Result<ExpressionSpans, qsl_forms::SpanRefusal> {
+    // A quantifier read through a clock-reading declaration is located at
+    // its call, a point with no source range to divide: its generated nodes
+    // sit at that point, as the call's other grafted nodes do.
+    if span.start == span.end {
+        return ExpressionSpans::at_point(expression, span.start);
+    }
+    let mut spans = ExpressionSpans::new(span)?;
+    let root_span = spans.root();
+    let root = expression.root_id();
+    let mut order = Vec::with_capacity(expression.len());
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        let node = expression
+            .get(id)
+            .ok_or(qsl_forms::SpanRefusal::UnknownParent(root_span))?;
+        order.push(id);
+        pending.extend(node.node().children());
+    }
+    let mut node_counts = vec![0_usize; expression.len()];
+    for id in order.into_iter().rev() {
+        let node = expression
+            .get(id)
+            .ok_or(qsl_forms::SpanRefusal::UnknownParent(root_span))?;
+        let count = node
+            .node()
+            .children()
+            .into_iter()
+            .try_fold(1_usize, |count, child| {
+                count.checked_add(node_counts[child.index()])
+            });
+        node_counts[id.index()] = count.ok_or(qsl_forms::SpanRefusal::UnknownParent(root_span))?;
+    }
+    let needed = node_counts[root.index()];
+    if span.end.saturating_sub(span.start) < needed {
+        return Err(qsl_forms::SpanRefusal::Reversed(span));
+    }
+    let mut pending = vec![(root, spans.root(), span)];
+    while let Some((id, parent, region)) = pending.pop() {
+        let node = expression
+            .get(id)
+            .ok_or(qsl_forms::SpanRefusal::UnknownParent(parent))?;
+        let mut start = region.start;
+        let mut children = Vec::new();
+        for child in node.node().children() {
+            let width = node_counts[child.index()];
+            let end = start
+                .checked_add(width)
+                .ok_or(qsl_forms::SpanRefusal::Reversed(region))?;
+            let child_region = Span { start, end };
+            let child_parent = spans.push_child(parent, child_region)?;
+            children.push((child, child_parent, child_region));
+            start = end;
+        }
+        pending.extend(children.into_iter().rev());
+    }
+    Ok(spans)
 }
 
 /// The disjunctive forms, read positively and negated, of the quantifier
@@ -310,6 +460,7 @@ fn slot(
                 clock,
                 via: Vec::new(),
                 slots: vec![binding.slot],
+                binding: Some(binding.clone()),
                 op,
                 bound: bound.clone(),
                 span,
@@ -407,8 +558,8 @@ fn renamed(
         .expression
         .graft(id, &grafts)
         .ok_or_else(|| located.outside(id))?;
-    let spans = ExpressionSpans::at_point(&expression, located.span(id).start)
-        .map_err(|_| located.outside(id))?;
+    let spans =
+        expression_spans_at(&expression, located.span(id)).map_err(|_| located.outside(id))?;
     Ok(ExpressionForm { expression, spans })
 }
 
@@ -546,18 +697,41 @@ pub(super) fn reset(
     }))
 }
 
-/// The span of the first quantifier over a clock collection in `located`,
-/// in node order: a guard reading one has no `clock_guard` binder form
-/// until STD-554 (QSpec FR-322-AC-263).
-pub(super) fn first(
-    located: &Located<'_>,
-    clocks: &Clocks<'_>,
-    context: &EffectiveId,
-) -> Option<qsl_foundation::Span> {
-    located
-        .form
-        .expression
-        .iter()
-        .find_map(|node| quantifier(located, node.id(), clocks, context))
-        .map(|quantifier| quantifier.span)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn size_read() -> Expression {
+        Expression::binary(
+            BinaryOperator::Equal,
+            Expression::size(Expression::field(Expression::self_ref(), "ts")),
+            Expression::integer(0_u64),
+        )
+    }
+
+    /// FR-230-AC-21: the generated size read of a quantifier located at a
+    /// point (its call, for a clock-reading declaration) places every node at
+    /// that point; a quantifier with a source range divides it, so no node
+    /// span is empty.
+    #[test]
+    fn a_point_located_quantifier_places_every_generated_node_at_the_point() {
+        let expression = size_read();
+        let point = Span { start: 7, end: 7 };
+        let at_point = expression_spans_at(&expression, point)
+            .expect("a point span places the nodes")
+            .of_nodes(&expression)
+            .expect("one span for each node");
+        assert_eq!(at_point.len(), expression.len());
+        assert!(at_point.iter().all(|span| *span == point), "{at_point:?}");
+
+        let range = Span { start: 7, end: 40 };
+        let divided = expression_spans_at(&expression, range)
+            .expect("a range is divided")
+            .of_nodes(&expression)
+            .expect("one span for each node");
+        assert!(
+            divided.iter().all(|span| span.end > span.start),
+            "{divided:?}"
+        );
+    }
 }

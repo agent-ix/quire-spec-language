@@ -148,6 +148,21 @@ pub enum ProtocolAnchorCause {
         /// The function name's span.
         span: Span,
     },
+    /// A predicate join names a protocol that exists but was refused by its
+    /// own S3 check. The dependent refusal keeps the ordinary
+    /// `missing_declaration`/`missing-name` pair while recording the target's
+    /// own code and cause as structured dependency provenance.
+    RefusedDependency {
+        /// The protocol name written as the predicate function.
+        function: String,
+        /// The refused protocol and its original check pair.
+        refused_dependency: Box<RefusedProtocolDependency>,
+        /// True because this refusal follows from the target protocol's
+        /// refusal rather than a missing declaration.
+        consequence: bool,
+        /// The predicate reference span.
+        span: Span,
+    },
     /// FR-218 Predicate joins: the resolved function's Boolean signature
     /// does not match the distinct joined labels.
     JoinFunctionType {
@@ -630,6 +645,17 @@ pub enum ProtocolAnchorCause {
     },
 }
 
+/// The typed refusal pair of a protocol named by a dependent protocol.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RefusedProtocolDependency {
+    /// The target protocol declaration.
+    pub declaration: String,
+    /// The target's own refusal code.
+    pub code: Code,
+    /// The target's own catalog cause.
+    pub cause: &'static str,
+}
+
 /// Which expression slot of a protocol node a refusal is about (FR-218
 /// "Scopes").
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1023,6 +1049,7 @@ impl ProtocolAnchorCause {
             | Self::Unimplemented { span, .. }
             | Self::JoinFunctionMissing { span, .. }
             | Self::JoinFunctionKind { span, .. }
+            | Self::RefusedDependency { span, .. }
             | Self::JoinFunctionType { span, .. }
             | Self::MissingProfile { span, .. }
             | Self::MissingRoleType { span, .. }
@@ -1083,6 +1110,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => Code::MissingDeclaration,
             Self::JoinFunctionMissing { .. } => Code::MissingDeclaration,
+            Self::RefusedDependency { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -1138,6 +1166,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => "missing-name",
             Self::JoinFunctionMissing { .. } => "missing-name",
+            Self::RefusedDependency { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -1227,18 +1256,17 @@ pub enum TimedOmission {
 /// `unsupported_construct`/`not-yet-implemented` at the member.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum UnwrittenTimedMember {
-    /// A guard or time invariant quantified over a clock collection, which
-    /// has no binder form in a `clock_guard` or `time_invariant` until
-    /// STD-554 (QSpec FR-322-AC-263, `QN-01`, `QN-02`).
+    /// A quantified timed-clause form the current producer does not write,
+    /// such as an unbounded clock family or an unsupported element-data read.
     QuantifiedClause,
     /// A clock-reading clause bound to an execution point: a timed clause
-    /// names its operation's no-point anchor, and STD-555 rules the
-    /// point-qualified anchor (QSpec FR-342-AC-11).
+    /// needs a point-qualified operation anchor, while this producer writes
+    /// only the point-free operation anchor (QSpec FR-342-AC-11).
     PointQualifiedClause,
     /// A guard part, time invariant or `urgent when` predicate that reads
     /// the presences of a clock collection's elements (`forall(e in self.q:
-    /// present(e))`), whose quantifier over the collection's slots has no
-    /// checked form until STD-554.
+    /// present(e))`), whose quantified presence form this producer does not
+    /// admit yet.
     ElementPresence,
     /// A postcondition requiring a clock presence by a comparison with
     /// `absent` (`self.v != absent`, `not (self.v = absent)`), whose
@@ -1254,14 +1282,12 @@ impl UnwrittenTimedMember {
     /// The member, as the refusal names it.
     pub const fn description(self) -> &'static str {
         match self {
-            Self::QuantifiedClause => {
-                "a quantified guard or time invariant has no binder form until STD-554"
-            }
+            Self::QuantifiedClause => "a quantified timed clause is not written by this producer",
             Self::PointQualifiedClause => {
-                "a clock-reading clause bound to an execution point waits on STD-555"
+                "a clock-reading clause bound to an execution point is not written by this producer"
             }
             Self::ElementPresence => {
-                "a predicate reading a clock collection's element presences waits on STD-554"
+                "a predicate reading a clock collection's element presences is not written by this producer"
             }
             Self::ComparedPresence => {
                 "a postcondition requiring a clock presence by comparison with `absent`"
@@ -2436,7 +2462,8 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::ModelCheckMaxStoreBuffer
             | Setting::ModelCheckMaxMessages
             | Setting::ExpansionMaxCandidates
-            | Setting::InspectMaxViewEntries => Err(setting),
+            | Setting::InspectMaxViewEntries
+            | Setting::ProgressCoveredPositions => Err(setting),
         }
     }
 }
@@ -2728,6 +2755,11 @@ pub enum CheckCause {
     /// profile:
     /// `invalid_package`.
     IeeeProfileNotAdmitted,
+    /// `invalid_package` / `conflicting-definition` (FR-397-AC-16): a
+    /// supplied library exports a declaration under the reserved IEEE
+    /// intrinsic identity the call names; a declaration never replaces or
+    /// shadows an intrinsic.
+    ReservedIntrinsicConflict(String),
     /// A derived collection bound exceeds the representable cardinality range.
     UnrepresentableBound,
     /// `invalid_package` / `definition-cycle` (FR-151, TC-196 D08): an
@@ -3215,6 +3247,7 @@ impl CheckCause {
             Self::SumCase(cause) => cause.code(),
             Self::ResourceExhausted(_) => Code::StageLimitExceeded,
             Self::IeeeProfileNotAdmitted
+            | Self::ReservedIntrinsicConflict(_)
             | Self::DefinitionCycle { .. }
             | Self::InvalidDispatchDeclaration(_)
             | Self::NodePreimage(_) => Code::InvalidPackage,
@@ -3311,6 +3344,7 @@ impl CheckCause {
                 Some(Setting::IdentityInputBytes.kind().catalog_cause())
             }
             Self::Identity(IdentityRefusal::Allocation { .. }) => Some("allocation-failed"),
+            Self::ReservedIntrinsicConflict(_) => Some("conflicting-definition"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
                 None
             }
@@ -3378,6 +3412,20 @@ pub struct CheckRefusal {
     pub location: Location,
     /// The typed cause.
     pub cause: CheckCause,
+}
+
+/// Refusals owned by one protocol declaration while the rest of the unit
+/// continues checking (FR-383 per-protocol results).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ProtocolCheckRefusal {
+    /// The protocol declaration's authored name.
+    pub declaration: String,
+    /// The protocol declaration's source-unit index.
+    pub source_index: usize,
+    /// The span of the protocol declaration's name.
+    pub declaration_span: Span,
+    /// Every typed refusal attributed to this declaration, in check order.
+    pub refusals: Vec<CheckRefusal>,
 }
 
 impl CheckRefusal {

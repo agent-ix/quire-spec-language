@@ -159,6 +159,15 @@ pub enum ReplayRefusal {
     /// stage limits the request carries (`stage_limit_exceeded`).
     #[error("the recompile refused at stage {stage}: {refusal}", stage = .0.stage().as_str(), refusal = .0)]
     Recompile(Box<CompileRefusal>),
+    /// A compile stage reached an attributable protocol outcome and retained
+    /// the ordered declaration results with its primary refusal or limit.
+    #[error("the recompile refused at stage {refusal_stage}: {refusal}", refusal_stage = .refusal.stage().as_str(), refusal = .refusal)]
+    RecompileWithProtocolResults {
+        /// The primary stage refusal or limit, which determines category.
+        refusal: Box<CompileRefusal>,
+        /// Ordered per-protocol results through the stage that stopped.
+        protocol_results: Vec<spine::ProtocolResult>,
+    },
     /// QC-1: the request's domain package documents do not form a package
     /// input (an unreadable document, or two for one identity).
     #[error("{}", .0.detail)]
@@ -493,6 +502,7 @@ impl ReplayRefusal {
             Self::SourceCount(_) => Code::InvalidRequest,
             Self::InvalidPackageName(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
+            Self::RecompileWithProtocolResults { refusal, .. } => refusal.code(),
             Self::DomainPackages(refusal) => refusal.code,
             Self::DependencySelections(_) => Code::InvalidPackage,
             Self::DependencyInput(refusal) => refusal.code(),
@@ -552,6 +562,7 @@ impl ReplayRefusal {
         match self {
             Self::Request(refusal) => refusal.cause(),
             Self::Recompile(refusal) => refusal.cause(),
+            Self::RecompileWithProtocolResults { refusal, .. } => refusal.cause(),
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
@@ -603,6 +614,17 @@ impl ReplayRefusal {
             | Self::UnsupportedHelper(_)
             | Self::Cancelled(_)
             | Self::Fault(_) => None,
+        }
+    }
+
+    /// Per-protocol results retained by a compile-stage refusal, when the
+    /// stage could attribute the result to protocol declarations.
+    pub fn protocol_results(&self) -> Option<&[spine::ProtocolResult]> {
+        match self {
+            Self::RecompileWithProtocolResults {
+                protocol_results, ..
+            } => Some(protocol_results),
+            _ => None,
         }
     }
 
@@ -1429,11 +1451,25 @@ pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
     let cancel = Cancel::new();
-    let refusal = |failure| match spine::refusal_or_fault(failure) {
-        Ok(refusal) => ReplayRefusal::Recompile(refusal),
-        Err(fault) => ReplayRefusal::Fault(fault),
+    let refusal = |failure| match failure {
+        qsl_foundation::diagnostic::StageFailure::RefusedWithPayload(refusal, protocol_results) => {
+            ReplayRefusal::RecompileWithProtocolResults {
+                refusal,
+                protocol_results,
+            }
+        }
+        qsl_foundation::diagnostic::StageFailure::LimitWithPayload(limit, protocol_results) => {
+            ReplayRefusal::RecompileWithProtocolResults {
+                refusal: Box::new(CompileRefusal::Limit(limit)),
+                protocol_results,
+            }
+        }
+        failure => match spine::refusal_or_fault(failure) {
+            Ok(refusal) => ReplayRefusal::Recompile(refusal),
+            Err(fault) => ReplayRefusal::Fault(fault),
+        },
     };
-    let parsed = spine::parse(
+    let parsed = spine::parse_for_continuation(
         &ParseRequest {
             source: unit,
             path,
@@ -1447,7 +1483,7 @@ pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
     let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check_with_temporal_selections_and_execution_points(
+    let checked = spine::check_for_continuation(
         &parsed,
         package.as_str().to_owned(),
         execution_points,

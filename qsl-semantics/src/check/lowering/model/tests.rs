@@ -441,7 +441,8 @@ fn lower_with_occurrences<T>(
 
 /// TC-417 steps 1-2 (FR-094-AC-1, AC-2): `r`'s type node is a reference
 /// type over `Order`'s model node and `s`'s is over `Invoice`'s; the
-/// correspondence holds exactly the two model nodes.
+/// correspondence holds exactly those two model nodes and `Sub`'s, the
+/// declaring node of FR-496 rows.
 #[trace("FR-094-AC-1", "FR-094-AC-2", "FR-094-CON-2", "TC-417")]
 #[test]
 fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
@@ -480,19 +481,22 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
         "the reference type's body references Order's model node"
     );
 
-    // FR-094-AC-2: exactly (Order, M1) and (Invoice, M3).
+    // FR-094-AC-2: exactly (Order, M1), (Invoice, M3) and (Sub, M5); M5 is
+    // only the declaring node of `Sub`'s FR-496 rows.
+    let m5 = model_node_of(graph, "Sub");
     let model_nodes: Vec<NodeKey> = graph
         .nodes()
         .filter(|node| matches!(node.node_tag(), NodeTag::Model | NodeTag::Relation))
         .map(SemanticNode::key)
         .collect();
     assert_eq!(model_nodes, {
-        let mut expected = vec![m1.clone(), m3.clone()];
+        let mut expected = vec![m1.clone(), m3.clone(), m5.clone()];
         expected.sort();
         expected
     });
     assert_eq!(checked.resolve_declaration(m1), Some(&key("Order")));
     assert_eq!(checked.resolve_declaration(m3), Some(&key("Invoice")));
+    assert_eq!(checked.resolve_declaration(m5), Some(&key("Sub")));
     assert_eq!(checked.resolve_declaration(r_type), None);
 
     // FR-094-CON-2: every owned node without a source declaration is

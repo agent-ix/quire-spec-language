@@ -71,9 +71,14 @@ mod exact_decimals;
 mod family_outcome_layering;
 mod formal_source;
 mod formatter_identity;
+mod retired_checked_views_paths;
 mod string_edge_marker;
 mod value_parity_profile_selections;
 // The handoff writer is behind its feature; the all-features lane runs this.
+#[cfg(feature = "checked-handoff")]
+mod checked_handoff;
+#[cfg(feature = "checked-handoff")]
+mod checked_views;
 mod fairness_item_path;
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;

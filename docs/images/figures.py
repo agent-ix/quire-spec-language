@@ -164,15 +164,17 @@ def outcomes():
         ("refused", "exit 20", "input rejected"),
         ("unsupported", "exit 21", "profile can't check it"),
         ("incomplete · inconclusive", "exit 22", "data or budget ran out"),
+        ("indeterminate", "exit 11", "closed evidence is unresolved"),
+        ("pending", "exit 0", "no violation seen yet"),
         ("internal failure", "exit 30", "a bug in QSL"),
     ]
     f = Figure(
         "outcomes",
         980,
-        344,
+        440,
         "Every QSL check ends in exactly one outcome with its own exit code: success 0; violation "
-        "or undefined 10; refused 20; unsupported 21; incomplete or inconclusive 22; internal "
-        "failure 30. Only success and violation are answers about the rule; the others say why "
+        "or undefined 10; indeterminate 11; refused 20; unsupported 21; incomplete or inconclusive 22; "
+        "internal failure 30; a clause still pending when its trace ends exits 0. Only success and violation are answers about the rule; the others say why "
         "no answer was given.",
     )
     f.box(0, 150, 150, 56, "logic", "a check", "runs")
@@ -187,7 +189,7 @@ def outcomes():
             f.text(620, y + 25, why, "muted", "mono", SMALL + 1)
             f.line([(470, y + 20), (497, y + 20)], role, arrow=False)
     f.line([(150, 178), (190, 178)], "logic", arrow=False)
-    ys = [24 + 20, 24 + 48 + 20] + [150 + i * 48 + 20 for i in range(4)]
+    ys = [24 + 20, 24 + 48 + 20] + [150 + i * 48 + 20 for i in range(6)]
     f.line([(190, ys[0]), (190, ys[-1])], "logic", arrow=False)
     for y in ys:
         f.line([(190, y), (237, y)], "logic")
