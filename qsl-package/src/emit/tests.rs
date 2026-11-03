@@ -50,6 +50,7 @@ mod golden;
 mod hybrid;
 mod hyper_clause;
 mod large_cycle;
+mod mapping_support;
 mod navigation;
 mod operation_effects;
 mod option_value;

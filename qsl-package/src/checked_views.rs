@@ -11,9 +11,14 @@
 //! with [`quire_contract_model::CheckedPackageV2::term`].
 
 mod graph;
+mod mapping;
 pub(crate) mod predicate;
 mod subject;
 
+pub use mapping::{
+    mapping_support, AuthenticatedSelection, Classification, Closure, MappingRefusal, Retained,
+    Support, Target, Unmatched, OUTSTANDING_PREMISES,
+};
 pub use predicate::{checked_predicate, CheckedPredicateView, PredicateKind, PredicateSelection};
 #[cfg(test)]
 pub(crate) use subject::temporal_subject_within;
