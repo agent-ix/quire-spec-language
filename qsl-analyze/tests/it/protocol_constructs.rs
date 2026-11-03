@@ -6,20 +6,20 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_eval::simulation::SubjectSystem;
 use qsl_eval::simulation::protocol::{
     ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind, ThreadPath, WaitCause,
 };
-use qsl_eval::simulation::SubjectSystem;
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 use qsl_foundation::diagnostic::Code;
 use qsl_replay::{CompileRefusal, ReplayRefusal};
 use qsl_semantics::check::{CheckCause, ProtocolConstruct, ProtocolReferenceCause};
 
 use crate::fill::{
-    attempt, compiled, contracts, json_of, projections, protocol, reachable, sc_system, Reached,
+    Reached, attempt, compiled, contracts, json_of, projections, protocol, reachable, sc_system,
 };
-use crate::protocol_system::{touch, Case};
+use crate::protocol_system::{Case, touch};
 
 /// The protocol `P` with `members` and `run` over `ADR-027 §7`'s contracts,
 /// from `c.v = 0`.
@@ -1160,7 +1160,30 @@ fn a_waiting_receive_names_why_it_waits() {
 /// iterations: `X E X E`, then the outer `exhausted` `F`.
 #[trace("TC-651", "FR-206-AC-5")]
 #[test]
-fn a_nested_repeat_control_refuses_while_its_wire_form_is_unavailable() {
+fn a_nested_repeat_counter_restarts_on_each_entry() {
+    let run = format!(
+        "sequence Main {{ repeat Outer by w visible () max 2 while {{ true }} \
+         sequence OuterBody {{ repeat Inner by w visible () max 1 while {{ true }} {} \
+         exhausted {} }} exhausted {} }}",
+        touch("X"),
+        touch("E"),
+        touch("F"),
+    );
+    let unit = case("", &run);
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let expected: BTreeSet<Vec<String>> = [["X", "E", "X", "E", "F", "Done"]]
+        .into_iter()
+        .map(|steps| steps.into_iter().map(str::to_owned).collect())
+        .collect();
+    assert_eq!(projections(&reached), expected);
+}
+
+/// The package emitter still reports its separate nested-repeat wire gap.
+/// This does not replace TC-651's direct in-memory runtime coverage above.
+#[test]
+fn nested_repeat_emission_reports_its_unavailable_wire_form() {
     let run = format!(
         "sequence Main {{ repeat Outer by w visible () max 2 while {{ true }} \
          sequence OuterBody {{ repeat Inner by w visible () max 1 while {{ true }} {} \

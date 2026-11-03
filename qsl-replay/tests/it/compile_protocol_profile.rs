@@ -6,10 +6,10 @@
 use ix_trace_rs::trace;
 use qsl_foundation::Setting;
 use qsl_replay::{
-    compile_package, Code, DependencyInput, ReplayLimits, ReplayRefusal, SourceIdentity,
-    StageLimits,
+    Code, DependencyInput, ReplayLimits, ReplayRefusal, SourceIdentity, StageLimits,
+    compile_package,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 const PROFILE: &str = "quire.protocol.finite-global/v1";
@@ -112,11 +112,13 @@ fn a_protocol_and_value_function_use_their_own_profile_aliases() {
             "definition": {"authority": "agent-ix", "identity": PROFILE},
         }])
     );
-    assert!(wire["lock"]["definition_selections"]
-        .as_array()
-        .expect("definition selections")
-        .iter()
-        .any(|selection| selection["identity"] == "quire.value.complete/v1"));
+    assert!(
+        wire["lock"]["definition_selections"]
+            .as_array()
+            .expect("definition selections")
+            .iter()
+            .any(|selection| selection["identity"] == "quire.value.complete/v1")
+    );
 }
 
 /// Source to IR: a unit that selects the protocol profile and refers to a
@@ -138,7 +140,7 @@ fn a_selected_protocol_profile_reaches_the_emitted_lock() {
 
 /// A header profile in no catalog refuses, and dropping the selection leaves the protocol use
 /// without its required profile (no default is supplied).
-#[trace("FR-092-AC-18", "TC-1021")]
+#[trace("TC-1021")]
 #[test]
 fn an_unknown_or_missing_profile_binding_refuses() {
     let declarations = format!("{REFERENCE}{PROTOCOL}");

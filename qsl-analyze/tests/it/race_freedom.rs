@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze_items, derived_protocol_item, AnalyzeRecord, DerivedItemMismatch, Engines, ProtocolItem,
+    AnalyzeRecord, DerivedItemMismatch, Engines, ProtocolItem, analyze_items, derived_protocol_item,
 };
 use qsl_analyze::model_check::manifest as en1;
 use qsl_analyze::model_check::{ModelCheckRefusal, ProtocolCheckRequest};
@@ -21,15 +21,15 @@ use qsl_eval::simulation::protocol::{
     MemoryModel, MemorySelection, ProtocolTransition, Ra, StepKind, Tso,
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::node_occurrence;
 use qsl_replay::{
-    check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause,
-    IncompleteCause, MemoryBound, MemoryBoundMember, ModelCheckItem, ModelCheckLimit,
-    ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement, ProofCertificate,
-    ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
-    TemporalCounterexample, TerminalValue,
+    CertificateRule, CounterexampleKind, DisagreementCause, IncompleteCause, MemoryBound,
+    MemoryBoundMember, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
+    ModelStep, ModelTraceSettlement, ProofCertificate, ProtocolCertificateRequest, Race,
+    ResultLabel, TemporalCertificateCheck, TemporalCounterexample, TerminalValue,
+    check_protocol_closure,
 };
 use qsl_route::deadlock::{
     ItemObligation, ModelTemporalItem, ObligationKind, ProtocolTemporalItem,
@@ -41,15 +41,15 @@ use qsl_semantics::family::{ClaimExtent, Requirements};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::PropertyForm;
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 use crate::dense_route::{ids, registry};
 use crate::derived_request::{
     derived_subjects, items_of_kind, protocol_request, protocol_request_under, settled,
 };
 use crate::fill::tcb_01_event_position_selection;
-use crate::litmus::{attempt, contracts, protocol, protocol_with, NO_BOTH_ZERO};
-use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
+use crate::litmus::{NO_BOTH_ZERO, attempt, contracts, protocol, protocol_with};
+use crate::weak_memory::{Case, MP, litmus_run, load_ordered, select, steps};
 
 /// `SB::Main::Both` resolved to `tso`.
 fn tso() -> [MemorySelection; 1] {
@@ -694,7 +694,7 @@ fn a_store_after_the_send_races_with_the_receivers_load() {
 #[test]
 fn the_race_freedom_item_over_a_model_subject_is_refused() {
     use crate::counter::{
-        package_with_clauses, subject as model_subject, Documents, CONTRACT, UNLIMITED,
+        CONTRACT, Documents, UNLIMITED, package_with_clauses, subject as model_subject,
     };
     let documents = Documents::new(crate::counter::document(false));
     let (package, _) = package_with_clauses(&documents.document, CONTRACT, &[]);
@@ -1701,38 +1701,75 @@ fn one_clause_under_two_sets_of_resolved_models_is_two_items() {
     );
 }
 
-/// QSpec FR-368-AC-24 and AC-25: a protocol subject with a selected protocol
-/// profile receives its deadlock-freedom item but never a time-lock-freedom
-/// item. The protocol profile is required for the declaration to pass checking.
+/// QSpec FR-368-AC-24 and AC-25: a protocol subject of a unit that selects
+/// no protocol profile, whose checked clause has no node (FR-322
+/// "Properties"), has no anchor. Its deadlock-freedom item, and its
+/// race-freedom item exactly where FR-438 derives it (a weak resolved model
+/// with a non-atomic access), are written as no request item and settled
+/// `unsupported` with `unsupported_projection`/
+/// `unsupported-requested-capability`, each detail naming the item kind and
+/// that the unit selects no protocol profile. Under `sc`, or with every
+/// access atomic, there is no race-freedom item at all, and in no case is
+/// there a time-lock-freedom item, written or settled.
 #[trace("QSpec-TC-431", "QSpec-FR-368-AC-24")]
 #[trace("QSpec-TC-431", "QSpec-FR-368-AC-25")]
 #[test]
-fn a_protocol_subject_with_its_profile_gains_no_time_lock_freedom_item() {
-    let case = Case::protocol_profiled(
+fn a_protocol_subject_of_a_unit_with_no_protocol_profile_is_settled_unsupported() {
+    let case = Case::with_letters(
         &(contracts() + &protocol("SB", &message_passing("", "release", "acquire")) + NO_BOTH_ZERO),
         &MP,
     );
     let graph = case.checked().graph();
     let protocol = graph.protocol("SB").expect("SB");
-    assert!(protocol.node().is_some());
+    assert_eq!(protocol.node(), None);
     let clause = node_occurrence(&graph.temporal_clauses()[0]);
-    let subject = case.subject(&ra());
-    let models = models_of(&subject);
-    let written = protocol_request(&[ProtocolTemporalItem {
-        occurrence: &clause,
-        subject: &subject.protocol,
-        protocol,
-        models: &models,
-        non_atomic_access: true,
-    }]);
-    assert!(written
-        .items()
-        .iter()
-        .any(|item| { item.item_kind() == Some(ItemKind::DeadlockFreedom) }));
-    assert!(!written
-        .items()
-        .iter()
-        .any(|item| { item.item_kind() == Some(ItemKind::TimeLockFreedom) }));
+    let code = CatalogCode::new("unsupported_projection", "unsupported-requested-capability");
+    let sc = [select("SB::Main::Both", MemoryModelName::Sc)];
+    let cases: [(&[MemorySelection], bool, &[ItemKind]); 3] = [
+        (
+            &ra(),
+            true,
+            &[ItemKind::DeadlockFreedom, ItemKind::RaceFreedom],
+        ),
+        (&sc, true, &[ItemKind::DeadlockFreedom]),
+        (&ra(), false, &[ItemKind::DeadlockFreedom]),
+    ];
+    for (selection, non_atomic_access, expected) in cases {
+        let subject = case.subject(selection);
+        let models = models_of(&subject);
+        let written = protocol_request(&[ProtocolTemporalItem {
+            occurrence: &clause,
+            subject: &subject.protocol,
+            protocol,
+            models: &models,
+            non_atomic_access,
+        }]);
+        let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
+        assert_eq!(kinds, [Some(ItemKind::Formula)], "{selection:?}");
+        let unanchored: Vec<_> = written
+            .unanchored()
+            .iter()
+            .map(|item| {
+                assert_eq!(item.subject, "SB");
+                assert_eq!(item.cause, NoAnchor::NoProtocolProfile);
+                assert_eq!(item.catalog_code(), code);
+                let detail = match item.kind {
+                    ItemKind::DeadlockFreedom => {
+                        "the deadlock-freedom item's protocol subject has no anchor: \
+                         the unit selects no protocol profile"
+                    }
+                    ItemKind::RaceFreedom => {
+                        "the race-freedom item's protocol subject has no anchor: \
+                         the unit selects no protocol profile"
+                    }
+                    other => panic!("no {other:?} item is derived here"),
+                };
+                assert_eq!(item.detail(), detail);
+                item.kind
+            })
+            .collect();
+        assert_eq!(unanchored, expected, "{selection:?} {non_atomic_access}");
+    }
 }
 
 /// The EN-1 run over `case`'s `SB` under `selection` deciding `item`, its
@@ -1894,7 +1931,10 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
     };
 
     let ordered = run(&profiled_stores("y"));
-    let [(1, deadlock_backend, deadlock, None), (2, race_backend, race, None)] = &ordered[..]
+    let [
+        (1, deadlock_backend, deadlock, None),
+        (2, race_backend, race, None),
+    ] = &ordered[..]
     else {
         panic!("{ordered:?}");
     };
@@ -1908,7 +1948,10 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
 
     let racing = profiled_stores("x");
     let racy = run(&racing);
-    let [(1, _, deadlock, None), (2, race_backend, TerminalValue::Refuted, Some(kind))] = &racy[..]
+    let [
+        (1, _, deadlock, None),
+        (2, race_backend, TerminalValue::Refuted, Some(kind)),
+    ] = &racy[..]
     else {
         panic!("{racy:?}");
     };
@@ -1965,7 +2008,7 @@ fn a_protocol_derived_items_caller_limits_reach_en1() {
             ModelCheckItem::RaceFreedom,
         );
         analyzed(vec![
-            derived_protocol_item(&derived, &obligation, item).expect("the race-freedom run")
+            derived_protocol_item(&derived, &obligation, item).expect("the race-freedom run"),
         ])
         .remove(0)
     };
@@ -2099,12 +2142,14 @@ fn a_protocol_derived_item_refuses_a_run_over_other_resolved_models() {
             &derived_request_over(&case, &tso_selection, &DerivedLimits::default()),
             kind,
         );
-        assert!(derived_protocol_item(
-            &tso_derived,
-            &tso_obligation,
-            protocol_run(&case, &tso_selection, item, item)
-        )
-        .is_ok());
+        assert!(
+            derived_protocol_item(
+                &tso_derived,
+                &tso_obligation,
+                protocol_run(&case, &tso_selection, item, item)
+            )
+            .is_ok()
+        );
     }
 }
 
@@ -2139,7 +2184,7 @@ fn a_protocol_derived_items_max_store_buffer_reaches_the_run_and_the_check() {
             ModelCheckItem::DeadlockFreedom,
         );
         analyzed(vec![
-            derived_protocol_item(&derived, &obligation, item).expect("the deadlock-freedom run")
+            derived_protocol_item(&derived, &obligation, item).expect("the deadlock-freedom run"),
         ])
         .remove(0)
     };

@@ -14,6 +14,14 @@ fn checks_with_header(header: &str, source: &str) {
         .unwrap_or_else(|refusals| panic!("{source}: {refusals:?}"));
 }
 
+fn refusals_with_header(header: &str, source: &str) -> (String, Vec<crate::check::CheckRefusal>) {
+    let (text, assembled) = super::assemble_with(header, source);
+    let refusals = assembled
+        .check(CheckingLimits::default())
+        .expect_err("the wrong profile kind refuses");
+    (text, refusals)
+}
+
 fn recovery_flow_with_await(await_form: &str) -> String {
     recovery_flow("Main::Committed", "").replacen(
         "effect Applied of Tried as (applied: Boolean) { true };",
@@ -35,6 +43,12 @@ fn recovery_flow_with_await(await_form: &str) -> String {
 )]
 #[test]
 fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
+    let header = format!(
+        "{}profile i = \"quire.temporal.infinite-trace/v1\";\n\
+         profile tm = \"quire.temporal.timed/v1\";\n\
+         profile s = \"quire.state.core/v1\";\n",
+        super::HEADER
+    );
     let protocol = attempt_flow("Flow", "").replace("using pp", "using v");
     let await_form = "await Wait after Applied using v clock \"ticks\" within [0,1] \
         match event Seen by R for Undo as (seen: Boolean) { true }; \
@@ -55,6 +69,18 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
             "protocol profile",
         ),
         (
+            attempt_flow("Flow", "").replace("using pp", "using tm"),
+            "tm",
+            "quire.temporal.timed/v1",
+            "protocol profile",
+        ),
+        (
+            attempt_flow("Flow", "").replace("using pp", "using s"),
+            "s",
+            "quire.state.core/v1",
+            "protocol profile",
+        ),
+        (
             recovery_flow_with_await(await_form),
             "v",
             "quire.value.complete/v1",
@@ -67,6 +93,12 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
             "temporal profile",
         ),
         (
+            recovery_flow_with_await(&await_form.replace("using v", "using i")),
+            "i",
+            "quire.temporal.infinite-trace/v1",
+            "temporal profile",
+        ),
+        (
             recovery_flow("Main::Committed", check_form),
             "pp",
             "quire.protocol.finite-global/v1",
@@ -76,6 +108,12 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
             recovery_flow("Main::Committed", "check Fine using e { true };"),
             "e",
             "quire.temporal.event-position.false-extension/v1",
+            "state-bearing layer",
+        ),
+        (
+            recovery_flow("Main::Committed", "check Fine using tm { true };"),
+            "tm",
+            "quire.temporal.timed/v1",
             "state-bearing layer",
         ),
         (
@@ -105,10 +143,19 @@ fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
             "quire.temporal.infinite-trace/v1",
             "temporal profile",
         ),
+        (
+            recovery_flow("Main::Committed", "").replace(
+                "on M::Actor::op using e clock",
+                "on M::Actor::op using i clock",
+            ),
+            "i",
+            "quire.temporal.infinite-trace/v1",
+            "temporal profile",
+        ),
     ];
 
     for (source, alias, selected, required) in cases {
-        let (text, found) = refusals(&source);
+        let (text, found) = refusals_with_header(&header, &source);
         let matches: Vec<_> = found
             .iter()
             .filter(|refusal| refusal.cause.code().as_str() == "unknown_profile")

@@ -4,19 +4,18 @@
 //! checked-package writer refuses explicitly.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
+use qsl_analyze::model_check::{ProtocolCheckRequest, check_protocol};
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
-use qsl_eval::simulation::protocol::MemorySelection;
+use qsl_eval::simulation::protocol::{MemorySelection, StepKind};
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::MemoryModelName;
-use qsl_replay::{
-    CompileRefusal, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ReplayRefusal,
-};
-use qsl_semantics::check::{CheckCause, FormulaNodeId, ProtocolConstruct, ProtocolReferenceCause};
+use qsl_replay::{ModelCheckItem, ModelCheckLimits, ModelCheckOutcome};
+use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
 
-use crate::litmus::{attempt, contracts, field, package, protocol, Documents};
+use crate::fill::{projections, reachable, sc_system};
+use crate::litmus::{Documents, attempt, contracts, field, package, protocol};
 use crate::weak_memory::select;
 
 const PRETEST_CLAIM: &str = "temporal NoLoad using t0 over (k: M::Core) clock \"model-steps\" \
@@ -99,33 +98,37 @@ impl Fixture {
     }
 }
 
-/// FR-466/STD-539 does not emit a repeat whose guard reads a binder declared
-/// by its own body; such a repeat needs post-test semantics.
-#[trace("TC-1268", "FR-228-AC-2")]
+/// FR-218-AC-33 / TC-1268 and QSpec FR-228-AC-2: the repeat's body runs once
+/// before its guard reads the body binder. The false binder then exits the
+/// repeat, producing one `Ready` event and no second body iteration.
+#[trace("TC-1268", "FR-218-AC-33", "QSpec-FR-228-AC-2")]
 #[test]
-fn a_repeat_guard_over_its_body_binder_requires_post_test_emission() {
-    let run = "sequence Main { repeat Poll by w visible (ready) while { ready } \
-                sequence Body { event Ready by w as (ready: Boolean) { true }; } }";
-    let body = crate::fill::contracts("self.v = 0") + &crate::fill::protocol("P", "", run, "d");
-    let error = crate::fill::compiled(&body)
-        .expect_err("a body binder in the guard requires a post-test repeat");
-    let refusal = match error {
-        ReplayRefusal::Recompile(refusal) => *refusal,
-        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => *refusal,
-        other => panic!("expected a checked-stage refusal, got {other:?}"),
-    };
-    let CompileRefusal::Check { refusals, .. } = refusal else {
-        panic!("expected the protocol check refusal, got {refusal:?}");
-    };
-    assert!(
-        refusals.iter().any(|refusal| matches!(
-            &refusal.cause,
-            CheckCause::ProtocolReference(cause)
-                if matches!(cause.as_ref(), ProtocolReferenceCause::NotEmitted {
-                    construct: ProtocolConstruct::PostTestRepeat
-                })
-        )),
-        "{refusals:?}"
+fn a_repeat_guard_over_its_body_binder_runs_the_body_before_testing() {
+    let run = format!(
+        "sequence Main {{ repeat Poll by c visible (ready) max 2 while {{ ready }} \
+         sequence Body {{ {} event Ready by c as (ready: Boolean) {{ false }}; }} \
+         exhausted sequence Done {{ }} }}",
+        attempt("Store", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+    );
+    let fixture = Fixture::with_run(&run, PRETEST_CLAIM, &READS_THREE);
+    let system = sc_system(&fixture.subject());
+    let reached = reachable(&system);
+
+    assert_eq!(
+        projections(&reached),
+        [["Store", "Ready", "Done"]]
+            .into_iter()
+            .map(|steps| steps.into_iter().map(str::to_owned).collect())
+            .collect()
+    );
+    let ready_events = reached
+        .iter()
+        .flat_map(|state| &state.steps)
+        .filter(|(transition, _)| transition.kind() == StepKind::Event)
+        .count();
+    assert_eq!(
+        ready_events, 1,
+        "the false post-test guard exits after one body"
     );
 }
 
