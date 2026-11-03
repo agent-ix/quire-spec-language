@@ -1137,3 +1137,23 @@ fn the_dependency_graph_holds_no_quire_protocol_and_the_views_read_no_bytes() {
         assert!(!text.contains(reader), "protocol_view.rs names {reader}");
     }
 }
+
+/// FR-519-AC-10 (TC-1314): `protocol_view`, `causal_relation` and `binder` each
+/// take `&CheckedPackageV2`, and the node references they return are
+/// `CheckedNodeId`s.
+#[trace("FR-519-AC-10", "TC-1314")]
+#[test]
+fn the_package_views_take_the_admitted_package_and_return_node_ids() {
+    let fixture = fixture();
+    let package: &CheckedPackageV2 = &fixture.admitted;
+    let clause_id: &CheckedNodeId = &clause(package).node_id;
+    let view = protocol_view(package, clause_id).unwrap();
+    let _: &CheckedNodeId = view.clause();
+    let _: Vec<&CheckedNodeId> = view.controls().to_vec();
+    let relation = causal_relation(package, clause_id).unwrap();
+    let _: &CheckedNodeId = &relation.edges()[0].from.node;
+    let requested = by_name(package, "Requested");
+    let found = binder(package, requested).unwrap();
+    let _: &CheckedNodeId = found.node;
+    assert_eq!(found.name, "sent");
+}

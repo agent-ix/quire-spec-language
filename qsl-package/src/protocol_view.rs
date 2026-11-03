@@ -37,6 +37,12 @@
 //! use qsl_package::protocol_view::Definition;
 //! ```
 //!
+//! A window binding has no view (FR-519-AC-13): it is an evaluation input.
+//!
+//! ```compile_fail,E0432
+//! use qsl_package::protocol_view::Window;
+//! ```
+//!
 //! A read answers [`ViewRefusal`] when the package lacks a member the node
 //! layout states, naming the node and the member, and never returns a partial
 //! view or relation.
