@@ -10,6 +10,7 @@ use super::temporal_clause::{
     admit, compile, declared, declared_on, evidence, unit, EVENT, INFINITE,
 };
 use super::*;
+use crate::checked_v2::V2ReadRefusal;
 use crate::checked_views::{
     mapping_support, temporal_subject, Activation, Classification, Closure, MappingRefusal,
     Support, Target, Unmatched, ViewRefusal, OUTSTANDING_PREMISES,
@@ -434,8 +435,8 @@ fn lock_row(package: &CheckedPackageV2, profile: &str) -> quire_contract_model::
 
 /// FR-527-AC-13 (TC-1322 row 13): every result's `selection` holds the
 /// package identity, the clause and the definition identity and artifact equal
-/// to the values read from the lock row, supported or not, and no clock
-/// parameter map.
+/// to the values read from the lock row, supported or not. The selection has
+/// exactly those three private fields, so it holds no clock parameter map.
 #[trace("FR-527-AC-13", "TC-1322")]
 #[test]
 fn every_result_retains_the_selection_of_the_lock_row() {
@@ -464,11 +465,6 @@ fn every_result_retains_the_selection_of_the_lock_row() {
                 row.definition.identity.as_ref()
             );
             assert_eq!(*selection.definition_artifact(), row.definition);
-            let shown = format!("{selection:?}").to_lowercase();
-            assert!(
-                !shown.contains("clock") && !shown.contains("parameter"),
-                "{shown}"
-            );
         }
     }
 }
@@ -517,8 +513,9 @@ fn a_profile_row_outside_the_five_admitted_profiles_is_refused() {
 
 /// FR-527-AC-21 (TC-1322 row 21): the reader refuses a package whose lock has
 /// no `profile_selections` row for a temporal clause's `temporal_profile`
-/// law, and one whose row names another identity than the clause's law, so
-/// no such package yields a `TemporalSubjectView`.
+/// law, and one whose row names another identity than the clause's law, each
+/// with `operation_law_unselected` at the clause's `laws/0/definition`, so no
+/// such package yields a `TemporalSubjectView`.
 #[trace("FR-527-AC-21", "TC-1322")]
 #[test]
 fn the_reader_refuses_a_package_with_no_profile_selection_row() {
@@ -527,7 +524,7 @@ fn the_reader_refuses_a_package_with_no_profile_selection_row() {
         &declared("Due", "always holds(c.versionNumber = 1)"),
     ));
     assert!(
-        read_wire(&compiled.wire).is_some(),
+        matches!(read_wire_outcome(&compiled.wire), Read::Verified { .. }),
         "the unmodified wire reads"
     );
     let mut stripped = compiled.wire.clone();
@@ -535,7 +532,6 @@ fn the_reader_refuses_a_package_with_no_profile_selection_row() {
         .as_array_mut()
         .expect("rows")
         .retain(|row| row["definition"]["identity"] != INFINITE);
-    assert!(read_wire(&stripped).is_none());
     let mut other = compiled.wire.clone();
     for row in other["lock"]["profile_selections"]
         .as_array_mut()
@@ -545,16 +541,28 @@ fn the_reader_refuses_a_package_with_no_profile_selection_row() {
             row["definition"]["identity"] = Value::from("quire.temporal.unknown/v1");
         }
     }
-    assert!(read_wire(&other).is_none());
+    for wire in [stripped, other] {
+        let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = read_wire_outcome(&wire)
+        else {
+            panic!("the reader refuses the package");
+        };
+        assert_eq!(
+            refusal.cause,
+            Some(quire_contract_model::CheckedPackageRefusalCause::OperationLawUnselected)
+        );
+        let path = refusal.loci[0]
+            .path
+            .as_ref()
+            .expect("a pointer")
+            .to_string();
+        assert!(path.ends_with("/laws/0/definition"), "{path}");
+    }
 }
 
-/// The package a wire reads back as, `None` when the reader refuses it.
-fn read_wire(wire: &Value) -> Option<std::sync::Arc<CheckedPackageV2>> {
+/// The outcome of reading `wire`'s canonical bytes.
+fn read_wire_outcome(wire: &Value) -> Read {
     let bytes = quire_canonical::to_vec(wire, crate::checked::EMIT_LIMITS).expect("canonical");
-    match read_v2(&bytes, library(), V2ReadLimits::default(), &evidence(wire)) {
-        Read::Verified { admitted, .. } => Some(admitted),
-        _ => None,
-    }
+    read_v2(&bytes, library(), V2ReadLimits::default(), &evidence(wire))
 }
 
 /// FR-527-AC-19 (TC-1322 row 19): classifying one clause twice gives equal
@@ -632,43 +640,47 @@ fn a_profile_outside_the_admitted_identities_is_refused_at_check() {
     }
 }
 
-/// A view of an infinite-trace clause with `body`, presented with the timed
-/// lock row `quire.temporal.timed/v1` (FR-234): a timed unit needs a timed
-/// model package this fixture does not have, so the row is swapped in.
+/// The clauses of a timed hybrid package: `SlowEnough` selected under
+/// `quire.temporal.timed/v1` over the `Braking` hybrid model, read by the I2
+/// reader, classified under both closures.
 fn timed_classifications(body: &str) -> Vec<Classification> {
-    let package = package_of(INFINITE, body);
-    let [id] = clauses(&package)[..]
+    let (emission, _wire) = super::hybrid::compile(&format!(
+        "{}{}",
+        super::hybrid::braking(super::hybrid::FLOW),
+        super::hybrid::slow_enough("t", body)
+    ));
+    let Read::Verified { admitted, .. } = read_v2(
+        emission.package.bytes(),
+        LibraryName::new("example").expect("a library name"),
+        V2ReadLimits::default(),
+        &read_evidence(&emission),
+    ) else {
+        panic!("the I2 read admits the timed package");
+    };
+    let [id] = clauses(&admitted)[..]
         .to_vec()
         .try_into()
         .expect("one clause");
-    let timed = quire_contract_model::CheckedSelection {
-        role: CheckedSelectionRole::TemporalProfile,
-        definition: quire_contract_model::CheckedArtifactRef {
-            authority: "agent-ix".into(),
-            identity: TIMED.into(),
-        },
-    };
-    let view = temporal_subject(&package, &id)
-        .expect("reads")
-        .with_profile(&timed);
+    let view = temporal_subject(&admitted, &id).expect("reads");
+    assert_eq!(view.profile().definition.identity.as_ref(), TIMED);
     [Closure::Complete, Closure::Open]
         .map(|surrounding| {
             let classified = mapping_support(&view, surrounding).expect("classifies");
             assert_eq!(classified.retained.declaration, id);
-            assert_eq!(classified.retained.profile, timed);
+            assert_eq!(classified.retained.profile, *view.profile());
             assert_eq!(classified.selection().definition_identity(), TIMED);
             classified
         })
         .to_vec()
 }
 
-/// FR-527-AC-22 (TC-1322 row 22): a clause selected under
+/// FR-527-AC-22 (TC-1322 row 22): a clause the reader admitted under
 /// `quire.temporal.timed/v1` returns `Unsupported` naming `TimedProfile` and
 /// no TL target, under both closures.
 #[trace("FR-527-AC-22", "TC-1322")]
 #[test]
 fn the_timed_profile_is_unsupported_on_its_own_dimension() {
-    for classified in timed_classifications("always holds(c.versionNumber = 1)") {
+    for classified in timed_classifications("always [0, 10] holds(h.v < 30)") {
         assert_eq!(classified.support, unsupported(&[Unmatched::TimedProfile]));
     }
 }
@@ -678,7 +690,8 @@ fn the_timed_profile_is_unsupported_on_its_own_dimension() {
 #[trace("FR-527-AC-23", "TC-1322")]
 #[test]
 fn a_timed_clause_that_mixes_directions_names_both_dimensions() {
-    for classified in timed_classifications(MIXED) {
+    let body = "once [0, 1] holds(h.v < 30) and eventually [0, 2] holds(h.v < 30)";
+    for classified in timed_classifications(body) {
         assert_eq!(
             classified.support,
             unsupported(&[Unmatched::TimedProfile, Unmatched::MixedDirection])

@@ -24,7 +24,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      unit ms : Time = rational(1, 1000) * s;\n";
 
 /// FR-447's `Braking`, with `flow` the flow of `Moving`.
-fn braking(flow: &str) -> String {
+pub(super) fn braking(flow: &str) -> String {
     format!(
         "hybrid Braking using p {{\n\
            mode Moving invariant {{ v >= 0 and v <= 20 and a >= 1 and a <= 2 }}\n\
@@ -36,10 +36,10 @@ fn braking(flow: &str) -> String {
     )
 }
 
-const FLOW: &str = "v' = -a; a' = 0; t' = 1;";
+pub(super) const FLOW: &str = "v' = -a; a' = 0; t' = 1;";
 
 /// `SlowEnough` under the profile alias `profile`, with `body`.
-fn slow_enough(profile: &str, body: &str) -> String {
+pub(super) fn slow_enough(profile: &str, body: &str) -> String {
     format!(
         "temporal SlowEnough using {profile} over (h: Braking) clock \"model-time\" \
          on origin {{ {body} }}\n"
@@ -79,7 +79,7 @@ struct Checked {
 
 /// `declarations` through S1, S2, the assembler, check, link and the v2
 /// emitter; nothing may be omitted.
-fn compile(declarations: &str) -> (Emission, Value) {
+pub(super) fn compile(declarations: &str) -> (Emission, Value) {
     let (emission, wire, _) = compile_checked(declarations);
     (emission, wire)
 }
