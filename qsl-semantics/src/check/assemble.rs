@@ -1158,11 +1158,9 @@ struct ModelTypes {
 /// declaring its supertypes by their effective identities and its fields
 /// with their value types, presences and redefinitions, and its operations
 /// (FR-103). Record and event value types are emitted as composites with
-/// their effective fields. Every other record an object type's shape would
-/// need and the type environment cannot hold (a systems part, port or
-/// allocation) refuses as [`AssemblyCause::UnsupportedModelMember`].
-/// Relationship and population records name no type environment entry;
-/// they stay in the admitted model `check` keys model nodes from. Each
+/// their effective fields. Systems parts, ports, allocations, relationships
+/// and populations name no value-type entry; they stay in the admitted model
+/// view used for model-reference binding. Each
 /// object type's operations go into `table`, keyed by its effective
 /// identity, beside the type environment rather than in it.
 fn model_object_types(
@@ -1353,9 +1351,12 @@ fn model_object_types(
             // entry, but their owners/members are part of the source model
             // that this assembly arm must accept.
             DomainPackageRecord::Clause(_) | DomainPackageRecord::Namespace(_) => {}
+            // These declarations are retained by the selected model view for
+            // typed model-reference binding, but are not value types and do
+            // not contribute a TypeEnvironment declaration.
             DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
-            | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
+            | DomainPackageRecord::Allocation(_) => {}
             // Record and event declarations are emitted as composites below;
             // their effective fields are collected from the normalized view.
             // A variant type and its cases are collected from the normalized

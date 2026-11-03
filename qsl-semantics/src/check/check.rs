@@ -949,6 +949,9 @@ pub struct Scope {
     /// The selected package behind each source model alias, used by static
     /// protocol roles that act on a whole model.
     model_selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
+    /// Admitted systems-model ports by their `M::artifact` source name,
+    /// with the exact declaration and owning object type used by a role.
+    model_ports: BTreeMap<(String, String), (DeclarationKey, EffectiveId)>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// FR-150: each object type a `symmetric` population covers, with that
     /// population's declaration key.
@@ -1158,6 +1161,7 @@ impl Scope {
             history_names: Vec::new(),
             complete_model: false,
             model_selections: BTreeMap::new(),
+            model_ports: BTreeMap::new(),
             dispatch_operations,
             symmetric_objects: BTreeMap::new(),
             index,
@@ -1317,6 +1321,24 @@ impl Scope {
         alias: &str,
     ) -> Option<&crate::model::domain_package::DomainPackageRef> {
         self.model_selections.get(alias)
+    }
+
+    /// This scope with the selected models' typed Port declarations.
+    pub(crate) fn with_model_ports(
+        mut self,
+        ports: BTreeMap<(String, String), (DeclarationKey, EffectiveId)>,
+    ) -> Self {
+        self.model_ports = ports;
+        self
+    }
+
+    /// The selected Port declaration named by `M::artifact` and the owning
+    /// effective object type that provides its runtime value context.
+    pub(crate) fn model_port(&self, name: &str) -> Option<(&DeclarationKey, &EffectiveId)> {
+        let (alias, artifact) = name.split_once("::")?;
+        self.model_ports
+            .get(&(alias.to_owned(), artifact.to_owned()))
+            .map(|(key, owner)| (key, owner))
     }
 
     /// This scope with the unit's admitted dimension and unit declarations

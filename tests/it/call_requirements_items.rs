@@ -143,3 +143,793 @@ fn only_value_validity_records_have_an_owner() {
         ]
     );
 }
+
+/// TC-1308 row 5: the one checked predicate is called from a function, a
+/// state invariant, a protocol check and a temporal clause; every emitted
+/// call keeps its own source-map occurrence and names that same callee node.
+#[trace("TC-1308", "FR-046-AC-1", "FR-046-AC-8", "FR-513-AC-3", "FR-513-AC-7")]
+#[test]
+fn predicate_calls_from_each_clause_family_share_one_checked_callee() {
+    let packages = qsl_semantics::model::intake::package_input([
+        crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
+    ])
+    .expect("the ConfigVersion package is keyed by its identity");
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.model.complete/v1\";\n",
+        "profile t = \"quire.temporal.infinite-trace/v1\";\n",
+        "profile p = \"quire.protocol.finite-global/v1\";\n",
+        "model Config = \"example/config-version\";\n",
+        "predicate Positive using v(a: Int[0, 1000], b: Int[0, 1000]): Boolean { a <= b }\n",
+        "function FunctionCall using v(x: Int[0, 1000], y: Int[0, 1000]): Boolean pure { Positive(x, y) }\n",
+        "invariant StateCall using v on Config::ConfigVersion at current { Positive(self.versionNumber, 1) }\n",
+        "temporal TemporalCall using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { always holds(Positive(c.versionNumber, 1)) }\n",
+        "protocol Flow using p over (view: Config::ConfigVersion) on origin { ",
+        "capture saved: Int[0, 1000] = view.versionNumber; ",
+        "role R on Config::ConfigVersion; run sequence Main { check ProtocolCall using v { Positive(7, saved) }; } ",
+        "finish End as (outcome: Boolean) { true }; }\n",
+    );
+    let emitted = crate::support::front_end::emitted(
+        SourceIdentity::new("agent-ix", "test:tc-1308-calls", "fixture", "fixture:1"),
+        "predicate-calls.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+    )
+    .expect("the four checked call contexts admit and emit");
+    let bytes = emitted.package().bytes();
+    let wire: serde_json::Value = serde_json::from_slice(bytes).expect("checked package JSON");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("semantic nodes");
+    let predicates: Vec<_> = nodes
+        .iter()
+        .filter(|node| node["declaration"]["qualified_name"] == serde_json::json!(["Positive"]))
+        .collect();
+    assert_eq!(predicates.len(), 1, "one Positive declaration is emitted");
+    let calls: Vec<_> = nodes
+        .iter()
+        .filter(|node| node["semantic_form"] == "call")
+        .collect();
+    assert_eq!(calls.len(), 4, "one call per checked clause family");
+    let selected_callee = calls[0]["body"]["arguments"][0]["target"].clone();
+    let selected_predicate = predicates
+        .iter()
+        .find(|predicate| predicate["node_id"] == selected_callee)
+        .expect("the integer call selects one exact Positive overload");
+    let mut authored_calls = std::collections::BTreeSet::new();
+    let mut state_receiver = None;
+    let mut temporal_receiver = None;
+    for call in &calls {
+        assert_eq!(call["body"]["operator"], "call");
+        let arguments = call["body"]["arguments"]
+            .as_array()
+            .expect("call arguments");
+        assert_eq!(arguments.len(), 3, "callee followed by two ordered args");
+        assert_eq!(arguments[0]["target"], selected_predicate["node_id"]);
+        assert!(
+            call["dependencies"].as_array().is_some_and(|dependencies| {
+                dependencies.contains(&selected_predicate["node_id"])
+            }),
+            "call does not name the unique Positive node: {call}"
+        );
+        let source_map = wire["source_map"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["node_id"] == call["node_id"])
+            .expect("each call has a source-map row");
+        let call_text = source_map["regions"]
+            .as_array()
+            .and_then(|regions| {
+                regions.iter().find_map(|region| {
+                    let (Some(start), Some(end)) = (
+                        region["start"]
+                            .as_u64()
+                            .and_then(|value| usize::try_from(value).ok()),
+                        region["end"]
+                            .as_u64()
+                            .and_then(|value| usize::try_from(value).ok()),
+                    ) else {
+                        return None;
+                    };
+                    unit.get(start..end)
+                        .filter(|text| text.starts_with("Positive("))
+                        .map(str::to_owned)
+                })
+            })
+            .expect("call source-map row retains the authored call expression");
+        match call_text.as_str() {
+            "Positive(x, y)" => {
+                assert!(arguments[1]["target"]["path"]
+                    .as_array()
+                    .is_some_and(|path| path.iter().any(|part| part == "x")));
+                assert!(arguments[2]["target"]["path"]
+                    .as_array()
+                    .is_some_and(|path| path.iter().any(|part| part == "y")));
+            }
+            "Positive(self.versionNumber, 1)" => {
+                assert_ne!(arguments[1]["target"], arguments[2]["target"]);
+                assert!(arguments[1]["target"]["path"]
+                    .as_array()
+                    .is_some_and(|path| path.iter().any(|part| part == "quire.op.record.project")));
+                state_receiver = Some(arguments[1]["target"].clone());
+            }
+            "Positive(c.versionNumber, 1)" => {
+                assert_ne!(arguments[1]["target"], arguments[2]["target"]);
+                assert!(arguments[1]["target"]["path"]
+                    .as_array()
+                    .is_some_and(|path| path.iter().any(|part| part == "quire.op.record.project")));
+                temporal_receiver = Some(arguments[1]["target"].clone());
+            }
+            "Positive(7, saved)" => {
+                assert_ne!(arguments[1]["target"], arguments[2]["target"]);
+                assert!(arguments[2]["target"]["path"]
+                    .as_array()
+                    .is_some_and(|path| path.iter().any(|part| part == "saved")));
+            }
+            _ => panic!("unexpected call expression {call_text}"),
+        }
+        authored_calls.insert(call_text);
+    }
+    assert_eq!(
+        authored_calls,
+        [
+            "Positive(x, y)",
+            "Positive(self.versionNumber, 1)",
+            "Positive(c.versionNumber, 1)",
+            "Positive(7, saved)",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect(),
+        "the checked call terms preserve argument order and each context receiver"
+    );
+    assert_ne!(
+        state_receiver.expect("state invariant receiver target"),
+        temporal_receiver.expect("temporal receiver target"),
+        "self and c bind to distinct checked model receiver identities"
+    );
+    assert!(
+        wire.to_string().contains("saved"),
+        "the emitted protocol retains the capture binder referenced by its call"
+    );
+}
+
+/// TC-1308 row 7: recursive predicate cycles without an accepted measure are
+/// refused by the complete front-end check stage before a package is emitted.
+#[trace("TC-1308", "FR-046-AC-2", "FR-513-AC-4")]
+#[test]
+fn recursive_predicate_cycles_without_measures_refuse_on_the_spine() {
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "predicate R using v(x: Boolean): Boolean { R(x) }\n",
+        "predicate A using v(x: Boolean): Boolean { B(x) }\n",
+        "predicate B using v(x: Boolean): Boolean { A(x) }\n",
+    );
+    let refusal = crate::support::front_end::emitted(
+        SourceIdentity::new("agent-ix", "test:tc-1308-recursion", "fixture", "fixture:1"),
+        "recursive-predicates.native",
+        unit.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+    )
+    .expect_err("both recursive SCCs require measures");
+    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("recursive predicates must refuse at check, got {refusal:?}");
+    };
+    let cycles: Vec<_> = refusals
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            qsl_semantics::check::CheckCause::UnprovedDecrease {
+                cycle,
+                obligation: qsl_semantics::check::MeasureObligation::MissingMeasure,
+            } => Some(cycle),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        cycles
+            .iter()
+            .any(|cycle| cycle.first() == cycle.last() && cycle.len() == 2),
+        "self recursion must carry its typed missing-measure obligation: {refusals:?}"
+    );
+    assert!(
+        cycles
+            .iter()
+            .any(|cycle| cycle.len() == 3 && cycle.first() == cycle.last()),
+        "mutual recursion must carry its typed missing-measure obligation: {refusals:?}"
+    );
+}
+
+/// TC-1308 row 9/10: predicate call type errors and a partial divisor retain
+/// their typed check refusal through the complete spine, including a
+/// possibly-zero rational divisor.
+#[trace("TC-1308", "FR-046-AC-2", "FR-513-AC-4")]
+#[test]
+fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
+    let compile = |identity: &str, declarations: &str| {
+        let unit = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\";\n{declarations}"
+        );
+        let result = crate::support::front_end::emitted(
+            SourceIdentity::new("agent-ix", identity, "fixture", "fixture:1"),
+            "predicate-errors.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+        );
+        (unit, result)
+    };
+    for (identity, call) in [
+        ("test:tc-1308-wrong-arity", "Positive(1)"),
+        ("test:tc-1308-wrong-type", "Positive(true, 1)"),
+    ] {
+        let (unit, result) = compile(
+            identity,
+            &format!(
+                "predicate Positive using v(a: Int[0, 9], b: Int[0, 9]): Boolean {{ a <= b }}\n\
+                 function Caller using v(): Boolean pure {{ {call} }}\n\
+                 function Dependent using v(): Boolean pure {{ Caller() }}\n"
+            ),
+        );
+        let refusal = result.expect_err("a malformed call to Positive refuses");
+        assert!(
+            refusal
+                .causes()
+                .iter()
+                .any(|cause| cause.code.as_str() == "ill_typed"),
+            "the call refusal remains ill_typed: {refusal:?}"
+        );
+        let qsl_replay::spine::CompileRefusal::Check {
+            region: Some(region),
+            ..
+        } = refusal.as_ref()
+        else {
+            panic!("the call refusal must identify its original check span: {refusal:?}");
+        };
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        let span = unit
+            .get(start..end)
+            .expect("check region indexes the authored source");
+        let call_start = unit.find(call).expect("authored call is present");
+        let call_end = call_start + call.len();
+        assert!(
+            start >= call_start && end <= call_end,
+            "refusal span {span:?} is inside the original call {call:?}"
+        );
+    }
+
+    let (unit, result) = compile(
+        "test:tc-1308-unguarded-division",
+        "predicate D using v(x: Rational[-10, 10; 1, 5]): Boolean { rational(10, 1) / x > rational(1, 1) }\n\
+         function Caller using v(x: Rational[-10, 10; 1, 5]): Boolean pure { D(x) }\n",
+    );
+    let refusal = result.expect_err("an unguarded divisor that may be zero refuses");
+    assert!(
+        refusal.causes().iter().any(|cause| {
+            cause.code.as_str() == "undefined_expression" && cause.cause == Some("unproved-nonzero")
+        }),
+        "the division refusal remains unproved-nonzero: {refusal:?}"
+    );
+    let qsl_replay::spine::CompileRefusal::Check {
+        region: Some(region),
+        ..
+    } = refusal.as_ref()
+    else {
+        panic!("the division refusal must identify its authored span: {refusal:?}");
+    };
+    let start = usize::try_from(region.start()).unwrap();
+    let end = usize::try_from(region.end()).unwrap();
+    let span = unit
+        .get(start..end)
+        .expect("check region indexes the authored source");
+    assert!(
+        span.contains("rational(10, 1) / x"),
+        "refusal span is {span:?}"
+    );
+}
+
+/// TC-1308 rows 11 and 16: query records retain their checked declaration,
+/// binder/type/unit selections, and replay is separately executed below.
+#[trace("TC-1308", "FR-046-AC-4", "FR-046-AC-8", "FR-513-AC-5", "FR-513-AC-7")]
+#[test]
+fn empty_collection_queries_return_their_defined_identity_on_the_spine() {
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "model Config = \"example/config-version\";\n",
+        "dimension Length; unit meter: Length = rational(1, 1);\n",
+        "function querySize using v(s: Sequence<Int[0, 9]>[0, 3]): Integer pure { size(s) }\n",
+        "function queryContains using v(s: Sequence<Int[0, 9]>[0, 3]): Boolean pure { contains(s, 1) }\n",
+        "function queryForall using v(s: Sequence<Int[0, 9]>[0, 3]): Boolean pure { forall(x in s: x = 1) }\n",
+        "function queryExists using v(s: Sequence<Int[0, 9]>[0, 3]): Boolean pure { exists(x in s: x = 1) }\n",
+        "function queryFilter using v(s: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { filter(x in s: x = 1) }\n",
+        "function queryMap using v(s: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { map(x in s: x) }\n",
+        "function queryCount using v(s: Sequence<Int[0, 9]>[0, 3]): Integer pure { count<Config::VersionNumber>(x in s: x = 1) }\n",
+        "function querySum using v(s: Sequence<Int[0, 9]>[0, 3]): Integer pure { sum<Config::VersionNumber>(x in s: x) }\n",
+        "function queryUnitMap using v(s: Sequence<Quantity<meter>>[0, 3]): Sequence<Quantity<meter>>[0, 3] pure { map(x in s: x) }\n",
+    );
+    let packages = qsl_semantics::model::intake::package_input([
+        crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
+    ])
+    .expect("ConfigVersion domain package");
+    let sequence_type = quire_exact::CollectionType::new(
+        quire_exact::CollectionKind::Sequence,
+        quire_exact::ValueType::Int(
+            quire_exact::IntegerInterval::new(0_i64.into(), 9_i64.into()).unwrap(),
+        ),
+        Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+    );
+    let empty = quire_exact::from_admitted(sequence_type, Vec::new());
+    let source = SourceIdentity::new(
+        "agent-ix",
+        "test:tc-1308-empty-query",
+        "fixture",
+        "fixture:1",
+    );
+    let cancel = Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let failure = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure).expect("no internal front-end fault")
+    };
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "empty-queries.native",
+            bytes: unit.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("the source parses")
+    .into_value();
+    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(failure)
+        .expect("the model selects")
+        .into_value();
+    let checked = qsl_replay::spine::check(
+        &parsed,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("the checked package admits all query functions")
+    .into_value();
+
+    let emitted = qsl_package::emit_checked(checked.package()).expect("query package emits");
+    let wire: serde_json::Value =
+        serde_json::from_slice(emitted.package().bytes()).expect("emitted query package JSON");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("emitted semantic nodes");
+    let query_names = [
+        "querySize",
+        "queryContains",
+        "queryForall",
+        "queryExists",
+        "queryFilter",
+        "queryMap",
+        "queryCount",
+        "querySum",
+        "queryUnitMap",
+    ];
+    let query_declarations: Vec<_> = nodes
+        .iter()
+        .filter(|node| {
+            node["declaration"]["qualified_name"]
+                .as_array()
+                .and_then(|name| name.first())
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|name| query_names.contains(&name))
+        })
+        .collect();
+    assert_eq!(query_declarations.len(), query_names.len());
+    for declaration in &query_declarations {
+        assert!(
+            declaration["node_id"].is_object(),
+            "query handle survives: {declaration}"
+        );
+        assert!(
+            declaration["semantic_type"].is_object(),
+            "query's selected result type survives"
+        );
+    }
+    assert!(
+        wire.to_string().contains("meter"),
+        "the query's selected unit survives emission"
+    );
+    assert!(
+        wire.to_string().contains("queryMap") && wire.to_string().contains("x"),
+        "the query binder and its owning declaration survive emission"
+    );
+
+    for (function, expected) in [
+        ("querySize", ExpectedValue::Integer(0)),
+        ("queryContains", ExpectedValue::Boolean(false)),
+        ("queryForall", ExpectedValue::Boolean(true)),
+        ("queryExists", ExpectedValue::Boolean(false)),
+        ("queryFilter", ExpectedValue::EmptySequence),
+        ("queryMap", ExpectedValue::EmptySequence),
+        ("queryCount", ExpectedValue::Integer(0)),
+        ("querySum", ExpectedValue::Integer(0)),
+    ] {
+        let mut meter = quire_exact::Meter::new(default_accounting(1_000_000));
+        let evaluation = qsl_eval::value::CheckedPackageEvaluation::call(
+            checked.package(),
+            &qsl_eval::value::QualifiedName::unqualified(function).unwrap(),
+            vec![empty.clone()],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap_or_else(|refusal| panic!("{function} refuses: {refusal:?}"));
+        let quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(actual)) =
+            evaluation.outcome
+        else {
+            panic!("{function} did not complete: {:?}", evaluation.outcome);
+        };
+        match (actual, expected) {
+            (quire_exact::Value::Boolean(actual), ExpectedValue::Boolean(expected)) => {
+                assert_eq!(actual, expected, "{function}");
+            }
+            (quire_exact::Value::Integer(actual), ExpectedValue::Integer(expected)) => {
+                assert_eq!(actual, expected.into(), "{function}");
+            }
+            (quire_exact::Value::Collection(actual), ExpectedValue::EmptySequence) => {
+                assert!(actual.elements().is_empty(), "{function}: {actual:?}")
+            }
+            (actual, expected) => {
+                panic!("{function}: unexpected result {actual:?}; expected {expected:?}")
+            }
+        }
+    }
+}
+
+/// TC-1308 row 15: a nested filter that expands a predicate charges work and
+/// retained output on the checked package, and a fresh meter reproduces the
+/// completed immutable result.
+#[trace("TC-1308", "FR-046-AC-7", "FR-513-AC-6")]
+#[test]
+fn nested_predicate_query_stops_at_work_and_result_boundaries_on_the_spine() {
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use quire_exact::{
+        CollectionKind, CollectionType, Integer, IntegerInterval, LimitKind, Meter, Value,
+        ValueType,
+    };
+
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }\n",
+        "function nested using v(groups: Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3]): Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3] pure { map(group in groups: filter(item in group: Positive(item))) }\n",
+    );
+    let source = SourceIdentity::new(
+        "agent-ix",
+        "test:tc-1308-query-budgets",
+        "fixture",
+        "fixture:1",
+    );
+    let cancel = Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let packages = BTreeMap::new();
+    let failure = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure).expect("no internal front-end fault")
+    };
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "query-budgets.native",
+            bytes: unit.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("source parses")
+    .into_value();
+    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(failure)
+        .expect("no models are selected")
+        .into_value();
+    let checked = qsl_replay::spine::check(
+        &parsed,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("nested query checks")
+    .into_value();
+
+    let inner_type = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Int(IntegerInterval::new(0_i64.into(), 9_i64.into()).unwrap()),
+        Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+    );
+    let outer_type = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::collection(inner_type.clone()),
+        Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+    );
+    let input = quire_exact::from_admitted(
+        outer_type,
+        vec![
+            quire_exact::from_admitted(
+                inner_type.clone(),
+                vec![
+                    Value::Integer(Integer::from(1_i64)),
+                    Value::Integer(Integer::from(0_i64)),
+                    Value::Integer(Integer::from(2_i64)),
+                ],
+            ),
+            quire_exact::from_admitted(inner_type, vec![Value::Integer(Integer::from(3_i64))]),
+        ],
+    );
+    let original_input = format!("{input:?}");
+    let accounting = |work_units, result_units| quire_exact::ScalarLimits {
+        work_units,
+        result_units,
+        ..default_accounting(u64::MAX)
+    };
+    let evaluate = |work_units, result_units| {
+        let mut meter = Meter::new(accounting(work_units, result_units));
+        let evaluation = checked
+            .package()
+            .call(
+                &QualifiedName::unqualified("nested").unwrap(),
+                vec![input.clone()],
+                &ObjectEnvironment::default(),
+                &mut meter,
+            )
+            .expect("nested query evaluation has no call refusal");
+        (evaluation.outcome, meter)
+    };
+    let (quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(expected)), measured) =
+        evaluate(u64::MAX, u64::MAX)
+    else {
+        panic!("unlimited nested query completes");
+    };
+    let work = measured.consumed(LimitKind::WorkUnits);
+    let results = measured.consumed(LimitKind::ResultUnits);
+    assert!(
+        work > 0 && results > 0,
+        "measured work={work}, results={results}"
+    );
+
+    for bound in [work, work - 1, 0] {
+        let (outcome, _) = evaluate(bound, u64::MAX);
+        if bound == work {
+            assert!(matches!(
+                outcome,
+                quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(_))
+            ));
+        } else {
+            let quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(incomplete)) =
+                outcome
+            else {
+                panic!("work bound {bound} should stop incompletely: {outcome:?}");
+            };
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+        }
+    }
+    for bound in [results, results - 1, 0] {
+        let (outcome, _) = evaluate(u64::MAX, bound);
+        if bound == results {
+            assert!(matches!(
+                outcome,
+                quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(_))
+            ));
+        } else {
+            let quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(incomplete)) =
+                outcome
+            else {
+                panic!("result bound {bound} should stop incompletely: {outcome:?}");
+            };
+            assert_eq!(incomplete.limit_kind, LimitKind::ResultUnits);
+        }
+    }
+    let (quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(retried)), _) =
+        evaluate(u64::MAX, u64::MAX)
+    else {
+        panic!("fresh meter retry completes");
+    };
+    assert_eq!(format!("{retried:?}"), format!("{expected:?}"));
+    assert_eq!(format!("{input:?}"), original_input);
+}
+
+/// TC-1308 row 14: call admission rejects wrong element kinds before query
+/// execution, while maximum-length and nested sequences retain duplicates
+/// and occurrence order.
+#[trace("TC-1308", "FR-046-AC-4", "FR-513-AC-5")]
+#[test]
+fn query_inputs_reject_before_evaluation_and_keep_nested_occurrence_order() {
+    use num_traits::ToPrimitive;
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use quire_exact::{
+        CollectionKind, CollectionType, Integer, IntegerInterval, Meter, Value, ValueType,
+    };
+
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "function preserve using v(s: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { map(item in s: item) }\n",
+        "function preserveNested using v(s: Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3]): Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3] pure { map(group in s: map(item in group: item)) }\n",
+    );
+    let source = SourceIdentity::new(
+        "agent-ix",
+        "test:tc-1308-query-inputs",
+        "fixture",
+        "fixture:1",
+    );
+    let cancel = Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let packages = BTreeMap::new();
+    let failure = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure).expect("no internal front-end fault")
+    };
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "query-inputs.native",
+            bytes: unit.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("source parses")
+    .into_value();
+    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(failure)
+        .expect("no models are selected")
+        .into_value();
+    let checked = qsl_replay::spine::check(
+        &parsed,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(failure)
+    .expect("query input functions check")
+    .into_value();
+
+    let int_type = ValueType::Int(IntegerInterval::new(0_i64.into(), 9_i64.into()).unwrap());
+    let sequence_type = CollectionType::new(
+        CollectionKind::Sequence,
+        int_type.clone(),
+        Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+    );
+    let input = quire_exact::from_admitted(
+        sequence_type.clone(),
+        [1_i64, 1, 2]
+            .into_iter()
+            .map(|value| Value::Integer(Integer::from(value)))
+            .collect(),
+    );
+    let evaluate = |function: &str, value: Value| {
+        let mut meter = Meter::new(default_accounting(1_000_000));
+        CheckedPackageEvaluation::call(
+            checked.package(),
+            &QualifiedName::unqualified(function).unwrap(),
+            vec![value],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+    };
+    let outcome = evaluate("preserve", input).expect("maximum length with duplicates admits");
+    let quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Collection(
+        values,
+    ))) = outcome.outcome
+    else {
+        panic!("the maximum sequence completes: {:?}", outcome.outcome);
+    };
+    let integer_values = |values: &[Value]| {
+        values
+            .iter()
+            .map(|value| match value {
+                Value::Integer(value) => value.as_big().to_i64().expect("small test integer"),
+                other => panic!("integer query occurrence, got {other:?}"),
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(integer_values(values.elements()), [1, 1, 2]);
+
+    let wrong_element_kind = quire_exact::from_admitted(
+        CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Boolean,
+            Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+        ),
+        vec![Value::Boolean(false)],
+    );
+    assert!(matches!(
+        evaluate("preserve", wrong_element_kind),
+        Err(quire_eval::CallFailure::Input(
+            quire_semantic_value::call::InputRefusal::WrongValueKind { parameter: 0 }
+        ))
+    ));
+
+    let wider_sequence_type = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Int(IntegerInterval::new(0_i64.into(), 10_i64.into()).unwrap()),
+        Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+    );
+    let invalid_last_value = quire_exact::from_admitted(
+        wider_sequence_type,
+        [1_i64, 1, 10]
+            .into_iter()
+            .map(|value| Value::Integer(Integer::from(value)))
+            .collect(),
+    );
+    assert!(
+        !ValueType::collection(sequence_type).admits(&invalid_last_value),
+        "the final occurrence is outside the declared scalar bound"
+    );
+    assert!(
+        matches!(
+            evaluate("preserve", invalid_last_value),
+            Err(quire_eval::CallFailure::Input(
+                quire_semantic_value::call::InputRefusal::WrongValueKind { parameter: 0 }
+            ))
+        ),
+        "the invalid final element is refused before any query result"
+    );
+
+    let inner_type = CollectionType::new(
+        CollectionKind::Sequence,
+        int_type,
+        Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+    );
+    let outer_type = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::collection(inner_type.clone()),
+        Some(quire_exact::CardinalityBound::new(0, 3).unwrap()),
+    );
+    let nested_input = quire_exact::from_admitted(
+        outer_type,
+        vec![
+            quire_exact::from_admitted(
+                inner_type.clone(),
+                vec![
+                    Value::Integer(Integer::from(1_i64)),
+                    Value::Integer(Integer::from(1_i64)),
+                ],
+            ),
+            quire_exact::from_admitted(inner_type, vec![Value::Integer(Integer::from(2_i64))]),
+        ],
+    );
+    let outcome = evaluate("preserveNested", nested_input).expect("nested input admits");
+    let quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Collection(
+        groups,
+    ))) = outcome.outcome
+    else {
+        panic!("nested query completes: {:?}", outcome.outcome);
+    };
+    let group_values: Vec<Vec<i64>> = groups
+        .elements()
+        .iter()
+        .map(|group| match group {
+            Value::Collection(values) => integer_values(values.elements()),
+            other => panic!("nested collection, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(group_values, [vec![1, 1], vec![2]]);
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ExpectedValue {
+    Boolean(bool),
+    Integer(i64),
+    EmptySequence,
+}

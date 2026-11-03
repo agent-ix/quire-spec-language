@@ -217,13 +217,24 @@ pub fn check(
     let roles = protocol
         .roles
         .iter()
-        .map(|role| CheckedRole {
-            name: role.name.name.clone(),
-            context: scope.object_type_named(&role.context.name),
-            model_selection: scope
-                .model_selection(&role.context.name)
-                .map(|selection| selection.identity.clone()),
-            replicated: role.replicated.is_some(),
+        .map(|role| {
+            let port = scope.model_port(&role.context.name);
+            let alias = role
+                .context
+                .name
+                .split_once("::")
+                .map_or(role.context.name.as_str(), |(alias, _)| alias);
+            CheckedRole {
+                name: role.name.name.clone(),
+                context: port
+                    .map(|(_, owner)| owner.clone())
+                    .or_else(|| scope.object_type_named(&role.context.name)),
+                model_member: port.map(|(key, _)| key.clone()),
+                model_selection: scope
+                    .model_selection(alias)
+                    .map(|selection| selection.identity.clone()),
+                replicated: role.replicated.is_some(),
+            }
         })
         .collect();
     let mut parallels = Vec::new();

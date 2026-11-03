@@ -400,6 +400,71 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
+    /// The selected model's Port roles, each with its qualified source
+    /// artifact, declaration key and owning effective object type.
+    pub(crate) fn port_roles(&self) -> Vec<(String, String, DeclarationKey, EffectiveId)> {
+        let Some(alias) = self.alias.as_ref() else {
+            return Vec::new();
+        };
+        self.records
+            .values()
+            .filter_map(|record| {
+                let DomainPackageRecord::Endpoint(port) = record else {
+                    return None;
+                };
+                let artifact =
+                    crate::model::intake::type_identity_segment(&port.key.package, &port.key.node)?;
+                let DomainPackageRecord::Component(part) =
+                    self.records.get(&port.owning_component)?
+                else {
+                    return None;
+                };
+                let owner = self.object_type_id(&part.owning_type)?;
+                Some((alias.clone(), artifact.to_owned(), port.key.clone(), owner))
+            })
+            .collect()
+    }
+
+    /// The effective object types at the ends of an admitted FR-152
+    /// connection. `None` means the declaration is not a connection, its
+    /// endpoints do not resolve to their owner types, or the connection's
+    /// admission rule refuses it.
+    pub(crate) fn admitted_connection_ends(&self, key: &DeclarationKey) -> Option<[ValueType; 2]> {
+        use crate::model::accounting::{Meter, ModelNormalizationLimits};
+        use crate::model::systems::{
+            check_connection, classify, ConnectionCheckOutcome, ConnectionOutcome, Kind,
+        };
+
+        let DomainPackageRecord::Relationship(relationship) = self.records.get(key)? else {
+            return None;
+        };
+        let mut meter = Meter::new(ModelNormalizationLimits::default());
+        let systems = classify(self.index.package(), &mut meter).ok()?;
+        if systems.actual_kind(key) != Kind::Connection {
+            return None;
+        }
+        if !matches!(
+            check_connection(&self.index, &systems, key, &mut meter),
+            ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted)
+        ) {
+            return None;
+        }
+        let endpoint_owner = |endpoint: &DeclarationKey| {
+            let DomainPackageRecord::Endpoint(port) = self.records.get(endpoint)? else {
+                return None;
+            };
+            let DomainPackageRecord::Component(part) = self.records.get(&port.owning_component)?
+            else {
+                return None;
+            };
+            self.object_type_id(&part.owning_type)
+        };
+        Some([
+            ValueType::Reference(endpoint_owner(&relationship.source.type_identity)?),
+            ValueType::Reference(endpoint_owner(&relationship.target.type_identity)?),
+        ])
+    }
+
     /// Each directly declared object, process or state-machine operation and
     /// the exact record of its owner. Persistence-interface and
     /// systems-interface operations are not FR-496 frame declarations. The
