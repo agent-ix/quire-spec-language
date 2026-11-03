@@ -149,8 +149,9 @@ One exit code.
 | FR-285-AC-7 | A finite-window clause run (FR-330) whose result is FR-501's `Indeterminate` reports category `indeterminate`, keeps that label and the reason in its machine output, and exits 11; it does not exit 10 or 0. | Test (TC-769) |
 | FR-285-AC-8 | A `StageFailure::Refused` carrying `protocol_results` [W `Emitted`, X `Refused` with an `ill_typed` cause] exits 20, one whose first `Refused` result has a profile-gated cause exits 21, and a `StageFailure::Limit` carrying [W `Emitted`, Z `Incomplete`] exits 22; removing the payload from each changes neither category nor exit. | Test (TC-769) |
 | FR-285-AC-9 | A clause pending when its supplied trace ends exits 0 with the category `pending`, not `inconclusive`; its machine-output record carries the status `pending` and the ids of the pending clauses, and a run whose clauses are all discharged carries no pending status and no pending ids. | Test (TC-769) |
-| FR-285-AC-10 | The label and exit that `run_clause` reports for a finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome equal the label and exit the multi-item ranking reads for the same outcome, and each of the five pairs is `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22. | Test (TC-769) |
+| FR-285-AC-10 | The label and exit that `run_clause` reports for a finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome equal the label and exit the multi-item ranking reads for the same outcome. | Test (TC-769) |
 | FR-285-AC-11 | With a catalog whose `Category` holds `Indeterminate` and `Pending` (IR-1281), the label and exit of a finite-window `Pending` and `Indeterminate` outcome are the catalog's, and QSL holds no local mapping. This is gated on IR-1281. | Test (TC-769) |
+| FR-285-AC-12 | Under the interim mapping a finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome has the label and exit `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22. | Test (TC-769) |
 
 ## Dependencies
 

@@ -12,7 +12,7 @@ relationships:
 
 Verify the one exit function over every O-16 category, the severity order, the failure variants and the undefined case.
 
-Scope: FR-285-AC-1 to FR-285-AC-11.
+Scope: FR-285-AC-1 to FR-285-AC-12.
 
 ## Test Procedure
 

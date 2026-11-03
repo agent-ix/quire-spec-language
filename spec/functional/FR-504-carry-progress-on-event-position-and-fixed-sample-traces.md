@@ -94,8 +94,11 @@ defined below.
   observation can resolve it.
 - **Deadline participation.** A position at coordinate `D` participates when
   `W >= D` (fixed-sample); a position at `D + 1` does not.
-- **Missing valuations and history.** The evaluator SHALL treat missing and
-  conflicting valuations as FR-501 "Verdicts" states with possibility sets,
+- **Missing valuations and history.** The evaluator SHALL treat a missing
+  valuation as FR-501 "Verdicts" states it with a possibility set. A position of
+  these traces is one document at its own coordinate, and no two positions share a
+  coordinate, so no atom has two valuations at one coordinate and these traces
+  have no conflicting-valuation case,
   and its `Indeterminate` carries the `instance` and `also_held_by` members of
   FR-501's `MissingValuation` reason for an instance-bound atom of an evidence
   call (FR-524),
