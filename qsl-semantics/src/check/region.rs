@@ -150,7 +150,14 @@ fn resolve<'s>(
         Origin::Body { index, .. } | Origin::Measure { index, .. } => {
             function_sources.get(*index).unwrap_or(document.source)
         }
-        Origin::TypeDeclaration { name } => source_owners.get(name).unwrap_or(document.source),
+        Origin::TypeDeclaration { name } => source_owners
+            .get(name)
+            .or_else(|| {
+                name.strip_prefix("dimension ")
+                    .or_else(|| name.strip_prefix("unit "))
+                    .and_then(|declaration| source_owners.get(declaration))
+            })
+            .unwrap_or(document.source),
         _ => document.source,
     };
     let embedding = (source == document.source)

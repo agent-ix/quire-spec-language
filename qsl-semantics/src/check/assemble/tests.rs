@@ -3917,4 +3917,20 @@ fn aggregate_dimension_equivalence_keeps_its_declaring_source_owner() {
         }))
         .expect("the equivalence declaration resolves to its source");
     assert_eq!(region.source(), &source_b);
+    for (kind, name) in [
+        (super::super::lowering::QuantityKind::Dimension, "Distance"),
+        (super::super::lowering::QuantityKind::Dimension, "Duration"),
+        (super::super::lowering::QuantityKind::Unit, "dm"),
+        (super::super::lowering::QuantityKind::Unit, "ms"),
+    ] {
+        let origin = super::super::lowering::quantity_origin(kind, name);
+        let region = checked
+            .region(&Location::root(Origin::TypeDeclaration { name: origin }))
+            .unwrap_or_else(|| panic!("{name}'s type declaration resolves to a region"));
+        assert_eq!(
+            region.source(),
+            &source_b,
+            "{name}'s type declaration region uses its declaring source"
+        );
+    }
 }
