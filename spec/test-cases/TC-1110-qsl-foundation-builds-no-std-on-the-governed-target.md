@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the closure-tier row for `qsl-foundation` and the `build-no-std`
-gate. Scope: NFR-015-AC-1, NFR-015-AC-2, NFR-015-AC-3, NFR-015-AC-8 and NFR-015-AC-11.
+gate. Scope: NFR-015-AC-1, NFR-015-AC-2, NFR-015-AC-3 and NFR-015-AC-8 (AC-11 is retired).
 
 ## Test Procedure
 
@@ -32,14 +32,14 @@ gate. Scope: NFR-015-AC-1, NFR-015-AC-2, NFR-015-AC-3, NFR-015-AC-8 and NFR-015-
 
 ## Expected Results
 
-1. `[features]` has `default = ["std"]`; `serde`, `serde_json`, `hashbrown`,
-   `thiserror` and `sha2` are declared with `default-features = false` and `std`
+1. `[features]` has `default = ["std"]`; `serde`, `serde_json`, `hashbrown` and
+   `thiserror` are declared with `default-features = false` and `std`
    enables the `std` features of `serde`, `serde_json` and `thiserror`; the crate root has `#![cfg_attr(not(feature = "std"), no_std)]`.
 2. The build succeeds.
 3. The depth-1 tree lists exactly `quire-exact`, `quire-semantic-value` (from
-   ADR-011 X-13 or X-14, whichever lands first), `serde`, `serde_json`, `hashbrown`, `thiserror`, `sha2` and the `ix-trace-rs`
+   ADR-011 X-13 or X-14, whichever lands first), `serde`, `serde_json`, `hashbrown`, `thiserror` and the `ix-trace-rs`
    proc macro; the full feature tree lists no `std` feature of `serde`,
-   `serde_json`, `thiserror` or `sha2`, and the manifest takes `sha2` with default features off and `force-soft` only (AC-11).
+   `serde_json` or `thiserror`.
 4. Both runs pass.
 5. The recipe runs step 2's command and `cargo clippy --locked -p
    qsl-foundation --no-default-features --target thumbv7em-none-eabi -- -D

@@ -10,14 +10,14 @@ relationships:
 
 ## Description
 
-Verify the checked-package mutation corpus. Scope: FR-518-AC-1 to FR-518-AC-12.
+Verify the checked-package mutation corpus. Scope: FR-518-AC-1 to FR-518-AC-12 (AC-9 and AC-10 are retired).
 The case table is FR-518's; rows are referenced by number.
 
 ## Test Procedure
 
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
-| 1 | 1 | `write(R, dir)` with `Standard`; parse `mutations/manifest.json` | format `quire.checked-handoff.mutations/1`; cases in table order with unique identities and stages `reader` or `selection`; 14b, 15b, 28m present; every file non-empty |
+| 1 | 1 | `write(R, dir)` with `Standard`; parse `mutations/manifest.json` | format `quire.checked-handoff.mutations/1`; cases in table order with unique identities and stages `reader` or `selection`; 14b, 15b present; every file non-empty |
 | 2 | 2 | submit each `reader` case to `read_checked_package` with the evidence of the directory | refused with the table's code, cause and pointer; every `reader` case of the manifest |
 | 3 | 3 | submit each `selection` case to the reader, then to `Selection::check`; submit unmutated **R** to both | admitted then refused with the row's `SelectionAxis` (every `selection` case of the manifest); **R** passes both |
 | 4 | 4 | submit the cases of rows 12 and 29 to the reader, then `Selection::check` | admitted, then `definition.identity` and `definition.authority` |
@@ -25,8 +25,8 @@ The case table is FR-518's; rows are referenced by number.
 | 6 | 6 | two writes | identical manifest and case files; cases in table order |
 | 7 | 7 | search each case's `expected` for `digest`, `seal`, `v2.`; write with `None` | none names any of them; no `mutations/` directory |
 | 8 | 8 | list `mutations/` and the manifest's cases; look for a case-count or identity-list export | each file named by one case and each case by one file; no such export |
-| 9 | 9 | submit 28m to a reader implementing IR-1273 | `invalid_package`/`source-integrity` at the `CheckedSourceRef` pointer |
-| 10 | 10 | submit 28m to a reader double that admits it | `CaseMismatch` naming `definition-original-bytes-moved`, nothing written |
+| 9 | 9 | **RETIRED (source-byte integrity removed).** | none |
+| 10 | 10 | **RETIRED (source-byte integrity removed).** | none |
 | 11 | 11 | submit a package whose temporal clause declares a name differing from the sidecar's, to a reader implementing IR-1278, then to `Selection::check` | admitted, then refused with `clause.name`; gated on IR-1278 |
 | 12 | 12 | edit the sidecar's profile law revision against the admitted **R** and call `Selection::check` | refused with `definition.revision` |
 

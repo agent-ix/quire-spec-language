@@ -132,8 +132,14 @@ The decoder is test-support: it produces a `ReplayRequestWire` and decides
 nothing about the request. A document that does not match the closed schema is
 a defect of the corpus, so it is a per-vector `tool-failure`; a request that
 matches the schema and that QSL refuses is a QSL result and is settled as one.
-The decoder maps `source_integrity` strings unchanged, because the published
-schema requires a claim on every entry and the claims' meaning is FR-071's.
+The adapter is needed independently of any one request member: FR-350-AC-10
+requires every in-scope `replay` vector to run, and `xtask` decodes no
+`replay-request` file without it.
+
+**Open question, not decided (relates to FR-350-AC-12).** QSpec FR-336's
+top-level mapping lists a `package` member of `ReplayRequestWire`, but the
+published `$defs.ReplayRequest` has 13 properties and no `package`. Which of
+the two the adapter follows for the proved package's `sources` is unresolved.
 
 ### Settlement
 
@@ -223,10 +229,10 @@ consumer type. A class with no such vector contributes none.
 | FR-350-AC-9 | For an in-scope `run` vector with object context, QSL admits the selected model and object environment through FR-084/FR-089/FR-106 and resolves any population argument to the binding established by that admission before S6a. Native-run/1 does not gain a population argument wire from qualification. | Test (TC-875) |
 | FR-350-AC-10 | For each in-scope `replay` vector, QSL adapts the corpus input to the existing FR-071 `ReplayRequestWire`, supplies its bytes to FR-098, and settles the FR-072 typed result. Byte-path resolution follows QSpec FR-336-AC-8; malformed request data retains the owning refusal and an unreadable named file is a per-vector `tool-failure`. | Test (TC-875) |
 | FR-350-AC-11 | The `replay-request` adapter of the runner decodes a vector's `replay-request` file, a closed document of QSpec FR-336 `$defs.ReplayRequest`, into `ReplayRequestWire` member by member as FR-336's mapping states, and gives the result to `qsl_replay::replay`; a corpus whose replay vectors the runner could not decode before this adapter now executes them. | Test (TC-1325) |
-| FR-350-AC-12 | The adapter maps each `sources` entry, of the package and of each `dependencies` entry, to its authority, identity and `source_integrity` string as the file states them, with no revision label, and maps the `byte_provision` rows by reading each sibling `bytes_path` file as raw bytes. | Test (TC-1325) |
-| FR-350-AC-13 | The adapter maps `object_environment` to the closed `{authority, identity}` identity and refuses a file whose `object_environment` identity carries `source_integrity`. | Test (TC-1325) |
-| FR-350-AC-14 | A `replay-request` file that does not match `$defs.ReplayRequest` (an unknown member, a missing required member such as a `sources` entry's `source_integrity`, a wrong JSON kind) is that vector's `tool-failure` with cause `corpus-decode` naming the JSON pointer of the defect, and not a QSL refusal. | Test (TC-1325) |
-| FR-350-AC-15 | Over a fixture corpus holding a schema-valid `replay-request` vector whose `package.sources[0].source_integrity` differs from the SHA-256 of its `bytes_path` file, the adapter hands the request to `qsl_replay::replay` unchanged, and the vector is `passed` when it expects `invalid_package`/`source-integrity` at `/package/sources/0` and `failed`, holding the expected and the actual result, when it expects a success. | Test (TC-1325) |
+| FR-350-AC-12 | The adapter maps each `sources` entry, of the package and of each `dependencies` entry, to its authority and identity as the file states them, with no revision label, and maps the `byte_provision` rows by reading each sibling `bytes_path` file as raw bytes. | Test (TC-1325) |
+| FR-350-AC-13 | The adapter maps `object_environment` to the closed `{authority, identity}` identity and refuses a file whose `object_environment` identity carries any other member. | Test (TC-1325) |
+| FR-350-AC-14 | A `replay-request` file that does not match `$defs.ReplayRequest` (an unknown member, a missing required member such as a `sources` entry's `identity`, a wrong JSON kind) is that vector's `tool-failure` with cause `corpus-decode` naming the JSON pointer of the defect, and not a QSL refusal. | Test (TC-1325) |
+| FR-350-AC-15 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement. | Test (TC-1325), retired |
 
 ## Dependencies
 
