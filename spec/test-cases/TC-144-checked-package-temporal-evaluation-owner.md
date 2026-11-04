@@ -32,7 +32,7 @@ non-direct correction predecessor, or refuses the finite-window profile.
 
 Executable controls for the clause-route rows live in the module
 `checked_route_owner` beside the spine clause tests in `qsl-replay`; those of the
-evidence-route rows (2, 3, 4g, 9) are to be added in `qsl-eval/tests/it`.
+evidence-route rows (2, 3, 4g, 9) live in `qsl-eval/tests/it`.
 Expected values come from the authored unit and the stated traces, and are computed by the FR-043/FR-501 reference rules
 written in the table, never from the route's own output.
 
@@ -69,7 +69,7 @@ Row 9's first step keeps the correspondence unchanged and changes only the evide
 | 6 | `Reach` (settled over **A**) and `Reach2` (same clause, work budget zero) in one request | `Reach` `Completed(true)` unchanged; `Reach2` `Incomplete` at `temporal.visit`; no `Reach2` truth |
 | 7 | `Window` over **A** | `Completed(true)` (the position stamped 5 is eligible for `[0,5]` and `level = 2` there); the profile is not refused (FR-052-AC-14) |
 | 8 | progress ledger for the `Window` binding: W 100 then W 60; `Complete {through 100}` then `Complete {through 60}`; the same progress under a foreign package, then a foreign clause | the contradictions refuse as FR-502-AC-1 and AC-2; the foreign progress settles nothing (FR-052-AC-13) |
-| 9 | evidence route: with a ledger holding row 1's result `r1`, a `Superseding(r1)` request with changed evidence; then, once that result `r2` is held, `Superseding(r1)` again; then a `Superseding(r1)` for another clause of the package; then a `Superseding(r1)` whose trigger identity is another trigger's, whose result the ledger holds; then a `Superseding(r2)` with `r2`'s evidence unchanged; then a `Superseding(r1)` with no ledger | `lineage` 1, relation `Superseding` naming `r1`'s `result_identity`, and `r1` unchanged (FR-526-AC-2, AC-3); then `Err(CallFailure::Admission)` with cause `predecessor-not-latest`; then `predecessor-unknown`; then `predecessor-unknown` (the identity-mismatched predecessor of FR-052-AC-12, FR-053-AC-9: the ledger holds no entry under the request's own trigger identity); then `unchanged-input`; then `no-ledger`; each refusal with an empty charge log, the held results unchanged (FR-052-AC-12) |
+| 9 | evidence route: with a ledger holding row 1's result `r1`, a `Superseding(r1)` request with changed evidence; then, once that result `r2` is held, `Superseding(r1)` again; then a `Superseding(r1)` for another clause of the package; then a `Superseding(r1)` whose trigger identity is another trigger's, with no ledger entry under that request's own trigger identity; then a `Superseding(r2)` with `r2`'s evidence unchanged; then a `Superseding(r1)` with no ledger | `lineage` 1, relation `Superseding` naming `r1`'s `result_identity`, and `r1` unchanged (FR-526-AC-2, AC-3); then `Err(CallFailure::Admission)` with cause `predecessor-not-latest`; then `predecessor-unknown`; then `predecessor-unknown` (the identity-mismatched predecessor of FR-052-AC-12, FR-053-AC-9: the ledger holds no entry under the request's own trigger identity); then `unchanged-input`; then `no-ledger`; each refusal with an empty charge log, the held results unchanged (FR-052-AC-12) |
 
 
 ## Expected Results
@@ -81,6 +81,5 @@ Row 9's first step keeps the correspondence unchanged and changes only the evide
 - Row 6 asserts the settled sibling's result is byte for byte the one it has
   alone.
 - Test code carries the tags FR-052-AC-9 to AC-14, FR-501-AC-19 (row 5) and TC-144.
-  The clause-route rows are tagged in `checked_route_owner`; the tests of rows 2,
-  3, 4g and 9 in `qsl-eval/tests/it` and the clause-route test of row 5's
-  out-of-order listing are still to be added.
+  The clause-route rows are tagged in `checked_route_owner`; the rows 2, 3, 4g and
+  9 in `qsl-eval/tests/it`.
