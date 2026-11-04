@@ -12,19 +12,43 @@
 //!   thirteen counters, their ceilings and the `temporal_evidence.*`
 //!   settings, with the stop scope of one call (FR-523).
 
+mod activation;
 mod binding;
+mod call;
 mod counters;
 mod identity;
+mod ledger;
 mod limits;
+mod request;
+mod trigger;
 mod work;
 
+pub use activation::{
+    activate, scope_disposition, Activation, ActivationFault, ActivationInput, ActivationStop,
+    ClauseShape, Completeness, Contradiction, Disposition, ExecutionDisposition, FaultKind,
+    FaultSubject, Instance, InstanceState, SurplusCapture, UnknownKind,
+};
 pub use binding::{
     authenticate_clock, AuthenticatedBinding, BindingMismatch, ClauseSelection,
     MismatchedDimension, TraceBinding, ADMIT_STAGE,
 };
+pub use call::evaluate_temporal_evidence;
 pub use counters::{CallMeter, ClauseStop, EvidenceStop, LimitReached, Visit};
 pub use identity::{
     IdentityBuilder, IdentityMember, InputIdentity, MemberEncoder, MemberFault, ResultIdentity,
 };
+pub use ledger::{
+    CaptureEntry, CaptureEnvironment, EvidenceLedger, ObligationKey, ResultEntry, RetainedInstance,
+    SourceBinding,
+};
 pub use limits::{CounterKind, EvidenceCounter, EvidenceUsage, TemporalEvidenceLimits};
+pub use request::{
+    ActivationRow, ActivationState, CompletenessRecord, EvidenceIncomplete, EvidencePosition,
+    EvidenceRef, EvidenceRequest, EvidenceResult, EvidenceSubject, Indeterminate, NonValue,
+    NonValueKind, Relation, Settlement, SubjectOccurrence, SupportRef, Truth,
+};
+pub use trigger::{
+    CaptureFact, CapturedValue, EmptyIdentity, Evicted, ExecutionOrigin, Payload, Receipt,
+    SemanticTriggerIdentity, TriggerDelivery, TriggerEvidence, TriggerRecord, TriggerScope,
+};
 pub use work::{ClauseWork, NodeReach, NodeShape, ReachFault};

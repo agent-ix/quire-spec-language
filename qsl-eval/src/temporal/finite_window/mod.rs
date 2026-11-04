@@ -29,7 +29,7 @@ pub use outcome::{
     WindowEvaluation, WindowVerdict,
 };
 pub use progressed::{ProgressedRefusal, SampleProgress};
-pub use run::evaluate_finite_window;
+pub use run::{evaluate_finite_window, evaluate_finite_window_at, WindowCharge, WindowUnit};
 pub use trace::{
     LowerBoundary, OrderKey, TimestampedObservation, TimestampedTrace, Watermark, WindowClock,
     WindowProgress,
