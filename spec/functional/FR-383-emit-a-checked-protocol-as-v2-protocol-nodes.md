@@ -255,8 +255,10 @@ A row's *occurrence* is the source occurrence key (`node_id`, role, ordinal) of
 QSpec FR-322 that the emitter keys the term to, and its *occurrence ordinal* is
 the third component of that key. The group of FR-322-AC-291 is the rows of one
 application and one occurrence, and its `term_ordinal` values run consecutively
-from zero across every origin the group holds, because an application can be held
-by several slots; they do not restart for each origin. Within a group the
+from zero across every origin the group holds; they do not restart for each
+origin. A group holds rows of several origins when the general rule below keys
+visits of several slots to one occurrence, which happens where the checker
+recorded no `expression` occurrence at those visits' positions. Within a group the
 emitter SHALL write the rows of the origins in origin order, and within one
 origin in visit order.
 
@@ -273,11 +275,12 @@ which every visit takes that occurrence.
 
 The checker records one `expression` occurrence of an application each time it
 lowers the term at a position of a slot expression, so an application written at
-two positions, in one slot or in two, has two occurrences, numbered in document
-order. The emitter SHALL key each visit to the occurrence the checker recorded
-at that visit's position. It SHALL NOT key two visits to one occurrence the
-checker recorded once, and SHALL NOT key a visit of one slot to an occurrence
-recorded at a position of another slot.
+two positions, in one slot or in two, has two occurrences, numbered in the order
+the checker lowers them (measured as document order for fixtures E and E-C,
+FR-383-AC-61). WHERE the checker recorded an `expression` occurrence at a
+visit's position, the emitter SHALL key that visit to it; otherwise the general
+rule above applies. The emitter SHALL NOT key a visit whose position has a
+recorded occurrence to an occurrence recorded at another position.
 
 The emitter SHALL NOT derive a row's location from a source region, a node
 order, an operand position or a default value.
@@ -600,7 +603,7 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-58 | For every application of **W** and fixtures E, L and E-C, the (occurrence ordinal, `term_ordinal`) pairs of a slot's rows of that application, taken along the slot walk's visits, strictly increase. | Test (TC-1063) |
 | FR-383-AC-59 | In fixture E-C no `protocol_locations` row names a `Local` read (`x`, `b`, `c`), a literal, a `let`, a conditional or a case node. | Test (TC-1063) |
 | FR-383-AC-60 | In fixture E-C each arm of `Composed.case` holds exactly one row (`x >= 1` and `not b`). | Test (TC-1063) |
-| FR-383-AC-61 | In fixture E the checked package records exactly two `expression` occurrences of the `earlier.tally` application of `Refund`'s retry relation, ordinal 0 at its term in `earlier.tally < 3` and ordinal 1 at its term in `earlier.tally + 1`, and exactly two of `target >= 0`, ordinal 0 at its term in the trigger guard and ordinal 1 at its term in the retry relation, so each position of an application in a slot's walk has an occurrence of its own. | Test (TC-1063) |
+| FR-383-AC-61 | In fixture E the checked package records exactly two `expression` occurrences of the `earlier.tally` application of `Refund`'s retry relation, ordinal 0 at its term in `earlier.tally < 3` and ordinal 1 at its term in `earlier.tally + 1`, and exactly two of `target >= 0`, ordinal 0 at its term in the trigger guard and ordinal 1 at its term in the retry relation; and in fixture E-C's `Tried` and `Picked` controls exactly two of `order >= 0`, ordinal 0 at the `Tried` constraint and ordinal 1 at the `Picked` constraint (declaration order, although `Picked` sorts first by origin name); so each position of an application in a slot's walk has an occurrence of its own. | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.

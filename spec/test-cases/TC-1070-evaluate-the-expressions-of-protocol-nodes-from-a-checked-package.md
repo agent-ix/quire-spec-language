@@ -193,7 +193,7 @@ expressible in QSL's surface syntax is a check for the code lane. The
 constraints of `Tried` and `Picked` both read the one protocol-level capture
 `order`, so the application `order >= 0` is a single graph node held by two
 slots of two origins (`protocol Composed run Main Picked body` and `protocol Composed run Main Tried body`) (the checker builds equal applications over one binder as
-one node), with two `expression` occurrences, 0 at `Tried` and 1 at `Picked` (FR-383). Each table slot has its own site name and shares no application with another
+one node), with two `expression` occurrences, 0 at `Tried` and 1 at `Picked` (measured by FR-383-AC-61 / TC-1063 L8h over the `Tried` and `Picked` controls). Each table slot has its own site name and shares no application with another
 slot, and its binder `m` or `choice` is shared with no other slot.
 
 | Slot | Shape | Walk positions of interest |
@@ -217,7 +217,7 @@ slot, and its binder `m` or `choice` is shared with no other slot.
 | C4a | C3 on the package of C4 | C3's supply | the halt reports the location of the term in `earlier.tally + 1` (AC-34) |
 | C5 | package with the retry-origin `earlier.tally` row keyed to occurrence 1 removed | any | `ViewFailure::Unsupported`/`MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, retry origin of `Refund`, visit number 1, two visits, one row (AC-35) |
 | C5a | the package of C5 | any slot, any meter | no slot has a view; the meter is unchanged (AC-36) |
-| C6 | package with a retry-origin `earlier.tally` row appended, keyed to occurrence 1 at `term_ordinal` 1 | any | `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application; no meter charge (AC-37) |
+| C6 | package with a retry-origin `earlier.tally` row inserted directly after the occurrence-1 `earlier.tally` row, keyed to occurrence 1 at `term_ordinal` 1 | any | `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application; no meter charge (AC-37) |
 | C6a | package with a retry-origin row added at `term_ordinal` 1 for `order >= 0` of `Applied.constraint` | any | `MissingLocationProjection` at the `Node` locus of that application; no meter charge (AC-38) |
 | C7 | package with the occurrence-1 retry-origin `earlier.tally` row's `term_ordinal` changed from 0 to 1 | any | refused at I2 by the QSpec reader, `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`; view creation not attempted (AC-39) |
 | C7a | package with a retry-origin `earlier.tally` row duplicated | any | refused at I2 with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>`; view creation not attempted (AC-40) |

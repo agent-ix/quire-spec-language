@@ -89,7 +89,7 @@ traced only once that file exists.
 | L7a | fixture E-C emitted and read back | each row's `Location` equals the checked clause's (AC-48) |
 | L7b | fixture E-C emitted and read back | the unselected arms of `Composed.if` and `Composed.case` have rows with the checked clause's `Location` values (AC-49) |
 | L8 | fixture E's package | the `earlier.tally` rows are keyed to occurrences 0 and 1 in visit order, each with `term_ordinal` 0 (AC-50) |
-| L8h | fixture E checked | `earlier.tally` has exactly two `expression` occurrences, 0 in `earlier.tally < 3` and 1 in `earlier.tally + 1`; `target >= 0` exactly two, 0 in the trigger guard and 1 in the retry relation (AC-61) |
+| L8h | fixture E checked; fixture E-C's `Tried` and `Picked` controls checked | `earlier.tally` has exactly two `expression` occurrences, 0 in `earlier.tally < 3` and 1 in `earlier.tally + 1`; `target >= 0` exactly two, 0 in the trigger guard and 1 in the retry relation; E-C's `order >= 0` exactly two, 0 at `Tried` and 1 at `Picked` (AC-61) |
 | L8a | fixture E emitted | `target >= 0` is one node held by `Refund`'s retry relation and trigger guard (AC-51) |
 | L8b | fixture E emitted | its trigger-guard row is keyed to occurrence 0 and its retry row to occurrence 1, one row per group (AC-52) |
 | L8c | fixture E emitted | both rows have `term_ordinal` 0 and distinct occurrences (AC-53) |

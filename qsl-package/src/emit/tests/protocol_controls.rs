@@ -1503,3 +1503,52 @@ fn each_position_of_an_application_has_its_own_occurrence_in_document_order() {
         [(0, in_guard), (1, in_retry)]
     );
 }
+
+/// The `Tried` and `Picked` attempt controls of TC-1070 fixture E-C, which
+/// both constrain `order >= 0` over the protocol capture `order`. The result
+/// binders use `M::Flag` from fixture E's model; neither constraint reads
+/// them, so the shared application is unchanged.
+const E_C_TRIED_PICKED: &str = r#"
+language "ix:native" edition "1-draft";
+profile P = "quire.protocol.finite-global/v1";
+model M = "test/orders";
+protocol Composed using P over (view: M::Node) on origin {
+  capture order: M::Total = view.total;
+  role Service on M::Node;
+  run sequence Main {
+    attempt Tried by Service on M::Node::step contracts []
+        as (t: M::Flag) { order >= 0 };
+    attempt Picked by Service on M::Node::step contracts []
+        as (p: M::Flag) { order >= 0 };
+  }
+  finish Closed as (closed: M::Flag) { true };
+}
+"#;
+
+/// TC-1063 row L8h over fixture E-C: `order >= 0`, held by the `Tried` and
+/// `Picked` constraints, is one node with occurrence 0 at `Tried` and
+/// occurrence 1 at `Picked` -- declaration order, although `Picked` sorts
+/// first by origin name. These are the keys of FR-383-AC-56.
+#[trace("TC-1063", "FR-383-AC-61")]
+#[test]
+fn e_c_shared_constraint_has_occurrence_zero_at_tried_and_one_at_picked() {
+    let document = serde_json::to_vec(&tc1070::document()).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let graph = assemble_with_models(E_C_TRIED_PICKED.as_bytes(), &packages)
+        .expect("E-C fragment assembles")
+        .check(CheckingLimits::default())
+        .expect("E-C fragment checks");
+    let body = |attempt: &str| {
+        Location::at(
+            Origin::TypeDeclaration {
+                name: format!("protocol Composed run Main {attempt} body"),
+            },
+            &[],
+        )
+    };
+    let (tried, picked) = (body("Tried"), body("Picked"));
+    assert_eq!(
+        expression_occurrences_of_node_at(&graph, &picked),
+        [(0, tried), (1, picked)]
+    );
+}
