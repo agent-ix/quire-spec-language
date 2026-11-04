@@ -37,6 +37,12 @@ pub(super) struct Assembled {
     pub(super) units: BTreeMap<String, ComposedUnit>,
 }
 
+/// The source document owners and their encounter order for one assembly.
+pub(super) struct SourceDocuments<'a> {
+    pub(super) owners: &'a BTreeMap<String, SourceOwner>,
+    pub(super) order: &'a [SourceOwner],
+}
+
 /// What the dimension and unit declarations fix before the unit-graph
 /// topology is decided: each base dimension's key, each derived dimension's
 /// name, and each unit's dimension with its composed edge when its target
@@ -799,10 +805,12 @@ pub(super) fn assemble(
     units: &[UnitForm],
     imported: &Imported,
     owner: &SourceOwner,
-    owners: &BTreeMap<String, SourceOwner>,
+    sources: &SourceDocuments<'_>,
     package_name: &str,
     limits: AssemblyLimits,
 ) -> Result<Assembled, Refused> {
+    let owners = sources.owners;
+    let source_order = sources.order;
     if dimensions.is_empty() && units.is_empty() {
         return Ok(Assembled {
             graph: UnitGraph::default(),
@@ -924,8 +932,12 @@ pub(super) fn assemble(
         .iter()
         .map(|name| document(QuantityKind::Unit, name))
         .collect();
-    let ranked: BTreeSet<&SourceOwner> = dimension_owners.iter().chain(&unit_owners).collect();
-    let rank = |found: &SourceOwner| ranked.iter().position(|each| *each == found).unwrap_or(0);
+    let rank = |found: &SourceOwner| {
+        source_order
+            .iter()
+            .position(|source| source == found)
+            .unwrap_or(0)
+    };
     let dimension_documents: Vec<usize> = dimension_owners.iter().map(rank).collect();
     let unit_documents: Vec<usize> = unit_owners.iter().map(rank).collect();
     let walk = Walk {
