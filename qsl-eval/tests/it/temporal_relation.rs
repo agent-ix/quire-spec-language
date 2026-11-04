@@ -72,6 +72,7 @@ fn an_original_result_starts_a_chain_at_lineage_zero_and_is_recorded() {
 }
 
 #[trace(
+    "FR-052-AC-12",
     "FR-526-AC-2",
     "FR-526-AC-3",
     "FR-526-AC-14",
