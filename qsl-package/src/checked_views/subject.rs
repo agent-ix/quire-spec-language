@@ -30,7 +30,7 @@ use crate::checked_v2::{resolve_clause_root, role_spelling, wire_graph};
 pub(super) const FORMULA_VISITS: u64 = CheckedPackageReadLimits::bounded().work;
 
 /// The operation identity of a `holds` atom.
-const HOLDS: &str = "quire.op.temporal.holds";
+pub(super) const HOLDS: &str = "quire.op.temporal.holds";
 
 /// One declaration of a clause node: FR-337's identity triple.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,6 +64,46 @@ pub struct OperatorUse<'p> {
     pub operation: &'p str,
     /// The interval member, `None` for an unbounded or interval-free operator.
     pub interval: Option<CheckedOperationInterval>,
+}
+
+/// Whether a bounded temporal operator looks forward or back (QSpec FR-092).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperatorDirection {
+    /// `eventually`, `always`, `until` or `release`.
+    Future,
+    /// `once`, `historically`, `since` or `triggered`.
+    Past,
+}
+
+/// One formula node of a clause with the positions of its operands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FormulaNodeUse<'p> {
+    /// The `quire.op.temporal.*` operation identity.
+    pub operation: &'p str,
+    /// The interval member, `None` for an unbounded or interval-free node.
+    pub interval: Option<CheckedOperationInterval>,
+    /// The positions, in [`TemporalSubjectView::formula_graph`], of the
+    /// node's operand entries.
+    pub operands: Vec<usize>,
+}
+
+impl FormulaNodeUse<'_> {
+    /// The direction of the node when it is a bounded temporal operator;
+    /// `None` for `holds`, the connectives and the constants.
+    #[ix_trace_rs::string_edge]
+    pub fn direction(&self) -> Option<OperatorDirection> {
+        match self.operation {
+            "quire.op.temporal.eventually"
+            | "quire.op.temporal.always"
+            | "quire.op.temporal.until"
+            | "quire.op.temporal.release" => Some(OperatorDirection::Future),
+            "quire.op.temporal.once"
+            | "quire.op.temporal.historically"
+            | "quire.op.temporal.since"
+            | "quire.op.temporal.triggered" => Some(OperatorDirection::Past),
+            _ => None,
+        }
+    }
 }
 
 /// The temporal clause `declaration` of one admitted checked package.
@@ -129,10 +169,11 @@ pub struct TemporalSubjectView<'p> {
     requirements: Vec<&'p CheckedNodeId>,
     source_span: &'p CheckedSourceMapEntry,
     profile: &'p CheckedSelection,
-    clock: Option<&'p TemporalBinding>,
     activation: Activation,
     captures: Vec<CheckedNodeId>,
+    capture_names: Vec<String>,
     formula: Vec<OperatorUse<'p>>,
+    formula_graph: Vec<FormulaNodeUse<'p>>,
     predicate_leaves: Vec<CheckedNodeId>,
 }
 
@@ -181,10 +222,29 @@ impl<'p> TemporalSubjectView<'p> {
         self.profile
     }
 
-    /// The `temporal_bindings` row of this declaration, `None` when the lock
-    /// selects no clock configuration for it.
+    /// The `temporal_bindings` row of the node's only occurrence. `None`
+    /// when the lock selects no clock configuration for it and `None` for a
+    /// node with several occurrences, whose rows [`Self::clock_of`] returns.
     pub fn clock(&self) -> Option<&'p TemporalBinding> {
-        self.clock
+        match self.occurrences.as_slice() {
+            [only] => self.clock_of(only),
+            _ => None,
+        }
+    }
+
+    /// The `temporal_bindings` row keyed by `occurrence`'s `{ declaration,
+    /// role, ordinal }`, `None` when the lock selects no clock configuration
+    /// for it. The row is never paired by the position of the occurrence or
+    /// of the row: producer-assigned ordinals need not run consecutively
+    /// from zero, and the node's occurrence order need not match the lock's.
+    pub fn clock_of(&self, occurrence: &ClauseOccurrence) -> Option<&'p TemporalBinding> {
+        if occurrence.role != CheckedOccurrenceRole::Claim {
+            return None;
+        }
+        self.package
+            .temporal_bindings()?
+            .iter()
+            .find(|row| row.declaration == occurrence.node && row.occurrence == occurrence.ordinal)
     }
 
     /// The clause's activation.
@@ -200,6 +260,21 @@ impl<'p> TemporalSubjectView<'p> {
     /// The `quire.op.temporal.*` applications of the formula in pre-order.
     pub fn formula(&self) -> &[OperatorUse<'p>] {
         &self.formula
+    }
+
+    /// The declared name of each capture, in source order.
+    pub(super) fn capture_names(&self) -> &[String] {
+        &self.capture_names
+    }
+
+    /// Every formula node the clause reads in pre-order, with the positions
+    /// in this list of its operand entries: the temporal applications, the
+    /// `holds` applications, the connectives and the constants. A `holds`
+    /// atom and a constant have no operands. A node shared by several parents
+    /// is listed once per use, like [`Self::formula`], which lists the same
+    /// nodes without their operand edges.
+    pub fn formula_graph(&self) -> &[FormulaNodeUse<'p>] {
+        &self.formula_graph
     }
 
     /// The Boolean operand node of every `holds` atom in formula pre-order.
@@ -310,7 +385,14 @@ pub(super) fn subject_in<'p>(
         .iter()
         .find(|entry| entry.node_id == *declaration && entry.role == CheckedOccurrenceRole::Claim)
         .ok_or(ViewRefusal::UnresolvedClause)?;
-    let (formula, predicate_leaves) = formula_reads(graph, formula_at, visits)?;
+    let (formula_graph, predicate_leaves) = formula_reads(graph, formula_at, visits)?;
+    let formula = formula_graph
+        .iter()
+        .map(|node| OperatorUse {
+            operation: node.operation,
+            interval: node.interval.clone(),
+        })
+        .collect();
     Ok(TemporalSubjectView {
         package,
         declaration,
@@ -319,12 +401,11 @@ pub(super) fn subject_in<'p>(
         requirements: requirements(graph, declaration),
         source_span,
         profile,
-        clock: package
-            .temporal_bindings()
-            .and_then(|rows| rows.iter().find(|row| row.declaration == *declaration)),
         activation: read_activation(activation)?,
         captures: read_captures(captures)?,
+        capture_names: read_capture_names(captures)?,
         formula,
+        formula_graph,
         predicate_leaves,
     })
 }
@@ -454,6 +535,30 @@ fn read_activation(term: &CheckedTerm) -> Result<Activation, ViewRefusal> {
     }
 }
 
+fn read_capture_names(term: &CheckedTerm) -> Result<Vec<String>, ViewRefusal> {
+    members(term)?
+        .iter()
+        .map(|member| match member {
+            CheckedTerm::Binding { name, .. } => match name.kind() {
+                CheckedBindingNameKind::Other(name) => Ok(name.to_owned()),
+                _ => Err(ViewRefusal::UnresolvedClause),
+            },
+            _ => Err(ViewRefusal::UnresolvedClause),
+        })
+        .collect()
+}
+
+/// The declared name of the `value`/`parameter` node `term` is the body of.
+pub(super) fn parameter_name(term: &CheckedTerm) -> Option<&str> {
+    let CheckedTerm::Aggregate { members } = term else {
+        return None;
+    };
+    match binding(members, "name")?.literal_read()?.value {
+        CheckedLiteralValue::Text(name) => Some(name),
+        _ => None,
+    }
+}
+
 fn read_captures(term: &CheckedTerm) -> Result<Vec<CheckedNodeId>, ViewRefusal> {
     members(term)?
         .iter()
@@ -466,17 +571,19 @@ fn read_captures(term: &CheckedTerm) -> Result<Vec<CheckedNodeId>, ViewRefusal> 
         .collect()
 }
 
-/// The operator applications of the formula rooted at `root` in pre-order,
-/// and the Boolean operand of each `holds` among them.
+/// The formula nodes rooted at `root` in pre-order with their operand
+/// positions, and the Boolean operand of each `holds` among them.
 fn formula_reads<'p>(
     graph: &Graph<'p>,
     root: usize,
     visits: u64,
-) -> Result<(Vec<OperatorUse<'p>>, Vec<CheckedNodeId>), ViewRefusal> {
-    let mut uses = Vec::new();
+) -> Result<(Vec<FormulaNodeUse<'p>>, Vec<CheckedNodeId>), ViewRefusal> {
+    let mut uses: Vec<FormulaNodeUse<'p>> = Vec::new();
     let mut leaves = Vec::new();
-    let mut pending = vec![root];
-    while let Some(at) = pending.pop() {
+    // Each pending entry is a node and the position of the parent that
+    // listed it; operands pop in operand order, so they append in that order.
+    let mut pending: Vec<(usize, Option<usize>)> = vec![(root, None)];
+    while let Some((at, parent)) = pending.pop() {
         if u64::try_from(uses.len()).map_or(true, |read| read >= visits) {
             return Err(ViewRefusal::FormulaTooLarge);
         }
@@ -488,9 +595,17 @@ fn formula_reads<'p>(
             Some(CheckedOperationMember::TemporalInterval { interval }) => interval.clone(),
             _ => None,
         };
-        uses.push(OperatorUse {
+        let position = uses.len();
+        if let Some(parent) = parent {
+            uses.get_mut(parent)
+                .ok_or(ViewRefusal::UnresolvedClause)?
+                .operands
+                .push(position);
+        }
+        uses.push(FormulaNodeUse {
             operation,
             interval,
+            operands: Vec::new(),
         });
         let arguments = graph.arguments(at).ok_or(ViewRefusal::UnresolvedClause)?;
         if operation == HOLDS {
@@ -504,7 +619,7 @@ fn formula_reads<'p>(
             );
         } else {
             for operand in arguments.iter().rev() {
-                pending.push(reference_position(graph, operand)?);
+                pending.push((reference_position(graph, operand)?, Some(position)));
             }
         }
     }

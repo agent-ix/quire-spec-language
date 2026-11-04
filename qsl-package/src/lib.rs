@@ -46,10 +46,10 @@ pub use checked::{CheckedPackage, ResolvedDependency};
 pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, hyper_roots, occurrence_role, read_evaluation_package, read_hybrids,
-    read_import_view, read_terminal, read_terminals, resolve_clause_root, resolve_hyper_root,
-    resolve_schedulability_root, resolve_state_graph_root, resolve_terminals, schedulability_roots,
-    state_graph_roots, supply_closure, AdmittedPackageRead, AdmittedPackages,
+    clause_roots, hyper_roots, occurrence_role, read_evaluation_emission, read_evaluation_package,
+    read_hybrids, read_import_view, read_terminal, read_terminals, resolve_clause_root,
+    resolve_hyper_root, resolve_schedulability_root, resolve_state_graph_root, resolve_terminals,
+    schedulability_roots, state_graph_roots, supply_closure, AdmittedPackageRead, AdmittedPackages,
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
     CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot,
@@ -68,7 +68,7 @@ pub use emit::{
     emit_monitor_plan, emit_monitor_plan_over, emit_package, emit_package_with_temporal_selections,
     emit_timed_models, Emission, EmitRefusal, MonitorPlanWire, OmissionCause, OmittedNode,
     ProtocolEmission, ProtocolEmissionAggregate, ProtocolEmissionResult, TemporalBindingRows,
-    TemporalClockSelection, TimedOrderFault,
+    TemporalClauseRef, TemporalClockSelection, TemporalRows, TimedOrderFault,
 };
 pub use evaluation_view::{
     AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, ReaderProtocolField,

@@ -732,6 +732,7 @@ fn finish(
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows: super::TemporalBindingRows::default(),
+        temporal_rows: super::TemporalRows::default(),
     })
 }
 

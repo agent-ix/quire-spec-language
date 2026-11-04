@@ -65,6 +65,16 @@ pub(super) struct Compiled {
 /// `unit` through S1, S2, I1, the assembler, check, link and the v2
 /// emitter, with nothing omitted.
 pub(super) fn compile(unit: &str) -> Compiled {
+    compile_with(unit, &|clause| fixture_clock(clause.profile()))
+}
+
+/// [`compile`] with the clock configuration `clock` selects for each clause.
+pub(super) fn compile_with(
+    unit: &str,
+    clock: &dyn Fn(
+        &qsl_semantics::check::CheckedTemporalClause,
+    ) -> Option<quire_contract_model::ClockConfiguration>,
+) -> Compiled {
     let graph = check_graph(unit);
     let mut selections: Vec<_> = graph
         .temporal_clauses()
@@ -73,7 +83,7 @@ pub(super) fn compile(unit: &str) -> Compiled {
             Some(crate::emit::TemporalClockSelection {
                 source: graph.source().clone(),
                 declaration_span: temporal.clause().span(),
-                clock: fixture_clock(temporal.clause().profile())?,
+                clock: clock(temporal.clause())?,
             })
         })
         .collect::<Vec<_>>();

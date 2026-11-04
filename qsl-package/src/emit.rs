@@ -470,6 +470,52 @@ pub struct Emission {
     /// The `temporal_bindings` rows of the checked graph's temporal and
     /// hyper clauses, keyed by the graph's own clause identity.
     pub(crate) temporal_binding_rows: TemporalBindingRows,
+    /// The clause references, `profile_selections` and `temporal_bindings`
+    /// rows exactly as written into [`Self::package`] (FR-337).
+    pub(crate) temporal_rows: TemporalRows,
+}
+
+/// One declaration of a checked temporal clause as the emitter wrote it
+/// (FR-337): the id the emitted bytes assign its node, its claim occurrence
+/// ordinal, and the position of the clause in the checked graph's temporal
+/// clauses. The pair `declaration`, `occurrence` equals a
+/// `temporal_clause_names` row of the emitted bytes; no other derivation of
+/// the id exists.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemporalClauseRef {
+    /// The emitted clause node.
+    pub declaration: CheckedNodeId,
+    /// The claim occurrence ordinal of this declaration.
+    pub occurrence: u64,
+    /// The position of the clause in the checked graph's temporal clauses.
+    pub clause: usize,
+}
+
+/// The temporal rows of an emission, exactly as written (FR-337, FR-515).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TemporalRows {
+    clauses: Vec<TemporalClauseRef>,
+    profile_selections: Vec<quire_contract_model::CheckedSelection>,
+    bindings: Vec<quire_contract_model::TemporalBinding>,
+}
+
+impl TemporalRows {
+    /// One reference per claim occurrence of every checked temporal clause,
+    /// ascending by `declaration` and `occurrence` like the name rows.
+    pub fn clauses(&self) -> &[TemporalClauseRef] {
+        &self.clauses
+    }
+
+    /// The lock's `profile_selections` rows.
+    pub fn profile_selections(&self) -> &[quire_contract_model::CheckedSelection] {
+        &self.profile_selections
+    }
+
+    /// The package's `temporal_bindings` rows, ascending by `declaration`
+    /// and `occurrence`; empty when no clause has a clock configuration.
+    pub fn bindings(&self) -> &[quire_contract_model::TemporalBinding] {
+        &self.bindings
+    }
 }
 
 /// The `temporal_bindings` rows (FR-050, FR-515) an emission wrote for the
@@ -626,6 +672,7 @@ impl DebugWith for Emission {
             equality_fact_witness_rows,
             wire_nodes,
             temporal_binding_rows,
+            temporal_rows,
         } = self;
         f.debug_struct("Emission")
             .field("package", package)
@@ -657,6 +704,7 @@ impl DebugWith for Emission {
             .field("equality_fact_witness_rows", equality_fact_witness_rows)
             .field("wire_node_count", &wire_nodes.len())
             .field("temporal_binding_row_count", &temporal_binding_rows.len())
+            .field("temporal_rows", temporal_rows)
             .finish()
     }
 }
@@ -819,6 +867,12 @@ impl Emission {
     /// keyed by wire identity only.
     pub fn temporal_binding_rows(&self) -> &TemporalBindingRows {
         &self.temporal_binding_rows
+    }
+
+    /// The temporal clause references, `profile_selections` and
+    /// `temporal_bindings` rows as written into [`Self::package`] (FR-337).
+    pub fn temporal_rows(&self) -> &TemporalRows {
+        &self.temporal_rows
     }
 
     /// Every node of the checked graph the wire omits, ascending by node id.
@@ -4794,6 +4848,7 @@ pub fn emit_timed_models(
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows: TemporalBindingRows::default(),
+        temporal_rows: TemporalRows::default(),
     })
 }
 
@@ -5694,7 +5749,7 @@ fn emit_package_inner(
         &mut step_rows,
         &mut schedulability_claim_rows,
     )?;
-    let (temporal_bindings, temporal_clause_names, temporal_binding_rows) =
+    let (temporal_bindings, temporal_clause_names, temporal_binding_rows, temporal_clause_refs) =
         temporal_binding_rows(graph, &emitted_node_ids, &nodes, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
@@ -5834,6 +5889,11 @@ fn emit_package_inner(
         equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows,
+        temporal_rows: TemporalRows {
+            clauses: temporal_clause_refs,
+            profile_selections: lock.profile_selections,
+            bindings: temporal_bindings,
+        },
     })
 }
 
@@ -5982,6 +6042,7 @@ fn temporal_binding_rows(
         Vec<quire_contract_model::TemporalBinding>,
         Vec<quire_contract_model::TemporalClauseName>,
         TemporalBindingRows,
+        Vec<TemporalClauseRef>,
     ),
     EmitRefusal,
 > {
@@ -6015,15 +6076,22 @@ fn temporal_binding_rows(
             name: site.name.as_str().into(),
         });
     }
+    let mut refs = Vec::new();
     let mut missing = Vec::new();
-    for temporal in graph.temporal_clauses() {
+    for (position, temporal) in graph.temporal_clauses().iter().enumerate() {
         let clause = temporal.clause();
         let profile = clause.profile();
+        let declaration = emitted_node_ids
+            .get(&temporal.identity())
+            .cloned()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        refs.push(TemporalClauseRef {
+            declaration: declaration.clone(),
+            occurrence: temporal.claim().ordinal(),
+            clause: position,
+        });
         names.push(quire_contract_model::TemporalClauseName {
-            declaration: emitted_node_ids
-                .get(&temporal.identity())
-                .cloned()
-                .ok_or(EmitRefusal::SourceMapInvariant)?,
+            declaration,
             occurrence: temporal.claim().ordinal(),
             name: clause.name().into(),
         });
@@ -6227,7 +6295,10 @@ fn temporal_binding_rows(
     names.sort_by(|left, right| {
         (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
     });
-    Ok((rows, names, keyed))
+    refs.sort_by(|left, right| {
+        (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
+    });
+    Ok((rows, names, keyed, refs))
 }
 
 /// The ids `node` holds that this emitter can reach through IR's public

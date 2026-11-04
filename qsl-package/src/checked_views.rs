@@ -19,11 +19,15 @@ pub use mapping::{
     mapping_support, AuthenticatedSelection, Classification, Closure, MappingRefusal, Retained,
     Support, Target, Unmatched, OUTSTANDING_PREMISES,
 };
-pub use predicate::{checked_predicate, CheckedPredicateView, PredicateKind, PredicateSelection};
+pub use predicate::{
+    checked_predicate, instance_bound_atoms, CheckedPredicateView, PredicateKind,
+    PredicateSelection,
+};
 #[cfg(test)]
 pub(crate) use subject::temporal_subject_within;
 pub use subject::{
-    temporal_subject, Activation, ClauseOccurrence, OperatorUse, TemporalSubjectView,
+    temporal_subject, Activation, ClauseOccurrence, FormulaNodeUse, OperatorDirection, OperatorUse,
+    TemporalSubjectView,
 };
 
 /// Why a view was not read: a closed set, so a caller branches on the

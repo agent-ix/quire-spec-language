@@ -861,6 +861,21 @@ pub fn read_evaluation_package<'package>(
         package: identity.clone(),
         refusal: Some(refusal),
     })?;
+    read_evaluation_emission(package, &emission, identity, domain_packages, limits)
+}
+
+/// Admit `emission`, the bytes `package` was emitted to (with the clock
+/// selections of its temporal clauses, FR-050), and its dependency closure
+/// through the I2 reader, and retain the successful read for evaluator use.
+///
+/// Refuses [`ImportViewRefusal::Emission`] for an emission that omits a node.
+pub fn read_evaluation_emission<'package>(
+    package: &'package CheckedPackage,
+    emission: &Emission,
+    identity: LibraryName,
+    domain_packages: &qsl_semantics::model::intake::PackageInput,
+    limits: V2ReadLimits,
+) -> Result<AdmittedPackageRead<'package>, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
     let mut reader = ClosureReader {
@@ -869,7 +884,7 @@ pub fn read_evaluation_package<'package>(
         admitted: BTreeMap::new(),
         limits,
     };
-    let read = reader.read_emitted(package, &emission, identity.clone())?;
+    let read = reader.read_emitted(package, emission, identity.clone())?;
     let mut closure = reader.admitted;
     closure.insert(identity.clone(), Arc::clone(&read.admitted));
     let reader_nodes = reader_node_keys(&read.admitted).map_err(|_| ImportViewRefusal::Read {
@@ -902,6 +917,16 @@ impl AdmittedPackageRead<'_> {
     /// The structural exports admitted for this package.
     pub fn import_view(&self) -> &ImportView {
         &self.read.package
+    }
+
+    /// The admitted package the reader returned for these bytes.
+    pub fn admitted(&self) -> &CheckedPackageV2 {
+        &self.read.admitted
+    }
+
+    /// The in-process package whose emission these bytes are.
+    pub fn source(&self) -> &CheckedPackage {
+        self.source
     }
 
     /// The source map retained from the successful I2 read.
