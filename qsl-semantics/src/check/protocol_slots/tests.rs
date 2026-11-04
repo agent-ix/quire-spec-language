@@ -255,7 +255,7 @@ fn a_terminal_predicate_reads_the_model_observation_and_the_captures() {
         ORIGIN,
         "terminal when { k.total = 1 and start >= 0 };",
     ));
-    let CheckedTerminalMember::When(predicate) = terminal(&graph) else {
+    let CheckedTerminalMember::When { predicate, .. } = terminal(&graph) else {
         panic!("a `when` member");
     };
     assert_eq!(predicate.root().value_type(), &ValueType::Boolean);
@@ -372,7 +372,10 @@ fn a_replicated_role_records_its_population_maximum_and_lifetime() {
         (role.role, role.population.node.as_str(), role.max),
         (1, "ix://example/protocol-obligations/nodes", 1)
     );
-    let CheckedLifetime::Until(until) = &role.lifetime else {
+    let CheckedLifetime::Until {
+        predicate: until, ..
+    } = &role.lifetime
+    else {
         panic!("an until lifetime, got {:?}", role.lifetime);
     };
     assert_eq!(until.root().value_type(), &ValueType::Boolean);
