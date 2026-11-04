@@ -529,8 +529,8 @@ mod family_contract_tests {
         assert!(env.losses.is_empty());
     }
 
-    /// `name(p: Decimal[0..100], q: Decimal[1..9]): Decimal[0..10000; 2, 2;
-    /// mode] = p / q`. With `nearest-even` a call on (1, 3) completes and
+    /// `name(p: Decimal[1..10000; 2, 2; mode]): Decimal[1..10000; 2, 2; mode]
+    /// = p / decimal(3, 0)`. With `nearest-even` a call on 1 completes and
     /// records one loss; with `exact` it stops with a refusal, located at the
     /// division.
     fn decimal_division(name: &str, mode: &str) -> FunctionDeclaration {
@@ -544,16 +544,16 @@ mod family_contract_tests {
         let profile = decimal(["1", "10000", "2", "2", mode]);
         FunctionDeclaration::new(
             name,
-            vec![
-                ("p".to_owned(), profile.clone()),
-                ("q".to_owned(), profile.clone()),
-            ],
+            vec![("p".to_owned(), profile.clone())],
             profile,
             None,
+            // A nonzero `decimal(c, s)` literal is the only decimal divisor
+            // that discharges the nonzero obligation (FR-093 "Decimal
+            // constructors").
             Expression::binary(
                 qsl_forms::BinaryOperator::Divide,
                 Expression::name("p".to_owned()),
-                Expression::name("q".to_owned()),
+                Expression::decimal(quire_exact::Integer::from(3_i64), 0),
             ),
         )
     }
@@ -580,7 +580,7 @@ mod family_contract_tests {
             declarations
         }
         .check(CheckingLimits::default())
-        .expect("p / q with q in [1, 9] checks cleanly");
+        .expect("p / decimal(3, 0) checks cleanly");
         let rounding = graph
             .function_identity("rounding")
             .expect("rounding is declared in this package");
@@ -595,7 +595,7 @@ mod family_contract_tests {
                 0,
             ))
         };
-        let mut env = EvaluationEnv::new(&package, &objects, vec![decimal(1), decimal(3)]);
+        let mut env = EvaluationEnv::new(&package, &objects, vec![decimal(1)]);
         let mut unlimited = Meter::new(SCALAR_LIMITS_UNLIMITED);
 
         let first = ValueFunctionFamily::evaluate(&rounding, &mut env, &mut unlimited)
@@ -610,7 +610,7 @@ mod family_contract_tests {
         assert_eq!(env.location, None);
         assert_eq!(env.losses.len(), 1, "the division rounds 1/3");
 
-        env.arguments = Some(vec![decimal(1), decimal(3)]);
+        env.arguments = Some(vec![decimal(1)]);
         let second = ValueFunctionFamily::evaluate(&exact, &mut env, &mut unlimited)
             .expect("the exact division stops in Ok");
         assert!(
@@ -623,7 +623,7 @@ mod family_contract_tests {
         assert!(env.location.is_some(), "a refusal is located");
         assert!(env.losses.is_empty(), "{:?}", env.losses);
 
-        env.arguments = Some(vec![decimal(1), decimal(3)]);
+        env.arguments = Some(vec![decimal(1)]);
         let mut exhausted = Meter::new(quire_exact::ScalarLimits {
             work_units: 0,
             ..SCALAR_LIMITS_UNLIMITED

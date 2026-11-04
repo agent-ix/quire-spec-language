@@ -121,6 +121,7 @@ fn literal_json(value: &LiteralValue) -> (&'static str, Json) {
         LiteralValue::Integer(value) => ("integer", json!(value.to_string())),
         LiteralValue::Count(value) => ("integer", json!(value)),
         LiteralValue::Rational(value) => ("rational", json!(value.to_string())),
+        LiteralValue::Decimal(text) => ("decimal", json!(text)),
         LiteralValue::Float32Bits(bits) => ("float32_bits", json!(format!("{bits:08x}"))),
         LiteralValue::Float64Bits(bits) => ("float64_bits", json!(format!("{bits:016x}"))),
         LiteralValue::Quantity(value) => ("quantity", json!(value.to_string())),
