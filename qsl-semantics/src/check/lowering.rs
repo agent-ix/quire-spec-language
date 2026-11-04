@@ -118,7 +118,8 @@ pub(crate) use state::{
 pub(crate) use state_graph::StateGraphClaimInput;
 pub(crate) use state_transition::TransitionClause;
 pub(crate) use temporal::{
-    temporal_location, temporal_site, LoweredTemporalClause, TemporalClauseInput, TemporalSite,
+    temporal_location, temporal_site, AggregatePart, LoweredTemporalClause, TemporalClauseInput,
+    TemporalSite,
 };
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
 pub(crate) use timed_clause::TimedClauseInput;

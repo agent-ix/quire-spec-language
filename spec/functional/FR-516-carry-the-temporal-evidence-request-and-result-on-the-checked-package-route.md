@@ -332,11 +332,13 @@ source; the bare package has none.
 
 A formula atom is a `holds` node or a window aggregate node (FR-337-AC-15), numbered
 together by first use as FR-532 "Atom index" states. For an aggregate atom the
-package carries the aggregate kind, the optional filter and value expression, the
-window `past[a, b]`, `min_count`, the comparison (`<`, `<=`, `>=`, `>` or `=`) and the
-threshold converted to the value unit (QSpec FR-414; FR-194; FR-337-AC-15). QSpec
-defines the aggregate term and its semantics (FR-414) and defines no wire members for
-the emitted node; the member names are those of FR-337-AC-15. QSL does not evaluate the value expression or the filter
+package carries the aggregate kind, the `quantile` level `q`, the `fraction` predicate,
+the value expression, the optional filter, the window `past[a, b]` (`window_kind`,
+`lower`, `upper`), `min_count`, the comparison (`<`, `<=`, `>=`, `>` or `=`) and the
+threshold of the aggregate's result family (QSpec FR-414; FR-194; FR-337-AC-15). QSpec
+FR-414 defines the aggregate term and its semantics and QSpec FR-370 "Window aggregate
+atom" defines the node's wire bindings, which FR-337 "Aggregate formula emission"
+writes. QSL does not evaluate the value expression, the predicate or the filter
 on this route: as a `holds` condition is, they are the observation owner's, supplied
 per position.
 
@@ -389,10 +391,9 @@ per position.
   new counter exists: the thirteen stay thirteen, and an exhausted counter stops the
   call as FR-523 states.
 
-The aggregate node is not yet written by QSL's emitter (lowering faults an aggregate
-atom), no QSpec operation catalog entry defines the node and Contract IR's reader
-admits no `quire.op.temporal.aggregate` operation (the catalog is QSpec's
-`proposals/checked-package-v2/schema.json`), so no package carrying the node can be
+QSL's emitter writes the aggregate node (FR-337 "Aggregate formula emission") and
+QSpec FR-370 catalogues `quire.op.temporal.aggregate` (QSL-1644), but the Contract IR
+reader QSL locks admits no such operation, so no package carrying the node can be
 admitted today, a hand-built one included. The evaluation behavior above and its
 criteria are specified now and are gated on the dependencies in "Dependencies".
 
@@ -459,7 +460,7 @@ criteria are specified now and are gated on the dependencies in "Dependencies".
   does not replace. FR-522 supplies `binding`, `authenticated` and the
   `result_identity` rule, FR-523 the thirteen counters, FR-524 the activation
   states and faults, FR-526 the relation checks.
-- **Window aggregates (gates FR-516-AC-47 to AC-50 and FR-532-AC-11):** QSL's emission of an aggregate clause as a `quire.op.temporal.aggregate` node (QSL-1643), and QSL-1644 (a QSpec operation catalog entry that defines the node's members, and Contract IR's admission of it by `read_checked_package`); QSpec FR-414 and FR-194 (the window, `min_count`, quantile, undefined and charge rules), FR-337-AC-15 (the emitted aggregate argument), FR-255 (`monitor.max_window_values`). FR-194 evaluation needs, beyond the per-position sample stream above, nothing from the observation: the window, `min_count`, comparison and converted threshold come from the package, and the value expression and filter are evaluated by the observation owner.
+- **Window aggregates (gates FR-516-AC-47 to AC-50 and FR-532-AC-11):** QSL's emission of an aggregate clause as a `quire.op.temporal.aggregate` node (QSL-1643), and QSL-1644 (QSpec FR-370's catalog entry and wire bindings for the node, merged; Contract IR's admission of it by `read_checked_package` remains); QSpec FR-414 and FR-194 (the window, `min_count`, quantile, undefined and charge rules), FR-337-AC-15 (the emitted aggregate argument), FR-255 (`monitor.max_window_values`). FR-194 evaluation needs, beyond the per-position sample stream above, nothing from the observation: the window, `min_count`, comparison and converted threshold come from the package, and the value expression and filter are evaluated by the observation owner.
 - **Delivery:** FR-516-AC-18, AC-29, AC-30, AC-45 and AC-46 are delivered by QSL-1608 (see FR-515 Dependencies).
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/conformance/kernel.rs`,
   `tests/it002_observation_temporal.rs` (QSL-1549).
