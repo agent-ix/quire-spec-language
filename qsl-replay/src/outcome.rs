@@ -741,9 +741,6 @@ pub struct OutcomeItem {
     /// A violation's or undefined evaluation's `TemporalCounterexample`.
     #[serde(skip_serializing_if = "Option::is_none")]
     counterexample: Option<serde_json::Value>,
-    /// A violation's QSpec FR-351 separating witness record.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    witness: Option<serde_json::Value>,
     /// The values an insufficient-data window held.
     #[serde(skip_serializing_if = "Option::is_none")]
     count: Option<u64>,
@@ -945,7 +942,6 @@ impl OutcomeItem {
             limit_reached: None,
             position: None,
             counterexample: None,
-            witness: None,
             count: None,
             min_count: None,
             clause: None,
@@ -999,7 +995,6 @@ impl OutcomeItem {
             limit_reached: None,
             position: None,
             counterexample: None,
-            witness: None,
             count: None,
             min_count: None,
             clause: None,
@@ -1049,7 +1044,6 @@ impl OutcomeItem {
             cause: clause_run_cause(report),
             position: record.position,
             counterexample: record.counterexample,
-            witness: record.witness,
             count: record.count,
             min_count: record.min_count,
             basis: None,

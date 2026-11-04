@@ -2355,7 +2355,8 @@ fn format_model_selection(
 pub(crate) use temporal::ReasonWire;
 
 /// The members of FR-283's record a monitor item carries besides its label
-/// and cause (FR-286 "Monitor documents from clause runs"), each written by
+/// and cause (a temporal violation carries its counterexample and no witness,
+/// FR-267) (FR-286 "Monitor documents from clause runs"), each written by
 /// the one `native-run-result/2` writer.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ItemRecord {
@@ -2366,8 +2367,6 @@ pub(crate) struct ItemRecord {
     /// FR-283's `TemporalCounterexample` of a violation or an undefined
     /// evaluation.
     pub counterexample: Option<serde_json::Value>,
-    /// The QSpec FR-351 separating witness of a violation.
-    pub witness: Option<serde_json::Value>,
     /// The values an insufficient-data window held.
     pub count: Option<u64>,
     /// The window's `min_count`.
@@ -2400,13 +2399,6 @@ pub(crate) fn item_record(report: &ClauseRunReport) -> Result<ItemRecord, Native
                 .and_then(serde_json::Value::as_u64);
         }
         _ => {}
-    }
-    if record.counterexample.is_some() {
-        record.witness = report
-            .witness
-            .as_ref()
-            .map(|witness| RecordWire::of(witness).and_then(|wire| Ok(serde_json::to_value(wire)?)))
-            .transpose()?;
     }
     Ok(record)
 }

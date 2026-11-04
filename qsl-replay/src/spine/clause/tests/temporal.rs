@@ -3466,6 +3466,7 @@ fn violated_undefined_and_insufficient_data_items_carry_their_record_members() {
         Some(3)
     );
     assert_eq!(violated["counterexample"]["loop"], serde_json::json!([]));
+    assert!(violated.get("witness").is_none());
     assert!(violated.get("count").is_none() && violated.get("min_count").is_none());
 
     let undefined = item_json(
