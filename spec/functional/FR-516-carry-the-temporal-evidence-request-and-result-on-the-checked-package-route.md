@@ -35,6 +35,10 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-499
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-531
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-532
+    type: references
 ---
 # FR-516: Carry the temporal evidence request and result on the checked-package route
 
@@ -71,7 +75,7 @@ result field:
 | --- | --- | --- |
 | `trigger: SemanticTriggerIdentity` | `trigger: Option<SemanticTriggerIdentity>` (non-empty opaque bytes when present) | selects the instance the call assesses among the resolved instances; for a clause that activates `on origin` it is the execution-origin identity; required when the request carries a delivery or an origin, and `None` when it carries none |
 | `correspondence: EvidenceRef` | `correspondence: EvidenceRef` | `EvidenceRef` keeps `identity`, `authority_identity`, `authority_revision`, `scope`, `population`, and carries `contract` (text), `schema_digest`, `digest` and `authority_digest` (byte strings) as opaque caller-supplied members: QSL does not compute, verify or interpret them (it does not authenticate observation evidence), echoes each byte for byte in the result's support references, and no truth, settlement or support value depends on them. Package content digests stay removed (QSL-1270); these are the observation owner's identifiers, not QSL's |
-| `positions: Vec<ObservedPosition>` | `positions` | each `{ observation: EvidenceRef, position, instance_valuations }`; `instance_valuations` is FR-524's map from a trigger identity to that instance's valuations at the position |
+| `positions: Vec<ObservedPosition>` | `positions` | each `{ observation: EvidenceRef, position, valuations, aggregate_samples, instance_valuations, instance_aggregate_samples }`; `instance_valuations` is FR-524's map from a trigger identity to that instance's valuations at the position; `aggregate_samples` and `instance_aggregate_samples` carry the window aggregate samples of "Window aggregate atoms" below |
 | `anchor` | `anchor` | the authored activation anchor: the `EvidenceRef` identity of one of the request's positions, which fixes the activation position ("Assessed instance") |
 | `triggers: Vec<TriggerInput>` | `deliveries: Vec<TriggerDelivery>` (clause `on each`) or `origins: Vec<ExecutionOrigin>` (clause `on origin`, each `{ identity, payload, captures }`) | the ordered deliveries, each `{ identity, receipt, anchor, payload, guard: Option<bool>, captures }`, so that a repeated delivery of one identity and several instances are expressible (FR-524). The retired native request admitted exactly one trigger; the legacy evaluator (`temporal::Trace.triggers`) admitted many, and this field is the successor of that list |
 | `trigger_evidence`, `trigger_scope` | same | `Evidence` and `Closure` of the retained `temporal` vocabulary, independent of the decision scope, with the completeness of the trigger record (`Complete` or `Incomplete`) as a third member of the scope (FR-524) |
@@ -132,7 +136,7 @@ refusal carrying `mismatched_dimension` (a field of the refusal, not a cause),
 `surplus_capture_index`, and `no-ledger`, `predecessor-unknown`,
 `predecessor-not-latest`, `unchanged-input` and `correspondence-changed`, which
 FR-526 names itself. Every refusal charges nothing and leaves the
-caller's ledgers unchanged. No other cause exists.
+caller's ledgers unchanged. No other cause exists than those of this table, the causes named above and `aggregate-sample-kind`.
 
 | `cause` | Condition |
 | --- | --- |
@@ -145,8 +149,9 @@ caller's ledgers unchanged. No other cause exists.
 | `activation-mapping-mismatch` | `control` is present and its row names another temporal clause |
 | `progress-contradiction` | the progress assertion contradicts the progress ledger's retained watermark, completeness or closure (FR-502; names `contradicted_dimension`) |
 | `progress-inconsistent` | the request's positions and its progress assertion contradict each other as FR-504 "Consistency" states: under the event-position or the fixed-sample profile a fixed-sample watermark or a `Complete { through }` below the last position's coordinate; it applies to fixed-sample and event-position progress assertions only, because a timestamped-event clause takes completeness assertions (FR-501, FR-504) |
+| `aggregate-sample-kind` | an `aggregate_samples` or `instance_aggregate_samples` entry whose kind the aggregate term does not take (a `Value` for `fraction`, a `Holds` for `sum`, a `Counted` for `min`, and so on, as "Window aggregate atoms" states); the call refuses with `CallFailure::Admission` carrying the catalog code `invalid_runtime_input`/`invalid-value` and the fields `atom` and `position`, before any charge |
 | `clause-root-unresolved` | the clause node id is absent from the package or names a node that is not a temporal clause; the call refuses with `CallFailure::Admission` carrying the cause name `clause-root-unresolved`, which is FR-337's lookup result reused; FR-337 states no catalog code, so the call carries the cause name only |
-| `clause-unreadable` | the clause's formula, built from the subject view's `formula_graph()` entries and `operands` edges (FR-515), cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an `operands` position that names no entry or a cycle, a `predicate_leaves()` count that differs from the formula's `holds` count, or a clause whose formula differs from the source clause it is paired with in the admitted read's source (FR-515) (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523) |
+| `clause-unreadable` (reasons: `formula-differs`, `atom-count`, `profile-selection`, `profile-unknown`, `clause-name`, `capture-type`) | the clause's formula, built from the subject view's `formula_graph()` entries and `operands` edges (FR-515), cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an `operands` position that names no entry or a cycle, a `predicate_leaves()` count that differs from the formula's `holds` count, or, on a route that holds a source, a clause whose formula differs from the source clause it is paired with in the admitted read's source (FR-515) (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523) |
 
 A progress ledger whose covered positions would exceed its capacity is not a
 refusal: the call returns an `Incomplete(LimitReached{limit: node count, value,
@@ -310,6 +315,87 @@ ceilings from the same inputs is byte-equal to a call that never stopped
   requirement; quire-protocol's producer-contract registry rows for them end with
   QSL-1549, not before (FR-521 row 4).
 
+### Consumer entry
+
+`evaluate_temporal_evidence` is also the call of the package built by
+`EvidencePackage::from_package` over a `BarePackage` (FR-531), the entry for a
+consumer that holds only a `CheckedPackageV2`. It reads the clause's activation,
+profile, clock, formula and the package identity of its progress binding from the
+package's own nodes and rows, spells an atom by its position in `formula_graph()`
+pre-order, adds no cause and no refusal dimension, and returns for one package and
+one request the same result and charges as the two routes that start from source
+(FR-532). Its reasons for `clause-unreadable` add `profile-unknown`, `clause-name` and `capture-type` (FR-531, FR-532); the cause names of the table above are unchanged. The
+`Emission`-constructed and read-back packages keep the cross-check against their
+source; the bare package has none.
+
+### Window aggregate atoms
+
+A formula atom is a `holds` node or a window aggregate node (FR-337-AC-15), numbered
+together by first use as FR-532 "Atom index" states. For an aggregate atom the
+package carries the aggregate kind, the optional filter and value expression, the
+window `past[a, b]`, `min_count`, the comparison (`<`, `<=`, `>=`, `>` or `=`) and the
+threshold converted to the value unit (QSpec FR-414; FR-194; FR-337-AC-15). QSpec
+defines the aggregate term and its semantics (FR-414) and defines no wire members for
+the emitted node; the member names are those of FR-337-AC-15. QSL does not evaluate the value expression or the filter
+on this route: as a `holds` condition is, they are the observation owner's, supplied
+per position.
+
+- **Sample.** `aggregate_samples` maps an aggregate atom index to an
+  `AggregateSample` at the position: `Excluded` (the filter is false there, or the
+  position is not admitted), `Value(Rational)` (the value expression's exact value in
+  the aggregate's value unit; QSL converts no unit), `Holds(bool)` (the `fraction`
+  predicate's value, for a `fraction` term), `Counted` (for `count`, the filter
+  holds) or `Undefined(cause)` (the filter, the value or the predicate is undefined
+  there). A sample of a kind the term does not take is refused at request
+  construction as an `Err(CallFailure::Admission)` with cause `aggregate-sample-kind`
+  naming the atom and position. An aggregate atom that reads a capture is
+  instance-bound and its samples are keyed under the instance in
+  `instance_aggregate_samples`, as `instance_valuations` keys a valuation
+  (FR-524).
+- **Window.** At activation position `i` under the event-position profile the
+  window holds the request positions `j` with `i - b <= j <= i - a` and `j >= 0`;
+  under the timestamped-event profile, the observed positions whose stamp `t_j` has
+  `t_i - b <= t_j <= t_i - a`; no window reads a position after `i`, and a silent
+  sample holds no sample (FR-504). The atom is computed at each visited position from
+  the window's samples, oldest first, by FR-194's rules: `count` is the number of
+  counted samples, `sum` the exact sum (0 over none), `min` and `max` over the
+  values, `fraction` the number of `Holds(true)` over the number of `Holds` samples,
+  `quantile q` the `ceil(q * n)`-th smallest of the `n` values; the result is
+  compared with the threshold by the comparison and is `Boolean`.
+- **Undefined and insufficient.** The first `Undefined(cause)` sample in oldest-first
+  order makes the atom undefined with that cause and stops the window; this is
+  QSpec FR-414's undefined evaluation (O-16 category violation) and reads as an
+  undefined `holds` valuation: `truth = None`, `activation = Active` and a `Refused`
+  non-value with code `undefined-atom`. A window holding fewer than `min_count`
+  samples makes the atom have no value with cause `insufficient-data{count,
+  min_count}`, which is QSpec FR-414's O-16 category `undefined`, never an undefined
+  evaluation: it reads as a missing valuation, `truth = None` and a `Missing`
+  non-value with code `insufficient-data`, dimension `valuation:<atom>@<pos>`. When
+  a window is both short of `min_count` and holds an undefined sample, the undefined
+  sample's cause wins (FR-414). A position the window needs that the
+  request does not list is an absent sample: the atom is `Missing` as an absent
+  valuation is (the `fact-withdrawn` rule).
+- **Limit.** A window that would hold more than the FR-255 setting
+  `monitor.max_window_values` (default 1,048,576) stops the call with an
+  `Incomplete` result carrying `limit-reached` naming `max_window_values` as `LimitReached{limit, value, setting:
+  monitor.max_window_values}` (QSpec FR-414) and no truth, as the progress-ledger capacity stop is
+  (above); the setting is a system setting, not a request member.
+- **Charges.** QSpec FR-414-AC-8 charges one unit of clause work at `temporal.visit`
+  per window position visited, whether or not the filter admits it, up to and
+  including the first undefined position. FR-523 "Window aggregate visit" maps it:
+  the atom lookup is charged as a `holds` lookup, and each window position read is
+  one `evaluation_steps` unit and one `valuations` unit (and so one `visited` unit);
+  an unlisted position is not visited and the comparison charges nothing further. No
+  new counter exists: the thirteen stay thirteen, and an exhausted counter stops the
+  call as FR-523 states.
+
+The aggregate node is not yet written by QSL's emitter (lowering faults an aggregate
+atom), no QSpec operation catalog entry defines the node and Contract IR's reader
+admits no `quire.op.temporal.aggregate` operation (the catalog is QSpec's
+`proposals/checked-package-v2/schema.json`), so no package carrying the node can be
+admitted today, a hand-built one included. The evaluation behavior above and its
+criteria are specified now and are gated on the dependencies in "Dependencies".
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -359,6 +445,10 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-43 | With a decisive witness whose support valuation at position 1 of atom 0 is absent from the request, the result's `non_value` is `Missing` with code `fact-withdrawn` and dimension `valuation:0@1`, and the result with the valuation present has no `non_value`; with a valuation of atom 1 at position 2, read by the evaluator and not in the decision support, absent from the request, the dimension is `valuation:1@2`; with the decision closure and the valuation both withdrawn the dimension is `decision_closure`. | Test (TC-1311) |
 | FR-516-AC-44 | Over a fixed-sample clause whose support includes a pair at a silent sample, the result's `support` holds an entry for each support pair at an observed position and none for the pair at the silent sample, and the count equals the observed pairs. | Test (TC-1311) |
 | FR-516-AC-45 | A call over a `CheckedNodeId` absent from the package, and over the id of a `protocol_clause` node, each returns `Err(CallFailure::Admission)` with cause `clause-root-unresolved` and an empty charge log, and the caller's ledgers are unchanged. | Test (TC-1311) |
+| FR-516-AC-47 | Under the event-position profile with samples at positions 0 to 3 of 3, 4, 5, 6 for a `sum` term over `past[0, 2]` compared `<= 15`, the atom is true at position 3 (window 4 + 5 + 6 = 15) and false with threshold `<= 14`; at position 1 the window is positions 0 and 1 and the sum is 7; `min` over the same is 4 and `max` is 6 at position 3; `count` over `Counted` samples at positions 0, 1 and 3 and `Excluded` at 2 is 2 at position 3 for `past[0, 2]`. | Test (TC-1311) |
+| FR-516-AC-48 | With the values 4, 5, 6 in the window, `quantile 1/2` is 5 (the `ceil(3/2) = 2`nd smallest) and `quantile 3/4` is 6 (the `ceil(9/4) = 3`rd); with `Holds` samples `true, false, true`, `fraction` is 2/3 and compares exactly with a threshold of `2/3` as equal; an `Excluded` sample is not counted. | Test (TC-1311) |
+| FR-516-AC-49 | With `min_count 2` and one admitted sample in the window the atom is undefined with cause `insufficient-data{count: 1, min_count: 2}` and the result has `truth = None` and a `non_value` for `valuation:<atom>@<pos>`; a `count` or `sum` term with `min_count 0` over an empty window is 0; an `Undefined(cause)` sample at the second of three window positions stops the window there with that cause; a window position the request does not list gives a `Missing` non-value; a window with one admitted sample, `min_count 2` and an `Undefined(cause)` sample at its second position returns the `Refused` non-value `undefined-atom` with that cause and not `insufficient-data`; `insufficient-data` is a `Missing` non-value with `truth = None` and an undefined sample is a `Refused` non-value with `truth = None`. | Test (TC-1311) |
+| FR-516-AC-50 | Over the event-position false-extension profile, the clause `on origin always[0,3] (sum(v) over past[0,2] <= 15)` and a request of four positions 0 to 3 with `Value` samples 3, 4, 5, 6 of the one aggregate atom (index 0), progress `Complete { through: 3 }` and a closed decision scope, the call returns `truth = True`, and `usage` reports `formula_nodes` 2, `instances` 1, `positions` 4, `valuations` 13 (four atom lookups and window reads of 1, 2, 3 and 3 positions), `captures` 0, `evaluation_steps` 19 (the origin, the `always` node, four atom lookups, four scans and nine window reads) and `visited` 19 (2 + 4 + 13 + 0); the nine window units of QSpec FR-414-AC-8 (1 + 2 + 3 + 3 window positions) are the `valuations` and `evaluation_steps` units of the window reads, and FR-523 adds the four atom lookups on top of them (13 and 19 are 9 + 4 and 9 + 4 + 6); the comparison of the other six counters with the values the in-process route measures for the same request, and the agreement of every route, are gated on the aggregate emission dependency, since the in-process route cannot yet emit the clause. With `monitor.max_window_values` 2 the call returns `Ok` with `Incomplete` carrying `LimitReached{limit: 2, value: 3, setting: monitor.max_window_values}` at position 2 and `truth = None`; at 3 it completes. With `valuations` one below 13, or `evaluation_steps` one below 19, the call returns `Incomplete` naming that counter. A `Value` sample for a `fraction` term is refused `aggregate-sample-kind` with an empty charge log. | Test (TC-1311) |
 | FR-516-AC-46 | Over each `EvidencePackage` of FR-515-AC-24 (one built by `from_emission`, one by `from_read`) whose written package differs from the source clause, the first `evaluate_temporal_evidence` call that reaches the clause returns `Err(CallFailure::Admission)` with cause `clause-unreadable`, an empty charge log and the caller's ledgers unchanged. | Test (TC-1311) |
 
 ## Dependencies
@@ -369,6 +459,7 @@ ceilings from the same inputs is byte-equal to a call that never stopped
   does not replace. FR-522 supplies `binding`, `authenticated` and the
   `result_identity` rule, FR-523 the thirteen counters, FR-524 the activation
   states and faults, FR-526 the relation checks.
+- **Window aggregates (gates FR-516-AC-47 to AC-50 and FR-532-AC-11):** QSL's emission of an aggregate clause as a `quire.op.temporal.aggregate` node (QSL-1643), and QSL-1644 (a QSpec operation catalog entry that defines the node's members, and Contract IR's admission of it by `read_checked_package`); QSpec FR-414 and FR-194 (the window, `min_count`, quantile, undefined and charge rules), FR-337-AC-15 (the emitted aggregate argument), FR-255 (`monitor.max_window_values`). FR-194 evaluation needs, beyond the per-position sample stream above, nothing from the observation: the window, `min_count`, comparison and converted threshold come from the package, and the value expression and filter are evaluated by the observation owner.
 - **Delivery:** FR-516-AC-18, AC-29, AC-30, AC-45 and AC-46 are delivered by QSL-1608 (see FR-515 Dependencies).
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/conformance/kernel.rs`,
   `tests/it002_observation_temporal.rs` (QSL-1549).
