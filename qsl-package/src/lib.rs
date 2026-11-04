@@ -30,6 +30,8 @@ mod checked_v2;
 pub mod checked_views;
 #[cfg(feature = "std")]
 mod emit;
+#[cfg(feature = "std")]
+mod equality_file;
 pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
@@ -51,6 +53,10 @@ mod reader_protocol_projection;
 pub use bare::{
     BarePackage, BareSupply, IdentityFileRefusal, IdentityMember, IdentityWitnessRefusal,
     ReadIdentityRows, IDENTITIES_FORMAT,
+};
+#[cfg(feature = "std")]
+pub use equality_file::{
+    EqualityFileRefusal, EqualityWitnessRefusal, ReadEqualityRows, EQUALITY_FORMAT,
 };
 #[cfg(feature = "std")]
 pub use bare_slot::{BareSelectionFailure, BareSlot, BareSource};

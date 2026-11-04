@@ -4719,7 +4719,10 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
     let bare = qsl_package::BarePackage::new(v2)
-        .with_supply(qsl_package::BareSupply { identities: &rows });
+        .with_supply(qsl_package::BareSupply {
+            identities: &rows,
+            equality: None,
+        });
     let view = package.evaluation_view();
     let row_origins: std::collections::BTreeSet<String> = v2
         .checked_term_data()
@@ -4843,7 +4846,10 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
     let bare = qsl_package::BarePackage::new(v2)
-        .with_supply(qsl_package::BareSupply { identities: &rows });
+        .with_supply(qsl_package::BareSupply {
+            identities: &rows,
+            equality: None,
+        });
     let view = package.evaluation_view();
     let clause = slot(&package, "Refunds", "Refunds", "activation.guard", None).node;
     let descriptor = |member: &str, index| {
