@@ -59,6 +59,13 @@ claims runtime observations or family evaluation.
    accounting boundary. Retry with sufficient budget and inspect the original
    source/model inputs and prior report for mutation. Never infer the expected
    exact limit from the run's own reported consumption.
+7. Compile `protocol P using ob` with `ob` selecting
+   `quire.observation.binding/v1` and the exact registered definition inventory.
+   Inspect the `ProfileUse`: it retains the completed closure with the exact
+   `quire.protocol.finite-global/v1` dependency and transitive requirements,
+   while the protocol site refuses `WrongProfileKind`. Then omit or conflict the
+   protocol definition; the use retains the closure cause and the declarations
+   refuse or remain incomplete, with no complete package admission.
 
 ## Expected Results
 
