@@ -1524,6 +1524,35 @@ mod tests {
         }
     }
 
+    /// FR-501 / TC-1295: a tick bound above `u64::MAX` is refused as an
+    /// interval binding, not truncated.
+    #[ix_trace_rs::trace("TC-1295", "FR-501")]
+    #[test]
+    fn a_tick_bound_above_u64_max_is_an_interval_binding_refusal() {
+        use std::str::FromStr;
+
+        use quire_exact::{Integer, Rational};
+        let above = Rational::from_integer(
+            Integer::from_str("18446744073709551616").expect("u64::MAX + 1 parses"),
+        );
+        let interval = CheckedInterval::Timed(
+            qsl_foundation::bound::TimedInterval::new(
+                Rational::from_integer(Integer::from(0_i64)),
+                true,
+                above,
+                true,
+            )
+            .expect("a valid interval"),
+        );
+        assert!(matches!(
+            wire_bounds(&interval),
+            Err(Error::Refused(Refusal::Binding {
+                dimension: Dimension::Interval,
+                ..
+            }))
+        ));
+    }
+
     /// A clock binding without the `clock:` spelling has no admitted clock
     /// name; the evaluator refuses it as a clock-binding mismatch, the same
     /// refusal as a wrong asserted name, and accepts only the exact name.

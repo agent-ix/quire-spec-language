@@ -29,3 +29,9 @@ Ticket: QSL-1609. Gap analysis of the PR diff against the specs. The product cha
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No requirement or test names the checked-to-wire route's handling of an open or non-integer Timed interval (a refusal in `checked_interval` versus a fault in the lowering's `temporal_interval`). The two layers disagree on the kind of outcome for the same invariant break. Fix: have the spec lane state which one owns the case, then tag a test. | src/temporal.rs:1299 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | Owning requirement for open or non-integer Timed intervals filed as QSL-1611 (spec lane). |

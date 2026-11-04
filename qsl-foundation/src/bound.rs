@@ -623,6 +623,55 @@ impl TimedIntervalKey {
 
 #[cfg(test)]
 mod tests {
+    /// FR-501 / TC-1295: a tick interval's integral closed bounds are read
+    /// from `[a, b]` (zero width included); an open end, a rational bound or a
+    /// bound above `u64::MAX` is no tick interval.
+    #[trace("TC-1295", "FR-501")]
+    #[test]
+    fn closed_integral_bounds_accept_only_closed_integral_u64_intervals() {
+        use std::str::FromStr;
+
+        use quire_exact::{Integer, Rational};
+
+        let whole = |value: i64| Rational::from_integer(Integer::from(value));
+        let interval = |lower, lower_closed, upper, upper_closed| {
+            TimedInterval::new(lower, lower_closed, upper, upper_closed).expect("a valid interval")
+        };
+        assert_eq!(
+            interval(whole(0), true, whole(5), true).closed_integral_bounds(),
+            Some((0, 5))
+        );
+        assert_eq!(
+            interval(whole(0), true, whole(0), true).closed_integral_bounds(),
+            Some((0, 0))
+        );
+        assert_eq!(
+            interval(whole(0), false, whole(5), true).closed_integral_bounds(),
+            None,
+            "open lower end"
+        );
+        assert_eq!(
+            interval(whole(0), true, whole(5), false).closed_integral_bounds(),
+            None,
+            "open upper end"
+        );
+        let half =
+            Rational::new(Integer::from(1_i64), Integer::from(2_i64)).expect("a denominator");
+        assert_eq!(
+            interval(half, true, whole(5), true).closed_integral_bounds(),
+            None,
+            "rational endpoint"
+        );
+        let above = Rational::from_integer(
+            Integer::from_str("18446744073709551616").expect("u64::MAX + 1 parses"),
+        );
+        assert_eq!(
+            interval(whole(0), true, above, true).closed_integral_bounds(),
+            None,
+            "endpoint above u64::MAX"
+        );
+    }
+
     /// FR-097-AC-9: a proof bound exists only with the kind its variant
     /// pairs with; `None` is for a `Variants` bound alone.
     #[trace("TC-436", "FR-097-AC-9")]

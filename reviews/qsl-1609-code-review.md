@@ -34,3 +34,16 @@ Ticket: QSL-1609. Code review with the rust-review lane folded in. The product c
 | --- | --- | --- | --- |
 | FND-001 | low | The new refusal arms of `checked_interval` (open end, non-integer bound) have no test of their own, and the closed-integer predicate duplicates `tick_bounds` in the lowering, which is private to `qsl-semantics`. The arms are defensive today (the finite-window check admits only closed integral intervals), but nothing pins them and the two copies of the rule can drift. Fix: add a small unit test beside the function, or expose the lowering's predicate and call it. | src/temporal.rs:1299 |
 | FND-002 | low | `default_clock_selections` panics for `FixedSampleFalseExtension` and supplies the arbitrary authority `"fixture"` for event-position. Any future `request_builder::check` fixture that uses a fixed-sample clause panics inside shared support instead of naming its own selection through a typed failure. Fix: return the selection for fixed-sample from a documented default or take the selections as a parameter. | tests/support/front_end.rs:224 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit e9fa9e538 adds `a_closed_integral_tick_interval_is_written_as_wire_ticks` (asserts "0".."5" and the zero-width "0".."0") and `an_open_or_non_integer_timed_interval_is_an_interval_binding_refusal` (open upper, open lower, 1/2 lower), and replaces the private `tick_bounds` and the duplicate predicate with `TimedInterval::closed_integral_bounds()`, called from both sites. The lowering behavior is unchanged. |
+| FND-002 | fixed | `default_clock_selections` returns a FixedSample selection (epoch 0, period 1/10, milliseconds) and uses authority `events-authority`; the panic is gone. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The shared `closed_integral_bounds` has no unit test in `qsl-foundation`, and its `to_u64()?` overflow arm (a bound above `u64::MAX`) is untested at both call sites; only open-end and non-integer refusals are pinned. Fix: add a foundation test for integral, open, fractional and over-u64 bounds. | qsl-foundation/src/bound.rs:537 |

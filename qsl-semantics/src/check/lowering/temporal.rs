@@ -587,6 +587,8 @@ fn timed_member(interval: &qsl_foundation::bound::TimedInterval) -> Member {
 
 #[cfg(test)]
 mod tick_interval_tests {
+    use std::str::FromStr;
+
     use quire_exact::{Integer, Rational};
 
     use super::*;
@@ -619,6 +621,15 @@ mod tick_interval_tests {
         let open = timed(rational(0, 1), rational(5, 1), false);
         assert_eq!(
             temporal_interval(Some(&open), true).err(),
+            Some("finite-window-interval-is-integral-closed")
+        );
+        // A bound above `u64::MAX` is no tick: a fault, not a truncation.
+        let above = Rational::from_integer(
+            Integer::from_str("18446744073709551616").expect("u64::MAX + 1 parses"),
+        );
+        let huge = timed(rational(0, 1), above, true);
+        assert_eq!(
+            temporal_interval(Some(&huge), true).err(),
             Some("finite-window-interval-is-integral-closed")
         );
         // The timed profile keeps its rational wire form.
