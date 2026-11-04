@@ -21,6 +21,7 @@ mod automaton_key_bounded;
 mod call_verdicts;
 mod canonical_node_probe;
 mod checked_package_call;
+mod checked_route_trigger;
 mod child_composite;
 mod clause_read_paths;
 mod collection_algebra;
