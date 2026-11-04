@@ -691,6 +691,109 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
     })
 }
 
+/// FR-505-AC-1: a bounded Rational value type is admitted through Semantic IR
+/// validation and package reading, and its typed field retains that identity.
+#[trace("FR-505-AC-1", "TC-1300")]
+#[test]
+fn reads_a_bounded_rational_value_type_from_a_package_document() {
+    let package = "test/rational-value-type";
+    let ratio = format!("ix://{package}/Ratio");
+    let holder = format!("ix://{package}/Holder");
+    let constraints = [
+        ("maxDenominator", 12_i64),
+        ("minNumerator", -3_i64),
+        ("minDenominator", 1_i64),
+        ("maxNumerator", 7_i64),
+    ]
+    .into_iter()
+    .map(|(keyword, value)| {
+        let identity = format!("{ratio}/constraints/{keyword}");
+        serde_json::json!({
+            "identity": identity,
+            "keyword": keyword,
+            "operands": {"value": value},
+            "appliesTo": ratio.clone(),
+            "diagnosticCode": format!("rational.{keyword}"),
+            "origin": {"generated": {
+                "generatorIdentity": ratio.clone(),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [ratio.clone()],
+            }},
+        })
+    })
+    .collect::<Vec<_>>();
+    let field = wire_field(&format!("{holder}/ratio"), "ratio", &ratio);
+    let document = wire_envelope(
+        package,
+        serde_json::json!([
+            wire_construct(
+                package,
+                "value_type",
+                meaning::VALUE_TYPE,
+                serde_json::json!({}),
+            ),
+            wire_construct(
+                package,
+                "object_type",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({})
+            ),
+        ]),
+        serde_json::json!([
+            wire_type(
+                &ratio,
+                serde_json::json!({"module": package, "name": "value_type"}),
+                serde_json::json!({"scalar": "rational", "constraints": constraints}),
+            ),
+            wire_type(
+                &holder,
+                serde_json::json!({"module": package, "name": "object_type"}),
+                serde_json::json!({"supertypes": [], "fields": [field], "operations": []}),
+            ),
+        ]),
+    );
+    let parsed = parse_document(&serde_json::to_vec(&document).expect("serialize package"));
+    let records = read_records(package, &parsed).expect("bounded Rational package reads");
+    let scalar = records
+        .iter()
+        .find_map(|record| match record {
+            qsl_semantics::model::domain_package::DomainPackageRecord::ScalarType(scalar)
+                if scalar.key.node == ratio =>
+            {
+                Some(scalar)
+            }
+            _ => None,
+        })
+        .expect("Ratio scalar record");
+    let qsl_semantics::model::domain_package::ScalarValueDomain::Rational {
+        domain: Some(domain),
+        unit: None,
+    } = &scalar.domain
+    else {
+        panic!("bounded dimensionless Rational was not retained: {scalar:?}");
+    };
+    assert_eq!(
+        domain.numerator().lower(),
+        &quire_exact::Integer::from(-3_i64)
+    );
+    assert_eq!(
+        domain.numerator().upper(),
+        &quire_exact::Integer::from(7_i64)
+    );
+    assert_eq!(domain.denominator().lower(), &quire_exact::Integer::one());
+    assert_eq!(
+        domain.denominator().upper(),
+        &quire_exact::Integer::from(12_i64)
+    );
+    assert!(records.iter().any(|record| matches!(
+        record,
+        qsl_semantics::model::domain_package::DomainPackageRecord::FieldMember(field)
+            if field.value_type == qsl_semantics::model::domain_package::ValueTypeRef::Package(
+                scalar.key.clone()
+            )
+    )));
+}
+
 fn unit_intake_scale_document(package_identity: &str, count: usize) -> Vec<u8> {
     let mut types = String::from("[");
     for index in 0..count {
