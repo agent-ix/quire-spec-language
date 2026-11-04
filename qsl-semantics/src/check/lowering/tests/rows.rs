@@ -818,7 +818,8 @@ fn rational_literals_are_one_literal_node_through_check() {
 /// scale is refused `ill_typed`/`type-mismatch`.
 #[trace("FR-104-AC-16", "TC-1232")]
 #[test]
-fn a_decimal_constructor_lowers_to_a_literal_spelled_with_its_written_scale() {
+fn a_decimal_constructor_lowers_with_its_written_scale_and_a_scale_past_65535_is_ill_typed_type_mismatch(
+) {
     let bounds = ["-99999", "99999", "0", "2", "nearest-even"];
     let lowered = |coefficient: i64, scale: u32| {
         let literal = function(

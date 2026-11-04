@@ -2221,16 +2221,10 @@ enum AliasStep<'e> {
     OrElse(ExprRef<'e>, Option<usize>),
 }
 
-/// Whether `node` is a checked `decimal(c, s)` literal.
-fn is_decimal_literal(node: &Node) -> bool {
-    matches!(
-        node.kind,
-        NodeKind::Literal(CheckedLiteral(Value::Decimal(_)))
-    )
-}
-
 /// The largest written scale of a `decimal(c, s)` literal the checker keeps:
-/// the literal's wire spelling has exactly that many fractional digits.
+/// the literal's wire spelling has exactly that many fractional digits. No
+/// spec text states this bound yet; it is an interim limit that keeps a zero
+/// coefficient (a member at every scale) from spelling an unbounded string.
 const MAX_LITERAL_SCALE: u32 = 65_535;
 
 /// Whether an expression takes its type from its context.
@@ -2518,6 +2512,18 @@ impl<'a> Typer<'a> {
     }
 
     /// Store `node` as an operand of the node being built, and name it.
+    /// Whether `node` is a checked `decimal(c, s)` literal, possibly negated.
+    fn is_decimal_literal(&self, node: &Node) -> bool {
+        match &node.kind {
+            NodeKind::Literal(CheckedLiteral(Value::Decimal(_))) => true,
+            NodeKind::DecimalNegate(operand, _) => self
+                .body
+                .get(*operand)
+                .is_some_and(|inner| self.is_decimal_literal(inner)),
+            _ => false,
+        }
+    }
+
     fn push(&mut self, node: Node) -> NodeId {
         self.body.push(node)
     }
@@ -3467,7 +3473,7 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
-        let literal_operand = is_decimal_literal(&left) || is_decimal_literal(&right);
+        let literal_operand = self.is_decimal_literal(&left) || self.is_decimal_literal(&right);
         let (left_box, right_box) = (self.push(left), self.push(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
             (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => {
@@ -3532,11 +3538,15 @@ impl<'a> Typer<'a> {
                     Some(ValueType::Decimal(target)) if target == left_decimal => target.clone(),
                     Some(ValueType::Decimal(_)) => return Err(mismatch(location)),
                     Some(_) => return Err(mismatch(location)),
-                    // No expected type: a `decimal(c, s)` operand took its
-                    // typed peer's type, so the operands share one decimal
-                    // type and the operation is typed by it (FR-104-AC-13).
-                    // Typed operands alone supply no target.
-                    None if literal_operand => left_decimal.clone(),
+                    // No expected type: decimal operands and result share one
+                    // named type (QSpec FR-140-AC-7), so a sum, difference or
+                    // product is typed by its operands' type (FR-104-AC-13).
+                    // A quotient's result type is not determined by its
+                    // operands: it needs an expected type, or a `decimal(c, s)`
+                    // operand that took its typed peer's type (FR-140-AC-3).
+                    None if operator != ArithmeticOperator::Divide || literal_operand => {
+                        left_decimal.clone()
+                    }
                     None => {
                         return Err(CheckRefusal::ill_typed(
                             location,

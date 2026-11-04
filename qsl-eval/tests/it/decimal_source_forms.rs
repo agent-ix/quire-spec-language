@@ -469,6 +469,8 @@ fn a_decimal_literal_takes_the_type_of_its_typed_peer() {
     };
     for body in [
         "p + decimal(1, 2) = p",
+        "p + -decimal(5, 0) = p",
+        "-decimal(5, 0) + p = p",
         "decimal(1, 2) + p = p",
         "p = p + decimal(1, 2)",
         "p * decimal(1, 2) = p",
@@ -552,5 +554,46 @@ fn only_a_nonzero_literal_divisor_discharges_the_nonzero_obligation() {
             "p / (if b then decimal(5, 2) else decimal(6, 2))"
         )),
         unproved_nonzero()
+    );
+}
+
+/// FR-104-AC-13 (TC-1084): the sum, difference and product of two operands of
+/// one decimal type are typed by it with no expected type (QSpec FR-140-AC-7),
+/// so `a + b = b + a` checks, evaluates to `true`, and the overflow of
+/// `0.99 + 0.01` at `P` is a runtime refusal, not a typing one.
+#[trace("FR-104-AC-13", "QSpec-FR-140-AC-7", "TC-1084")]
+#[test]
+fn sums_differences_and_products_of_one_typed_pair_need_no_expected_type() {
+    let wide = "type P = Decimal[-99, 99; 2, 2; nearest-even];\n";
+    for body in ["a + b = b + a", "a * b = b * a", "a - b = a - b"] {
+        let package = compile(&format!(
+            "{wide}function f using v(a: P, b: P): Boolean pure {{ {body} }}\n"
+        ))
+        .unwrap_or_else(|refusals| panic!("{body} checks: {refusals:?}"));
+        let value =
+            |coefficient: i64| Value::Decimal(quire_exact::Decimal::new(int(coefficient), 2));
+        let run = call(&package, vec![value(1), value(2)], UNLIMITED);
+        assert!(
+            matches!(run.outcome, Outcome::Completed(Value::Boolean(true))),
+            "{body}: {:?}",
+            run.outcome
+        );
+    }
+    let package = compile(&format!(
+        "{wide}function f using v(a: P, b: P): Boolean pure {{ a + b = b + a }}\n"
+    ))
+    .expect("the sum checks");
+    let value = |coefficient: i64| Value::Decimal(quire_exact::Decimal::new(int(coefficient), 2));
+    let over = call(&package, vec![value(99), value(1)], UNLIMITED);
+    assert!(
+        matches!(over.outcome, Outcome::Refused(_)),
+        "{:?}",
+        over.outcome
+    );
+    assert_eq!(
+        refusal(&format!(
+            "{wide}function d using v(a: P, b: P): Boolean pure {{ let s = a / b in s = a }}\n"
+        )),
+        ambiguous()
     );
 }
