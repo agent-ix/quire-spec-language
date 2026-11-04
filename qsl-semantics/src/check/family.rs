@@ -693,6 +693,14 @@ fn encode_expression(
                 out.write_str("contains");
                 pending.extend([expr.at(*collection), expr.at(*item)]);
             }
+            ExprNode::DropFirst(operand) => {
+                out.write_str("drop-first");
+                pending.push(expr.at(*operand));
+            }
+            ExprNode::RemoveOne { collection, item } => {
+                out.write_str("remove-one");
+                pending.extend([expr.at(*collection), expr.at(*item)]);
+            }
             ExprNode::AllInstances { target, population } => {
                 out.write_str("all-instances");
                 measure_model_target(out, target);

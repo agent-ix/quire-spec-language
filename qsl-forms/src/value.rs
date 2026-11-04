@@ -772,6 +772,8 @@ enum Shape {
     Dispatch(String),
     Query(BinderQuery, String),
     Flatten,
+    DropFirst,
+    RemoveOne,
     Accumulate {
         form: Accumulation,
         accumulator_type: DeclaredName,
@@ -957,6 +959,17 @@ impl Shape {
             Self::Flatten => {
                 arity(1)?;
                 ExprNode::Flatten(operands.next()?)
+            }
+            Self::DropFirst => {
+                arity(1)?;
+                ExprNode::DropFirst(operands.next()?)
+            }
+            Self::RemoveOne => {
+                arity(2)?;
+                ExprNode::RemoveOne {
+                    collection: operands.next()?,
+                    item: operands.next()?,
+                }
             }
             Self::Size => {
                 arity(1)?;
@@ -1861,11 +1874,16 @@ impl<'c> Mapping<'c> {
                 }
                 self.with_children(Shape::Size, &task, one(&operands)?)
             }
-            b"contains" => {
+            b"contains" | b"removeOne" => {
                 if operands.len() != 2 {
                     return Err(unexpected(node));
                 }
-                self.with_children(Shape::Contains, &task, operands)
+                let shape = if token.spelling() == b"contains" {
+                    Shape::Contains
+                } else {
+                    Shape::RemoveOne
+                };
+                self.with_children(shape, &task, operands)
             }
             b"(" => {
                 let [inner] = operands.as_slice() else {
@@ -2222,6 +2240,7 @@ impl<'c> Mapping<'c> {
         } else {
             match head.spelling() {
                 b"flatten" => Shape::Flatten,
+                b"dropFirst" => Shape::DropFirst,
                 b"fold" | b"reduce" => Shape::Accumulate {
                     form: if head.spelling() == b"fold" {
                         Accumulation::Fold

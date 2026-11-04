@@ -1797,6 +1797,8 @@ mod tests {
             Expression::seq(bound(), boxed(), boxed(), boxed()),
             Expression::size(boxed()),
             Expression::contains(boxed(), boxed()),
+            Expression::drop_first(boxed()),
+            Expression::remove_one(boxed(), boxed()),
             Expression::all_instances(form(), boxed()),
             Expression::lookup(form(), boxed(), boxed(), AbsenceMode::Empty),
             Expression::dispatch(boxed(), "m".to_owned(), vec![boxed(), boxed()]),
@@ -1815,7 +1817,7 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 40] = [
+    const FORM_NAMES: [&str; 42] = [
         "Case",
         "Boolean",
         "Absent",
@@ -1849,6 +1851,8 @@ mod tests {
         "Seq",
         "Size",
         "Contains",
+        "DropFirst",
+        "RemoveOne",
         "AllInstances",
         "Lookup",
         "Dispatch",
@@ -1897,6 +1901,8 @@ mod tests {
             ExprNode::Seq { .. } => "Seq",
             ExprNode::Size(_) => "Size",
             ExprNode::Contains { .. } => "Contains",
+            ExprNode::DropFirst(_) => "DropFirst",
+            ExprNode::RemoveOne { .. } => "RemoveOne",
             ExprNode::AllInstances { .. } => "AllInstances",
             ExprNode::Lookup { .. } => "Lookup",
             ExprNode::Dispatch { .. } => "Dispatch",

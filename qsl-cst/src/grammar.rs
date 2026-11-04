@@ -912,7 +912,12 @@ fn expressions(g: &mut Grammar) {
                 r(P::Expression),
                 x(")"),
             ]),
-            s(vec![x("flatten"), x("("), r(P::Expression), x(")")]),
+            s(vec![
+                c(vec![x("flatten"), x("dropFirst")]),
+                x("("),
+                r(P::Expression),
+                x(")"),
+            ]),
             s(vec![
                 c(vec![x("fold"), x("reduce")]),
                 x("<"),
@@ -1029,6 +1034,9 @@ fn expressions(g: &mut Grammar) {
                 r(P::Expression),
                 x(")"),
             ]),
+            // Tried before the keyword forms: every nesting level of `((..))` then
+            // pays one terminal, not one per keyword alternative.
+            s(vec![x("("), r(P::Expression), x(")")]),
             r(P::PopulationCall),
             r(P::CollectionCall),
             s(vec![
@@ -1056,7 +1064,7 @@ fn expressions(g: &mut Grammar) {
                 x(")"),
             ]),
             s(vec![
-                x("contains"),
+                c(vec![x("contains"), x("removeOne")]),
                 x("("),
                 r(P::Expression),
                 x(","),
@@ -1080,7 +1088,6 @@ fn expressions(g: &mut Grammar) {
                 r(P::QualifiedName),
                 x(")"),
             ]),
-            s(vec![x("("), r(P::Expression), x(")")]),
             s(vec![ident(), args]),
             r(P::QualifiedName),
         ]),
