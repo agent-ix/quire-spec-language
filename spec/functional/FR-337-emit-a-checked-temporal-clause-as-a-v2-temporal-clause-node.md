@@ -516,7 +516,7 @@ FR-488 and FR-447.
 | FR-337-AC-12 | The standing `CaptureRead` refusal of "Capture observation" (QSL-1092): the clause `eventually[0,1] holds(n < 3 and c.value = n + 1)` under event-position false-extension, `on each (q: M::Counter) when (c.value = 1)` with `capture n: Int[0, 3] = c.value;` checks and S4 emits it, and the engine returns `ModelCheckRefusal::CaptureRead` naming the clause and `n` and no verdict, exploring no state (no state is charged to the meter); the same refusal results for `always holds(n < 3 and c.value <= n + 1)` under infinite-trace `on each`, for a bounded monitor clause `on origin` with `capture n: Int[0, 3] = c.value;` and `always holds(c.value >= n)`, and for a clause reading its second capture only, naming that capture; a clause whose unit has an unbounded root returns `RequiresBound`, not `CaptureRead`; the same clause with the `holds` condition `c.value = 3` returns AC-11's verdict with the capture unread. | Test (TC-1267) |
 | FR-337-AC-13 | Over the `Counter` subject with a capture `n: Int[0, 3] = c.value;` no `holds` reads: infinite-trace `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` is `Violated`, as FR-125-AC-18 returns it, and FR-128 replays its counterexample to `reproduced-with-evaluated-witness`; the unguarded `on each (q: M::Counter)` clause with the same capture is `Holds{Exhaustive}` (a guarded clause carries no closure certificate) and FR-338's checker accepts the `ClosureCertificate`, reading the captures from the recompiled package. For AC-11's `z` clause, FR-338's checker rejects a certificate for a reached state at which `z` is undefined `BadState` at the reached product state, as it rejects an undefined atom. FR-128 replays the same clause's `UndefinedEvaluation` counterexample to `reproduced-with-evaluated-witness` with the undefined value at position 2 located at `z`, and the payload with `where.locus` naming the activation or another capture, or with `where.position` 1, settles `inconclusive`, `ReplayParity`; FR-339's component checker is not built, so its rejection of the same certificate waits on it. | Test (TC-1267) |
 | FR-337-AC-14 | The footprint (FR-156 "Atom footprints") of `always holds(true)` `on each (q: M::Counter) when (true)` with `capture n: Int[0, 3] = c.value;` holds the location `Counter::value` with the `over` parameter as its receiver, which the same clause with no capture does not, and FR-126's partial-order run joins it into the atoms'; a capture initializer reading through `q` has the same receiver. | Test (TC-1267) |
-| FR-337-AC-15 | A clause with an aggregate atom emits a `temporal`/`formula` node applying `quire.op.temporal.aggregate` whose one argument is QSpec FR-370's "Window aggregate atom" `aggregate`: for each kind its bindings and literals are those of the QSpec accepted vector over the same inputs (AG-01 to AG-06, AG-08, AG-09); its `predicate`, `value` and `filter` references reach the clause's `over` parameter; spans resolve through the source map; an omitted and an explicit `min_count 1` give one node; changing the window, `min_count`, value, filter, comparison, threshold or kind changes the formula key and package identity; a `duration` window lowers to quantity literals of its lower bound's unit, `past[0 ms, 300 s]` to `0` and `300000` of `ms`; and a `duration` window whose unit node is not the `scalar_type`/`unit` node the selected `timestamp_unit` names refuses the emission with no package. | Test (TC-1267) |
+| FR-337-AC-15 | A clause with an aggregate atom emits a `temporal`/`formula` node applying `quire.op.temporal.aggregate` whose one argument is QSpec FR-370's "Window aggregate atom" `aggregate`: for each kind its bindings and literals are those of the QSpec accepted vector over the same inputs (AG-01 to AG-06, AG-08, AG-09); its `predicate`, `value` and `filter` references reach the clause's `over` parameter; spans resolve through the source map; an omitted and an explicit `min_count 1` give one node; changing the window, `min_count`, value, filter, comparison, threshold or kind changes the formula key and package identity; a `duration` window lowers to quantity literals of the selected clock unit when S3 is given the clock, `past[0 M::s, 300000 M::ms]` to `0` and `300000` of `M::ms` under a clock in `M::ms` and to `0` and `300` of `M::s` under a clock in `M::s`, and otherwise of its lower bound's unit, `past[0 ms, 300 s]` to `0` and `300000` of `ms`; a bound whose converted value is past `s3.rational_bits` refuses `LimitExceeded(S3RationalBits)` at the bound, `past[0 ms, 255 s]` under a ceiling of 16 (the converted `255000` is 18 bits) and checks under 18; and a `duration` window whose unit node is not the `scalar_type`/`unit` node the selected `timestamp_unit` names refuses the emission with no package. | Test (TC-1267) |
 | FR-337-AC-16 | Two structurally equal clauses `eventually[0,1] holds(true)` over one subject named `Alpha` and `Beta` emit one `temporal_clause` node and two `temporal_clause_names` rows at occurrences 0 and 1 with the names `Alpha` and `Beta`, whatever the clause's profile. | Test (TC-1326) |
 | FR-337-AC-17 | Renaming `Alpha` changes that name row and no NodeId or `package_id` of any node. | Test (TC-1326) |
 | FR-337-AC-18 | A unit with no clause omits `temporal_clause_names`, and a unit whose clauses each have one occurrence carries one row at occurrence 0 per clause. | Test (TC-1326) |
@@ -568,14 +568,34 @@ threshold of another family, as FR-194 states.
 
 The clause's clock unit is the `scalar_type`/`unit` node whose path is
 `["scalar_type", "unit", T]`, `T` the selected clock's `timestamp_unit`.
-The emitter SHALL refuse a clause whose `duration` window's unit node is not
-that node with `InvalidTemporalClockValue` naming `timestamp_unit`, and SHALL
-write no package. S3 does not yet know the selected clock, so it converts
-both bounds to the lower bound's written time unit, and a window whose lower
-bound is written in another unit than the clock's is refused rather than
-converted (Remaining work: QSL-1648). A source-declared unit's node path is
-its declared name, and a source cannot yet name a model package's unit
-(QSL-1478), so no `duration` window emits today; `positions` windows do.
+The caller that selects the clause's timestamped-event clock SHALL give the
+selection to S3 as well as to the emitter (the spine passes each selection
+of the unit's source to its check). S3 SHALL convert both bounds of each
+`duration` window exactly to the time unit whose node is the clock unit
+node, and SHALL refuse a bound whose unit is a declared unit of another
+dimension, or is a time unit that does not convert to the clock unit (a
+`Time` of another owner with no admitted equivalence),
+`ill_typed`/`unit-mismatch` at the bound's unit (FR-194); a unit that names
+no declared unit stays `missing_declaration`/`missing-name` and an affine
+time unit stays `ill_typed`/`type-mismatch`. The `s3.rational_bits`
+ceiling SHALL bound each bound's converted value as well as its written
+magnitude, and a converted value past it SHALL be refused
+`LimitExceeded(S3RationalBits)` at the bound. A model-owned clock unit node and its dimension are written
+by the emitter, with an empty body, the model owner and a `generated`
+occurrence at the clause, as a timed source's are. Without a selected
+clock, or when no time unit has the clock unit node, S3 converts both
+bounds to the lower bound's written unit. The emitter SHALL refuse a clause
+whose `duration` window's unit node is not the clock unit node with
+`InvalidTemporalClockValue` naming `timestamp_unit`, and SHALL write no
+package. A source-declared unit's node path is its declared name, never
+`["scalar_type", "unit", T]`, so a `duration` window emits only in the time
+units of a selected model package (`M::s`, `M::ms`).
+
+Remaining work: QSL-1662. The model-check re-emit paths (identity, item and
+certificate closure) re-emit a supplied checked package with clock
+selections but do not re-run S3 with them, so a package checked without
+the clock whose bound unit differs from the clock unit is refused
+`InvalidTemporalClockValue`; the result is a refusal, never a wrong verdict.
 
 The bindings are inputs of the node's structural identity, so a change of any
 binding changes the formula node, and an omitted `min_count` and `min_count 1`
