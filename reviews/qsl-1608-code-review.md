@@ -71,3 +71,29 @@ Round 1, fix head 5fa074aee (main 0bc21d1df including spec #2272). Mutations re-
 ## Verdict (disposition pass 1)
 
 Not mergeable: FND-004 (high) is open.
+
+
+## Dispositions (round 2)
+
+Round 2, fix head 3d353bb10 (main 475dbdd75, spec #2280, already included). Gates re-run: fmt 0; check, clippy default and --no-default-features, arch-lint qualified-core and api-surface all rc=0 (with the PR's qsl-replay spine.rs arm); qsl-replay the 19 known names; qsl-package lib 625 passed 0 failed; qsl-eval 183/1062/43 green; root it plain 878 and --all-features 927, 0 failures.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | subject() now runs one same_formula comparison of the package formula_graph against the clause at the reference's clause position in AdmittedPackageRead::source() on both routes (the checks_formula flag is gone), matching #2280. The AC-24 test pairs a second unit's emission with the first unit's source for an operation, an interval and an operand-edge run and asserts clause-unreadable, an empty charge log and unchanged ledgers on from_emission and from_read. Mutation removing the comparison fails that test; mutations ignoring the interval or the operation fail it. |
+
+## Verdict (disposition pass 2)
+
+Mergeable. The PR's qsl-replay arm for ProtocolAnchorCause::ChannelDeliveryRange reports channel, lower and upper with the lower count above the upper, which is the FR-509-AC-2 condition the cause is raised for (protocol_controls.rs raises it only when lower > upper), so it is the right message and not only a compiling arm. Test-support hooks with_temporal_profile_selections, with_temporal_bindings, with_temporal_clause_refs and with_package_bytes are compiled only under the test-support feature, replace one row set of the emission and leave the reader-admitted bytes and every production path untouched.
+
+
+## New findings (disposition pass 3)
+
+Round 3, head 7da9d4cae (main 733f972e4 included). Gates: fmt 0; check rc=0; clippy default and --no-default-features show exactly one warning (unreachable_patterns, the duplicate ChannelDeliveryRange arm of main) and no other; arch-lint both rc=0; qsl-package lib 638 passed 0 failed; qsl-eval 183/1064/43 green; root it plain 878 and --all-features 927; qsl-replay lib: 21 failures, the 14 known plus 7 new (below).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | Semantic collision with main's #2279 (QSL-1384): six qsl-replay lib tests that pass on origin/main 733f972e4 fail on this head: spine::clause::tests::temporal::{a_ledger_with_a_lasso_is_refused_at_admit_and_returned_unchanged, a_ledger_with_an_infinite_trace_clause_is_refused_at_admit_and_returned_unchanged, a_ledger_with_a_finite_trace_without_progress_is_refused_at_admit_and_returned_unchanged, covered_positions_over_the_setting_report_incomplete_with_the_limit_fields, run_clause_returns_the_updated_ledger_and_preserves_it_on_regression, two_clauses_with_one_body_keep_separate_progress_bindings}. The run is refused at admit (invalid_runtime_input, invalid-value, mismatched_dimension Clock, asserted model-steps, no expected clock) because authenticate_binding (qsl-replay/src/spine/clause/temporal.rs) passes subject.clock() to TraceBinding::authenticate, and this PR changed TemporalSubjectView::clock() to answer only for a node with one occurrence (None for several, FR-515-AC-20), so a unit whose clauses share a node gets no clock. The caller already holds the occurrence ordinal (clock_rows.declaration(&node.identity(), node.claim().ordinal())): it must pair the clock by key with subject.clock_of(the occurrence of that ordinal). The seventh new failure, spine::tests::channel_delivery_range_message_names_the_channel_and_both_counts, fails on main too (main-red, the duplicate arm) and is not this PR's. | qsl-replay/src/spine/clause/temporal.rs:423 |
+
+## Verdict (disposition pass 3)
+
+Not mergeable: FND-005 (high) is open. temporal_binding_rows carries both the keyed.declarations push and the TemporalClauseRef row once per clause occurrence before the profile `continue`, with no duplicate or dropped row (the conflict resolution is correct).

@@ -8,8 +8,8 @@
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{
     evaluate_temporal_evidence, instance_bound_indices, ActivationState, ClauseFormula, ClauseWork,
-    CompletenessRecord, EvidenceCounter, EvidenceIncomplete, EvidenceLedger, EvidenceRef,
-    EvidenceRequest, EvidenceResult, ReachFault, SubjectOccurrence,
+    CompletenessRecord, EvidenceCounter, EvidenceIncomplete, EvidenceRef, EvidenceRequest,
+    EvidenceResult, ReachFault, SubjectOccurrence,
 };
 use qsl_eval::temporal::{ProgressCompleteness, ProgressLedger, Valuation};
 use qsl_package::checked_views::FormulaNodeUse;
@@ -285,7 +285,7 @@ fn a_leaf_count_that_differs_from_the_holds_count_maps_no_atoms() {
 
 /// FR-516-AC-40, FR-516-AC-41 (TC-1311 rows 40 and 41): each cause of the
 /// table that this call can meet is `Err(CallFailure::Admission)` with that
-/// cause, an empty charge log and the request's ledgers unchanged, and the
+/// cause and an empty charge log, and the
 /// request that differs from it only in not meeting the condition is `Ok`.
 #[trace("FR-516-AC-40", "FR-516-AC-41", "TC-1311")]
 #[test]
@@ -306,28 +306,20 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
         asked.trigger = Some(id(trigger));
         asked
     };
-    // Each refusal charges nothing and returns the request's ledgers as they
-    // were: the request carries both and neither gains an entry.
+    // Each refusal charges nothing. A refusal returns no result and no
+    // ledger, and the call takes the request by shared reference, so the
+    // caller's ledgers cannot change; the ledgers of an `Ok` stop are
+    // asserted by FR-516-AC-31's tests.
     let check_between = |env: &Env,
                          refused_subject: &qsl_eval::temporal::evidence::EvidenceSubject<'_>,
                          met_subject: &qsl_eval::temporal::evidence::EvidenceSubject<'_>,
-                         mut refused: EvidenceRequest,
+                         refused: EvidenceRequest,
                          met: EvidenceRequest,
                          cause: &str| {
-        refused.ledger.get_or_insert_with(EvidenceLedger::default);
-        refused
-            .progress_ledger
-            .get_or_insert_with(ProgressLedger::new);
-        let before = format!("{:?}", (&refused.ledger, &refused.progress_ledger));
         let mut meter = unlimited();
         let result = evaluate_temporal_evidence(refused_subject, &refused, &mut meter);
         expect_refusal(result, cause);
         assert!(meter.admitted_charges().is_empty(), "{cause}");
-        assert_eq!(
-            format!("{:?}", (&refused.ledger, &refused.progress_ledger)),
-            before,
-            "{cause}: the ledgers"
-        );
         assert!(
             call(env, met_subject, &met).is_ok(),
             "{cause}: the unmet twin"

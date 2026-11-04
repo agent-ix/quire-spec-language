@@ -340,8 +340,7 @@ fn compile_accepts_a_multi_unit_program_array() {
     assert_eq!(failure["details"]["path"], "unit-b.native", "{failure}");
     let edition_literal = invalid_second.find("\"0-draft\"").unwrap();
     assert_eq!(
-        failure["details"]["span"]["start"]["byte"],
-        edition_literal,
+        failure["details"]["span"]["start"]["byte"], edition_literal,
         "{failure}"
     );
     assert_eq!(
@@ -528,10 +527,13 @@ fn compile_program_array_file_count_refusal_names_the_programs_group() {
     let value = error.value().unwrap();
     assert_eq!(error.category().exit_code(), 22);
     assert_eq!(value["code"], "resource_exhausted", "{value}");
-    assert_eq!(value["details"], json!({
-        "limit":"selected files","category":"programs",
-        "requested":65,"remaining":64,"maximum":64
-    }));
+    assert_eq!(
+        value["details"],
+        json!({
+            "limit":"selected files","category":"programs",
+            "requested":65,"remaining":64,"maximum":64
+        })
+    );
 }
 
 /// FR-026-AC-4 (TC-104): a clause run request selecting more observation files

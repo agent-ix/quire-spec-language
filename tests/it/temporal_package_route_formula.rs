@@ -5,10 +5,7 @@
 //! name is refused at construction.
 
 use ix_trace_rs::trace;
-use qsl_eval::temporal::evidence::{
-    ClauseFormula, ClauseWork, EvidenceLedger, EvidencePackage, PackageMismatch,
-};
-use qsl_eval::temporal::ProgressLedger;
+use qsl_eval::temporal::evidence::{ClauseFormula, ClauseWork, EvidencePackage, PackageMismatch};
 use serde_json::Value;
 
 use super::temporal_package_route::{
@@ -32,12 +29,12 @@ fn only(body: &str) -> String {
 /// in-process clause formula differs from the package's `formula_graph()` in
 /// one operation or one interval (each in its own run) refuses
 /// `clause-unreadable` at the first call that reaches the clause, with an empty
-/// charge log and the caller's ledgers unchanged; the unaltered clause is
+/// charge log; the unaltered clause is
 /// evaluated; and the `EvidencePackage` built by `from_read` over the same
 /// bytes, paired with the same in-process source graph, is refused the same
-/// way. The operand-edge run points a connective's operand at another node;
-/// the written operations then differ at that position, since the pre-order
-/// of operations and the arities fix the edges.
+/// way. The third run writes another node under a connective, which is an
+/// operation difference at that position: an operand-edge change alone cannot
+/// exist, because the pre-order of operations and the arities fix the edges.
 #[trace("FR-515-AC-24", "FR-516-AC-39", "FR-516-AC-46", "TC-1310", "TC-1311")]
 #[test]
 fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
@@ -55,7 +52,7 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
             only("eventually[0,2] holds(c.versionNumber <= 1)"),
         ),
         (
-            "an operand edge",
+            "a connective's operand (an operation difference)",
             only("eventually[0,1] (holds(c.versionNumber <= 1) and holds(c.versionNumber >= 0))"),
             only("eventually[0,1] (holds(c.versionNumber <= 1) and true)"),
         ),
@@ -65,14 +62,11 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
         let unaltered =
             EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
         let [clause] = clause_ids(&unaltered).try_into().expect("one clause");
-        let mut asked = request(&unaltered, &clause, None, 3);
+        let asked = request(&unaltered, &clause, None, 3);
         assert!(
             run(&unaltered, &clause, &asked).0.is_ok(),
             "{what}: the unaltered clause"
         );
-        asked.ledger = Some(EvidenceLedger::default());
-        asked.progress_ledger = Some(ProgressLedger::new());
-        let ledgers = format!("{:?}", (&asked.ledger, &asked.progress_ledger));
 
         let other = event_clauses(&body, &[("Only", "only-authority")]);
         let changed = built.with_emission_of(other);
@@ -87,11 +81,6 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
             "{what}"
         );
         assert!(meter.admitted_charges().is_empty(), "{what}");
-        assert_eq!(
-            format!("{:?}", (&asked.ledger, &asked.progress_ledger)),
-            ledgers,
-            "{what}"
-        );
 
         // The read-back package is paired with the same in-process source
         // graph, so the same bytes are refused the same way.
@@ -104,18 +93,13 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
             "{what}: read back"
         );
         assert!(meter.admitted_charges().is_empty(), "{what}: read back");
-        assert_eq!(
-            format!("{:?}", (&asked.ledger, &asked.progress_ledger)),
-            ledgers,
-            "{what}: read back"
-        );
     }
 }
 
 /// FR-516-AC-45 (TC-1311 row 45): a call over a `CheckedNodeId` absent from the
 /// package, and over the id of a `protocol_clause` node, each returns
 /// `Err(CallFailure::Admission)` with cause `clause-root-unresolved`, an empty
-/// charge log and the caller's ledgers unchanged.
+/// charge log.
 #[trace("FR-516-AC-45", "TC-1311")]
 #[test]
 fn a_clause_the_package_does_not_hold_is_unresolved() {
@@ -123,10 +107,7 @@ fn a_clause_the_package_does_not_hold_is_unresolved() {
     let read = built.read(&built.emission);
     let package = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
     let due = clause_ids(&package).remove(0);
-    let mut asked = request(&package, &due, None, 3);
-    asked.ledger = Some(EvidenceLedger::default());
-    asked.progress_ledger = Some(ProgressLedger::new());
-    let ledgers = format!("{:?}", (&asked.ledger, &asked.progress_ledger));
+    let asked = request(&package, &due, None, 3);
     let protocol_clause = read
         .admitted()
         .graph()
@@ -152,11 +133,6 @@ fn a_clause_the_package_does_not_hold_is_unresolved() {
             "{what}"
         );
         assert!(meter.admitted_charges().is_empty(), "{what}");
-        assert_eq!(
-            format!("{:?}", (&asked.ledger, &asked.progress_ledger)),
-            ledgers,
-            "{what}"
-        );
     }
 }
 

@@ -63,3 +63,21 @@ Round 1, fix head 5fa074aee against merged spec #2272 (0bc21d1df).
 ## Verdict (disposition pass 1)
 
 Spec findings are all resolved. FND-006 is low. The PR stays not mergeable until SR-2263001 FND-004 is resolved.
+
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | FR-515-AC-25..28 own the construction refusals per route and each has a test: ClauseRow and ProfileSelections and Bindings from from_emission only, AmbiguousName from from_read only with from_emission constructing over the same package. Mutations removing each check are killed by its own test. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | FR-515-AC-24 asks for a mutated operand edge in its own run. The test's operand-edge run changes `and holds(...)` to `and true`, which is an operation difference at one position (pre-order and arities fix the edges), so no run isolates an edge. The mutation ignoring operand edges in same_formula survives every test. Restate the AC as operation and interval, or delete the edge comparison as redundant. | spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md:276 |
+| FND-008 | low | The ledger-unchanged assertions of the AC-41 loop and the AC-45/46 tests compare the request's ledgers before and after a call that takes the request by shared reference, so they cannot fail; no mutation can change them. The meaningful part (a refusal returns Err and no result carrying a ledger) is asserted by expect_refusal. Drop the snapshots or state the guarantee as the API's shared borrow. | qsl-eval/tests/it/temporal_causes.rs:306-340 |
+
+## Verdict (disposition pass 2)
+
+Mergeable. FND-007 and FND-008 are low and can be fixed forward.
