@@ -3,18 +3,35 @@
 //! checked-term view"): one machine over any source of checked nodes.
 
 use qsl_semantics::check::{CheckedGraph, CheckedNode, NodeId};
-use quire_checked::node::NodeKind;
-use quire_exact::ValueType;
+use quire_checked::node::{CheckedLiteral, NodeKind};
+use quire_exact::{Value, ValueType};
 use quire_semantic_value::location::Location;
 
 /// A handle to one checked node, from which its operands and the bodies of
 /// the functions it calls are reached.
+///
+/// The machine matches `kind` by reference on every visit, so a source must
+/// own its stored operations for `'a`: the checked arena stores
+/// `NodeKind<NodeId, CheckedLiteral>`, and a reader source stores its
+/// projected `NodeKind<Child, &'a Value>` operations (the `operation` of a
+/// `quire_checked::NodeRead`) once, rather than rebuilding one per visit.
+/// Returning the operation by value instead would clone every operand vector
+/// and owned metadata on each visit of the hot evaluation loop.
 pub(crate) trait NodeSource<'a>: Copy + 'a {
     /// What a [`NodeKind`] of this source names an operand by.
     type Child: Copy + 'a;
 
-    /// What the node computes.
-    fn kind(self) -> &'a NodeKind<Self::Child>;
+    /// How a [`NodeKind::Literal`] of this source holds its value: an owned
+    /// [`CheckedLiteral`] in the checked arena, a borrowed `&'a Value` in a
+    /// `NodeRead` operation. The machine reads it only through
+    /// [`NodeSource::literal`].
+    type Literal: 'a;
+
+    /// What the node computes, borrowed from the source for `'a`.
+    fn kind(self) -> &'a NodeKind<Self::Child, Self::Literal>;
+
+    /// The value a [`NodeKind::Literal`] of this source holds.
+    fn literal(literal: &'a Self::Literal) -> &'a Value;
 
     /// The operand `child` names, in this node's source.
     fn at(self, child: Self::Child) -> Self;
@@ -35,6 +52,11 @@ pub(crate) trait NodeSource<'a>: Copy + 'a {
     /// Function `function` of `graph`, the package a call at this node
     /// evaluates against: a `NodeKind::Call` index, an imported library's
     /// function, or a dispatch candidate's body or precondition.
+    ///
+    /// `graph` is the function table of the checked source only: the
+    /// machine's current package, or the imported library an
+    /// `ImportedCall` resolves to. A source whose functions live elsewhere
+    /// resolves `function` against its own table and ignores `graph`.
     fn callee(self, graph: &'a CheckedGraph, function: usize) -> Option<Callee<'a, Self>>;
 }
 
@@ -50,9 +72,14 @@ pub(crate) struct Callee<'a, N> {
 
 impl<'a> NodeSource<'a> for CheckedNode<'a> {
     type Child = NodeId;
+    type Literal = CheckedLiteral;
 
     fn kind(self) -> &'a NodeKind<NodeId> {
         CheckedNode::kind(self)
+    }
+
+    fn literal(literal: &'a CheckedLiteral) -> &'a Value {
+        &literal.0
     }
 
     fn at(self, child: NodeId) -> Self {

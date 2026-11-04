@@ -8,8 +8,8 @@
 //! make no charge.
 
 use quire_checked::node::{
-    Arithmetic, AuthoredBound, CheckedLiteral, Connective, ConnectiveOrigin, EndSide,
-    IntegerDivisionOperator, NodeKind, OrderedKind, RecordSlot, Visit,
+    Arithmetic, AuthoredBound, Connective, ConnectiveOrigin, EndSide, IntegerDivisionOperator,
+    NodeKind, OrderedKind, RecordSlot, Visit,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
@@ -1808,8 +1808,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
 
     fn eval(&mut self, node: N) -> Result<(), Halt> {
         match node.kind() {
-            NodeKind::Literal(CheckedLiteral(value)) => {
-                self.push_value(value.clone(), false);
+            NodeKind::Literal(literal) => {
+                self.push_value(N::literal(literal).clone(), false);
                 return Ok(());
             }
             NodeKind::Local(slot) => return self.eval_local(*slot),
@@ -4526,6 +4526,7 @@ mod tests {
         PopulationDocument, PopulationMember,
     };
     use quire_checked::key::DeclarationKey;
+    use quire_checked::node::CheckedLiteral;
     use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;
