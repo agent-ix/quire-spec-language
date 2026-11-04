@@ -151,20 +151,7 @@ fn enumerate_model_graph<P: StatePredicate>(
         let (model_bytes, _) = system
             .state_key(state)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        let encoded_model = base64::Engine::encode(
-            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-            model_bytes,
-        );
-        let bytes = serde_json::to_vec(&serde_json::json!([
-            "quire.probability-product-key/v1",
-            null,
-            encoded_model,
-            null,
-            null,
-            null
-        ]))
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        Ok::<_, ExactProbabilityGraphError>(ProbabilityProductKey(bytes))
+        product_key(&model_bytes)
     };
     let first = initial
         .into_iter()
@@ -247,6 +234,23 @@ fn enumerate_model_graph<P: StatePredicate>(
         initial: root,
         states,
     })
+}
+
+fn product_key(model_bytes: &[u8]) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+    let encoded_model = base64::Engine::encode(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        model_bytes,
+    );
+    let bytes = serde_json::to_vec(&serde_json::json!([
+        "quire.probability-product-key/v1",
+        null,
+        encoded_model,
+        null,
+        null,
+        null
+    ]))
+    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    Ok(ProbabilityProductKey(bytes))
 }
 
 /// Independently enumerate and check a bounded unbound exact reachability
@@ -577,6 +581,25 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[trace("TC-636")]
+    #[test]
+    fn bounded_model_product_key_uses_the_complete_fr196_v1_tuple() {
+        let key = product_key(b"model-state-key").expect("the fixed key encodes");
+        let actual: serde_json::Value =
+            serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
+        assert_eq!(
+            actual,
+            serde_json::json!([
+                "quire.probability-product-key/v1",
+                null,
+                "bW9kZWwtc3RhdGUta2V5",
+                null,
+                null,
+                null
+            ])
+        );
     }
 
     #[trace("TC-636")]
