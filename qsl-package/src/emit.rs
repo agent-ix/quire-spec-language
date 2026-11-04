@@ -271,15 +271,6 @@ pub enum EmitRefusal {
         /// The selected temporal profile identity.
         profile: &'static str,
     },
-    /// A selected temporal clock identity does not name a unique configured
-    /// declaration, or selections are not in structural NodeRef order.
-    #[error("temporal clock selection at {source_ref:?} bytes {span:?} does not identify a unique declaration in NodeRef order")]
-    InvalidTemporalClockReference {
-        /// The selected source document.
-        source_ref: qsl_foundation::source::provenance::RawSourceRef,
-        /// The selected declaration locus.
-        span: qsl_foundation::Span,
-    },
     /// A selected clock name or one of its exact configuration fields is
     /// empty, oversized, noncanonical or outside its declared range.
     #[error("temporal clock selection at {source_ref:?} bytes {span:?} has an invalid {field}")]
@@ -331,8 +322,7 @@ impl EmitRefusal {
             Self::MissingTemporalClockSelection { .. } => Code::MissingDeclaration,
             Self::SurplusTemporalClockSelection { .. }
             | Self::DuplicateTemporalClockSelection { .. }
-            | Self::TemporalClockProfileMismatch { .. }
-            | Self::InvalidTemporalClockReference { .. } => Code::InvalidPackage,
+            | Self::TemporalClockProfileMismatch { .. } => Code::InvalidPackage,
             Self::InvalidTemporalClockValue { .. } => Code::InvalidPackage,
             Self::Encoding { .. } => Code::OutputFailure,
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
@@ -390,8 +380,7 @@ impl EmitRefusal {
             Self::MissingTemporalClockSelection { .. } => Some("missing-selection"),
             Self::SurplusTemporalClockSelection { .. }
             | Self::DuplicateTemporalClockSelection { .. }
-            | Self::TemporalClockProfileMismatch { .. }
-            | Self::InvalidTemporalClockReference { .. } => Some("timed-node-reference"),
+            | Self::TemporalClockProfileMismatch { .. } => Some("timed-node-reference"),
             Self::InvalidTemporalClockValue { .. } => Some("invalid-value"),
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
             Self::MissingDispatchIdentityContext { .. } => None,
@@ -478,6 +467,44 @@ pub struct Emission {
     /// bare execution point) are not decodable through serde outside its
     /// admitting reader, so protocol results read these rather than the bytes.
     pub(crate) wire_nodes: Vec<CheckedSemanticNodeV2>,
+    /// The `temporal_bindings` rows of the checked graph's temporal and
+    /// hyper clauses, keyed by the graph's own clause identity.
+    pub(crate) temporal_binding_rows: TemporalBindingRows,
+}
+
+/// The `temporal_bindings` rows (FR-050, FR-515) an emission wrote for the
+/// checked graph's clauses, keyed by the clause's [`NodeKey`] and claim
+/// occurrence ordinal, so a reader of the in-process package finds a
+/// declaration's row without the wire's node identities (FR-522
+/// "Authentication").
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TemporalBindingRows {
+    rows: Vec<(NodeKey, quire_contract_model::TemporalBinding)>,
+}
+
+impl TemporalBindingRows {
+    /// The row of `declaration`'s claim occurrence `occurrence`, `None` when
+    /// the lock selects no clock configuration for it.
+    pub fn get(
+        &self,
+        declaration: &NodeKey,
+        occurrence: u64,
+    ) -> Option<&quire_contract_model::TemporalBinding> {
+        self.rows
+            .iter()
+            .find(|(key, row)| key == declaration && row.occurrence == occurrence)
+            .map(|(_, row)| row)
+    }
+
+    /// The number of keyed rows.
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Whether no clause has a row.
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
 }
 
 /// A protocol's result from checked-package emission (FR-383).
@@ -598,6 +625,7 @@ impl DebugWith for Emission {
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
+            temporal_binding_rows,
         } = self;
         f.debug_struct("Emission")
             .field("package", package)
@@ -628,6 +656,7 @@ impl DebugWith for Emission {
             )
             .field("equality_fact_witness_rows", equality_fact_witness_rows)
             .field("wire_node_count", &wire_nodes.len())
+            .field("temporal_binding_row_count", &temporal_binding_rows.len())
             .finish()
     }
 }
@@ -782,6 +811,14 @@ impl Emission {
     /// The v2 bytes and their manifest package name.
     pub fn package(&self) -> &EmittedPackage {
         &self.package
+    }
+
+    /// The `temporal_bindings` rows of the checked graph's clauses, keyed by
+    /// clause identity (FR-522). An emission re-encoded from a read package
+    /// (timed models, a monitor plan) keys none: the read package's rows are
+    /// keyed by wire identity only.
+    pub fn temporal_binding_rows(&self) -> &TemporalBindingRows {
+        &self.temporal_binding_rows
     }
 
     /// Every node of the checked graph the wire omits, ascending by node id.
@@ -4756,6 +4793,7 @@ pub fn emit_timed_models(
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
+        temporal_binding_rows: TemporalBindingRows::default(),
     })
 }
 
@@ -5656,7 +5694,7 @@ fn emit_package_inner(
         &mut step_rows,
         &mut schedulability_claim_rows,
     )?;
-    let (temporal_bindings, temporal_clause_names) =
+    let (temporal_bindings, temporal_clause_names, temporal_binding_rows) =
         temporal_binding_rows(graph, &emitted_node_ids, &nodes, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
@@ -5795,6 +5833,7 @@ fn emit_package_inner(
         equality_producer_identity_rows,
         equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
+        temporal_binding_rows,
     })
 }
 
@@ -5942,13 +5981,13 @@ fn temporal_binding_rows(
     (
         Vec<quire_contract_model::TemporalBinding>,
         Vec<quire_contract_model::TemporalClauseName>,
+        TemporalBindingRows,
     ),
     EmitRefusal,
 > {
     use qsl_semantics::check::TemporalProfile;
 
     let mut selected = BTreeMap::new();
-    let mut selection_order = Vec::with_capacity(selections.len());
     for selection in selections {
         let key = (
             selection.source.clone(),
@@ -5961,14 +6000,10 @@ fn temporal_binding_rows(
                 span: selection.declaration_span,
             });
         }
-        selection_order.push((
-            selection.source.clone(),
-            selection.declaration_span.start,
-            selection.declaration_span.end,
-        ));
     }
 
     let mut rows = Vec::new();
+    let mut keyed = TemporalBindingRows::default();
     let mut names = Vec::new();
     for site in graph.hybrid_claim_sites() {
         names.push(quire_contract_model::TemporalClauseName {
@@ -5980,7 +6015,6 @@ fn temporal_binding_rows(
             name: site.name.as_str().into(),
         });
     }
-    let mut matched_declarations = BTreeMap::new();
     let mut missing = Vec::new();
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
@@ -6027,13 +6061,14 @@ fn temporal_binding_rows(
             .get(&declaration_key)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        matched_declarations.insert(key, declaration.clone());
-        rows.push(quire_contract_model::TemporalBinding {
+        let row = quire_contract_model::TemporalBinding {
             declaration,
             occurrence: temporal.claim().ordinal(),
             clock_name: clause.clock().into(),
             clock: clock.clone(),
-        });
+        };
+        keyed.rows.push((declaration_key, row.clone()));
+        rows.push(row);
     }
 
     for hyper in graph.hyper_clauses() {
@@ -6098,13 +6133,14 @@ fn temporal_binding_rows(
             .get(&wrapper)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        matched_declarations.insert(key, declaration.clone());
-        rows.push(quire_contract_model::TemporalBinding {
+        let row = quire_contract_model::TemporalBinding {
             declaration,
             occurrence: occurrence.origin().ordinal(),
             clock_name: clock_name.into(),
             clock: clock.clone(),
-        });
+        };
+        keyed.rows.push((wrapper.clone(), row.clone()));
+        rows.push(row);
     }
 
     // QSpec FR-322-AC-305: a `compensate` node reads a clock too, so it is
@@ -6158,7 +6194,6 @@ fn temporal_binding_rows(
                 });
             }
             validate_temporal_clock(&source, span, template.clock.as_str(), clock)?;
-            matched_declarations.insert(key, declaration.clone());
             for node in nodes.iter().filter(|node| node.node_id == declaration) {
                 for ordinal in node
                     .occurrences
@@ -6186,33 +6221,13 @@ fn temporal_binding_rows(
     if let Some((source_ref, span)) = missing.into_iter().next() {
         return Err(EmitRefusal::MissingTemporalClockSelection { source_ref, span });
     }
-    let mut previous = None;
-    for (source_ref, start, end) in selection_order {
-        let key = (source_ref.clone(), start, end);
-        let Some(declaration) = matched_declarations.get(&key) else {
-            return Err(EmitRefusal::InvalidTemporalClockReference {
-                source_ref,
-                span: qsl_foundation::Span { start, end },
-            });
-        };
-        if previous
-            .as_ref()
-            .is_some_and(|previous: &CheckedNodeId| previous > declaration)
-        {
-            return Err(EmitRefusal::InvalidTemporalClockReference {
-                source_ref,
-                span: qsl_foundation::Span { start, end },
-            });
-        }
-        previous = Some(declaration.clone());
-    }
     rows.sort_by(|left, right| {
         (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
     });
     names.sort_by(|left, right| {
         (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
     });
-    Ok((rows, names))
+    Ok((rows, names, keyed))
 }
 
 /// The ids `node` holds that this emitter can reach through IR's public

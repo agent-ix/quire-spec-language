@@ -134,8 +134,9 @@ FR-267 writer writes these as the report holds them and derives none.
   `Timestamped` trace for any other profile, at stage `admit`,
   `invalid_runtime_input`/`invalid-value`. FR-501's `Pending` reports
   `pending` (the exit of FR-285's row for a supplied-trace clause pending when the trace ends) and its `Indeterminate` reports `indeterminate` (exit 11)
-  with its reason as the cause, no `truth` and no counterexample. FR-285's
-  interim mapping governs both labels until IR-1281. A progress
+  with its reason as the cause, no `truth` and no counterexample. Both labels
+  and exits are the shared catalog's `Category` values, with no local mapping
+  (FR-285). A progress
   contradiction (FR-502) reports stage `evaluate`, category `refusal`, with its
   record.
 - A refused `holds` condition (FR-327 "Refused condition") SHALL report

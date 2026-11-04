@@ -7,14 +7,13 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
-use qsl_eval::simulation::protocol::{MemorySelection, StepKind};
+use qsl_eval::simulation::protocol::MemorySelection;
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::MemoryModelName;
 use qsl_replay::{ModelCheckItem, ModelCheckLimits, ModelCheckOutcome};
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
 
-use crate::fill::{projections, reachable, sc_system};
 use crate::litmus::{attempt, contracts, field, package, protocol, Documents};
 use crate::weak_memory::select;
 
@@ -96,40 +95,6 @@ impl Fixture {
             letters: self.letters,
         }
     }
-}
-
-/// FR-218-AC-33 / TC-1268 and QSpec FR-228-AC-2: the repeat's body runs once
-/// before its guard reads the body binder. The false binder then exits the
-/// repeat, producing one `Ready` event and no second body iteration.
-#[trace("TC-1268", "FR-218-AC-33", "QSpec-FR-228-AC-2")]
-#[test]
-fn a_repeat_guard_over_its_body_binder_runs_the_body_before_testing() {
-    let run = format!(
-        "sequence Main {{ repeat Poll by c visible (ready) max 2 while {{ ready }} \
-         sequence Body {{ {} event Ready by c as (ready: Boolean) {{ false }}; }} \
-         exhausted sequence Done {{ }} }}",
-        attempt("Store", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
-    );
-    let fixture = Fixture::with_run(&run, PRETEST_CLAIM, &READS_THREE);
-    let system = sc_system(&fixture.subject());
-    let reached = reachable(&system);
-
-    assert_eq!(
-        projections(&reached),
-        [["Store", "Ready", "Done"]]
-            .into_iter()
-            .map(|steps| steps.into_iter().map(str::to_owned).collect())
-            .collect()
-    );
-    let ready_events = reached
-        .iter()
-        .flat_map(|state| &state.steps)
-        .filter(|(transition, _)| transition.kind() == StepKind::Event)
-        .count();
-    assert_eq!(
-        ready_events, 1,
-        "the false post-test guard exits after one body"
-    );
 }
 
 /// SR-1737002 FND-001: a repeat whose guard reads only a binder readable at

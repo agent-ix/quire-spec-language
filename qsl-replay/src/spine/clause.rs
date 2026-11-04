@@ -1082,15 +1082,16 @@ pub fn run_clause_with_temporal_selections(
             &cancel,
         )?
         .into_value();
-        front_end::package_with_temporal_selections(
+        let emitted = front_end::package_with_temporal_selections(
             &checked,
             temporal_selections,
             front_end::PackageLimits::default(),
             &cancel,
-        )?;
-        Ok(checked)
+        )?
+        .into_value();
+        Ok((checked, emitted))
     };
-    let checked = match front_end() {
+    let (checked, emitted) = match front_end() {
         Ok(compiled) => compiled,
         Err(failure) => {
             let disposition = match front_end::refusal_or_fault(failure) {
@@ -1152,6 +1153,7 @@ pub fn run_clause_with_temporal_selections(
                 trace,
                 over,
                 ledger: ledger.as_ref(),
+                clock_rows: emitted.temporal_binding_rows(),
             },
         )),
     }
