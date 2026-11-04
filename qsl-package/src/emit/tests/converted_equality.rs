@@ -35,7 +35,7 @@ fn checked_graph(declarations: &str) -> qsl_semantics::check::CheckedGraph {
 }
 
 /// `declarations` through S1 to S4 and the v2 emitter, with nothing omitted.
-fn emitted(declarations: &str) -> Emission {
+pub(super) fn emitted(declarations: &str) -> Emission {
     let graph = checked_graph(declarations);
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);

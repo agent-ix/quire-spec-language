@@ -146,6 +146,21 @@ fn check(
     (CheckedPackage::link(graph), packages)
 }
 
+/// The operation-member rows of `clauses`'s emission.
+pub(super) fn operation_member_rows(
+    clauses: &str,
+) -> Vec<quire_contract_model::SelectedOperationMemberRow> {
+    compile(clauses)
+        .emission
+        .selected_operation_member_rows()
+        .to_vec()
+}
+
+/// A unit with operation clauses and a protocol, for [`operation_member_rows`].
+pub(super) fn operation_unit() -> String {
+    unit_13("")
+}
+
 fn compile(clauses: &str) -> Compiled {
     compile_with(clauses, true)
 }
