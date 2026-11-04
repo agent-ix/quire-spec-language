@@ -85,7 +85,7 @@ pub(crate) fn project_protocol_root<'wire>(
     let identities = source_graph
         .selected_exact_identities(admitted)
         .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
-    admitted
+    let root_node = admitted
         .graph()
         .nodes
         .iter()
@@ -102,15 +102,15 @@ pub(crate) fn project_protocol_root<'wire>(
         function_indexes: BTreeMap::new(),
         memo: BTreeMap::new(),
     };
-    // FR-383 carries application locations, so a leaf-only selected root can
-    // have no admitted row. Its CheckedBody location is passed only as root
-    // provenance for diagnostics; projected values, operations, types and
-    // equality remain exclusively reader-derived. Such a literal root does
-    // not charge the evaluator meter, and the AC-15 parity oracle pins that.
-    let root_location = builder.location(root).unwrap_or(root_provenance);
-    builder.read_functions(root, Some(root_location.clone()))?;
+    // A CheckedBody location is diagnostic provenance only for a bare literal
+    // root. Every composed term and function body must resolve its own
+    // protocol_locations row from the admitted reader graph.
+    let root_location = builder.location(root).or_else(|| {
+        matches!(&root_node.body, CheckedTerm::Literal { .. }).then_some(root_provenance)
+    });
+    builder.read_functions(root, None)?;
     let context = builder.functions.len();
-    let root_index = builder.project_node(root, context, locals, Some(root_location))?;
+    let root_index = builder.project_node(root, context, locals, root_location)?;
     Ok(Some(ReaderProtocolProjection {
         arena: ReaderArena {
             nodes: builder.nodes,

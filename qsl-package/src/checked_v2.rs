@@ -945,7 +945,7 @@ pub fn read_evaluation_emission<'package>(
     })?;
     Ok(AdmittedPackageRead {
         source: package,
-        emission,
+        emission: emission.clone(),
         read,
         dependencies: AdmittedPackages(closure),
         reader_nodes,
