@@ -9,6 +9,8 @@
 //! builds its [`NodeShape`]s and calls [`ClauseWork::of_shapes`].
 
 use qsl_foundation::bound::TemporalUpper;
+use qsl_package::checked_views::{FormulaNodeUse, OperatorDirection};
+use qsl_package::{CheckedIntervalEnd, CheckedOperationInterval, CheckedOperationRational};
 use qsl_semantics::check::{
     BinaryTemporal, CheckedFormula, CheckedInterval, FormulaNode, UnaryTemporal,
 };
@@ -221,6 +223,113 @@ fn shape(node: &FormulaNode) -> Result<NodeShape, ReachFault> {
             NodeReach::Future(upper)
         } else {
             NodeReach::Past(upper)
+        },
+    })
+}
+
+/// The formula of a clause as the evidence call measures it: one
+/// [`NodeShape`] per node, the first node the root.
+///
+/// A clause of a checked package builds it from the subject view's
+/// `formula_graph()` entries and their `operands` edges (FR-515) with
+/// [`Self::of_graph`], one construction for every route to a package, so
+/// that the package built from an `Emission` and the one read back from the
+/// emitted bytes give the evaluator the same formula by construction.
+/// [`Self::of_checked`] reads an in-process checked formula, for a caller
+/// that holds no package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseFormula {
+    shapes: Result<Vec<NodeShape>, ReachFault>,
+    root: usize,
+}
+
+impl ClauseFormula {
+    /// The formula of `formula`, rooted at its root node.
+    pub fn of_checked(formula: &CheckedFormula) -> Self {
+        Self {
+            shapes: formula.nodes().iter().map(shape).collect(),
+            root: formula.root().index(),
+        }
+    }
+
+    /// The formula whose nodes are `graph`, the first node the root: each
+    /// operand position names an entry of `graph`.
+    pub fn of_graph(graph: &[FormulaNodeUse<'_>]) -> Self {
+        Self {
+            shapes: graph.iter().map(graph_shape).collect(),
+            root: 0,
+        }
+    }
+
+    /// The shape of each node.
+    ///
+    /// # Errors
+    ///
+    /// [`ReachFault::Unbounded`], [`ReachFault::Timed`] or
+    /// [`ReachFault::Overflow`] for the first operator whose interval has no
+    /// finite tick upper bound, and [`ReachFault::Malformed`] for a node with
+    /// more than two operands.
+    pub fn shapes(&self) -> Result<&[NodeShape], ReachFault> {
+        self.shapes.as_deref().map_err(|fault| *fault)
+    }
+
+    /// The work counters the formula fixes.
+    ///
+    /// # Errors
+    ///
+    /// [`ReachFault`] as [`ClauseWork::of_shapes`] and [`Self::shapes`] state.
+    pub fn work(&self) -> Result<ClauseWork, ReachFault> {
+        ClauseWork::of_shapes(self.shapes()?, self.root)
+    }
+}
+
+/// The shape of one `formula_graph()` entry.
+fn graph_shape(node: &FormulaNodeUse<'_>) -> Result<NodeShape, ReachFault> {
+    let mut operands = [None, None];
+    if node.operands.len() > operands.len() {
+        return Err(ReachFault::Malformed);
+    }
+    for (slot, operand) in operands.iter_mut().zip(&node.operands) {
+        *slot = Some(*operand);
+    }
+    let Some(direction) = node.direction() else {
+        return Ok(NodeShape {
+            operands,
+            reach: NodeReach::None,
+        });
+    };
+    let upper = match &node.interval {
+        None => return Err(ReachFault::Unbounded),
+        Some(CheckedOperationInterval::Integer { upper: None, .. })
+        | Some(CheckedOperationInterval::Timed { upper: None, .. }) => {
+            return Err(ReachFault::Unbounded)
+        }
+        Some(CheckedOperationInterval::Integer {
+            upper: Some(upper), ..
+        }) => u64::try_from(upper).map_err(|_| ReachFault::Overflow)?,
+        // The same predicate `shape` applies to an in-process timed
+        // interval: closed ends and integral bounds count ticks.
+        Some(CheckedOperationInterval::Timed {
+            lower,
+            upper: Some(upper),
+            lower_end,
+            upper_end,
+        }) => {
+            let closed = |end: &CheckedIntervalEnd| *end == CheckedIntervalEnd::Closed;
+            let integral = |bound: &CheckedOperationRational| {
+                u64::try_from(&bound.denominator).is_ok_and(|denominator| denominator == 1)
+            };
+            if !closed(lower_end) || !closed(upper_end) || !integral(lower) || !integral(upper) {
+                return Err(ReachFault::Timed);
+            }
+            u64::try_from(&upper.numerator).map_err(|_| ReachFault::Overflow)?
+        }
+    };
+    Ok(NodeShape {
+        operands,
+        reach: match direction {
+            OperatorDirection::Future => NodeReach::Future(upper),
+            OperatorDirection::Past => NodeReach::Past(upper),
         },
     })
 }

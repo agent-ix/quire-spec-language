@@ -256,3 +256,56 @@ fn leaf_source<'p>(
         .find(|entry| entry.regions.iter().all(inside))
         .or(first)
 }
+
+/// Whether the operand of each `holds` atom of `subject`'s formula reads an
+/// instance binder, one entry per atom in formula pre-order (so entry `k`
+/// belongs to the `k`-th `holds` node and to `predicate_leaves()[k]`).
+///
+/// The instance binders of a clause are the binders of its captures, each the
+/// `parameter` node named like the capture (the captures argument holds the
+/// initializers, not the binders); the `over` binder is not one, and a `holds`
+/// condition cannot read the trigger binder. The activation guard is no
+/// `holds` atom and has no entry. An atom is
+/// instance-bound when [`CheckedPredicateView::binders`] of its operand
+/// includes a capture binder.
+///
+/// Refuses [`ViewRefusal::UnresolvedClause`] when the clause's
+/// `predicate_leaves()` and the `holds` nodes of its `formula_graph()` differ
+/// in count, because the mapping of an atom to its operand is by formula
+/// order.
+pub fn instance_bound_atoms(subject: &TemporalSubjectView<'_>) -> Result<Vec<bool>, ViewRefusal> {
+    let holds = subject
+        .formula_graph()
+        .iter()
+        .filter(|node| node.operation == super::subject::HOLDS)
+        .count();
+    if holds != subject.predicate_leaves().len() {
+        return Err(ViewRefusal::UnresolvedClause);
+    }
+    subject
+        .predicate_leaves()
+        .iter()
+        .map(|leaf| {
+            let view = read_predicate(
+                subject.package(),
+                subject.package().source_map(),
+                &PredicateSelection {
+                    clause: subject.declaration().clone(),
+                    leaf: leaf.clone(),
+                },
+            )?;
+            Ok(view.binders().iter().any(|binder| {
+                subject
+                    .package()
+                    .term(binder)
+                    .and_then(super::subject::parameter_name)
+                    .is_some_and(|name| {
+                        subject
+                            .capture_names()
+                            .iter()
+                            .any(|capture| capture == name)
+                    })
+            }))
+        })
+        .collect()
+}

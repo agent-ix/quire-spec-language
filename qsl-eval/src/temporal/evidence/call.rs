@@ -35,7 +35,7 @@ use super::request::{
 use super::trigger::{
     CaptureFact, Evicted, SemanticTriggerIdentity, TriggerEvidence, TriggerRecord, TriggerScope,
 };
-use super::work::{ClauseWork, ReachFault};
+use super::work::ReachFault;
 use crate::temporal::finite_window::{
     evaluate_finite_window_at, Basis, ClockCover, IndeterminateReason, LowerBoundary,
     ProgressedRefusal, SampleProgress, TimestampedObservation, TimestampedTrace, Valuation,
@@ -49,13 +49,17 @@ use crate::temporal::outcome::TemporalRefusal;
 use crate::temporal::position::TemporalPosition;
 use qsl_semantics::check::FormulaNodeId;
 
-fn fault(invariant: &'static str) -> CallFailure {
+pub(super) fn fault(invariant: &'static str) -> CallFailure {
     CallFailure::Fault(InternalFault::new("temporal.evidence", invariant))
 }
 
 /// `Err(CallFailure::Admission)` for the member `member`, with `cause` and
 /// `fields` in the diagnostic.
-fn refusal(cause: &'static str, member: &str, fields: &[(&'static str, String)]) -> CallFailure {
+pub(super) fn refusal(
+    cause: &'static str,
+    member: &str,
+    fields: &[(&'static str, String)],
+) -> CallFailure {
     let mut named = BTreeMap::from([("cause", cause.to_owned())]);
     named.extend(fields.iter().map(|(name, value)| (*name, value.clone())));
     CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
@@ -78,6 +82,7 @@ fn refusal(cause: &'static str, member: &str, fields: &[(&'static str, String)])
 struct ResolvedSubject<'p> {
     selection: ClauseSelection<'p>,
     clause: &'p qsl_semantics::check::CheckedTemporalClause,
+    formula: &'p super::work::ClauseFormula,
     instance_bound: &'p BTreeSet<u64>,
     activation_map: &'p [super::request::ActivationRow],
     progress: crate::temporal::ledger::LedgerBinding,
@@ -92,20 +97,35 @@ impl ResolvedSubject<'_> {
     }
 }
 
+/// The occurrence of `occurrences` that `requested` names by its key
+/// `{ role, ordinal }`, never by position; the only occurrence when none is
+/// requested and the node has one.
+///
+/// # Errors
+///
+/// `occurrence-required` when the node has several occurrences and none is
+/// requested, `occurrence-unknown` when `requested` names none of them.
+pub(super) fn select_occurrence<'a, 'p>(
+    occurrences: &'a [super::request::SubjectOccurrence<'p>],
+    requested: Option<&qsl_package::CheckedOccurrence>,
+) -> Result<&'a super::request::SubjectOccurrence<'p>, CallFailure> {
+    match (requested, occurrences) {
+        (Some(key), rows) => rows
+            .iter()
+            .find(|row| row.occurrence == *key)
+            .ok_or_else(|| refusal("occurrence-unknown", "occurrence", &[])),
+        (None, [only]) => Ok(only),
+        (None, _) => Err(refusal("occurrence-required", "occurrence", &[])),
+    }
+}
+
 /// Select the occurrence the request names by its key `{ role, ordinal }`,
 /// never by position (FR-516 `occurrence`).
 fn resolve<'p>(
     subject: &'p EvidenceSubject<'p>,
     request: &EvidenceRequest,
 ) -> Result<ResolvedSubject<'p>, CallFailure> {
-    let chosen = match (&request.occurrence, subject.occurrences.as_slice()) {
-        (Some(key), rows) => rows
-            .iter()
-            .find(|row| row.occurrence == *key)
-            .ok_or_else(|| refusal("occurrence-unknown", "occurrence", &[]))?,
-        (None, [only]) => only,
-        (None, _) => return Err(refusal("occurrence-required", "occurrence", &[])),
-    };
+    let chosen = select_occurrence(&subject.occurrences, request.occurrence.as_ref())?;
     let occurrence_key = serde_json::to_vec(&(subject.declaration, &chosen.occurrence))
         .map_err(|_| fault("clause-identity-encodes"))?;
     Ok(ResolvedSubject {
@@ -115,6 +135,7 @@ fn resolve<'p>(
             clock: chosen.clock,
         },
         clause: subject.clause,
+        formula: &subject.formula,
         instance_bound: &subject.instance_bound,
         activation_map: subject.activation_map,
         progress: crate::temporal::ledger::LedgerBinding {
@@ -1178,7 +1199,7 @@ fn assess(
         .get(activation_position)
         .map(|position| position.stamp)
         .ok_or_else(|| fault("activation-position-is-admitted"))?;
-    match ClauseWork::of(facts.subject.clause.formula()) {
+    match facts.subject.formula.work() {
         Ok(_) | Err(ReachFault::Overflow) => {}
         Err(unreadable) => {
             return Err(refusal(
@@ -1239,7 +1260,7 @@ fn run_instance(
         ClockCover::Exact => None,
         ClockCover::Counter { uncertainty } => Some(uncertainty),
     };
-    match call.admit_clause(subject.clause.formula(), uncertainty, [*anchor_tick]) {
+    match call.admit_work(subject.formula.work(), uncertainty, [*anchor_tick]) {
         Ok(_) => {}
         Err(ClauseStop::Limit(limit)) => {
             return Ok(Outcome::stopped(EvidenceIncomplete::Limit(limit)));

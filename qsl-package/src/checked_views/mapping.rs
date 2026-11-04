@@ -13,7 +13,7 @@
 use qsl_semantics::check::TemporalProfile;
 use quire_contract_model::{CheckedArtifactRef, CheckedNodeId, CheckedSelection};
 
-use super::subject::{Activation, TemporalSubjectView};
+use super::subject::{Activation, OperatorDirection, TemporalSubjectView};
 
 /// The surrounding-execution closure a mapping request names. It selects the
 /// TL row of FR-045's future rows; decision-scope closure is a separate axis
@@ -203,30 +203,6 @@ pub enum MappingRefusal {
     NoProfileSelection,
 }
 
-/// The direction of a bounded temporal operator (QSpec FR-092).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Direction {
-    Future,
-    Past,
-}
-
-/// The direction of the `quire.op.temporal.*` operation `identity`; `None` for
-/// `holds` and the connectives, which are neither past nor future.
-#[ix_trace_rs::string_edge]
-fn direction(identity: &str) -> Option<Direction> {
-    match identity {
-        "quire.op.temporal.eventually"
-        | "quire.op.temporal.always"
-        | "quire.op.temporal.until"
-        | "quire.op.temporal.release" => Some(Direction::Future),
-        "quire.op.temporal.once"
-        | "quire.op.temporal.historically"
-        | "quire.op.temporal.since"
-        | "quire.op.temporal.triggered" => Some(Direction::Past),
-        _ => None,
-    }
-}
-
 /// Classify the clause `subject` against FR-045's support table.
 ///
 /// Unmatched dimensions accumulate: a mixed-direction request under the
@@ -257,10 +233,10 @@ pub fn mapping_support(
     let profile = TemporalProfile::from_identity(&subject.profile().definition.identity)
         .ok_or(MappingRefusal::NoProfileSelection)?;
     let (mut future, mut past) = (false, false);
-    for used in subject.formula() {
-        match direction(used.operation) {
-            Some(Direction::Future) => future = true,
-            Some(Direction::Past) => past = true,
+    for used in subject.formula_graph() {
+        match used.direction() {
+            Some(OperatorDirection::Future) => future = true,
+            Some(OperatorDirection::Past) => past = true,
             None => {}
         }
     }

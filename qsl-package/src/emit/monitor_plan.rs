@@ -729,12 +729,16 @@ pub(super) struct RetainedRows {
         Vec<quire_contract_model::SelectedModelEnumDeclarationRow>,
     pub(super) selected_model_enum_member_rows:
         Vec<quire_contract_model::SelectedModelEnumMemberRow>,
+    pub(super) selected_enum_declaration_rows:
+        Vec<quire_contract_model::SelectedEnumDeclarationRow>,
+    pub(super) selected_enum_member_rows: Vec<quire_contract_model::SelectedEnumMemberRow>,
     pub(super) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     pub(super) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
     pub(super) equality_producer_identity_rows: Vec<super::EqualityProducerEmissionRow>,
     pub(super) equality_fact_witness_rows: Vec<super::EqualityFactWitnessRow>,
     pub(super) temporal_binding_rows: super::TemporalBindingRows,
+    pub(super) temporal_rows: super::TemporalRows,
 }
 
 /// Re-keys every node id a retained row holds through `changes`, in order.
@@ -859,6 +863,31 @@ pub(super) fn carry_rows(
         rekey.id(structural_node);
         rekey.id(declaration_node);
     }
+    let mut source_enum_declarations = retained.selected_enum_declaration_rows.clone();
+    for row in &mut source_enum_declarations {
+        let m::SelectedEnumDeclarationRow {
+            structural_node,
+            source_authority: _,
+            source_identity: _,
+            qualified_declaration: _,
+            node_key: _,
+        } = row;
+        rekey.id(structural_node);
+    }
+    let mut source_enum_members = retained.selected_enum_member_rows.clone();
+    for row in &mut source_enum_members {
+        let m::SelectedEnumMemberRow {
+            structural_node,
+            source_authority: _,
+            source_identity: _,
+            declaration_node,
+            declaration_qualified_name: _,
+            case: _,
+            member_key: _,
+        } = row;
+        rekey.id(structural_node);
+        rekey.id(declaration_node);
+    }
     let mut exact_declarations = retained.selected_exact_declaration_rows.clone();
     for row in &mut exact_declarations {
         let m::SelectedExactDeclarationRow {
@@ -923,6 +952,24 @@ pub(super) fn carry_rows(
         } = row;
         rekey.id(declaration);
     }
+    let mut temporal_rows = retained.temporal_rows.clone();
+    for super::TemporalClauseRef {
+        declaration,
+        occurrence: _,
+        clause: _,
+    } in &mut temporal_rows.clauses
+    {
+        rekey.id(declaration);
+    }
+    for row in &mut temporal_rows.bindings {
+        let m::TemporalBinding {
+            declaration,
+            occurrence: _,
+            clock_name: _,
+            clock: _,
+        } = row;
+        rekey.id(declaration);
+    }
     RetainedRows {
         omitted,
         selected_operation_member_rows: operation,
@@ -930,11 +977,14 @@ pub(super) fn carry_rows(
         selected_source_unit_rows: units,
         selected_model_enum_declaration_rows: enum_declarations,
         selected_model_enum_member_rows: enum_members,
+        selected_enum_declaration_rows: source_enum_declarations,
+        selected_enum_member_rows: source_enum_members,
         selected_exact_declaration_rows: exact_declarations,
         selected_exact_field_rows: exact_fields,
         equality_producer_identity_rows: producers,
         equality_fact_witness_rows: facts,
         temporal_binding_rows: temporal,
+        temporal_rows,
     }
 }
 
@@ -998,12 +1048,15 @@ fn finish(
         selected_source_unit_rows: rows.selected_source_unit_rows,
         selected_model_enum_declaration_rows: rows.selected_model_enum_declaration_rows,
         selected_model_enum_member_rows: rows.selected_model_enum_member_rows,
+        selected_enum_declaration_rows: rows.selected_enum_declaration_rows,
+        selected_enum_member_rows: rows.selected_enum_member_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,
         equality_producer_identity_rows: rows.equality_producer_identity_rows,
         equality_fact_witness_rows: rows.equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows: rows.temporal_binding_rows,
+        temporal_rows: rows.temporal_rows,
     })
 }
 

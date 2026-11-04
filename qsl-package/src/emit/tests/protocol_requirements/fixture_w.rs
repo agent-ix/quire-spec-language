@@ -1573,7 +1573,7 @@ fn tc134_template_without_a_written_node_writes_no_row() {
     let none = std::collections::HashMap::new();
     let rows = crate::emit::temporal_binding_rows(&graph, &none, &[], &[])
         .expect("no written node needs no selection");
-    assert!(rows.0.is_empty() && rows.1.is_empty());
+    assert!(rows.bindings.is_empty() && rows.names.is_empty());
     assert!(matches!(
         crate::emit::temporal_binding_rows(&graph, &none, &[], &selections),
         Err(R::SurplusTemporalClockSelection { span, .. }) if selections.iter().any(|s| s.declaration_span == span)

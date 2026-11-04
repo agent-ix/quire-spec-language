@@ -240,7 +240,22 @@ impl<'m> CallMeter<'m> {
         uncertainty: Option<u64>,
         anchors: impl IntoIterator<Item = u64>,
     ) -> Result<ClauseWork, ClauseStop> {
-        let work = match ClauseWork::of(formula) {
+        self.admit_work(ClauseWork::of(formula), uncertainty, anchors)
+    }
+
+    /// [`Self::admit_clause`] for a clause whose formula was measured
+    /// already (a [`super::ClauseFormula`] of a checked package).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::admit_clause`].
+    pub fn admit_work(
+        &mut self,
+        work: Result<ClauseWork, ReachFault>,
+        uncertainty: Option<u64>,
+        anchors: impl IntoIterator<Item = u64>,
+    ) -> Result<ClauseWork, ClauseStop> {
+        let work = match work {
             Ok(work) => work,
             Err(ReachFault::Overflow) => {
                 return Err(ClauseStop::Limit(

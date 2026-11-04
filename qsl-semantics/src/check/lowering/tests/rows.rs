@@ -571,6 +571,66 @@ fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
     }
 }
 
+/// FR-092-AC-19: two bindings of one admitted enum declaration whose names
+/// resolve different source owners build one declaration node, and its
+/// source enum row takes the owner of the binding that built the node, so the
+/// row's source authority and identity equal the node's owner.
+#[trace("FR-092-AC-19", "TC-1021")]
+#[test]
+fn a_second_binding_of_one_enum_keeps_the_first_owner_in_its_row() {
+    let first = SourceOwner::new("first", "unit-a").expect("a source owner");
+    let second = SourceOwner::new("second", "unit-b").expect("a source owner");
+    let status = status();
+    let alias = EnumBinding {
+        name: "Alias".to_owned(),
+        ..status.clone()
+    };
+    let owners = std::collections::BTreeMap::from([
+        (status.name.clone(), first.clone()),
+        (alias.name.clone(), second),
+    ]);
+    let scope = crate::check::family::fixtures::empty_scope();
+    let unit = SourceOwner::from(&fixture_source());
+    let mut occurrences = OccurrenceMap::default();
+    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
+    let mut lowering = Lowering::new_with_source_owners(
+        &scope,
+        &unit,
+        &owners,
+        &[],
+        &[],
+        scope.types().units().clone(),
+        None,
+        0,
+        &mut occurrences,
+        &mut meter,
+        "fixture",
+    );
+    lowering
+        .enum_nodes(&status)
+        .expect("the first binding lowers");
+    lowering
+        .enum_nodes(&alias)
+        .expect("the second binding lowers");
+
+    let key = status.declaration.key();
+    let node = lowering
+        .graph
+        .node(key.clone())
+        .expect("one declaration node");
+    assert_eq!(node.content.owner, Some(Owner::Source(first.clone())));
+    let row = lowering
+        .graph
+        .source_enum_declaration(&key)
+        .expect("one source enum row");
+    assert_eq!(row.owner, first);
+    assert_eq!(lowering.graph.source_enum_declarations().count(), 1);
+    assert_eq!(
+        lowering.graph.source_enum_members().count(),
+        status.members.len()
+    );
+}
+
 /// `functions` functions `fK(x: Country): Boolean { true }` over one
 /// 250-variant `Country` enum: each parameter's preimage writes every
 /// variant.

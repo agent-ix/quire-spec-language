@@ -14,7 +14,7 @@ relationships:
 
 ## Description
 
-Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18.
+Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18, FR-092-AC-19.
 
 Catches an implementation that binds by name and looks it up again at emission, one that emits a `dependency_reference` or a separate collection, one that emits a second carrier or refuses for a repeated reference, one that changes the carrier id when a reference is repeated, one that lets the occurrences enter node identity, one that carries a semantic type other than the target's, and one that builds the carrier path without its target.
 
@@ -33,6 +33,10 @@ Catches an implementation that binds by name and looks it up again at emission, 
    declaration read, and scheduling. Separately check a protocol with no
    selected profile and no reference, and one with a construct FR-383 marks
    not yet emitted.
+9. Emit a unit that declares `enum Status { READY, DONE }` and reads
+   `Status::READY`, then a unit with a model variant type and no source enum.
+   Separately lower two bindings of one admitted enum declaration whose names
+   resolve different source owners.
 
 ## Expected Results
 
@@ -48,4 +52,12 @@ Catches an implementation that binds by name and looks it up again at emission, 
   declaration. The unsupported construct refuses
   `unsupported_construct`/`not-yet-implemented` at the construct, naming
   the construct and its implementation ticket, with no clause node.
+- Step 9 gives one `SelectedEnumDeclarationRow` and two
+  `SelectedEnumMemberRow`s. Each row's structural id names an emitted
+  `scalar_type`/`enum` or `value`/`enum_value` node, its source authority and
+  identity equal that node's source owner, its qualified declaration is
+  `["Status"]`, its node key is the key of the node it names, and each member
+  row names the declaration's emitted id and its own case. The model variant
+  unit has no source enum row. The two bindings build one declaration node and
+  one row, whose owner is the node's owner.
 - Assertions compare typed fields, causes and keys, never message text.
