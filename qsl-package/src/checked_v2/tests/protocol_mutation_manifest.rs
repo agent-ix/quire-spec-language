@@ -280,6 +280,24 @@ fn pointer_of(location: &quire_contract_model::CheckedPackageRefusalLocation) ->
     location.path.as_ref().map(|path| path.as_str())
 }
 
+/// A schema refusal: `malformed_wire`, no cause, the first error's path as the
+/// locus and no `document_pointer`, at the schema stage.
+fn check_wire_refusal(expect: &Value, path: &str) -> Result<(), String> {
+    if expect["stage"] != "schema" || expect["code"] != "malformed_wire" {
+        return Err(format!(
+            "the schema refused first at {path}, but the row expects {} at stage {}",
+            expect["code"], expect["stage"]
+        ));
+    }
+    if !expect["cause"].is_null() || expect.get("document_pointer").is_some() {
+        return Err("a wire refusal has no cause and no document_pointer".to_owned());
+    }
+    if expect["locus"].as_str() != Some(path) {
+        return Err(format!("wire locus {path:?}, expected {}", expect["locus"]));
+    }
+    Ok(())
+}
+
 /// What the row expects of a refusal, against the reader's: exact code,
 /// cause, locus (and `document_pointer` where the row gives one), with the
 /// row's stage telling a wire refusal from a reader one.
@@ -373,6 +391,7 @@ fn replay_row(
     base: &Value,
     manifest: &Value,
     directory: &std::path::Path,
+    schema: &jsonschema::JSONSchema,
     executed: &mut Executed,
 ) -> Result<(), String> {
     let id = row["id"].as_str().expect("a row id");
@@ -385,30 +404,49 @@ fn replay_row(
         .map(Vec::as_slice)
         .unwrap_or_default();
     let edited = apply(id, base, edit);
-    let evidence = base_evidence(manifest, directory, &edited);
-    let name = edited["name"].as_str().expect("a package name");
-    let outcome = read_v2(
-        &fixture_wire_bytes(&edited),
-        identity(name),
-        V2ReadLimits::default(),
-        &evidence,
-    );
+    // The published schema decides the wire first: a package it refuses is
+    // reported `malformed_wire` at the first error's path and never reaches
+    // the reader, whose later checks cover the shapes the schema admits.
+    let wire_error = schema
+        .validate(&edited)
+        .err()
+        .and_then(|mut errors| errors.next())
+        .map(|error| error.instance_path.to_string());
+    let outcome = match &wire_error {
+        Some(_) => None,
+        None => {
+            let evidence = base_evidence(manifest, directory, &edited);
+            let name = edited["name"].as_str().expect("a package name");
+            Some(read_v2(
+                &fixture_wire_bytes(&edited),
+                identity(name),
+                V2ReadLimits::default(),
+                &evidence,
+            ))
+        }
+    };
     let expect = &row["expect"];
     match row["class"].as_str().expect("a class") {
         "admit" => {
             executed.admit += 1;
             match outcome {
-                Read::Verified { .. } => Ok(()),
-                other => Err(format!("expected admission, read {other:?}")),
+                Some(Read::Verified { .. }) => Ok(()),
+                other => Err(format!(
+                    "expected admission, read {other:?} (schema {wire_error:?})"
+                )),
             }
         }
         "refuse" => {
             executed.refuse += 1;
-            check_refusal(expect, &outcome, &edited)
+            match (&outcome, &wire_error) {
+                (None, Some(path)) => check_wire_refusal(expect, path),
+                (Some(outcome), _) => check_refusal(expect, outcome, &edited),
+                (None, None) => Err("neither the schema nor the reader answered".to_owned()),
+            }
         }
         "property" => {
             executed.property += 1;
-            let Read::Verified { admitted, .. } = outcome else {
+            let Some(Read::Verified { admitted, .. }) = outcome else {
                 return Err(format!("expected admission, read {outcome:?}"));
             };
             let nodes: Vec<Value> = admitted
@@ -457,10 +495,13 @@ fn conformance_protocol_mutation_manifest_replays_through_i2() {
     let base = read_fixture(&directory.join(manifest["base"]["fixture"].as_str().expect("a base")));
     let manifest_rows = manifest["rows"].as_array().expect("manifest rows");
     let layout_rows = layout["rows"].as_array().expect("layout rows");
+    let schema_document = read_fixture(&directory.join("../schema.json"));
+    let schema = jsonschema::JSONSchema::compile(&schema_document)
+        .unwrap_or_else(|error| panic!("the published schema compiles: {error}"));
     let mut executed = Executed::default();
     let mut defects = Vec::new();
     for row in manifest_rows.iter().chain(layout_rows) {
-        if let Err(defect) = replay_row(row, &base, &manifest, &directory, &mut executed) {
+        if let Err(defect) = replay_row(row, &base, &manifest, &directory, &schema, &mut executed) {
             defects.push(format!("{}: {defect}", row["id"]));
         }
     }
