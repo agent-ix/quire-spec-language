@@ -176,7 +176,7 @@ without it replays to several model states. Every other step has
 
 `ProductAction` is the following new closed semantic action type, owned with
 ProductKey in qsl-replay. The untimed build uses its first three members,
-`Identity`, `PostState` and `TerminalStutter`; the five delay, observation
+`Identity`, `PostState` and `TerminalStutter`; the six delay, observation
 and race members exist in a timed product only (FR-204). The enum below is the
 `qsl-replay` form, whose `PostState` holds the canonical `ProductKey`; the
 builder's `ProductAction` holds the in-memory `ProbKey` in the same member. An edge's `action` is its operation projection;
@@ -191,18 +191,37 @@ pub enum ProductAction {
     EnterIdleDelay,             // positive delay committing to TS-5 idle tail
     IdleDelay,                  // positive delay already in idle tail
     IdleObserve,                // clock-valued observation, no additional elapsed time
-    WorkloadResolve { identity: ScheduledIdentity, delay: u64 }, // workload race choice (FR-204)
+    WorkloadResolve { identity: ScheduledIdentity, delay: u64 }, // all-free workload race choice (FR-204)
+    FreeDelays(Vec<FreeDelayRow>), // mixed given/free workload race: post-draw free delays (FR-204, ADR-026 SD-3)
+}
+pub struct FreeDelayRow {
+    pub given: Vec<(ScheduledIdentity, u64)>, // one drawn given-delay vector, digital units
+    pub free: Vec<(ScheduledIdentity, u64)>,  // the scheduler's delay for every free racing identity after that draw
 }
 ```
 
 Canonical semantic action bodies use exactly `["identity",schedule]`,
 `["post-state",product_key]`, `["terminal-stutter"]`, `["delay"]`,
-`["enter-idle-delay"]`, `["idle-delay"]`, `["idle-observe"]` and
-`["workload-resolve",schedule,delay]` respectively, where `delay` is the digital
+`["enter-idle-delay"]`, `["idle-delay"]`, `["idle-observe"]`,
+`["workload-resolve",schedule,delay]` and
+`["free-delays",[[given,free],...]]` respectively, where `delay` is the digital
 unit count as a canonical unsigned decimal string, and where schedule uses the full existing schedule form below and product_key
-is a parsed full canonical key, not a local index/string wrapper.
-Unknown/extra/missing members refuse. Action equality/order uses complete
-JCS UTF-8 bytes. These are explicit new semantic choices, not a claim that
+is a parsed full canonical key, not a local index/string wrapper. In
+`free-delays`, `given` and `free` are arrays of `[schedule,delay]` pairs, each
+sorted by full schedule bytes with unique schedules; `given` names exactly the
+racing identities whose delay a `discrete` distribution gives and `free`
+exactly the racing identities whose delay no distribution gives. The rows
+cover every vector of the conditioned given-delay support exactly once, in
+ascending lexicographic order of the given delays read as unsigned integers in
+`given` order (numeric order, not decimal-string byte order). A row whose
+`given` or `free` identities differ from those sets, a duplicate or missing
+support vector, a row out of order, or a free delay outside its identity's
+window at that state refuses.
+Unknown/extra/missing members refuse. Action equality uses complete JCS
+UTF-8 bytes, and so does action order, except between two `FreeDelays`
+actions: those order row by row in row order, and within a row by the free
+delays read as unsigned integers in `free` order (numeric, so delay 9 precedes
+delay 10). This is the canonical transition order FR-198 breaks ties by. These are explicit new semantic choices, not a claim that
 QSpec FR-413/412 transport already accepts these spellings. No fake operation
 NodeId, receiver or random draw is assigned to a timed tail choice.
 
@@ -216,15 +235,39 @@ Each delay has elapsed reward one digital unit (1/scale in the model unit);
 Observe has elapsed reward zero. All delay guards/invariants still rederive.
 Identity/PostState follow the actual discrete draw/reset relation and emit
 a letter only when the post-state is resolved, never at a pending intermediate.
-WorkloadResolve is enabled only in a timed product under a workload, in a
-state where a free-delay identity races (FR-204), advances the chosen `delay`
-digital units and is a distribution of total probability 1 over the race
-outcomes; it is never enabled in an every-scheduler product. A state whose
-racing identities all have free delays offers UnitDelay and one
+WorkloadResolve and FreeDelays are enabled only in a timed product under a
+workload and never in an every-scheduler product. A state whose racing
+identities all have free delays offers UnitDelay and one
 `WorkloadResolve{identity, delay: 0}` whose `identity` is the first enabled
 identity and whose mass splits over every enabled identity by the workload's
 weights; a state whose racing identities all have given delays labels each
-race edge `Identity(r)` with `r` its first racing identity.
+race edge `Identity(r)` with `r` its first racing identity. A state in which
+given-delay and free-delay identities race together has as its choice set one
+`FreeDelays` action per function from the conditioned given-delay support to
+free-delay assignments (FR-204): each row's free delays are chosen after its
+given vector is drawn. An action is one distribution of total probability 1
+over the race outcomes, the sum over its rows of the row's given-vector
+probability times that row's race outcome; each outcome advances its winning
+delay. The product SHALL NOT build one edge set per action. It SHALL build,
+per row `g` and per assignment `a` of that row, the row-choice edges of `(g, a)`:
+the race outcomes of `g` with `a`, each with probability `P(g)` times the
+outcome's mass, outcomes reaching the same post-key with the same rewards
+(elapsed included) merged as FR-187 merges draws. A row-choice edge's `choice`
+is the one-row body `FreeDelays([row])`, which names that row only and is not
+an enabled action by itself. An action is one row choice per row, and its
+edges are the union of those row choices' edges, merged again by post-key and
+rewards; FR-198 and FR-201 evaluate a state's actions through the row-factored
+operator of FR-204, so `s · w^k` row choices (support size `s`, window size
+`w`, `k` free identities), not `(w^k)^s` actions, are built. A path step
+through the action names no given row, and replay recomputes its probability
+from the rows.
+The mixed state offers no WorkloadResolve: the choice made before the draw is
+the FreeDelays choice whose rows all hold one assignment, so a second name for
+it would duplicate a decision. FreeDelays adds no ProductKey member: the drawn
+given vector is not an intermediate state (ADR-028 SCH-2 is not used for the
+race); FR-204 shows the two representations give equal values. Each built
+row-choice edge counts against `max_transitions`; an action not built adds
+none.
 TerminalStutter retains its existing untimed profile meaning and is not a
 synonym for IdleObserve. FR-202 owns choice entries/path replay, FR-201 owns
 certificate policy entries, and FR-204 enumerates these actual digital actions.
@@ -796,6 +839,7 @@ rejection loci, with no model-only shortcut.
 | FR-196-AC-11 | A `steps from holds(A) until holds(B) within 3` measure whose `A` never holds ends every path at control `Measure{remaining: 0, phase: Unactivated}` with accumulator `Steps{activated: false, amount: 0}`, decided and not expanded. A `steps` measure activated at a terminal model state counts each stutter step up to its horizon. A fraction reads its predicate at the position the step leaves. | Test (TC-631) |
 | FR-196-AC-12 | Over every scheduler, a draw with several post-states followed by an accumulating step adds the draw's reward to the accumulator once, at the resolution; each resolution edge carries every reward at 0 and the draw edge carries the draw's. An `Undefined` path through such a draw names the complete product key of the post-state taken (`resolved`) and replays to one model state; every other step has `resolved: None`. An `Undefined` path over a claim `over` two objects carries the initial-state index and the binding of the undefined read, and its `key` is the complete pre-read product key at the undefined read (AC-13). A path to an instance that is undefined at an initial state has no step and position 0. | Test (TC-631, TC-641) |
 | FR-196-AC-13 | At every undefined read, `UndefinedPath.key` is the complete pre-read product key at that read: it retains the model state reached and the real control before evaluating the position's letter, and does not advance that control on the undefined result. For an undefined read at position 0, the key uses the initial model state and the claim-initialized non-null formula, measure or fraction control (or null control for an unbounded form); for a first undefined read after a step, it uses the reached post-state and the control carried from the preceding defined position. A resolved multi-post-state draw names the selected post-state with no pending draw. | Test (TC-641) |
+| FR-196-AC-14 | A mixed given/free workload race whose given identity `A` has the conditioned support 9 and 10 digital units and whose free identity `B` has the window `[1, 2]` offers four `FreeDelays` actions; each canonical body lists the row given `[9]` before the row given `[10]` (numeric order, although `"10"` precedes `"9"` as bytes), and its `given` names `A` only and its `free` `B` only. A body in byte order, with a row missing or repeated, with `free` empty or naming `A`, or with `B` delay 3 refuses. The state's ProductKey carries `pending: null` (no given-draw member), and two rows reaching one post-key with one elapsed amount are one merged edge whose probability is their sum. | Test (TC-631) |
 
 ## Dependencies
 
