@@ -832,7 +832,7 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
 /// FR-383-AC-15: unrelated protocols cannot alter Fill's protocol node bytes,
 /// and changing a reachable finish node changes the clause key.
 #[trace("FR-383-AC-15", "TC-1062")]
-#[ignore = "gated on STD-653: QSpec must settle canonical protocol identity across package-wide node-index changes; QSL-1620 implemented stable node keys"]
+#[ignore = "gated on STD-653 (tracker QSL-1695): QSpec must settle canonical protocol identity across package-wide node-index changes; QSL-1620 implemented stable node keys"]
 #[test]
 fn protocol_nodes_are_stable_around_unrelated_declarations() {
     let emitted_nodes = |declarations: &str| {

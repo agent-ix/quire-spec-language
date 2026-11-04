@@ -168,10 +168,9 @@ pub(crate) fn check(
     let mut failures = Vec::new();
     let mut canonical: Vec<&SelectedModel> = selected.iter().collect();
     canonical.sort_by(|left, right| {
-        let identity = |model: &SelectedModel| model.view.model_selection().identity.clone();
+        let identity = |model: &SelectedModel| model.view.model_selection().identity.as_bytes();
         identity(left)
-            .as_bytes()
-            .cmp(identity(right).as_bytes())
+            .cmp(identity(right))
             .then_with(|| left.alias.as_bytes().cmp(right.alias.as_bytes()))
     });
     for selection in canonical {

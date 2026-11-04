@@ -44,9 +44,9 @@ use quire_eval::FamilyResult;
 use quire_eval::{
     PreconditionFailure, ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
 };
-use quire_exact::Rational;
 use quire_exact::{
-    compare_ieee, evaluate_ieee, ieee_to_exact, IeeeComparison, IeeeFlags, IeeeOperation,
+    compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_to_exact, IeeeComparison,
+    IeeeFlags, IeeeOperation,
 };
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
@@ -65,6 +65,7 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, PopulationId,
 };
 use quire_exact::{DivisionMember, IntegerDomain};
+use quire_exact::{FloatType, Rational};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::catalog::{render_identity, InternalFault};
 use quire_semantic_value::declaration::{
@@ -1509,6 +1510,33 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
+    /// FR-397 "Conversion into a float": a float operand converts across
+    /// widths and an exact operand rounds once, each through the owned
+    /// `quire_exact` operation under the target's mode.
+    fn convert_to_float(
+        &mut self,
+        node: N,
+        value: &Value,
+        target: FloatType,
+    ) -> Result<Value, Halt> {
+        if self.scope.ieee_profile().is_none() {
+            return Err(invariant("ieee-profile-unresolved"));
+        }
+        let (width, rounding) = (target.width(), target.rounding());
+        let outcome = match value {
+            Value::Float(float) => convert_ieee_width(*float, width, rounding, self.meter),
+            Value::Integer(integer) => exact_to_ieee(integer, width, rounding, self.meter),
+            Value::Rational(rational) => exact_to_ieee(rational, width, rounding, self.meter),
+            Value::Decimal(decimal) => exact_to_ieee(decimal, width, rounding, self.meter),
+            _ => return Err(invariant("ieee-conversion-operand-expected")),
+        };
+        let result = outcome_into_stop(outcome)?;
+        if result.flags() != IeeeFlags::EMPTY {
+            self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
+        }
+        Ok(Value::Float(result.value()))
+    }
+
     /// Record `loss` at `node`. A loss is always located: a reader node
     /// whose admitted wire carries no location cannot report one, and its
     /// evaluation faults rather than drop or invent the location (FR-390).
@@ -2771,7 +2799,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let target_type = node.value_type();
                 let carried_conversion = matches!(source_type, ValueType::CarriedQuantity(_))
                     || matches!(target_type, ValueType::CarriedQuantity(_));
-                if carried_conversion {
+                if let ValueType::Float(float) = target_type {
+                    self.convert_to_float(node, &value, *float)?
+                } else if carried_conversion {
                     let Value::Quantity(quantity) = &value else {
                         return Err(invariant("carried-quantity-conversion-source-expected"));
                     };

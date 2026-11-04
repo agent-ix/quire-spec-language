@@ -247,7 +247,8 @@ lowers by the `QuantityPower` row to one `binary` `quire.op.quantity.pow` node
 whose arguments are `[ref(e), ref(n)]`, `n` the `value`/`literal` node of the
 exponent (`value_kind` `integer`, typed by the `Integer` scalar node), whose
 `result_type` is the node of the result's compound unit, and which carries no
-law, mode, member or leaves.
+law, mode, member or leaves: QSpec FR-322's operand contract for the operation
+(QSpec FR-322-AC-383, TC-187 QP-01 to QP-10), which IR's v2 reader applies.
 
 - A negative exponent divides by the base, so it carries the nonzero
   obligation of a quantity divisor on `e` (QSpec FR-146): only a base that is

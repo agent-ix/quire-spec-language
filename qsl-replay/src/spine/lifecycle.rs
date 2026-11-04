@@ -2675,10 +2675,24 @@ fn protocol_check_outcome(
         }
     }
     if first_failure.is_none() && !graph.unit_refusals().is_empty() {
-        first_failure = Some(CompileRefusal::Check {
-            refusals: graph.unit_refusals().to_vec(),
-            region: graph.unit_refusal_region().cloned(),
+        // FR-096: a unit-level refusal is located like any other check
+        // refusal, by the span its cause carries or by its `location`. The
+        // continuation graph omits the refused clause's own spans, so a
+        // refusal the lifecycle re-reported at a call (a dispatch family that
+        // did not link, FR-302) keeps the region resolved against the
+        // declarations before the graph dropped them; the locator is the
+        // fallback.
+        let regions = graph.memoized_regions();
+        let refusals = graph.unit_refusals().to_vec();
+        let region = graph.unit_refusal_region().cloned().or_else(|| {
+            refusals.first().and_then(|refusal| match &refusal.cause {
+                CheckCause::LayerEquality {
+                    span: Some(span), ..
+                } => region(parsed.source().reference(), *span),
+                _ => regions(&refusal.location),
+            })
         });
+        first_failure = Some(CompileRefusal::Check { refusals, region });
     }
     if first_failure.is_none() {
         first_failure = protocol_failure_from_parsed(parsed);

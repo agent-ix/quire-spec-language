@@ -217,6 +217,7 @@ pub(crate) fn probabilistic_clause(
             activation,
             confidence,
             body,
+            content: cst.significant_content(node),
             span: node.span(),
         },
     )))

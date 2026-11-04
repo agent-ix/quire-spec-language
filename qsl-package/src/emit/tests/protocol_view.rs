@@ -891,7 +891,10 @@ fn the_node_views_return_the_map_successors_and_refuse_a_removed_member() {
 
 /// FR-519-AC-5, channel delivery and queue capacity: the delivery policy word
 /// and a declared interval (FR-509), the literal and the symbolic capacity.
-#[trace("FR-519-AC-5", "FR-519-AC-8", "TC-1314")]
+/// FR-509-AC-8: the delivery view admits `[0,3]`, `[0,0]`, `[2,2]` and
+/// `[0,18446744073709551615]` and refuses every other spelling as
+/// `MalformedMember` naming `delivery`, never `MissingMember`.
+#[trace("FR-519-AC-5", "FR-519-AC-8", "FR-509-AC-8", "TC-1304", "TC-1314")]
 #[test]
 fn the_channel_and_queue_views_return_delivery_and_capacity() {
     let fixture = fixture();
@@ -956,6 +959,10 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
     assert_eq!(
         delivery(&with_text("[0,3]")).unwrap(),
         Delivery::Between { lower: 0, upper: 3 }
+    );
+    assert_eq!(
+        delivery(&with_text("[0,0]")).unwrap(),
+        Delivery::Between { lower: 0, upper: 0 }
     );
     assert_eq!(
         delivery(&with_text("[2,2]")).unwrap(),
@@ -1064,6 +1071,52 @@ fn an_interval_channel_emits_and_reads_back_its_delivery_premise() {
     assert_eq!(
         delivery(qsl_charge).unwrap(),
         Delivery::Between { lower: 0, upper: 3 }
+    );
+}
+
+/// FR-509-AC-6 (TC-1304): a `delivery [1,2]` channel in a unit whose header
+/// selects the protocol profile and no temporal profile checks and emits; the
+/// interval reads no clock, so the package has no temporal binding and no
+/// temporal clause or clock place node, and the reader returns the bounds.
+#[trace("FR-509-AC-6", "TC-1304")]
+#[test]
+fn an_interval_channel_needs_no_temporal_profile_and_reads_no_clock() {
+    let members = "role Buyer on M::Order;\nrole Seller on M::Person;\n\
+         channel Pay from Buyer to Seller carries Boolean ordering unordered \
+         delivery [1,2] capacity 2 overflow block;";
+    let lowered = super::reachability::lower_with(
+        super::protocol_graph::model(),
+        "profile p = \"quire.protocol.finite-global/v1\";\n",
+        &super::protocol_graph::flow_over("M::Order", "on origin", members),
+    );
+    assert!(
+        lowered.ir.is_ok(),
+        "{:?}\n{}",
+        lowered.ir.as_ref().err(),
+        lowered.text
+    );
+    assert!(lowered.verified, "{}", lowered.text);
+    assert!(
+        !lowered.text.contains("quire.temporal"),
+        "the header selects no temporal profile"
+    );
+    let package = lowered.ir.as_ref().expect("the package is admitted");
+    assert_eq!(
+        delivery(by_name(package, "Pay")).unwrap(),
+        Delivery::Between { lower: 1, upper: 2 }
+    );
+    assert_eq!(
+        package.temporal_bindings(),
+        None,
+        "the interval reads no clock"
+    );
+    assert!(
+        package
+            .graph()
+            .nodes
+            .iter()
+            .all(|node| !matches!(&*node.semantic_form, "temporal_clause" | "clock_place")),
+        "no temporal clause or clock place node is emitted"
     );
 }
 
@@ -1284,4 +1337,118 @@ fn the_package_views_take_the_admitted_package_and_return_node_ids() {
     let found = binder(package, requested).unwrap();
     let _: &CheckedNodeId = found.node;
     assert_eq!(found.name, "sent");
+}
+
+/// FR-519-AC-11 (TC-1314 row 11), over the protocol_view fixture (the TC-134
+/// workflow plus an invariant over the signed-64 extrema): the `semantic_type` nodes and the literal
+/// and reference terms that stand for the retired `Type`, `Value` and `Number`
+/// records are read through `CheckedPackageV2::term` and equal the values the
+/// emitter built in memory, with each number in the FR-322 encoding (a decimal
+/// text, never a JSON number). The workflow gains an invariant over the
+/// signed-64 extrema so that the numbers reach the extremes of the encoding.
+#[trace("FR-519-AC-11", "TC-1314")]
+#[test]
+fn types_values_and_numbers_are_the_terms_the_emitter_built() {
+    let text = format!(
+        "{}\ninvariant Wide using v on M::OrderView at current {{ \
+         self.order <= 9223372036854775807 and self.order >= -9223372036854775808 }}\n",
+        source_text()
+    );
+    let fixture = fixture_over(&text);
+    let package = &*fixture.admitted;
+
+    let mut types = 0;
+    let mut literals = Vec::new();
+    let mut negated = Vec::new();
+    for emitted in nodes(&fixture.wire) {
+        let id: CheckedNodeId = serde_json::from_value(emitted["node_id"].clone()).unwrap();
+        let read = node(package, &id);
+        let form = emitted["semantic_form"].as_str().unwrap();
+        if matches!(form, "boolean" | "integer" | "text" | "reference") {
+            types += 1;
+            assert_eq!(&*read.semantic_form, form);
+            assert_eq!(serde_json::to_value(read).unwrap(), *emitted, "{form}");
+        }
+        let Some(term) = package.term(&id) else {
+            continue;
+        };
+        assert_eq!(
+            serde_json::to_value(term).unwrap(),
+            emitted["body"],
+            "the term of {form}"
+        );
+        match term {
+            CheckedTerm::Literal {
+                value_kind: LiteralKind::Integer,
+                value,
+                ..
+            } => {
+                literals.push(
+                    value
+                        .as_str()
+                        .expect("an integer is a decimal text")
+                        .to_owned(),
+                );
+            }
+            CheckedTerm::Application { arguments, .. }
+                if emitted["body"]["operation"]["identity"] == "quire.op.integer.negate" =>
+            {
+                negated.push(serde_json::to_value(&arguments[0]).unwrap()["value"].clone());
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        types >= 3,
+        "boolean, integer and text scalar types: {types}"
+    );
+    literals.sort();
+    assert_eq!(
+        literals,
+        ["9223372036854775807"],
+        "the maximum is a literal decimal text"
+    );
+    assert_eq!(
+        negated,
+        ["9223372036854775808"],
+        "the signed minimum is the negation of its magnitude"
+    );
+}
+
+/// FR-519-AC-12 (TC-1314 row 12): the population declaration node of the
+/// model, selected from the admitted package by its node id, equals the node
+/// the emitter built in memory, with its `max` bound in the FR-322 encoding.
+/// R of FR-517 declares no population, so, as the merged FR-519-AC-12 states, this
+/// runs over TC-1054's model (TC-1046's fixture with `orders` and `people`).
+#[trace("FR-519-AC-12", "TC-1314")]
+#[test]
+fn the_population_declaration_node_is_selected_by_its_id() {
+    let lowered = super::reachability::lower_over(
+        super::population_bound::document(),
+        &format!(
+            "bound OrdersBound on M::orders [3]\n{}",
+            super::reachability::NO_LOOP
+        ),
+    );
+    let package = lowered.ir.as_ref().expect("IR admits the package");
+    let populations: Vec<&Value> = nodes(&lowered.wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "model_population")
+        .collect();
+    let [emitted] = populations.as_slice() else {
+        panic!("one population node");
+    };
+    let id: CheckedNodeId = serde_json::from_value(emitted["node_id"].clone()).unwrap();
+    let read = node(package, &id);
+    assert_eq!(&*read.semantic_form, "model_population");
+    assert_eq!(serde_json::to_value(read).unwrap(), **emitted);
+    let term = package.term(&id).expect("the node has a body term");
+    assert_eq!(serde_json::to_value(term).unwrap(), emitted["body"]);
+    let maximum = emitted["body"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["name"] == "max")
+        .expect("the bound's max");
+    assert_eq!(maximum["value"]["value"], "3");
 }

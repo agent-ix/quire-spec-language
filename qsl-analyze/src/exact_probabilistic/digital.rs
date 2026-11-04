@@ -156,7 +156,10 @@ enum Form<'c> {
 
 impl<'c> Form<'c> {
     fn of(claim: &'c CheckedProbabilisticClaim) -> Result<Self, ProductRefusal> {
-        let shape = || ProductRefusal::TimedFormShape { span: claim.span };
+        let shape = || ProductRefusal::TimedFormShape {
+            span: claim.span,
+            claim: claim.occurrence().cloned(),
+        };
         match &claim.form {
             ProbForm::Probability {
                 event: Event::Formula { formula, .. },
