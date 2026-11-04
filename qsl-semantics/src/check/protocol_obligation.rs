@@ -1331,7 +1331,7 @@ pub(super) fn type_body(
 /// [`type_body`], with the name each slot of the body is bound under,
 /// indexed by slot: `bound`'s names, then the binders the body introduces.
 /// Lowering keys each binder's parameter node by its name (FR-093).
-fn type_named_body(
+pub(super) fn type_named_body(
     form: &ExpressionForm,
     bound: &[(String, ValueType)],
     goal: Goal<'_>,

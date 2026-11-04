@@ -1826,7 +1826,7 @@ fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
 /// it.
 #[trace("FR-517-AC-14", "TC-1312")]
 #[test]
-#[ignore = "gated on the Contract IR reader: a `sum` binder bound inside `recover` is refused `BinderScope` (QSL emits it since QSL-1555)"]
+#[ignore = "gated on IR-1311 (the Contract IR reader): a `sum` binder bound inside `recover` is refused `BinderScope` (QSL emits it since QSL-1555)"]
 fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
     let unit = std::fs::read_to_string(format!("{DIR}/unit-event-position.native")).unwrap();
     let recover = |name: &str| {

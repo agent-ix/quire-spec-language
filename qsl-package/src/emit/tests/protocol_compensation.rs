@@ -251,22 +251,34 @@ fn parameter<'w>(nodes: &'w [Value], reference: &Value) -> (&'w str, &'w str) {
 }
 
 /// QSL-1555: a query binder written inside a compensation body is lowered
-/// as the `parameter` its source names. A `sum` in the `Partial` recovery
-/// predicate binds `line`, and an activation capture of `Full` that reads the
-/// registration capture `saved` reads `saved`'s own parameter, not the
-/// protocol input's.
+/// as the `parameter` its source names. A `sum` in each of the `Partial`
+/// trigger guard, retry relation and recovery predicate binds `g`, `r` and
+/// `line`, and an activation capture of `Full` that reads the registration
+/// capture `saved` reads `saved`'s own parameter, not the protocol input's.
 #[trace("FR-383-AC-8", "TC-1061")]
 #[test]
 fn a_sum_binder_in_a_recovery_predicate_is_a_parameter_named_by_its_source() {
-    let unit = unit_text("type Total = Integer;", "true", "false")
-        .replace(
-            "recover (recB: M::Money) { true }",
-            "recover (recB: M::Lines) { sum<Total>(line in recB.lines: line.amount_minor) >= 0 }",
-        )
-        .replace(
-            "capture activatedA: M::Money = trigA;",
-            "capture activatedA: M::Money = saved;",
-        );
+    let unit = unit_text(
+        "type Total = Integer;",
+        "sum<Total>(g in trigB.lines: g.amount_minor) >= 0",
+        "sum<Total>(r in lateB.lines: r.amount_minor) >= 0",
+    )
+    .replace(
+        "activate first (trigB: M::Money)",
+        "activate first (trigB: M::Lines)",
+    )
+    .replace(
+        "attempts 1 of M::Money;\nretry (earlyB: M::Money, lateB: M::Money)",
+        "attempts 1 of M::Lines;\nretry (earlyB: M::Lines, lateB: M::Lines)",
+    )
+    .replace(
+        "recover (recB: M::Money) { true }",
+        "recover (recB: M::Lines) { sum<Total>(line in recB.lines: line.amount_minor) >= 0 }",
+    )
+    .replace(
+        "capture activatedA: M::Money = trigA;",
+        "capture activatedA: M::Money = saved;",
+    );
     let (_, wire, _) =
         emitted_text(&unit).unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let nodes = nodes(&wire);
@@ -293,23 +305,30 @@ fn a_sum_binder_in_a_recovery_predicate_is_a_parameter_named_by_its_source() {
         .iter()
         .filter(|node| node["body"]["operation"]["identity"] == "quire.op.collection.sum.integer")
         .collect();
-    let [sum] = sums[..] else {
-        panic!("one sum application: {sums:?}");
-    };
-    let binding = &sum["body"]["arguments"][1];
-    assert_eq!(
-        (&binding["term"], &binding["name"]),
-        (&json!("binding"), &json!("line")),
-        "the sum binds `line`: {sum}"
-    );
-    let lines: Vec<&Value> = nodes
+    let mut bound: Vec<&Value> = sums
         .iter()
-        .filter(|node| {
-            node["semantic_form"] == "parameter"
-                && node["body"]["members"][0]["value"]["value"] == "line"
+        .map(|sum| {
+            let binding = &sum["body"]["arguments"][1];
+            assert_eq!(binding["term"], "binding", "{sum}");
+            &binding["name"]
         })
         .collect();
-    assert_eq!(lines.len(), 1, "one parameter node `line`: {lines:?}");
+    bound.sort_by_key(|name| name.as_str());
+    assert_eq!(bound, [&json!("g"), &json!("line"), &json!("r")]);
+    for name in ["g", "line", "r"] {
+        let parameters: Vec<&Value> = nodes
+            .iter()
+            .filter(|node| {
+                node["semantic_form"] == "parameter"
+                    && node["body"]["members"][0]["value"]["value"] == name
+            })
+            .collect();
+        assert_eq!(
+            parameters.len(),
+            1,
+            "one parameter node `{name}`: {parameters:?}"
+        );
+    }
 
     let recovery = argument(template("Partial"), "recovery");
     assert_eq!(

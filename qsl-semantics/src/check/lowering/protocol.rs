@@ -53,7 +53,7 @@ use crate::check::protocol_obligation::{
     CheckedCompensation,
 };
 use crate::check::protocol_slots::{
-    CheckedLifetime, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
+    CheckedLifetime, CheckedNodeBody, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
 };
 use crate::check::refinement::{
     KeyedCatalogClass, KeyedClassCatalog, KeyedMemoryClass, MemoryStepKind, RefinementCatalogClass,
@@ -253,7 +253,7 @@ impl ProtocolInput<'_> {
             unemitted.push(ProtocolConstruct::RepeatStepsThroughRepeat);
         }
         if matches!(form.activation, ActivationForm::Each { .. })
-            && matches!(&slots.terminal, CheckedTerminalMember::When(body) if body.reads_local(0))
+            && matches!(&slots.terminal, CheckedTerminalMember::When { predicate, .. } if predicate.reads_local(0))
         {
             unemitted.push(ProtocolConstruct::TerminalReadsOverUnderEach);
         }
@@ -325,15 +325,14 @@ impl ProtocolInput<'_> {
             .any(|control| control.kind == ProtocolNodeKind::Attempt)
     }
 
-    /// The checked body of the `finish` constraint.
-    fn finish_body(&self) -> Option<&crate::check::ir::CheckedBody> {
+    /// The checked `finish` constraint and its slot names.
+    fn finish_body(&self) -> Option<&CheckedNodeBody> {
         let (finish, _) = self.checked.finish.as_ref()?;
         self.checked
             .slots
             .bodies
             .iter()
             .find(|body| body.node == *finish)
-            .map(|body| &body.body)
     }
 
     /// The root of every expression tree the protocol's slots hold: its
@@ -359,8 +358,8 @@ impl ProtocolInput<'_> {
         {
             roots.push(guard.root());
         }
-        if let CheckedTerminalMember::When(body) = &self.checked.slots.terminal {
-            roots.push(body.root());
+        if let CheckedTerminalMember::When { predicate, .. } = &self.checked.slots.terminal {
+            roots.push(predicate.root());
         }
         let slots = &self.checked.slots;
         roots.extend(slots.bodies.iter().map(|body| body.body.root()));
@@ -1338,9 +1337,12 @@ impl Lowering<'_> {
             CheckedLifetime::Scope(_) => {
                 members.push(member("lifetime", self.text_literal("scope", location)?));
             }
-            CheckedLifetime::Until(body) => {
+            CheckedLifetime::Until {
+                predicate,
+                slot_names: checked_names,
+            } => {
                 members.push(member("lifetime", self.text_literal("until", location)?));
-                let mut slot_names: Vec<String> = protocol
+                let mut stage: Vec<String> = protocol
                     .checked
                     .slots
                     .binders
@@ -1348,15 +1350,19 @@ impl Lowering<'_> {
                     .take(readable.len())
                     .map(|binder| binder.name.clone())
                     .collect();
-                slot_names.push(role.name.clone());
+                stage.push(role.name.clone());
+                let slot_names = checked_slot_names(checked_names, &stage, location)?;
                 let mut scope = readable.to_vec();
                 scope.push(Binder {
                     slot: readable.len(),
                     parameter: parameter.into(),
                     semantic_type: semantic_type.into(),
                 });
-                let mut binders = Binders::new(&slot_names, &scope);
-                members.push(member("until", self.expression(body.root(), &mut binders)?));
+                let mut binders = Binders::new(slot_names, &scope);
+                members.push(member(
+                    "until",
+                    self.expression(predicate.root(), &mut binders)?,
+                ));
             }
         }
         Ok(BindingValue::Group(GroupTerm::new(members)))
@@ -2068,15 +2074,16 @@ impl Lowering<'_> {
         let binder = self.protocol_binder(closing, slot, readable.len(), &location)?;
         let mut scope = readable.to_vec();
         scope.push(binder.clone());
-        let slot_names: Vec<String> = checked
+        let stage: Vec<String> = checked
             .slots
             .binders
             .iter()
             .map(|binder| binder.name.clone())
             .collect();
-        let mut binders = Binders::new(&slot_names, &scope);
         let body = protocol.finish_body().ok_or_else(unchecked)?;
-        let constraint = self.expression(body.root(), &mut binders)?;
+        let slot_names = checked_slot_names(&body.slot_names, &stage, &location)?;
+        let mut binders = Binders::new(slot_names, &scope);
+        let constraint = self.expression(body.body.root(), &mut binders)?;
         let declaration = vec![
             identifier(name, &location)?,
             identifier("finish", &location)?,
@@ -2119,23 +2126,27 @@ impl Lowering<'_> {
         let (mode, condition) = match &protocol.checked.slots.terminal {
             CheckedTerminalMember::None => return Ok(None),
             CheckedTerminalMember::Any => ("any", None),
-            CheckedTerminalMember::When(body) => ("when", Some(body)),
+            CheckedTerminalMember::When {
+                predicate,
+                slot_names,
+            } => ("when", Some((predicate, slot_names))),
         };
         let condition = match condition {
             None => MemberTerm::binding("condition", empty_group()),
-            Some(body) => {
+            Some((body, checked_names)) => {
                 let scope: Vec<Binder> = match trigger {
                     None => readable.to_vec(),
                     Some(_) => readable.iter().take(1).cloned().collect(),
                 };
-                let slot_names: Vec<String> = protocol
+                let stage: Vec<String> = protocol
                     .checked
                     .slots
                     .binders
                     .iter()
                     .map(|binder| binder.name.clone())
                     .collect();
-                let mut binders = Binders::new(&slot_names, &scope);
+                let slot_names = checked_slot_names(checked_names, &stage, &location)?;
+                let mut binders = Binders::new(slot_names, &scope);
                 let term = self.expression(body.root(), &mut binders)?;
                 MemberTerm::binding(
                     "condition",

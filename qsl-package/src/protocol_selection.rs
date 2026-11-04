@@ -502,7 +502,10 @@ pub(crate) fn select<'a>(
                             .unwrap_or(usize::MAX)
                 })
                 .ok_or_else(absent)?;
-            let CheckedLifetime::Until(body) = &checked.lifetime else {
+            let CheckedLifetime::Until {
+                predicate: body, ..
+            } = &checked.lifetime
+            else {
                 return Err(absent());
             };
             let mut frame = protocol_input(protocol);
@@ -714,7 +717,9 @@ pub(crate) fn select<'a>(
             }
         }
         Node::Terminal if slot.member == "condition" && slot.index.is_none() => {
-            let qsl_semantics::check::CheckedTerminalMember::When(body) = &protocol.slots.terminal
+            let qsl_semantics::check::CheckedTerminalMember::When {
+                predicate: body, ..
+            } = &protocol.slots.terminal
             else {
                 return Err(absent());
             };

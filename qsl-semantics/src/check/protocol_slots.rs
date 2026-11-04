@@ -46,7 +46,7 @@ use super::check::Scope;
 use super::ir::CheckedBody;
 use super::lowering::{protocol_location, ProtocolSite};
 use super::protocol_clause::{record_binder, written_owner, CheckedProtocol, ProtocolNodeId};
-use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, Goal};
+use super::protocol_obligation::{model_state_reads, span_of, type_named_body, wraps, Goal};
 use super::refusal::{
     ArmFault, CheckCause, CheckRefusal, ObservationReason, ProtocolAnchorCause, RelatedEnd,
     SlotKind,
@@ -121,6 +121,9 @@ pub struct CheckedNodeBody {
     pub node: ProtocolNodeId,
     /// The checked body.
     pub body: CheckedBody,
+    /// The name each slot of `body` is bound under: every binder of
+    /// [`CheckedSlots::binders`], then the binders the body introduces.
+    pub slot_names: Vec<String>,
 }
 
 /// A checked replicated role's lifetime (FR-218 "Scopes", QSpec FR-428).
@@ -135,7 +138,13 @@ pub enum CheckedLifetime {
     Scope(Option<ProtocolNodeId>),
     /// `lifetime until(p)`: the checked Boolean `p`, over `C0` and the
     /// role's binder.
-    Until(CheckedBody),
+    Until {
+        /// The checked predicate.
+        predicate: CheckedBody,
+        /// The name each slot of `predicate` is bound under: `C0`'s, the
+        /// role's binder's, then the binders the predicate introduces.
+        slot_names: Vec<String>,
+    },
 }
 
 /// One checked replicated role `role r each T from pop max n lifetime L`
@@ -184,7 +193,14 @@ pub enum CheckedTerminalMember {
     #[default]
     None,
     /// `terminal when { P }`: the checked Boolean predicate.
-    When(CheckedBody),
+    When {
+        /// The checked predicate.
+        predicate: CheckedBody,
+        /// The name each slot of `predicate` is bound under: every binder
+        /// of [`CheckedSlots::binders`], then the binders the predicate
+        /// introduces.
+        slot_names: Vec<String>,
+    },
     /// `terminal any`: every terminal state is intended.
     Any,
 }
@@ -366,6 +382,16 @@ impl Checker<'_, '_> {
     /// `slot` typed over every binder and checked against the slot's rules,
     /// in the order the module doc states; `None` when it refuses.
     fn slot(&mut self, slot: &Slot<'_>, cx: &mut CheckContext<'_, Scope>) -> Option<CheckedBody> {
+        self.named_slot(slot, cx).map(|(body, _)| body)
+    }
+
+    /// [`Self::slot`], with the name each slot of the body is bound under,
+    /// which lowering keys each binder the body introduces by (FR-093).
+    fn named_slot(
+        &mut self,
+        slot: &Slot<'_>,
+        cx: &mut CheckContext<'_, Scope>,
+    ) -> Option<(CheckedBody, Vec<String>)> {
         let node_name = match slot.owner {
             SlotOwner::Node(node) => self.name(node),
             SlotOwner::Clause => self.protocol.name.name.clone(),
@@ -456,7 +482,7 @@ impl Checker<'_, '_> {
             location: site_location.as_ref().unwrap_or(self.declarations.location),
             ..*self.declarations
         };
-        let typed = type_body(
+        let typed = type_named_body(
             slot.form,
             role_bound.as_deref().unwrap_or(&self.bound),
             slot.goal,
@@ -465,8 +491,8 @@ impl Checker<'_, '_> {
             cx,
         );
         self.nodes = nodes;
-        let body = match typed {
-            Ok(body) => body,
+        let (body, slot_names) = match typed {
+            Ok(named) => named,
             Err(CheckRefusal { location, cause }) => {
                 let span = span_of(slot.form, &location);
                 if wraps(&cause) && cause.cause().is_some() {
@@ -502,7 +528,7 @@ impl Checker<'_, '_> {
             }
         }
         if role_bound.is_some() {
-            return Some(body);
+            return Some((body, slot_names));
         }
         let mut out_of_scope = Vec::new();
         let mut read = BTreeSet::new();
@@ -538,7 +564,7 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        Some(body)
+        Some((body, slot_names))
     }
 
     /// Whether the binder `name` is a decision fact of a role.
@@ -1093,10 +1119,11 @@ pub(crate) fn check(
             readable: &readable,
             bars_model_state,
         };
-        if let Some(checked_body) = checker.slot(&slot, &mut cx) {
+        if let Some((checked_body, slot_names)) = checker.named_slot(&slot, &mut cx) {
             slots.bodies.push(CheckedNodeBody {
                 node: ProtocolNodeId(node),
                 body: checked_body,
+                slot_names,
             });
         }
     }
@@ -1395,7 +1422,7 @@ pub(crate) fn check(
                 &role.name.name,
             ))),
             RoleLifetime::Until(predicate) if checker.role_binders.contains_key(&index) => checker
-                .slot(
+                .named_slot(
                     &Slot {
                         owner: SlotOwner::Role(index),
                         kind: SlotKind::Lifetime,
@@ -1406,7 +1433,10 @@ pub(crate) fn check(
                     },
                     &mut cx,
                 )
-                .map(CheckedLifetime::Until),
+                .map(|(predicate, slot_names)| CheckedLifetime::Until {
+                    predicate,
+                    slot_names,
+                }),
             RoleLifetime::Until(_) => None,
         };
         let population = if declarations
@@ -1473,7 +1503,7 @@ pub(crate) fn check(
         None => CheckedTerminalMember::None,
         Some(TerminalForm::Any { .. }) => CheckedTerminalMember::Any,
         Some(TerminalForm::When { predicate, .. }) => checker
-            .slot(
+            .named_slot(
                 &Slot {
                     owner: SlotOwner::Clause,
                     kind: SlotKind::Terminal,
@@ -1484,7 +1514,12 @@ pub(crate) fn check(
                 },
                 &mut cx,
             )
-            .map_or(CheckedTerminalMember::None, CheckedTerminalMember::When),
+            .map_or(CheckedTerminalMember::None, |(predicate, slot_names)| {
+                CheckedTerminalMember::When {
+                    predicate,
+                    slot_names,
+                }
+            }),
     };
 
     if checker.refusals.is_empty() {
