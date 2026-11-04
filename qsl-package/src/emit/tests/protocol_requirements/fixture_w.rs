@@ -1745,7 +1745,7 @@ fn w_nodes_do_not_follow_unrelated_protocols() {
 /// wire bytes for each of its protocol nodes as W alone. QSpec FR-322
 /// writes each operand as its index in the whole document's graph, so nodes
 /// the unrelated protocols add ahead of W's operands shift those indices.
-#[ignore = "gated on STD-653: FR-322 operand index segments are document graph positions"]
+#[ignore = "gated on STD-653 (tracker QSL-1695): FR-322 operand index segments are document graph positions"]
 #[test]
 fn w_wire_bytes_do_not_follow_unrelated_protocols() {
     let alone = lower_with(document(), PROFILES_W, W);
