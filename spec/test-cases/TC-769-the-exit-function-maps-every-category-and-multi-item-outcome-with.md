@@ -26,7 +26,7 @@ Scope: FR-285-AC-1 to FR-285-AC-12.
 8. Render a clause pending at the end of its supplied trace and a run whose clauses are all discharged; read each machine-output record.
 
 9. Run FR-501-AC-3's `Pending` case and FR-501-AC-4's `Indeterminate` case, FR-501-AC-1's `Completed(true)` and `Completed(false)` cases and a work-stopped `Incomplete` case through `run_clause`, and read each label and exit from the report and from the multi-item ranking.
-10. Read the label and exit of the `Pending` and `Indeterminate` cases and compare them with the catalog's `Category::Pending` and `Category::Indeterminate`; compare `trace_exit_code` with `exit_code` for each of the ten categories; search QSL for a local outcome-to-label or outcome-to-exit mapping.
+10. Read the label and exit of the `Pending` and `Indeterminate` cases and compare them with the catalog's `Category::Pending` and `Category::Indeterminate`; compare `trace_exit_code` with `exit_code` for each of the ten categories; and search the production source (`src/` trees, tests and fixtures excluded) of `qsl-foundation`, `qsl-eval`, `qsl-replay`, `qsl-route`, `qsl-package` and the QSL command crate for (a) the literal pairs `"pending"` with `0` and `"indeterminate"` with `11` in one expression, and (b) a `match` or `if let` over `TemporalCategory`, `ClauseDisposition` or any type that maps a temporal or trace outcome to a label string or an exit integer. Pass means zero hits for both searches and every label and exit read by a call to `as_str`, `exit_code` or `trace_exit_code` on a `Category`.
 
 Tag the tests `#[trace("TC-769", "<AC id>")]`.
 
@@ -41,4 +41,4 @@ Tag the tests `#[trace("TC-769", "<AC id>")]`.
 - Step 7: 20, 21, 22, each equal with and without the payload.
 - Step 8: category `pending`, exit 0, status `pending` and the pending clause ids; the discharged run has neither.
 - Step 9: `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22 from the report, each equal to the ranking's.
-- Step 10: the catalog's label and exit for each (`pending`/0, `indeterminate`/11); equal trace and plain exits for all ten; no local mapping in QSL.
+- Step 10: the catalog's label and exit for each (`pending`/0, `indeterminate`/11); equal trace and plain exits for all ten; zero hits in both searches.

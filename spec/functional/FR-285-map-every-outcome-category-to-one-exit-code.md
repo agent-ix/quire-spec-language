@@ -155,7 +155,7 @@ One exit code.
 | FR-285-AC-8 | A `StageFailure::Refused` carrying `protocol_results` [W `Emitted`, X `Refused` with an `ill_typed` cause] exits 20, one whose first `Refused` result has a profile-gated cause exits 21, and a `StageFailure::Limit` carrying [W `Emitted`, Z `Incomplete`] exits 22; removing the payload from each changes neither category nor exit. | Test (TC-769) |
 | FR-285-AC-9 | A clause pending when its supplied trace ends has `Category::Pending`, exits 0 with the label `pending`, not `Category::Inconclusive`; its machine-output record carries the status `pending` and the ids of the pending clauses, and a run whose clauses are all discharged carries no pending status and no pending ids. | Test (TC-769) |
 | FR-285-AC-10 | The label and exit that `run_clause` reports for a finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome equal the label and exit the multi-item ranking reads for the same outcome. | Test (TC-769) |
-| FR-285-AC-11 | The label and exit of a finite-window `Pending` and `Indeterminate` outcome equal the catalog's `Category::Pending.as_str()` and `exit_code()` (`pending`, 0) and `Category::Indeterminate.as_str()` and `exit_code()` (`indeterminate`, 11), and QSL holds no function from an outcome to a label or an exit other than the catalog's: a catalog whose `Pending` exit differs changes the reported exit. | Test (TC-769) |
+| FR-285-AC-11 | The label and exit of a finite-window `Pending` and `Indeterminate` outcome equal the catalog's `Category::Pending.as_str()` and `exit_code()` (`pending`, 0) and `Category::Indeterminate.as_str()` and `exit_code()` (`indeterminate`, 11), and QSL production source holds no local mapping: it contains no literal `("pending", 0)` or `("indeterminate", 11)` label and exit pair and no `match` over a temporal or trace outcome (`TemporalCategory`, `ClauseDisposition` or an equivalent) that yields a label or an exit code, every label and exit being obtained by calling the catalog's `as_str`, `exit_code` or `trace_exit_code` on a `Category` value. | Test (TC-769) |
 | FR-285-AC-12 | A finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome has the label and exit `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22. | Test (TC-769) |
 
 ## Dependencies
@@ -163,6 +163,7 @@ One exit code.
 - ADR-029 CB-4: the exit table, ruling RU-1.
 - ADR-013 O-16, T-4: the categories and the failure types.
 - ADR-011 §5: one total exit function.
+- **Delivery:** FR-285-AC-9, FR-285-AC-11 and TC-769 step 10 are delivered by QSL-1574, which removes QSL's local temporal outcome-to-category mapping.
 - The shared semantic catalog (`quire-semantic-value`): the ten-value `Category`
   with `Pending` and `Indeterminate`, `exit_code` and `trace_exit_code`;
   FR-285-AC-11.
