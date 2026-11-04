@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_foundation::source::provenance::RawSourceRef;
 use quire_exact::{EffectiveId, ValueType};
 
+use super::lowering::AdmittedModel;
 use crate::model::domain_package::DomainPackageRef;
 
 /// What one package-owned type name `M::T` names.
@@ -141,6 +142,22 @@ impl ModelSpellings {
         alias: &str,
     ) -> Option<&DomainPackageRef> {
         self.package(unit, alias).map(|package| &package.selection)
+    }
+
+    /// The model of `models` that `unit` (the primary unit when `None`)
+    /// reads its model alias `alias` as: the admitted model with that alias
+    /// on the package the unit binds it to. Two units may bind one alias to
+    /// two packages, so the alias alone does not pick it.
+    pub(crate) fn model<'m>(
+        &self,
+        models: &'m [AdmittedModel],
+        unit: Option<&RawSourceRef>,
+        alias: &str,
+    ) -> Option<&'m AdmittedModel> {
+        let selection = self.selection(unit, alias)?;
+        models
+            .iter()
+            .find(|model| model.alias() == Some(alias) && model.selection() == selection)
     }
 
     /// `unit` selects a model under `alias`, bound to the package at

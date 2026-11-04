@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-201 exact-value certificate types and the independent Bellman checker
-//! core. Model re-enumeration and the public replay facade are separate work.
-//!
-//! The low-level graph evaluator is retained here until the replay facade
-//! supplies its independently enumerated graph; it is exercised by this
-//! module's tests and is not wired to the analyzer's product.
-
-#![allow(dead_code)]
+//! core. The bounded graph adapter below enumerates a checker-owned model
+//! graph through `qsl-eval::ModelSystem`; it does not consume analyzer output.
 
 use qsl_semantics::check::Bound;
 use quire_exact::{Integer, Rational};
+use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
+
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
+use qsl_eval::simulation::TransitionSystem;
+use qsl_semantics::check::{
+    CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate,
+};
+
+use crate::identity::ObligationIdentity;
 
 /// A complete canonical product-state key, encoded by the checker.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -122,6 +126,218 @@ pub enum ExactProbabilityGraphError {
     /// The graph is cyclic; cyclic certificates require the later
     /// unbounded-certificate checking path.
     Cycle,
+    /// The checker-side model expansion was undecided or refused.
+    ExpansionRefused,
+    /// The checker-side graph exceeded its configured state or edge bound.
+    LimitReached,
+    /// The model API exposed a draw that was not a single-state probability.
+    UnsupportedDraw,
+    /// The model has no single initial state; this slice checks exactly one.
+    UnsupportedInitial,
+    /// No checked claim has the requested obligation's node as its checked
+    /// package identity, or more than one does.
+    ClaimNotBound,
+    /// The bound claim is not an unbounded `eventually` reachability claim,
+    /// the only form this bounded slice checks.
+    UnsupportedClaimForm,
+}
+
+/// Enumerate an unbound reachability graph from the checked model itself.
+/// Product keys use the FR-196 v1 array with only the model component set;
+/// monitor, accumulator, and pending controls are null in this bounded slice.
+///
+/// This adapter intentionally refuses draws with multiple post-states and
+/// stops at explicit limits. It is a bounded exact-check foundation, not a
+/// complete probabilistic product implementation.
+fn enumerate_model_graph<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: &P,
+    max_states: usize,
+    max_edges: usize,
+) -> Result<CheckerGraph, ExactProbabilityGraphError> {
+    let initial = system.initial();
+    if initial.len() != 1 {
+        return Err(ExactProbabilityGraphError::UnsupportedInitial);
+    }
+    let key_of = |state: &ModelSimState| {
+        let (model_bytes, _) = system
+            .state_key(state)
+            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        product_key(&model_bytes)
+    };
+    let first = initial
+        .into_iter()
+        .next()
+        .ok_or(ExactProbabilityGraphError::UnsupportedInitial)?;
+    let root = key_of(&first)?;
+    let mut pending = VecDeque::from([(root.clone(), first)]);
+    let mut states = BTreeMap::new();
+    let mut seen = BTreeSet::from([root.clone()]);
+    let mut edge_count = 0usize;
+    while let Some((key, state)) = pending.pop_front() {
+        if states.len() == max_states {
+            return Err(ExactProbabilityGraphError::LimitReached);
+        }
+        let reading = system
+            .state_predicates(&state, &[(target, None)])
+            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
+            .into_iter()
+            .next()
+            .ok_or(ExactProbabilityGraphError::ExpansionRefused)?;
+        let terminal = match reading {
+            qsl_eval::simulation::model::PredicateReading::True => Some(true),
+            qsl_eval::simulation::model::PredicateReading::False => None,
+            _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
+        };
+        let choices = if terminal.is_some() {
+            Vec::new()
+        } else {
+            let actions = system
+                .actions(&state)
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            if actions.is_empty() {
+                states.insert(
+                    key,
+                    CheckerState {
+                        terminal: Some(false),
+                        choices: Vec::new(),
+                    },
+                );
+                continue;
+            }
+            let mut choices = Vec::with_capacity(actions.len());
+            for action in actions {
+                let mut choice = Vec::new();
+                for draw in action.draws {
+                    if draw.probability == rational(0) {
+                        continue;
+                    }
+                    if draw.successors.len() != 1 {
+                        return Err(ExactProbabilityGraphError::UnsupportedDraw);
+                    }
+                    let (_, successor) = draw
+                        .successors
+                        .into_iter()
+                        .next()
+                        .ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
+                    let target_key = key_of(&successor)?;
+                    edge_count = edge_count
+                        .checked_add(1)
+                        .ok_or(ExactProbabilityGraphError::TooManyEdges)?;
+                    if edge_count > max_edges {
+                        return Err(ExactProbabilityGraphError::LimitReached);
+                    }
+                    choice.push(ProbabilityEdge {
+                        target: target_key.clone(),
+                        probability: draw.probability,
+                    });
+                    if seen.insert(target_key.clone()) {
+                        pending.push_back((target_key, successor));
+                    }
+                }
+                choices.push(choice);
+            }
+            choices
+        };
+        states.insert(key, CheckerState { terminal, choices });
+    }
+    Ok(CheckerGraph {
+        initial: root,
+        states,
+    })
+}
+
+fn product_key(model_bytes: &[u8]) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+    let encoded_model = base64::Engine::encode(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        model_bytes,
+    );
+    let bytes = serde_json::to_vec(&serde_json::json!([
+        "quire.probability-product-key/v1",
+        null,
+        encoded_model,
+        null,
+        null,
+        null
+    ]))
+    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    Ok(ProbabilityProductKey(bytes))
+}
+
+/// Independently enumerate and check a bounded unbound exact reachability
+/// certificate against the supplied checked model system.
+///
+/// The caller constructs `system` from replay/recompiled subject inputs and
+/// supplies the checked claim predicate. The certificate cannot supply graph
+/// states or transitions. This slice handles one initial state and exact
+/// draws with one successor each; unsupported shapes return an error.
+pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: &P,
+    certificate: &ExactProbabilityCertificate,
+    objective: ProbabilityObjective,
+    bound: &Bound,
+    max_states: usize,
+    max_edges: usize,
+) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
+    let graph = enumerate_model_graph(system, target, max_states, max_edges)?;
+    check_exact_reachability(&graph, certificate, objective, bound)
+}
+
+/// Bind `item` to its checked claim by checked node identity, then check the
+/// certificate over that claim's target predicate and bound (FR-498).
+///
+/// The claim is the one whose `occurrence().node()` equals the obligation's
+/// node; name, span and source order never select it. A claim without a
+/// package identity is never bound.
+pub fn check_claim_exact_reachability(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    certificate: &ExactProbabilityCertificate,
+    max_states: usize,
+    max_edges: usize,
+) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
+    let mut bound = claims.iter().filter(|claim| {
+        claim
+            .occurrence()
+            .is_some_and(|key| key.node() == item.node())
+    });
+    let claim = bound
+        .next()
+        .ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    if bound.next().is_some() {
+        return Err(ExactProbabilityGraphError::ClaimNotBound);
+    }
+    let ProbForm::Reach {
+        bound,
+        target: ReachTarget::Eventually(predicate),
+    } = &claim.form
+    else {
+        return Err(ExactProbabilityGraphError::UnsupportedClaimForm);
+    };
+    let objective = claim_objective(&claim.scheduler, bound);
+    check_model_exact_reachability(
+        system,
+        predicate,
+        certificate,
+        objective,
+        bound,
+        max_states,
+        max_edges,
+    )
+}
+
+/// The scheduler objective the claim itself fixes (FR-198): a claim `under
+/// every scheduler` must hold at the worst scheduler, the minimum for a `>=`
+/// bound and the maximum for a `<=` bound; a workload has one distribution.
+fn claim_objective(scheduler: &ProbScheduler, bound: &Bound) -> ProbabilityObjective {
+    match (scheduler, bound) {
+        (ProbScheduler::Workload(_), _) => ProbabilityObjective::Workload,
+        (ProbScheduler::Every, Bound::AtLeast(_)) => ProbabilityObjective::Minimum,
+        (ProbScheduler::Every, Bound::AtMost(_)) => ProbabilityObjective::Maximum,
+    }
 }
 
 /// One successor and its exact probability mass.
@@ -432,6 +648,47 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[trace("TC-636")]
+    #[test]
+    fn the_claim_fixes_the_scheduler_objective() {
+        let half = || Rational::new(Integer::from(1_i64), Integer::from(2_i64)).unwrap();
+        let every = ProbScheduler::Every;
+        let workload = ProbScheduler::Workload("W".to_owned());
+        assert_eq!(
+            claim_objective(&every, &Bound::AtLeast(half())),
+            ProbabilityObjective::Minimum
+        );
+        assert_eq!(
+            claim_objective(&every, &Bound::AtMost(half())),
+            ProbabilityObjective::Maximum
+        );
+        for bound in [Bound::AtLeast(half()), Bound::AtMost(half())] {
+            assert_eq!(
+                claim_objective(&workload, &bound),
+                ProbabilityObjective::Workload
+            );
+        }
+    }
+
+    #[trace("TC-636")]
+    #[test]
+    fn bounded_model_product_key_uses_the_complete_fr196_v1_tuple() {
+        let key = product_key(b"model-state-key").expect("the fixed key encodes");
+        let actual: serde_json::Value =
+            serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
+        assert_eq!(
+            actual,
+            serde_json::json!([
+                "quire.probability-product-key/v1",
+                null,
+                "bW9kZWwtc3RhdGUta2V5",
+                null,
+                null,
+                null
+            ])
+        );
     }
 
     #[trace("TC-636")]

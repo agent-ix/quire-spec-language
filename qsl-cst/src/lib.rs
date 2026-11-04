@@ -32,7 +32,7 @@ pub mod token;
 
 pub use cst::{
     CstElement, CstNode, CstToken, LosslessCst, NodeIdentity, NodeIndex, Production, Recovery,
-    RecoveryKind, SourceChange, TokenClass, TokenKind,
+    RecoveryKind, SignificantContent, SourceChange, TokenClass, TokenKind,
 };
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use lexer::{declared_edition, DeclaredEdition, Limits};

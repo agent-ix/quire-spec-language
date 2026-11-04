@@ -79,6 +79,7 @@ mod abstraction;
 mod hybrid;
 mod hyper;
 mod model;
+mod probabilistic;
 mod protocol;
 mod refinement_rows;
 mod state;
@@ -4469,7 +4470,29 @@ impl<'a> Lowering<'a> {
                 };
                 let target = target.clone();
                 let member = self.type_argument(&target, node.location())?;
-                let operation = if matches!(
+                let operation = if let ValueType::Float(to) = &target {
+                    // FR-397 "Conversion into a float": a float source is a
+                    // width conversion (`to_float32` rounds under the
+                    // target's mode, `to_float64` is exact and carries none);
+                    // an exact source is `from_exact` under the target's mode.
+                    let law = self.law(LawRole::IeeeProfile, node.location())?;
+                    let rounding = OperationMode::Rounding(to.rounding());
+                    let (identity, mode) = match (node.at(*operand).value_type(), to.width()) {
+                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary32) => {
+                            ("quire.op.ieee.to_float32", Some(rounding))
+                        }
+                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary64) => {
+                            ("quire.op.ieee.to_float64", None)
+                        }
+                        _ => ("quire.op.ieee.from_exact", Some(rounding)),
+                    };
+                    Operation {
+                        laws: vec![law],
+                        mode,
+                        member: Some(member),
+                        ..plain(identity)
+                    }
+                } else if matches!(
                     node.at(*operand).value_type(),
                     ValueType::Quantity(_) | ValueType::CarriedQuantity(_)
                 ) {

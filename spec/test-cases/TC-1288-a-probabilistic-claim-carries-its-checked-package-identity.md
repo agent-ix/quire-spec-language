@@ -36,7 +36,7 @@ FR-498-AC-1 to FR-498-AC-4.
    written identically.
 3. Check an elapsed-time claim with an unsupported form and a punctual interval
    in a non-admitted form, each sharing its name with another claim, and read
-   the settled causes' `{declaration, occurrence}`.
+   the settled causes' `{node, occurrence}` locus.
 4. Read the emitted package with the strict reader and check every row names
    a node of the emitted graph with that node's own `claim` occurrence.
 
@@ -54,7 +54,7 @@ Vectors are referenced by QSpec case ID, never copied.
   identity; moving, reformatting and commenting leave written content equal
   and a changed token makes it differ; the identical twins have distinct
   identities.
-- Step 3: each cause carries the selected claim's `{declaration, occurrence}`
+- Step 3: each cause carries the selected claim's `{node, occurrence}` locus
   and no other claim's.
 - Step 4: the strict reader admits the package and every row joins its node
   and occurrence.

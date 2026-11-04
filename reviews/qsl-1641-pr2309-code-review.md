@@ -34,3 +34,23 @@ Examined, clean:
 ## Verdict
 
 Not mergeable as written: no high finding, but FND-001 and FND-002 should be fixed in the same round as the test gaps in the gap-analysis review. Gates on the head trial-merged with origin/main: fmt, `cargo check --locked --workspace --all-targets`, clippy `-D warnings` default and `--no-default-features`, arch-lint `qualified-core` and `api-surface --qsl . --qsl-only` all pass. `qsl-package` (645 + doc 52), `qsl-semantics` and `qsl-eval` pass; `qsl-replay` has 19 failures, a strict subset of the 20 known (the one missing on this head is `aggregate_package_accepts_temporal_selection_from_later_source`); root `it` plain (882) and `--all-features` (941) pass.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The replay `LedgerBinding.package` doc comment says "The checked package's name" but the value is the caller's source identity string. The new test `the_replay_binding_names_the_package_the_source_emits` compares the recipe's identity label with `package.name()`; it does not run the replay path, so it pins a coincidence of the recipe, not a rule. | qsl-replay/src/spine/clause/progress.rs:68, tests/it/bare_package.rs:936-955 |
+
+## Dispositions
+
+Round 1, head 003b53ccd (A) trial-merged with origin/main 3800efb02; #2311 head 2db5b5c3a is A plus the identity file.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | accepted-no-change | FR-532 defines "route" as the three evidence routes (from an `Emission`, from a read-back package, from a bare package); all three bind `package.name()` (test `the_progress_binding_names_the_package_and_no_source_label`). The replay ledger is a separate type no evaluator route reads. The label equals the manifest name only in the recipe; see FND-008 for the doc and test wording. |
+| FND-002 | fixed | `bound_atom_indices` returns `None` on a count mismatch; assertions restored for `[true,false]`, `[]`, shared, instance-bound and distinct-after-shared atoms. Removing the guard fails `a_leaf_count_that_differs_from_the_holds_count_maps_no_atoms`. |
+| FND-003 | fixed | `finite_window_profile` names the timed profile, so the evaluator gives its own refusal as in-process; unit test pins the closed table and `None` for unknown identities. |
+| FND-004 | fixed | `dependencies()` deduplicates by pointer identity; `the_dependency_closure_follows_a_chain_and_lists_a_diamond_once` fails without the recursion. |
+| FND-005 | accepted-no-change | The retained `assert_eq!` of the formula to `of_graph(view.formula_graph())` and of its work to the checked formula's work carry the AC-23 claim; the dropped inequality against the arena formula is trivially true once the formula holds a first-use plan. |
+| FND-006 | fixed | `atom_numbers` crate-private; `with_formula` and `bound_atom_indices` `doc(hidden)`. `from_arena_index`, `capture_names`, `declaration_key` and `capture_value_types` stay `pub` because `qsl-eval` calls them across the crate boundary; accepted. |
+| FND-007 | fixed | `counts_ticks` is the one predicate for the work counters, the plan and the cross-check. The per-evaluation `Plan` clone in `run_window` remains (low, same as the coordinator review's FND-003); no AC depends on it. |
