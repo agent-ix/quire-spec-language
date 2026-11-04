@@ -996,6 +996,21 @@ fn observation_through_view<'a>(
     ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>,
     ObjectReference,
 ) {
+    observation_with_row(package, evaluation_view, view, keys, Some(complete))
+}
+
+/// The `nodes` snapshot row: `None` leaves it out of the snapshot entirely,
+/// `Some(complete)` lists it with that completeness.
+fn observation_with_row<'a>(
+    package: &'a CheckedPackage,
+    evaluation_view: &qsl_package::AdmittedEvaluationView<'a>,
+    view: &qsl_semantics::model::normalize::EffectiveView,
+    keys: &[&str],
+    row: Option<bool>,
+) -> (
+    ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>,
+    ObjectReference,
+) {
     let key = quire_checked::key::DeclarationKey {
         package: model::PACKAGE.to_owned(),
         node: model::id("Node"),
@@ -1022,6 +1037,16 @@ fn observation_through_view<'a>(
             })
         })
         .collect();
+    let populations: Vec<_> = row
+        .map(|complete| {
+            serde_json::json!({
+                "population": model::id("nodes"),
+                "complete": complete,
+                "objects": objects,
+            })
+        })
+        .into_iter()
+        .collect();
     let snapshot = serde_json::json!({
         "format": "quire.state.snapshot/v1",
         "identity": {
@@ -1030,7 +1055,7 @@ fn observation_through_view<'a>(
             },
         "observation": "current",
         "model": {"identity": model::PACKAGE, "version": "1.0.0", "digest": "set at admission"},
-        "populations": [{"population": model::id("nodes"), "complete": complete, "objects": objects}],
+        "populations": populations,
     });
     let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
         .into_iter()
@@ -4336,6 +4361,74 @@ fn incomplete_sole_population_is_returned_with_its_population_locus() {
             .unwrap()
         )
     );
+}
+
+/// FR-106-AC-65: a supplied ghost reference attributed to `nodes` makes that
+/// declaration required. With no `nodes` row the admission is
+/// `incomplete_population`/`missing-required-artifact`, with the row listed
+/// but not complete it is `incomplete-scope`, both at that population before
+/// check 8; with the row complete, check 8 reports the ghost against it.
+#[test]
+#[trace("TC-1071", "FR-106-AC-65")]
+fn a_seed_population_without_a_row_is_a_missing_required_artifact() {
+    let (package, view) = fixture_with_view();
+    let evaluation_view = package.evaluation_view();
+    let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    for (row, incomplete, code) in [
+        (
+            None,
+            true,
+            CatalogCode::new("incomplete_population", "missing-required-artifact"),
+        ),
+        (
+            Some(false),
+            true,
+            CatalogCode::new("incomplete_population", "incomplete-scope"),
+        ),
+        (
+            Some(true),
+            false,
+            CatalogCode::new("dangling_reference", "absent-target-in-complete-population"),
+        ),
+    ] {
+        let (observation, reference) =
+            observation_with_row(&package, &evaluation_view, &view, &["n5"], row);
+        let ghost = ObjectReference::new(
+            reference.universe().clone(),
+            reference.object_type().clone(),
+            ObjectId::new("ghost").unwrap(),
+        );
+        let mut meter = Meter::new(UNLIMITED);
+        let before = meter.clone();
+        let result = package.evaluate_protocol_slot(
+            &capture,
+            &supply(
+                &package,
+                "Refunds",
+                vec![("view", Value::Reference(ghost))],
+                Some(&observation),
+            ),
+            &mut meter,
+        );
+        assert_eq!(
+            meter, before,
+            "row {row:?}: admission precedes every charge"
+        );
+        let Err(CallFailure::Admission(failure)) = result else {
+            panic!("row {row:?}: expected an admission failure: {result:?}");
+        };
+        let record = match failure.as_ref() {
+            CallAdmissionFailure::Incomplete(record) if incomplete => record,
+            CallAdmissionFailure::Refused(record) if !incomplete => record,
+            other => panic!("row {row:?}: wrong admission outcome: {other:?}"),
+        };
+        assert_eq!(record.record.catalog, code, "row {row:?}");
+        assert_eq!(
+            record.record.fields["population"],
+            model::id("nodes"),
+            "row {row:?}"
+        );
+    }
 }
 
 /// FR-390-AC-20: a successful immutable observation authority remains usable
