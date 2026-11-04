@@ -368,8 +368,8 @@ pub use assemble::{
 };
 pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
-    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
-    VariantCaseDeclaration, VariantTypeDeclaration,
+    DecimalLiteralLimits, DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations,
+    ResolvedSignatures, VariantCaseDeclaration, VariantTypeDeclaration,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use checked_dispatch::checked_dispatch_selected_operation;
@@ -2172,6 +2172,7 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
+        .with_decimal_literal_limits(self.decimal_literal_limits)
         .with_known_populations(refinement::population_names(&self.models))
         .with_clock_reading(
             self.clock_reading

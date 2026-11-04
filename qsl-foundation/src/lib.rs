@@ -35,6 +35,7 @@ pub mod serde_object;
 pub mod setting;
 pub mod source;
 pub mod source_map;
+pub mod tally;
 pub mod wire_format;
 pub mod witness;
 
