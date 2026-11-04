@@ -15,6 +15,7 @@ use super::reachability::{lower_with, Lowered};
 use super::*;
 use crate::checked_v2::V2ReadRefusal;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
+use quire_semantic_value::location::{Location, Origin};
 
 /// Read the complete envelope through QSL's I2 dispatch with its domain evidence.
 fn read_protocol(wire: &Value) -> Read {
@@ -1432,4 +1433,73 @@ fn activation_capture_self_and_foreign_reads_are_refused_by_the_reader() {
             "{refusal:?}"
         );
     }
+}
+
+/// The `expression` occurrences the checked package records for the one node
+/// that has an `expression` occurrence at `at`, in ordinal order.
+fn expression_occurrences_of_node_at(
+    graph: &qsl_semantics::check::CheckedGraph,
+    at: &Location,
+) -> Vec<(u64, Location)> {
+    let expression = |origin: &quire_exact::Origin| origin.role().as_str() == "expression";
+    let mut nodes = graph
+        .occurrences()
+        .filter(|(_, origin, location)| expression(origin) && *location == at)
+        .map(|(key, _, _)| key);
+    let node = nodes.next().expect("one node has an occurrence there");
+    assert_eq!(
+        nodes.next(),
+        None,
+        "exactly one node has an occurrence there"
+    );
+    graph
+        .occurrences()
+        .filter(|(key, origin, _)| *key == node && expression(origin))
+        .map(|(_, origin, location)| (origin.ordinal(), location.clone()))
+        .collect()
+}
+
+/// TC-1063 row L8h: an application written at two positions has one
+/// `expression` occurrence per position, numbered in document order -- in
+/// one slot (`earlier.tally` twice in `Refund`'s retry relation) and across
+/// two slots (`target >= 0` in the trigger guard, then the retry relation).
+/// These are the occurrences FR-383 keys each visit's row to.
+#[trace("TC-1063", "FR-383-AC-61")]
+#[test]
+fn each_position_of_an_application_has_its_own_occurrence_in_document_order() {
+    let document = serde_json::to_vec(&tc1070::document()).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let graph = assemble_with_models(tc1070::SOURCE.as_bytes(), &packages)
+        .expect("E assembles")
+        .check(CheckingLimits::default())
+        .expect("E checks");
+    let site = |name: &str, path: &[usize]| {
+        Location::at(
+            Origin::TypeDeclaration {
+                name: format!("protocol Refunds compensate Refund {name}"),
+            },
+            path,
+        )
+    };
+    // `((earlier.tally < 3 and later.tally = earlier.tally + 1) and
+    // target >= 0) and not activated`: `earlier.tally` is the left operand
+    // of `<` and of `+`.
+    let in_less = site("retry 0", &[0, 0, 0, 0]);
+    let in_plus = site("retry 0", &[0, 0, 1, 1, 0]);
+    assert_eq!(
+        expression_occurrences_of_node_at(&graph, &in_less),
+        [(0, in_less.clone()), (1, in_plus.clone())]
+    );
+    assert_eq!(
+        expression_occurrences_of_node_at(&graph, &in_plus),
+        [(0, in_less), (1, in_plus)]
+    );
+    // `not trigger.ready and target >= 0`, then the retry relation's
+    // `target >= 0` at `[0, 1]`.
+    let in_guard = site("trigger-guard 0", &[1]);
+    let in_retry = site("retry 0", &[0, 1]);
+    assert_eq!(
+        expression_occurrences_of_node_at(&graph, &in_retry),
+        [(0, in_guard), (1, in_retry)]
+    );
 }

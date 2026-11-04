@@ -271,6 +271,14 @@ application is the order of its visits: the row at that order's index `k`
 belongs to the visit numbered `k`. A node with one occurrence is the case in
 which every visit takes that occurrence.
 
+The checker records one `expression` occurrence of an application each time it
+lowers the term at a position of a slot expression, so an application written at
+two positions, in one slot or in two, has two occurrences, numbered in document
+order. The emitter SHALL key each visit to the occurrence the checker recorded
+at that visit's position. It SHALL NOT key two visits to one occurrence the
+checker recorded once, and SHALL NOT key a visit of one slot to an occurrence
+recorded at a position of another slot.
+
 The emitter SHALL NOT derive a row's location from a source region, a node
 order, an operand position or a default value.
 
@@ -283,16 +291,21 @@ compensate Refund retry 0`, the *retry origin* of `Refund`) holds one
 `earlier.tally` application node reached at two positions, in `earlier.tally < 3`
 (visit 0) and in `earlier.tally + 1` (visit 1). No other slot holds it, so it has
 two rows of the retry origin: the first carries the location of the term in
-`earlier.tally < 3` and the second that in `earlier.tally + 1`. The node has the
-one occurrence of its `expression` role, so both rows share its key, with
-`term_ordinal` 0 and 1.
+`earlier.tally < 3` and the second that in `earlier.tally + 1`. The checker
+records two `expression` occurrences of the node, ordinal 0 at the term in
+`earlier.tally < 3` and ordinal 1 at the term in `earlier.tally + 1`. The first
+row is keyed to occurrence 0 and the second to occurrence 1. Each row is the
+only row of its group, so both have `term_ordinal` 0. Their ascending (occurrence
+ordinal, `term_ordinal`) order, (0, 0) then (1, 0), is the visit order. This
+is fixture E's two-occurrence case.
 
 In the same fixture the trigger guard (origin `protocol Refunds compensate Refund
 trigger-guard 0`) and the retry relation both read the capture `target`, so
-`target >= 0` is one application node held by two slots. Its group holds one row
-of each origin. In origin order the retry origin precedes the trigger-guard
-origin (`retry` before `trigger-guard`), so the retry row has `term_ordinal` 0
-and the trigger-guard row `term_ordinal` 1.
+`target >= 0` is one application node held by two slots. The checker records two
+`expression` occurrences of it: ordinal 0 at its term in the trigger guard, which
+comes first in document order, and ordinal 1 at its term in the retry relation.
+The trigger-guard row is keyed to occurrence 0 and the retry row to occurrence 1.
+Each row is alone in its group with `term_ordinal` 0.
 
 Assumption A1 (non-term locations, one place): a position that is not a term
 has no row and takes its location from its own admitted node. For a leaf this is
@@ -569,24 +582,25 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-40 | In fixtures E, L and E-C no two slots have the same site name. | Test (TC-1063) |
 | FR-383-AC-41 | In fixtures E, L and E-C no row has a `protocol_attempt` origin. | Test (TC-1063) |
 | FR-383-AC-42 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
-| FR-383-AC-43 | Removing the highest-`term_ordinal` retry-origin `earlier.tally` row of `Refund` from fixture E's emitted package (leaving a lone ordinal-zero row) leaves a package QSL's I2 reader admits. | Test (TC-1063) |
-| FR-383-AC-44 | Removing the ordinal-zero retry-origin `earlier.tally` row of `Refund` (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
-| FR-383-AC-45 | Changing the second retry-origin `earlier.tally` row's `term_ordinal` from 1 to 2 (ordinals 0 and 2) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-43 | Removing the retry-origin `earlier.tally` row of `Refund` keyed to occurrence 1 from fixture E's emitted package (leaving the occurrence-0 row) leaves a package QSL's I2 reader admits. | Test (TC-1063) |
+| FR-383-AC-44 | Changing the `term_ordinal` of the retry-origin `earlier.tally` row of `Refund` keyed to occurrence 1 from 0 to 1 (a group with no ordinal-zero row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-45 | Rekeying the occurrence-1 retry-origin `earlier.tally` row to occurrence 0 with `term_ordinal` 2 (group ordinals 0 and 2) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
 | FR-383-AC-46 | Duplicating a retry-origin `earlier.tally` row (same key, written next to the original) is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
 | FR-383-AC-47 | For fixture E-C, every table slot's row count for an application equals its visits in the slot walk (each table slot has its own site name and shares no application with another slot), including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
 | FR-383-AC-48 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
 | FR-383-AC-49 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
-| FR-383-AC-50 | In fixture E the two retry-origin `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
+| FR-383-AC-50 | In fixture E the two retry-origin `earlier.tally` rows of `Refund` are keyed to the node's `expression` occurrences 0 and 1, in visit order, and each has `term_ordinal` 0. | Test (TC-1063) |
 | FR-383-AC-51 | In fixture E, `target >= 0` is one graph node that `Refund`'s retry relation and trigger guard both hold. | Test (TC-1063) |
-| FR-383-AC-52 | In fixture E the group of `target >= 0` holds exactly one row of the retry origin and one of the trigger-guard origin of `Refund`. | Test (TC-1063) |
-| FR-383-AC-53 | In fixture E the retry-origin row of `target >= 0` has `term_ordinal` 0 and the trigger-guard row `term_ordinal` 1. | Test (TC-1063) |
+| FR-383-AC-52 | In fixture E `target >= 0` has one row of the trigger-guard origin of `Refund`, keyed to its `expression` occurrence 0, and one row of the retry origin, keyed to occurrence 1; each group holds exactly one row. | Test (TC-1063) |
+| FR-383-AC-53 | In fixture E both rows of `target >= 0` have `term_ordinal` 0, and the retry row is not keyed to the trigger-guard row's occurrence. | Test (TC-1063) |
 | FR-383-AC-54 | In fixture E each of the two rows of `target >= 0` carries the `Location` of the term in its own slot. | Test (TC-1063) |
 | FR-383-AC-55 | In fixture E-C, `order >= 0` is one graph node that the constraints of `Tried` and of `Picked` both hold. | Test (TC-1063) |
-| FR-383-AC-56 | In fixture E-C the group of `order >= 0` holds exactly one row of the `Picked` constraint's origin (`protocol Composed run Main Picked body`) and one of the `Tried` constraint's origin (`protocol Composed run Main Tried body`). | Test (TC-1063) |
-| FR-383-AC-57 | In fixture E-C the `Picked` row of `order >= 0` has `term_ordinal` 0 and the `Tried` row `term_ordinal` 1 (`Picked` before `Tried` in UTF-8 byte order of the names). | Test (TC-1063) |
+| FR-383-AC-56 | In fixture E-C `order >= 0` has one row of the `Tried` constraint's origin (`protocol Composed run Main Tried body`), keyed to its `expression` occurrence 0, and one of the `Picked` constraint's origin (`protocol Composed run Main Picked body`), keyed to occurrence 1 (`Tried` precedes `Picked` in document order); each group holds exactly one row. | Test (TC-1063) |
+| FR-383-AC-57 | In fixture E-C both rows of `order >= 0` have `term_ordinal` 0. | Test (TC-1063) |
 | FR-383-AC-58 | For every application of **W** and fixtures E, L and E-C, the (occurrence ordinal, `term_ordinal`) pairs of a slot's rows of that application, taken along the slot walk's visits, strictly increase. | Test (TC-1063) |
 | FR-383-AC-59 | In fixture E-C no `protocol_locations` row names a `Local` read (`x`, `b`, `c`), a literal, a `let`, a conditional or a case node. | Test (TC-1063) |
 | FR-383-AC-60 | In fixture E-C each arm of `Composed.case` holds exactly one row (`x >= 1` and `not b`). | Test (TC-1063) |
+| FR-383-AC-61 | In fixture E the checked package records exactly two `expression` occurrences of the `earlier.tally` application of `Refund`'s retry relation, ordinal 0 at its term in `earlier.tally < 3` and ordinal 1 at its term in `earlier.tally + 1`, and exactly two of `target >= 0`, ordinal 0 at its term in the trigger guard and ordinal 1 at its term in the retry relation, so each position of an application in a slot's walk has an occurrence of its own. | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.
