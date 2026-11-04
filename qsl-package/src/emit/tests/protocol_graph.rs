@@ -1756,7 +1756,7 @@ fn tso_continue_and_nested_parallels_read_back() {
 /// and `predicate`, a reference to the `function` node `both` (keyed before
 /// the protocol, FR-093), whose two Boolean parameters, one per joined
 /// label, and Boolean result S3 checked; IR's reader admits the package.
-#[trace("FR-464-AC-1", "TC-1021")]
+#[trace("FR-464-AC-1", "FR-383-AC-22", "TC-1021")]
 #[test]
 fn a_predicate_join_references_its_function_and_reads_back() {
     let lowered = lower_with(
@@ -1794,6 +1794,68 @@ fn a_predicate_join_references_its_function_and_reads_back() {
             .map(|labels| labels.iter().map(lit).collect::<Vec<_>>()),
         Some(vec!["a", "b"])
     );
+}
+
+/// FR-383-AC-22: both predicate joins name one held function node, label
+/// source order does not change the emitted package, and renaming the
+/// function updates both references to its renamed node.
+#[trace("FR-383-AC-22", "TC-1021")]
+#[test]
+fn predicate_joins_share_the_function_node_and_are_order_invariant() {
+    let run = |labels: [&str; 2], function: &str| {
+        let joins = format!(
+            "parallel First {{ branch east sequence East {{ }} branch west sequence West {{ }} }} join predicate({function}) [{}, {}];\n\
+             parallel Second {{ branch east sequence East2 {{ }} branch west sequence West2 {{ }} }} join predicate({function}) [{}, {}];",
+            labels[0], labels[1], labels[0], labels[1]
+        );
+        let text = format!(
+            "function {function} using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{}",
+            parallel_flow(&joins)
+        );
+        let lowered = lower_with(model(), PROFILES, &text);
+        assert!(
+            lowered.ir.is_ok(),
+            "{:?}\n{}",
+            lowered.ir.err(),
+            lowered.text
+        );
+        assert!(lowered.verified, "{}", lowered.text);
+        lowered
+    };
+
+    let forward = run(["west", "east"], "both");
+    let reversed = run(["east", "west"], "both");
+    assert_eq!(forward.wire, reversed.wire, "joined labels are canonical");
+
+    let function_node = |wire: &Value, name: &str| {
+        nodes(wire)
+            .into_iter()
+            .find(|node| {
+                node["node_tag"] == "function" && node["declaration"]["qualified_name"][0] == name
+            })
+            .expect("the predicate function node")
+            .clone()
+    };
+    let target_for = |wire: &Value, control_name: &str| {
+        let control = control_at(wire, &["Flow", "run", "Main", control_name]);
+        argument(control, &PARALLEL, "join")["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|member| member["name"] == "predicate")
+            .map(|member| member["value"]["target"].clone())
+            .expect("the predicate reference")
+    };
+    let both = function_node(&forward.wire, "both");
+    let first = target_for(&forward.wire, "First");
+    let second = target_for(&forward.wire, "Second");
+    assert_eq!(first, both["node_id"]);
+    assert_eq!(second, both["node_id"]);
+
+    let renamed = run(["east", "west"], "either");
+    let either = function_node(&renamed.wire, "either");
+    assert_eq!(target_for(&renamed.wire, "First"), either["node_id"]);
+    assert_eq!(target_for(&renamed.wire, "Second"), either["node_id"]);
 }
 
 /// FR-466-AC-15 with FR-206-AC-11 (SR-1761002 FND-001): a predicate join

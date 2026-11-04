@@ -125,6 +125,7 @@ mod retired_native_runtime;
 mod seam5_retired;
 mod source_inventory;
 mod source_map;
+mod spine_deletion_boundaries;
 mod spine_run;
 mod temporal_negotiation;
 mod text_enum_identity;

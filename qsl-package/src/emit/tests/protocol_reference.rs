@@ -726,6 +726,54 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
     assert_eq!(forward, keys_of(&format!("{drain}{fill}")));
 }
 
+/// FR-383-AC-15: unrelated protocols cannot alter Fill's protocol node bytes,
+/// and changing a reachable finish node changes the clause key.
+#[trace("FR-383-AC-15", "TC-1062")]
+#[ignore = "gated on QSL-1620: protocol node bytes must remain stable when unrelated declarations change package-wide node indices"]
+#[test]
+fn protocol_nodes_are_stable_around_unrelated_declarations() {
+    let emitted_nodes = |declarations: &str| {
+        let (_, wire, read) = emit_model_unit(&selecting(declarations), None);
+        assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+        let mut owned: Vec<Value> = nodes(&wire)
+            .into_iter()
+            .filter(|node| node["declaration"]["qualified_name"][0] == "Fill")
+            .cloned()
+            .collect();
+        owned.sort_by_key(|node| node["node_id"].to_string());
+        let clause = nodes(&wire)
+            .into_iter()
+            .find(|node| {
+                node["semantic_form"] == "protocol_clause"
+                    && node["declaration"]["qualified_name"][0] == "Fill"
+            })
+            .expect("the Fill protocol clause")["node_id"]
+            .clone();
+        (owned, clause)
+    };
+
+    let fill = protocol("Fill");
+    let isolated = emitted_nodes(&fill);
+    let surrounded = emitted_nodes(&format!(
+        "{}{}{}",
+        protocol("Before"),
+        fill,
+        protocol("After")
+    ));
+    assert_eq!(
+        isolated.0, surrounded.0,
+        "unrelated declarations do not alter Fill's complete protocol node bytes"
+    );
+
+    let changed = fill.replace("{ true };", "{ false };");
+    assert_ne!(changed, fill, "the reachable finish expression changes");
+    let (_, changed_clause) = emitted_nodes(&changed);
+    assert_ne!(
+        changed_clause, isolated.1,
+        "a changed reachable finish node changes the clause key"
+    );
+}
+
 /// FR-218-AC-8 (TC-1021 step 4): an unknown name, a name only qualified, a
 /// name that resolves to a function and a second reference to one target.
 #[trace("FR-218-AC-8", "TC-1021")]
