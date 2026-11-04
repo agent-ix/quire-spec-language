@@ -137,9 +137,10 @@ pub(super) enum TemporalWire {
     },
 }
 
-#[derive(Serialize)]
+/// FR-501's indeterminate reason as the result report spells it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
-pub(super) enum ReasonWire {
+pub(crate) enum ReasonWire {
     MissingValuation {
         position: u64,
         atom: String,
@@ -420,6 +421,33 @@ fn positioned(variant: &'static str, position: u64) -> TemporalWire {
     }
 }
 
+impl From<&TemporalIndeterminateReason> for ReasonWire {
+    fn from(reason: &TemporalIndeterminateReason) -> Self {
+        match reason {
+            TemporalIndeterminateReason::MissingValuation {
+                position,
+                atom,
+                instance,
+                also_held_by,
+            } => Self::MissingValuation {
+                position: *position,
+                atom: atom.clone(),
+                instance: instance.clone(),
+                also_held_by: instance.as_ref().map(|_| also_held_by.clone()),
+            },
+            TemporalIndeterminateReason::ConflictingValuation { position, atom } => {
+                Self::ConflictingValuation {
+                    position: *position,
+                    atom: atom.clone(),
+                }
+            }
+            TemporalIndeterminateReason::IncompleteInput => Self::IncompleteInput,
+            TemporalIndeterminateReason::MissingHistory => Self::MissingHistory,
+            TemporalIndeterminateReason::StraddlesBound => Self::StraddlesBound,
+        }
+    }
+}
+
 /// The `temporal` member and `outcome` of a verdict's table row.
 pub(super) fn verdict_wire(
     verdict: &TemporalVerdict,
@@ -478,28 +506,7 @@ pub(super) fn verdict_wire(
         TemporalVerdict::Indeterminate { at, reason } => (
             TemporalWire::Indeterminate {
                 position: *at,
-                reason: match reason {
-                    TemporalIndeterminateReason::MissingValuation {
-                        position,
-                        atom,
-                        instance,
-                        also_held_by,
-                    } => ReasonWire::MissingValuation {
-                        position: *position,
-                        atom: atom.clone(),
-                        instance: instance.clone(),
-                        also_held_by: instance.as_ref().map(|_| also_held_by.clone()),
-                    },
-                    TemporalIndeterminateReason::ConflictingValuation { position, atom } => {
-                        ReasonWire::ConflictingValuation {
-                            position: *position,
-                            atom: atom.clone(),
-                        }
-                    }
-                    TemporalIndeterminateReason::IncompleteInput => ReasonWire::IncompleteInput,
-                    TemporalIndeterminateReason::MissingHistory => ReasonWire::MissingHistory,
-                    TemporalIndeterminateReason::StraddlesBound => ReasonWire::StraddlesBound,
-                },
+                reason: ReasonWire::from(reason),
             },
             None,
         ),

@@ -45,10 +45,9 @@ use crate::proof_result::{
 use crate::result::ReplayResult;
 use crate::spine::kernel_undefined_reason;
 use crate::spine::{
-    classify_clause_run, CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit,
-    ClauseDisposition, ClauseRunReport, CompileRefusal, EmittedUnit, FrontEndFailure,
-    ParsedUnitSource, RunRefusal, SpineStage, TemporalIndeterminateReason, TemporalUndefinedCause,
-    TemporalVerdict,
+    classify_clause_run, item_record, CallIncomplete, CallOutcome, CallRefusal, CallValue,
+    CheckedUnit, ClauseDisposition, ClauseRunReport, CompileRefusal, EmittedUnit, FrontEndFailure,
+    ParsedUnitSource, ReasonWire, RunRefusal, SpineStage, TemporalUndefinedCause, TemporalVerdict,
 };
 use crate::statistical::{self, Decision, StatisticalVerdict};
 use crate::ReplayRefusal;
@@ -225,12 +224,17 @@ impl ItemLabel {
     }
 }
 
-/// The error of building an item from a clause run whose category has no
-/// item: an evaluator fault fails the whole request (FR-283), and no clause
-/// run settles inconclusive.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("a clause run of category {} is not an outcome item", .0.as_str())]
-pub struct ClauseRunNotAnItem(pub Category);
+/// Why a clause run is not an outcome item.
+#[derive(Debug, thiserror::Error)]
+pub enum ClauseRunNotAnItem {
+    /// The run's category has no item: an evaluator fault fails the whole
+    /// request (FR-283), and no clause run settles inconclusive.
+    #[error("a clause run of category {} is not an outcome item", .0.as_str())]
+    Category(Category),
+    /// The run's clause-run record could not be written.
+    #[error("the clause-run record could not be written: {0}")]
+    Record(#[from] crate::spine::NativeRunResultError),
+}
 
 /// Why a replay settled inconclusive: its disagreement reason and the two
 /// verdicts' categories.
@@ -287,7 +291,8 @@ impl Serialize for WireNode {
 /// `kind`, and the members that spelling names.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ItemCause {
-    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
     #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
     at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -382,18 +387,10 @@ pub struct ItemCause {
     /// The typed transition identity named by `not-stochastic`.
     #[serde(skip_serializing_if = "Option::is_none")]
     identity: Option<TimedTransitionWire>,
-    /// The trace position of an indeterminate valuation (FR-501).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    position: Option<u64>,
-    /// The atom of an indeterminate valuation (FR-501).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    atom: Option<String>,
-    /// The instance of an instance-bound missing valuation (FR-524).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    instance: Option<String>,
-    /// The other instances holding the valuation (FR-524).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    also_held_by: Option<Vec<String>>,
+    /// A clause run's FR-501 indeterminate reason, in the result report's
+    /// own spelling; it supplies the cause's `kind`.
+    #[serde(flatten)]
+    reason: Option<ReasonWire>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -524,7 +521,7 @@ fn cancel_source<S: Serializer>(
 impl ItemCause {
     fn kind(kind: &'static str) -> Self {
         Self {
-            kind,
+            kind: Some(kind),
             at: None,
             cause: None,
             code: None,
@@ -561,10 +558,7 @@ impl ItemCause {
             recompiled: None,
             state: None,
             identity: None,
-            position: None,
-            atom: None,
-            instance: None,
-            also_held_by: None,
+            reason: None,
         }
     }
 
@@ -741,6 +735,21 @@ pub struct OutcomeItem {
     /// The state-graph limit reached, when the run stopped at one.
     #[serde(skip_serializing_if = "Option::is_none")]
     limit_reached: Option<ReachedLimitWire>,
+    /// A clause run's trace position (FR-283's record).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<u64>,
+    /// A violation's or undefined evaluation's `TemporalCounterexample`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    counterexample: Option<serde_json::Value>,
+    /// A violation's QSpec FR-351 separating witness record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    witness: Option<serde_json::Value>,
+    /// The values an insufficient-data window held.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    count: Option<u64>,
+    /// An insufficient-data window's `min_count`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_count: Option<u64>,
     /// The qualified name of the clause a clause run settled (FR-286).
     #[serde(skip_serializing_if = "Option::is_none")]
     clause: Option<String>,
@@ -934,6 +943,11 @@ impl OutcomeItem {
             witness_samples: None,
             limits: None,
             limit_reached: None,
+            position: None,
+            counterexample: None,
+            witness: None,
+            count: None,
+            min_count: None,
             clause: None,
             category: value.category(),
         }
@@ -983,6 +997,11 @@ impl OutcomeItem {
             witness_samples: None,
             limits: None,
             limit_reached: None,
+            position: None,
+            counterexample: None,
+            witness: None,
+            count: None,
+            min_count: None,
             clause: None,
             category: Category::Violation,
         }
@@ -1020,13 +1039,19 @@ impl OutcomeItem {
             Category::Refusal => ItemLabel::Declined,
             Category::Undefined => ItemLabel::Undefined,
             Category::Inconclusive | Category::InternalFailure => {
-                return Err(ClauseRunNotAnItem(category))
+                return Err(ClauseRunNotAnItem::Category(category))
             }
         };
+        let record = item_record(report)?;
         Ok(Self {
             request_index: request_index.get(),
             result,
             cause: clause_run_cause(report),
+            position: record.position,
+            counterexample: record.counterexample,
+            witness: record.witness,
+            count: record.count,
+            min_count: record.min_count,
             basis: None,
             certification: None,
             measured: None,
@@ -1050,32 +1075,6 @@ impl OutcomeItem {
     /// The item's result label.
     pub fn result(&self) -> ItemLabel {
         self.result
-    }
-}
-
-/// FR-501's indeterminate reason, spelled as its result report spells it.
-fn indeterminate_reason(reason: &TemporalIndeterminateReason) -> ItemCause {
-    match reason {
-        TemporalIndeterminateReason::MissingValuation {
-            position,
-            atom,
-            instance,
-            also_held_by,
-        } => ItemCause {
-            position: Some(*position),
-            atom: Some(atom.clone()),
-            instance: instance.clone(),
-            also_held_by: instance.as_ref().map(|_| also_held_by.clone()),
-            ..ItemCause::kind("missing-valuation")
-        },
-        TemporalIndeterminateReason::ConflictingValuation { position, atom } => ItemCause {
-            position: Some(*position),
-            atom: Some(atom.clone()),
-            ..ItemCause::kind("conflicting-valuation")
-        },
-        TemporalIndeterminateReason::IncompleteInput => ItemCause::kind("incomplete-input"),
-        TemporalIndeterminateReason::MissingHistory => ItemCause::kind("missing-history"),
-        TemporalIndeterminateReason::StraddlesBound => ItemCause::kind("straddles-bound"),
     }
 }
 
@@ -1111,7 +1110,9 @@ fn clause_run_cause(report: &ClauseRunReport) -> Option<ItemCause> {
             )),
             TemporalVerdict::Indeterminate { at, reason } => Some(ItemCause {
                 at: Some(format!("position {at}")),
-                ..indeterminate_reason(reason)
+                kind: None,
+                reason: Some(ReasonWire::from(reason)),
+                ..ItemCause::kind("")
             }),
             TemporalVerdict::MissingFairnessPremise { .. } => Some(catalog(
                 "unsupported_projection",
@@ -1123,7 +1124,7 @@ fn clause_run_cause(report: &ClauseRunReport) -> Option<ItemCause> {
                 incomplete.limit_kind.as_str(),
             )),
             TemporalVerdict::ActivationIncomplete { at, .. } => Some(ItemCause {
-                position: Some(*at),
+                at: Some(format!("position {at}")),
                 ..ItemCause::kind("activation-incomplete")
             }),
             TemporalVerdict::WindowLimitReached {

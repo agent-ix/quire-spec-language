@@ -2352,6 +2352,65 @@ fn format_model_selection(
     selection.identity.clone()
 }
 
+pub(crate) use temporal::ReasonWire;
+
+/// The members of FR-283's record a monitor item carries besides its label
+/// and cause (FR-286 "Monitor documents from clause runs"), each written by
+/// the one `native-run-result/2` writer.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ItemRecord {
+    /// The trace position of a violation, an undefined evaluation, an
+    /// insufficient-data outcome, or the position an indeterminate reason
+    /// names.
+    pub position: Option<u64>,
+    /// FR-283's `TemporalCounterexample` of a violation or an undefined
+    /// evaluation.
+    pub counterexample: Option<serde_json::Value>,
+    /// The QSpec FR-351 separating witness of a violation.
+    pub witness: Option<serde_json::Value>,
+    /// The values an insufficient-data window held.
+    pub count: Option<u64>,
+    /// The window's `min_count`.
+    pub min_count: Option<u64>,
+}
+
+pub(crate) fn item_record(report: &ClauseRunReport) -> Result<ItemRecord, NativeRunResultError> {
+    let ClauseDisposition::Temporal(verdict) = &report.disposition else {
+        return Ok(ItemRecord::default());
+    };
+    let (wire, _) = temporal::verdict_wire(verdict, report.counterexample.as_ref())?;
+    let wire = serde_json::to_value(wire)?;
+    let member = |name: &str| wire.get(name).cloned();
+    let number = |name: &str| wire.get(name).and_then(serde_json::Value::as_u64);
+    let mut record = ItemRecord::default();
+    match wire.get("kind").and_then(serde_json::Value::as_str) {
+        Some("violated" | "undefined") => {
+            record.position = number("position");
+            record.counterexample = member("counterexample");
+        }
+        Some("insufficient-data") => {
+            record.position = number("position");
+            record.count = number("count");
+            record.min_count = number("min_count");
+        }
+        Some("indeterminate") => {
+            record.position = wire
+                .get("reason")
+                .and_then(|reason| reason.get("position"))
+                .and_then(serde_json::Value::as_u64);
+        }
+        _ => {}
+    }
+    if record.counterexample.is_some() {
+        record.witness = report
+            .witness
+            .as_ref()
+            .map(|witness| RecordWire::of(witness).and_then(|wire| Ok(serde_json::to_value(wire)?)))
+            .transpose()?;
+    }
+    Ok(record)
+}
+
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.
 pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, NativeRunResultError> {
     if report.basis.is_decisive() != report.witness.is_some() {

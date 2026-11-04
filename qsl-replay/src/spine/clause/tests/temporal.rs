@@ -3415,8 +3415,208 @@ fn the_undefined_label_is_written_only_for_the_undefined_category() {
     let fault = synthetic(ClauseDisposition::EvaluateFault(
         quire_semantic_value::catalog::InternalFault::new("monitor", "test"),
     ));
-    assert_eq!(
-        crate::OutcomeDocument::from_clause_runs(None, [("Fault", &fault)]).unwrap_err(),
-        crate::ClauseRunNotAnItem(Category::InternalFailure)
+    assert!(matches!(
+        crate::OutcomeDocument::from_clause_runs(None, [("Fault", &fault)]),
+        Err(crate::ClauseRunNotAnItem::Category(
+            Category::InternalFailure
+        ))
+    ));
+}
+
+fn synthetic_report(disposition: ClauseDisposition) -> ClauseRunReport {
+    ClauseRunReport {
+        basis: SettlementBasis::Unavailable,
+        witness: None,
+        disposition,
+        usage: super::super::ClauseRunUsage::default(),
+        consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
+        finite_window: None,
+        counterexample: None,
+        ledger: None,
+    }
+}
+
+fn item_json(clause: &str, run: &ClauseRunReport) -> serde_json::Value {
+    monitor_json(&[(clause, run)]).1["items"][0].clone()
+}
+
+/// FR-286-AC-10, FR-286-AC-11, FR-286-AC-12 (TC-770 step 9): a violated item
+/// carries FR-283's position and counterexample and no cause; an undefined
+/// evaluation adds the `undefined-evaluation` cause; insufficient data
+/// carries position, count and min_count and no counterexample.
+#[trace("TC-770", "FR-286-AC-10")]
+#[trace("TC-770", "FR-286-AC-11")]
+#[trace("TC-770", "FR-286-AC-12")]
+#[test]
+fn violated_undefined_and_insufficient_data_items_carry_their_record_members() {
+    let violated = item_json(
+        "Bounded",
+        &report(finite(Unit::Bounded, "Bounded", &[0, 1, 2])),
     );
+    assert_eq!(violated["result"], "refuted");
+    assert_eq!(violated["category"], "violation");
+    assert_eq!(violated["clause"], "Bounded");
+    assert_eq!(violated["position"], 0);
+    assert!(violated["cause"].is_null());
+    assert_eq!(violated["counterexample"]["trace_position"], 0);
+    assert_eq!(
+        violated["counterexample"]["prefix"]
+            .as_array()
+            .map(Vec::len),
+        Some(3)
+    );
+    assert_eq!(violated["counterexample"]["loop"], serde_json::json!([]));
+    assert!(violated.get("count").is_none() && violated.get("min_count").is_none());
+
+    let undefined = item_json(
+        "Undefined",
+        &report(finite(Unit::Undefined, "Undefined", &[0, 1, 2])),
+    );
+    assert_eq!(undefined["result"], "refuted");
+    assert_eq!(undefined["category"], "violation");
+    assert_eq!(undefined["position"], 2);
+    assert_eq!(undefined["counterexample"]["trace_position"], 2);
+    assert_eq!(undefined["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(undefined["cause"]["where"], "position 2");
+    assert_eq!(undefined["cause"]["cause"], "division-by-zero");
+    assert!(undefined.get("witness").is_none());
+
+    let insufficient = synthetic_report(ClauseDisposition::Temporal(TemporalVerdict::Undefined {
+        at: 0,
+        cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+            count: 1,
+            min_count: 2,
+        },
+    }));
+    let json = item_json("Window", &insufficient);
+    assert_eq!(json["result"], "undefined");
+    assert_eq!(json["category"], "undefined");
+    assert_eq!(json["cause"]["kind"], "insufficient-data");
+    assert_eq!(json["position"], 0);
+    assert_eq!(json["count"], 1);
+    assert_eq!(json["min_count"], 2);
+    assert!(json.get("counterexample").is_none() && json.get("witness").is_none());
+    let document = crate::OutcomeDocument::from_clause_runs(None, [("Window", &insufficient)])
+        .expect("an item");
+    assert_eq!(document.category().exit_code(), 10);
+}
+
+/// FR-286 table (TC-770 step 8): the incomplete, unsupported and declined
+/// rows each carry their label, category, exit and cause from a real run.
+#[trace("TC-770", "FR-286-AC-9")]
+#[test]
+fn incomplete_unsupported_and_declined_rows_carry_their_labels_and_causes() {
+    let mut starved = lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]);
+    starved.accounting = default_accounting(0);
+    let starved = item_json("Reaches", &report(starved));
+    assert_eq!(starved["result"], "incomplete");
+    assert_eq!(starved["category"], "incomplete");
+    assert_eq!(starved["cause"]["kind"], "limit-reached");
+    assert_eq!(starved["cause"]["limit"], "work_units");
+    assert_eq!(starved["cause"]["setting"], "work_units");
+
+    let fair = report(lasso(Unit::Infinite, "Fair", 0, &[0, 1, 2]));
+    assert_eq!(fair.disposition.exit_code(), 21);
+    let fair = item_json("Fair", &fair);
+    assert_eq!(fair["result"], "unsupported");
+    assert_eq!(fair["category"], "unsupported");
+    assert_eq!(fair["cause"]["kind"], "missing-fairness-premise");
+    assert_eq!(fair["cause"]["code"], "unsupported_projection");
+
+    let empty_loop = report(lasso(Unit::Infinite, "Reaches", 3, &[0, 1, 2]));
+    assert_eq!(empty_loop.disposition.exit_code(), 20);
+    let empty_loop = item_json("Reaches", &empty_loop);
+    assert_eq!(empty_loop["result"], "declined");
+    assert_eq!(empty_loop["category"], "refusal");
+    assert_eq!(empty_loop["cause"]["kind"], "invalid-value");
+    assert_eq!(empty_loop["cause"]["code"], "invalid_runtime_input");
+
+    let ghost = item_json("Reaches", &report(ghost()));
+    assert_eq!(ghost["result"], "declined");
+    assert_eq!(ghost["cause"]["kind"], "wrong-role-mapping");
+    assert_eq!(ghost["cause"]["code"], "invalid_runtime_input");
+}
+
+/// FR-286 table (FR-501): the item's indeterminate cause is the result
+/// report's own spelling of each of the five reasons, and a reason that names
+/// a position puts it on the item.
+#[trace("TC-770", "FR-286-AC-9")]
+#[test]
+fn every_indeterminate_reason_is_spelled_as_the_result_report_spells_it() {
+    use crate::spine::TemporalIndeterminateReason as Reason;
+    let reasons = [
+        Reason::MissingValuation {
+            position: 1,
+            atom: "p".to_owned(),
+            instance: None,
+            also_held_by: Vec::new(),
+        },
+        Reason::MissingValuation {
+            position: 1,
+            atom: "p".to_owned(),
+            instance: Some("i".to_owned()),
+            also_held_by: vec!["j".to_owned()],
+        },
+        Reason::ConflictingValuation {
+            position: 1,
+            atom: "p".to_owned(),
+        },
+        Reason::IncompleteInput,
+        Reason::MissingHistory,
+        Reason::StraddlesBound,
+    ];
+    for reason in reasons {
+        let run = synthetic_report(ClauseDisposition::Temporal(
+            TemporalVerdict::Indeterminate {
+                at: 0,
+                reason: reason.clone(),
+            },
+        ));
+        let item = item_json("W", &run);
+        let record: serde_json::Value = serde_json::from_slice(
+            &crate::spine::write_clause_run_result(&run).expect("the record writes"),
+        )
+        .expect("the record is JSON");
+        let mut cause = item["cause"].clone();
+        assert_eq!(cause["where"], "position 0");
+        cause.as_object_mut().expect("object").remove("where");
+        assert_eq!(
+            cause, record["disposition"]["temporal"]["reason"],
+            "{reason:?}"
+        );
+        assert_eq!(
+            item["position"],
+            cause.get("position").cloned().unwrap_or_default()
+        );
+    }
+}
+
+/// FR-286 table: finite-window and next-event pending runs are pending items
+/// with no cause and no record members.
+#[trace("TC-770", "FR-286-AC-8")]
+#[test]
+fn window_and_next_event_pending_runs_are_bare_pending_items() {
+    let window = report(timestamped(&[0], &[0], 1, Some(1)));
+    assert!(matches!(
+        outcome(&window),
+        TemporalVerdict::PendingWindow { .. }
+    ));
+    let next = synthetic_report(ClauseDisposition::Temporal(
+        TemporalVerdict::PendingNextEvent { at: 1 },
+    ));
+    for run in [&window, &next] {
+        let item = item_json("W", run);
+        assert_eq!(item["result"], "pending");
+        assert_eq!(item["category"], "pending");
+        assert!(item["cause"].is_null());
+        for member in [
+            "position",
+            "counterexample",
+            "witness",
+            "count",
+            "min_count",
+        ] {
+            assert!(item.get(member).is_none(), "{member}");
+        }
+    }
 }
