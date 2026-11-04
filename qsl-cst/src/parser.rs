@@ -136,6 +136,8 @@ pub(super) fn parse(
                             CompleteCode::InvalidSyntax,
                             if failure.position == significant.len() {
                                 CompleteCause::UnexpectedEnd
+                            } else if malformed_decimal_argument(&significant, failure.position) {
+                                CompleteCause::InvalidToken
                             } else {
                                 CompleteCause::UnexpectedToken
                             },
@@ -210,6 +212,7 @@ pub(super) fn parse(
     );
     let cst = LosslessCst::new(source.clone(), tokens, nodes, root, recoveries);
     diagnostics.extend(interval_bounds(&source, &cst));
+    diagnostics.extend(decimal_constructor_numbers(&source, &cst));
     Ok(ParsedSource::from_parts(
         source,
         cst,
@@ -923,6 +926,99 @@ fn coalesce_complete_compounds(
         }
     }
     output
+}
+
+/// Whether the token at `position` is a numeric token whose spelling is not
+/// the `signed-int` coefficient or the `uint` scale of a `decimal(c, s)`
+/// constructor (FR-091-AC-58): a sign `+`, a second `-` for the scale, or a
+/// fractional literal, written where the constructor expects an argument.
+fn malformed_decimal_argument(tokens: &[Significant], position: usize) -> bool {
+    let Some(token) = tokens.get(position) else {
+        return false;
+    };
+    let numeric = matches!(token.kind, Some(Kind::Fractional))
+        || matches!(token.spelling.as_ref(), "+" | "-");
+    if !numeric || position == 0 {
+        return false;
+    }
+    let spelling = |index: usize| tokens.get(index).map(|each| each.spelling.as_ref());
+    match spelling(position - 1) {
+        Some("(") => position >= 2 && spelling(position - 2) == Some("decimal"),
+        Some(",") => {
+            let opened_at = |open: usize| {
+                position > open
+                    && spelling(position - open) == Some("(")
+                    && spelling(position - open - 1) == Some("decimal")
+            };
+            // `decimal(` N `,` or `decimal(` `-` N `,`.
+            opened_at(3) || (position >= 3 && spelling(position - 3) == Some("-") && opened_at(4))
+        }
+        _ => false,
+    }
+}
+
+/// The parse diagnostics of every `decimal(c, s)` constructor whose numbers
+/// have a malformed spelling that S1's token grammar admits: a negative zero
+/// coefficient, and a scale that does not fit `u32` (FR-091-AC-58; the scale
+/// bound is FR-091-AC-57's, an unsigned 32-bit integer).
+fn decimal_constructor_numbers(source: &Source, cst: &LosslessCst) -> Vec<CompleteDiagnostic> {
+    let mut diagnostics = Vec::new();
+    for node in cst.nodes() {
+        if node.production() != Production::ExactNumber {
+            continue;
+        }
+        let span = node.span();
+        let tokens: Vec<(Span, &[u8])> = cst
+            .tokens()
+            .iter()
+            .filter(|token| {
+                token.class() == TokenClass::Token
+                    && token.span().start >= span.start
+                    && token.span().end <= span.end
+            })
+            .map(|token| (token.span(), token.spelling()))
+            .collect();
+        if tokens.first().map(|token| token.1) != Some(b"decimal".as_slice()) {
+            continue;
+        }
+        let mut refuse = |span: Span, message: &'static str| {
+            diagnostics.push(*super::diagnostic::error(
+                source,
+                CompleteCode::InvalidSyntax,
+                CompleteCause::InvalidToken,
+                Phase::Parse,
+                span.start,
+                span.end,
+                message,
+            ));
+        };
+        if let [_, _, sign, digits, ..] = tokens[..] {
+            if sign.1 == b"-" && digits.1.iter().all(|byte| *byte == b'0') {
+                refuse(
+                    Span {
+                        start: sign.0.start,
+                        end: digits.0.end,
+                    },
+                    "a decimal constructor's coefficient has no negative zero",
+                );
+            }
+        }
+        if let Some(scale) = tokens
+            .len()
+            .checked_sub(2)
+            .and_then(|index| tokens.get(index))
+        {
+            let fits =
+                std::str::from_utf8(scale.1).is_ok_and(|digits| digits.parse::<u32>().is_ok());
+            if !fits {
+                refuse(
+                    scale.0,
+                    "a decimal constructor's scale is an unsigned 32-bit integer",
+                );
+            }
+        }
+    }
+    diagnostics
 }
 
 /// The parse diagnostics of every bracketed interval's bounds, each located

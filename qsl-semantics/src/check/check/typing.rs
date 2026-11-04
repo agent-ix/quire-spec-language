@@ -1227,7 +1227,14 @@ impl<'a> Typer<'a> {
                 )
             }
             ExprNode::Negate(operand) => {
-                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
+                // A negated `decimal(c, s)` literal takes its operand's
+                // decimal type from the expected one (FR-104-AC-16).
+                let operand = expression.at(*operand);
+                let operand_hint = hint.clone().filter(|each| {
+                    matches!(**each, ValueType::Decimal(_))
+                        && matches!(operand.node(), ExprNode::DecimalValue { .. })
+                });
+                let goal = Goal::Infer(operand, operand_hint, location.child(0));
                 return Ok(Self::unary(Unary::Negate(hint), goal, location, frames));
             }
             ExprNode::Not(operand) => {

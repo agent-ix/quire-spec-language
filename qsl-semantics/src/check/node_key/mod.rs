@@ -1566,13 +1566,22 @@ impl LiteralValue {
         let (sign, digits) = coefficient
             .strip_prefix('-')
             .map_or(("", coefficient.as_str()), |digits| ("-", digits));
-        let scale = representation.scale() as usize;
+        let scale = usize::try_from(representation.scale()).unwrap_or(usize::MAX);
         if scale == 0 {
             return Self::Decimal(format!("{sign}{digits}"));
         }
-        let padded = format!("{digits:0>width$}", width = scale + 1);
-        let (whole, fractional) = padded.split_at(padded.len() - scale);
-        Self::Decimal(format!("{sign}{whole}.{fractional}"))
+        let mut text = String::from(sign);
+        if digits.len() > scale {
+            let (whole, fractional) = digits.split_at(digits.len() - scale);
+            text.push_str(whole);
+            text.push('.');
+            text.push_str(fractional);
+        } else {
+            text.push_str("0.");
+            text.push_str(&"0".repeat(scale - digits.len()));
+            text.push_str(digits);
+        }
+        Self::Decimal(text)
     }
 }
 

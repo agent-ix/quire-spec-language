@@ -2221,6 +2221,10 @@ enum AliasStep<'e> {
     OrElse(ExprRef<'e>, Option<usize>),
 }
 
+/// The largest written scale of a `decimal(c, s)` literal the checker keeps:
+/// the literal's wire spelling has exactly that many fractional digits.
+const MAX_LITERAL_SCALE: u32 = 65_535;
+
 /// Whether an expression takes its type from its context.
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
@@ -2232,7 +2236,10 @@ fn contextual(expression: ExprRef<'_>) -> bool {
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
         ExprNode::Call { name, .. } if name.name == "Text" => true,
-        ExprNode::Negate(operand) => matches!(expression.at(*operand).node(), ExprNode::Integer(_)),
+        ExprNode::Negate(operand) => matches!(
+            expression.at(*operand).node(),
+            ExprNode::Integer(_) | ExprNode::DecimalValue { .. }
+        ),
         ExprNode::Binary {
             operator: BinaryOperator::Divide,
             ..
@@ -2968,6 +2975,11 @@ impl<'a> Typer<'a> {
             Some(ValueType::Decimal(domain)) => domain,
             Some(_) => return Err(mismatch(location)),
         };
+        // A zero coefficient is a member whatever its written scale, and the
+        // literal keeps that scale as written, so its spelling is bounded.
+        if scale > MAX_LITERAL_SCALE {
+            return Err(mismatch(location));
+        }
         let value = Decimal::new(coefficient.clone(), scale);
         if !domain.contains(&value) {
             return Err(mismatch(location));
@@ -3511,12 +3523,10 @@ impl<'a> Typer<'a> {
                     Some(ValueType::Decimal(target)) if target == left_decimal => target.clone(),
                     Some(ValueType::Decimal(_)) => return Err(mismatch(location)),
                     Some(_) => return Err(mismatch(location)),
-                    None => {
-                        return Err(CheckRefusal::ill_typed(
-                            location,
-                            IllTypedCause::AmbiguousLiteral,
-                        ))
-                    }
+                    // No expected type: the operands share one decimal type
+                    // (a literal operand took its typed peer's), and the
+                    // operation is typed by it (FR-104-AC-13).
+                    None => left_decimal.clone(),
                 };
                 (
                     NodeKind::Decimal {

@@ -414,3 +414,144 @@ fn a_decimal_literal_takes_only_a_decimal_expected_type_it_is_a_member_of() {
         ("ill_typed".to_owned(), Some("type-mismatch".to_owned()))
     );
 }
+
+const P: &str =
+    "type P = Decimal[0, 1000; 2, 2; exact];\ntype R = Decimal[0, 1000; 1, 1; exact];\n";
+
+fn mismatch() -> (String, Option<String>) {
+    ("ill_typed".to_owned(), Some("type-mismatch".to_owned()))
+}
+
+fn ambiguous() -> (String, Option<String>) {
+    ("ill_typed".to_owned(), Some("ambiguous-literal".to_owned()))
+}
+
+fn unproved_nonzero() -> (String, Option<String>) {
+    (
+        "undefined_expression".to_owned(),
+        Some("unproved-nonzero".to_owned()),
+    )
+}
+
+/// FR-104-AC-16 e1 to e6 (TC-1084 step 5): the six D25 expressions.
+#[trace("FR-104-AC-16", "TC-1084")]
+#[test]
+fn the_six_d25_expressions_check_or_refuse_as_the_criterion_states() {
+    let case = |parameters: &str, result: &str, body: &str| {
+        format!("{P}function f using v({parameters}): {result} pure {{ {body} }}\n")
+    };
+    assert_eq!(
+        refusal(&case(
+            "",
+            "P",
+            "let v = decimal(15, 1) + decimal(225, 2) in v"
+        )),
+        ambiguous()
+    );
+    assert_eq!(
+        refusal(&case("", "Boolean", "decimal(15, 1) = decimal(150, 2)")),
+        ambiguous()
+    );
+    assert!(compile(&case("p: P", "P", "p + decimal(15, 1)")).is_ok());
+    assert_eq!(refusal(&case("p: P, r: R", "P", "p + r")), mismatch());
+    assert!(compile(&case("p: P, r: R", "P", "p + convert<P>(r)")).is_ok());
+    assert!(compile(&case("", "P", "decimal(15, 1) + decimal(225, 2)")).is_ok());
+}
+
+/// FR-104-AC-13 (TC-1084): a `decimal(c, s)` operand takes the unique
+/// decimal type of its typed peer when its position gives no expected type,
+/// and a negated literal takes its operand's decimal type.
+#[trace("FR-104-AC-13", "FR-104-AC-16", "TC-1084")]
+#[test]
+fn a_decimal_literal_takes_the_type_of_its_typed_peer() {
+    let case = |parameters: &str, body: &str| {
+        format!("{P}function f using v({parameters}): Boolean pure {{ {body} }}\n")
+    };
+    for body in [
+        "p + decimal(1, 2) = p",
+        "decimal(1, 2) + p = p",
+        "p = p + decimal(1, 2)",
+        "p * decimal(1, 2) = p",
+        "p - decimal(1, 2) = p",
+        "decimal(15, 1) = p",
+        "p < decimal(15, 1)",
+        "-decimal(5, 0) = p",
+        "p + -decimal(5, 0) = p",
+        "r + decimal(15, 1) = r",
+    ] {
+        let package = compile(&case("p: P, r: R", body))
+            .unwrap_or_else(|refusals| panic!("{body} checks: {refusals:?}"));
+        let _ = package;
+    }
+    let converted =
+        format!("{P}function f using v(r: R): P pure {{ convert<P>(decimal(15, 1) + r) }}\n");
+    assert!(
+        compile(&converted).is_ok(),
+        "{:?}",
+        compile(&converted).err()
+    );
+    assert_eq!(refusal(&case("p: P, r: R", "p + r = p")), mismatch());
+    assert_eq!(
+        refusal(&case(
+            "p: P",
+            "let s = decimal(1, 2) + decimal(2, 2) in s = p"
+        )),
+        ambiguous()
+    );
+    let negated = format!("{P}function f using v(): P pure {{ -decimal(5, 0) }}\n");
+    let package = compile(&negated);
+    assert!(package.is_ok(), "{:?}", package.err());
+}
+
+/// FR-104-AC-13: with `a: P` and `b: P`, `a + decimal(1, 2) = b` evaluates to
+/// `true` at `a = 1.00` ... through the checked literal typed `P`.
+#[trace("FR-104-AC-13", "TC-1084")]
+#[test]
+fn a_literal_beside_a_typed_operand_evaluates_at_the_peer_type() {
+    let package = compile(&format!(
+        "{P}function f using v(a: P, b: P): Boolean pure {{ a + decimal(1, 2) = b }}\n"
+    ))
+    .expect("the body checks with the literal typed P");
+    let value = |coefficient: i64| Value::Decimal(quire_exact::Decimal::new(int(coefficient), 2));
+    let yes = call(&package, vec![value(1), value(2)], UNLIMITED);
+    assert!(
+        matches!(yes.outcome, Outcome::Completed(Value::Boolean(true))),
+        "{:?}",
+        yes.outcome
+    );
+    let no = call(&package, vec![value(1), value(3)], UNLIMITED);
+    assert!(
+        matches!(no.outcome, Outcome::Completed(Value::Boolean(false))),
+        "{:?}",
+        no.outcome
+    );
+}
+
+/// FR-140-AC-8 and the nonzero obligation of a divisor: only a literal with
+/// a nonzero coefficient discharges it, whatever its scale. A zero literal,
+/// a parameter, `p / q` and an `if` of two literals do not.
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-4")]
+#[test]
+fn only_a_nonzero_literal_divisor_discharges_the_nonzero_obligation() {
+    let case = |parameters: &str, body: &str| {
+        format!("{P}function f using v({parameters}): P pure {{ {body} }}\n")
+    };
+    assert!(compile(&case("p: P", "p / decimal(4, 0)")).is_ok());
+    assert!(compile(&case("p: P", "p / decimal(400, 2)")).is_ok());
+    assert_eq!(
+        refusal(&case("p: P", "p / decimal(0, 2)")),
+        unproved_nonzero()
+    );
+    assert_eq!(
+        refusal(&case("p: P", "p / decimal(0, 0)")),
+        unproved_nonzero()
+    );
+    assert_eq!(refusal(&case("p: P, q: P", "p / q")), unproved_nonzero());
+    assert_eq!(
+        refusal(&case(
+            "p: P, b: Boolean",
+            "p / (if b then decimal(5, 2) else decimal(6, 2))"
+        )),
+        unproved_nonzero()
+    );
+}
