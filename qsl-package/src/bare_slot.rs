@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use qsl_semantics::check::{protocol_site, ProtocolSite};
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm};
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -98,9 +99,9 @@ impl BareSlot {
         &self.root
     }
     /// The site name the slot's `protocol_locations` rows are keyed under:
-    /// the name the node determines, the origin FR-533 "Slot naming on the
-    /// bytes route" resolves for a span-named slot, or `None` for a slot with
-    /// no application to locate.
+    /// the name the node determines, the one origin FR-533 "Slot naming on
+    /// the bytes route" resolves for a span-named slot, or `None` for a slot
+    /// with no application to locate.
     pub fn origin(&self) -> Option<&str> {
         self.origin.as_deref()
     }
@@ -126,31 +127,38 @@ fn fault(invariant: &'static str) -> SlotSelectionFailure {
     SlotSelectionFailure::Fault(InternalFault::new("FR-390", invariant))
 }
 
-/// How the member is named in the site-name registry (FR-383).
+/// How the slot is named in the site-name registry (FR-383).
 enum Site {
     /// The whole name is known from the node.
     Exact(String),
-    /// Only a prefix is known; the name ends in a source span the bytes do
-    /// not carry, so the rule of FR-533 "Slot naming on the bytes route"
-    /// resolves it.
-    Prefix(String, Span),
+    /// The name ends in a source span the bytes do not carry: the control's
+    /// site (`protocol P run path`) and the kind of tail.
+    Spanned(String, Tail),
 }
 
-/// How a span-named origin spells its span after the prefix.
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum Span {
-    /// `<start>..<end>` of a `decision` name (a visible entry or case guard).
-    Decision,
-    /// `<start> <end>` of a `related` name.
+/// The tail of a span-named site.
+#[derive(Clone, Copy)]
+enum Tail {
+    /// `related <start> <end>`.
     Related,
+    /// `decision <start>..<end>`: a `visible` entry, case guard or repeat guard.
+    Decision,
 }
 
-impl Span {
-    /// The numeric `(start, end)` of the remainder of an origin name.
+impl Tail {
+    /// The spelling that follows the control's site and a space.
+    fn word(self) -> &'static str {
+        match self {
+            Self::Related => "related ",
+            Self::Decision => "decision ",
+        }
+    }
+
+    /// The numeric `(start, end)` of the name after `word`.
     fn parse(self, rest: &str) -> Option<(u64, u64)> {
         let (start, end) = match self {
-            Self::Decision => rest.split_once("..")?,
             Self::Related => rest.split_once(' ')?,
+            Self::Decision => rest.split_once("..")?,
         };
         let number = |text: &str| {
             (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
@@ -168,15 +176,9 @@ fn names(node: &Node) -> Vec<&str> {
         .unwrap_or_default()
 }
 
-fn clause_name(node: &Node) -> String {
-    // The clause is `P`; every other protocol node leads with `P` too.
-    names(node)
-        .first()
-        .map(|s| (*s).to_owned())
-        .unwrap_or_default()
-}
-
-/// The term a slot's member names and the site it is located under.
+/// The term a slot's member names and the site it is located under. The
+/// site names come from `qsl_semantics::check::protocol_site`, the one
+/// registry the emitter writes them with.
 fn slot_term<'n>(
     node: &'n Node,
     op: ControlOperation,
@@ -209,16 +211,20 @@ fn slot_term<'n>(
             _ => Err(fault("selected-protocol-member-is-a-list")),
         }
     };
-    let p = clause_name(node);
-    let path = || {
-        names(node)
-            .iter()
-            .skip(2)
+    let declared = names(node);
+    let p = declared
+        .first()
+        .copied()
+        .ok_or_else(|| fault("selected-protocol-node-is-declared"))?;
+    // `[P, "role" | "channel" | "compensate" | "finish" | "run", name...]`.
+    let own = || {
+        declared
+            .get(2)
             .copied()
-            .collect::<Vec<_>>()
-            .join(" ")
+            .ok_or_else(|| fault("selected-protocol-node-is-named"))
     };
-    let run = |what: &str| format!("protocol {p} run {} {what}", path());
+    let path: Vec<String> = declared.iter().skip(2).map(|s| (*s).to_owned()).collect();
+    let control = || protocol_site(p, ProtocolSite::Control(&path));
     let arg = |name: &str| argument(node, name).ok_or_else(no);
     let member_of = |term: &'n CheckedTerm, name: &str| group_member(term, name).ok_or_else(no);
     // The Nth record of a tuple argument, as its Group.
@@ -238,37 +244,32 @@ fn slot_term<'n>(
             .map(str::to_owned)
             .ok_or_else(no)
     };
+    let exact = |site: ProtocolSite<'_>| Site::Exact(protocol_site(p, site));
     Ok(match (op, member) {
         (Op::Protocol, "activation.guard") => (
             member_of(arg("activation")?, "guard")?,
-            Site::Exact(format!("protocol {p} activation guard")),
+            exact(ProtocolSite::ActivationGuard),
         ),
         (Op::Protocol, "captures") => {
             let record = record("captures")?;
             let name = capture_name(record)?;
             (
                 member_of(record, "initializer")?,
-                Site::Exact(format!("protocol {p} capture {name} initializer")),
+                exact(ProtocolSite::CaptureInitializer(&name)),
             )
         }
         (Op::Role, "replication.until") => (
             member_of(arg("replication")?, "until")?,
-            Site::Exact(format!(
-                "protocol {p} role {} until",
-                names(node).get(2).ok_or_else(no)?
-            )),
+            exact(ProtocolSite::RoleUntil(own()?)),
         ),
         (Op::Channel, "ordering.key") => (
             member_of(arg("ordering")?, "key")?,
-            Site::Exact(format!(
-                "protocol {p} channel {} key",
-                names(node).get(2).ok_or_else(no)?
-            )),
+            exact(ProtocolSite::ChannelKey(own()?)),
         ),
         (Op::Compensate, member) => {
-            let name = names(node).get(2).copied().ok_or_else(no)?.to_owned();
-            let stage = |stage: &str, position: usize| {
-                Site::Exact(format!("protocol {p} compensate {name} {stage} {position}"))
+            let name = own()?;
+            let stage = |stage: &'static str, position: usize| {
+                exact(ProtocolSite::CompensationBody(name, stage, position))
             };
             match member {
                 "registration_captures" => (
@@ -293,42 +294,40 @@ fn slot_term<'n>(
         }
         (Op::Choice, "cases.guard") => (
             member_of(record("cases")?, "guard")?,
-            Site::Prefix(run("decision "), Span::Decision),
+            Site::Spanned(control(), Tail::Decision),
         ),
         (Op::Choice | Op::Repeat, "visible") => (
             at(arg("visible")?)?
                 .get(index.ok_or_else(no)?)
                 .ok_or_else(no)?,
-            Site::Prefix(run("decision "), Span::Decision),
+            Site::Spanned(control(), Tail::Decision),
         ),
-        (Op::Repeat, "guard") => (arg("guard")?, Site::Exact(run("body"))),
-        (Op::Check, "condition") => (arg("condition")?, Site::Exact(run("body"))),
+        (Op::Repeat, "guard") => (arg("guard")?, Site::Spanned(control(), Tail::Decision)),
+        (Op::Check, "condition") => (arg("condition")?, exact(ProtocolSite::ControlBody(&path))),
         (
             Op::Send | Op::Receive | Op::Attempt | Op::Effect | Op::Event | Op::Commit,
             "constraint",
-        ) => (arg("constraint")?, Site::Exact(run("body"))),
+        ) => (arg("constraint")?, exact(ProtocolSite::ControlBody(&path))),
         (
             Op::Send | Op::Receive | Op::Attempt | Op::Effect | Op::Event,
             "related.from" | "related.to",
-        ) => (
-            member_of(record("related")?, &member[8..])?,
-            Site::Prefix(run("related "), Span::Related),
-        ),
-        (Op::Finish, "constraint") => (
-            arg("constraint")?,
-            Site::Exact(format!(
-                "protocol {p} finish {} body",
-                names(node).get(2).ok_or_else(no)?
-            )),
-        ),
+        ) => {
+            let end = if member == "related.from" {
+                "from"
+            } else {
+                "to"
+            };
+            (
+                member_of(record("related")?, end)?,
+                Site::Spanned(control(), Tail::Related),
+            )
+        }
+        (Op::Finish, "constraint") => (arg("constraint")?, exact(ProtocolSite::FinishBody(own()?))),
         (Op::Terminal, "condition") => {
             let [condition] = at(arg("condition")?)? else {
                 return Err(no());
             };
-            (
-                condition,
-                Site::Exact(format!("protocol {p} terminal body")),
-            )
+            (condition, exact(ProtocolSite::TerminalBody))
         }
         _ => return Err(no()),
     })
@@ -369,6 +368,11 @@ fn tied_order<'n>(
             };
             slots.push(((rank, order), descriptor));
         }
+    }
+    // A `repeat`'s guard is its only decision slot besides `visible`.
+    let guard = ProtocolSlotDescriptor::new(key.clone(), "guard", None);
+    if slot_term(node, op, &guard, package).is_ok() {
+        slots.push(((1, 0), guard));
     }
     slots.sort_by_key(|(order, _)| *order);
     slots
@@ -516,7 +520,8 @@ impl<'p> BarePackage<'p> {
             .map_err(|_| fault("bare-package-has-structural-keys"))?;
         let origin = match &slot.site {
             Site::Exact(name) => Some(name.clone()),
-            Site::Prefix(prefix, span) => {
+            Site::Spanned(control, tail) => {
+                let prefix = format!("{control} {}", tail.word());
                 let binders = |sources: &[BareSource]| -> Vec<NodeKey> {
                     sources.iter().map(|source| source.binder.clone()).collect()
                 };
@@ -547,8 +552,8 @@ impl<'p> BarePackage<'p> {
                         rows.iter()
                             .filter(|(_, held)| **held == own)
                             .map(|(name, _)| *name),
-                        prefix,
-                        *span,
+                        &prefix,
+                        *tail,
                     );
                     // Rule 4: this slot's rank among the control's slots
                     // that share its walk.
@@ -565,7 +570,7 @@ impl<'p> BarePackage<'p> {
                         let Ok(key) = graph.key(sibling.root) else {
                             continue;
                         };
-                        if matches!(&sibling.site, Site::Prefix(held, _) if held == prefix)
+                        if matches!(&sibling.site, Site::Spanned(held, held_tail) if held == control && held_tail.word() == tail.word())
                             && visits(&key, &sibling.sources)? == own
                         {
                             rank += 1;
@@ -585,7 +590,12 @@ impl<'p> BarePackage<'p> {
                                 .key(application)
                                 .map_err(SlotSelectionFailure::Fault)?;
                             return Err(BareSelectionFailure::Unsupported(Box::new(
-                                UnsupportedView::missing_origin(package.name(), prefix, key, count),
+                                UnsupportedView::missing_origin(
+                                    package.name(),
+                                    &prefix,
+                                    key,
+                                    count,
+                                ),
                             )));
                         }
                     }
@@ -607,7 +617,7 @@ impl<'p> BarePackage<'p> {
 fn ordered_candidates<'a>(
     names: impl Iterator<Item = &'a str>,
     prefix: &str,
-    form: Span,
+    form: Tail,
 ) -> Vec<&'a str> {
     let mut spanned: Vec<((u64, u64), &str)> = names
         .filter_map(|name| Some((form.parse(name.strip_prefix(prefix)?)?, name)))
@@ -674,7 +684,7 @@ mod tests {
         let got = ordered_candidates(
             decision.iter().copied(),
             "protocol P run M C decision ",
-            Span::Decision,
+            Tail::Decision,
         );
         assert_eq!(
             got,
@@ -692,7 +702,7 @@ mod tests {
             ordered_candidates(
                 related.iter().copied(),
                 "protocol P run M G related ",
-                Span::Related
+                Tail::Related
             ),
             [
                 "protocol P run M G related 99 100",
@@ -700,7 +710,7 @@ mod tests {
             ],
             "related.from[0] takes `99 100`, related.to[0] takes `100 105`"
         );
-        assert_eq!(Span::Related.parse("1  2"), None);
-        assert_eq!(Span::Decision.parse("1..2..3"), None);
+        assert_eq!(Tail::Related.parse("1  2"), None);
+        assert_eq!(Tail::Decision.parse("1..2..3"), None);
     }
 }

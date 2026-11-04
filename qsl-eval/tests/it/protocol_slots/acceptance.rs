@@ -60,6 +60,17 @@ fn fixture_from_document(
     CheckedPackage,
     qsl_semantics::model::normalize::EffectiveView,
 ) {
+    fixture_named(source, bytes, "acceptance")
+}
+
+fn fixture_named(
+    source: &str,
+    bytes: &[u8],
+    name: &str,
+) -> (
+    CheckedPackage,
+    qsl_semantics::model::normalize::EffectiveView,
+) {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("protocol", "acceptance"),
         "acceptance.native",
@@ -80,7 +91,7 @@ fn fixture_from_document(
         CheckedPackage::link(
             PackageDeclarations::assemble(
                 parsed.source().reference().clone(),
-                "acceptance".to_owned(),
+                name.to_owned(),
                 unit,
                 models,
                 Vec::new(),
@@ -4708,16 +4719,11 @@ fn bare_rows(
     )
 }
 
-/// FR-533-AC-1 (selection half), AC-4, AC-10: over every slot kind of TC-1070
+/// FR-533-AC-1 (selection half), AC-4 (selection path), with the bytes-route
+/// site names equal to the source selector's: over every slot kind of TC-1070
 /// the selection read from the package's nodes alone names the root and the
 /// binders (name, level, type, key) the source selector names.
-#[trace(
-    "FR-533-AC-1",
-    "FR-533-AC-4",
-    "FR-533-AC-10",
-    "FR-533-AC-12",
-    "TC-1333"
-)]
+#[trace("FR-533-AC-1", "FR-533-AC-4", "FR-533-AC-12", "TC-1333")]
 #[test]
 fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let package = fixture();
@@ -4828,24 +4834,18 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
             .collect();
         assert_eq!(got, expected, "{}", parity.name);
         assert_eq!(chosen.frame_len(), got.len());
+        // The site name the source selector locates the slot under.
+        let source_origin = format!("{:?}", source.checked_body().root().location().origin);
+        // FR-533-AC-12: exactly one origin, the source route's.
         if let Some(origin) = chosen.origin() {
-            // FR-533-AC-12: the origin the bytes route resolves is the one
-            // the source route locates the slot under.
-            let source_origin = match &source.checked_body().root().location().origin {
-                quire_semantic_value::location::Origin::TypeDeclaration { name } => {
-                    Some(name.to_string())
-                }
-                _ => None,
-            };
             assert_eq!(
-                Some(origin.to_owned()),
+                format!("TypeDeclaration {{ name: {origin:?} }}"),
                 source_origin,
-                "{}: the origin equals the source route's",
+                "{}",
                 parity.name
             );
             assert!(
-                row_origins.contains(&format!("TypeDeclaration {{ name: {origin:?} }}"))
-                    || origin.ends_with(" body"),
+                row_origins.contains(&source_origin) || origin.ends_with(" body"),
                 "{}: {origin}",
                 parity.name
             );
@@ -4855,11 +4855,54 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     assert!(kinds.len() >= 12, "{kinds:?}");
 }
 
-/// FR-531-AC-5 (identity half) and FR-390 selection rules 1 and 2 over the
+/// FR-531-AC-5: rows produced for another package are `Foreign`. `Unknown` is
+/// not reachable through a package read: the intake join drops a row naming a
+/// node the package does not hold, so IR's `from_stage_rows` only fails for a
+/// row the join cannot reconcile, which this fixture cannot produce; it is
+/// not claimed here.
+#[trace("FR-531-AC-5", "TC-1331")]
+#[test]
+fn rows_of_another_package_are_a_foreign_identity_witness() {
+    use qsl_package::{BareSelectionFailure, IdentityWitnessRefusal};
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let rows = bare_rows(&package, read.admitted());
+    let (other, _) = fixture_named(SOURCE, &serde_json::to_vec(&document()).unwrap(), "other");
+    let domain = qsl_semantics::model::intake::package_input([serde_json::to_vec(&document())
+        .unwrap()
+        .as_slice()])
+    .unwrap();
+    let other_read = qsl_package::read_evaluation_package(
+        &other,
+        qsl_semantics::library::LibraryName::new("other").unwrap(),
+        &domain,
+        qsl_package::V2ReadLimits::default(),
+    )
+    .expect("the other package is admitted");
+    let bare =
+        qsl_package::BarePackage::new(other_read.admitted()).with_supply(qsl_package::BareSupply {
+            identities: &rows,
+            equality: None,
+        });
+    let clause = slot(&other, "Refunds", "Refunds", "activation.guard", None).node;
+    let result = bare.select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+        clause,
+        "activation.guard",
+        None,
+    ));
+    assert!(matches!(
+        result,
+        Err(BareSelectionFailure::Identity(
+            IdentityWitnessRefusal::Foreign
+        ))
+    ));
+}
+
+/// FR-531-AC-5 (Missing) and FR-390 selection rules 1 and 2 over the
 /// bare package: no supply is `Missing` before any node is read; an unknown
 /// node, a non-protocol node, an absent member and an index defect refuse as
 /// the source selector does.
-#[trace("FR-531-AC-5", "FR-531-AC-4", "FR-533-AC-10", "TC-1331")]
+#[trace("FR-531-AC-4", "TC-1331")]
 #[test]
 fn the_bare_selection_refuses_as_the_source_selection_does() {
     use qsl_package::{BareSelectionFailure, IdentityWitnessRefusal, SlotSelectionFailure};

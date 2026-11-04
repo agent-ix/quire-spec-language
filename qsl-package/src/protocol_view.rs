@@ -368,10 +368,7 @@ pub(crate) fn argument<'n>(node: &'n Node, name: &str) -> Option<&'n CheckedTerm
     })
 }
 
-pub(crate) fn required<'n>(
-    node: &'n Node,
-    name: &'static str,
-) -> Result<&'n CheckedTerm, ViewRefusal> {
+fn required<'n>(node: &'n Node, name: &'static str) -> Result<&'n CheckedTerm, ViewRefusal> {
     argument(node, name).ok_or_else(|| missing(&node.node_id, name))
 }
 
@@ -415,7 +412,7 @@ pub(crate) fn integer(term: &CheckedTerm) -> Option<u64> {
     }
 }
 
-pub(crate) fn members<'t>(
+fn members<'t>(
     owner: &Node,
     member: &'static str,
     term: &'t CheckedTerm,
@@ -427,7 +424,7 @@ pub(crate) fn members<'t>(
 }
 
 /// The references an ordered list or set argument `name` of `node` holds.
-pub(crate) fn references<'n>(
+fn references<'n>(
     node: &'n Node,
     name: &'static str,
 ) -> Result<Vec<&'n CheckedNodeId>, ViewRefusal> {
@@ -438,15 +435,12 @@ pub(crate) fn references<'n>(
 }
 
 /// The reference argument `name` of `node`.
-pub(crate) fn single<'n>(
-    node: &'n Node,
-    name: &'static str,
-) -> Result<&'n CheckedNodeId, ViewRefusal> {
+fn single<'n>(node: &'n Node, name: &'static str) -> Result<&'n CheckedNodeId, ViewRefusal> {
     reference(required(node, name)?).ok_or_else(|| malformed(&node.node_id, name))
 }
 
 /// The optional argument `name`: a Group of no member or one.
-pub(crate) fn optional<'n>(
+fn optional<'n>(
     node: &'n Node,
     name: &'static str,
 ) -> Result<Option<&'n CheckedTerm>, ViewRefusal> {
@@ -458,7 +452,7 @@ pub(crate) fn optional<'n>(
 }
 
 /// The `(label, body)` records of the sorted-records argument `name`.
-pub(crate) fn records<'n>(
+fn records<'n>(
     node: &'n Node,
     name: &'static str,
 ) -> Result<Vec<(&'n str, &'n CheckedNodeId)>, ViewRefusal> {
