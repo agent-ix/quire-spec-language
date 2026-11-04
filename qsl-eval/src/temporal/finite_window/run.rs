@@ -26,6 +26,38 @@ use crate::temporal::position::TemporalPosition;
 
 const VISIT: ChargePoint = ChargePoint::TemporalVisit;
 
+/// One unit of the work of a finite-window evaluation at the
+/// `temporal.visit` charge point, named for the FR-523 counters it spends.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowUnit {
+    /// A temporal operator node visited at its activation.
+    Step,
+    /// One position scanned by an operator node.
+    Scan,
+    /// One atomic `holds` read at an observed position.
+    Lookup,
+    /// One atomic `holds` read at a silent sample (FR-504), which is no
+    /// observation and no evaluated position visit.
+    SilentLookup,
+    /// A temporal operator node visited at a silent sample.
+    SilentStep,
+    /// One silent sample scanned by an operator node.
+    SilentScan,
+}
+
+/// Where an evaluation charges its `temporal.visit` units instead of the
+/// bare meter (FR-523): the temporal evidence call's counters, which refuse
+/// a unit before the meter sees it.
+pub trait WindowCharge {
+    /// Charge one unit of work.
+    ///
+    /// # Errors
+    ///
+    /// The `Incomplete` that stops the evaluation; a refused unit is not
+    /// performed.
+    fn charge(&mut self, unit: WindowUnit) -> Result<(), Incomplete>;
+}
+
 /// Why a run stopped before it finished every activation.
 enum Stop {
     Incomplete(Incomplete),
@@ -97,6 +129,10 @@ struct Run<'a, L: TemporalLetters> {
     watermark: i128,
     letters: &'a mut L,
     meter: &'a mut Meter,
+    /// The caller's own charging of the visits, when it has one.
+    units: Option<&'a mut dyn WindowCharge>,
+    /// The one activation anchor the run evaluates, when the caller names it.
+    only: Option<usize>,
     visited: HashSet<(usize, usize)>,
     /// The atom each node stands for: nodes whose conditions are the same
     /// atom share one valuation at a position (QSpec FR-160).
@@ -130,6 +166,37 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
     trace: &TimestampedTrace,
     letters: &mut L,
     meter: &mut Meter,
+) -> Result<WindowEvaluation, TemporalRefusal> {
+    run_window(clause, trace, letters, meter, None, None)
+}
+
+/// [`evaluate_finite_window`] for the one activation anchored at the
+/// admitted position `anchor` (an `on each` clause activates once per
+/// instance, FR-516), with every `temporal.visit` unit charged through
+/// `units` before it reaches the meter (FR-523). An `on origin` clause
+/// activates at position 0 whatever `anchor` names.
+///
+/// # Errors
+///
+/// As [`evaluate_finite_window`].
+pub fn evaluate_finite_window_at<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    trace: &TimestampedTrace,
+    anchor: usize,
+    letters: &mut L,
+    units: &mut dyn WindowCharge,
+    meter: &mut Meter,
+) -> Result<WindowEvaluation, TemporalRefusal> {
+    run_window(clause, trace, letters, meter, Some(units), Some(anchor))
+}
+
+fn run_window<'a, L: TemporalLetters>(
+    clause: &'a CheckedTemporalClause,
+    trace: &'a TimestampedTrace,
+    letters: &'a mut L,
+    meter: &'a mut Meter,
+    units: Option<&'a mut dyn WindowCharge>,
+    only: Option<usize>,
 ) -> Result<WindowEvaluation, TemporalRefusal> {
     if !matches!(
         clause.profile(),
@@ -166,6 +233,8 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
         watermark: trace.progress.watermark.inclusive(),
         letters,
         meter,
+        units,
+        only,
         visited: HashSet::new(),
         classes,
         cells: HashMap::new(),
@@ -235,8 +304,11 @@ fn position_of(index: usize) -> Result<TemporalPosition, InternalFault> {
 }
 
 impl<L: TemporalLetters> Run<'_, L> {
-    fn charge(&mut self) -> Result<(), Stop> {
-        self.meter.charge(Charge::new(VISIT))?;
+    fn charge(&mut self, unit: WindowUnit) -> Result<(), Stop> {
+        match self.units.as_deref_mut() {
+            Some(units) => units.charge(unit)?,
+            None => self.meter.charge(Charge::new(VISIT))?,
+        }
         self.visits = self.visits.saturating_add(1);
         Ok(())
     }
@@ -267,7 +339,13 @@ impl<L: TemporalLetters> Run<'_, L> {
             // anchors on one (FR-504).
             Activation::Each { guarded } => (self.trace.observed, guarded),
         };
-        for anchor in 0..positions {
+        // An anchored run is one instance's single activation: its guard is
+        // the instance's, established when the instance was created.
+        let (anchors, guarded) = match (self.clause.activation(), self.only) {
+            (Activation::Each { .. }, Some(anchor)) => (anchor..anchor.saturating_add(1), false),
+            _ => (0..positions, guarded),
+        };
+        for anchor in anchors {
             let at = position_of(anchor)?;
             if guarded {
                 match self.letters.activation(at, &mut *self.meter)? {
@@ -363,7 +441,12 @@ impl<L: TemporalLetters> Run<'_, L> {
     /// `ConflictingValuation` at every position of that stamp (FR-501
     /// "Verdicts"), whatever order they were listed in.
     fn read_atom(&mut self, node: usize, position: usize) -> Result<(), Stop> {
-        self.charge()?;
+        let silent = position >= self.trace.observed;
+        self.charge(if silent {
+            WindowUnit::SilentLookup
+        } else {
+            WindowUnit::Lookup
+        })?;
         let class = self.class(node);
         let id = self
             .clause
@@ -421,7 +504,12 @@ impl<L: TemporalLetters> Run<'_, L> {
     /// scan's direction (one charge each), keep the ones whose stamp lies in
     /// the interval, and read what a continuation could still add.
     fn scan(&mut self, node: usize, position: usize) -> Result<ScanFrame, Stop> {
-        self.charge()?;
+        let silent = position >= self.trace.observed;
+        self.charge(if silent {
+            WindowUnit::SilentStep
+        } else {
+            WindowUnit::Step
+        })?;
         let Node::Scan(scan) = slot(&self.plan.nodes, node)? else {
             return Err(fault("scan-node").into());
         };
@@ -438,7 +526,11 @@ impl<L: TemporalLetters> Run<'_, L> {
         let cover = self.trace.clock.cover;
         let mut candidates: Vec<Candidate> = Vec::new();
         for candidate in order {
-            self.charge()?;
+            self.charge(if candidate >= self.trace.observed {
+                WindowUnit::SilentScan
+            } else {
+                WindowUnit::Scan
+            })?;
             let stamp = u64::try_from(self.stamp(candidate)?).map_err(|_| fault("stamp-in-u64"))?;
             let anchor_stamp = u64::try_from(anchor).map_err(|_| fault("stamp-in-u64"))?;
             let part = match cover.eligible(

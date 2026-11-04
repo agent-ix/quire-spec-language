@@ -168,8 +168,15 @@ const VECTORS: [Vectors; 2] = [
     },
 ];
 
-/// Trace: FR-397-AC-13, FR-397-AC-24 (F34)
-#[trace("TC-1091", "FR-397-AC-13", "FR-397-AC-24")]
+/// Trace: FR-397-AC-13, FR-397-AC-24 (F34); QSpec FR-148-AC-12's vectors,
+/// with no flag, at both widths.
+#[trace(
+    "TC-1091",
+    "FR-397-AC-13",
+    "FR-397-AC-24",
+    "QSpec-TC-193",
+    "QSpec-FR-148-AC-12"
+)]
 #[test]
 fn ordering_and_equality_vectors_hold_at_both_widths() {
     for v in &VECTORS {
@@ -195,11 +202,15 @@ fn ordering_and_equality_vectors_hold_at_both_widths() {
             (v.pinf, "<=", v.pinf, true),
         ];
         for (left, op, right, value) in expected {
-            assert_eq!(
-                operator(w, op, left, right),
-                value,
-                "{w}: {left:#x} {op} {right:#x}"
+            let body = format!("{} {op} {}", constant(w, left), constant(w, right));
+            let (outcome, losses) = run("Boolean", &body);
+            assert!(
+                matches!(outcome, Outcome::Completed(Value::Boolean(holds)) if holds == value),
+                "{w}: {left:#x} {op} {right:#x}: {outcome:?}"
             );
+            // QSpec FR-148-AC-12: a quiet comparison raises no flag, a
+            // signaling NaN operand included.
+            assert!(flags(&losses).is_empty(), "{w}: {body}: {losses:?}");
         }
     }
 }

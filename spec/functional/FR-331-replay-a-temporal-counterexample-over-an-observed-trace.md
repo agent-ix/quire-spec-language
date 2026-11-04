@@ -85,12 +85,17 @@ formula is false on it.
   refuse an absent object as `invalid_runtime_input`/`wrong-role-mapping`.
 - A payload whose `trace` is `"model"` SHALL refuse
   `invalid_runtime_input`/`invalid-value`; it replays through FR-128.
-- When the loop is present and empty, or the decoded `trace_position` lies
-  outside the represented trace, the facade SHALL refuse
-  `invalid_runtime_input`/`invalid-value`.
+- When the clause is a liveness clause, which only a lasso refutes (QSpec
+  FR-364's Liveness shape), and the packet's `loop` is empty, the facade SHALL
+  refuse `invalid_runtime_input`/`invalid-value`.
+- When the decoded `trace_position` lies outside the represented trace, the
+  facade SHALL refuse `invalid_runtime_input`/`invalid-value`.
+- A packet whose clause is refuted by a finite prefix (a safety or bounded
+  clause, or an undefined-evaluation envelope) spells it with an empty `loop`,
+  as FR-330 and QSpec FR-364 do, and the facade SHALL admit it.
 - The facade SHALL admit each observed document by FR-106 and re-evaluate
   the formula over the reconstructed trace: by FR-327 under a bounded
-  profile, by FR-328 for an infinite-trace prefix with no loop, and by
+  profile, by FR-328 for an infinite-trace prefix with an empty loop, and by
   FR-329 for an infinite-trace lasso, including its refusals.
 - When the clause's fairness set is non-empty, the facade SHALL refuse with
   `ReplayRefusal::MissingFairnessPremise{constraint}`, naming the first
@@ -126,7 +131,8 @@ formula is false on it.
 |----|----------|--------------|
 | FR-331-AC-1 | A packet for the `Counter` unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) with an observed lasso, empty prefix, loop 0, 1, and `trace_position` `0` settles `reproduced-with-evaluated-witness`; the same packet with loop 0, 1, 2 settles `inconclusive`, `ReplayParity`. | Test (TC-841) |
 | FR-331-AC-2 | A packet for the bounded clause `Bounded` (`eventually[0,1] holds(c.value = 2)`) over the finite trace 0, 1, 2 with `interval` `{lower: "0", upper: "1"}` under event-position and `trace_position` `0` settles `reproduced-with-evaluated-witness`; with `trace_position` `1` it settles `inconclusive`, `ReplayParity`; | Test (TC-841) |
-| FR-331-AC-3 | AC-1's first packet with an empty loop, or `trace_position` `7`, or `trace: "model"`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
+| FR-331-AC-3 | AC-1's first packet (a liveness clause) with an empty loop, or `trace_position` `7`, or `trace: "model"`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
+| FR-331-AC-10 | The finite counterexample FR-330-AC-1 reports for `Bounded` (prefix 0, 1, 2, `loop` `[]`, `trace_position` 0), sent as a replay packet, is admitted and settles `reproduced-with-evaluated-witness`, and FR-330's `Undefined` counterexample of FR-331-AC-4 with `loop` `[]` is admitted. | Test (TC-841) |
 | FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome (`always[0,2] holds(3 mod (2 - c.value) >= 0)`, an interval-carrying clause, with the undefined-evaluation envelope) with `trace_position` 2 settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` 1 settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
 | FR-331-AC-5 | AC-1's first packet for a clause `ReachesFair` (`eventually holds(c.value = 2)` under `fair weak inc`), refuses `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole inc`, catalog code `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported, with no result and no formula evaluated. | Test (TC-841) |
 | FR-331-AC-6 | An observed temporal replay request for AC-1 carries `over` `{"reference":{"population":"Counters","key":"c1"}}`; decoding and re-encoding preserves both values, and the replay resolves that object in the first observed document before evaluation. A request that carries `over` for a function or frame target refuses `invalid_runtime_input`/`unknown-member` at `/replay/over`. | Test (TC-841) |
