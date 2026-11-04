@@ -486,6 +486,11 @@ fn encode_expression(
                 out.write_str(&numerator.to_string());
                 out.write_str(&denominator.to_string());
             }
+            ExprNode::DecimalValue { coefficient, scale } => {
+                out.write_str("decimal");
+                out.write_str(&coefficient.to_string());
+                out.write_str(&scale.to_string());
+            }
             ExprNode::Quantity(quantity) => {
                 out.write_str("quantity");
                 out.write_str(&quantity.magnitude.first.to_string());

@@ -1045,6 +1045,9 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
+            ExprNode::DecimalValue { coefficient, scale } => {
+                self.decimal_literal(coefficient, *scale, hint.as_deref(), &location)?
+            }
             ExprNode::Absent => self.absent_literal(hint.as_deref(), &location)?,
             // FR-185: a quantity literal is its magnitude, measured and
             // reduced as an exact value, in the unit its name declares.
@@ -1848,10 +1851,16 @@ impl<'a> Typer<'a> {
             // A float result type is the rounding mode of a contextual
             // float literal operand (FR-397-AC-24): `float32(bits: ..) + x`
             // under a `Float32[nearest-even]` result rounds by it.
+            // A `decimal(c, s)` literal with no typed peer takes the declared
+            // `Decimal[..]` result type and its peer then takes the
+            // literal's type (FR-104-AC-16).
             PeerOperator::Arithmetic(operator) => {
-                let first_hint = hint
-                    .clone()
-                    .filter(|each| matches!(**each, ValueType::Float(_)));
+                let literal = matches!(first.node(), ExprNode::DecimalValue { .. });
+                let first_hint = hint.clone().filter(|each| match **each {
+                    ValueType::Float(_) => true,
+                    ValueType::Decimal(_) => literal,
+                    _ => false,
+                });
                 (
                     PeerForm::Arithmetic {
                         operator,

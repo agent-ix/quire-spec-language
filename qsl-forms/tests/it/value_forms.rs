@@ -132,6 +132,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Float32(bits) => format!("float32({bits:08x})"),
         ExprNode::Float64(bits) => format!("float64({bits:016x})"),
         ExprNode::Rational(n, d) => format!("rational({n},{d})"),
+        ExprNode::DecimalValue { coefficient, scale } => format!("decimal({coefficient},{scale})"),
         ExprNode::Quantity(quantity) => {
             format!(
                 "quantity({} {})",
@@ -568,7 +569,6 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
 #[test]
 fn a_construct_no_variant_represents_refuses_the_unit() {
     let cases = [
-        ("decimal(1, 2)", Production::ExactNumber, "decimal(1, 2)"),
         ("xs[0]", Production::Postfix, "xs[0]"),
         // FR-102: a single-segment `reaches` edge now builds
         // (`each_expression_construct_maps_to_its_variant`); a
@@ -1531,5 +1531,33 @@ fn s2_builds_dimension_equivalence_forms_as_written() {
         let at = diagnostic.byte_span().expect("located").start;
         assert_eq!(at, text.rfind(offending).expect("in the unit"), "{written}");
         assert!(build_unit(&parsed).is_err(), "{written}");
+    }
+}
+
+/// FR-091-AC-57, TC-1232 step 1: a value-position `decimal(c, s)` builds one
+/// `DecimalValue` holding the coefficient and the scale exactly as written,
+/// reduced not at all, and no longer refuses with `UnrepresentedConstruct`.
+#[trace("FR-091-AC-57", "TC-1232")]
+#[test]
+fn a_decimal_constructor_builds_one_decimal_value_as_written() {
+    for (source, coefficient, scale) in [
+        ("decimal(125, 2)", 125_i64, 2_u32),
+        ("decimal(-5, 0)", -5, 0),
+        ("decimal(0, 3)", 0, 3),
+        ("decimal(1, 4294967295)", 1, u32::MAX),
+        ("decimal(100, 2)", 100, 2),
+    ] {
+        let (text, function) = body(source);
+        let root = function.body.root_node();
+        assert_eq!(
+            root,
+            &ExprNode::DecimalValue {
+                coefficient: Integer::from(coefficient),
+                scale
+            },
+            "{source}"
+        );
+        assert_eq!(function.body.root().children().len(), 0, "{source}");
+        let _ = text;
     }
 }

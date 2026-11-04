@@ -370,6 +370,7 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::Absent
         | ExprNode::Integer(_)
         | ExprNode::Rational(..)
+        | ExprNode::DecimalValue { .. }
         | ExprNode::Quantity(_)
         | ExprNode::String(_)
         | ExprNode::Name(_)

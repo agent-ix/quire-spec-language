@@ -74,7 +74,6 @@ use qsl_forms::{
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
-use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::EnumShape;
@@ -83,6 +82,7 @@ use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
+use quire_exact::{Decimal, DecimalType};
 use quire_exact::{NodeKey, VariantId};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::absence::AbsenceMode;
@@ -2228,6 +2228,7 @@ fn contextual(expression: ExprRef<'_>) -> bool {
         | ExprNode::Float32(_)
         | ExprNode::Float64(_)
         | ExprNode::Rational(..)
+        | ExprNode::DecimalValue { .. }
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
         ExprNode::Call { name, .. } if name.name == "Text" => true,
@@ -2939,6 +2940,41 @@ impl<'a> Typer<'a> {
         Ok(node(
             NodeKind::Literal(CheckedLiteral(Value::Rational(value))),
             ValueType::Rational(domain.clone()),
+            location,
+        ))
+    }
+
+    /// `decimal(c, s)`: the decimal of coefficient `c` and scale `s` as
+    /// written, typed by its unique expected `Decimal[..]` type (FR-104-AC-13,
+    /// FR-104-AC-16). With no expected type it is ambiguous; where no decimal
+    /// is expected it is a type mismatch. A literal that is not a member of
+    /// that type by value (QSpec FR-140: membership scale `max(s, smin)`,
+    /// membership coefficient the exact integer at that scale) is a type
+    /// mismatch at check time, before any charge (QSpec FR-140-AC-8).
+    fn decimal_literal(
+        &self,
+        coefficient: &Integer,
+        scale: u32,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let domain = match hint {
+            None => {
+                return Err(CheckRefusal::ill_typed(
+                    location,
+                    IllTypedCause::AmbiguousLiteral,
+                ))
+            }
+            Some(ValueType::Decimal(domain)) => domain,
+            Some(_) => return Err(mismatch(location)),
+        };
+        let value = Decimal::new(coefficient.clone(), scale);
+        if !domain.contains(&value) {
+            return Err(mismatch(location));
+        }
+        Ok(node(
+            NodeKind::Literal(CheckedLiteral(Value::Decimal(value))),
+            ValueType::Decimal(domain.clone()),
             location,
         ))
     }

@@ -2312,6 +2312,7 @@ fn check_match(
                 | ExprNode::Float32(_)
                 | ExprNode::Float64(_)
                 | ExprNode::Rational(..)
+                | ExprNode::DecimalValue { .. }
                 | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Binary { .. }
@@ -2764,6 +2765,7 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::Float32(_)
         | ExprNode::Float64(_)
         | ExprNode::Rational(..)
+        | ExprNode::DecimalValue { .. }
         | ExprNode::String(_)
         | ExprNode::Name(_)
         | ExprNode::If { .. }
@@ -2970,6 +2972,10 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ExprNode::Rational(numerator, denominator) => (
             b"rational".to_vec(),
             text_segment(&format!("{numerator}/{denominator}")),
+        ),
+        ExprNode::DecimalValue { coefficient, scale } => (
+            b"decimal".to_vec(),
+            text_segment(&format!("{coefficient}e-{scale}")),
         ),
         ExprNode::Binary { .. }
         | ExprNode::Quantity(_)

@@ -1140,9 +1140,18 @@ impl<'a> Definedness<'a> {
                 ..
             } => {
                 let zero = Integer::zero();
-                match node.at(*right).value_type() {
-                    ValueType::Decimal(divisor)
-                        if divisor.lower() > &zero || divisor.upper() < &zero =>
+                let divisor = node.at(*right);
+                // A `decimal(c, s)` divisor with a nonzero coefficient is a
+                // nonzero literal whatever its declared interval.
+                let literal = match divisor.kind() {
+                    NodeKind::Literal(CheckedLiteral(Value::Decimal(value))) => {
+                        value.representation().coefficient() != &zero
+                    }
+                    _ => false,
+                };
+                match divisor.value_type() {
+                    ValueType::Decimal(interval)
+                        if literal || interval.lower() > &zero || interval.upper() < &zero =>
                     {
                         Ok(())
                     }

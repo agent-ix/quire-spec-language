@@ -747,6 +747,7 @@ enum Shape {
     Float32(u32),
     Float64(u64),
     Rational(Integer, Integer),
+    Decimal(Integer, u32),
     Quantity(QuantityForm),
     String(StringLiteral),
     Name(NameForm),
@@ -861,6 +862,10 @@ impl Shape {
             Self::Rational(numerator, denominator) => {
                 arity(0)?;
                 ExprNode::Rational(numerator, denominator)
+            }
+            Self::Decimal(coefficient, scale) => {
+                arity(0)?;
+                ExprNode::DecimalValue { coefficient, scale }
             }
             Self::Quantity(quantity) => {
                 arity(0)?;
@@ -1882,7 +1887,13 @@ impl<'c> Mapping<'c> {
             }
             Production::ExactNumber => {
                 if !has_token(&items, b"rational") {
-                    return Err(unrepresented(Production::ExactNumber, child.span()));
+                    let form = exact_number(self.cst, child)?;
+                    let scale = form
+                        .second
+                        .to_string()
+                        .parse::<u32>()
+                        .map_err(|_| unexpected(child))?;
+                    return self.leaf(Shape::Decimal(form.first, scale), &task);
                 }
                 let parts = nodes_of(&items, Production::SignedInteger);
                 let [numerator, denominator] = parts.as_slice() else {

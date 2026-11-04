@@ -2508,6 +2508,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Float32(_)
                 | ExprNode::Float64(_)
                 | ExprNode::Rational(..)
+                | ExprNode::DecimalValue { .. }
                 | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
