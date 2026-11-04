@@ -66,11 +66,13 @@ form and read `units`; repeat with source-owner identity `w` and the same requir
 
 16. Read the retained fields of each topology refusal of steps 4 and 7 as
     values (FR-091-AC-71); assemble the U11p, U11w, U11x, U11n, U11o and
-    U11z3 units of FR-091-AC-71 and read each refusal's code, cause, locus and
+    U11z3 units of FR-091-AC-71, U11x also with `unit e : E = rational(0, 1);`
+    added, and read each refusal's code, cause, locus and
     fields.
 17. With `acme/rpc` declaring base dimension `Rate` and root unit `us`,
     assemble FR-091-AC-72's `tick` and `tock` units, check and evaluate `k1`
-    for `d` = `2 tick`, and assemble each of its refused units.
+    for `d` = `2 tick`, and assemble each of its refused units in its own unit
+    beside the base declarations alone.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
