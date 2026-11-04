@@ -294,6 +294,59 @@ pub struct ProbKey {
     pub pending: Option<Pending>,
 }
 
+impl ProbKey {
+    /// A stable complete identifier for a zero-delay cycle state in FR-204.
+    ///
+    /// The digital model member is already the full encoded model/clock
+    /// state. This identifier frames it with every other product-key member
+    /// and never relies on Rust's `Debug` representation. Only the timed
+    /// deadline control used by the digital cycle detector is admitted here.
+    pub fn digital_cycle_identity(&self) -> Option<String> {
+        let Some(MonitorState::Deadline { kind, phase }) = self.monitor else {
+            return None;
+        };
+        if self.accumulator.is_some() || self.pending.is_some() {
+            return None;
+        }
+
+        let mut identity = String::from("quire.probability-digital-cycle-state/v1;");
+        match &self.binding {
+            Some(binding) => {
+                identity.push_str("binding=some;");
+                cycle_identity_field(&mut identity, binding.population.package.as_bytes());
+                cycle_identity_field(&mut identity, binding.population.node.as_bytes());
+                cycle_identity_field(&mut identity, binding.key.as_bytes());
+            }
+            None => identity.push_str("binding=none;"),
+        }
+        cycle_identity_field(&mut identity, &self.model);
+        identity.push_str("monitor=deadline;");
+        identity.push_str(match kind {
+            DeadlineKind::Eventually => "eventually;",
+            DeadlineKind::Until => "until;",
+        });
+        identity.push_str(match phase {
+            DeadlinePhase::Pending => "pending;",
+            DeadlinePhase::Accept => "accept;",
+            DeadlinePhase::Reject => "reject;",
+        });
+        identity.push_str("accumulator=none;pending=none;");
+        Some(identity)
+    }
+}
+
+/// Append a byte member as an unambiguous decimal-length-prefixed lowercase
+/// hexadecimal string.
+fn cycle_identity_field(identity: &mut String, bytes: &[u8]) {
+    use std::fmt::Write as _;
+
+    let _ = write!(identity, "{}:", bytes.len());
+    for byte in bytes {
+        let _ = write!(identity, "{byte:02x}");
+    }
+    identity.push(';');
+}
+
 impl PartialEq for ProbKey {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == Ordering::Equal
