@@ -470,9 +470,7 @@ impl<'wire> WireIndex<'wire> {
                     .iter()
                     .find(|row| row.checked_node() == id)
                     .ok_or_else(|| fault("reader-equality-has-producer-identity-row"))?;
-                let rows = self
-                    .equality_rows
-                    .get_or_init(|| emission.equality_rows());
+                let rows = self.equality_rows.get_or_init(|| emission.equality_rows());
                 emission
                     .admitted_equality_from(rows, admitted, id, row.occurrence(), self.work_limit)
                     .map_err(|_| fault("reader-equality-decision-is-admitted").into())
@@ -2077,4 +2075,34 @@ struct ReaderFunction {
 
 fn fault(invariant: &'static str) -> InternalFault {
     InternalFault::new("FR-390", invariant)
+}
+
+impl UnsupportedView {
+    /// A span-named slot whose root holds an application and which no origin
+    /// of the package names (FR-533 "Slot naming on the bytes route", rule
+    /// 5): `rows` is the number of candidate origins and `visits` the
+    /// application's visits in the slot's walk.
+    pub(crate) fn missing_origin(
+        package: &str,
+        prefix: &str,
+        application: NodeKey,
+        visits: usize,
+    ) -> Self {
+        Self {
+            package: package.to_owned(),
+            locus: ViewLocus {
+                key: application.clone(),
+                location: None,
+            },
+            reason: UnsupportedReason::MissingLocationProjection(Box::new(MissingLocation {
+                origin: prefix.trim_end().to_owned(),
+                application,
+                index: 0,
+                rows: 0,
+                visits,
+                defect: ("invalid_package", "invalid-value"),
+                pointer: ROWS_POINTER.to_owned(),
+            })),
+        }
+    }
 }

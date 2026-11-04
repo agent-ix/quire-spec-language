@@ -290,6 +290,7 @@ pub fn write_with(
     insert_inputs(&mut files, &compiled)?;
     files.insert("selection.json", selection.to_bytes()?)?;
     files.insert("identities.json", identity_file(&compiled, &package)?)?;
+    files.insert("equality.json", equality_file(&compiled, &package)?)?;
     if request.corpus == Corpus::Standard {
         let cases = corpus::build(&bytes, &selection, &evidence, environment)?;
         for (path, contents) in cases.files()? {
@@ -330,6 +331,22 @@ fn identity_file(
     qsl_package::ReadIdentityRows::of_rows(package, declarations, fields)
         .to_bytes(package)
         .map_err(|refused| unnameable(format!("identity file: {refused}")))
+}
+
+/// `equality.json` (FR-531 "The equality file"): the producer's equality
+/// witness rows of the in-process unit, written empty when the unit holds no
+/// equality application, in the order the emitter holds them.
+fn equality_file(
+    compiled: &Compiled,
+    package: &quire_contract_model::CheckedPackageV2,
+) -> Result<Vec<u8>, Error> {
+    let unnameable = |what: String| Error::Unnameable { what };
+    let emission = qsl_package::emit_checked(compiled.checked.package())
+        .map_err(|refusal| unnameable(format!("equality witness: {refusal}")))?;
+    emission
+        .equality_witness(package)
+        .to_bytes(package)
+        .map_err(|refused| unnameable(format!("equality file: {refused}")))
 }
 
 /// The exact input bytes under `sources/` and `models/`.

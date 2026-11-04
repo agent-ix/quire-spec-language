@@ -55,10 +55,6 @@ pub use bare::{
     ReadIdentityRows, IDENTITIES_FORMAT,
 };
 #[cfg(feature = "std")]
-pub use equality_file::{
-    EqualityFileRefusal, EqualityWitnessRefusal, ReadEqualityRows, EQUALITY_FORMAT,
-};
-#[cfg(feature = "std")]
 pub use bare_slot::{BareSelectionFailure, BareSlot, BareSource};
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
@@ -88,6 +84,10 @@ pub use emit::{
     Emission, EmitRefusal, MonitorPlanWire, OmissionCause, OmittedNode, ProtocolEmission,
     ProtocolEmissionAggregate, ProtocolEmissionResult, TemporalBindingRows, TemporalClauseRef,
     TemporalClockSelection, TemporalRows, TimedOrderFault,
+};
+#[cfg(feature = "std")]
+pub use equality_file::{
+    EqualityFileRefusal, EqualityWitnessRefusal, ReadEqualityRows, EQUALITY_FORMAT,
 };
 pub use evaluation_view::{
     AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, SelectedProtocolTerm,

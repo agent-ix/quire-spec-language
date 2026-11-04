@@ -4711,17 +4711,20 @@ fn bare_rows(
 /// FR-533-AC-1 (selection half), AC-4, AC-10: over every slot kind of TC-1070
 /// the selection read from the package's nodes alone names the root and the
 /// binders (name, level, type, key) the source selector names.
-#[trace("FR-533-AC-1", "FR-533-AC-4", "FR-533-AC-10", "TC-1333")]
+#[trace("FR-533-AC-1", "FR-533-AC-4", "FR-533-AC-10", "FR-533-AC-12", "TC-1333")]
 #[test]
 fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let package = fixture();
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
     let bare = qsl_package::BarePackage::new(v2)
         .with_supply(qsl_package::BareSupply {
             identities: &rows,
-            equality: None,
+            equality: Some(&equality),
         });
     let view = package.evaluation_view();
     let row_origins: std::collections::BTreeSet<String> = v2
@@ -4820,7 +4823,21 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
             .collect();
         assert_eq!(got, expected, "{}", parity.name);
         assert_eq!(chosen.frame_len(), got.len());
-        for origin in chosen.origins() {
+        if let Some(origin) = chosen.origin() {
+            // FR-533-AC-12: the origin the bytes route resolves is the one
+            // the source route locates the slot under.
+            let source_origin = match &source.checked_body().root().location().origin {
+                quire_semantic_value::location::Origin::TypeDeclaration { name } => {
+                    Some(name.to_string())
+                }
+                _ => None,
+            };
+            assert_eq!(
+                Some(origin.to_owned()),
+                source_origin,
+                "{}: the origin equals the source route's",
+                parity.name
+            );
             assert!(
                 row_origins.contains(&format!("TypeDeclaration {{ name: {origin:?} }}"))
                     || origin.ends_with(" body"),
@@ -4895,4 +4912,41 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
             SlotSelectionFailure::MalformedNode(_)
         ))
     ));
+}
+
+/// FR-533-AC-11: over TC-1070 fixture L the bare route selects the visible
+/// entry and both case guards of `Decide` by (control node, member, index)
+/// alone, each with the one origin the table of "Slot naming on the bytes
+/// route" gives, and the `related` ends of `Got` (leaf references) have none.
+#[trace("FR-533-AC-11", "FR-533-AC-12", "TC-1333")]
+#[test]
+fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
+    let origin = |owner: &str, member: &str, index: usize| {
+        let wanted = slot(&package, "Pipeline", owner, member, Some(index));
+        bare.select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            wanted.node,
+            member,
+            Some(index),
+        ))
+        .unwrap_or_else(|failure| panic!("{owner}.{member}[{index}]: {failure:?}"))
+        .origin()
+        .map(str::to_owned)
+    };
+    let name = |span: &str| format!("protocol Pipeline run Main Decide decision {span}");
+    assert_eq!(origin("Decide", "visible", 0), Some(name("2641..2650")));
+    assert_eq!(origin("Decide", "cases.guard", 0), Some(name("2735..2748")));
+    assert_eq!(origin("Decide", "cases.guard", 1), Some(name("2676..2685")));
+    assert_eq!(origin("Got", "related.from", 0), None);
+    assert_eq!(origin("Got", "related.to", 0), None);
 }

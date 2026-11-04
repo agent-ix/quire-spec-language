@@ -20,8 +20,8 @@ use quire_contract_model::{
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, DecimalType, EffectiveId, EnumShape,
     FloatType, IeeeWidth, Integer, IntegerInterval, Location, NodeKey, Origin,
-    OriginalDeclarationKey, RationalDomain, RoundingMode, TextProfile, TextType, UnitId,
-    ValueType, VariantId,
+    OriginalDeclarationKey, RationalDomain, RoundingMode, TextProfile, TextType, UnitId, ValueType,
+    VariantId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -123,7 +123,8 @@ impl<'de> Deserialize<'de> for Json {
         impl<'de> serde::de::Visitor<'de> for Visitor {
             type Value = Json;
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("null, a boolean, an unsigned integer, text, an array or an object")
+                formatter
+                    .write_str("null, a boolean, an unsigned integer, text, an array or an object")
             }
             fn visit_unit<E>(self) -> Result<Json, E> {
                 Ok(Json::Null)
@@ -137,24 +138,20 @@ impl<'de> Deserialize<'de> for Json {
             fn visit_str<E>(self, value: &str) -> Result<Json, E> {
                 Ok(Json::Text(value.to_owned()))
             }
-            fn visit_seq<A: serde::de::SeqAccess<'de>>(
-                self,
-                mut seq: A,
-            ) -> Result<Json, A::Error> {
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Json, A::Error> {
                 let mut items = Vec::new();
                 while let Some(item) = seq.next_element()? {
                     items.push(item);
                 }
                 Ok(Json::Array(items))
             }
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<Json, A::Error> {
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Json, A::Error> {
                 let mut members: Vec<(String, Json)> = Vec::new();
                 while let Some(name) = map.next_key::<String>()? {
                     if members.iter().any(|(held, _)| *held == name) {
-                        return Err(serde::de::Error::custom(format!("repeated member `{name}`")));
+                        return Err(serde::de::Error::custom(format!(
+                            "repeated member `{name}`"
+                        )));
                     }
                     members.push((name, map.next_value()?));
                 }
@@ -662,9 +659,10 @@ fn value_type_from(joins: &Joins, json: &Json) -> Result<ValueType, Bad> {
         "string" => ValueType::String,
         "uuid" => ValueType::Uuid,
         "timestamp" => ValueType::Timestamp,
-        "int" => ValueType::Int(IntegerInterval::new(integer(m[0])?, integer(m[1])?).or_else(
-            |_| malformed("an empty interval"),
-        )?),
+        "int" => ValueType::Int(
+            IntegerInterval::new(integer(m[0])?, integer(m[1])?)
+                .or_else(|_| malformed("an empty interval"))?,
+        ),
         "rational" => ValueType::Rational(
             RationalDomain::new(interval_from(m[0])?, interval_from(m[1])?)
                 .or_else(|_| malformed("a rational denominator below one"))?,
@@ -729,7 +727,10 @@ fn value_type_from(joins: &Joins, json: &Json) -> Result<ValueType, Bad> {
 
 const OPERAND_ROLES: [(&str, EqualityOperandTypeRole); 2] = [
     ("source", EqualityOperandTypeRole::Source),
-    ("conversion_target", EqualityOperandTypeRole::ConversionTarget),
+    (
+        "conversion_target",
+        EqualityOperandTypeRole::ConversionTarget,
+    ),
 ];
 
 const UNIT_ROLES: [(&str, EqualityUnitRole); 2] = [
@@ -1169,11 +1170,10 @@ impl ReadEqualityRows {
             ("facts", Json::Array(facts)),
             ("source_units", Json::Array(source_units)),
         ]);
-        let mut bytes = serde_json::to_vec_pretty(&file).map_err(|e| {
-            EqualityFileRefusal::Malformed {
+        let mut bytes =
+            serde_json::to_vec_pretty(&file).map_err(|e| EqualityFileRefusal::Malformed {
                 detail: e.to_string(),
-            }
-        })?;
+            })?;
         bytes.push(b'\n');
         Ok(bytes)
     }

@@ -76,6 +76,8 @@ mod string_edge_marker;
 mod value_parity_profile_selections;
 // The handoff writer is behind its feature; the all-features lane runs this.
 #[cfg(feature = "checked-handoff")]
+mod bare_equality;
+#[cfg(feature = "checked-handoff")]
 mod bare_package;
 #[cfg(feature = "checked-handoff")]
 mod checked_handoff;
