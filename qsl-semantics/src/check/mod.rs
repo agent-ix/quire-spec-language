@@ -1993,6 +1993,7 @@ impl PackageDeclarations {
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
                     source_owners: &self.source_owners,
+                    spellings: &self.model_spellings,
                     clock_reading: &self.clock_reading,
                     operation_bodies: &self.operation_bodies,
                     units: &units,
@@ -2180,17 +2181,10 @@ impl PackageDeclarations {
         )
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
-        .with_model_selections(
-            self.models
-                .iter()
-                .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
-                .collect(),
-        )
         .with_model_ports(
             self.models
                 .iter()
                 .flat_map(AdmittedModel::port_roles)
-                .map(|(alias, artifact, key, owner)| ((alias, artifact), (key, owner)))
                 .collect(),
         )
         .with_declared_units(&self.units)
@@ -3131,6 +3125,7 @@ impl PackageDeclarations {
             if matches!(terminal.kind, terminal::TerminalClauseKind::Any)
                 && !models.iter().any(|model| {
                     model.alias() == Some(terminal.model.as_str())
+                        && model.selection().identity == terminal.package
                         && model.terminal_object().is_some()
                 })
             {
@@ -4052,10 +4047,7 @@ impl PackageDeclarations {
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
-        // `over` parameter, now that every function signature is known. A
-        // clause S4 does not emit (a protocol fairness target, the timed
-        // profile) is refused rather than compiled and silently missing from
-        // the package (`temporal_clause::not_emitted`).
+        // `over` parameter, now that every function signature is known.
         let time_units = time_units::TimeUnits::new(
             &self.units,
             &self.nominal_spans,
@@ -4093,14 +4085,13 @@ impl PackageDeclarations {
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
             let body_refused = match &outcome {
-                Ok(staged) => !temporal_clause::is_emitted(staged.value()),
                 Err(StageFailure::Refused(refusal)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
                 Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
-                Err(_) => false,
+                Ok(_) | Err(_) => false,
             };
             if body_refused {
                 let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
@@ -4136,48 +4127,6 @@ impl PackageDeclarations {
                 }
             }
             match outcome {
-                Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
-                    let checked = staged.into_value();
-                    if checked.has_aggregate {
-                        let location =
-                            lowering::temporal_location(index, lowering::TemporalSite::Claim);
-                        let condition_declarations = state_clause::ClauseDeclarations {
-                            scope: &scope,
-                            signatures: &signatures,
-                            dispatch_tables: &dispatch_tables,
-                            models: &models,
-                            checking_limits: limits,
-                            location: &location,
-                            nodes_used,
-                            cancel: Some(cancel),
-                            staged: None,
-                        };
-                        let mut condition_cx = crate::family::CheckContext::new(
-                            &condition_declarations,
-                            contract_limits,
-                            &mut contract_meter,
-                            &mut contract_diagnostics,
-                            &mut contract_scopes,
-                        );
-                        match temporal_clause::condition::check_conditions(
-                            index,
-                            &clause.form,
-                            &checked,
-                            &condition_declarations,
-                            &mut condition_cx.reborrow(&scope),
-                        ) {
-                            Ok((_, used)) => nodes_used = used,
-                            Err(refusal) => {
-                                refusals.push(refusal);
-                                if cancel.tripped().is_some() {
-                                    return Err(refusals);
-                                }
-                                continue;
-                            }
-                        }
-                    }
-                    refusals.push(temporal_clause::not_emitted(&checked));
-                }
                 Ok(staged) => {
                     let checked = staged.into_value();
                     let location =
@@ -5680,6 +5629,7 @@ impl PackageDeclarations {
             match lowering.terminal(&lowering::TerminalInput {
                 index,
                 model: &declaration.model,
+                package: &declaration.package,
                 declaration: &checked.declaration,
             }) {
                 Ok(key) => lowered_terminals.push((index, declaration.model.clone(), key)),

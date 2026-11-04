@@ -13,9 +13,6 @@
 //! binding to a model operation; when every bound operation has an
 //! abstraction-relation binding it also has a second requirement, the code
 //! claim.
-//!
-//! A clause that checks is refused as not emitted until S4 writes its node,
-//! as a `temporal` clause is (`temporal_clause::not_emitted`).
 
 use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -3491,13 +3488,7 @@ pub fn check_hyper_clauses(
     .with_complete_value(complete_value)
     .with_known_populations(super::refinement::population_names(&package.models))
     .with_complete_model(!package.models.is_empty())
-    .with_model_selections(
-        package
-            .models
-            .iter()
-            .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
-            .collect(),
-    )
+    .with_model_spellings(package.model_spellings.clone())
     .with_declared_units(&package.units);
     // The declared functions' signatures, which a body's calls resolve
     // against; a function that does not resolve is left out.

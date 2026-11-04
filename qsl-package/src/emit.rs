@@ -6220,6 +6220,22 @@ fn temporal_clock_invalid_field(
     }
 }
 
+/// Whether `unit` is the `scalar_type`/`unit` node whose path is
+/// `["scalar_type", "unit", name]` (QSpec FR-370's clock unit).
+fn is_unit_named(unit: &NodeKey, name: &str) -> bool {
+    use quire_exact::PathSegmentView as Segment;
+    let mut path = unit.view().path();
+    matches!(
+        (path.next(), path.next(), path.next(), path.next()),
+        (
+            Some(Segment::Text("scalar_type")),
+            Some(Segment::Text("unit")),
+            Some(Segment::Text(last)),
+            None,
+        ) if last == name
+    )
+}
+
 fn validate_temporal_clock(
     source_ref: &RawSourceRef,
     span: qsl_foundation::Span,
@@ -6333,6 +6349,23 @@ fn temporal_binding_rows(
             });
         }
         validate_temporal_clock(&source, span, clause.clock(), clock)?;
+        // QSpec FR-370 "Window aggregate atom": a `duration` window's bounds
+        // are quantities of the clause's clock unit, the `scalar_type`/`unit`
+        // node named by the selected `timestamp_unit` (FR-337 "Aggregate
+        // formula emission").
+        if let quire_contract_model::ClockConfiguration::TimestampedEvent { timestamp_unit } = clock
+        {
+            if clause
+                .duration_window_units()
+                .any(|unit| !is_unit_named(unit, timestamp_unit))
+            {
+                return Err(EmitRefusal::InvalidTemporalClockValue {
+                    source_ref: source.clone(),
+                    span,
+                    field: "timestamp_unit",
+                });
+            }
+        }
         let declaration_key = temporal.identity();
         let declaration = emitted_node_ids
             .get(&declaration_key)

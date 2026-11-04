@@ -97,8 +97,8 @@ engine limits and the typed inspection operation's limit have their own table
 | `s3.work_units` | S3 | work budget | `CheckingLimits` work budget | 16777216 units |
 | `s3.rational_bits` | S3 | rational bits | `CheckingLimits` rational bits | 65536 bits |
 | `s3.decimal_scale` | S3 assembly | work budget | `AssemblyLimits` decimal scale | 4096 digits |
-| `s3.decimal_literal_scale` | S3 | work budget | `CheckingLimits` decimal literal scale | 65535 digits |
-| `s3.decimal_literal_scale_total` | S3 | work budget | `CheckingLimits` decimal literal scale total per checked package | 1048576 digits |
+| `s3.decimal_literal_scale` | S3 | work budget | `AssemblyLimits` decimal literal limits (`DecimalLiteralLimits` scale), carried onto the package declarations and into checking | 65535 digits |
+| `s3.decimal_literal_scale_total` | S3 | work budget | `AssemblyLimits` decimal literal limits (`DecimalLiteralLimits` total per checked package), carried onto the package declarations and into checking | 1048576 digits |
 | `environment.ancestor_steps` | S3 type-environment admission | edge count | `TypeEnvironmentLimits` ancestor_steps | 16777216 edges |
 | `environment.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |
 | `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes | 67108864 bytes |

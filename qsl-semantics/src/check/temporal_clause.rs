@@ -223,8 +223,8 @@ pub enum FormulaNode {
         /// The span of the whole `holds(e)`.
         span: Span,
     },
-    /// A parsed and S3-checked aggregate atom. S4 currently refuses the
-    /// enclosing clause until the FR-370 wire proposal is confirmed.
+    /// A window aggregate atom (FR-194); its checked term is the clause's
+    /// aggregate at this node's arena index.
     Aggregate {
         /// The complete aggregate atom's source span.
         span: Span,
@@ -257,6 +257,75 @@ pub enum FormulaNode {
         /// Its right operand.
         right: FormulaNodeId,
     },
+}
+
+/// A checked aggregate kind (FR-194 "Outputs").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AggregateKind {
+    /// `count`.
+    Count,
+    /// `sum`.
+    Sum,
+    /// `min`.
+    Min,
+    /// `max`.
+    Max,
+    /// `fraction holds(P)`.
+    Fraction,
+    /// `quantile q`, with its exact level `0 < q < 1`.
+    Quantile(Rational),
+}
+
+impl AggregateKind {
+    /// The kind's FR-337 wire spelling.
+    pub(crate) const fn spelling(&self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::Sum => "sum",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::Fraction => "fraction",
+            Self::Quantile(_) => "quantile",
+        }
+    }
+}
+
+/// A checked `past[a, b]` window (FR-194 "Outputs").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AggregateWindow {
+    /// Position offsets, under the event-position profile.
+    Positions {
+        /// The nearest offset `a`.
+        lower: u64,
+        /// The farthest offset `b`.
+        upper: u64,
+    },
+    /// Durations, under the timestamped-event profile, both bounds converted
+    /// exactly to the lower bound's written time unit, which the emitter
+    /// requires to be the clause's clock unit (FR-337 "Aggregate formula
+    /// emission").
+    Duration {
+        /// The nearest age `a`.
+        lower: Rational,
+        /// The farthest age `b`.
+        upper: Rational,
+        /// The node of the time unit both bounds are expressed in.
+        unit: NodeKey,
+    },
+}
+
+/// The checked term of one window aggregate atom, beside its typed value,
+/// filter, predicate and threshold expressions (FR-194, FR-337-AC-15).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedAggregate {
+    /// The aggregate kind.
+    pub(crate) kind: AggregateKind,
+    /// The past window.
+    pub(crate) window: AggregateWindow,
+    /// The normalized `min_count`: 1 when the source omits it.
+    pub(crate) min_count: u64,
+    /// The comparison with the threshold.
+    pub(crate) comparison: qsl_forms::AggregateComparison,
 }
 
 impl FormulaNode {
@@ -485,9 +554,9 @@ pub struct CheckedTemporalClause {
     /// order of first occurrence (FR-212 "Targets at S3"), each with the
     /// span of its first occurrence's name.
     protocol_fairness: Vec<(CheckedProtocolFairness, Span)>,
-    /// Whether the clause contains an aggregate whose emission wire is still
-    /// provisional in QSpec FR-370.
-    pub(crate) has_aggregate: bool,
+    /// The checked term of each window aggregate atom, by its formula
+    /// node's arena index (FR-337-AC-15).
+    aggregates: BTreeMap<usize, CheckedAggregate>,
     property_form: Option<PropertyForm>,
     /// Under the timed profile: the clause's `model-time` binding.
     time_binding: Option<ModelTimeBinding>,
@@ -519,7 +588,7 @@ impl DebugWith for CheckedTemporalClause {
             fairness_sources,
             fairness_order,
             protocol_fairness,
-            has_aggregate,
+            aggregates,
             property_form,
             time_binding,
             timed_form,
@@ -544,7 +613,7 @@ impl DebugWith for CheckedTemporalClause {
             .field("fairness_sources", &fairness_sources)
             .field("fairness_order", &fairness_order)
             .field("protocol_fairness", &protocol_fairness)
-            .field("has_aggregate", &has_aggregate)
+            .field("aggregates", &aggregates)
             .field("property_form", &property_form)
             .field("time_binding", &time_binding)
             .field("timed_form", &timed_form)
@@ -674,6 +743,24 @@ impl CheckedTemporalClause {
     /// its operands), each temporal operator holding its validated interval.
     pub fn formula(&self) -> &CheckedFormula {
         &self.formula
+    }
+
+    /// The checked term of each window aggregate atom, by its formula
+    /// node's arena index.
+    pub(crate) fn aggregates(&self) -> &BTreeMap<usize, CheckedAggregate> {
+        &self.aggregates
+    }
+
+    /// The time unit node of each `duration` window of the clause's window
+    /// aggregate atoms, which QSpec FR-370 requires to be the clause's clock
+    /// unit (FR-337 "Aggregate formula emission").
+    pub fn duration_window_units(&self) -> impl Iterator<Item = &NodeKey> {
+        self.aggregates
+            .values()
+            .filter_map(|aggregate| match &aggregate.window {
+                AggregateWindow::Duration { unit, .. } => Some(unit),
+                AggregateWindow::Positions { .. } => None,
+            })
     }
 
     /// How the clause activates (FR-325 "Outputs").
@@ -1203,10 +1290,12 @@ fn check_clause(
     let mut refusals: Vec<TemporalCause> = Vec::new();
     let (operators, punctual) = checked_operators(&form.formula, &reading, &mut refusals)?;
     let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
-    for node in form.formula.nodes() {
+    let mut aggregates = BTreeMap::new();
+    for (id, node) in form.formula.iter() {
         let TemporalNodeForm::AggregateAtom(atom) = node else {
             continue;
         };
+        let mut window = None;
         if model_subject {
             refusals.push(TemporalCause::AggregateModelSubject {
                 span: atom.term.span,
@@ -1244,6 +1333,11 @@ fn check_clause(
                             refusals.push(TemporalCause::InvalidAggregateWindow {
                                 span: atom.term.window.span,
                             });
+                        } else {
+                            window = Some(AggregateWindow::Positions {
+                                lower: lower.value,
+                                upper: upper.value,
+                            });
                         }
                     } else {
                         let (
@@ -1269,6 +1363,12 @@ fn check_clause(
                         if lower_value > upper_value {
                             refusals.push(TemporalCause::InvalidAggregateWindow {
                                 span: atom.term.window.span,
+                            });
+                        } else {
+                            window = Some(AggregateWindow::Duration {
+                                lower: lower_value,
+                                upper: upper_value,
+                                unit: target.unit(),
                             });
                         }
                     }
@@ -1299,26 +1399,49 @@ fn check_clause(
                 span: atom.term.span,
             });
         }
-        if let qsl_forms::AggregateKindForm::Quantile(level) = &atom.term.kind {
-            match super::probabilistic::exact_value(level, declarations.timed.rational_bits) {
-                Ok(value)
-                    if value > Rational::from_integer(Integer::zero())
-                        && value < Rational::from_integer(Integer::one()) => {}
-                Ok(_) | Err(super::probabilistic::ExactFault::ZeroDenominator) => {
-                    refusals.push(TemporalCause::InvalidAggregateValue { span: level.span });
-                }
-                Err(super::probabilistic::ExactFault::AboveCeiling { bits }) => {
-                    return Err(located(
-                        LimitExceeded::new(
-                            Setting::S3RationalBits,
-                            declarations.timed.rational_bits,
-                            u128::from(bits),
-                        ),
-                        declarations,
-                        level.span,
-                    ));
+        let kind = match &atom.term.kind {
+            qsl_forms::AggregateKindForm::Count => Some(AggregateKind::Count),
+            qsl_forms::AggregateKindForm::Sum => Some(AggregateKind::Sum),
+            qsl_forms::AggregateKindForm::Min => Some(AggregateKind::Min),
+            qsl_forms::AggregateKindForm::Max => Some(AggregateKind::Max),
+            qsl_forms::AggregateKindForm::Fraction(_) => Some(AggregateKind::Fraction),
+            qsl_forms::AggregateKindForm::Quantile(level) => {
+                match super::probabilistic::exact_value(level, declarations.timed.rational_bits) {
+                    Ok(value)
+                        if value > Rational::from_integer(Integer::zero())
+                            && value < Rational::from_integer(Integer::one()) =>
+                    {
+                        Some(AggregateKind::Quantile(value))
+                    }
+                    Ok(_) | Err(super::probabilistic::ExactFault::ZeroDenominator) => {
+                        refusals.push(TemporalCause::InvalidAggregateValue { span: level.span });
+                        None
+                    }
+                    Err(super::probabilistic::ExactFault::AboveCeiling { bits }) => {
+                        return Err(located(
+                            LimitExceeded::new(
+                                Setting::S3RationalBits,
+                                declarations.timed.rational_bits,
+                                u128::from(bits),
+                            ),
+                            declarations,
+                            level.span,
+                        ));
+                    }
                 }
             }
+        };
+        // FR-194: an omitted `min_count` is the term written `min_count 1`.
+        if let (Some(kind), Some(window)) = (kind, window) {
+            aggregates.insert(
+                id.index(),
+                CheckedAggregate {
+                    kind,
+                    window,
+                    min_count: atom.term.min_count.as_ref().map_or(1, |count| count.value),
+                    comparison: atom.comparison,
+                },
+            );
         }
     }
     let CheckedFairness {
@@ -1425,11 +1548,7 @@ fn check_clause(
         fairness_sources,
         fairness_order,
         protocol_fairness,
-        has_aggregate: form
-            .formula
-            .nodes()
-            .iter()
-            .any(|node| matches!(node, TemporalNodeForm::AggregateAtom(_))),
+        aggregates,
         property_form,
         time_binding,
         timed_form,
@@ -1981,12 +2100,6 @@ fn formula_horizon(
     })
 }
 
-/// Whether S4 emits `checked` (FR-337, FR-212). QSpec FR-370 defines the timed interval form, which S4 lowers with
-/// the same temporal formula topology as integer intervals.
-pub(crate) fn is_emitted(checked: &CheckedTemporalClause) -> bool {
-    !checked.has_aggregate
-}
-
 /// Whether `refusal` of the clause `form` is located after its `on each`
 /// activation's binder, in the guard or the body, so that the guard is checked
 /// first (FR-337 "`on each` activation at S3").
@@ -1998,16 +2111,6 @@ pub(crate) fn refuses_after_activation(form: &TemporalClauseForm, refusal: &Chec
         return false;
     };
     cause.span().start > parameter.name.span.end
-}
-
-/// The refusal for a clause that checked but that no S4 emission writes
-/// ([`is_emitted`]): refused rather than compiled and silently missing from
-/// the package.
-pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
-    refusal(TemporalCause::NotEmitted {
-        name: checked.name.clone(),
-        span: checked.span,
-    })
 }
 
 #[cfg(any(test, feature = "test-support"))]

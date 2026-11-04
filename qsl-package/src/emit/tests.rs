@@ -83,6 +83,7 @@ mod source_map_debug;
 mod state_graph_claim;
 mod state_transition;
 mod step_relation;
+mod temporal_aggregate;
 mod temporal_clause;
 mod temporal_package_route;
 mod terminal;

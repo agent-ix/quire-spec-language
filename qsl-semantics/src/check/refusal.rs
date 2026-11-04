@@ -2767,6 +2767,11 @@ pub enum CheckCause {
     /// `ill_typed` / `non-boolean-root` (FR-104): a state clause body whose
     /// type is not `Boolean`, at the body.
     NonBooleanRoot,
+    /// `ill_typed` / `unit-mismatch` (FR-194, QSpec FR-370 step 5): a window
+    /// aggregate threshold quantity of another dimension than the value's,
+    /// or in a unit that does not convert exactly to the value's, at the
+    /// threshold.
+    UnitMismatch,
     /// `wrong_snapshot` / `wrong-anchor` (FR-104): `result` written anywhere
     /// but a postcondition of an operation that declares a result. Names the
     /// state clause kind and the operation it was written under: both are
@@ -3274,6 +3279,7 @@ impl CheckCause {
             Self::IllTyped(_)
             | Self::IdentityObservingForm(_)
             | Self::NonBooleanRoot
+            | Self::UnitMismatch
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. }
             | Self::TextLiteralOutsideBounds { .. } => Code::IllTyped,
@@ -3350,6 +3356,7 @@ impl CheckCause {
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
+            Self::UnitMismatch => Some("unit-mismatch"),
             Self::IdentityObservingForm(_) => Some("identity-observing-form"),
             Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. }
