@@ -122,7 +122,6 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
     assert_eq!(attempt.code(), qsl_foundation::Code::UnsupportedConstruct);
     assert_eq!(attempt.cause(), Some("not-yet-implemented"));
     for (construct, ticket) in [
-        (ProtocolConstruct::WholeModelRole, "IR-874"),
         (ProtocolConstruct::Relationships, "QSL-1141"),
         (ProtocolConstruct::ChannelCarriesBounded, "QSL-1137"),
         (ProtocolConstruct::ChannelKeyNotEqualityStable, "QSL-1142"),
@@ -616,36 +615,10 @@ fn the_roles_set_does_not_follow_source_order() {
     assert_eq!(in_order, roles_of(&source(widget, gadget)));
 }
 
-/// FR-092-AC-18: a role on a whole model refuses as the IR gap it is,
-/// naming the construct, never writing the protocol without it.
-#[trace("FR-092-AC-18", "TC-1021")]
-#[test]
-fn constructs_without_a_node_yet_refuse_naming_the_construct() {
-    let causes = |text: &str| -> Vec<CheckCause> {
-        refusals(text)
-            .into_iter()
-            .map(|refusal| refusal.cause)
-            .collect()
-    };
-    assert_eq!(
-        causes(&selecting(
-            "protocol Flow using p over (input: M::Gadget) on origin {\n\
-             role W on M;\n\
-             run sequence Main { }\n\
-             finish End as (outcome: Boolean) { true };\n\
-             }\n"
-        )),
-        [not_emitted(ProtocolConstruct::WholeModelRole)]
-    );
-    assert_eq!(ProtocolConstruct::WholeModelRole.tracking(), "IR-874");
-}
-
 /// FR-383-AC-23: selected whole-model identities are emitted as literal text,
 /// without a model dependency or replication group, and survive the I2 read.
-/// The criterion remains gated on QSL-1623, which owns the missing IR node.
 #[trace("FR-383-AC-23", "TC-1021")]
 #[test]
-#[ignore = "gated on QSL-1623: whole-model role IR node is not implemented"]
 fn a_whole_model_role_is_emitted_and_admitted() {
     fn replace_strings(value: &mut Value, from: &str, to: &str) {
         match value {
