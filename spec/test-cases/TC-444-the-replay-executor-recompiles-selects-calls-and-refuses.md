@@ -56,8 +56,8 @@ occurrence key unless a step names another occurrence.
    unit imports it `as u` and declares
    `function q using v(x: Int[0, 9]): Boolean pure { u::big(x) }`. Build its
    request from its spine compile against `test/units`: `sources` names the
-   unit's one source, `dependencies` holds `{test/units, <its
-   package_id>, [its one source]}`, and the byte provision carries both.
+   unit's one source, `dependencies` holds `{test/units,
+   [its one source]}` (identity and sources only), and the byte provision carries both.
    Replay `q(3)`. Then add an extra entry no import
    reaches; then swap two entries; then repeat the entry; then add an entry
    whose source has `test/units`'s authority and identity; then remove the

@@ -52,6 +52,9 @@ FR-057-AC-10's value-function row.
    form; check the same form through the other, unmutated, context.
    Compare the two checked outputs and the mutated context's own observable
    state.
+   A per-check counter held by the scope (`qsl_foundation::tally::Tally`) is
+   allowed (FR-062-AC-3); the scan still flags `static mut`, `thread_local!`,
+   `lazy_static!` and the banned type names, and flags no `Tally`.
 5. Call the pure requirements function on the checked function
    declaration `b and c` over Boolean parameters, and on the one whose body
    is `x + y` over `Int[0, 9]` parameters. Call it twice on the same checked

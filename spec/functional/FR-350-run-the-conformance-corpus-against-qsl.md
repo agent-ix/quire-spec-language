@@ -158,10 +158,11 @@ checked-package document, or whose `contract_version` is another value, is a
 `dependencies` and FR-323's `package.checked_package`, `package.sources` and
 `package.dependencies` members name members the schema does not have (a
 `checked_package` member of the dependency entry among them); the schema is
-followed, and FR-071's `package_id` of a dependency entry has no source on the
-corpus wire, so the adapter supplies none and the recompile identifies the
-dependency package (FR-098). The QSpec prose conflict is reported to the
-QSpec owner.
+followed. A dependency entry is `{identity, sources}` (FR-071): it has no
+`package_id` member, so the request is constructible from the corpus and the
+recompile identifies the dependency package by identity (FR-098). QSpec
+FR-323's `package_id` member of a dependency entry is the QSpec owner's
+prose conflict, reported there.
 The decoder refuses, as the consumer of QSpec FR-336-AC-8, a
 `bytes_path` that is absent, not listed as `kind: bytes` in the vector, absolute
 or parent-traversing, and a `stage_limits` key that names no FR-255 setting,
