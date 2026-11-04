@@ -135,6 +135,7 @@ fn composite() -> Emission {
                 },
             },
         )],
+        declarations: Vec::new(),
     };
     base
 }

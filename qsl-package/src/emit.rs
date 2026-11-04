@@ -489,6 +489,7 @@ pub struct Emission {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TemporalBindingRows {
     rows: Vec<(NodeKey, quire_contract_model::TemporalBinding)>,
+    declarations: Vec<(NodeKey, u64, quire_contract_model::CheckedNodeId)>,
 }
 
 impl TemporalBindingRows {
@@ -503,6 +504,19 @@ impl TemporalBindingRows {
             .iter()
             .find(|(key, row)| key == declaration && row.occurrence == occurrence)
             .map(|(_, row)| row)
+    }
+
+    /// The checked-package declaration identity for one exact checked
+    /// temporal clause occurrence.
+    pub fn declaration(
+        &self,
+        declaration: &NodeKey,
+        occurrence: u64,
+    ) -> Option<&quire_contract_model::CheckedNodeId> {
+        self.declarations
+            .iter()
+            .find(|(key, ordinal, _)| key == declaration && *ordinal == occurrence)
+            .map(|(_, _, checked)| checked)
     }
 
     /// The number of keyed rows.
@@ -6053,6 +6067,14 @@ fn temporal_binding_rows(
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
         let profile = clause.profile();
+        keyed.declarations.push((
+            temporal.identity(),
+            temporal.claim().ordinal(),
+            emitted_node_ids
+                .get(&temporal.identity())
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?,
+        ));
         names.push(quire_contract_model::TemporalClauseName {
             declaration: emitted_node_ids
                 .get(&temporal.identity())

@@ -2644,6 +2644,7 @@ fn timestamped_binding_is_required_and_authenticated() {
     let refusal = |request: ClauseRunRequest| {
         let refused = report(request);
         assert_eq!(refused.disposition.stage(), ClauseRunStage::Admit);
+        assert!(refused.authenticated_temporal_selection.is_none());
         assert_eq!(refused.usage.temporal_visits, 0);
         assert_eq!(refused.usage.admission_consumed.objects, 0);
         let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = refused.disposition
@@ -2714,6 +2715,31 @@ fn timestamped_binding_is_required_and_authenticated() {
     );
     // An agreeing binding runs.
     assert_eq!(outcome(&report(base())), &TemporalVerdict::Holds);
+}
+
+/// The successful checked-spine run strictly reads its emitted package and
+/// retains the exact profile and typed clock row used to authenticate it.
+#[trace("TC-138", "FR-050-AC-6")]
+#[test]
+fn strict_readback_temporal_run_retains_authenticated_selection() {
+    let successful = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
+    let selection = successful
+        .authenticated_temporal_selection
+        .as_ref()
+        .expect("a matching clock-bearing trace retains its checked selection");
+
+    assert_eq!(
+        selection.profile.identity.as_ref(),
+        "quire.temporal.timestamped-event.finite-window/v1"
+    );
+    assert_eq!(selection.clock_name.as_ref(), "ms");
+    assert_eq!(
+        selection.clock,
+        qsl_package::ClockConfiguration::TimestampedEvent {
+            timestamp_unit: "ms".into(),
+        }
+    );
+    assert!(!selection.declaration.path.is_empty());
 }
 
 /// `request` with its `Window` clause body replaced by `body`.
@@ -3392,6 +3418,7 @@ fn the_undefined_label_is_written_only_for_the_undefined_category() {
         consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        authenticated_temporal_selection: None,
         ledger: None,
     };
     let insufficient = synthetic(ClauseDisposition::Temporal(TemporalVerdict::Undefined {
@@ -3432,6 +3459,7 @@ fn synthetic_report(disposition: ClauseDisposition) -> ClauseRunReport {
         consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        authenticated_temporal_selection: None,
         ledger: None,
     }
 }

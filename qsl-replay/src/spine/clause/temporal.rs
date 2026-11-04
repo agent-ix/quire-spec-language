@@ -393,52 +393,51 @@ pub(super) struct TemporalRun<'a> {
     /// The compiled package's `temporal_bindings` rows, keyed by clause
     /// identity (FR-522 "Authentication").
     pub(super) clock_rows: &'a qsl_package::TemporalBindingRows,
+    /// The emitted bytes after strict checked-package admission.
+    pub(super) admitted_package: &'a quire_contract_model::CheckedPackageV2,
 }
 
-/// FR-522 "Authentication": the refusal of a `TraceBinding` that is absent or
-/// that differs from the clause's selection, at stage `admit`,
-/// `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` and the
-/// asserted and expected values. The dimensions are tested in the order
-/// `Profile`, `Clock`, `ClockParameters`, then the member dimensions; the
-/// clock and its parameters compare with `row`, the `temporal_bindings` row of
-/// the clause's declaration and claim occurrence. A clause with no row refuses
-/// any binding with `Clock` and no `expected` value.
-fn binding_refusal(
+/// FR-522 "Authentication": compare a `TraceBinding` against the profile and
+/// clock rows recovered from the strictly admitted package. A mismatch is
+/// refused at stage `admit`, `invalid_runtime_input`/`invalid-value`, with the
+/// first differing dimension and asserted/expected values. The checked
+/// declaration identity comes from emission's exact `(NodeKey, occurrence)`
+/// mapping; the profile and clock are read from that declaration's admitted
+/// temporal subject.
+fn authenticate_binding(
     binding: Option<&TraceBinding>,
-    clause: &qsl_semantics::check::CheckedTemporalClause,
-    row: Option<&qsl_package::TemporalBinding>,
-) -> Option<ClauseDisposition> {
+    subject: &qsl_package::checked_views::TemporalSubjectView<'_>,
+) -> Result<crate::spine::AuthenticatedTemporalSelection, Box<ClauseDisposition>> {
     let Some(binding) = binding else {
-        return Some(refused("invalid-value", BTreeMap::new()));
+        return Err(Box::new(refused("invalid-value", BTreeMap::new())));
     };
-    let differ = |dimension: &'static str, asserted: &str, expected: Option<&str>| {
-        let mut fields = BTreeMap::from([
-            ("mismatched_dimension", dimension.to_owned()),
-            ("asserted", asserted.to_owned()),
-        ]);
-        if let Some(expected) = expected {
-            fields.insert("expected", expected.to_owned());
-        }
-        Some(refused("invalid-value", fields))
+    let binding = qsl_eval::temporal::evidence::TraceBinding {
+        profile: binding.profile.clone().into_boxed_str(),
+        clock_name: binding.clock_name.clone().into_boxed_str(),
+        parameters: binding.parameters.clone(),
     };
-    if binding.profile != clause.profile().identity() {
-        return differ(
-            "Profile",
-            &binding.profile,
-            Some(clause.profile().identity()),
-        );
-    }
-    let mismatch = qsl_eval::temporal::evidence::authenticate_clock(
-        &binding.clock_name,
-        &binding.parameters,
-        row,
-    )
-    .err()?;
-    differ(
-        mismatch.dimension.name(),
-        &mismatch.asserted,
-        mismatch.expected.as_deref(),
-    )
+    let authenticated = binding
+        .authenticate(&qsl_eval::temporal::evidence::ClauseSelection {
+            declaration: subject.declaration(),
+            profile: subject.profile(),
+            clock: subject.clock(),
+        })
+        .map_err(|mismatch| {
+            let mut fields = BTreeMap::from([
+                ("mismatched_dimension", mismatch.dimension.name().to_owned()),
+                ("asserted", mismatch.asserted),
+            ]);
+            if let Some(expected) = mismatch.expected {
+                fields.insert("expected", expected);
+            }
+            Box::new(refused("invalid-value", fields))
+        })?;
+    Ok(crate::spine::AuthenticatedTemporalSelection {
+        declaration: authenticated.declaration,
+        profile: authenticated.profile,
+        clock_name: authenticated.clock_name,
+        clock: authenticated.clock,
+    })
 }
 
 fn refused(cause: &'static str, fields: BTreeMap<&'static str, String>) -> ClauseDisposition {
@@ -458,10 +457,13 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         over,
         ledger,
         clock_rows,
+        admitted_package,
     } = *request;
     // A trace is evidence for that trace only: it settles no item and
     // derives no witness (FR-332).
-    let report = |disposition: ClauseDisposition, usage: ClauseRunUsage| ClauseRunReport {
+    let report = |disposition: ClauseDisposition,
+                  usage: ClauseRunUsage,
+                  authenticated_temporal_selection| ClauseRunReport {
         // FR-266's Temporal row.
         basis: match &disposition {
             ClauseDisposition::Temporal(verdict) => verdict.basis(),
@@ -481,8 +483,9 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         ledger: ledger.cloned(),
         finite_window: None,
         counterexample: None,
+        authenticated_temporal_selection,
     };
-    let early = |disposition| report(disposition, ClauseRunUsage::default());
+    let early = |disposition| report(disposition, ClauseRunUsage::default(), None);
 
     let graph = run.package.graph();
     let Some(node) = graph
@@ -495,7 +498,27 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         });
     };
     let clause = node.clause();
-    let row = clock_rows.get(&node.identity(), node.claim().ordinal());
+    let Some(declaration) = clock_rows.declaration(&node.identity(), node.claim().ordinal()) else {
+        return early(ClauseDisposition::EvaluateFault(
+            quire_semantic_value::catalog::InternalFault::new(
+                "FR-050",
+                "emitted-temporal-declaration-retains-checked-id",
+            ),
+        ));
+    };
+    let subject = match qsl_package::checked_views::temporal_subject(admitted_package, declaration)
+    {
+        Ok(subject) => subject,
+        Err(_) => {
+            return early(ClauseDisposition::EvaluateFault(
+                quire_semantic_value::catalog::InternalFault::new(
+                    "FR-050",
+                    "admitted-temporal-subject-resolves",
+                ),
+            ));
+        }
+    };
+    let mut authenticated_temporal_selection = None;
 
     let trace_matches_profile = match trace {
         TraceInput::Progressed { .. } => matches!(
@@ -518,9 +541,10 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     if let TraceInput::Progressed { binding, .. } = trace {
         // FR-522: the same authentication precedes every position of a
         // progressed trace (FR-330-AC-11).
-        if let Some(refusal) = binding_refusal(Some(binding), clause, row) {
-            return early(refusal);
-        }
+        authenticated_temporal_selection = match authenticate_binding(Some(binding), &subject) {
+            Ok(selection) => Some(selection),
+            Err(refusal) => return early(*refusal),
+        };
     }
 
     if let TraceInput::Timestamped {
@@ -532,9 +556,11 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         // FR-522: the trace's binding is authenticated before any position is
         // visited, any stamp or completeness is checked or the meter is
         // charged (FR-330-AC-11).
-        if let Some(refusal) = binding_refusal(window.binding.as_ref(), clause, row) {
-            return early(refusal);
-        }
+        authenticated_temporal_selection =
+            match authenticate_binding(window.binding.as_ref(), &subject) {
+                Ok(selection) => Some(selection),
+                Err(refusal) => return early(*refusal),
+            };
         if observations.is_empty() {
             return early(refused("invalid-value", BTreeMap::new()));
         }
@@ -658,6 +684,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
                         admission_consumed: admitted,
                         ..ClauseRunUsage::default()
                     },
+                    authenticated_temporal_selection.clone(),
                 )
             }
         }
@@ -671,6 +698,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
                 admission_consumed: admitted,
                 ..ClauseRunUsage::default()
             },
+            authenticated_temporal_selection.clone(),
         )
     };
 
@@ -756,7 +784,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
-        let mut finished = report(disposition, usage);
+        let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.counterexample = counterexample;
         if accepted {
@@ -785,7 +813,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
-        let mut finished = report(disposition, usage);
+        let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.counterexample = counterexample;
         if accepted {
@@ -828,7 +856,11 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         quire_semantic_value::catalog::Category::Refusal
             | quire_semantic_value::catalog::Category::InternalFailure
     );
-    let mut report = report(disposition, ClauseRunUsage::from_meter(&meter, admitted));
+    let mut report = report(
+        disposition,
+        ClauseRunUsage::from_meter(&meter, admitted),
+        authenticated_temporal_selection,
+    );
     report.counterexample = counterexample;
     if accepted {
         report.ledger = accepted_ledger.or_else(|| ledger.cloned());
