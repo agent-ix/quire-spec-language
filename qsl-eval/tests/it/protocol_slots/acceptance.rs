@@ -3946,7 +3946,6 @@ fn reader_backed_projection_preserves_compound_quantity_identity() {
 /// QSL-1626: compound units formed in a protocol capture initializer are
 /// retained by the package unit table and equality uses their exact identity.
 #[test]
-#[trace("FR-390-AC-25")]
 fn protocol_capture_compound_quantity_identity_is_held() {
     let source = SOURCE
         .replace(
