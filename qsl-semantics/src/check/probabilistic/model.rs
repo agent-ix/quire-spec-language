@@ -599,6 +599,17 @@ pub(crate) enum Unresolved {
 }
 
 impl<'a> ProbabilisticInput<'a> {
+    /// The time source of the model of `alias` on the package `package`:
+    /// two units may bind one alias to two packages (FR-480 "Selections and
+    /// imports"), so the alias alone does not name the model.
+    pub(crate) fn time_source(&self, alias: &str, package: &str) -> Option<&'a ModelTimeSource> {
+        let model = self
+            .models
+            .iter()
+            .find(|model| model.alias() == Some(alias) && model.selection().identity == package)?;
+        self.time_sources.iter().find(|source| source.times(model))
+    }
+
     /// The operation `written` names: in the model `model` only when given,
     /// else in every selected model.
     pub(crate) fn operation(
@@ -1087,9 +1098,11 @@ impl Pass<'_, '_> {
             Err(fault) => return self.refuse(unresolved(fault, &form.operation)),
         };
         let name = form.operation.name.as_str();
-        let Some(source) = self.input.time_sources.iter().find(|source| {
-            source.model == operation.model && matches!(source.source, TimeSourceKind::Dense)
-        }) else {
+        let Some(source) = self
+            .input
+            .time_source(&operation.model, &operation.key.package)
+            .filter(|source| matches!(source.source, TimeSourceKind::Dense))
+        else {
             return self.refuse(ProbabilisticCause::DelayOnUntimedModel {
                 operation: name.to_owned(),
                 span: form.span,

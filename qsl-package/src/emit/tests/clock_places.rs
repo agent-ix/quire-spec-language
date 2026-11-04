@@ -6,6 +6,7 @@
 use super::admission_corpus::config_version_unit;
 use super::*;
 use crate::checked_v2::{read_checked_package_v2, CheckedTimedModel};
+use crate::emit::timed_models_of;
 use quire_contract_model::CheckedPackageEvidence;
 
 /// ConfigVersion with the clock `x: Clock` and the clock collection `s:
@@ -701,4 +702,95 @@ fn an_urgency_reading_element_presences_is_not_emitted() {
         )),
         "{refusals:?}"
     );
+}
+
+/// `units`, each a source identity and its text, assembled as one package
+/// over `documents`, as spine `compile` runs several source units.
+fn assemble_units_with_models(
+    units: &[(&str, &str)],
+    documents: &[&[u8]],
+) -> Result<PackageDeclarations, String> {
+    let units: Vec<_> = units
+        .iter()
+        .map(|(identity, text)| {
+            let parsed = qsl_cst::parse(
+                qsl_foundation::SourceIdentity::new("agent-ix", *identity),
+                "program.native",
+                text.as_bytes(),
+                qsl_cst::Limits::default(),
+            )
+            .expect("S1 admits the unit");
+            assert_eq!(parsed.diagnostics(), []);
+            let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+            (parsed.source().reference().clone(), unit)
+        })
+        .collect();
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().copied()).unwrap();
+    let selections: Vec<_> = units
+        .iter()
+        .map(|(_, unit)| unit.selections().models.as_slice())
+        .collect();
+    let models = qsl_semantics::model::intake::admit_units_with_cancel(
+        &selections,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &quire_exact::Cancel::new(),
+    )
+    .map_err(|refusal| format!("intake: {refusal:?}"))?;
+    PackageDeclarations::assemble_units(
+        "pkg".to_owned(),
+        units,
+        models,
+        Vec::new(),
+        qsl_semantics::check::AssemblyLimits::default(),
+        &quire_exact::Cancel::new(),
+    )
+    .map_err(|refusal| format!("{refusal:?}"))
+}
+
+/// FR-480 "Selections and imports" (QSL-1638), FR-322 "Timed-model nodes":
+/// two units each write `time Config` with `Config` bound to a different
+/// package. The emitter reads each source's timed models, and so its clock
+/// places, urgencies and clauses, through the model node: a source reads its
+/// own package's timed model only. (S4 cannot yet write both models: their
+/// declarations are both named `Config::Timed`.)
+#[trace("FR-480")]
+#[test]
+fn two_units_timing_two_packages_under_one_alias_emit_their_own_clock_places() {
+    const OTHER: &str = "example/other-config-version";
+    let first = clocked_document();
+    // The second package keeps the clock `x` only.
+    let second = String::from_utf8(clocked_document_with(false))
+        .expect("the document is UTF-8")
+        .replace("example/config-version", OTHER);
+    // The sources differ in their unit: two content-equal sources are one
+    // node (its key is its content), which a source map cannot yet locate
+    // twice.
+    let a = clocked_unit("unit s : Time = rational(1000, 1) * ms;\n");
+    let b = "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
+             profile t = \"quire.temporal.complete/v1\";\n"
+        .to_owned()
+        + &format!("model Config = {OTHER:?};\ntime Config dense unit s;\n");
+    let graph = assemble_units_with_models(
+        &[("a", &a), ("b", &b)],
+        &[first.as_slice(), second.as_bytes()],
+    )
+    .expect("the units assemble")
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("each unit times its own package: {refusals:?}"));
+    // Each source's timed models are its own package's: one model, with that
+    // package's clock places only.
+    let mut places: Vec<usize> = graph
+        .time_sources()
+        .iter()
+        .map(|source| {
+            let [timed] = timed_models_of(&graph, source).collect::<Vec<_>>()[..] else {
+                panic!("one timed model for each source");
+            };
+            timed.place_nodes().len()
+        })
+        .collect();
+    places.sort_unstable();
+    assert_eq!(places, [1, 2]);
 }

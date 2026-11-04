@@ -110,7 +110,15 @@ pub(crate) fn checked_clause_on(
         declarations.time_sources.push(ModelTimeSource {
             model: "M".to_owned(),
             span: Span { start: 0, end: 1 },
-            model_node: crate::fixture_ids::node_key([0]),
+            // The model node of `M`'s state object, which names the timed
+            // model's package.
+            model_node: qsl_semantics::model::key::object_type_node_key(
+                &quire_checked::key::DeclarationKey {
+                    package: "example/config-version".to_owned(),
+                    node: "ix://example/config-version/ConfigVersion".to_owned(),
+                },
+            )
+            .expect("a model node key"),
             tick_operation_key: None,
             tick_operation_span: None,
             tick_operation_anchor: None,

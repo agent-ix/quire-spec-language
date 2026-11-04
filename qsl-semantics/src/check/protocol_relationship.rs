@@ -24,6 +24,7 @@ use qsl_foundation::Span;
 use quire_exact::ValueType;
 use quire_semantic_value::location::{Location, Origin};
 
+use super::check::Scope;
 use super::lowering::AdmittedModel;
 use super::refusal::{CheckCause, CheckRefusal, ProtocolAnchorCause};
 use crate::model::domain_package::DomainPackageRecord;
@@ -84,10 +85,13 @@ fn kind_label(record: &DomainPackageRecord) -> &'static str {
 }
 
 /// Every relationship member of `protocol`, checked against the selected
-/// `models`, in source order, or the refusals with their spans.
+/// `models` as the protocol's own unit binds their aliases in `scope`
+/// (FR-480 "Selections and imports"), in source order, or the refusals with
+/// their spans.
 pub(crate) fn check(
     protocol: &ProtocolDeclarationForm,
     models: &[AdmittedModel],
+    scope: &Scope,
 ) -> Result<Vec<CheckedRelationship>, Vec<(Span, CheckRefusal)>> {
     let mut refusals = Vec::new();
     let mut by_name: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
@@ -117,7 +121,7 @@ pub(crate) fn check(
     for relationship in &protocol.relationships {
         let target = &relationship.target;
         let export = target.name.split_once("::").and_then(|(alias, artifact)| {
-            let model = models.iter().find(|model| model.alias() == Some(alias))?;
+            let model = scope.declared_model(models, &protocol.name.name, alias)?;
             Some((model, model.export(artifact)?))
         });
         let Some((model, export)) = export else {

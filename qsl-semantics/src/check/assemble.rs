@@ -787,7 +787,14 @@ pub use clock_forms::{ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePo
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TimedDeclaration {
     /// `time Model dense/tick ...`.
-    TimeSource(TimeSourceForm),
+    TimeSource {
+        /// The S2 form.
+        form: TimeSourceForm,
+        /// The key of its source unit among the package's source owners
+        /// (`time_source_owner`), which reads its model alias (FR-480
+        /// "Selections and imports").
+        owner: String,
+    },
     /// `time invariant ...`.
     TimeInvariant(TimeInvariantForm),
     /// `urgent ...`.
@@ -799,7 +806,7 @@ pub enum TimedDeclaration {
 impl TimedDeclaration {
     pub(super) const fn construct(&self) -> TimedConstruct {
         match self {
-            Self::TimeSource(_) => TimedConstruct::TimeSource,
+            Self::TimeSource { .. } => TimedConstruct::TimeSource,
             Self::TimeInvariant(_) => TimedConstruct::TimeInvariant,
             Self::Urgent(_) => TimedConstruct::Urgent,
             Self::ClockType(_) => TimedConstruct::Clock,
@@ -808,7 +815,7 @@ impl TimedDeclaration {
 
     pub(super) const fn span(&self) -> Span {
         match self {
-            Self::TimeSource(form) => form.span,
+            Self::TimeSource { form, .. } => form.span,
             Self::TimeInvariant(form) => form.span,
             Self::Urgent(form) => form.span,
             Self::ClockType(position) => position.span,
@@ -823,12 +830,18 @@ impl TimedDeclaration {
     /// unit has no one model it can belong to.
     pub(super) fn owner<'a>(&'a self, model: Option<&'a str>) -> &'a str {
         match self {
-            Self::TimeSource(source) => &source.model.name,
+            Self::TimeSource { form, .. } => &form.model.name,
             Self::TimeInvariant(invariant) => model.unwrap_or(&invariant.name.name),
             Self::Urgent(urgent) => model.unwrap_or(&urgent.name.name),
             Self::ClockType(position) => &position.owner,
         }
     }
+}
+
+/// The source-owner key of the package's `index`th time source, in source
+/// unit order: a time source declares no name of its own.
+pub(super) fn time_source_owner(index: usize) -> String {
+    format!("time_source:{index}")
 }
 
 /// The unit's declarations, split by kind, and the names they bind.
@@ -918,8 +931,15 @@ impl Unit {
                 .into_iter()
                 .map(TimedDeclaration::ClockType),
         );
+        // Each time source's position among the unit's time sources, the key
+        // of its source unit (`time_source_owner`).
+        let mut time_sources = 0usize;
         for (index, form) in forms.into_iter().enumerate() {
             let span = form.span();
+            let time_source = time_sources;
+            if matches!(form.form(), DeclarationForm::TimeSource(_)) {
+                time_sources += 1;
+            }
             let form = match clock_forms.dispositions.remove(&index) {
                 None => form.into_form(),
                 Some(clock_forms::Disposition::Drop) => continue,
@@ -979,7 +999,10 @@ impl Unit {
                 DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
                 DeclarationForm::Hybrid(hybrid) => unit.hybrids.push(*hybrid),
                 DeclarationForm::TimeSource(time) => {
-                    unit.timed.push(TimedDeclaration::TimeSource(*time))
+                    unit.timed.push(TimedDeclaration::TimeSource {
+                        form: *time,
+                        owner: time_source_owner(time_source),
+                    })
                 }
                 DeclarationForm::TimeInvariant(invariant) => {
                     unit.timed.push(TimedDeclaration::TimeInvariant(*invariant))
@@ -3284,6 +3307,8 @@ impl PackageDeclarations {
         let mut source_owners = BTreeMap::new();
         let sources: Vec<_> = units.iter().map(|(source, _)| source.clone()).collect();
         let mut state_clause_index = 0usize;
+        let mut time_source_index = 0usize;
+        let mut equivalence_index = 0usize;
         for (source, unit) in &units {
             for form in unit.forms() {
                 if matches!(form.form(), qsl_forms::DeclarationForm::StateClause(_)) {
@@ -3291,10 +3316,17 @@ impl PackageDeclarations {
                         .insert(format!("state_clause:{state_clause_index}"), source.clone());
                     state_clause_index += 1;
                 }
+                if matches!(form.form(), qsl_forms::DeclarationForm::TimeSource(_)) {
+                    source_owners.insert(time_source_owner(time_source_index), source.clone());
+                    time_source_index += 1;
+                }
                 match form.form() {
-                    qsl_forms::DeclarationForm::DimensionEquivalence(equivalence) => {
-                        source_owners
-                            .insert(equivalence::source_owner_key(equivalence), source.clone());
+                    qsl_forms::DeclarationForm::DimensionEquivalence(_) => {
+                        source_owners.insert(
+                            equivalence::source_owner_key(equivalence_index),
+                            source.clone(),
+                        );
+                        equivalence_index += 1;
                     }
                     qsl_forms::DeclarationForm::Dimension(dimension) => {
                         source_owners.insert(dimension.name.name.clone(), source.clone());
@@ -3899,6 +3931,8 @@ impl PackageDeclarations {
                     equivalence::Ownership {
                         owner: &owner,
                         source_owners: &source_node_owners,
+                        units: &source_owners,
+                        spellings: &model_spellings,
                         package_name: &package_name,
                     },
                     limits,
@@ -3918,6 +3952,8 @@ impl PackageDeclarations {
                     equivalence::Ownership {
                         owner: &owner,
                         source_owners: &source_node_owners,
+                        units: &source_owners,
+                        spellings: &model_spellings,
                         package_name: &package_name,
                     },
                     limits,

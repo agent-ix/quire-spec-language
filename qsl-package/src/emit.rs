@@ -4953,6 +4953,19 @@ fn literal_type(nodes: &[CheckedSemanticNodeV2], kind: &str) -> Option<CheckedNo
     nodes.iter().find_map(|node| visit(&node.body, kind))
 }
 
+/// The checked timed models `source` times. Two units may bind one model
+/// alias to two packages (FR-480 "Selections and imports"), so a time
+/// source names its models through the model node, never the alias.
+pub(crate) fn timed_models_of<'g>(
+    graph: &'g qsl_semantics::check::CheckedGraph,
+    source: &'g qsl_semantics::check::ModelTimeSource,
+) -> impl Iterator<Item = &'g qsl_semantics::check::TimedModel> {
+    graph
+        .timed_models()
+        .iter()
+        .filter(move |timed| timed.is_timed_by(source))
+}
+
 /// Emit a complete admitted package using typed timed models for its timed
 /// nodes. The base package supplies the already-checked non-timed graph,
 /// lock, source map, capability report and diagnostics; every timed node is
@@ -5611,10 +5624,7 @@ fn emit_package_inner(
                 qsl_semantics::check::builtin_integer_type_key(graph.package_name())
                     .map_err(encoding)?,
             );
-            model.clock_places = graph
-                .timed_models()
-                .iter()
-                .filter(|timed| timed.model() == source.model)
+            model.clock_places = timed_models_of(graph, source)
                 .flat_map(|timed| timed.place_nodes())
                 .map(|key| {
                     let id = node_id(ids, key);
@@ -5636,11 +5646,7 @@ fn emit_package_inner(
             // has one or more source occurrences); the root lists it once.
             let mut regions_of: BTreeMap<CheckedNodeId, Vec<(u64, u64)>> = BTreeMap::new();
             let mut declared = Vec::new();
-            for timed in graph
-                .timed_models()
-                .iter()
-                .filter(|timed| timed.model() == source.model)
-            {
+            for timed in timed_models_of(graph, source) {
                 for (at, urgency) in timed.urgency().iter().enumerate() {
                     let id = placeholder(&format!("urgency-{at}"))?;
                     let metadata = TimedNodeMetadata {
@@ -5735,10 +5741,8 @@ fn emit_package_inner(
             model.urgencies = urgencies;
             // QSpec FR-322 "Clause nodes": the guards, resets, invariants
             // and constraints S3 lowered, each located at its own source.
-            if let Some(clauses) = graph
-                .timed_models()
-                .iter()
-                .find(|timed| timed.model() == source.model)
+            if let Some(clauses) = timed_models_of(graph, source)
+                .next()
                 .and_then(qsl_semantics::check::TimedModel::clause_nodes)
             {
                 let places: Vec<CheckedNodeId> = model

@@ -763,11 +763,12 @@ impl Pass<'_, '_> {
         let alias = form.subject.name.as_str();
         let claim = form.name.name.clone();
         let span = form.subject.span;
+        // The model the claim's own unit binds the alias to (FR-480
+        // "Selections and imports").
         match self
             .input
-            .models
-            .iter()
-            .find(|model| model.alias() == Some(alias))
+            .scope
+            .declared_model(self.input.models, &form.name.name, alias)
         {
             Some(model) => Ok(ModelSubjectRef {
                 alias: alias.to_owned(),
@@ -1135,9 +1136,7 @@ impl Pass<'_, '_> {
                 let reader = if timed.is_some() {
                     let Some(source) = self
                         .input
-                        .time_sources
-                        .iter()
-                        .find(|source| source.model == claim.subject.alias)
+                        .time_source(&claim.subject.alias, &claim.subject.package.identity)
                     else {
                         refusals.push(refusal(ProbabilisticCause::TimedEventProfile {
                             claim: claim.claim().to_owned(),
@@ -1449,9 +1448,7 @@ impl Pass<'_, '_> {
                 }
                 let source = self
                     .input
-                    .time_sources
-                    .iter()
-                    .find(|source| source.model == claim.subject.alias)
+                    .time_source(&claim.subject.alias, &claim.subject.package.identity)
                     .ok_or_else(|| {
                         temporal_refusal(TemporalCause::ModelTimeOnUntimedModel {
                             model: claim.subject.alias.clone(),
@@ -1837,7 +1834,7 @@ impl Pass<'_, '_> {
         };
         let mut fairness: Vec<Vec<u8>> = fairness
             .iter()
-            .map(|constraint| self.fairness_bytes(&claim.subject.alias, constraint))
+            .map(|constraint| self.fairness_bytes(claim.subject, constraint))
             .collect::<Result<_, _>>()?;
         fairness.sort();
         // The binder's name is not content: the predicates encode it as a
@@ -1907,7 +1904,7 @@ impl Pass<'_, '_> {
 
     fn fairness_bytes(
         &self,
-        alias: &str,
+        subject: &ModelSubjectRef,
         constraint: &FairnessConstraint,
     ) -> Result<Vec<u8>, CheckRefusal> {
         let operation = constraint.operation();
@@ -1915,7 +1912,10 @@ impl Pass<'_, '_> {
             .input
             .models
             .iter()
-            .filter(|model| model.alias() == Some(alias))
+            .filter(|model| {
+                model.alias() == Some(subject.alias.as_str())
+                    && *model.selection() == subject.package
+            })
             .find_map(|model| model.declaration_key(operation.declaring_type()))
             .ok_or_else(|| broken("fairness-operation-is-declared"))?;
         let kind: &[u8] = match constraint.kind() {

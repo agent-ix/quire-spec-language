@@ -1215,7 +1215,7 @@ fn a_clock_reading_parameter_names_its_own_units_package() {
         &Cancel::new(),
     )
     .expect("each unit's model selection admits");
-    PackageDeclarations::assemble_units(
+    let graph = PackageDeclarations::assemble_units(
         crate::TEST_PACKAGE_NAME.to_owned(),
         units,
         selected,
@@ -1227,4 +1227,159 @@ fn a_clock_reading_parameter_names_its_own_units_package() {
     .with_unwritten_timed_members()
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("b's o.x is a clock of b's package: {refusals:?}"));
+    // QSL-1650: b's `time Config` times b's package, whose `x` is a clock,
+    // never a's package of the same alias, which declares none.
+    let [source] = graph.time_sources() else {
+        panic!("one time source: {:?}", graph.time_sources());
+    };
+    let model = timed(&graph);
+    assert_eq!(&source.model_node, model.model_node());
+    let clocks: Vec<&str> = model.clocks().iter().map(|clock| clock.name()).collect();
+    assert_eq!(clocks, ["x"]);
+}
+
+/// `units`, each a source identity and its declarations under the model and
+/// temporal profiles, assembled over the packages `documents` and checked.
+fn check_units(
+    units: &[(&str, &str)],
+    documents: &[&[u8]],
+) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    let texts: Vec<String> = units
+        .iter()
+        .map(|(_, declarations)| {
+            format!("profile v = \"quire.model.complete/v1\";\n{TEMPORAL}{declarations}")
+        })
+        .collect();
+    let units: Vec<(&str, &str)> = units
+        .iter()
+        .zip(&texts)
+        .map(|((identity, _), text)| (*identity, text.as_str()))
+        .collect();
+    crate::model_operations::assemble_units(&units, documents)
+        .with_unwritten_timed_members()
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+}
+
+/// FR-480 "Selections and imports" (QSL-1650): two units bind `Config` to
+/// two packages and each writes `time Config`. Each time source times its
+/// own unit's package: neither is a duplicate of the other, and each timed
+/// model is the one of its own package, with that package's clock.
+#[trace("FR-480")]
+#[test]
+fn each_units_time_source_times_its_own_units_package() {
+    const OTHER: &str = "example/other-config-version";
+    // `OTHER`'s copy of the package has the further clock `y`.
+    let other = String::from_utf8(rpc_document(&["x", "y"]))
+        .expect("the document is UTF-8")
+        .replace(PACKAGE, OTHER);
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n");
+    let b = format!("model Config = {OTHER:?};\ntime Config dense unit ms;\n");
+    let graph = check_units(
+        &[("a", &a), ("b", &b)],
+        &[rpc_document(&["x"]).as_slice(), other.as_bytes()],
+    )
+    .unwrap_or_else(|refusals| panic!("each unit times its own package: {refusals:?}"));
+    let [first, second] = graph.time_sources() else {
+        panic!("two time sources: {:?}", graph.time_sources());
+    };
+    assert_ne!(first.model_node, second.model_node);
+    // The sources are in source position order, which interleaves units.
+    let mut clocks: Vec<Vec<&str>> = [first, second]
+        .into_iter()
+        .map(|source| {
+            let model = graph
+                .timed_models()
+                .iter()
+                .find(|model| model.is_timed_by(source))
+                .expect("each time source has its timed model");
+            model.clocks().iter().map(|clock| clock.name()).collect()
+        })
+        .collect();
+    clocks.sort();
+    assert_eq!(clocks, [vec!["x"], vec!["x", "y"]]);
+}
+
+/// FR-230: the common layout, both units binding `Config` to one package
+/// and each writing `time Config`, still gives that model two time sources,
+/// and the second refuses as its duplicate.
+#[trace("FR-230")]
+#[test]
+fn two_units_timing_one_package_under_one_alias_is_a_duplicate() {
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n");
+    let b = format!("model Config = {PACKAGE:?};\ntime Config dense unit ms;\n");
+    let refusals = check_units(&[("a", &a), ("b", &b)], &[rpc_document(&["x"]).as_slice()])
+        .expect_err("the second time source is a duplicate");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [CheckRefusal {
+                cause: CheckCause::Temporal(cause),
+                ..
+            }] if matches!(**cause, TemporalCause::DuplicateTimeSource { .. })
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// FR-230 (FND-003): two units bind two different aliases to one package and
+/// each writes `time` over its alias. The package is one state model with at
+/// most one `time` member, so the second refuses as a duplicate.
+#[trace("FR-230")]
+#[test]
+fn two_aliases_of_one_package_timed_twice_are_a_duplicate() {
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n");
+    let b = format!("model Other = {PACKAGE:?};\ntime Other dense unit ms;\n");
+    let refusals = check_units(&[("a", &a), ("b", &b)], &[rpc_document(&["x"]).as_slice()])
+        .expect_err("the second time source is a duplicate");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [CheckRefusal {
+                cause: CheckCause::Temporal(cause),
+                ..
+            }] if matches!(**cause, TemporalCause::DuplicateTimeSource { .. })
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// The package `rpc_document(&["x"])` with `x` a Boolean field, which a
+/// `tick` time source admits, and a copy of it under the identity `other`.
+fn clockless_pair(other: &str) -> (String, String) {
+    let first = String::from_utf8(rpc_document(&["x"]))
+        .expect("the document is UTF-8")
+        .replace("ix://quire/native/Clock", "ix://quire/native/Boolean");
+    let second = first.replace(PACKAGE, other);
+    (first, second)
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): two units bind `Config` to
+/// two packages and each writes a `tick` time source over its own package's
+/// `Config::Call::bump`. Each source's operation anchor resolves through the
+/// package its own unit binds, never the first model of the shared alias.
+#[trace("FR-480")]
+#[test]
+fn each_units_tick_anchor_is_its_own_packages_operation() {
+    const OTHER: &str = "example/other-config-version";
+    let (first, other) = clockless_pair(OTHER);
+    let tick = "time Config tick Config::Call::bump period 1 ms unit ms;\n";
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}{tick}");
+    let b = format!("model Config = {OTHER:?};\n{tick}");
+    let graph = check_units(
+        &[("a", &a), ("b", &b)],
+        &[first.as_bytes(), other.as_bytes()],
+    )
+    .unwrap_or_else(|refusals| panic!("each unit anchors its own package: {refusals:?}"));
+    let [first, second] = graph.time_sources() else {
+        panic!("two time sources: {:?}", graph.time_sources());
+    };
+    let (Some(first_anchor), Some(second_anchor)) =
+        (&first.tick_operation_anchor, &second.tick_operation_anchor)
+    else {
+        panic!(
+            "every tick source has its operation anchor: {:?}",
+            graph.time_sources()
+        );
+    };
+    assert_ne!(first_anchor, second_anchor);
 }

@@ -216,7 +216,7 @@ const SOURCE_LABEL: &str = "sources/source:examples/checked-handoff/unit-event-p
 /// FR-517-AC-1, the paths the writer writes today: everything in the Outputs
 /// table except `inventory.json`, and no `mutations/` for a `None` corpus. The
 /// package bytes are those `emit_checked_v2::emit` returns.
-#[trace("FR-517-AC-1", "FR-042-AC-15", "TC-1312")]
+#[trace("FR-517-AC-1", "FR-042-AC-15", "FR-048-AC-10", "TC-1312", "TC-135")]
 #[test]
 fn the_directory_holds_the_outputs_table_except_the_inventory() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
@@ -272,7 +272,7 @@ fn each_directory_holds_the_inventory_with_the_outputs_table() {
 /// FR-517-AC-2: the package read with evidence from the written files is
 /// admitted, `Selection::check` passes, and the sidecar rows name the
 /// clauses and clock rows of the package.
-#[trace("FR-517-AC-2", "TC-1312")]
+#[trace("FR-517-AC-2", "FR-048-AC-10", "TC-1312", "TC-135")]
 #[test]
 fn the_written_package_is_admitted_and_matches_its_sidecar() {
     for kind in KINDS {
@@ -287,6 +287,38 @@ fn the_written_package_is_admitted_and_matches_its_sidecar() {
         .expect("models/0.json is the document the evidence holds");
         let package = admitted(&files["checked-package.json"], &held);
         let selection = Selection::read(&files["selection.json"]).expect("sidecar parses");
+        // FR-048-AC-10: the lock keeps every selection the request makes, as
+        // exactly this role list (the protocol profile only where the unit
+        // has a protocol clause), the selected library, and the domain
+        // package whose document the evidence holds.
+        let temporal = match kind {
+            "event_position" => "quire.temporal.event-position.false-extension/v1",
+            "fixed_sample" => "quire.temporal.fixed-sample.false-extension/v1",
+            _ => "quire.temporal.timestamped-event.finite-window/v1",
+        };
+        let mut expected_roles = Vec::new();
+        if kind == "event_position" {
+            expected_roles.push(("protocol_profile", "quire.protocol.finite-global/v1"));
+        }
+        expected_roles.push(("temporal_profile", temporal));
+        let lock = serde_json::to_value(package.lock()).unwrap();
+        let roles: Vec<(&str, &str)> = lock["profile_selections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|selected| {
+                (
+                    selected["role"].as_str().unwrap(),
+                    selected["definition"]["identity"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(roles, expected_roles, "{kind}: the lock's role selections");
+        assert_eq!(
+            lock["dependency_selections"],
+            serde_json::json!([{"identity": "agent-ix/checked-handoff-library"}]),
+            "{kind}"
+        );
         assert_eq!(selection.check(&package), Ok(()));
         let sidecar: Value = serde_json::from_slice(&files["selection.json"]).unwrap();
         let rows = sidecar["clauses"].as_array().unwrap();
@@ -1158,7 +1190,7 @@ fn every_case_gets_the_refusal_of_its_row() {
 /// TC-1308 row 23: Contract IR admits the emitted protocol package directly,
 /// then refuses substitutions to its source, selected model, result node
 /// identity, and canonical wire bytes.
-#[trace("TC-1308", "FR-513-AC-13")]
+#[trace("TC-1308", "TC-135", "FR-513-AC-13", "FR-048-AC-9")]
 #[test]
 fn protocol_package_is_independently_admitted_and_identity_mutations_refuse() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
