@@ -1298,7 +1298,7 @@ impl ReadEqualityRows {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     fn id(name: &str) -> CheckedNodeId {
         serde_json::from_value(json!({ "package": "p", "path": [name], "ordinal": 0 })).unwrap()
@@ -1403,7 +1403,7 @@ mod tests {
             .unwrap()
             + 4;
         let end = start + text[start..].find("\n```").unwrap() + 1;
-        text[start..end].as_bytes().to_vec()
+        text.as_bytes()[start..end].to_vec()
     }
 
     /// FR-531-AC-17: the encoding of the vector's rows equals its bytes and
@@ -1423,7 +1423,7 @@ mod tests {
 
     fn every_value_type(keys: &BTreeMap<&str, NodeKey>) -> Vec<ValueType> {
         let int = |lo: i64, hi: i64| IntegerInterval::new(lo.into(), hi.into()).unwrap();
-        let unit = UnitId::compound(vec![(keys["U"].clone(), (-2).into())]);
+        let unit = UnitId::compound(vec![(keys["U"].clone(), Integer::from(-2_i64))]);
         let element = ValueType::Option(ValueType::String.into());
         vec![
             ValueType::Boolean,
@@ -1434,7 +1434,14 @@ mod tests {
             ValueType::Int(int(-5, 7)),
             ValueType::Rational(RationalDomain::new(int(-3, 3), int(1, 9)).unwrap()),
             ValueType::Decimal(
-                DecimalType::new(0.into(), 99.into(), 1, 4, RoundingMode::NearestEven).unwrap(),
+                DecimalType::new(
+                    Integer::from(0_i64),
+                    Integer::from(99_i64),
+                    1,
+                    4,
+                    RoundingMode::NearestEven,
+                )
+                .unwrap(),
             ),
             ValueType::Float(FloatType::new(
                 IeeeWidth::Binary32,
@@ -1483,8 +1490,8 @@ mod tests {
         use EqualityFactWitness as F;
         let (joins, keys) = joins();
         let unit = UnitId::compound(vec![
-            (keys["U"].clone(), 2.into()),
-            (keys["V"].clone(), (-1).into()),
+            (keys["U"].clone(), Integer::from(2_i64)),
+            (keys["V"].clone(), Integer::from(-1_i64)),
         ]);
         let rational = |n: &str| CheckedRational {
             numerator: n.into(),
@@ -1545,7 +1552,7 @@ mod tests {
             .into_iter()
             .map(Some)
             .chain([None])
-            .zip(facts.iter().cycle().cloned())
+            .zip(facts.clone().into_iter().cycle())
             .map(|(ty, fact)| fact_row(&keys, ty, fact))
             .chain(facts.into_iter().map(|fact| fact_row(&keys, None, fact)))
             .collect();
@@ -1621,7 +1628,8 @@ mod tests {
             );
         }
         let mut compound = vector_rows(&keys);
-        compound.source_units[0].unit_id = UnitId::compound(vec![(keys["U"].clone(), 1.into())]);
+        compound.source_units[0].unit_id =
+            UnitId::compound(vec![(keys["U"].clone(), Integer::from(1_i64))]);
         assert!(matches!(
             compound.encode(&joins),
             Err(EqualityFileRefusal::Malformed { .. })
