@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the replay-owned `encode_refinement_query` wrapper over
-`CasRefinesCounter`. Scope: FR-492-AC-1 and FR-492-AC-5 to FR-492-AC-7; AC-4 is
+`CasRefinesCounter`. Scope: FR-492-AC-1 and FR-492-AC-5 to FR-492-AC-13; AC-4 is
 the `arch-lint-api-surface-qsl` make target.
 
 ## Test Procedure
@@ -27,6 +27,24 @@ alone (`acquire_checked_closure`, `refinement_node_key`, `RefinementUniverse::fo
 4. Resolve `CasRefinesCounter`, `Missing` and the state clause `CanInc` with
    `refinement_node_key`; build a universe with `for_population`.
 
+5. Read the selected key and seven-row count; repeat over the same source with
+   all step rows removed and assert a zero count. A key from another retained
+   refinement faults rather than supplying rows to this selection.
+6. Encode authored adapter controls using CG FR-045's handoff grammar, preserving
+   each query and hand-written checker-proof oracle unchanged. Assemble in two
+   record orders, compare the complete certificates, and call the request-owned
+   native checker. Repeat Base-only for the zero-step selection.
+7. Remove/duplicate parts, change a row outside the selected range, truncate each
+   framing component, change a tag/count/length, and append trailing bytes. The
+   private assembler separately receives absent optional fields.
+8. Keep an empty or non-UTF8 proof present and observe native proof rejection;
+   change a query byte and observe QueryMismatch. Exercise exact, one-less and
+   zero assembly limits and cancellation; the checker budget remains independent.
+9. Run the compile-fail private-bridge probe and the existing API-surface check.
+
+These authored framing and checker controls do not establish CG live solver
+handoff qualification; IR-1120 owns that genuine cross-repository execution.
+
 Tag the tests `#[trace("TC-1275", "FR-492-AC-n")]`.
 
 ## Expected Results
@@ -37,3 +55,7 @@ Tag the tests `#[trace("TC-1275", "FR-492-AC-n")]`.
 - Step 4: the refinement's node key, equal on repeat; `UnknownName` and
   `NotARefinement` respectively; a universe equal to the one built from the
   `DeclarationKey`.
+
+- Steps 5–9: exact selected row/identity and byte preservation, typed framing or
+  shape refusal with no certificate, native checker outcomes, named resource
+  and cancellation stops, and an inaccessible private request bridge.

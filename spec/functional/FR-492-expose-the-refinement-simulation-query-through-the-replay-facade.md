@@ -63,6 +63,53 @@ root items alone:
   digest-keyed field of the wrapped request is passed through until the digest
   removal program changes the request (QSL-1282).
 
+### Public refinement certificate adapter
+
+The request SHALL expose `refinement_key() -> &NodeKey`, returning its held
+selected key unchanged, and `step_count() -> Result<usize, SmtEncodingRefusal>`,
+reading the same retained-refinement join as assembly and checking. An
+unresolvable selection is the existing encoding invariant fault, never a
+caller-supplied count, probe-until-refusal loop or zero default.
+
+The replay-owned request SHALL expose `assemble_smt_certificate(handoff,
+limits, cancel)` and `check_smt_proof(certificate, limits, cancel)`. Assembly
+SHALL consume the existing CG FR-045 run-record byte format: a little-endian
+unsigned 64-bit count; a Base tag `0`, or Step tag `1` followed by its
+little-endian unsigned 64-bit row; then separate query and proof fields,
+each a little-endian unsigned 64-bit length followed by those bytes. It
+SHALL consume the whole input and reject unknown tags, truncated fields,
+nonrepresentable lengths and trailing bytes. This adapter owns no second
+run-record format and adds no QSpec wire member.
+
+The request's retained selected refinement SHALL determine the required
+step count. Exactly one Base and one Step for every selected declaration-order
+row are required; missing, duplicate or out-of-range parts refuse assembly.
+Assembly SHALL validate the complete framing and part set before copying
+query/proof fields into the existing `RefinementSmtCertificate`, preserving
+all bytes, including empty and non-UTF8 proofs. A present invalid proof is
+not an absent certificate. CG's format has no encoding for an absent field:
+CG refuses to emit such a handoff; a truncated stream is malformed framing.
+The private assembly boundary SHALL also reject absent query/proof fields.
+
+`RefinementHandoffRefusal` SHALL distinguish `Malformed`, `Shape`,
+`Stopped(IncompleteCause)` and `Fault(InternalFault)`. No failed assembly
+returns a partial certificate. Assembly SHALL use a fresh stage budget from
+`CertificateCheckLimits`: every supplied byte counts once against
+`max_certificate_bytes`, including framing, and each record counts once
+against `max_certificate_edges`. It SHALL poll cancellation before charging
+and while visiting records; allocation reservation failure stops with
+`ResourceExhausted`. It SHALL validate the count against the retained
+refinement before allocating record slots, use checked length arithmetic,
+and impose no additional unconfigured cap. An unresolvable selected
+refinement is an invariant fault, not a zero-row refinement.
+
+`check_smt_proof` SHALL construct the internal request only inside the
+existing private request bridge and delegate the existing FR-314 checker.
+It SHALL expose the native `SmtProofCheck`/`CertificateRejection` result
+unchanged. Checking has its existing fresh checker budget; assembly and
+checking do not claim to share a mutable budget. No public signature or
+re-export of these adapter additions SHALL name a `qsl_eval` request type.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -74,6 +121,12 @@ root items alone:
 | FR-492-AC-5 | `refinement_node_key("CasRefinesCounter")` over the retained closure returns the node key of that refinement, and a second call returns the same key. | Test (TC-1275) |
 | FR-492-AC-6 | `refinement_node_key` over a name the closure does not declare returns `UnknownName`, and over a name declared as a state clause returns `NotARefinement`. | Test (TC-1275) |
 | FR-492-AC-7 | `RefinementUniverse::for_population(package, population, keys)` equals the universe of the `DeclarationKey` of that population declared in that package. | Test (TC-1275) |
+| FR-492-AC-8 | Over a replay-root request for the seven-row refinement, the CG-format Base and Step handoff assembles in row order in either input order, with exact query/proof bytes preserved; the zero-row refinement accepts Base only. No caller-provided count defines the selected refinement. | Test (TC-1275) |
+| FR-492-AC-9 | Missing or duplicate Base or Step, out-of-range Step, a handoff for a different selected row count, unknown tag, truncated header/row/field, impossible length, mismatched count and trailing bytes each refuse with the specified typed shape or malformed result and no partial certificate. The private assembler also refuses absent query or proof fields. | Test (TC-1275) |
+| FR-492-AC-10 | A present empty proof and arbitrary non-UTF8 bytes survive assembly. The request-owned checker reports the native NotRefutation or Malformed rejection for those proofs and QueryMismatch for a different query; assembly itself claims no proof acceptance. A checked-rule refutation through the facade yields the same native result as FR-314. | Test (TC-1275) |
+| FR-492-AC-11 | Assembly succeeds at its exact byte/record budgets, stops at one less or zero with the corresponding existing limit and setting, and a cancelled handle stops with its native cause. Limits, cancellation and reservation failure expose no partial certificate. Checking retains its independent FR-314 budget. | Test (TC-1275) |
+| FR-492-AC-12 | The two new request methods are usable from replay-root types alone; no adapter public signature exposes the internal certificate request, and callers cannot invoke the private with_certificate_request bridge. | Test (TC-1275), Inspection |
+| FR-492-AC-13 | The public refinement_key accessor returns the exact key selected from the retained closure, and step_count returns the authoritative declaration-order row count for seven-row and zero-row selections; an unrelated key faults rather than giving a count. The driver needs no private request type or caller row-count authority. | Test (TC-1275) |
 
 ## Dependencies
 

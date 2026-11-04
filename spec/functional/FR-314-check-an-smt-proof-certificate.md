@@ -366,6 +366,18 @@ of the recompiled refinement's `steps` array.
   refinement path of FR-146, not FR-127's `SmtProofOutcome` path for a
   `BoundedComplete` or `Inductive` temporal item.
 
+The public replay adapter is the existing `RefinementQueryRequest`'s
+`assemble_smt_certificate` method (FR-492). Its input is CG FR-045's serialized
+handoff, not a QSpec certificate wire format. Its fresh assembly byte/record
+budget and typed framing/shape/resource/fault refusals are FR-492's; a refusal
+produces no certificate and therefore no `CertificateRejected` proof verdict.
+`RefinementQueryRequest::check_smt_proof` delegates this requirement's checker
+through the retained request, with its existing independent checking budget.
+Assembly is not proof verification: empty, malformed and unknown-rule proof
+bytes must reach the checker unchanged. CG's genuine live solver-to-handoff
+readback qualification remains with IR-1120; manually authored certificate
+fields or synthetic solver framing do not establish that qualification.
+
 ### Checked Alethe rules
 
 The checker accepts these Alethe rules and checks each command against the
