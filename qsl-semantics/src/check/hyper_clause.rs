@@ -2343,6 +2343,7 @@ fn check_match(
                 | ExprNode::Binary { .. }
                 | ExprNode::Not(_)
                 | ExprNode::Negate(_)
+                | ExprNode::Power { .. }
                 | ExprNode::If { .. }
                 | ExprNode::Present(_)
                 | ExprNode::Value(_)
@@ -2782,6 +2783,7 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::Lookup { .. }
         | ExprNode::Dispatch { .. }
         | ExprNode::Quantity(_)
+        | ExprNode::Power { .. }
         | ExprNode::Reaches { .. }
         | ExprNode::ProtocolReference { .. } => true,
         ExprNode::Boolean(_)
@@ -3004,6 +3006,7 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ),
         ExprNode::Binary { .. }
         | ExprNode::Quantity(_)
+        | ExprNode::Power { .. }
         | ExprNode::Case(_)
         | ExprNode::Let { .. }
         | ExprNode::Record { .. }

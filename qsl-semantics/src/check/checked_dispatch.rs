@@ -1879,6 +1879,7 @@ mod tests {
             ExprNode::If { .. } => "If",
             ExprNode::Binary { .. } => "Binary",
             ExprNode::Negate(_) => "Negate",
+            ExprNode::Power { .. } => "Power",
             ExprNode::Not(_) => "Not",
             ExprNode::Field { .. } => "Field",
             ExprNode::Present(_) => "Present",

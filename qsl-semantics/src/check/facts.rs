@@ -1167,6 +1167,25 @@ impl<'a> Definedness<'a> {
                     _ => Err(Self::refuse(node, Obligation::Nonzero)),
                 }
             }
+            // FR-093 "Integer power": a negative exponent divides by the
+            // base, so it carries the quantity divisor's nonzero obligation
+            // above; an exponent of zero or more carries none.
+            NodeKind::QuantityPower(base, exponent) => {
+                let negative = !matches!(
+                    node.at(*exponent).kind(),
+                    NodeKind::Literal(CheckedLiteral(Value::Integer(exponent)))
+                        if !exponent.is_negative()
+                );
+                match node.at(*base).kind() {
+                    NodeKind::Literal(CheckedLiteral(Value::Quantity(base)))
+                        if !base.magnitude().is_zero() =>
+                    {
+                        Ok(())
+                    }
+                    _ if !negative => Ok(()),
+                    _ => Err(Self::refuse(node, Obligation::Nonzero)),
+                }
+            }
             NodeKind::Query {
                 visit: Visit::Sum,
                 source,

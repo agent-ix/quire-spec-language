@@ -756,6 +756,7 @@ enum Shape {
     Case(Vec<ArmSyntax>, Span),
     Binary(BinaryOperator),
     Negate,
+    Power(Integer),
     Not,
     Field(String),
     Present,
@@ -926,6 +927,13 @@ impl Shape {
             Self::Negate => {
                 arity(1)?;
                 ExprNode::Negate(operands.next()?)
+            }
+            Self::Power(exponent) => {
+                arity(1)?;
+                ExprNode::Power {
+                    base: operands.next()?,
+                    exponent,
+                }
             }
             Self::Not => {
                 arity(1)?;
@@ -1625,6 +1633,15 @@ impl<'c> Mapping<'c> {
             [Item::Node(operand)] => {
                 self.pass(&task, operand);
                 Ok(())
+            }
+            // `postfix ^ signed-int` (FR-091 "Integer power spelling"): one
+            // node over the base, the exponent exactly as written.
+            [Item::Node(base), Item::Token(caret), Item::Node(exponent)]
+                if caret.spelling() == b"^"
+                    && exponent.production() == Production::SignedInteger =>
+            {
+                let exponent = integer(&spelled(self.cst, exponent)?, exponent)?;
+                self.with_children(Shape::Power(exponent), &task, vec![*base])
             }
             _ => Err(unexpected(node)),
         }

@@ -548,6 +548,11 @@ fn encode_expression(
                 out.write_str("negate");
                 pending.push(expr.at(*operand));
             }
+            ExprNode::Power { base, exponent } => {
+                out.write_str("power");
+                out.write_str(&exponent.to_string());
+                pending.push(expr.at(*base));
+            }
             ExprNode::Not(operand) => {
                 out.write_str("not");
                 pending.push(expr.at(*operand));

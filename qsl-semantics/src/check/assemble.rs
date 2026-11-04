@@ -2625,6 +2625,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Query { .. }
                 | ExprNode::Population { .. }
                 | ExprNode::Seq { .. }
+                | ExprNode::Power { .. }
                 | ExprNode::Flatten(_)
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }

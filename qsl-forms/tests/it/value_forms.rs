@@ -146,6 +146,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Case(_) => "Case".into(),
         ExprNode::Binary { operator, .. } => format!("{operator:?}"),
         ExprNode::Negate(_) => "Negate".into(),
+        ExprNode::Power { exponent, .. } => format!("Power[{exponent}]"),
         ExprNode::Not(_) => "Not".into(),
         ExprNode::Field { field, .. } => format!("Field[{field}]"),
         ExprNode::Present(_) => "Present".into(),
@@ -1559,5 +1560,59 @@ fn a_decimal_constructor_builds_one_decimal_value_as_written() {
         );
         assert_eq!(function.body.root().children().len(), 0, "{source}");
         let _ = text;
+    }
+}
+
+/// FR-091-OQ-15, TC-1334: `e ^ n` maps to one `Power` node over its base with
+/// the exponent exactly as written; the power binds tighter than the prefix
+/// `-` and than `*`, a quantity literal is its base, and the exponent keeps
+/// any magnitude.
+#[trace("FR-093-AC-58", "TC-1334")]
+#[test]
+fn an_integer_power_maps_to_one_power_node_with_the_exponent_as_written() {
+    let cases = [
+        ("a ^ 2", "Power[2](a)"),
+        ("a ^ -1", "Power[-1](a)"),
+        ("a ^ 0", "Power[0](a)"),
+        ("2 m ^ 2", "Power[2](quantity(2 m))"),
+        ("-1 m ^ 2", "Negate(Power[2](quantity(1 m)))"),
+        ("a * b ^ 3", "Multiply(a, Power[3](b))"),
+        ("a.f ^ 2", "Power[2](Field[f](a))"),
+        ("f(a) ^ 2", "Power[2](Call[f](a))"),
+        ("(a + b) ^ 2", "Power[2](Add(a, b))"),
+        ("not a ^ 2", "Not(Power[2](a))"),
+        ("a ^ 18446744073709551616", "Power[18446744073709551616](a)"),
+        (
+            "a ^ 340282366920938463463374607431768211456",
+            "Power[340282366920938463463374607431768211456](a)",
+        ),
+    ];
+    for (source, expected) in cases {
+        let (_, declaration) = body(source);
+        assert_eq!(show(declaration.body.root()), expected, "{source}");
+    }
+}
+
+/// FR-091-OQ-15, FR-093-AC-58: `^` takes one signed integer literal. A name,
+/// a parenthesized expression, a constructor and a second `^` each refuse
+/// `invalid_syntax` at the first token that is not part of the power.
+#[trace("FR-093-AC-58", "TC-1334")]
+#[test]
+fn a_power_exponent_other_than_one_signed_integer_literal_refuses_at_that_token() {
+    for (written, offending) in [
+        ("d ^ k", "k"),
+        ("d ^ (2)", "(2)"),
+        ("d ^ 2 ^ 3", "^ 3"),
+        ("d ^ rational(1, 2)", "rational"),
+    ] {
+        let text = format!("function p using v(d: Int[0, 1]): Boolean pure {{ {written} }}");
+        let (text, parsed) = parse(&text);
+        assert!(!parsed.is_admissible(), "{written}");
+        let diagnostic = &parsed.diagnostics()[0];
+        assert_eq!(diagnostic.code, Code::InvalidSyntax, "{written}");
+        let at = diagnostic.byte_span().expect("located").start;
+        let caret = text.find('^').expect("a power");
+        let expected = caret + text[caret..].find(offending).expect("in the unit");
+        assert_eq!(at, expected, "{written}");
     }
 }

@@ -796,7 +796,12 @@ fn expressions(g: &mut Grammar) {
         P::Unary,
         c(vec![
             s(vec![c(vec![x("not"), x("-")]), r(P::Unary)]),
-            r(P::Postfix),
+            // QSpec's `power = postfix, [ '^', signed-int ]` (QSL FR-091
+            // "Integer power spelling"): one exponent, never chained.
+            s(vec![
+                r(P::Postfix),
+                opt(s(vec![x("^"), r(P::SignedInteger)])),
+            ]),
         ]),
     );
     g.insert(

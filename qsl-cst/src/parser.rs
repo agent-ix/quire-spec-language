@@ -1258,29 +1258,29 @@ enum Step<'g> {
 ///
 /// | input (function body unless noted)   | steps / token |
 /// | ------------------------------------ | ------------- |
-/// | `x = x and x = x ...`                | 69.9          |
-/// | 63 nested parentheses                | 69.4          |
-/// | `x + x + ...`                        | 65.2          |
-/// | `g(x, x) + ...`                      | 61.2          |
-/// | `x * x * ...`                        | 59.8          |
-/// | `x[x][x]...`                         | 59.4          |
-/// | `set[x, x] + ...`                    | 58.7          |
-/// | `forall(v in x: v) and ...`          | 52.8          |
-/// | `if true then x else ...`            | 51.2          |
-/// | `M::T(x, x) + ...`                   | 48.0          |
-/// | `let v = x in ...`                   | 36.1          |
-/// | `true implies true ...`              | 33.8          |
-/// | `M::R { a: x, b: x } + ...`          | 33.5          |
-/// | `size<M::T>(x) + ...`                | 33.0          |
-/// | 63 nested `Option<...>` (alias)      | 7.1           |
-/// | `not not ... true`                   | 6.0           |
-/// | `always [0,1] ...` (temporal clause) | 3.0           |
+/// | `x = x and x = x ...`                | 84.9          |
+/// | 63 nested parentheses                | 86.2          |
+/// | `x + x + ...`                        | 80.2          |
+/// | `g(x, x) + ...`                      | 74.1          |
+/// | `x * x * ...`                        | 74.8          |
+/// | `x[x][x]...`                         | 70.8          |
+/// | `set[x, x] + ...`                    | 71.6          |
+/// | `forall(v in x: v) and ...`          | 63.2          |
+/// | `if true then x else ...`            | 59.7          |
+/// | `M::T(x, x) + ...`                   | 58.0          |
+/// | `let v = x in ...`                   | 42.9          |
+/// | `true implies true ...`              | 36.0          |
+/// | `M::R { a: x, b: x } + ...`          | 40.5          |
+/// | `size<M::T>(x) + ...`                | 40.0          |
+/// | 63 nested `Option<...>` (alias)      | 7.7           |
+/// | `not not ... true`                   | 6.1           |
+/// | `always [0,1] ...` (temporal clause) | 6.4           |
 ///
 /// Measured with production memoization. The same inputs store
 /// 0.03 to 0.17 matches per step.
 ///
 /// An identifier operand is the costliest token: `Primary` tries every
-/// alternative before `QualifiedName`. 256 is over three times the worst
+/// alternative before `QualifiedName`. 288 is over three times the worst
 /// measured case.
 ///
 /// Alternatives that share a prefix re-read it: a failed `TupleValue` is
@@ -1289,7 +1289,7 @@ enum Step<'g> {
 /// production that matched, so such a re-read costs one step per production
 /// it reuses and work stays linear in bracket depth
 /// (`tests::nested_trailing_comma_work_is_linear_in_depth`).
-pub(crate) const DEFAULT_WORK_UNITS: usize = 256;
+pub(crate) const DEFAULT_WORK_UNITS: usize = 288;
 
 /// A bounded interpreter for the declarative grammar table.
 ///
@@ -1316,7 +1316,7 @@ pub(crate) const DEFAULT_WORK_UNITS: usize = 256;
 /// most the links of the productions still open. With 2 × matches + reuses
 /// ≤ steps, the store takes at most 40 bytes per step of the budget, plus 16
 /// bytes per token for the memo heads. At the default ceilings
-/// (100,000 tokens, so 25,600,256 steps) that is about 1 GiB in the worst
+/// (100,000 tokens, so 28,800,288 steps) that is about 1 GiB in the worst
 /// case. The measured inputs at the default
 /// [`Limits::work_units`] store at most 0.17
 /// matches and 0.17 links per step, about 14 bytes per step.
