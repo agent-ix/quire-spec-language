@@ -151,11 +151,11 @@ alone:
 3. When the slot has one candidate, that is its origin.
 4. When the candidates are shared by several slots of the control with the same
    walk (slots that share a root), the *tied slots* are ordered by member in the
-   order `visible`, `cases.guard`, `related.from`, `related.to` (source places the
-   visible entries before the cases of a choice), and within a member by ascending
-   `index`; for `related` the two ends of record `i` are ordered `related.from[i]`,
-   `related.to[i]` before the ends of record `i + 1`, so the order is `from[0]`,
-   `to[0]`, `from[1]`, `to[1]`, ... (a `choice` or `repeat` holds no `related` end,
+   order `visible`, `cases.guard`, `related` (source places the visible entries
+   before the cases of a choice), and within `visible` and `cases.guard` by ascending
+   `index`; the `related` ends are ordered by record, not by member then index: the
+   two ends of record `i` are `related.from[i]` then `related.to[i]`, before the ends
+   of record `i + 1`, so the order is `from[0]`, `to[0]`, `from[1]`, `to[1]`, ... (a `choice` or `repeat` holds no `related` end,
    and the other controls hold no `visible` entry or case guard, so the members of
    one control that can tie are the first two or the last two); the candidates are ordered by
    ascending numeric `(start, end)`, parsing both as decimal integers and not
@@ -194,11 +194,13 @@ row of the `not` application under `... 2735..2748` only. The origins are:
 | `Decide.cases.guard[1]` | `got.ready` | `... 2641..2650`, `... 2676..2685` | rank 1: `... 2676..2685` |
 
 `Got.related.from[0]` and `Got.related.to[0]` have the reference `view` as root,
-no row, and no origin. The `related` ends of fixture L are leaf references, so no
-TC-1070 fixture holds tied `related` ends; the rule is vectored on a package
-(FR-533-AC-14): if the ends of one `related` record are one application with the
-origins `... related 100 105` and `... related 110 115`, `related.from[0]` takes
-`... related 100 105` and `related.to[0]` takes `... related 110 115`.
+no row, and no origin. The `related` ends of fixture L are leaf references and the
+model `M` has no Reference-typed field a non-leaf end could read, so no compiled
+TC-1070 fixture holds tied `related` ends and the source route cannot be compared
+for them; the rule is vectored on a package (FR-533-AC-14): if the ends of one
+`related` record are one application with the origins `... related 99 100` and
+`... related 100 105`, `related.from[0]` takes `... related 99 100` and
+`related.to[0]` takes `... related 100 105`.
 
 ### Refusals and loci of the bare slot call
 
@@ -298,7 +300,7 @@ FR-520-AC-11 states.
 | FR-533-AC-11 | Over the package of TC-1070 fixture L, the bare route selects `Decide.visible[0]`, `Decide.cases.guard[0]` and `Decide.cases.guard[1]` by the triple (control node, member, index) alone, with a descriptor that carries no span and no site name; the origins resolve to `protocol Pipeline run Main Decide decision 2641..2650`, `... 2735..2748` and `... 2676..2685` respectively, as the table of "Slot naming on the bytes route" gives, each slot has exactly one origin, and no selection returns two origins or refuses as ambiguous. | Test (TC-1333) |
 | FR-533-AC-12 | For every slot of TC-1070 fixtures E, E-C and L, the source route and the bytes route select the same triple, the same root node, the same binders (name, level, key, `ValueType`) and the same origin; `Got.related.from[0]` and `Got.related.to[0]` of fixture L have no origin on either route. In a copy of fixture L's package whose origins `... decision 2641..2650`, `... 2676..2685` and `... 2735..2748` are renamed, rows with them, to `... decision 999..1005`, `... decision 1000..1004` and `... decision 1001..1002`, `Decide.visible[0]` takes `999..1005`, `Decide.cases.guard[1]` takes `1000..1004` and `Decide.cases.guard[0]` takes `1001..1002`, because the candidates are ordered numerically by `(start, end)`; ordered by the UTF-8 bytes of the names (`1000..1004` before `999..1005`) `Decide.visible[0]` would take `1000..1004` and `Decide.cases.guard[1]` would take `999..1005`, so the test fails if the bytes order is used. | Test (TC-1333) |
 | FR-533-AC-13 | Unmet parity, exact condition: two tied slots of one member (two `cases.guard` slots of a `choice`, or two ends of `related` records) have one root node and one walk, and their node order is the opposite of their source order (cases are held in ascending label order, so with the labels sorting against source positions the lower index is the later case in source; `related` records are held in the emitted record order). Then the bytes route gives `cases.guard[i]` the candidate origin of rank `i` and `cases.guard[j]` that of rank `j`, which are each other's source-route origins, and the two slots' `Location` values are exchanged relative to the source route; no other slot kind and no slot with a distinct root expression is affected. The value, outcome, exit status, catalog code, cause and charge log of both slots equal the source route's. In a copy of fixture L's unit whose cases `yes` and `no` both have the guard `got.ready`, the labels sort `no` before `yes` while `yes` is written first, the test asserts the equal values and charge logs and the exchanged `Location` values and records the exchange as this unmet parity; with the cases written `no` first, it asserts equal `Location` values. | Test (TC-1333) |
-| FR-533-AC-14 | In a copy of fixture L's package whose rows of the `decision 2641..2650` origin are removed, `Decide.visible[0]` (rank 0 of two tied slots, one candidate) takes `... 2676..2685` and view creation refuses `MissingLocationProjection` at the `Node` locus of the `got.ready` application for `Decide.cases.guard[1]` (rank 1, no candidate), carrying no partial view and no charge. | Test (TC-1333) In a package copy where the ends of one `related` record of fixture L's `Got` are one application with rows under the origins `... related 100 105` and `... related 110 115`, `related.from[0]` takes `100 105` and `related.to[0]` takes `110 115`, and with the origin names swapped in the rows the two slots take the other order. | Test (TC-1333) |
+| FR-533-AC-14 | In a copy of fixture L's package whose rows of the `decision 2641..2650` origin are removed, `Decide.visible[0]` (rank 0 of two tied slots, one candidate) takes `... 2676..2685` and view creation refuses `MissingLocationProjection` at the `Node` locus of the `got.ready` application for `Decide.cases.guard[1]` (rank 1, no candidate), carrying no partial view and no charge. In a package copy where the two ends of one `related` record of fixture L's `Got` are one application with rows under the origins `... related 99 100` and `... related 100 105`, `related.from[0]` takes `99 100` and `related.to[0]` takes `100 105` (numeric order of `(start, end)`); ordered by the UTF-8 bytes of the names `related.from[0]` would take `100 105`, so the test fails if the bytes order is used. | Test (TC-1333) |
 | FR-533-AC-15 | Over a `BarePackage` with no supply, with identity rows of another package and with identity rows that name no admitted identity, the slot call refuses `MissingIdentityWitness`, `ForeignIdentityWitness` and `UnknownIdentityWitness`, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature` and `locus == CallAdmissionLocus::Package`; the same three refusals for the equality rows (FR-531) report `Package`; a slot over a missing node reports `Node`, over a missing member `Member { name, index }`, and `MissingTypeRepresentation` reports `Node` with the binder's key; no witness refusal reports `Node` or `Binder`; the meter is byte-identical after each. | Test (TC-1333) |
 | FR-533-AC-16 | The bare route, given the identity rows and the equality rows read from the handoff directory, with no `Emission` and no `CheckedPackage` in the test crate, evaluates to the in-process route's value and charge log: the integer equality of `Refund`'s retry relation and recovery predicate in TC-1070 fixture E; the String, UUID and Timestamp equality slot of the fixture TC-1289 defines; and the quantity equality slot of the fixture TC-1290 defines. Over a bare package whose equality rows are omitted each of those slots refuses `MissingEqualityWitness`, while `Refund`'s `trigger.guard` (no `==` or `!=` application) evaluates. | Test (TC-1333) |
 | FR-533-AC-17 | An inspection of the bare route finds no function that derives an equality application row, equality fact row or source-unit row from a node, a name or a source, that reads `Emission::equality_producer_identity_rows`, `equality_fact_witness_rows` or `selected_source_unit_rows`, or that selects a span-named origin by its name text other than by the rule of "Slot naming on the bytes route". | Inspection (TC-1333) |
@@ -347,3 +349,9 @@ FR-520-AC-11 states.
   `admits` and `conforms` agree with the source route is being measured; FR-533-AC-5
   and the supply admission of FR-390-AC-21 on the bare route are gated on that
   measurement, and no rule is given here before it.
+- **Enum equality fixture:** FR-533-AC-16 covers no enum equality slot, because no
+  fixture of the TC-1070, TC-1289 or TC-1290 family defines an enum-typed slot, and
+  the equality file encodes `enum_member` facts that only such a slot exercises.
+  Enum equality on the bare route is unmet verification until a fixture with an enum
+  equality slot is defined, with its source text, in TC-1333; the encoding of
+  FR-531-AC-17 covers the `enum_member` fact tag meanwhile.
