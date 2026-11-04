@@ -5,11 +5,13 @@
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::PackageDeclarations;
+use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
 use quire_eval::FamilyOutcome;
-use quire_exact::{IeeeFlag, IeeeValue, Meter, Outcome, Refusal, ScalarLimits, Value};
+use quire_exact::{
+    IeeeFlag, IeeeValue, IllTypedCause, Meter, Outcome, Refusal, ScalarLimits, Value,
+};
 use quire_semantic_value::checking::CheckingLimits;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -263,10 +265,30 @@ fn ieee_equality_uses_numeric_equal_and_not_bit_identity() {
 #[trace("FR-091-AC-19", "TC-405")]
 #[test]
 fn operands_of_different_rounding_modes_are_a_type_mismatch() {
-    let text = "language \"ix:native\" edition \"1-draft\";\n\
+    assert_mixed_mode_mismatch("Float64[toward-zero]", "f + g");
+}
+
+/// QSpec FR-149-AC-13: `<`, `<=`, `>` and `>=` over two floats of one width
+/// but unlike rounding modes are `ill_typed`/`type-mismatch` at checking, so
+/// no evaluation, and no charge, ever happens.
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-13")]
+#[test]
+fn an_ordering_over_unlike_rounding_modes_is_a_type_mismatch() {
+    for operator in ["<", "<=", ">", ">="] {
+        assert_mixed_mode_mismatch("Boolean", &format!("f {operator} g"));
+    }
+}
+
+/// Checks `function h using v(f: Float64[toward-zero], g:
+/// Float64[nearest-even]): <result> pure { <body> }` and asserts it refuses
+/// `ill_typed`/`type-mismatch`.
+fn assert_mixed_mode_mismatch(result: &str, body: &str) {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         function add using v(f: Float64[toward-zero], g: Float64[nearest-even]): \
-         Float64[toward-zero] pure { f + g }\n";
+         function h using v(f: Float64[toward-zero], g: Float64[nearest-even]): \
+         {result} pure {{ {body} }}\n"
+    );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("a", "u"),
         "unit.native",
@@ -284,12 +306,15 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
     )
     .expect("the assembler admits both types");
     declarations.ieee_profile = Some(ieee_profile());
-    let refusal = declarations
+    let refusals = declarations
         .check(CheckingLimits::default())
         .expect_err("mixed-mode operands refuse");
     assert!(
-        format!("{refusal:?}").to_lowercase().contains("mismatch"),
-        "a type mismatch, not {refusal:?}"
+        refusals.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+        )),
+        "{body}: a type mismatch, not {refusals:?}"
     );
 }
 

@@ -137,7 +137,7 @@ fn private_witness_and_codec_sources_keep_format_identity() {
 /// (1, parent `root`); `high` holds `root` (0), `mid` (600, parent `root`)
 /// and `leaf` (700, parent `mid`).
 #[derive(Clone, Copy, Debug)]
-enum Snapshot {
+pub(super) enum Snapshot {
     Low,
     High,
 }
@@ -225,7 +225,11 @@ fn clause_request(
 }
 
 /// `clause` run over `snapshot`, self `self_key`, through `run_clause`.
-fn run(clause: &str, snapshot: Snapshot, self_key: &str) -> crate::spine::ClauseRunReport {
+pub(super) fn run(
+    clause: &str,
+    snapshot: Snapshot,
+    self_key: &str,
+) -> crate::spine::ClauseRunReport {
     run_clause(clause_request(clause, snapshot, self_key, 1_000_000))
         .expect("a well-formed request always reports")
 }

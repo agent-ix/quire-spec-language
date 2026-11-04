@@ -458,6 +458,15 @@ pub struct Emission {
         Vec<quire_contract_model::SelectedModelEnumDeclarationRow>,
     pub(crate) selected_model_enum_member_rows:
         Vec<quire_contract_model::SelectedModelEnumMemberRow>,
+    /// The checking stage's selected model declaration rows (record, object,
+    /// union, declared unit), retained from the acquisition these bytes were
+    /// emitted from. QSL builds no row for a source-owned enum declaration or
+    /// member, nor for a collection; those row kinds have no producer yet.
+    pub(crate) selected_exact_declaration_rows:
+        Vec<quire_contract_model::SelectedExactDeclarationRow>,
+    /// The checking stage's selected record-field rows, retained from the same
+    /// acquisition.
+    pub(crate) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
     /// Exact QSL identity witnesses for emitted equality occurrences.
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
@@ -622,6 +631,8 @@ impl DebugWith for Emission {
             selected_source_unit_rows,
             selected_model_enum_declaration_rows,
             selected_model_enum_member_rows,
+            selected_exact_declaration_rows,
+            selected_exact_field_rows,
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
@@ -650,6 +661,11 @@ impl DebugWith for Emission {
                 "selected_model_enum_member_rows",
                 selected_model_enum_member_rows,
             )
+            .field(
+                "selected_exact_declaration_rows",
+                selected_exact_declaration_rows,
+            )
+            .field("selected_exact_field_rows", selected_exact_field_rows)
             .field(
                 "equality_producer_identity_rows",
                 equality_producer_identity_rows,
@@ -864,6 +880,20 @@ impl Emission {
         &self,
     ) -> &[quire_contract_model::SelectedModelEnumMemberRow] {
         &self.selected_model_enum_member_rows
+    }
+
+    /// Selected model declaration rows (record, object, union, declared unit)
+    /// of the acquisition these bytes were emitted from.
+    pub fn selected_exact_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedExactDeclarationRow] {
+        &self.selected_exact_declaration_rows
+    }
+
+    /// Selected record-field rows of the acquisition these bytes were emitted
+    /// from.
+    pub fn selected_exact_field_rows(&self) -> &[quire_contract_model::SelectedExactFieldRow] {
+        &self.selected_exact_field_rows
     }
 
     /// QSL-owned identity rows keyed by equality application and occurrence.
@@ -4790,6 +4820,8 @@ pub fn emit_timed_models(
         selected_source_unit_rows: Vec::new(),
         selected_model_enum_declaration_rows: Vec::new(),
         selected_model_enum_member_rows: Vec::new(),
+        selected_exact_declaration_rows: Vec::new(),
+        selected_exact_field_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
@@ -5830,6 +5862,8 @@ fn emit_package_inner(
         selected_source_unit_rows,
         selected_model_enum_declaration_rows,
         selected_model_enum_member_rows,
+        selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
+        selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
         equality_producer_identity_rows,
         equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
@@ -6454,8 +6488,6 @@ pub(crate) mod tests;
 #[cfg(test)]
 mod extent_agreement;
 mod monitor_plan;
-pub use monitor_plan::{
-    declaration_less_function_id, emit_monitor_plan, emit_monitor_plan_over, MonitorPlanWire,
-};
+pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;

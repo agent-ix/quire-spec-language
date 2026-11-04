@@ -492,13 +492,19 @@ pub fn admit_protocol_reference_seeds(
         index += 1;
     }
 
+    // FR-106-AC-65: a seed population with no snapshot row is a missing
+    // required artifact; a listed row not marked `complete` is incomplete
+    // scope. Both stop admission before check 8.
     for (population, path) in &required {
-        if !environment.population_complete(population) {
-            let mut record = admission_record(Code::IncompletePopulation, "incomplete-scope")
-                .with("population", population.clone());
-            record.path = path.clone();
-            return Err(incomplete(record));
-        }
+        let cause = match environment.population_completeness().get(population) {
+            Some(true) => continue,
+            Some(false) => "incomplete-scope",
+            None => "missing-required-artifact",
+        };
+        let mut record = admission_record(Code::IncompletePopulation, cause)
+            .with("population", population.clone());
+        record.path = path.clone();
+        return Err(incomplete(record));
     }
 
     for (reference, node, path) in seeds {
@@ -1743,9 +1749,10 @@ pub fn admit_current_snapshot(
 /// [`admit_current_snapshot`] admits it, except that `required`, the
 /// populations the clause's `holds` atoms name (FR-391), are required to be
 /// complete (FR-106 check 7), repeatedly through their reference fields and
-/// relationship ends: a trace over one not listed `complete` is `Incomplete`
-/// `incomplete_population`/`incomplete-scope`, as a state clause's
-/// observation is.
+/// relationship ends: a trace over one with no snapshot row is `Incomplete`
+/// `incomplete_population`/`missing-required-artifact`, and over one listed
+/// but not `complete` is `Incomplete` `incomplete_population`/
+/// `incomplete-scope`, as a state clause's observation is.
 #[allow(clippy::too_many_arguments)]
 pub fn admit_trace_snapshot(
     model_selections: &[DomainPackageRef],
@@ -2095,8 +2102,10 @@ pub fn admit_observations(
 /// FR-391 "Evaluation": the populations a clause names, by the observation
 /// each is read at. Each is required (FR-106 check 7, "required
 /// population") in that observation's snapshot, and so, repeatedly, is every
-/// population a reference field of its objects names: one not listed
-/// `complete` is `Incomplete` `incomplete_population`/`incomplete-scope`.
+/// population a reference field of its objects names: one with no snapshot
+/// row is `Incomplete` `incomplete_population`/`missing-required-artifact`,
+/// and one listed but not `complete` is `Incomplete`
+/// `incomplete_population`/`incomplete-scope`.
 #[derive(Debug, Default)]
 struct NamedReads {
     current: Vec<String>,
@@ -2524,6 +2533,7 @@ fn admit_invocation_documents(
     let mut post_required = post_values.read_context_populations();
     post_required.extend(named.post.iter().cloned());
     document::check_population_completeness(
+        views,
         &pre_snapshot.populations,
         &pre_values.completeness,
         pre_self_population,
@@ -2531,6 +2541,7 @@ fn admit_invocation_documents(
         &pre_values.extents,
     )?;
     document::check_population_completeness(
+        views,
         &post_snapshot.populations,
         &post_values.completeness,
         post_self_population,
@@ -2901,6 +2912,7 @@ fn admit_pre_call(
     required.extend(values.read_context_populations());
     required.extend(context.named.iter().cloned());
     document::check_population_completeness(
+        context.views,
         &snapshot.populations,
         &values.completeness,
         input

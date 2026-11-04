@@ -550,6 +550,18 @@ impl TemporalVerdict {
     }
 }
 
+impl TemporalUndefinedCause {
+    /// The undefined value's FR-100 reason: the kernel's own spelling, a
+    /// family record's reason, or `insufficient-data` for a window.
+    pub fn reason(&self) -> &'static str {
+        match self {
+            Self::Kernel(undefined) => crate::spine::kernel_undefined_reason(undefined.clone()),
+            Self::Family(record) => record.reason.as_str(),
+            Self::InsufficientData { .. } => "insufficient-data",
+        }
+    }
+}
+
 /// Why closed finite-window evidence cannot determine a Boolean result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TemporalIndeterminateReason {
@@ -891,6 +903,12 @@ pub struct ClauseRunReport {
 }
 
 impl ClauseRunReport {
+    /// The run's catalog category (FR-109, FR-285), read from the
+    /// disposition and from nowhere else.
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+        self.disposition.category()
+    }
+
     /// Stable outcome category label. For temporal dispositions this returns
     /// the full temporal category set, including `pending` and `indeterminate`.
     pub fn category_label(&self) -> &'static str {

@@ -116,6 +116,17 @@ complete immutable plan and no second identity scheme is introduced. The
 logical Rust record above is the producer's in-memory view of that node; the
 wire node, not a QSL-owned Rust type, is what IR reads and the driver admits.
 
+The `Emission` that carries the plan-root bytes SHALL carry, from the same
+acquisition the package was emitted from, every witness row the emitter
+retains for the package: the selected model declaration and field rows, the
+source-unit rows, the model enum declaration and member rows, the tuple
+declaration rows, the operation-member rows, the equality producer and fact
+rows, the temporal binding rows and the omitted nodes. The plan-root writer
+SHALL re-key every node id each of those rows holds through the renames it
+performs and SHALL NOT write a row anew, so a consumer authenticates the
+selected generated closure against the rows of the acquisition and never
+invents them or acquires the unit a second time.
+
 The retained closure SHALL include the clock binding's counter, exact unit
 scale and width, so `ClockBindingKey` requires no ambient lookup at build or
 execution. The plan's uncertainty and maximum gap remain available to every
@@ -490,6 +501,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-39 | `TimedMonitorPlan` built through its public constructor with one atom body swapped has an unequal `PlanId`, and a plan with equal bodies throughout has an equal `PlanId`. | Test (TC-1081) |
 | FR-251-AC-40 | Under AC-2's premises (`once[0 ms, 10 ms] holds(p)`, capacity 22, `b` 10000 ticks, `u` 0), 23 events at ticks 0 to 22 with `p` false at ticks 0 to 21 and true at the lost 23rd event settle the affected obligations `Incomplete(LimitReached{limit: event_buffer, value: 22, setting: monitor.max_event_rate})` and raise `history_start` to `22 + 1 + 0` = 23; `once[0 ms, 10 ms] holds(p)` read at tick 5000 is `indeterminate`, not `false`, at tick 10022 (`now - b` is 22) is still `indeterminate`, and at tick 10023 (`now - b` is 23) decides from the entries then in the window. For `historically[0 ms, 10 ms] holds(p)` with `p` true at ticks 0 to 21 and false at the lost event, the read at tick 5000 and at tick 10022 is `indeterminate`, not `true`. With `u` 2 ticks the lost event at tick 22 raises `history_start` to 22 + 1 + 4 = 27 and the first deciding tick is 10027. | Test (TC-706) |
 | FR-251-AC-41 | For `once`, `historically`, `since` and `triggered` without an upper bound, the differential of AC-7 compares the monitor with the `HistoryCutoff` evaluator of "Unbounded past operators" (every atom before the baseline `indeterminate`) and requires equal verdicts; it also evaluates the same trace under QSpec's infinite-trace evaluator and requires that every definite monitor verdict equals that evaluator's verdict, and an `indeterminate` monitor verdict is not compared. | Test (TC-1081) |
+| FR-251-AC-42 | The `Emission` returned with a plan-root package holds, non-empty wherever the acquisition had rows, the selected model declaration rows, selected model field rows, source-unit rows, model enum declaration and member rows, tuple declaration rows, operation-member rows, equality producer rows, equality fact rows, temporal binding rows and omitted nodes of that acquisition. Every node id in each of them (anchor, structural node, record node, declaration node, checked node, source-map entry node, fact nodes, omitted node and the node an omission cause names, temporal binding declaration) equals the plan-root package's id for the node, so a node the writer renames is named by its renamed id in every row and a row naming no renamed node is unchanged; no row is written anew. The selected model declaration and field rows equal the unit's acquisition rows, and IR's selected exact identity join accepts them against the package read back. | Test (TC-1081) |
 
 ## Dependencies
 

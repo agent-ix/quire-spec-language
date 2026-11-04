@@ -3058,6 +3058,7 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
 /// in the pre snapshot of an invocation or a `PreCall` selection, and
 /// empty everywhere else.
 pub(super) fn check_population_completeness(
+    views: &[ModelView],
     populations: &[RawPopulation],
     completeness: &BTreeMap<String, bool>,
     self_population: Option<&str>,
@@ -3124,13 +3125,31 @@ pub(super) fn check_population_completeness(
             walk_order.push(name);
         }
     }
-    for name in walk_order {
-        if required.contains(name) && completeness.get(name).copied() != Some(true) {
-            return Err(incomplete(
-                admission_record(Code::IncompletePopulation, "incomplete-scope")
-                    .with("population", name.to_owned()),
-            ));
+    // A declared population only a reference value made required, with no
+    // row in the document, follows them all in identity order: it is a
+    // missing row. A name no view declares is no population; check 8 settles
+    // a reference into it.
+    for name in &required {
+        if !walk_order.contains(&name.as_str()) && find_population(views, name).is_some() {
+            walk_order.push(name);
         }
+    }
+    // A required population with no row is a missing row
+    // (`missing-required-artifact`, QSpec FR-153-AC-14); a listed row not
+    // marked `complete` is an open extent (`incomplete-scope`). The first in
+    // walk order is named, with the cause of its own kind.
+    for name in walk_order
+        .into_iter()
+        .filter(|name| required.contains(*name))
+    {
+        let cause = match completeness.get(name) {
+            Some(true) => continue,
+            Some(false) => "incomplete-scope",
+            None => "missing-required-artifact",
+        };
+        return Err(incomplete(
+            admission_record(Code::IncompletePopulation, cause).with("population", name.to_owned()),
+        ));
     }
     super::relationships::check_unlisted_ends(extents, completeness)
 }
@@ -3390,6 +3409,7 @@ pub(super) fn admit_populations(
         ancestor_steps,
     )?;
     check_population_completeness(
+        views,
         &snapshot.populations,
         &values.completeness,
         self_population,
@@ -3452,6 +3472,7 @@ pub(super) fn admit_initial_populations(
         .map(|entry| entry.population.clone())
         .collect();
     check_population_completeness(
+        views,
         populations,
         &values.completeness,
         None,
@@ -3528,6 +3549,7 @@ pub(super) fn admit_argument_populations(
     let mut required = values.populations_holding(arguments);
     required.extend(named.iter().cloned());
     check_population_completeness(
+        views,
         &snapshot.populations,
         &values.completeness,
         None,
