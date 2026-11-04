@@ -18,11 +18,11 @@ referenced by QSpec case ID and never copied.
 
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
-| 1 | 1 | ConfigVersion package; change one field bound / one frame entry / package revision / an unused declaration's bound | four different package byte strings, each different from the base |
+| 1 | 1 | ConfigVersion package; change a field bound, an operation frame entry, and an unused declaration's field bound separately; then change only the source package `version` metadata | each semantic mutation changes the checked package bytes; the metadata-only mutation leaves them equal to the base. `ModelSelection` has no source revision, digest, version, or content pin |
 | 2 | 1 | same package, operations and populations reordered | bytes equal to the base |
 | 3 | 1 | unit `model M` naming identity `other` | `missing_import` |
 | 4 | 2 | two documents with identity `p`, equal; then differing | `invalid_package`/`conflicting-definition` naming both, in both cases; no binding |
-| 4b | 2 | a unit with `model A = "p"` at version 1 and `model B = "p"` at version 2; then both at version 1 | `invalid_package`/`conflicting-definition` naming both declarations; then admitted |
+| 4b | 2 | a unit with two distinct aliases selecting identity `p`, and one supplied document for `p` | admitted; both aliases resolve against that same document, with no per-alias version or content comparison (alias coverage is also retained by the QSL-1530/QSL-1578 cases) |
 | 5 | 3 | `Positive` called from a function, an `invariant`, a protocol `check` and a `temporal` clause | one callee node; four call terms with their own argument order, span, receiver |
 | 6 | 3 | add a domain package declaring `Positive`; call `Positive(1)` | `ambiguous_declaration`/`ambiguous-name` |
 | 7 | 4 | `predicate R using v(x: Boolean): Boolean { R(x) }`; `A` and `B` calling each other | `missing-measure` for each |
