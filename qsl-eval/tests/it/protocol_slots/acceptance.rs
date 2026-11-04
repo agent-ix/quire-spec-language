@@ -2400,7 +2400,10 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         ))
         .expect("reader view selects the capture term");
     assert!(
-        selected.reader_projection().is_some(),
+        matches!(
+            selected.reader_slot(),
+            Some(qsl_package::ReaderSlot::Projected(_))
+        ),
         "reader view owns the root projection"
     );
     let unavailable = reader_view
@@ -2589,11 +2592,7 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
     }
 }
 
-/// The invariant of the unmet AC-11 dependency: a composed protocol root has
-/// no plain-data reader projection yet (FR-390: an unsupported projection of a
-/// QSL-emitted type is an unmet dependency, never a passing parity case).
-const UNMET_PROJECTION: &str = "reader-protocol-root-has-supported-plain-data-projection";
-
+/// Values supplied to one TC-1070 protocol slot.
 type SlotValues<'p> = Box<dyn Fn(Option<&ObjectReference>) -> Vec<(&'static str, Value)> + 'p>;
 
 /// One TC-1070 slot compared across the checked and the strict-reader view.
@@ -2606,8 +2605,6 @@ struct ParitySlot<'p> {
     values: SlotValues<'p>,
     observed: bool,
     expected: Option<Value>,
-    /// Whether the slot's root is a plain-data reader projection.
-    reader_backed: bool,
 }
 
 fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
@@ -2617,8 +2614,7 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
               member,
               index,
               values: Vec<(&'static str, Value)>,
-              expected: Value,
-              backed| {
+              expected: Value| {
         ParitySlot {
             name,
             protocol,
@@ -2628,10 +2624,9 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             values: Box::new(move |_| values.clone()),
             observed: false,
             expected: Some(expected),
-            reader_backed: backed,
         }
     };
-    let observed = |name, owner, member, protocol, expected: Option<Value>, backed| ParitySlot {
+    let observed = |name, owner, member, protocol, expected: Option<Value>| ParitySlot {
         name,
         protocol,
         owner,
@@ -2643,7 +2638,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         }),
         observed: true,
         expected,
-        reader_backed: backed,
     };
     let tick = record(
         package,
@@ -2661,7 +2655,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             None,
             vec![("opened", tick)],
             t.clone(),
-            true,
         ),
         observed(
             "protocol capture",
@@ -2669,7 +2662,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             "captures",
             "Refunds",
             Some(int(5)),
-            true,
         ),
     ];
     for (owner, forward, trigger, target, activated, earlier, later, recovered) in [
@@ -2702,7 +2694,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             Some(0),
             vec![(forward, receipt(package, 5))],
             int(5),
-            true,
         ));
         slots.push(on(
             "activation capture",
@@ -2712,7 +2703,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             Some(0),
             vec![(trigger, flag(package, true))],
             t.clone(),
-            true,
         ));
         slots.push(on(
             "trigger guard",
@@ -2722,7 +2712,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             None,
             vec![(trigger, flag(package, false)), (target, int(5))],
             t.clone(),
-            false,
         ));
         slots.push(on(
             "retry relation",
@@ -2737,7 +2726,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
                 (activated, f.clone()),
             ],
             t.clone(),
-            false,
         ));
         slots.push(on(
             "recovery predicate",
@@ -2751,7 +2739,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
                 (activated, f.clone()),
             ],
             t.clone(),
-            false,
         ));
     }
     slots.push(on(
@@ -2762,7 +2749,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         None,
         vec![("order", int(5))],
         t.clone(),
-        false,
     ));
     slots.push(on(
         "commit constraint",
@@ -2772,7 +2758,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         None,
         vec![("committed", flag(package, true))],
         t.clone(),
-        true,
     ));
     slots.push(on(
         "finish constraint",
@@ -2782,7 +2767,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         None,
         vec![],
         t.clone(),
-        false,
     ));
     slots.push(observed(
         "related from",
@@ -2790,7 +2774,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         "related.from",
         "Pipeline",
         None,
-        false,
     ));
     slots.push(observed(
         "related to",
@@ -2798,7 +2781,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         "related.to",
         "Pipeline",
         None,
-        false,
     ));
     slots.push(on(
         "choice visible",
@@ -2808,7 +2790,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         Some(0),
         vec![("got", flag(package, true))],
         t.clone(),
-        true,
     ));
     slots.push(on(
         "choice guard no",
@@ -2818,7 +2799,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         Some(0),
         vec![("got", flag(package, true))],
         f,
-        false,
     ));
     slots.push(on(
         "choice guard yes",
@@ -2828,7 +2808,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         Some(1),
         vec![("got", flag(package, true))],
         t,
-        true,
     ));
     slots
 }
@@ -2875,9 +2854,9 @@ fn read_checked_package_with_model_document<'p>(
     .expect("strict I2 admission accepts the emitted TC-1070 package")
 }
 
-/// A call result with its location removed. A reader-backed result carries no
-/// location (the admitted wire has none for a leaf root yet, and a reader view
-/// never takes one from the source package), so parity is compared on
+/// A call result with its location removed. A reader-backed read of a leaf
+/// carries no location (the admitted wire has none for a leaf, and a reader
+/// view never takes one from the source package), so parity is compared on
 /// everything else: outcome, value, binder, cause, losses and the per-binder
 /// charge log (FR-520-AC-9).
 fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> String {
@@ -2900,18 +2879,31 @@ fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> Str
     }
 }
 
-/// TC-1073: compares every TC-1070 slot between the in-process view and the view over
-/// the package the strict reader returns. A reader-backed slot (a plain-data
-/// root) must agree in value, ordered charge entries, each AC-9 counter
-/// boundary, repeated runs and unavailable supplies (binder and cause). The 11
-/// composed or literal roots have no reader projection yet: they are asserted
-/// as the typed unmet dependency, which leaves AC-11 and AC-15 open, so this
-/// test carries no FR-390-AC-11/15 tag. Its current cases also do not exercise
-/// AC-18's required recursively nested Option/Collection identities, so that
-/// criterion remains unclaimed here.
+/// FR-390-AC-15 location parity: when the reader's halt carries a location
+/// (an application-located read), it is the checked view's. A leaf halt
+/// carries none on the reader view (AC-64), so only a `Some` is compared.
+fn assert_location_parity(
+    label: &str,
+    checked: &Result<ProtocolSlotEvaluation, CallFailure>,
+    reader: &Result<ProtocolSlotEvaluation, CallFailure>,
+) {
+    if let Ok(ProtocolSlotEvaluation::Unavailable {
+        location: Some(reader),
+        ..
+    }) = reader
+    {
+        let Ok(ProtocolSlotEvaluation::Unavailable { location, .. }) = checked else {
+            panic!("{label}: the checked view did not halt unavailable");
+        };
+        assert_eq!(location.as_ref(), Some(reader), "{label}: halt location");
+    }
+}
+
+/// TC-1073: compares the explicit supported TC-1070 root list between the
+/// in-process view and the strict-reader view.
 #[test]
 #[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-520-AC-9")]
-fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unmet() {
+fn reader_backed_tc1070_slots_match_the_checked_view_for_supported_roots() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);
     let reader_view = read.evaluation_view().expect("the read retains its view");
@@ -2921,9 +2913,9 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
     assert_eq!(checked_reference, reader_reference);
 
-    let mut unmet = Vec::new();
+    let specs = parity_slots(&package);
     let mut compared = Vec::new();
-    for spec in parity_slots(&package) {
+    for spec in specs {
         let selected = slot(&package, spec.protocol, spec.owner, spec.member, spec.index);
         let values = (spec.values)(Some(&checked_reference));
         let checked_supply = supply(
@@ -2962,22 +2954,9 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
             ),
         }
 
-        let before = Meter::new(UNLIMITED);
         let mut reader_meter = Meter::new(UNLIMITED);
         let reader =
             reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut reader_meter);
-        if !spec.reader_backed {
-            let Err(CallFailure::Fault(fault)) = &reader else {
-                panic!("{label}: a composed root must be an unmet dependency: {reader:?}");
-            };
-            assert_eq!(fault.invariant(), UNMET_PROJECTION, "{label}");
-            assert_eq!(
-                reader_meter, before,
-                "{label}: the unmet call charges nothing"
-            );
-            unmet.push(label);
-            continue;
-        }
         compared.push(label.clone());
         assert_eq!(
             without_location(&checked).replace(&format!("{checked_reference:?}"), "REF"),
@@ -3076,6 +3055,7 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
                 without_location(&on_reader),
                 "{label}: unavailable halt binder and cause"
             );
+            assert_location_parity(&label, &on_checked, &on_reader);
             assert!(
                 matches!(
                     on_checked,
@@ -3086,6 +3066,9 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
                 ),
                 "{label}: the in-process halt is located"
             );
+            // FR-390-AC-64: the halt is at a `Local` read, a leaf whose
+            // admitted wire carries no location of its own, so the reader
+            // reports none and never the source package's.
             assert!(
                 matches!(
                     on_reader,
@@ -3101,29 +3084,16 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
         }
     }
     assert_eq!(
-        unmet,
-        [
-            "trigger guard (Refund.trigger.guard)",
-            "retry relation (Refund.retry.relation)",
-            "recovery predicate (Refund.recovery.predicate)",
-            "trigger guard (Partial.trigger.guard)",
-            "retry relation (Partial.retry.relation)",
-            "recovery predicate (Partial.recovery.predicate)",
-            "effect constraint (Applied.constraint)",
-            "finish constraint (Closed.constraint)",
-            "related from (Got.related.from)",
-            "related to (Got.related.to)",
-            "choice guard no (Decide.cases.guard)",
-        ],
-        "the composed or literal roots without a reader projection are the unmet dependency"
+        compared.len(),
+        20,
+        "all listed TC-1070 protocol roots were evaluated through the reader"
     );
-    assert!(!compared.is_empty());
 }
 
 /// Selection refusals have the same locus on both views and leave their
 /// meters unchanged, including refusals only the view can make (an absent
-/// node, a node of another tag). The ignored AC-15 matrix reuses the assertion
-/// so its criterion trace includes the refusal path too.
+/// node, a node of another tag). The AC-15 matrix reuses this assertion so its
+/// criterion trace includes the refusal path too.
 #[test]
 #[trace("TC-1071", "FR-390-AC-4")]
 fn selection_refusals_match_across_the_checked_and_reader_views() {
@@ -3229,7 +3199,6 @@ fn assert_selection_refusals_match_across_the_checked_and_reader_views() {
 /// ordered charges when evaluated through the bytes the I2 reader admits.
 #[test]
 #[trace("TC-1070", "TC-1073", "FR-390-AC-15")]
-#[ignore = "gated on QSL-1625: reader NodeRead must evaluate every composed protocol-slot root"]
 fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);
@@ -3348,6 +3317,7 @@ fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
                 "{}: unavailable supply parity",
                 spec.name
             );
+            assert_location_parity(spec.name, &checked_unavailable, &reader_unavailable);
             assert!(matches!(
                 checked_unavailable,
                 Ok(ProtocolSlotEvaluation::Unavailable { .. })
@@ -3779,7 +3749,6 @@ fn reader_backed_projection_preserves_nested_option_and_collection_value_types()
 /// result and charges when protocol slot evaluation crosses the I2 reader.
 #[test]
 #[trace("TC-1028", "FR-390-AC-24")]
-#[ignore = "gated on QSL-1625: reader NodeRead must evaluate computed protocol-slot roots"]
 fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charges() {
     let source = SOURCE
         .replace(
@@ -3791,10 +3760,12 @@ fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charge
             "model M = \"test/orders\";",
             "model M = \"test/orders\";\n\
              record Native { label: String; id: UUID; stamp: Timestamp; }\n\
+             record NativeTwin { label: String; id: UUID; stamp: Timestamp; }\n\
              function sameString using v(a: String, b: String): Boolean pure { a = b }\n\
              function sameUuid using v(a: UUID, b: UUID): Boolean pure { a = b }\n\
              function sameTimestamp using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n\
-             function sameNative using v(a: Native, b: Native): Boolean pure { a.label = b.label and a.id = b.id and a.stamp = b.stamp }",
+             function sameNative using v(a: Native, b: Native): Boolean pure { a.label = b.label and a.id = b.id and a.stamp = b.stamp }\n\
+             function sameNativeTwin using v(a: NativeTwin, b: NativeTwin): Boolean pure { a.label = b.label and a.id = b.id and a.stamp = b.stamp }",
         )
         .replace(
             "capture order: M::Total = view.total;",
@@ -3803,7 +3774,8 @@ fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charge
              capture uuidEquality: Boolean = sameUuid(UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), UUID(\"00112233-4455-6677-8899-aabbccddeeff\"));\n\
              capture timestampEquality: Boolean = sameTimestamp(Timestamp(5), Timestamp(5));\n\
              capture nestedNativeEquality: Boolean = sameNative(Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });\n\
-             capture nestedNativeDifference: Boolean = sameNative(Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, Native{ label: \"second\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });",
+             capture nestedNativeDifference: Boolean = sameNative(Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, Native{ label: \"second\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });\n\
+             capture sameShapeNativeTwin: Boolean = sameNativeTwin(NativeTwin{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, NativeTwin{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });",
         );
     let (package, model_view) = fixture_from_source(&source);
     let read = read_checked_package(&package);
@@ -3811,7 +3783,7 @@ fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charge
     let (observation, _) = observation(&package, &model_view);
     let (reader_observation, _) =
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
-    let expected = [false, true, true, true, false];
+    let expected = [false, true, true, true, false, true];
     for (index, expected) in expected.into_iter().enumerate() {
         let selected = slot(&package, "Refunds", "Refunds", "captures", Some(index + 1));
         let checked_supplies = supply(&package, "Refunds", Vec::new(), Some(&observation));
@@ -3835,7 +3807,6 @@ fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charge
 /// target unit.
 #[test]
 #[trace("FR-390-AC-25")]
-#[ignore = "gated on QSL-1625: reader NodeRead must evaluate quantity protocol-slot roots"]
 fn reader_backed_projection_preserves_declared_and_compound_quantity_units() {
     let source = SOURCE
         .replace(
@@ -3891,7 +3862,6 @@ fn reader_backed_projection_preserves_declared_and_compound_quantity_units() {
 /// the reader-backed protocol slot view.
 #[test]
 #[trace("FR-390-AC-25")]
-#[ignore = "gated on QSL-1625: reader NodeRead must evaluate computed protocol-slot roots"]
 fn reader_backed_projection_preserves_compound_quantity_identity() {
     let source = SOURCE
         .replace(
@@ -3993,7 +3963,6 @@ fn protocol_capture_compound_quantity_identity_is_held() {
 /// type's behavior through protocol slot reader admission.
 #[test]
 #[trace("FR-390-AC-26")]
-#[ignore = "gated on QSL-1625: reader NodeRead must evaluate aliased protocol-slot roots"]
 fn reader_backed_projection_preserves_alias_target_behavior() {
     let source = SOURCE
         .replace(
@@ -4052,7 +4021,6 @@ fn reader_backed_projection_preserves_alias_target_behavior() {
 /// positional payload when a case selects each active constructor.
 #[test]
 #[trace("FR-390-AC-27")]
-#[ignore = "gated on QSL-1625: reader NodeRead must evaluate union case protocol-slot roots"]
 fn reader_backed_projection_preserves_union_identity_and_case_payload_order() {
     let source = SOURCE
         .replace(
@@ -4114,10 +4082,7 @@ fn reader_backed_shared_meter_sums_and_bounds_in_both_orders() {
     let (checked_observation, reference) = observation(&package, &model_view);
     let (reader_observation, _) =
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
-    let specs: Vec<_> = parity_slots(&package)
-        .into_iter()
-        .filter(|spec| spec.reader_backed)
-        .collect();
+    let specs = parity_slots(&package);
     assert!(specs.len() >= 8);
     let selections: Vec<_> = specs
         .iter()

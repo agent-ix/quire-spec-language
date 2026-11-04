@@ -2821,6 +2821,39 @@ fn equality_fact_witness_rows(
                             },
                             None,
                         )?;
+                        // A unit of a base dimension carries that dimension
+                        // as its canonical base-dimension term. The IR
+                        // equality reader joins this separately from the
+                        // authored UnitDimension declaration row.
+                        if dimension.role
+                            == qsl_semantics::check::EqualityDimensionRole::UnitDimension
+                            && matches!(
+                                &unit,
+                                quire_semantic_value::quantity::QuantityUnit::Declared(_)
+                            )
+                            && graph_nodes
+                                .get(&dimension.node)
+                                .and_then(|node| node.nominal_payload())
+                                .and_then(|payload| match payload {
+                                    NominalPayload::Dimension(dimension) => {
+                                        Some(dimension.terms().is_empty())
+                                    }
+                                    _ => None,
+                                })
+                                == Some(true)
+                        {
+                            add(
+                                &dimension.node,
+                                EqualityFactWitness::DimensionDeclaration {
+                                    unit_id: unit_fact.unit_id.clone(),
+                                    operand_position,
+                                    role:
+                                        qsl_semantics::check::EqualityDimensionRole::BaseDimension,
+                                    ordinal: 0,
+                                },
+                                None,
+                            )?;
+                        }
                     }
                     for term in &unit_fact.dimension_terms {
                         let exact_term = graph_nodes
@@ -6799,12 +6832,13 @@ fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
 #[cfg(test)]
 pub(crate) mod tests;
 
+pub(crate) mod equality_reader;
 /// ADR-014 §4 (TC-440): QSL's extent classification agrees with
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
 mod monitor_plan;
-mod protocol_locations;
+pub(crate) mod protocol_locations;
 pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;
