@@ -39,7 +39,7 @@ FR-091-AC-58 and FR-093-AC-38 to FR-093-AC-42, FR-093-AC-45 and FR-093-AC-52 to 
    negated constructors of FR-093-AC-57.
 7. Check the constructors of FR-093-AC-38, AC-45, AC-52 and AC-53: scales
    65534, 65535, 65536 and 4294967295, a literal-scale setting of 4, and the
-   unit totals.
+   package totals.
 
 ## Expected Results
 

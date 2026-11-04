@@ -53,7 +53,37 @@ FR-091-AC-58 versus code: at head 530aee5c8 the code matches the spec. `decimal(
 | FND-011 | low | TC-1232 drops, with no replacement, the float-to-decimal conversion refusal, the "convert of a constructor builds no node" check, the oversize-coefficient constructor and the lowering of conversions to the listed operations; FR-093-AC-42 checks and evaluates only. These had no AC (AC-39 to AC-42 did not exist) but are behavior the code implements. | spec/test-cases/TC-1232-a-decimal-constructor-in-source-checks-lowers-and-evaluates.md:34 |
 | FND-012 | low | Redundancy and weak form: FR-093-AC-40 a1 repeats FR-104-AC-16 e1 verbatim, and AC-38 (eight claims) and AC-41 (nine functions) are multi-claim rows whose single failure hides the others. NFR-011's rationale "65535 is the largest width a Rust format argument takes" is an implementation artifact; the #2277 code now spells without a format width. | spec/non-functional/NFR-011-bound-value-checking-work.md:82 |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | medium | FR-093-AC-57 and the step-4 membership sentence make a negated literal a member when its negated value is (`-decimal(5, 0)` checks at `Decimal[-9, 0; 0, 0; toward-zero]`, `-decimal(-5, 0)` refuses `type-mismatch` there). QSpec FR-140 ("Operand membership applies to source operands"; a `decimal(c,s)` literal that is not a member of its unique expected type is `type-mismatch`; unary `-` and its operand share one named type) makes `decimal(5, 0)` the operand, a non-member of that type, so `m1` should refuse `type-mismatch` and `m3` is a runtime `decimal_out_of_domain`, not a check-time mismatch. The #2277 code does the QSpec reading (the operand takes the expected type as its hint). The AC is a new QSL rule that departs from QSpec and from the code with no QSpec change behind it. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:AC-57 |
+| FND-014 | low | NFR-011 and FR-255 say the total is "per checked unit" while NFR-011 elsewhere bounds "per checked package" and FR-091 uses "unit" for a physical-unit declaration; "checked unit" is defined nowhere (AC-52 reads it as one source unit). NFR-011's "sixteen times that" is 16 x 65536, the default total is 1048576 while AC-52's 16 literals total 1048560. | spec/non-functional/NFR-011-bound-value-checking-work.md:82 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-104 now says the checker SHALL type a quotient with no expected type, with the `let s = a / b in s = a` example; TC-1084 step 4 and AC-13 h pin it. The #2277 code and its test still assert `ambiguous-literal` and must change (code follow-up, not spec). |
+| FND-002 | fixed | AC-13 adds h (`let s = a / b in s = a`, refuses `unproved-nonzero`, never `ambiguous-literal`) and states that e takes P from the equality's other operand. |
+| FND-003 | fixed | AC-56 names `inexact_decimal`/`nonzero-discarded-digit` after the `decimal.arithmetic` charge with no `decimal.rounding` charge and no value; agrees with QSpec TC-185 D03 and D05 and TC-964 TN-04, and with the #2277 exact-case charge list (FunctionCall, operands, scale expansion, arithmetic). The code test asserts only `Refused(_)`; code follow-up. |
+| FND-004 | fixed | `s3.decimal_literal_scale_total`, default 1048576 digits, per checked unit, refuses `stage_limit_exceeded`/`work-budget-exceeded` at the literal that passes the running total, in FR-093 step 3, FR-255, NFR-011 and FR-096. Arithmetic checked: 16 x 65535 = 1048560 accepted, the 17th gives 1114095 > 1048576, bound and actual as AC-52 states; 5 + 5 + 1 = 11 > 10 for the setting-10 case. FND-014 is the residue. |
+| FND-005 | fixed | FR-516 line 139 and AC-17 now say a refusal returns no result and the ledger guarantee is AC-31's for an `Ok` `Incomplete` result (the entry takes the request by reference and an `Err` carries no ledger, line 120); AC-41/45/46 add "exactly that cause" and name `EvidenceResult`, so the cause is the testable part. The edit stays outside the decimal scope but is now reasoned and consistent; "no EvidenceResult" alone is still unfalsifiable, the cause is what can fail. |
+| FND-006 | fixed | FR-091 text says S1 refuses a scale above `u32::MAX` as `invalid-token` and S2 builds every scale S1 admits; AC-58 lists `decimal(1, 4294967296)`; FR-093-AC-53 pins both limits and the S1 case. Matches the #2277 parser test. |
+| FND-007 | still-open | AC-57 fixes the direction, but in the opposite direction to QSpec FR-140 and the #2277 code; see FND-013. |
+| FND-008 | fixed | FR-096 sentence lists the literal scale and its total and the producer table has an S3 `Typer` row with `Locus::Region` over the literal. |
+| FND-009 | fixed | The FR-093 section and the FR-104 bullet now carry SHALL / SHALL NOT per rule; the compound ordered list remains as a numbered decision order, acceptable. |
+| FND-010 | fixed | FR-093 gains depends_on NFR-011 and QSpec FR-140 and FR-146 and traces_to FR-255; FR-104 gains traces_to FR-093. |
+| FND-011 | fixed | AC-42 adds the lowering of the convert node and the float-to-decimal refusal (FR-397-AC-18, checked); AC-40 a7 adds the oversize coefficient. The "convert of a constructor builds no node" check is not restored; low and accepted. |
+| FND-012 | fixed | a1 removed from AC-40, AC-38/45 and AC-41/54/55 split, the Rust format-width rationale dropped from NFR-011. |
+
+Verified in this round: `quire validate --scope .` exit 0 for all nine changed spec files; FR-093 AC ids 1 to 57 each appear once with no duplicate and no id taken from main (45 was a gap); the FR-093 table rows are not in numeric order (45, 52, 53 after 38; 54, 55 after 41; 56, 57 after 42), which no tool or text reads as order and `quire matrix` keys on ids, so accepted (low); no ticket id appears in any added spec line (the only `QSL-1619` in the diff is the review file's own Summary).
+
 ## Verdict
+
+Round 1: NOT mergeable yet on FND-013 (medium, a new rule introduced by the fix round that departs from QSpec FR-140 and the #2277 code; either restore the QSpec reading of AC-57, refusing `m1` and treating `m3` as a runtime out-of-domain, or land the QSpec FR-140 amendment first). FND-001 to FND-006 and FND-008 to FND-012 are fixed; FND-007 is superseded by FND-013; FND-014 is low and non-blocking.
+
+## Round 0 verdict
 
 Mergeable after FND-001 to FND-006 are addressed or explicitly accepted; none blocks the decision to use `stage_limit_exceeded`/`work-budget-exceeded` with `s3.decimal_literal_scale` (sound, consistent with FR-255, `s3.decimal_scale` and NFR-011). FND-001 and FND-002 are one decision: keep the FR-104 sentence (QSpec supports it) and add an example with no expected type, such as `let s = a / b in s = a` refusing `undefined_expression`/`unproved-nonzero`; the #2277 code and its test then change. FND-003 needs the code named. FND-004 needs an aggregate bound or an explicit acceptance. FND-005 should be dropped from this PR or reasoned (and AC-17 and line 139 aligned). FND-006 needs one sentence and an AC-58 entry. The rest are low.
 
