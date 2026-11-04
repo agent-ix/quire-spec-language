@@ -9,8 +9,6 @@
 //! from the direct dependencies the reader retained in the package
 //! ([`BarePackage::dependencies`]).
 
-use std::collections::BTreeSet;
-
 use quire_contract_model::CheckedPackageV2;
 
 /// A checked package as a bytes-only consumer holds it (FR-531).
@@ -51,15 +49,16 @@ impl<'p> BarePackage<'p> {
 
     /// The package's dependency closure, read from the direct dependencies
     /// each package retains from its read evidence (IR-1325): every
-    /// dependency once, nearest first, in lock-selection order. The root
-    /// package is not listed.
+    /// dependency once, nearest first, in lock-selection order. A package
+    /// two parents retain is one retained value and is listed once; two
+    /// distinct values that share a name are both listed. The root package is
+    /// not listed.
     pub fn dependencies(&self) -> Vec<&'p CheckedPackageV2> {
         let mut closure: Vec<&'p CheckedPackageV2> = Vec::new();
-        let mut seen: BTreeSet<&str> = BTreeSet::new();
         let mut queue: std::collections::VecDeque<&'p CheckedPackageV2> =
             self.package.direct_dependencies().collect();
         while let Some(next) = queue.pop_front() {
-            if !seen.insert(next.name()) {
+            if closure.iter().any(|held| std::ptr::eq(*held, next)) {
                 continue;
             }
             closure.push(next);

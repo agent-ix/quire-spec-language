@@ -85,6 +85,7 @@ impl ClauseFacts {
     }
 
     /// The facts with `formula` as the clause's formula.
+    #[doc(hidden)]
     #[must_use]
     pub fn with_formula(mut self, formula: ClauseFormula) -> Self {
         self.formula = formula;
@@ -242,11 +243,30 @@ impl ClauseFormula {
     }
 }
 
+/// Whether a timed package interval counts ticks: both ends closed and both
+/// bounds integral (the predicate of `Window::of` for an in-process timed
+/// interval). One definition for the work counters, the plan and the
+/// cross-check.
+pub(crate) fn counts_ticks(
+    lower: &CheckedOperationRational,
+    upper: &CheckedOperationRational,
+    lower_end: &CheckedIntervalEnd,
+    upper_end: &CheckedIntervalEnd,
+) -> bool {
+    let integral = |bound: &CheckedOperationRational| {
+        u64::try_from(&bound.denominator).is_ok_and(|denominator| denominator == 1)
+    };
+    *lower_end == CheckedIntervalEnd::Closed
+        && *upper_end == CheckedIntervalEnd::Closed
+        && integral(lower)
+        && integral(upper)
+}
+
 /// The atom index (FR-532 "Atom index") of each entry of `graph`: the number
 /// of the entry's node among the distinct atom nodes (`holds` and window
 /// aggregate), counted from 0 in the order of first use in pre-order, and
 /// `None` for an entry that is no atom.
-pub fn atom_numbers(graph: &[FormulaNodeUse<'_>]) -> Vec<Option<u64>> {
+pub(crate) fn atom_numbers(graph: &[FormulaNodeUse<'_>]) -> Vec<Option<u64>> {
     let mut assigned: BTreeMap<&qsl_package::CheckedNodeId, u64> = BTreeMap::new();
     graph
         .iter()
@@ -427,11 +447,7 @@ fn graph_shape(
             lower_end,
             upper_end,
         }) => {
-            let closed = |end: &CheckedIntervalEnd| *end == CheckedIntervalEnd::Closed;
-            let integral = |bound: &CheckedOperationRational| {
-                u64::try_from(&bound.denominator).is_ok_and(|denominator| denominator == 1)
-            };
-            if !closed(lower_end) || !closed(upper_end) || !integral(lower) || !integral(upper) {
+            if !counts_ticks(lower, upper, lower_end, upper_end) {
                 return Err(ReachFault::Timed);
             }
             u64::try_from(&upper.numerator).map_err(|_| ReachFault::Overflow)?
@@ -528,25 +544,13 @@ fn window_of(interval: Option<&CheckedOperationInterval>) -> Result<Window, Inte
             upper,
             lower_end,
             upper_end,
-        }) => {
-            let integral = |bound: &CheckedOperationRational| {
-                u64::try_from(&bound.denominator).is_ok_and(|denominator| denominator == 1)
-            };
-            match upper {
-                Some(upper)
-                    if *lower_end == CheckedIntervalEnd::Closed
-                        && *upper_end == CheckedIntervalEnd::Closed
-                        && integral(lower)
-                        && integral(upper) =>
-                {
-                    Window::Closed {
-                        lower: tick(&lower.numerator)?,
-                        upper: tick(&upper.numerator)?,
-                    }
-                }
-                _ => return Err(fault("step-interval-has-offsets")),
-            }
-        }
+        }) => match upper {
+            Some(upper) if counts_ticks(lower, upper, lower_end, upper_end) => Window::Closed {
+                lower: tick(&lower.numerator)?,
+                upper: tick(&upper.numerator)?,
+            },
+            _ => return Err(fault("step-interval-has-offsets")),
+        },
     })
 }
 
