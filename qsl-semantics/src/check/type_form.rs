@@ -989,6 +989,65 @@ mod tests {
         ));
     }
 
+    /// QSpec FR-149-AC-27: `Rational[-3, 7; 1, 12]` is well formed and its
+    /// membership reads the reduced numerator and denominator; each
+    /// malformed bound pair refuses `ill_typed` at the type, bare and as the
+    /// carrier of `Quantity<m, C>`.
+    #[trace("QSpec-TC-981", "QSpec-FR-149-AC-27")]
+    #[test]
+    fn a_rational_type_is_well_formed_exactly_when_its_bounds_are_ordered_and_positive() {
+        let rational = |bounds: &[&str]| builtin(BuiltinType::Rational, bounds);
+        let ValueType::Rational(ref domain) =
+            resolve(&rational(&["-3", "7", "1", "12"])).expect("the type is well formed")
+        else {
+            panic!("a rational type");
+        };
+        let value = |numerator: i64, denominator: i64| {
+            quire_exact::Rational::new(Integer::from(numerator), Integer::from(denominator))
+                .expect("a nonzero denominator")
+        };
+        for (numerator, denominator) in [(1, 4), (-3, 1), (0, 1), (7, 12)] {
+            assert!(
+                domain.contains(&value(numerator, denominator)),
+                "{numerator}/{denominator} is a member"
+            );
+        }
+        for (numerator, denominator) in [(8, 1), (-4, 1), (1, 13), (127, 5000)] {
+            assert!(
+                !domain.contains(&value(numerator, denominator)),
+                "{numerator}/{denominator} is not a member"
+            );
+        }
+
+        let names = OneUnit(UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".to_owned())],
+                1,
+            )
+            .expect("a fixture node key is well formed"),
+        ));
+        for bounds in [
+            ["8", "7", "1", "12"],
+            ["0", "1", "0", "12"],
+            ["0", "1", "-1", "12"],
+            ["0", "1", "13", "12"],
+        ] {
+            assert_mismatch(&rational(&bounds));
+            let refusal = resolve_form(&names, &quantity_form(rational(&bounds)))
+                .expect_err("a malformed carrier refuses")
+                .into_refusal(&root_location());
+            assert!(
+                matches!(
+                    refusal.cause,
+                    CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+                ),
+                "Quantity<m, Rational{bounds:?}> refused with {:?}",
+                refusal.cause
+            );
+        }
+    }
+
     /// Inverted, missing and non-numeric bounds are refused as a type
     /// mismatch, per builtin.
     #[test]

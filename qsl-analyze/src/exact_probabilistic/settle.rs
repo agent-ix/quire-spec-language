@@ -3,7 +3,9 @@
 
 use qsl_eval::simulation::NotSimulated;
 use qsl_replay::statistical::SubjectLimits;
-use qsl_replay::{settle_exact_prob_build_issue, ExactProbBuildIssue, ExactProbBuildRecord};
+use qsl_replay::{
+    settle_exact_prob_build_issue, ExactProbBuildIssue, ExactProbBuildRecord, UnavailabilityCause,
+};
 use quire_semantic_value::catalog::CatalogCode;
 
 use super::{ProductRefusal, ProductStop};
@@ -19,13 +21,23 @@ pub fn settle_product_refusal(
         request @ ProductRefusal::NotSimulated(NotSimulated::RequiresBound(_)) => {
             return Err(request)
         }
-        // Timed-form support is decided at the plan boundary; the FR-203
-        // product-build settlement map does not own that unsupported result.
-        request @ (ProductRefusal::TimedFormShape { .. }
-        | ProductRefusal::StrictClockConstraint { .. }
-        | ProductRefusal::DelayDistribution { .. }
-        | ProductRefusal::ZeroDelayCycle { .. }
-        | ProductRefusal::NotStochastic { .. }) => return Err(request),
+        // FR-204's digital product exposes these recognized unsupported
+        // forms as typed EN-5 terminal causes.
+        ProductRefusal::StrictClockConstraint { span } => {
+            ExactProbBuildIssue::Unsupported(UnavailabilityCause::StrictClockConstraint { span })
+        }
+        ProductRefusal::DelayDistribution { operation } => {
+            ExactProbBuildIssue::Unsupported(UnavailabilityCause::DelayDistribution { operation })
+        }
+        ProductRefusal::ZeroDelayCycle { states } => {
+            ExactProbBuildIssue::Unsupported(UnavailabilityCause::ZeroDelayCycle {
+                states: states.iter().map(|state| format!("{state:?}")).collect(),
+            })
+        }
+        ProductRefusal::TimedFormShape { span } => {
+            ExactProbBuildIssue::Unsupported(UnavailabilityCause::TimedFormShape { span })
+        }
+        request @ ProductRefusal::NotStochastic { .. } => return Err(request),
         ProductRefusal::NotSimulated(
             refusal @ (NotSimulated::Extent(_)
             | NotSimulated::GeneratorMismatch { .. }
@@ -57,7 +69,7 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_eval::simulation::model::ExpansionLimits;
-    use qsl_replay::{IncompleteCause, ModelCheckLimit, TerminalValue};
+    use qsl_replay::{IncompleteCause, ModelCheckLimit, TerminalValue, UnavailabilityCause};
     use quire_exact::ScalarLimits;
     use quire_semantic_value::catalog::CatalogCode;
 
@@ -111,5 +123,74 @@ mod tests {
                 value: 2,
             })
         );
+    }
+
+    #[trace("TC-639", "FR-204-AC-2", "FR-204-AC-4")]
+    #[test]
+    fn digital_product_refusals_settle_as_typed_unsupported_causes() {
+        let meter = ScalarLimits {
+            integer_bits: 64,
+            decimal_digits: 64,
+            scale_expansion: 64,
+            text_input_bytes: 64,
+            text_scalars: 64,
+            normalized_scalars: 64,
+            unit_edges: 64,
+            value_occurrences: 64,
+            work_units: 4_096,
+            result_units: 64,
+        };
+        let subject = SubjectLimits {
+            expansion: ExpansionLimits { max_candidates: 2 },
+            meter: &meter,
+        };
+        let cycle_state = super::super::ProbKey {
+            binding: None,
+            model: vec![0, 1, 2],
+            monitor: None,
+            accumulator: None,
+            pending: None,
+        };
+        let cases = [
+            (
+                ProductRefusal::StrictClockConstraint {
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                },
+                UnavailabilityCause::StrictClockConstraint {
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                },
+            ),
+            (
+                ProductRefusal::DelayDistribution {
+                    operation: "M::Call::send".to_owned(),
+                },
+                UnavailabilityCause::DelayDistribution {
+                    operation: "M::Call::send".to_owned(),
+                },
+            ),
+            (
+                ProductRefusal::ZeroDelayCycle {
+                    states: vec![cycle_state.clone()],
+                },
+                UnavailabilityCause::ZeroDelayCycle {
+                    states: vec![format!("{cycle_state:?}")],
+                },
+            ),
+            (
+                ProductRefusal::TimedFormShape {
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                },
+                UnavailabilityCause::TimedFormShape {
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                },
+            ),
+        ];
+
+        for (refusal, cause) in cases {
+            let settled = settle_product_refusal(refusal, subject)
+                .expect("a recognized digital refusal settles");
+            assert_eq!(settled.value(), &TerminalValue::Unsupported(cause));
+            assert_eq!(settled.diagnostic(), None);
+        }
     }
 }
