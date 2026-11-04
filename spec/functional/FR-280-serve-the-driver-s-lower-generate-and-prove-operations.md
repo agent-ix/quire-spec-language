@@ -93,11 +93,11 @@ for `AdmissionFailure::Incomplete`, ADR-013 O-16's refusal row. The entry takes 
 package because a QSL engine runs in process
 over the checked subject, and because some packages a QSL engine settles have
 no emitted form: S4 refuses to emit a package that holds a random parameter,
-a workload, a reward or a probabilistic claim (FR-185), while its checked
-package remains. EN-4 decides a probabilistic claim over that checked subject
+a workload or a reward (FR-185), while its checked package remains; a
+claim-only package is emitted (FR-498). EN-4 decides a probabilistic claim over that checked subject
 (FR-189), and a sampled witness replays over the same subject (FR-193). An
 entry that read an `EmittedPackage` could serve no EN-4 item through `prove`,
-since every package that holds a probabilistic claim is one S4 refuses.
+since a claim's workload or reward makes its package one S4 refuses.
 
 ## Inputs
 

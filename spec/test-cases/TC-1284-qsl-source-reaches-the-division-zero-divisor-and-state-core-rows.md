@@ -14,7 +14,10 @@ Verify that each QSpec scalar row named by FR-495 is reachable from QSL source
 with the two observations the requirement states: the check refusal under
 `CheckMode::Linked` and the kernel outcome under `CheckMode::Kernel`; and that a
 state-core declaration is refused as a declaration before any of its
-expressions is classified. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6 and, through QSpec TC-266, FR-495-AC-5.
+expressions is classified; and that an integer division over unbounded
+`Integer` operands settles `requires-bound` against a finite backend without
+narrowing. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6, FR-495-AC-7 and,
+through QSpec TC-266, FR-495-AC-5.
 
 ## Test Procedure
 
@@ -37,8 +40,14 @@ expressions is classified. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6 and, t
    without a rational type expected (FR-495-AC-6).
 5. Run QSpec TC-192 DIV-14 through the registered SMT backend, once with a cvc5
    provider in the lock and once without.
+6. Under each division definition, check `q` of FR-495-AC-7 and its `rem` and
+   `mod` variants; read each operator's requirement record; write the request
+   and settle each item in a locked run with a cvc5 provider registered beside
+   a test descriptor advertising (`value-validity`, `bounded`) whose
+   disposition is `requires-bound`, then in a locked run with that bounded
+   descriptor alone and no SMT provider.
 
-Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "FR-495-AC-6", "TC-1284")]`; step 5 additionally carries `FR-495-AC-5` and depends on the provider.
+Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "FR-495-AC-6", "TC-1284")]`; step 5 additionally carries `FR-495-AC-5`, `QSpec-FR-147-AC-7` and `QSpec-FR-147-AC-8` and depends on the provider; step 6 carries `FR-495-AC-7`, `QSpec-FR-147-AC-3` and `QSpec-FR-147-AC-8`.
 Vectors are referenced by QSpec row ID, never copied.
 
 ## Expected Results
@@ -62,3 +71,8 @@ Vectors are referenced by QSpec row ID, never copied.
   value it checks only with the rational type expected.
 - Step 5: with a provider, the holding obligation is `proved` and the violated one `refuted`
   with a replayable counterexample; without one the row is reported pending on the provider.
+- Step 6: each record's extent is `Unbounded` over `a` and `b`; each item is
+  written with `finite_bound_available` true and the bounded descriptor's item
+  settles `requires-bound` with no harness and no evaluation in the run with
+  cvc5 registered, and the same in the run without it; no operand is narrowed
+  to an `Int[..]`.

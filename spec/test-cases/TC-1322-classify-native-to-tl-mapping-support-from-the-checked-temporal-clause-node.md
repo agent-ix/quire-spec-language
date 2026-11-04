@@ -39,7 +39,7 @@ Verify FR-527-AC-1 to FR-527-AC-24. The unit **M** holds one clause per row of F
 | 21 | 21 | a package whose lock lacks the `profile_selections` row of a temporal clause's `temporal_profile` law, read with the reader | refused; no view |
 | 22 | 22 | a clause selected under `quire.temporal.timed/v1` | `Unsupported` naming `TimedProfile`, no target |
 | 23 | 23 | a timed clause with a past and a future operator | `Unsupported` naming `TimedProfile` and `MixedDirection` |
-| 24 | 24 | a reader that implements IR-1278; the retained name | equal to the view's `name()`; gated on IR-1278 |
+| 24 | 24 | the one-occurrence clauses `Gamma` (supported) and `Delta` (timed, unsupported), and FR-337-AC-16's `Alpha` and `Beta` sharing one node; the retained name | `Some("Gamma")`, `Some("Delta")` and `None`, each equal to the view's `name()` |
 
 Tag the test `#[trace("FR-527-AC-1", ..., "FR-527-AC-19", "TC-1322")]`, and AC-21 to AC-24 likewise; AC-20 is Inspection and carries no test tag.
 

@@ -2467,14 +2467,19 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     assert_eq!(losses.len(), 1);
     assert!(matches!(losses[0].loss, ValueLoss::Decimal(_)));
     assert_eq!(losses[0].location.path(), Vec::<usize>::new());
-    check_in(
-        &package,
-        &parameters,
-        &quotient,
-        Some(&target),
-        CheckMode::Linked,
-    )
-    .unwrap();
+    // The divisor parameter `q` is no nonzero fact, whatever interval its
+    // type declares (FR-093 "Decimal constructors"): the linked check keeps
+    // the obligation.
+    assert_eq!(
+        refused(check_in(
+            &package,
+            &parameters,
+            &quotient,
+            Some(&target),
+            CheckMode::Linked,
+        )),
+        CheckCause::Unproved(Obligation::Nonzero)
+    );
 
     let (exact, exact_losses, _) = run_in_losses(
         &package,
@@ -2499,15 +2504,21 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
         )),
         CheckCause::Unproved(Obligation::Nonzero)
     );
+    // FR-104: a quotient of two operands of one decimal type is typed by it
+    // wherever it is written, with no expected type. Its nonzero obligation
+    // is discharged only by a nonzero `decimal(c, s)` literal (FR-093
+    // "Decimal constructors"), not by a declared interval excluding zero.
+    check_in(&package, &parameters, &quotient, None, CheckMode::Kernel)
+        .expect("the quotient is typed by its operands' decimal type");
     assert_eq!(
         refused(check_in(
             &package,
             &parameters,
             &quotient,
             None,
-            CheckMode::Kernel
+            CheckMode::Linked
         )),
-        CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)
+        CheckCause::Unproved(Obligation::Nonzero)
     );
 }
 

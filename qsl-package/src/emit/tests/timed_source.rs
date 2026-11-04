@@ -7,7 +7,7 @@ use super::*;
 use crate::checked_v2::{read_checked_package_v2, CheckedTimedModel};
 use quire_contract_model::CheckedPackageEvidence;
 
-fn package_units_document() -> Vec<u8> {
+pub(super) fn package_units_document() -> Vec<u8> {
     let mut document: Value =
         serde_json::from_slice(config_version_unit::DOMAIN_PACKAGE.as_bytes())
             .expect("the fixture is JSON");

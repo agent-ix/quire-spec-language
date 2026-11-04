@@ -210,12 +210,12 @@ resolving it is the assembler's (FR-091).
 
 ### Package emission
 
-If a checked package holds a random parameter, a workload, a reward or a
-checked `probabilistic` claim (FR-186), then
+If a checked package holds a random parameter, a workload or a reward, then
 S4 SHALL refuse the package `unsupported_construct`/`not-yet-implemented`,
 naming the first such declaration in source order, its feature name
-(`random-parameter`, `workload`, `reward` or `probabilistic-claim`) and the selected profile
-identity (QSpec FR-272). S3's checked record is unaffected, and FR-187 reads
+(`random-parameter`, `workload` or `reward`) and the selected profile
+identity (QSpec FR-272). A checked `probabilistic` claim (FR-186) is no such
+declaration: S4 emits it as its own node (FR-498). S3's checked record is unaffected, and FR-187 reads
 it from the checked package, not from the emitted wire. Replay of a sampled
 witness (FR-193) takes that checked subject and recompiles nothing.
 

@@ -7,6 +7,7 @@ mod abstraction_declaration;
 mod complete_cst;
 mod complete_grammar;
 mod cst_identity;
+mod decimal_constructor;
 mod deep_sources;
 mod hyper_clause;
 mod limits;
