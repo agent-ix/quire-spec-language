@@ -63,3 +63,16 @@ Fixes needed:
 - FND-002: drop the CheckedBody location.
 - FND-003: route plain-data roots through `ReaderNode`, then delete `ReaderRoot` and `Task::ReaderRead`.
 - FND-005: restore a real location assertion.
+
+## Dispositions
+
+- FND-001: fixed. A projected node carries an optional location: a slot-walk application reads its paired row, and a `Local`, literal, reference, `case` or function-body node reads none, because the admitted wire carries none for it (AC-64). The six tests pass.
+- FND-002: fixed. The reader no longer reads the source `CheckedBody` location. The `root_provenance` parameter is gone.
+- FND-003: fixed. Every reader root runs through `ReaderNode`. Object attributes project to `NodeKind::Attribute` over their `model.deref`. `ReaderRoot`, `Task::ReaderRead`, `eval_reader_read`, `protocol_reference_slot` and `ReaderProtocolField` are deleted.
+- FND-004: fixed. Rows are read from the admitted wire, grouped by origin and application, and ordered by (occurrence, `term_ordinal`). Visit k pairs with row k. The root context has no memo, so each parent's visit is its own position. A missing row, or a row with no visit, refuses view creation with `MissingLocationProjection` and the evidence FR-390 lists. Tests cover AC-31/33/35/37/38/52/53/54/57 in `qsl-package/src/emit/tests/protocol_locations.rs`.
+- FND-005: fixed. The TC-1073 reader halt again asserts `Unavailable { location: None, .. }` (AC-64).
+- FND-006: fixed, with a deviation. An unprojected form or operation is a typed `UnsupportedView` (`MissingOperationProjection`, `MissingLiteralProjection` or `MissingTypeRepresentation`) at its node. It is held per slot and returned at that slot's evaluation as `unknown_required_feature`/`unsupported-feature`, at no charge. FR-390 asks for a package-wide view refusal. That would refuse every package holding a `let` or `if` slot, which the projection does not cover yet, so the scope is per slot. `MissingLocationProjection` stays package-wide. Covered by test `an_unprojected_slot_root_is_a_typed_refusal_at_its_node`.
+- FND-007: fixed. The package is projected once, in `AdmittedPackageRead::evaluation_view`, over a node-id index. Identities and the wire graph are built once per view.
+- FND-008: fixed. Case binders in the root context take slots after the slot's binders, and the projection's `frame_slots` sizes the reader frame.
+- FND-009: fixed. The stale comment was removed along with the code it described.
+- FND-010: deferred to QSL-1660 (bound or unroll the projection recursion).

@@ -54,3 +54,10 @@ The tests are not tautological. Each one compares the checked and reader results
 ## Verdict
 
 CONDITIONAL. AC-25 is backed by two passing tests. AC-15, AC-24, AC-26 and AC-27 are tagged but red. AC-16 and AC-50 are violated in the code. Location pairing is missing.
+
+## Dispositions
+
+- FND-001: fixed. AC-15, AC-24, AC-26, AC-27, TC-1073 and the shared-meter test pass. All 46 `protocol_slots::acceptance` tests pass.
+- FND-002: fixed. Every reader root goes through `ReaderNode` (AC-16), and no location comes from the source package (AC-50).
+- FND-003: fixed. Pairing is implemented in `reader_protocol_projection.rs`, and tagged tests cover AC-31, 33, 35, 37, 38, 52, 53, 54 and 57.
+- FND-004: fixed. `an_unprojected_slot_root_is_a_typed_refusal_at_its_node` covers this. The refusal is per slot rather than package-wide; see code-review FND-006.
