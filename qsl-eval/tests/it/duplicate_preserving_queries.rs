@@ -112,12 +112,20 @@ fn booleans(value: &Value) -> Vec<bool> {
         .collect()
 }
 
-fn int(value: i64) -> Value {
-    Value::Integer(Integer::from(value))
+fn integer_of(value: &Value) -> Integer {
+    match value {
+        Value::Integer(integer) => integer.clone(),
+        other => panic!("an integer, not {other:?}"),
+    }
 }
 
-/// Evaluating `[2, 2, 3]` keeps the duplicate and the order through `filter`
-/// and `map`, and returns size 3, count of 2 equal to 2 and sum 7.
+/// FR-046-AC-3 (TC-127), the part that runs on the checked route: over the
+/// items `[2, 2, 3]`, `filter` and `map` keep the duplicate and the source
+/// order, and size is 3, the count of 2 is 2 and the sum is 7, evaluated from
+/// source text through the checker and `CheckedPackage::link`. Not covered
+/// here, and left to the follow-on under QSL-1681: the nominal unit `U` on the
+/// `Amount`, `Total` and `Count` domains, and evaluation of an admitted
+/// (emitted and read-back) artifact agreeing with these values.
 #[trace("FR-046-AC-3", "TC-127")]
 #[test]
 fn duplicate_items_survive_the_queries_and_size_count_and_sum_read_them() {
@@ -134,16 +142,10 @@ fn duplicate_items_survive_the_queries_and_size_count_and_sum_read_them() {
         [true, true, false],
         "map keeps one result per item, in order"
     );
+    assert_eq!(integer_of(&call(&package, "length")), Integer::from(3_i64));
     assert_eq!(
-        format!("{:?}", call(&package, "length")),
-        format!("{:?}", int(3))
+        integer_of(&call(&package, "twos_counted")),
+        Integer::from(2_i64)
     );
-    assert_eq!(
-        format!("{:?}", call(&package, "twos_counted")),
-        format!("{:?}", int(2))
-    );
-    assert_eq!(
-        format!("{:?}", call(&package, "summed")),
-        format!("{:?}", int(7))
-    );
+    assert_eq!(integer_of(&call(&package, "summed")), Integer::from(7_i64));
 }

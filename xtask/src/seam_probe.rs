@@ -1206,8 +1206,11 @@ mod tests {
     /// `Capability::__SeamProbe` has no row in `applies_to_declaration`, so
     /// the `qsl-semantics` probe build fails with `E0004` at exactly that
     /// function, while the same package builds clean with no probe cfg.
+    /// Ignored in the default run because `make seam-probe` (in `CI_CHECKS`)
+    /// runs the same builds and comparison; run it with `--ignored`.
     #[ix_trace_rs::trace("TC-1302", "FR-507-AC-6")]
     #[test]
+    #[ignore = "slow: runs under make seam-probe (CI_CHECKS)"]
     fn a_capability_variant_with_no_applicable_family_entry_does_not_compile() {
         let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
