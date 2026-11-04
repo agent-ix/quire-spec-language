@@ -349,7 +349,6 @@ impl<'p> ValueTarget<'p> {
     ///
     /// An [`InternalFault`] when the evaluator breaks one of its invariants
     /// or `assignment` does not fit the target's parameters.
-    #[deny(clippy::wildcard_enum_match_arm)]
     pub fn evaluate(
         &self,
         assignment: &[Value],
@@ -362,6 +361,7 @@ impl<'p> ValueTarget<'p> {
     /// Evaluate `assignment` under a limit on value-function body
     /// evaluations. The returned count lets the check arm charge nested
     /// callees to the same `max_cases` budget as parameter assignments.
+    #[deny(clippy::wildcard_enum_match_arm)]
     pub fn evaluate_with_case_budget(
         &self,
         assignment: &[Value],
