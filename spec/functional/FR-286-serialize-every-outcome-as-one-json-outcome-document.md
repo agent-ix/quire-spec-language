@@ -47,11 +47,11 @@ the same document (QSpec FR-300-AC-3). The document's members are:
   it is an empty array for every other operation and for an outcome with no
   items. Each item that has a terminal record, every proof result, carries its
   QSpec FR-331 terminal record with its label
-  and cause in FR-331's wire spelling (its wire-spelling table); a `monitor` item built from a clause run that did
-  not settle (pending or indeterminate) carries the clause-run record, with the
-  `clause` member, and no FR-331 terminal record (see "Monitor documents from
-  clause runs"): for example
-  `undefined-evaluation{where, cause}` and `replay-parity`. The scalar-parity
+  and cause in FR-331's wire spelling (its wire-spelling table): for example
+  `undefined-evaluation{where, cause}` and `replay-parity`. A `monitor` item
+  built from a clause run that did not settle (pending or indeterminate)
+  carries the clause-run record, with the `clause` member, and no FR-331
+  terminal record (see "Monitor documents from clause runs"). The scalar-parity
   cause `ScalarAgrees` (FR-357) is spelled `scalar-agrees` and carries its kind
   only: the claim identity and outcome stay on the typed `ScalarAgreement`. A proof item (`prove`,
   `analyze`) never carries the label `undefined`: an undefined claim
@@ -128,7 +128,7 @@ category:
 
 `pending` and `indeterminate` are catalog labels (`Category::as_str`), not
 FR-331 terminal-record labels: a clause run that did not settle has no terminal
-record, so these two items carry no record and the label is the catalog's.
+record, so these two items carry no FR-331 terminal record, only the clause-run record, and the label is the catalog's.
 Every item built from a clause run also carries `clause`, the clause's
 qualified name, so that a consumer names the pending clauses (FR-285's status
 `pending` and the ids of the pending clauses) from the document alone. An

@@ -51,6 +51,29 @@ V1-EXPR-024/025 FR-146-AC-3 and FR-019-AC-5 (TC-010, reflection, I/O, mutation r
 | FND-009 | low | FR-529-AC-5, FR-530-AC-3 and FR-530-AC-5 each bundle several independent checks (compile, read-back, admission, forged identity, referenced-result, finite trace; or three cases), so one failing sub-check hides behind the AC row; FR-530-AC-5 says "tests reject", naming the test not the system. FR-529 cites FR-350 and FR-380 and FR-530 cites FR-177 in prose but not in `relationships`. | spec/functional/FR-529-settle-a-temporal-guarantee-of-implementation-rust-natively.md:98-104 | wrong-requirement |
 | FND-010 | low | TC-1330 asks the test to "record in the test output which behaviour is existing coverage ... and which is newly delivered", which is a build-log instruction with no expected result that can fail. Remove it or turn it into an assertion on a named case. | spec/test-cases/TC-1330-native-composition-carries-and-checks-premises.md:20-24 | wrong-requirement |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-011 | low | The monitor section still says pending and indeterminate items "carry no record" while the items bullet now says they carry the clause-run record with `clause`; say "no FR-331 terminal record" there, and move the "for example `undefined-evaluation{where, cause}` and `replay-parity`" clause back beside the terminal-record sentence in the items bullet. Wording only, non-blocking. | spec/functional/FR-286-serialize-every-outcome-as-one-json-outcome-document.md:46-55,125-128 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-002 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-003 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-004 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-005 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-006 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-007 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-008 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-009 | fixed | Verified in fix commit f8528ef6e against the current text. |
+| FND-010 | fixed | Verified in fix commit f8528ef6e against the current text. |
+
 ## Verdict
 
 Not mergeable as is: FND-001 is a real contradiction (high) and four medium findings need a fix round. Merge order: QSpec #616 before this PR. Everything else listed in the Summary verified.
+
+Round 1: FND-001 to FND-010 are fixed; FND-011 is a new low, non-blocking wording finding. Verified: executed set re-derived from QSpec main 78dcf2a90 (manifest 25 admit, 56 refuse, 4 property plus 34 layout refuse rows = 25, 90, 4; 26 pending ids equal layout ids; CH14a replaced by CH14a-1..8); `quire validate` exit 0 on all changed files and on spec/** plus plan/**. Mergeable once QSpec #616 has merged (it is still open).
