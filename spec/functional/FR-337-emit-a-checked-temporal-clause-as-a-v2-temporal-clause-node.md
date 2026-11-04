@@ -516,7 +516,7 @@ FR-488 and FR-447.
 | FR-337-AC-12 | The standing `CaptureRead` refusal of "Capture observation" (QSL-1092): the clause `eventually[0,1] holds(n < 3 and c.value = n + 1)` under event-position false-extension, `on each (q: M::Counter) when (c.value = 1)` with `capture n: Int[0, 3] = c.value;` checks and S4 emits it, and the engine returns `ModelCheckRefusal::CaptureRead` naming the clause and `n` and no verdict, exploring no state (no state is charged to the meter); the same refusal results for `always holds(n < 3 and c.value <= n + 1)` under infinite-trace `on each`, for a bounded monitor clause `on origin` with `capture n: Int[0, 3] = c.value;` and `always holds(c.value >= n)`, and for a clause reading its second capture only, naming that capture; a clause whose unit has an unbounded root returns `RequiresBound`, not `CaptureRead`; the same clause with the `holds` condition `c.value = 3` returns AC-11's verdict with the capture unread. | Test (TC-1267) |
 | FR-337-AC-13 | Over the `Counter` subject with a capture `n: Int[0, 3] = c.value;` no `holds` reads: infinite-trace `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` is `Violated`, as FR-125-AC-18 returns it, and FR-128 replays its counterexample to `reproduced-with-evaluated-witness`; the unguarded `on each (q: M::Counter)` clause with the same capture is `Holds{Exhaustive}` (a guarded clause carries no closure certificate) and FR-338's checker accepts the `ClosureCertificate`, reading the captures from the recompiled package. For AC-11's `z` clause, FR-338's checker rejects a certificate for a reached state at which `z` is undefined `BadState` at the reached product state, as it rejects an undefined atom. FR-128 replays the same clause's `UndefinedEvaluation` counterexample to `reproduced-with-evaluated-witness` with the undefined value at position 2 located at `z`, and the payload with `where.locus` naming the activation or another capture, or with `where.position` 1, settles `inconclusive`, `ReplayParity`; FR-339's component checker is not built, so its rejection of the same certificate waits on it. | Test (TC-1267) |
 | FR-337-AC-14 | The footprint (FR-156 "Atom footprints") of `always holds(true)` `on each (q: M::Counter) when (true)` with `capture n: Int[0, 3] = c.value;` holds the location `Counter::value` with the `over` parameter as its receiver, which the same clause with no capture does not, and FR-126's partial-order run joins it into the atoms'; a capture initializer reading through `q` has the same receiver. | Test (TC-1267) |
-| FR-337-AC-15 | A clause with an aggregate atom emits a `temporal`/`formula` node with identity `quire.op.temporal.aggregate` and the normalized typed argument whose members are the window, normalized `min_count`, expression, comparison and converted threshold, with the aggregate term's kind and filter (QSpec FR-414 defines the term; no QSpec criterion yet defines the wire members, and FR-370-AC-14 is a fairness criterion); its expression terms bind the clause's `over` parameter and captures, spans resolve through the source map, and changing the window, normalized `min_count`, expression, comparison or converted threshold changes the formula key and package identity. | Test (TC-1267) |
+| FR-337-AC-15 | A clause with an aggregate atom emits a `temporal`/`formula` node applying `quire.op.temporal.aggregate` whose one argument is QSpec FR-370's "Window aggregate atom" `aggregate`: for each kind its bindings and literals are those of the QSpec accepted vector over the same inputs (AG-01 to AG-06, AG-08, AG-09); its `predicate`, `value` and `filter` references reach the clause's `over` parameter; spans resolve through the source map; an omitted and an explicit `min_count 1` give one node; changing the window, `min_count`, value, filter, comparison, threshold or kind changes the formula key and package identity; a `duration` window lowers to quantity literals of its lower bound's unit, `past[0 ms, 300 s]` to `0` and `300000` of `ms`; and a `duration` window whose unit node is not the `scalar_type`/`unit` node the selected `timestamp_unit` names refuses the emission with no package. | Test (TC-1267) |
 | FR-337-AC-16 | Two structurally equal clauses `eventually[0,1] holds(true)` over one subject named `Alpha` and `Beta` emit one `temporal_clause` node and two `temporal_clause_names` rows at occurrences 0 and 1 with the names `Alpha` and `Beta`, whatever the clause's profile. | Test (TC-1326) |
 | FR-337-AC-17 | Renaming `Alpha` changes that name row and no NodeId or `package_id` of any node. | Test (TC-1326) |
 | FR-337-AC-18 | A unit with no clause omits `temporal_clause_names`, and a unit whose clauses each have one occurrence carries one row at occurrence 0 per clause. | Test (TC-1326) |
@@ -529,34 +529,54 @@ FR-488 and FR-447.
 ### Aggregate formula emission
 
 For a checked temporal clause containing aggregate atoms, the emitter SHALL
-write each aggregate atom as a `temporal`/`formula` node using
-`quire.op.temporal.aggregate`, with the normalized, typed aggregate argument
-defined by QSpec FR-370. Each value, filter, predicate
-and threshold term SHALL be lowered in the clause's binder scope; the
-aggregate node identity SHALL include the window, normalized `min_count`,
-aggregate expressions, comparison and threshold. Source spans SHALL remain
-in the package source map and SHALL NOT enter the identity preimage.
-
-QSpec FR-414 defines the aggregate term and no QSpec criterion yet defines the
-node's wire members (QSL-1644), so until one does the application has no
-operation member and its arguments are these bindings, in this order:
+write each aggregate atom as a `temporal`/`formula` node applying
+`quire.op.temporal.aggregate` with exactly the wire shape of QSpec FR-370
+"Window aggregate atom" (QSL-1644): operator class `temporal_formula`, no
+law, member or mode, the result type the `Boolean` node, and one argument,
+an `aggregate` of these bindings in this order, a binding the row does not
+require omitted:
 
 1. `kind`: the text `count`, `sum`, `min`, `max`, `fraction` or `quantile`;
-2. `level`: for `quantile` only, the exact rational level `q`;
-3. `filter`: when a `where holds(...)` filter is written, its Boolean term;
-4. `window`: an aggregate binding `lower` and `upper`, the integer offsets of
-   `past[a, b]` under event-position, or, under timestamped-event, the exact
-   rational bounds converted to the lower bound's written time unit followed by
-   `unit`, that unit's name as text;
-5. `min_count`: the integer `min_count`, 1 when the source omits it;
-6. `expression`: the value term of `sum`, `min`, `max` or `quantile`, or the
-   predicate term of `fraction`; absent for `count`;
-7. `comparison`: the text `<`, `<=`, `=`, `>=` or `>`;
-8. `threshold`: the threshold term, converted to the value's unit when it is a
-   quantity of another unit of the value's dimension.
+2. `q`: for `quantile` only, the exact rational literal `0 < q < 1`;
+3. `predicate`: for `fraction` only, the term of the `holds(P)` predicate;
+4. `value`: for `sum`, `min`, `max` and `quantile` only, the term of the
+   value expression;
+5. `filter`: when a `where holds(...)` filter is written, its term;
+6. `window_kind`: the text `positions` under event-position, `duration`
+   under timestamped-event;
+7. `lower` and `upper`: the bounds `a` and `b` of `past[a, b]`, integer
+   literals for `positions`; for `duration` quantity literals typed by the
+   node of the lower bound's written time unit, both bounds converted
+   exactly to it;
+8. `min_count`: the integer literal `min_count`, 1 when the source omits it;
+9. `comparison`: the text `<`, `<=`, `=`, `>=` or `>`;
+10. `threshold`: the threshold term, of the aggregate's result family.
 
-Each expression is located in the source map at its own expression tree, and the
-node at the aggregate atom.
+Each `predicate`, `value` and `filter` term SHALL be lowered in the clause's
+binder scope and bound as a reference to its node. A threshold written as a
+literal SHALL be bound as a literal of the result family: `integer` for
+`count`, `rational` for `fraction`, otherwise the value's family, an integer
+literal written as the rational of its value where a rational is required; a
+quantity threshold in another unit of the value's dimension is converted to
+the value's unit and bound as a reference to the converted node; any other
+threshold is bound as a reference to its node. S3 refuses, before emission,
+a value that is not of family `integer`, `rational` or `quantity` and a
+threshold of another family, as FR-194 states.
+
+QSpec FR-370 types a `duration` bound by the clause's clock unit, the
+`scalar_type`/`unit` node whose path is `["scalar_type", "unit", T]`, `T`
+the selected clock's `timestamp_unit`. The emitter SHALL refuse a clause
+whose `duration` window's unit node is not that node with
+`InvalidTemporalClockValue` naming `timestamp_unit`, and SHALL write no
+package. A source-declared unit's node path is its declared name, and a
+source cannot yet name a model package's unit (QSL-1478), so no `duration`
+window emits today; `positions` windows do.
+
+The bindings are inputs of the node's structural identity, so a change of any
+binding changes the formula node, and an omitted `min_count` and `min_count 1`
+give one node. Each expression is located in the source map at its own
+expression tree, and the node at the aggregate atom; source spans SHALL NOT
+enter the identity preimage.
 
 ## Dependencies
 

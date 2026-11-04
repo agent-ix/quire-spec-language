@@ -2610,7 +2610,11 @@ impl<'a> Lowering<'a> {
     /// an empty body, and a unit typed by its dimension. A node already in the graph
     /// is left as it is. The walk is a heap work list, bounded by the unit
     /// table's size.
-    fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
+    pub(super) fn unit_nodes(
+        &mut self,
+        unit: NodeKey,
+        location: &Location,
+    ) -> Result<(), CheckRefusal> {
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
             let Some(node) = self.units.nominal_node(&key).cloned() else {

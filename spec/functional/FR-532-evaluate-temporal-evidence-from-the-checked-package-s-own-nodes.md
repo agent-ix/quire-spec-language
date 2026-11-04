@@ -136,11 +136,11 @@ without a finite upper bound, a timed interval under a bounded profile and a
 ### Window aggregates
 
 A clause with a window aggregate atom is written as a `quire.op.temporal.aggregate`
-entry whose typed argument carries the window, normalized `min_count`, expression,
-comparison and converted threshold (FR-337-AC-15) and the aggregate term's kind and
-filter (QSpec FR-414). QSpec defines the aggregate term (FR-414) and no wire members
-for the node, and FR-337-AC-15's citation of QSpec FR-370-AC-14 names a fairness
-criterion, so the member names are FR-337-AC-15's until QSpec defines them.
+entry whose one `aggregate` argument binds the kind, the `quantile` level `q`, the
+`fraction` predicate, the value, the optional filter, the window (`window_kind`,
+`lower`, `upper`), the normalized `min_count`, the comparison and the threshold
+(FR-337-AC-15). QSpec FR-414 defines the aggregate term and QSpec FR-370 "Window
+aggregate atom" defines these wire bindings (QSL-1644).
 
 Every route SHALL evaluate such an atom as FR-516 "Window aggregate atoms" states,
 from the entry's members read from the bytes and the per-position samples of the
@@ -148,9 +148,9 @@ request. `formula_graph()` SHALL read the entry (FR-515: `aggregate` member) and
 truth plan SHALL walk it as the atom it is.
 
 This does not run today, and no package route has ever raised a cause for it: QSL
-emits the node (FR-337-AC-15), but the in-process plan faults
-`aggregate-formula-not-emitted`, and no operation catalog entry exists for the node
-in QSpec or in Contract IR's reader, so no package carrying it is admitted. The criteria for aggregate atoms are specified
+emits the node (FR-337-AC-15) and QSpec FR-370 catalogues it, but the in-process plan
+faults `aggregate-formula-not-emitted`, and the Contract IR reader QSL locks admits no
+such operation, so no package carrying it is admitted. The criteria for aggregate atoms are specified
 now and are gated, as the IR-gated criteria of FR-533 are, on QSL-1643 (emission of
 aggregate clauses) and QSL-1644 (a QSpec catalog entry for the node and its
 admission by Contract IR). No hand-built wire package can stand in: `read_checked_package` refuses an

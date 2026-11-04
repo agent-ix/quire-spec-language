@@ -107,6 +107,12 @@ Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`, and the test of AC-8's later
   `ReplayParity` (FR-339's rejection waits on its checker); the footprint holds `Counter::value` with the `over` receiver only with the
   capture.
 - Step 8: each emitted formula atom uses `quire.op.temporal.aggregate` with
-  the closed ordered payload of FR-337 "Aggregate formula emission"; omitted and explicit `min_count 1` yield the
-  same key, reformatting changes neither key nor package identity, and each
-  semantic payload mutation changes both.
+  one `aggregate` argument whose bindings and literals equal the accepted
+  argument of QSpec's `temporal-aggregate-vectors.json` vector over the same
+  inputs (AG-01 to AG-06, AG-08, AG-09; read from `$QSPEC_DIR`), the
+  `fraction` threshold `1` written as the rational `1`; omitted and explicit
+  `min_count 1` yield the same key, reformatting changes neither key nor
+  package identity, and each semantic payload mutation changes both;
+  `past[0 ms, 300 s]` lowers to `lower` `0` and `upper` `300000` of `ms`; and
+  a `duration` window whose unit node is not the clock's
+  `["scalar_type", "unit", timestamp_unit]` node refuses the emission.

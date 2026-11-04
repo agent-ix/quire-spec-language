@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-337-AC-15 (TC-1267 step 8): a clause with a window aggregate atom
 //! emits the atom as a `temporal`/`formula` node applying
-//! `quire.op.temporal.aggregate`, whose arguments are the bindings FR-337
-//! "Aggregate formula emission" orders. Contract IR's reader admits no such
-//! operation yet (QSL-1644), so these tests read the emitted wire.
+//! `quire.op.temporal.aggregate`, whose one argument is QSpec FR-370's
+//! "Window aggregate atom" aggregate of bindings. QSL's locked Contract IR
+//! reader admits no such operation yet, so these tests read the emitted wire
+//! and compare it with the accepted arguments of QSpec's
+//! `temporal-aggregate-vectors.json`, read in place from `$QSPEC_DIR`.
 
 use super::temporal_clause::{
-    clause_node, compile, document, formula_root, node_key, node_with, parameter_named, reaches,
+    check_graph, clause_node, compile, document, formula_root, node_key, parameter_named, reaches,
     target, unit, EVENT,
 };
 use super::*;
@@ -41,6 +43,13 @@ fn timestamped(formula: &str) -> String {
     )
 }
 
+/// A timestamped-event clock whose timestamps are in the unit `unit`.
+fn clock_in(unit: &str) -> quire_contract_model::ClockConfiguration {
+    quire_contract_model::ClockConfiguration::TimestampedEvent {
+        timestamp_unit: unit.into(),
+    }
+}
+
 /// The one aggregate formula node of `wire`.
 fn aggregate(wire: &Value) -> &Value {
     let found: Vec<&Value> = nodes(wire)
@@ -57,170 +66,119 @@ fn aggregate(wire: &Value) -> &Value {
     node
 }
 
-/// The argument names of the aggregate node `node`, in order.
-fn names(node: &Value) -> Vec<&str> {
-    node["body"]["arguments"]
-        .as_array()
-        .expect("arguments")
-        .iter()
-        .map(|argument| {
-            assert_eq!(argument["term"], "binding", "{argument}");
-            argument["name"].as_str().expect("a name")
-        })
-        .collect()
+/// The one `aggregate` argument of the aggregate node `node`.
+fn argument(node: &Value) -> &Value {
+    let arguments = node["body"]["arguments"].as_array().expect("arguments");
+    let [argument] = &arguments[..] else {
+        panic!("one argument: {node:#}");
+    };
+    assert_eq!(argument["term"], "aggregate", "{argument}");
+    argument
 }
 
-/// The value bound to `name` among the aggregate node's arguments.
+/// The value bound to `name` in the aggregate node's argument.
 fn bound<'n>(node: &'n Value, name: &str) -> &'n Value {
-    node["body"]["arguments"]
+    argument(node)["members"]
         .as_array()
-        .expect("arguments")
+        .expect("members")
         .iter()
-        .find(|argument| argument["name"] == name)
-        .map(|argument| &argument["value"])
-        .unwrap_or_else(|| panic!("an argument {name}: {node:#}"))
+        .find(|member| member["name"] == name)
+        .map(|member| &member["value"])
+        .unwrap_or_else(|| panic!("a binding {name}: {node:#}"))
 }
 
-/// The literal text of the literal term `term`.
-fn literal(term: &Value) -> &str {
-    assert_eq!(term["term"], "literal", "{term}");
-    term["value"].as_str().expect("a literal value")
-}
-
-/// The window bindings of the aggregate node `node`, as `(name, value)`.
-fn window(node: &Value) -> Vec<(String, String)> {
-    bound(node, "window")["members"]
+/// The package-free shape of an aggregate argument: each binding's name
+/// and its literal (`value_kind`, `value` and the type's path) or
+/// `reference`.
+fn shape(argument: &Value) -> Vec<(String, String)> {
+    argument["members"]
         .as_array()
-        .expect("a window aggregate")
+        .expect("members")
         .iter()
         .map(|member| {
-            (
-                member["name"].as_str().expect("a name").to_owned(),
-                literal(&member["value"]).to_owned(),
-            )
+            assert_eq!(member["term"], "binding", "{member}");
+            let value = &member["value"];
+            let spelled = match value["term"].as_str() {
+                Some("literal") => format!(
+                    "{} {} {}",
+                    value["value_kind"].as_str().expect("a value kind"),
+                    value["value"].as_str().expect("a value"),
+                    value["type"]["path"]
+                ),
+                Some("reference") => "reference".to_owned(),
+                _ => panic!("a literal or a reference: {value}"),
+            };
+            (member["name"].as_str().expect("a name").to_owned(), spelled)
         })
         .collect()
+}
+
+/// The accepted argument of QSpec's window aggregate vector `id`.
+fn vector(id: &str) -> Value {
+    let path = std::path::Path::new(
+        &std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR names a quire-specification checkout"),
+    )
+    .join("proposals/checked-package-v2/temporal-aggregate-vectors.json");
+    let vectors: Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("the vectors read")).unwrap();
+    vectors["positive"]
+        .as_array()
+        .expect("positive vectors")
+        .iter()
+        .find(|case| case["id"] == id)
+        .map(|case| case["argument"].clone())
+        .unwrap_or_else(|| panic!("a positive vector {id}"))
 }
 
 /// FR-337-AC-15 (TC-1267 step 8): each aggregate kind emits its own
-/// `quire.op.temporal.aggregate` node whose bindings follow FR-337's order,
-/// with the kind, the normalized `min_count`, the window offsets, the
-/// comparison, and value, predicate and filter terms that read the clause's
-/// `over` parameter; the clause's `always` reads the node as its operand.
+/// `quire.op.temporal.aggregate` node whose one argument binds, in QSpec
+/// FR-370's order, exactly the members of QSpec's accepted vector over the
+/// same inputs; its value, predicate and filter references read the
+/// clause's `over` parameter, and the clause's `always` reads the node as
+/// its operand.
 #[trace("TC-1267", "FR-337-AC-15")]
 #[test]
-fn each_aggregate_kind_emits_its_ordered_bindings() {
+fn each_aggregate_kind_emits_the_qspec_vector_argument() {
     let cases = [
         (
-            "count where holds(e.v > 1) over past[0,2] >= 1",
-            "count",
-            vec![
-                "kind",
-                "filter",
-                "window",
-                "min_count",
-                "comparison",
-                "threshold",
-            ],
-            "1",
-            ">=",
+            "count where holds(e.v > 1) over past[0,9] <= 2",
+            "AG-01-count",
+        ),
+        ("sum of e.v over past[0,2] <= 15", "AG-02-sum"),
+        ("min of e.v over past[0,9] >= 1", "AG-03-min"),
+        ("max of e.v over past[0,9] < 10", "AG-04-max"),
+        (
+            "fraction holds(e.w = 0) over past[0,3] >= 1",
+            "AG-05-fraction",
+        ),
+        ("quantile 0.5 of e.v over past[0,9] = 4", "AG-06-quantile"),
+        (
+            "count where holds(e.v > 1) over past[0,9] min_count 0 <= 2",
+            "AG-08-count-min-count-0",
         ),
         (
-            "sum of e.v over past[0,2] min_count 0 <= 15",
-            "sum",
-            vec![
-                "kind",
-                "window",
-                "min_count",
-                "expression",
-                "comparison",
-                "threshold",
-            ],
-            "0",
-            "<=",
-        ),
-        (
-            "min of e.v over past[0,2] min_count 3 < 3",
-            "min",
-            vec![
-                "kind",
-                "window",
-                "min_count",
-                "expression",
-                "comparison",
-                "threshold",
-            ],
-            "3",
-            "<",
-        ),
-        (
-            "max of e.v over past[0,2] > 3",
-            "max",
-            vec![
-                "kind",
-                "window",
-                "min_count",
-                "expression",
-                "comparison",
-                "threshold",
-            ],
-            "1",
-            ">",
-        ),
-        (
-            "fraction holds(e.v > 1) over past[0,2] >= 1",
-            "fraction",
-            vec![
-                "kind",
-                "window",
-                "min_count",
-                "expression",
-                "comparison",
-                "threshold",
-            ],
-            "1",
-            ">=",
-        ),
-        (
-            "quantile 0.5 of e.v where holds(e.w = 0) over past[0,2] = 4",
-            "quantile",
-            vec![
-                "kind",
-                "level",
-                "filter",
-                "window",
-                "min_count",
-                "expression",
-                "comparison",
-                "threshold",
-            ],
-            "1",
-            "=",
+            "sum of e.v where holds(e.v > 1) over past[0,9] min_count 0 = 0",
+            "AG-09-sum-min-count-0",
         ),
     ];
-    for (atom, kind, order, min_count, comparison) in cases {
+    for (atom, id) in cases {
         let compiled = compile(&sampled(&format!("always[0,3] ({atom})")));
         let wire = &compiled.wire;
         let node = aggregate(wire);
-        assert_eq!(names(node), order, "{atom}");
-        assert_eq!(literal(bound(node, "kind")), kind, "{atom}");
-        assert_eq!(literal(bound(node, "min_count")), min_count, "{atom}");
-        assert_eq!(literal(bound(node, "comparison")), comparison, "{atom}");
-        assert_eq!(
-            window(node),
-            [
-                ("lower".to_owned(), "0".to_owned()),
-                ("upper".to_owned(), "2".to_owned())
-            ],
-            "{atom}"
-        );
+        let mut expected = shape(&vector(id));
+        if id == "AG-05-fraction" {
+            // The vector's threshold is 1/2; this source writes the integer
+            // 1, emitted as the rational 1.
+            let threshold = expected.last_mut().expect("a threshold");
+            threshold.1 = threshold.1.replace(" 1/2 ", " 1 ");
+        }
+        assert_eq!(shape(argument(node)), expected, "{atom}");
         let over = &parameter_named(wire, "e")["node_id"];
-        for read in ["expression", "filter"] {
-            if order.contains(&read) {
+        for read in ["predicate", "value", "filter"] {
+            if expected.iter().any(|(name, _)| name == read) {
                 assert!(reaches(wire, bound(node, read), over), "{atom}: {read}");
             }
         }
-        // The clause's `always` reads the aggregate node as its operand.
         let always = formula_root(wire, clause_node(wire));
         assert_eq!(
             always["body"]["operation"]["identity"],
@@ -228,19 +186,13 @@ fn each_aggregate_kind_emits_its_ordered_bindings() {
         );
         assert_eq!(target(&always["body"]["arguments"][0]), &node["node_id"]);
     }
-
-    // A `quantile`'s level is its exact rational.
-    let quantile = compile(&sampled(
-        "always[0,3] (quantile 0.5 of e.v over past[0,2] <= 4)",
-    ));
-    assert_eq!(literal(bound(aggregate(&quantile.wire), "level")), "1/2");
 }
 
 /// FR-337-AC-15 (TC-1267 step 8): an omitted `min_count` and an explicit
 /// `min_count 1` emit one node and one clause, reformatting the source
-/// changes no node, and changing the window, `min_count`, expression,
-/// comparison or threshold changes the aggregate node, the clause node and
-/// the package's node set.
+/// changes no node, and changing the window, `min_count`, value, filter,
+/// comparison, threshold or kind changes the aggregate node, the clause
+/// node and the package's node set.
 #[trace("TC-1267", "FR-337-AC-15")]
 #[test]
 fn the_aggregate_bindings_decide_the_node_identity() {
@@ -279,51 +231,47 @@ fn the_aggregate_bindings_decide_the_node_identity() {
     }
 }
 
-/// FR-337-AC-15 (TC-1267 step 8): under the timestamped-event profile a
-/// duration window is written in the lower bound's unit with both bounds
-/// converted exactly, and a threshold in another unit of the value's
-/// dimension is converted to the value's unit; one in the value's unit is
-/// written as it is.
+/// FR-337 "Aggregate formula emission": QSpec FR-370 writes a `duration`
+/// window's bounds as quantities of the `scalar_type`/`unit` node whose path
+/// is `["scalar_type", "unit", T]`, `T` the selected `timestamp_unit`. A
+/// source-declared unit's node path is its declared name, so a window in it
+/// has no encoding whatever the clock names, its own unit included, and the
+/// emission refuses with no package.
 #[trace("TC-1267", "FR-337-AC-15")]
 #[test]
-fn a_duration_window_and_threshold_are_converted() {
-    let converted = compile(&timestamped(
-        "always[0,3] (quantile 0.5 of e over past[0 s, 1500 ms] <= 1 s)",
+fn a_duration_window_outside_the_clock_unit_node_refuses() {
+    let graph = check_graph(&timestamped(
+        "always[0,3] (quantile 0.5 of e over past[0 ms, 300 s] <= 5 ms)",
     ));
-    let wire = &converted.wire;
-    let node = aggregate(wire);
-    assert_eq!(
-        window(node),
-        [
-            ("lower".to_owned(), "0".to_owned()),
-            ("upper".to_owned(), "3/2".to_owned()),
-            ("unit".to_owned(), "s".to_owned())
-        ]
-    );
-    let expression = bound(node, "expression");
-    let value_type = &node_with(wire, target(expression))["semantic_type"];
-    let threshold = node_with(wire, target(bound(node, "threshold")));
-    assert_eq!(
-        &threshold["semantic_type"], value_type,
-        "the threshold is in the value's unit"
-    );
+    let selections: Vec<_> = graph
+        .temporal_clauses()
+        .iter()
+        .map(|temporal| crate::emit::TemporalClockSelection {
+            source: graph.source().clone(),
+            declaration_span: temporal.clause().span(),
+            clock: clock_in("ms"),
+        })
+        .collect();
+    let refusal = crate::emit::emit_checked_with_temporal_selections(
+        &CheckedPackage::link(graph),
+        &selections,
+    )
+    .expect_err("a source-declared unit is no clock unit node");
     assert!(
-        threshold["body"]["operation"]["identity"]
-            .as_str()
-            .is_some_and(|identity| identity.contains("convert")),
-        "a converted threshold: {threshold:#}"
+        matches!(
+            refusal,
+            EmitRefusal::InvalidTemporalClockValue {
+                field: "timestamp_unit",
+                ..
+            }
+        ),
+        "{refusal:?}"
     );
-
-    let same_unit = compile(&timestamped(
-        "always[0,3] (quantile 0.5 of e over past[0 s, 1500 ms] <= 1000 ms)",
-    ));
-    let node = aggregate(&same_unit.wire);
-    let threshold = node_with(&same_unit.wire, target(bound(node, "threshold")));
-    assert_eq!(threshold["semantic_form"], "literal");
 }
 
 /// FR-337-AC-15 (TC-1267 step 8): the aggregate node is located at the
-/// aggregate atom and each of its expressions at its own expression tree.
+/// aggregate atom and each of its expressions at its own expression tree;
+/// a literal threshold is bound inline.
 #[trace("TC-1267", "FR-337-AC-15")]
 #[test]
 fn the_aggregate_spans_resolve_through_the_source_map() {
@@ -332,6 +280,8 @@ fn the_aggregate_spans_resolve_through_the_source_map() {
     let compiled = compile(&text);
     let wire = &compiled.wire;
     let node = aggregate(wire);
+    assert_eq!(bound(node, "threshold")["term"], "literal");
+    assert_eq!(bound(node, "threshold")["value"], "15");
 
     let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
@@ -356,5 +306,5 @@ fn the_aggregate_spans_resolve_through_the_source_map() {
     };
     assert_eq!(located(&node["node_id"]), [span(atom)]);
     assert!(located(target(bound(node, "filter"))).contains(&span("e.w = 0")));
-    assert!(located(target(bound(node, "threshold"))).contains(&span("15")));
+    assert!(located(target(bound(node, "value"))).contains(&span("e.v")));
 }

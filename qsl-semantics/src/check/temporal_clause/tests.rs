@@ -583,6 +583,32 @@ fn aggregate_atoms_are_checked_and_admitted() {
         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
     ));
 
+    // QSpec FR-370's families: a value of family integer, rational or
+    // quantity; a threshold of the aggregate's result family, an integer
+    // literal standing for the rational of its value where a rational is
+    // required.
+    package_admits(&source(
+        &[EVENT],
+        "Int[0,9]",
+        "fraction holds(c > 1) over past[0,3] >= 1",
+    ));
+    package_admits(&source(&[EVENT], "Int[0,9]", "count over past[0,3] >= c"));
+    for formula in [
+        "sum of (c > 1) over past[0,3] <= 1",
+        "fraction holds(c > 1) over past[0,3] >= c",
+    ] {
+        let refusals = assemble(&source(&[EVENT], "Int[0,9]", formula))
+            .check(CheckingLimits::default())
+            .expect_err(formula);
+        assert!(
+            matches!(
+                refusals[0].cause,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+            ),
+            "{formula}: {refusals:?}"
+        );
+    }
+
     let bounded = check(&assemble(&source(
         &[EVENT],
         "Int[0,9]",
@@ -594,6 +620,126 @@ fn aggregate_atoms_are_checked_and_admitted() {
         bounded.formula().nodes().get(1),
         Some(FormulaNode::Aggregate { .. })
     ));
+}
+
+/// FR-337-AC-15: a `duration` window lowers to quantity literals of its
+/// lower bound's time unit, both bounds converted exactly (`past[0 ms,
+/// 300 s]` is 0 and 300000 of `ms`), bound as `window_kind`, `lower` and
+/// `upper` of the aggregate argument in QSpec FR-370's order.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn a_duration_window_lowers_to_quantities_of_its_unit() {
+    use crate::check::node_key::{BodyTerm, GroupMember, LeafTerm, LiteralValue, MemberTerm};
+    let graph = assemble(&timestamped_source(
+        "always[0,2] (quantile 0.95 of c over past[0 ms, 300 s] <= 5 ms)",
+    ))
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("the clause checks: {refusals:?}"));
+    let [clause] = graph.temporal_clauses() else {
+        panic!("one clause");
+    };
+    let [unit] = clause.clause().duration_window_units().collect::<Vec<_>>()[..] else {
+        panic!("one duration window");
+    };
+    let arguments = graph
+        .semantic_graph()
+        .nodes()
+        .find_map(|node| match node.body() {
+            BodyTerm::Application(application)
+                if application.operation.identity == "quire.op.temporal.aggregate" =>
+            {
+                Some(application.arguments.clone())
+            }
+            _ => None,
+        })
+        .expect("an aggregate node");
+    let [MemberTerm::Group(argument)] = &arguments[..] else {
+        panic!("one aggregate argument: {arguments:?}");
+    };
+    let members: Vec<(&str, Option<&LiteralValue>, Option<NodeKey>)> = argument
+        .members
+        .iter()
+        .map(|member| match member {
+            GroupMember::Binding(binding) => match &binding.value {
+                LeafTerm::Literal { ty, value } => {
+                    (binding.name.as_str(), Some(value), ty.admitted().cloned())
+                }
+                _ => (binding.name.as_str(), None, None),
+            },
+            GroupMember::Leaf(_) => panic!("a binding: {member:?}"),
+        })
+        .collect();
+    assert_eq!(
+        members.iter().map(|(name, ..)| *name).collect::<Vec<_>>(),
+        [
+            "kind",
+            "q",
+            "value",
+            "window_kind",
+            "lower",
+            "upper",
+            "min_count",
+            "comparison",
+            "threshold"
+        ]
+    );
+    let quantity = |name: &str| {
+        members
+            .iter()
+            .find(|(bound, ..)| *bound == name)
+            .map(|(_, value, ty)| (value.cloned(), ty.clone()))
+            .unwrap_or_else(|| panic!("a binding {name}"))
+    };
+    let ms = |value: i64| {
+        (
+            Some(LiteralValue::Quantity(quire_exact::Rational::from_integer(
+                quire_exact::Integer::from(value),
+            ))),
+            Some(unit.clone()),
+        )
+    };
+    assert_eq!(quantity("lower"), ms(0));
+    assert_eq!(quantity("upper"), ms(300_000));
+    assert_eq!(quantity("threshold"), ms(5));
+
+    // A threshold in another unit of the value's dimension is converted
+    // to the value's unit: a reference to its converted node.
+    let graph = assemble(&timestamped_source(
+        "always[0,2] (quantile 0.95 of c over past[0 ms, 300 s] <= 1 s)",
+    ))
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("the clause checks: {refusals:?}"));
+    let converted = graph
+        .semantic_graph()
+        .nodes()
+        .find_map(|node| match node.body() {
+            BodyTerm::Application(application)
+                if application.operation.identity == "quire.op.temporal.aggregate" =>
+            {
+                match application.arguments.first() {
+                    Some(MemberTerm::Group(argument)) => argument.members.last().cloned(),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .expect("an aggregate threshold");
+    let GroupMember::Binding(threshold) = converted else {
+        panic!("a threshold binding");
+    };
+    assert_eq!(threshold.name, "threshold");
+    let LeafTerm::Reference { target } = &threshold.value else {
+        panic!("a reference to the converted threshold: {threshold:?}");
+    };
+    let node = target
+        .admitted()
+        .and_then(|key| graph.semantic_graph().node(key.clone()))
+        .expect("the converted threshold node");
+    assert_eq!(
+        node.semantic_type(),
+        Some(unit.clone()),
+        "the threshold is in the value's unit"
+    );
 }
 
 /// FR-337-AC-7: a guard whose divisor has no S3 law checks, the guard is

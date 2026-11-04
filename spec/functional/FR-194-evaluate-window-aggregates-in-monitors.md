@@ -91,6 +91,12 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   threshold in another unit converts exactly by QSpec FR-142, and another
   dimension SHALL be refused `ill_typed`/`unit-mismatch` at the threshold
   (QSpec FR-414-AC-4).
+- The value expression of a `sum`, `min`, `max` or `quantile` term SHALL be
+  of family `integer`, `rational` or `quantity`, and the threshold of the
+  aggregate's result family, `integer` for `count`, `rational` for
+  `fraction` (an integer literal standing for the rational of its value),
+  otherwise the value's family (QSpec FR-370 "Window aggregate atom"); S3
+  SHALL refuse another value or threshold `ill_typed`/`type-mismatch` at it.
 - An aggregate atom (the aggregate term with its comparison and threshold)
   with several of these faults SHALL report each, in source order.
 - When a bound of `past[a, b]` has the wrong kind, S3 SHALL report that

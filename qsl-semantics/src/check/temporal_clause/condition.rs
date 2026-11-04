@@ -237,6 +237,17 @@ pub(crate) fn check_conditions(
                     .as_ref()
                     .map(|value| typed(Goal::Any, value, AggregatePart::Value))
                     .transpose()?;
+                // QSpec FR-370 "Window aggregate atom": a value is of
+                // family `integer`, `rational` or `quantity`.
+                if value
+                    .as_ref()
+                    .is_some_and(|value| family(value.body.root().value_type()).is_none())
+                {
+                    return Err(CheckRefusal {
+                        location: at(AggregatePart::Value),
+                        cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                    });
+                }
                 let aggregate_value_type = value
                     .as_ref()
                     .map(|value| value.body.root().value_type().clone());
@@ -257,18 +268,24 @@ pub(crate) fn check_conditions(
                     &atom.threshold,
                     AggregatePart::Threshold,
                 )?;
-                let threshold_type = threshold.body.root().value_type();
-                let compatible = if !is_exact_numeric(threshold_type) {
-                    false
-                } else if matches!(
-                    atom.term.kind,
-                    qsl_forms::AggregateKindForm::Count | qsl_forms::AggregateKindForm::Fraction(_)
-                ) {
-                    !matches!(threshold_type, ValueType::Quantity(_))
-                } else if let Some(value_type) = &aggregate_value_type {
-                    same_dimension(value_type, threshold_type, input.scope.types().units())
-                } else {
-                    true
+                // QSpec FR-370: the threshold is of the aggregate's result
+                // family, `integer` for `count`, `rational` for `fraction`,
+                // otherwise the family of the value, and for a quantity
+                // the value's unit (converted above). An integer literal
+                // is written as the rational of its value where a rational
+                // is required.
+                let threshold_root = threshold.body.root();
+                let required = match &atom.term.kind {
+                    qsl_forms::AggregateKindForm::Count => Some(Family::Integer),
+                    qsl_forms::AggregateKindForm::Fraction(_) => Some(Family::Rational),
+                    _ => aggregate_value_type.as_ref().and_then(family),
+                };
+                let compatible = match (required, family(threshold_root.value_type())) {
+                    (Some(required), Some(found)) if required == found => true,
+                    (Some(Family::Rational), Some(Family::Integer)) => {
+                        is_integer_literal(threshold_root)
+                    }
+                    _ => false,
                 };
                 if !compatible {
                     return Err(CheckRefusal {
@@ -358,33 +375,38 @@ enum Goal<'t> {
     Threshold(Option<&'t ValueType>),
 }
 
-// A `BoundedQuantity` is deliberately not exact-numeric here: no source form
-// builds the type yet (QSL-1155), so a threshold or aggregate of that type is
-// refused conservatively rather than compared as a `Quantity` unchecked.
-fn is_exact_numeric(value_type: &ValueType) -> bool {
-    matches!(
-        value_type,
-        ValueType::Integer
-            | ValueType::Int(_)
-            | ValueType::Rational(_)
-            | ValueType::Decimal(_)
-            | ValueType::Quantity(_)
-    )
+/// The QSpec FR-370 term family of an aggregate value or threshold.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Family {
+    /// `integer`: an `Integer` or a bounded `Int`.
+    Integer,
+    /// `rational`.
+    Rational,
+    /// `quantity` in this unit.
+    Quantity(quire_exact::UnitId),
 }
 
-fn same_dimension(
-    left: &ValueType,
-    right: &ValueType,
-    units: &quire_semantic_value::quantity::UnitTable,
-) -> bool {
-    match (left, right) {
-        (ValueType::Quantity(left), ValueType::Quantity(right)) => units
-            .get(left.clone())
-            .zip(units.get(right.clone()))
-            .is_some_and(|(left, right)| left.dimension() == right.dimension()),
-        (ValueType::Quantity(_), _) | (_, ValueType::Quantity(_)) => false,
-        _ => is_exact_numeric(left) && is_exact_numeric(right),
+/// The family of `value_type`, or `None` for a type no aggregate value or
+/// threshold takes. A `BoundedQuantity` is deliberately none: no source form
+/// builds the type yet (QSL-1155), so it is refused conservatively rather
+/// than compared as a `Quantity` unchecked; a `Decimal` has no FR-370 family.
+pub(crate) fn family(value_type: &ValueType) -> Option<Family> {
+    match value_type {
+        ValueType::Integer | ValueType::Int(_) => Some(Family::Integer),
+        ValueType::Rational(_) => Some(Family::Rational),
+        ValueType::Quantity(unit) => Some(Family::Quantity(unit.clone())),
+        _ => None,
     }
+}
+
+/// Whether `node` is an integer literal.
+fn is_integer_literal(node: crate::check::ir::CheckedNode<'_>) -> bool {
+    matches!(
+        node.kind(),
+        quire_checked::node::NodeKind::Literal(quire_checked::node::CheckedLiteral(
+            quire_exact::Value::Integer(_)
+        ))
+    )
 }
 
 /// Type `condition` against `goal` over `bound`, bound from slot 0, at

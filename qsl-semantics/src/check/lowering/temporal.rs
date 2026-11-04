@@ -24,18 +24,19 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::{Identifier, Integer, NodeKey, Rational, ValueType};
+use quire_checked::node::{CheckedLiteral, NodeKind};
+use quire_exact::{Identifier, Integer, NodeKey, Rational, Value, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{fault, require_admitted, Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
-    Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, LiteralValue,
-    MemberTerm, NodeTag, Operation, OperationLaw, Operator,
+    Binding, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm,
+    NodeTag, Operation, OperationLaw, Operator,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
-use crate::check::temporal_clause::condition::{TypedCondition, TypedConditions};
+use crate::check::temporal_clause::condition::{family, Family, TypedCondition, TypedConditions};
 use crate::check::temporal_clause::{
     AggregateKind, AggregateWindow, BinaryTemporal, CheckedAggregate, CheckedFairnessMember,
     CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
@@ -526,7 +527,7 @@ impl Lowering<'_> {
                     (
                         "quire.op.temporal.aggregate",
                         None,
-                        self.aggregate_arguments(aggregate, scope, &location)?,
+                        vec![self.aggregate_argument(aggregate, scope, &location)?],
                     )
                 }
                 FormulaNode::Not(only) => ("quire.op.temporal.not", None, vec![operand(*only)?]),
@@ -598,81 +599,115 @@ impl Lowering<'_> {
             .ok_or_else(|| stage_fault(input.root_site, "formula-root-keyed"))
     }
 
-    /// FR-337-AC-15: the arguments of a `quire.op.temporal.aggregate`
-    /// application, each a binding, in the order `kind`, `level` (a
-    /// `quantile` only), `filter` (when written), `window`, `min_count`,
-    /// `expression` (the value of a `sum`, `min`, `max` or `quantile`, the
-    /// predicate of a `fraction`, none for a `count`), `comparison` and
-    /// `threshold`. Each expression is lowered in the clause's binder scope.
-    fn aggregate_arguments(
+    /// FR-337-AC-15, QSpec FR-370 "Window aggregate atom": the one argument
+    /// of a `quire.op.temporal.aggregate` application, an aggregate of the
+    /// bindings `kind`, `q` (a `quantile` only), `predicate` (a `fraction`
+    /// only), `value` (a `sum`, `min`, `max` or `quantile` only), `filter`
+    /// (when written), `window_kind`, `lower`, `upper`, `min_count`,
+    /// `comparison` and `threshold`, in that order. Each expression is lowered
+    /// in the clause's binder scope and bound as a reference to its node; a
+    /// literal threshold is bound as a literal of the aggregate's result
+    /// family.
+    fn aggregate_argument(
         &mut self,
         aggregate: &FormulaAggregate<'_>,
         scope: &[Binder],
         location: &Location,
-    ) -> Result<Vec<MemberTerm>, CheckRefusal> {
+    ) -> Result<MemberTerm, CheckRefusal> {
         let term = aggregate.term;
-        let mut arguments = vec![MemberTerm::bound(
-            "kind",
-            self.text_literal(term.kind.spelling(), location)?,
-        )];
+        let mut members = vec![("kind", self.text_literal(term.kind.spelling(), location)?)];
         if let AggregateKind::Quantile(level) = &term.kind {
-            arguments.push(MemberTerm::bound(
-                "level",
-                self.rational_literal(level, location)?,
-            ));
+            members.push(("q", self.rational_literal(level, location)?));
+        }
+        if let Some(predicate) = &aggregate.predicate {
+            members.push(("predicate", self.condition_term(predicate, scope)?));
+        }
+        if let Some(value) = &aggregate.value {
+            members.push(("value", self.condition_term(value, scope)?));
         }
         if let Some(filter) = &aggregate.filter {
-            arguments.push(MemberTerm::bound(
-                "filter",
-                self.condition_term(filter, scope)?,
-            ));
+            members.push(("filter", self.condition_term(filter, scope)?));
         }
-        let window = match &term.window {
-            AggregateWindow::Positions { lower, upper } => vec![
-                GroupMember::Binding(Binding::new(
-                    "lower",
-                    self.integer_literal(Integer::from(*lower), location)?,
-                )),
-                GroupMember::Binding(Binding::new(
-                    "upper",
-                    self.integer_literal(Integer::from(*upper), location)?,
-                )),
-            ],
-            AggregateWindow::Duration { lower, upper, unit } => vec![
-                GroupMember::Binding(Binding::new(
-                    "lower",
-                    self.rational_literal(lower, location)?,
-                )),
-                GroupMember::Binding(Binding::new(
-                    "upper",
-                    self.rational_literal(upper, location)?,
-                )),
-                GroupMember::Binding(Binding::new("unit", self.text_literal(unit, location)?)),
-            ],
+        let (window_kind, lower, upper) = match &term.window {
+            AggregateWindow::Positions { lower, upper } => (
+                "positions",
+                self.integer_literal(Integer::from(*lower), location)?,
+                self.integer_literal(Integer::from(*upper), location)?,
+            ),
+            AggregateWindow::Duration { lower, upper, unit } => {
+                self.unit_nodes(unit.clone(), location)?;
+                (
+                    "duration",
+                    LeafTerm::literal(unit.clone(), LiteralValue::Quantity(lower.clone())),
+                    LeafTerm::literal(unit.clone(), LiteralValue::Quantity(upper.clone())),
+                )
+            }
         };
-        arguments.push(MemberTerm::binding(
-            "window",
-            BindingValue::Group(GroupTerm::new(window)),
-        ));
-        arguments.push(MemberTerm::bound(
+        members.push(("window_kind", self.text_literal(window_kind, location)?));
+        members.push(("lower", lower));
+        members.push(("upper", upper));
+        members.push((
             "min_count",
             self.integer_literal(Integer::from(term.min_count), location)?,
         ));
-        if let Some(expression) = aggregate.value.as_ref().or(aggregate.predicate.as_ref()) {
-            arguments.push(MemberTerm::bound(
-                "expression",
-                self.condition_term(expression, scope)?,
-            ));
-        }
-        arguments.push(MemberTerm::bound(
+        members.push((
             "comparison",
             self.text_literal(comparison_spelling(term.comparison), location)?,
         ));
-        arguments.push(MemberTerm::bound(
-            "threshold",
-            self.condition_term(&aggregate.threshold, scope)?,
-        ));
-        Ok(arguments)
+        let threshold = match self.threshold_literal(aggregate, location)? {
+            Some(literal) => literal,
+            None => self.condition_term(&aggregate.threshold, scope)?,
+        };
+        members.push(("threshold", threshold));
+        Ok(MemberTerm::Group(GroupTerm::new(
+            members
+                .into_iter()
+                .map(|(name, value)| GroupMember::Binding(Binding::new(name, value)))
+                .collect(),
+        )))
+    }
+
+    /// A threshold written as a literal, as a literal of the aggregate's
+    /// result family (QSpec FR-370): `integer` for `count`, `rational` for
+    /// `fraction`, otherwise the value's family, an integer literal written
+    /// as the rational of its value where a rational is required. `None` for
+    /// a threshold that is not a literal, bound as a reference to its node.
+    fn threshold_literal(
+        &mut self,
+        aggregate: &FormulaAggregate<'_>,
+        location: &Location,
+    ) -> Result<Option<LeafTerm>, CheckRefusal> {
+        let root = aggregate.threshold.root;
+        let NodeKind::Literal(CheckedLiteral(literal)) = root.kind() else {
+            return Ok(None);
+        };
+        let rational = match &aggregate.term.kind {
+            AggregateKind::Count => false,
+            AggregateKind::Fraction => true,
+            AggregateKind::Sum
+            | AggregateKind::Min
+            | AggregateKind::Max
+            | AggregateKind::Quantile(_) => aggregate
+                .value
+                .as_ref()
+                .is_some_and(|value| family(value.root.value_type()) == Some(Family::Rational)),
+        };
+        let term = match literal {
+            Value::Integer(value) if rational => {
+                self.rational_literal(&Rational::from_integer(value.clone()), location)?
+            }
+            Value::Integer(value) => self.integer_literal(value.clone(), location)?,
+            Value::Rational(value) => self.rational_literal(value, location)?,
+            Value::Quantity(quantity) => {
+                let unit = match root.value_type() {
+                    ValueType::Quantity(unit) => self.quantity_type(unit.clone(), location)?,
+                    _ => return Ok(None),
+                };
+                LeafTerm::literal(unit, LiteralValue::Quantity(quantity.magnitude().clone()))
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(term))
     }
 
     /// `condition` lowered in the clause's binder scope `scope`.

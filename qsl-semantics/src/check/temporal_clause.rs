@@ -301,14 +301,16 @@ pub(crate) enum AggregateWindow {
         upper: u64,
     },
     /// Durations, under the timestamped-event profile, both bounds converted
-    /// exactly to the lower bound's written time unit.
+    /// exactly to the lower bound's written time unit, which the emitter
+    /// requires to be the clause's clock unit (FR-337 "Aggregate formula
+    /// emission").
     Duration {
         /// The nearest age `a`.
         lower: Rational,
         /// The farthest age `b`.
         upper: Rational,
-        /// The time unit both bounds are expressed in.
-        unit: String,
+        /// The node of the time unit both bounds are expressed in.
+        unit: NodeKey,
     },
 }
 
@@ -747,6 +749,18 @@ impl CheckedTemporalClause {
     /// node's arena index.
     pub(crate) fn aggregates(&self) -> &BTreeMap<usize, CheckedAggregate> {
         &self.aggregates
+    }
+
+    /// The time unit node of each `duration` window of the clause's window
+    /// aggregate atoms, which QSpec FR-370 requires to be the clause's clock
+    /// unit (FR-337 "Aggregate formula emission").
+    pub fn duration_window_units(&self) -> impl Iterator<Item = &NodeKey> {
+        self.aggregates
+            .values()
+            .filter_map(|aggregate| match &aggregate.window {
+                AggregateWindow::Duration { unit, .. } => Some(unit),
+                AggregateWindow::Positions { .. } => None,
+            })
     }
 
     /// How the clause activates (FR-325 "Outputs").
@@ -1354,7 +1368,7 @@ fn check_clause(
                             window = Some(AggregateWindow::Duration {
                                 lower: lower_value,
                                 upper: upper_value,
-                                unit: lower.unit.name.clone(),
+                                unit: target.unit(),
                             });
                         }
                     }
