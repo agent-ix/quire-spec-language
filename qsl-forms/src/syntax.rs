@@ -4372,9 +4372,28 @@ pub struct ProbabilisticForm {
     /// The whole claim's written content, with no span or position: the
     /// producer ranks claims that share a name by it, so a claim's identity
     /// does not depend on where it is declared (FR-498).
-    pub content: crate::SignificantContent,
+    pub content: SignificantContent,
     /// The span of the whole claim, closing `}` included.
     pub span: Span,
+}
+
+/// A declaration's written content (FR-498): the exact spellings of its
+/// significant tokens in source order, with no span, trivia or parse
+/// position. Its order is a total order on written content.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SignificantContent(Vec<Box<[u8]>>);
+
+impl SignificantContent {
+    /// The content `cst` carries, converted into the forms crate's own type
+    /// so no `qsl_cst` type crosses the S2 boundary (FR-091-AC-20).
+    pub(crate) fn from_cst(content: &qsl_cst::SignificantContent) -> Self {
+        Self(content.tokens().map(Box::from).collect())
+    }
+
+    /// The significant token spellings, in source order.
+    pub fn tokens(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.0.iter().map(|spelling| &**spelling)
+    }
 }
 
 /// One temporal operator written inside a state-graph claim's predicate. S1

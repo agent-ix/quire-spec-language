@@ -4481,14 +4481,19 @@ impl<'a> Lowering<'a> {
                     // an exact source is `from_exact` under the target's mode.
                     let law = self.law(LawRole::IeeeProfile, node.location())?;
                     let rounding = OperationMode::Rounding(to.rounding());
-                    let (identity, mode) = match (node.at(*operand).value_type(), to.width()) {
-                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary32) => {
+                    let float_source =
+                        matches!(node.at(*operand).value_type(), ValueType::Float(_));
+                    let (identity, mode) = match (float_source, to.width()) {
+                        (true, quire_exact::IeeeWidth::Binary32) => {
                             ("quire.op.ieee.to_float32", Some(rounding))
                         }
-                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary64) => {
+                        (true, quire_exact::IeeeWidth::Binary64) => {
                             ("quire.op.ieee.to_float64", None)
                         }
-                        _ => ("quire.op.ieee.from_exact", Some(rounding)),
+                        (
+                            false,
+                            quire_exact::IeeeWidth::Binary32 | quire_exact::IeeeWidth::Binary64,
+                        ) => ("quire.op.ieee.from_exact", Some(rounding)),
                     };
                     Operation {
                         laws: vec![law],
