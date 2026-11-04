@@ -1549,19 +1549,12 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
     });
 }
 
-/// TC-144/TC-149: checked protocol temporal evaluation consumes the admitted
-/// control mapping and the observation owner's exact trigger identities.
-#[trace(
-    "TC-144",
-    "TC-149",
-    "FR-052-AC-9",
-    "FR-052-AC-10",
-    "FR-052-AC-11",
-    "FR-052-AC-12",
-    "FR-053-AC-7",
-    "FR-053-AC-8",
-    "FR-053-AC-9"
-)]
+/// Checked protocol temporal evaluation over the retired native route
+/// consumes the admitted control mapping and the observation owner's exact
+/// trigger identities. The spine carries TC-144 and TC-149 in
+/// `qsl-eval/tests/it/{checked_route_owner,checked_route_trigger}.rs` and in
+/// `qsl-replay`'s `checked_route_owner`; this test is the legacy behavior
+/// QSL-858 deletes with `src/temporal`.
 #[test]
 fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
     let inputs = checked_fr050_inputs_with_second_event(
