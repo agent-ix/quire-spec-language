@@ -81,33 +81,31 @@ at each eligible position and one scan per position).
 | Counter | Kind | What one unit is | Replaces |
 | --- | --- | --- | --- |
 | `formula_nodes` | peak | a distinct node of the clause's formula reachable from its root; a node shared by two parents counts once | `formula_nodes` |
-| `positions` | cumulative | one scan charge of FR-501: one position read by one temporal operator node at one activation | `positions` |
+| `positions` | cumulative | one scan charge of FR-501: one position read by one temporal operator node at one activation, at an observed position or an observed position's false extension; a scan at a silent sample is not counted | `positions` |
 | `valuations` | cumulative | one atomic `holds` lookup, including one that finds no valuation | `valuations` |
 | `instances` | peak | one instance created from a delivery or an origin in this call, the greatest number created by the call (FR-524); a retained instance, a delivery with a false guard and an instance whose activation faulted are not created and charge nothing | NFR-008 `instances` |
 | `captures` | cumulative | one capture record retained, across all instances | `captures` |
 | `support` | peak | the greatest number of `(position, atom)` pairs an unsettled activation retains, and the number of pairs in a settled decision support | `support`; NFR-008 `retention` |
 | `history_span` | peak | the greatest interval upper bound of the clause, in ticks (FR-326 horizon) | `history_span`; NFR-008 `horizon` |
-| `evaluation_steps` | cumulative | one charge per evaluated position visit at the `temporal.visit` charge point (FR-327), including one per delivery or origin resolved, one per capture established and one per evicted record consulted (FR-524); a silent-sample lookup is charged at the same meter point but is not a visit and is not an `evaluation_steps` unit (see "Evaluated position visit") | `evaluation_steps`; NFR-008 `visits` |
+| `evaluation_steps` | cumulative | one charge per evaluated position visit at the `temporal.visit` charge point (FR-327), including one per delivery or origin resolved, one per capture established and one per evicted record consulted (FR-524); a charge made at a silent sample reaches the same meter point but is not an `evaluation_steps` unit (see "Evaluated position visit") | `evaluation_steps`; NFR-008 `visits` |
 | `lineage` | peak | the length of the result's chain of predecessors (FR-526) | `lineage` |
 | `visited` | cumulative | one unit of the usage of `formula_nodes`, `positions`, `valuations` and `captures`, and one evicted record consulted | `visited` |
 | `request_bytes` | peak | one byte of the request's opaque byte members, in total (FR-516) | `input_bytes` |
 | `result_bytes` | peak | one byte of the result's opaque byte members, in total | `output_bytes` |
 | `member_bytes` | peak | one byte of the longest single opaque member | `string_bytes` |
 
-- An evaluated position visit is one of FR-501-AC-12's `temporal.visit` charges
-  (a temporal node at its activation, a `holds` lookup at a position, one scan of
-  a position) made at a position that carries an observation of the trace, or at
-  an observed position's false extension beyond the watermark's samples as FR-504
-  reads it. The one `temporal.visit` charge that is not an evaluated position
-  visit is the `holds` lookup at a silent sample, a fixed-sample watermark sample
-  with no observation (FR-504); the node-activation and scan charges FR-501-AC-12
-  lists are unchanged.
+- **Evaluated position visit.** A silent sample is a fixed-sample watermark
+  sample with no observation (FR-504); it is not an observed position. Every
+  `temporal.visit` charge FR-501-AC-12 lists (a temporal node at its activation, a
+  `holds` lookup, one scan) that is made at an observed position, or at an
+  observed position's false extension, is one evaluated position visit and counts
+  in `evaluation_steps` (the scan also in `positions`). Every such charge made at
+  a silent sample, whether a lookup, a scan or a node activation, is charged to
+  the call's meter at the `temporal.visit` charge point, one meter unit each, and
+  counts in neither `evaluation_steps` nor `positions`. A silent-sample `holds`
+  lookup is a lookup that finds no valuation and also charges `valuations` and
+  its `visited` unit.
 - The evaluator SHALL charge a counter only for work it performs.
-- The evaluator SHALL charge a lookup at a silent sample (FR-504) as the lookup
-  that finds no valuation that it is: one unit of `valuations` and its `visited`
-  unit, and one meter unit at the `temporal.visit` charge point, the point every
-  lookup shares. It is not an evaluated position visit, so it SHALL NOT be charged
-  to `evaluation_steps` or to `positions`.
 - The evaluator SHALL keep the counters at thirteen: no counter is added for
   silent samples or for evicted records, whose visit is one hit charged on
   `evaluation_steps` and `visited` (FR-524).
@@ -175,25 +173,25 @@ at each eligible position and one scan per position).
 |----|----------|--------------|
 | FR-523-AC-1 | For each of the thirteen counters, the setting `temporal_evidence.<counter>` is accepted by FR-255's settings operation and sets that counter's ceiling and no other. | Test (TC-1318) |
 | FR-523-AC-2 | The settings `temporal_evidence.formula_depth`, `temporal_evidence.depth`, the bare counter name and a value that is not a non-negative integer are each refused as unknown or non-numeric settings. | Test (TC-1318) |
-| FR-523-AC-3 | Over **R**'s timestamped-event `on origin` clause `eventually[0,5] holds(p)` with one origin and three eligible positions, `usage` reports `formula_nodes` 2, `instances` 1, `positions` 3, `valuations` 3, `captures` 0, `evaluation_steps` 8 (one origin and the seven charges of FR-501-AC-12) and `visited` 8. | Test (TC-1318) |
+| FR-523-AC-3 | Over **R**'s timestamped-event `on origin` clause `eventually[0,5] holds(p)` with one origin and three eligible positions (no silent sample), `usage` reports `formula_nodes` 2, `instances` 1, `positions` 3, `valuations` 3, `captures` 0, `evaluation_steps` 8 (one origin and the seven charges of FR-501-AC-12) and `visited` 8. | Test (TC-1318) |
 | FR-523-AC-4 | Each of the thirteen counters, with its ceiling at exactly the usage the call measures, completes. | Test (TC-1318) |
 | FR-523-AC-5 | Each of the thirteen counters, with its ceiling one below the usage the call measures, returns `Incomplete` naming that counter and its setting, with no truth. | Test (TC-1318) |
 | FR-523-AC-6 | A formula that shares one subformula between two parents counts the shared node once in `formula_nodes`. | Test (TC-1318) |
 | FR-523-AC-7 | A ceiling of zero is used as zero: a call with `positions` 0 returns `Incomplete` naming `positions` at the first scan. | Test (TC-1318) |
 | FR-523-AC-8 | A ceiling raised above its default is used as given, and the setting is not clamped. | Test (TC-1318) |
 | FR-523-AC-9 | A refused charge leaves the counter's usage at its last successful value. | Test (TC-1318) |
-| FR-523-AC-10 | The charge log of a call whose ceiling is one below the exact usage equals the log of the successful prefix of the full call. | Test (TC-1318) |
+| FR-523-AC-10 | The charge log of a call whose ceiling is one below the exact usage equals the log of the successful prefix of the full call, including over the clause of AC-21, where a meter ceiling of 9 stops the call at the tenth `temporal.visit` charge, which is a silent-sample charge, and the log holds the first nine. | Test (TC-1318) |
 | FR-523-AC-11 | A retry of the AC-3 call after an AC-5 stop, with sufficient ceilings from the same inputs, returns the result of a call that never stopped, byte for byte. | Test (TC-1318) |
 | FR-523-AC-12 | A clause whose `history_span` exceeds its ceiling stops the call before the instance is assessed, and the call returns an `Incomplete` result naming `history_span` with `activation = Unavailable` and no truth. | Test (TC-1318) |
 | FR-523-AC-13 | A clause whose `formula_nodes` exceeds its ceiling stops the call before the instance is assessed, and the call returns an `Incomplete` result naming `formula_nodes` with `activation = Unavailable` and no truth. | Test (TC-1318) |
-| FR-523-AC-14 | Two calls for instances `t1` and `t2` of **R**'s `on each` clause share one `Meter` whose work-unit ceiling is the first call's usage plus one: the first call returns its result with its truth, basis and support, and the second returns `Incomplete` at the `temporal.visit` charge point naming `t2`. | Test (TC-1318) |
-| FR-523-AC-15 | With `evaluation_steps` at 1000 and the meter's work-unit ceiling one below the call's `temporal.visit` usage, the `Incomplete` is at the `temporal.visit` charge point; with the meter unbounded and `evaluation_steps` one below, it names `evaluation_steps`; over a clause that reads silent samples, the meter's usage at `temporal.visit` equals the `evaluation_steps` usage plus the silent-sample lookups, so a meter ceiling between the two denies a silent-sample lookup at the meter point while `evaluation_steps` stays below its ceiling. | Test (TC-1318) |
+| FR-523-AC-14 | Two calls for instances `t1` and `t2` of **R**'s `on each` clause share one `Meter` whose work-unit ceiling is the first call's usage plus one: the first call returns its result with its truth, basis and support, and the second returns `Incomplete` at the `temporal.visit` charge point naming `t2`; when the clause reads silent samples, the first call's usage counts each silent-sample charge as a meter unit, so a ceiling that counted only `evaluation_steps` would admit the second call and fails this criterion. | Test (TC-1318) |
+| FR-523-AC-15 | With `evaluation_steps` at 1000 and the meter's work-unit ceiling one below the call's `temporal.visit` usage, the `Incomplete` is at the `temporal.visit` charge point; with the meter unbounded and `evaluation_steps` one below, it names `evaluation_steps`. | | Test (TC-1318) |
 | FR-523-AC-16 | A stamp for which `t0 + Hf + m` exceeds `u64::MAX` returns `Incomplete` naming `history_span` before any position is visited (the charge log is empty), and a stamp whose sum is `u64::MAX` evaluates. | Test (TC-1318) |
 | FR-523-AC-17 | A formula nested 100,000 deep evaluates with `formula_nodes` and `evaluation_steps` raised to fit it, on a thread with a 512 KiB stack. | Test (TC-1318) |
 | FR-523-AC-18 | The `usage` of a call reports all thirteen counters, and two requests that differ only in one ceiling give distinct `result_identity` values (FR-522-AC-17). | Test (TC-1318) |
 | FR-523-AC-19 | After the second call of AC-14 stopped, the first call replayed with a fresh `Meter` returns a result equal to the first call's result. | Test (TC-1318) |
 | FR-523-AC-20 | A call with a ledger holding `t1`, a redelivery of `t1`, one new healthy delivery and one new faulted delivery reports `instances` usage 1. | Test (TC-1318) |
-| FR-523-AC-21 | Over a fixed-sample clause that reads silent samples, each lookup at a silent sample raises `valuations`, `visited` and the meter's work-unit usage at the `temporal.visit` charge point by one and leaves `evaluation_steps` and `positions` unchanged, so the meter's `temporal.visit` usage exceeds the `evaluation_steps` usage by exactly the number of silent-sample lookups, and `usage` holds the same thirteen counters. | Test (TC-1318) |
+| FR-523-AC-21 | Over **R**'s fixed-sample `on origin` clause `eventually[0,3] holds(p)` with one observed position at index 0 where `p` is false, watermark 3, `Complete { through: 3 }` and `Closed` scope (samples 1 to 3 are silent and the verdict is not settled before sample 3), `usage` reports `formula_nodes` 2, `positions` 1, `valuations` 4, `evaluation_steps` 4 (the origin, the `eventually` activation, and the scan and lookup at position 0) and `visited` 7, and the meter's `temporal.visit` usage is 10: the 4 evaluated position visits plus 6 charges at the silent samples (3 scans and 3 lookups). A reading that counts silent charges in `evaluation_steps` reports 10, a reading that counts the silent scans in `positions` reports 4, and a reading that leaves silent charges off the meter reports a meter usage of 4; each fails this criterion. | Test (TC-1318) |
 | FR-523-AC-23 | For each stop of AC-5, AC-12, AC-13 and AC-16 after a call has created an instance, the result's `ledger` and `progress_ledger` equal the request's byte for byte. | Test (TC-1318) |
 | FR-523-AC-22 | Every stop of AC-5, AC-12, AC-13 and AC-16 is an `Ok` result with `activation = Unavailable`, `incomplete` naming the counter and no truth, and none is an `Err`. | Test (TC-1318) |
 

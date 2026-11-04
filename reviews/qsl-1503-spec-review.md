@@ -113,3 +113,21 @@ FND-001 to FND-009 are fixed. FND-010 (medium) is a new contradiction introduced
 ## Verdict (disposition pass 2)
 
 FND-001 to FND-011 are fixed. FND-012 (medium) blocks merge: restate the `occurrences()` order as the node's array order and name a constructed-package fixture. FND-013 is low. quire validate exits 0 on all 12 changed files and on this file; TC ranges end at FR-515-AC-20, FR-516-AC-35, FR-523-AC-23, FR-524-AC-39; no id collides with open PRs.
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-014 | medium | The "Evaluated position visit" definition is self-inconsistent for the position scan at a silent sample. Its first clause makes a visit a charge "made at a position that carries an observation of the trace, or at an observed position's false extension beyond the watermark's samples", which excludes a silent sample (a watermark sample with no observation, inside the watermark, so neither); its last sentence says the only charge that is not a visit is the `holds` lookup at a silent sample and that "the node-activation and scan charges ... are unchanged", which makes the scan of a silent position a visit. FR-523-AC-3 pins only observed positions (8 = 1 origin + 7). So whether a silent-sample scan charges `evaluation_steps` and `positions` is unspecified, the charge logs of FR-523-AC-10 and the exact meter ceilings of FR-523-AC-14 differ between readings, and FR-516-AC-27 and FR-523-AC-21 do not pin it. State that a scan (and a node activation) at a silent sample is, or is not, charged to `evaluation_steps` and `positions`, and add the count to FR-523-AC-21. | spec/functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-instance-apart-from-a-stopped-declaration.md:97-104 | missing-requirement |
+
+## Dispositions (round 3)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-012 | fixed | `occurrences()` follows the node's `occurrences` array as carried; lock rows ascend; the twin AC in FR-515-AC-20, FR-516-AC-32, TC-1310 row 20 and TC-1311 row 32 is a constructed package, in memory and read back, with array order 7, 3 and rows 3, 7, and says QSL's emitter cannot produce it. Position pairing fails it, and FR-322 prose agrees. |
+| FND-013 | fixed | FR-523 defines the evaluated position visit through FR-501-AC-12's charges and FR-504; the excluded charge is the `holds` lookup at a silent sample, consistent with FR-523-AC-3 (observed positions, 8 charges). Residue is FND-014. |
+| FND-014 | still-open | medium: the charge of a position scan at a silent sample is contradicted between the definition's first clause and its last sentence. |
+
+## Verdict (disposition pass 3)
+
+FND-001 to FND-013 are fixed. FND-014 (medium) blocks merge: one sentence stating whether a scan and node activation at a silent sample charge `evaluation_steps` and `positions`, with the count in FR-523-AC-21. quire validate exits 0 on all 12 changed files and on this file; TC ranges unchanged (FR-515-AC-20, FR-516-AC-35, FR-523-AC-23, FR-524-AC-39); no new contradiction elsewhere.

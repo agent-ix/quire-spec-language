@@ -227,12 +227,7 @@ ceilings from the same inputs is byte-equal to a call that never stopped
   settings and stop scope FR-523 defines. Each of the thirteen
   counters completes at exactly
   its measured usage, and one below it returns an `Incomplete` result naming the
-  counter with no partial truth. A lookup at a silent sample (FR-504: a fixed-sample
-  watermark sample with no observation, at which every atom reads false) is a
-  `holds` lookup that finds no valuation: it charges the `valuations` counter and
-  its `visited` unit and the meter at the `temporal.visit` charge point as every
-  lookup does, and it charges no `evaluation_steps` unit and no `positions` unit, because it is not an evaluated position visit (FR-523).
-  It adds no counter: the thirteen stay thirteen.
+  counter with no partial truth. A charge at a silent sample (FR-504: a fixed-sample watermark sample with no observation, at which every atom reads false) is charged to the call's meter at the `temporal.visit` charge point, one unit each, and counts in neither `evaluation_steps` nor `positions` (FR-523 "Evaluated position visit"); its `holds` lookup also charges `valuations` and `visited`. It adds no counter: the thirteen stay thirteen.
 - **The in-process package.** The call reads the same facts from the in-memory
   checked package that the I2 write holds before any lock is emitted as from the
   package read back from the emitted bytes: the in-memory package carries, at
@@ -279,7 +274,7 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-24 | A request with a closed complete trigger scope, no delivery, `trigger` `None` and an `anchor` naming no observed position returns `Unavailable`, not `Inactive`. | Test (TC-1311) |
 | FR-516-AC-25 | A call stopped by a counter ceiling, by the meter, by the `lineage` ceiling, by an evicted required valuation, by `formula_nodes` and by `history_span` (including a tick sum that does not fit) each returns `Ok` with `activation = Unavailable`, `truth = None` and `incomplete` naming the stop (`history_span` for the last), and none returns `Err` or an unset activation. A request whose anchor names no observed position returns `Ok` with `activation = Unavailable`, a `Missing` non-value naming the anchor and `incomplete = None`. | Test (TC-1311) |
 | FR-516-AC-26 | A finite-window verdict `PendingNextEvent` and a verdict `Pending` each return `truth = Pending`. | Test (TC-1311) |
-| FR-516-AC-27 | Over a fixed-sample clause whose silent samples are read, the `evaluation_steps` usage equals the count of evaluated position visits, the meter's `temporal.visit` usage exceeds it by exactly the number of silent-sample lookups, and `usage` reports exactly thirteen counters. | Test (TC-1311) |
+| FR-516-AC-27 | Over the clause of FR-523-AC-21 through `evaluate_temporal_evidence`, `usage` reports `evaluation_steps` 4, `positions` 1, `valuations` 4, the meter's `temporal.visit` usage is 10, and `usage` reports exactly thirteen counters. | Test (TC-1311) |
 | FR-516-AC-28 | A request with a guard-`None` delivery and a healthy delivery lists both in `instances` (the first `Unavailable` with a guard fault), assessing the healthy one by `trigger`, and a request with a surplus capture fact returns `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
 | FR-516-AC-29 | Over the in-memory package of the I2 write, before any emit, the clause's profile selection and `TemporalBinding` row equal the rows of the package read back from its bytes, and `evaluate_temporal_evidence` over it authenticates the clause's own `binding`. | Test (TC-1311) |
 | FR-516-AC-30 | In a package with two temporal clauses of different formulas and different clock rows, each clause's `CheckedNodeId` pairs with its own row: a `binding` asserting the other clause's row is refused with the dimension FR-522 names, in the in-memory and in the read-back package alike. | Test (TC-1311) |

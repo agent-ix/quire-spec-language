@@ -44,7 +44,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 24 | 24 | closed complete scope, no delivery, `trigger` `None`, `anchor` naming no observed position | `Unavailable`, not `Inactive` |
 | 25 | 25 | a counter stop, a meter stop, a `lineage` stop, an evicted required valuation, a `formula_nodes` stop, a `history_span` stop, a non-fitting tick sum; a withdrawn anchor | each stop `Ok` with `Unavailable`, no truth and `incomplete` naming the stop; the anchor `Ok` with `Unavailable`, a `Missing` non-value and `incomplete` `None`; no `Err`; no unset activation |
 | 26 | 26 | a clause whose verdict is `PendingNextEvent`; one whose verdict is `Pending` | `Truth::Pending` each |
-| 27 | 27 | a fixed-sample clause with silent samples read | silent-sample lookups charge `valuations`, `visited` and the meter at `temporal.visit`; `evaluation_steps` and `positions` unchanged by them; thirteen counters |
+| 27 | 27 | the clause of FR-523-AC-21 through the evidence call | `evaluation_steps` 4, `positions` 1, `valuations` 4, meter usage at `temporal.visit` 10, thirteen counters |
 | 28 | 28 | a guard-`None` delivery with a healthy one; a request with a surplus capture fact | both listed, the first `Unavailable`; `Err(CallFailure::Admission)`, empty charge log |
 | 29 | 29 | the in-memory package of the I2 write before emit vs the read-back package | equal profile selection and `TemporalBinding` row; the clause's own `binding` authenticates |
 | 30 | 30 | a package with two clauses of different formulas and clock rows; a `binding` asserting the other's row | refused with the dimension FR-522 names, in the in-memory and the read-back package |
