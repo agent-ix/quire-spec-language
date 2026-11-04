@@ -131,3 +131,13 @@ re-export of these adapter additions SHALL name a `qsl_eval` request type.
 ## Dependencies
 
 FR-314, FR-315, FR-060 (T12), ADR-011.
+
+## Status
+
+The replay-owned query and retained-request certificate facade are implemented.
+TC-1275 exercises genuine checked-closure acquisition, source completeness,
+selected row counts, authored adapter framing controls and the native checker.
+Its hand-written checked-rule refutations are checker oracles, not evidence of
+CG solver execution. CG's live solver-to-handoff qualification remains IR-1120;
+a native `Unverifiable` result for a rule the checker has not implemented stays
+`Unverifiable`, and this adapter grants no broader proof-rule support.

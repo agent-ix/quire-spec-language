@@ -27,9 +27,11 @@ alone (`acquire_checked_closure`, `refinement_node_key`, `RefinementUniverse::fo
 4. Resolve `CasRefinesCounter`, `Missing` and the state clause `CanInc` with
    `refinement_node_key`; build a universe with `for_population`.
 
-5. Read the selected key and seven-row count; repeat over the same source with
-   all step rows removed and assert a zero count. A key from another retained
-   refinement faults rather than supplying rows to this selection.
+5. Read the selected key and seven-row count. Build operation-free selected
+   model documents and a refinement with no step rows, and assert a zero count.
+   Removing rows from the original operation-bearing models instead must fail
+   source checking with MissingRow, not create a zero-row request. A key from
+   another retained refinement faults rather than supplying rows to this selection.
 6. Encode authored adapter controls using CG FR-045's handoff grammar, preserving
    each query and hand-written checker-proof oracle unchanged. Assemble in two
    record orders, compare the complete certificates, and call the request-owned
