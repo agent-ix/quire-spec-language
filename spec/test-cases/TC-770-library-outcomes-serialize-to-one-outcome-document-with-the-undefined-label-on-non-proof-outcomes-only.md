@@ -26,9 +26,8 @@ Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 to FR-286-AC-13, and the monitor 
 6. Call `OutcomeDocument::from_run` over `qsl_replay::spine::run`'s result for: FR-100-AC-1's `seven`; FR-100-AC-5's `inv` source; FR-100-AC-5's `function` `nope`; `seven` with a `Cancel` cancelled with `CancelCause::Requested` before the run; and a constructed `RunRefusal::Fault`. Then build the driver's document for an engine it has not built: `OutcomeDocument::new(Execute, None, Unsupported)` with one diagnostic of code `unimplemented_capability`.
 7. Run FR-283-AC-1's `always p` over its finite trace that ends pending and call `OutcomeDocument::from_clause_runs` over that one run; serialize it, read its category, items and FR-285 exit.
 8. Call `from_clause_runs` over FR-501-AC-4's `Indeterminate` run alone, with a pending run, with a pending run and a `Completed(false)` run, and over a `Completed(true)` run alone.
-
 9. Call `from_clause_run` over the clause runs of FR-283-AC-1 (violated), FR-283-AC-5 (undefined evaluation) and FR-283-AC-11 (insufficient data) and read each item's members.
-10. Once the `monitor` operation exists, run steps 7 to 9's clauses through `monitor`, render each `MonitorRecord` through `from_clause_run`, and compare the document with `from_clause_runs` over the same runs.
+10. Once the `monitor` operation exists, run the clauses of steps 7 to 9 and step 8's indeterminate run through `monitor`, render each `MonitorRecord` through `from_clause_run`, and compare the document with `from_clause_runs` over the same runs. TC-765 step 10 is this same check, traced also to FR-283-AC-14; a test traced to both runs once.
 
 Tag the tests `#[trace("TC-770", "<AC id>")]`.
 

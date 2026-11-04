@@ -162,7 +162,7 @@ in the place of `holds`, under ADR-014 A-4:
 | `Undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample`, `cause` (`UndefinedEvaluation{where, cause}`) | violation | 10 |
 | `InsufficientData` | FR-327's insufficient-data outcome, `InsufficientData{where, atom, count, min_count}` (a window aggregate short of data, QSpec FR-414), not an `Undefined` | `position`, `count`, `min_count` | undefined, with the label `undefined` and reason `insufficient-data` | 10 |
 | `Pending` | `Pending`, finite trace | none | pending | 0 |
-| `Indeterminate` | `Indeterminate`, a finite-window clause (FR-501) whose window is closed and whose evidence stays unresolved | the FR-501 reason | indeterminate | 11 |
+| `Indeterminate` | `Indeterminate`, a finite-window clause (FR-501) whose window is closed and whose evidence stays unresolved | the FR-501 reason, and `position` where that reason names one | indeterminate | 11 |
 | `Tested` | `Completed(true)` | none | success | 0 |
 | `MissingFairnessPremise` | `MissingFairnessPremise`, a clause with a non-empty fairness set | `constraint`, the first constraint of the fairness set | unsupported | 21 |
 | `Incomplete` | `Incomplete` | the charge point and limit | incomplete | 22 |
@@ -266,7 +266,7 @@ record.
 | FR-283-AC-11 | Over FR-327-AC-1's closed `Counter` trace (`c.value` 0, 1, 2) as a three-position finite document under event-position false-extension, `always[0,2] (count over past[0, 9] min_count 2 >= 1)` `on origin` reports `InsufficientData` at position 0 with `count` 1 and `min_count` 2, category undefined, the label `undefined` with reason `insufficient-data`, and exit 10. | Test (TC-765) |
 | FR-283-AC-12 | Over AC-1's trace: `always p` with accounting `work_units` 0 reports `Incomplete` naming `work_units`, category incomplete, exit 22; a window aggregate clause whose window holds 2 values with `max_window_values` 1 reports `WindowLimitReached` with `limit` `max_window_values`, `value` 1 and `setting` `monitor.max_window_values`, category incomplete, exit 22. Over FR-327-AC-6's trace, its `holds` atom refused at position 1 reports `ConditionRefused` at position 1 with the record `integer_out_of_domain`/`outside-domain` and its locus, category refusal, exit 20. | Test (TC-766) |
 | FR-283-AC-13 | Over AC-2's lasso, `eventually[0,2] holds(q)` under event-position false-extension, a bounded profile, reports `TraceRefused` with the `TemporalRefusal::LassoUnderBoundedProfile` refusal naming that profile and the category and exit of its code. With a test trace evaluator that returns `TemporalRefusal::Fault` for one selected clause, the request fails with `StageFailure::Fault`, no record for any clause, and exit 30. | Test (TC-766) |
-| FR-283-AC-14 | Each `MonitorRecord` of AC-1, AC-5 and AC-11 renders through `OutcomeItem::from_clause_run` (FR-286), and the document built from the records equals `OutcomeDocument::from_clause_runs` over the same clause runs. | Test (TC-765) |
+| FR-283-AC-14 | Each `MonitorRecord` this operation returns renders through `OutcomeItem::from_clause_run` (FR-286), and the document built from the records equals `OutcomeDocument::from_clause_runs` over the same clause runs, for the runs FR-286-AC-13 names. | Test (TC-765) |
 
 ## Dependencies
 

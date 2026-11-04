@@ -27,8 +27,7 @@ Each trace is a `quire.monitor-trace/1` document whose positions are snapshot `D
 7. Over FR-327-AC-1's closed `Counter` trace as a three-position finite document, monitor `eventually[0,2] holds(c.value = 2)` and `eventually[0,1] holds(c.value = 2)` under event-position false-extension, `on origin`.
 8. Read step 1's `witness`. Over a three-position finite trace whose position-2 snapshot holds `items` 3, 0, 5, monitor `always holds(forall i in self.items : i > 0)`, and evaluate its `holds` atom with FR-107's evaluator over the position-2 observation.
 9. Over step 7's trace, monitor `always[0,2] (count over past[0, 9] min_count 2 >= 1)` `on origin`.
-
-10. Render step 1's, step 5's and step 9's records through `OutcomeItem::from_clause_run` and build the document from them; build the document with `OutcomeDocument::from_clause_runs` over the same clause runs.
+10. This is TC-770 step 10 run from the monitor side: render each record of steps 1, 2, 5 and 9, and FR-501-AC-4's indeterminate clause, through `OutcomeItem::from_clause_run`, build the document from them, and compare it with `OutcomeDocument::from_clause_runs` over the same clause runs.
 
 Tag the tests `#[trace("TC-765", "<AC id>")]`.
 
