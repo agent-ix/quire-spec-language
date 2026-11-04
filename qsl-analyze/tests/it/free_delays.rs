@@ -6,12 +6,19 @@
 //!
 //! The fixture's `Call` stands for FR-204's models: `phase` 0 is `Idle`, 1
 //! `Half` and 2 `Done`, and `late` is `b`.
+//!
+//! These tests assert the product's choices, the exact extrema and the policy's
+//! whole `FreeDelays` action. A claim's `proved`/`refuted` reading is the value
+//! against its threshold; the settled outcome item, FR-202's witness scheduler,
+//! path sets, replay and canonical action bodies are not asserted here
+//! (remaining work: QSL-1708).
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    build_product, decide_bounded_event, decide_reachability, free_delays_choice, ExactProbLimits,
-    ExtRational, FhResult, FreeDelayRow, ProbBuild, ProbProduct, ProductAction, ProductKind,
-    ProductRequest, UnboundedObjective,
+    build_product, decide_bounded_event, decide_fair_expected_reward, decide_fair_reachability,
+    decide_reachability, free_delays_choice, ActionChoice, ExactProbLimits, ExtRational, FhResult,
+    FreeDelayRow, ProbBuild, ProbProduct, ProductAction, ProductKind, ProductRefusal,
+    ProductRequest, SchedulerChoice, UnboundedObjective,
 };
 use qsl_eval::model_subject::ModelSubject;
 use qsl_semantics::check::Bound;
@@ -119,6 +126,27 @@ fn build(world: &World, name: &str) -> ProbProduct {
     }
 }
 
+fn refusal(world: &World, name: &str) -> ProductRefusal {
+    let claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim(name)
+        .expect("the claim checks");
+    build_product(
+        ProductRequest {
+            subject: ModelSubject {
+                simulation: world.request(),
+                proof_bounds: Vec::new(),
+            },
+            claim,
+            limits: ExactProbLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("the build is refused")
+}
+
 /// An operation text's operation name.
 fn short(world: &World, text: &str) -> String {
     world
@@ -209,7 +237,8 @@ fn witness(
 }
 
 /// FR-204-AC-6 (TC-642 step 3): the one row given `[2]` offers `B` the delays
-/// 1, 2 and 3; the minimum `0` takes `B` delay 3 and the maximum `1` delay 1.
+/// 1, 2 and 3; the minimum `0` takes `B` delay 3 and the maximum `1` delay 1,
+/// and the tie at `m = 2` splits `1/2` and `1/2`.
 #[trace("TC-642", "FR-204-AC-6")]
 #[test]
 fn race_offers_three_free_delays_actions() {
@@ -254,7 +283,8 @@ fn race_offers_three_free_delays_actions() {
 
 /// FR-204-AC-7 (TC-642 step 4): with `B` guarded by `x >= 2 ms` the maximum
 /// is the tie `1/2`, taken by the row given `[2]` to `B` delay 2, and the
-/// minimum `0`.
+/// minimum `0`; under every scheduler the claim is unsupported,
+/// `DelayDistribution`, naming `A`.
 #[trace("TC-642", "FR-204-AC-7")]
 #[test]
 fn a_later_guard_leaves_the_tie_as_the_maximum() {
@@ -263,7 +293,16 @@ fn a_later_guard_leaves_the_tie_as_the_maximum() {
         2,
         "",
         &["A", "B"],
-        &extrema_claims(5, "0.4", "0.5"),
+        &format!(
+            "{}{}",
+            extrema_claims(5, "0.4", "0.5"),
+            claim(
+                "Every",
+                "under every scheduler",
+                "<= 0.5",
+                "eventually[0 ms, 5 ms] holds(c.late)"
+            ),
+        ),
     );
     let built = build(&world, "Max");
     assert_eq!(actions(&row_choices(&world, &built)), 2);
@@ -274,6 +313,10 @@ fn a_later_guard_leaves_the_tie_as_the_maximum() {
     assert_eq!(max_witness, [row(&[("A", 2)], &[("B", 2)])]);
     let (minimum, _) = decide(&world, &build(&world, "Min"), Bound::AtLeast(ratio(1, 2)));
     assert_eq!(minimum, ratio(0, 1));
+    let ProductRefusal::DelayDistribution { operation } = refusal(&world, "Every") else {
+        panic!("a delay distribution under every scheduler");
+    };
+    assert_eq!(short(&world, &operation), "A");
 }
 
 /// FR-204-AC-8 and AC-9 (TC-642 step 5): two rows, given `[1]` and `[3]`,
@@ -345,7 +388,8 @@ fn detour(claims: &str) -> World {
 /// FR-204-AC-10 (TC-642 step 6), the separating vector: after the draw the
 /// maximum is `3/4` and the minimum `3/8`, so `<= 0.7` and `>= 0.45` are both
 /// refuted; a choice made before the draw would give `5/8`, `1/2` and `1/2`
-/// for `B` at 1, 2 and 3, proving both claims.
+/// for `B` at 1, 2 and 3, proving both claims. The witness path set and its
+/// replay are not asserted (QSL-1708).
 #[trace("TC-642", "FR-204-AC-10")]
 #[test]
 fn detour_separates_the_post_draw_choice_from_the_pre_draw_one() {
@@ -422,7 +466,8 @@ fn detour_separates_the_post_draw_choice_from_the_pre_draw_one() {
 
 /// FR-204-AC-11 (TC-642 step 7): with a second free operation `C` each row
 /// assigns both `B` and `C`; the maximum `1` takes `B` 1, `C` 2 and the
-/// minimum `0` takes `B` 2, `C` 1.
+/// minimum `0` takes `B` 2, `C` 1. The replay refusal of a row naming `B`
+/// alone is not asserted (QSL-1708).
 #[trace("TC-642", "FR-204-AC-11")]
 #[test]
 fn every_free_identity_is_in_each_row() {
@@ -449,27 +494,124 @@ fn every_free_identity_is_in_each_row() {
     assert_eq!(min_witness, [row(&[("A", 2)], &[("B", 2), ("C", 1)])]);
 }
 
-/// FR-204-AC-12 (TC-642 step 8): `Loop`'s `B` delay 1 returns to the initial
-/// state and delay 2 ties with `A`. Both attain the maximum's upper iterate
-/// 1; the maximum `1` takes the end component's exit, `B` delay 2, and the
-/// chain `B` delay 1 induces never reaches `b`: it is the minimum's choice,
-/// with value `0`.
-#[trace("TC-642", "FR-204-AC-12")]
-#[test]
-fn loop_witness_takes_the_end_component_exit() {
-    let world = model(
+/// FR-204-AC-12's `Loop` with `A`'s delay `a_delay`: `B` resets `x` and keeps
+/// `Idle`. `Reach` is AC-12's claim; `Cost` is the expected number of `B`
+/// steps until `b`.
+fn loop_world(a_delay: &str) -> World {
+    model(
         &[("A", &["phase", "late"]), ("B", &["x"])],
         &format!(
             "{}{}\
              time invariant Wait when {{ self.phase = 0 }} {{ self.x <= 2 ms }}\n\
-             delay M::Call::A ~ discrete {{ 2 ms: 1 }};\n{}\
+             delay M::Call::A ~ discrete {{ {a_delay} }};\n\
+             reward steps on M::Call::B = 1;\n{}\
              probabilistic Reach using inf on M over (c: M::Call) under Both on origin \
-             {{ probability <= 0.9 [ eventually holds(c.late) ] }}\n",
+             {{ probability <= 0.9 [ eventually holds(c.late) ] }}\n\
+             probabilistic Cost using inf on M over (c: M::Call) under Both on origin \
+             {{ expected accumulate steps until holds(c.late) <= 5 }}\n",
             operation("A", "self.phase = 0", "self.phase = 2 and self.late = true"),
             operation("B", "self.phase = 0 and self.x >= 1 ms", "self.x = 0 ms"),
             workload("Both", &["A", "B"]),
         ),
+    )
+}
+
+/// A fair scheduler's deterministic choices as an evaluator policy.
+fn deterministic(policy: &[Option<SchedulerChoice>]) -> Vec<Option<usize>> {
+    policy
+        .iter()
+        .map(|choice| match choice {
+            Some(SchedulerChoice::Deterministic(ActionChoice(index))) => Some(*index),
+            _ => None,
+        })
+        .collect()
+}
+
+/// FR-204 "row-factored operator" for FR-200's fair reachability: over
+/// AC-12's `Loop` the fair maximum is `1` and its scheduler takes the end
+/// component's exit, `B` delay 2, not the row choice `B` delay 1.
+#[trace("TC-642", "FR-204-AC-12")]
+#[test]
+fn fair_reachability_takes_the_row_factored_exit() {
+    let world = loop_world("2 ms: 1");
+    let built = build(&world, "Reach");
+    let start = built.initial[0].2;
+    let target: Vec<bool> = built.labels.iter().map(|labels| labels[0]).collect();
+    let result = decide_fair_reachability(
+        &built,
+        None,
+        &target,
+        UnboundedObjective::Max,
+        &ExactProbLimits::default(),
+    )
+    .expect("the fair maximum is decided");
+    assert_eq!(result.values.len(), built.states.len());
+    assert_eq!(
+        result.values[start.index()],
+        ExtRational::Finite(ratio(1, 1))
     );
+    assert_eq!(
+        witness(&world, &built, start, &deterministic(&result.policy)),
+        [row(&[("A", 2)], &[("B", 2)])]
+    );
+}
+
+/// FR-204: with `A` drawing 1 or 2 ms, `Loop`'s initial state has two rows.
+/// FR-200's fair reachability and fair expected reward decide it through the
+/// row-factored operator: maximum reachability `1`; minimum expected `B`
+/// steps `1/4` (row `[1]` takes `B` delay 2, where `A` wins alone; row `[2]`
+/// takes the tie, `1/2`, over returning at cost 1); maximum `3/2` (both rows
+/// take `B` delay 1).
+#[trace("TC-642", "FR-204")]
+#[test]
+fn fair_decisions_read_two_rows_through_the_row_factored_operator() {
+    let world = loop_world("1 ms: 1, 2 ms: 1");
+    let built = build(&world, "Reach");
+    let start = built.initial[0].2;
+    assert_eq!(actions(&row_choices(&world, &built)), 4);
+    let target: Vec<bool> = built.labels.iter().map(|labels| labels[0]).collect();
+    let limits = ExactProbLimits::default();
+    let reach = decide_fair_reachability(&built, None, &target, UnboundedObjective::Max, &limits)
+        .expect("the fair maximum is decided");
+    assert_eq!(
+        reach.values[start.index()],
+        ExtRational::Finite(ratio(1, 1))
+    );
+
+    let built = build(&world, "Cost");
+    let start = built.initial[0].2;
+    let target: Vec<bool> = built.labels.iter().map(|labels| labels[0]).collect();
+    let minimum =
+        decide_fair_expected_reward(&built, &target, "steps", UnboundedObjective::Min, &limits)
+            .expect("the fair minimum is decided");
+    assert_eq!(minimum.values.len(), built.states.len());
+    assert_eq!(
+        minimum.values[start.index()],
+        ExtRational::Finite(ratio(1, 4))
+    );
+    let policy = deterministic(minimum.policy.as_deref().expect("a fair scheduler"));
+    assert_eq!(
+        witness(&world, &built, start, &policy),
+        [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 2)], &[("B", 2)])]
+    );
+    let maximum =
+        decide_fair_expected_reward(&built, &target, "steps", UnboundedObjective::Max, &limits)
+            .expect("the fair maximum is decided");
+    assert_eq!(
+        maximum.values[start.index()],
+        ExtRational::Finite(ratio(3, 2))
+    );
+}
+
+/// FR-204-AC-12 (TC-642 step 8): `Loop`'s `B` delay 1 returns to the initial
+/// state and delay 2 ties with `A`. Both attain the maximum's upper iterate
+/// 1; the maximum `1` takes the end component's exit, `B` delay 2, and the
+/// chain `B` delay 1 induces never reaches `b`: it is the minimum's choice,
+/// with value `0`. The refutation's replay is not asserted (QSL-1708).
+#[trace("TC-642", "FR-204-AC-12")]
+#[test]
+fn loop_witness_takes_the_end_component_exit() {
+    let world = loop_world("2 ms: 1");
     let built = build(&world, "Reach");
     let start = built.initial[0].2;
     assert_eq!(
@@ -530,7 +672,8 @@ fn loop_witness_takes_the_end_component_exit() {
 /// FR-196-AC-14 (TC-631 step 12): a given `A` drawing 9 or 10 digital units
 /// and a free `B` in `[1, 2]` make two rows, given `[9]` before `[10]`
 /// (numeric order), each assigning `B` alone; four actions, and no state key
-/// carries a pending given draw.
+/// carries a pending given draw. The canonical `free-delays` body and the
+/// refusal of each malformed body are not asserted (QSL-1708).
 #[trace("TC-631", "FR-196-AC-14")]
 #[test]
 fn rows_are_in_numeric_order_and_add_no_key_member() {

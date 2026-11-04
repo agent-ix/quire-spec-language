@@ -129,11 +129,17 @@ impl<'p> Evaluation<'p> {
     /// The evaluation of `product`.
     pub(super) fn of(product: &'p ProbProduct) -> Result<Self, MalformedRows> {
         let states = product.states.len();
-        if !product
-            .edges
-            .iter()
-            .any(|edge| matches!(edge.choice, ProductAction::FreeDelays(_)))
-        {
+        // A product without row choices, or one that already carries its row
+        // nodes (a dispatch edge), is its own evaluation.
+        let mut free_delays = product.edges.iter().filter_map(|edge| match &edge.choice {
+            ProductAction::FreeDelays(rows) => Some(rows.is_empty()),
+            _ => None,
+        });
+        let own = match free_delays.next() {
+            None => true,
+            Some(dispatch) => dispatch || free_delays.any(|dispatch| dispatch),
+        };
+        if own {
             return Ok(Self {
                 product: Cow::Borrowed(product),
                 parents: Vec::new(),
@@ -173,30 +179,43 @@ impl<'p> Evaluation<'p> {
             }
         }
         edges.append(&mut node_edges);
-        let mut evaluated = product.clone();
-        evaluated.edges = edges;
-        for parent in &parents {
-            evaluated.states.push(
-                product
-                    .states
-                    .get(parent.index())
-                    .ok_or(MalformedRows)?
-                    .clone(),
-            );
-            if !product.labels.is_empty() {
-                let labels = product
-                    .labels
-                    .get(parent.index())
-                    .cloned()
-                    .ok_or(MalformedRows)?;
-                evaluated.labels.push(labels);
-            }
-        }
-        Ok(Self {
-            product: Cow::Owned(evaluated),
+        let mut evaluation = Self {
+            product: Cow::Borrowed(product),
             parents,
             states,
-        })
+        };
+        let keys = evaluation.extend(&product.states).ok_or(MalformedRows)?;
+        let labels = if product.labels.is_empty() {
+            Vec::new()
+        } else {
+            evaluation.extend(&product.labels).ok_or(MalformedRows)?
+        };
+        evaluation.product = Cow::Owned(ProbProduct {
+            states: keys,
+            kind: product.kind,
+            edges,
+            initial: product.initial.clone(),
+            decided: product.decided.clone(),
+            labels,
+            fairness_operations: product.fairness_operations.clone(),
+            fairness: product.fairness.clone(),
+        });
+        Ok(evaluation)
+    }
+
+    /// The product state an evaluation state stands for: itself, or the
+    /// `FreeDelays` state a row node belongs to.
+    pub(super) fn state_of(&self, state: ProbStateId) -> ProbStateId {
+        state
+            .index()
+            .checked_sub(self.states)
+            .and_then(|node| self.parents.get(node).copied())
+            .unwrap_or(state)
+    }
+
+    /// Whether `state` is one of the product's own states.
+    pub(super) fn is_product_state(&self, state: ProbStateId) -> bool {
+        state.index() < self.states
     }
 
     /// A per-state vector of the product extended to the evaluation: each

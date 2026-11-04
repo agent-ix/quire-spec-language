@@ -8,6 +8,7 @@ use qsl_semantics::check::Bound;
 use quire_exact::{Integer, Rational};
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 
+use super::rows::Evaluation;
 use super::unbounded::{
     decide_expected_reward, decide_reachability, decide_until, maximal_end_components,
     maximal_end_components_from, optimize_mec_fraction, policy_iteration, Choice, ComponentValue,
@@ -61,7 +62,8 @@ pub enum SchedulerChoice {
 pub struct FairUnboundedResult {
     /// Exact value for each product state.
     pub values: Vec<ExtRational>,
-    /// One fair scheduler choice for each state that has available actions.
+    /// One fair scheduler choice for each state that has available actions,
+    /// then one per row of each `FreeDelays` state (FR-204).
     pub policy: Vec<Option<SchedulerChoice>>,
     /// Fair end components used by the transformation.
     pub components: Vec<FairEndComponent>,
@@ -113,7 +115,8 @@ pub struct FairRandomizedWitness {
 pub struct FairExpectedRewardResult {
     /// Exact finite value or positive infinity for each product state.
     pub values: Vec<ExtRational>,
-    /// Fair deterministic or randomized scheduler choice per state.
+    /// Fair deterministic or randomized scheduler choice per state, then
+    /// per row of each `FreeDelays` state (FR-204).
     pub policy: Option<Vec<Option<SchedulerChoice>>>,
     /// The checked fairness set recorded with the result.
     pub fairness: Vec<FairnessConstraint>,
@@ -291,7 +294,74 @@ fn fairness_actions<'a>(
 /// For a minimum, this applies FR-200's fair-end-component complement
 /// transformation. A maximum uses FR-198's optimum and fills zero-value
 /// states with a uniform randomized scheduler.
+///
+/// A `FreeDelays` state is decided by FR-204's row-factored operator: the
+/// values and components are the product's states', and the policy's entries
+/// after them select each row's choice ([`super::free_delays_choice`]).
 pub fn decide_fair_reachability(
+    product: &ProbProduct,
+    from: Option<&[bool]>,
+    target: &[bool],
+    objective: UnboundedObjective,
+    limits: &ExactProbLimits,
+) -> Result<FairUnboundedResult, FairProductError> {
+    if target.len() != product.states.len()
+        || from.is_some_and(|labels| labels.len() != product.states.len())
+    {
+        return Err(FairProductError::InvalidForm);
+    }
+    let evaluation = evaluation_of(product)?;
+    let target = evaluation
+        .extend(target)
+        .ok_or(FairProductError::InvalidForm)?;
+    let from = from
+        .map(|from| evaluation.extend(from).ok_or(FairProductError::InvalidForm))
+        .transpose()?;
+    let mut result = fair_reachability(
+        &evaluation.product,
+        from.as_deref(),
+        &target,
+        objective,
+        limits,
+    )?;
+    result.values = evaluation.restrict(result.values);
+    result.components = result
+        .components
+        .into_iter()
+        .map(|component| restrict_component(&evaluation, component))
+        .collect();
+    Ok(result)
+}
+
+/// The evaluation of `product` (FR-204's row-factored operator).
+fn evaluation_of(product: &ProbProduct) -> Result<Evaluation<'_>, FairProductError> {
+    Evaluation::of(product)
+        .map_err(|_| FairProductError::Product(UnboundedError::InvalidProbability))
+}
+
+/// A fair end component of an evaluation as the product's: its row nodes
+/// dropped from the states (each belongs to a member state) and their
+/// internal identities credited to the state the node belongs to.
+fn restrict_component(
+    evaluation: &Evaluation<'_>,
+    component: FairEndComponent,
+) -> FairEndComponent {
+    let states = component
+        .states
+        .into_iter()
+        .filter(|state| evaluation.is_product_state(*state))
+        .collect();
+    let mut actions: Vec<(ProbStateId, super::ScheduledIdentity)> = Vec::new();
+    for (state, identity) in component.actions {
+        let state = evaluation.state_of(state);
+        if !actions.contains(&(state, identity.clone())) {
+            actions.push((state, identity));
+        }
+    }
+    FairEndComponent { states, actions }
+}
+
+fn fair_reachability(
     product: &ProbProduct,
     from: Option<&[bool]>,
     target: &[bool],
@@ -565,7 +635,26 @@ pub fn decide_fair_long_run_mdp(
 /// Minimum values use FR-198 directly. A maximum first applies the fair
 /// probability-one and positive-reward end-component tests, then collapses
 /// zero-reward recurrent components before the exact FR-198 solve.
+///
+/// A `FreeDelays` state is decided by FR-204's row-factored operator, as in
+/// [`decide_fair_reachability`].
 pub fn decide_fair_expected_reward(
+    product: &ProbProduct,
+    target: &[bool],
+    reward: &str,
+    objective: UnboundedObjective,
+    limits: &ExactProbLimits,
+) -> Result<FairExpectedRewardResult, FairProductError> {
+    let evaluation = evaluation_of(product)?;
+    let target = evaluation
+        .extend(target)
+        .ok_or(FairProductError::InvalidForm)?;
+    let mut result = fair_expected_reward(&evaluation.product, &target, reward, objective, limits)?;
+    result.values = evaluation.restrict(result.values);
+    Ok(result)
+}
+
+fn fair_expected_reward(
     product: &ProbProduct,
     target: &[bool],
     reward: &str,

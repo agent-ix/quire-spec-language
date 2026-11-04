@@ -579,6 +579,60 @@ impl Iterator for Odometer {
     }
 }
 
+/// Visit every ordering of the tied identities (each with its operation's
+/// workload weight) with its probability times `probability`: drawing without
+/// replacement by the operations' weights, and uniformly within an operation
+/// (ADR-026 SD-3). One ordering is held at a time, so a visitor that checks
+/// the transition budget bounds the work done before it stops.
+fn each_ordering(
+    tied: &[(ScheduledIdentity, Rational)],
+    probability: Rational,
+    prefix: &mut Vec<ScheduledIdentity>,
+    visit: &mut dyn FnMut(Rational, &[ScheduledIdentity]) -> Step<()>,
+) -> Step<()> {
+    if tied.is_empty() {
+        return visit(probability, prefix);
+    }
+    let mut operations: Vec<(&str, &Rational, u64)> = Vec::new();
+    for (identity, weight) in tied {
+        match operations
+            .iter_mut()
+            .find(|(name, _, _)| *name == identity.operation)
+        {
+            Some((_, _, count)) => *count += 1,
+            None => operations.push((identity.operation.as_str(), weight, 1)),
+        }
+    }
+    let total = operations
+        .iter()
+        .fold(zero(), |sum, (_, weight, _)| sum.add(weight));
+    for (name, weight, count) in &operations {
+        let each = weight
+            .div(&total)
+            .and_then(|share| {
+                share.div(&Rational::from_integer(Integer::from_big(BigInt::from(
+                    *count,
+                ))))
+            })
+            .ok_or_else(|| fault("workload-weights-sum"))?;
+        for (index, (identity, _)) in tied.iter().enumerate() {
+            if identity.operation != *name {
+                continue;
+            }
+            let rest: Vec<(ScheduledIdentity, Rational)> = tied
+                .iter()
+                .enumerate()
+                .filter(|(position, _)| *position != index)
+                .map(|(_, entry)| entry.clone())
+                .collect();
+            prefix.push(identity.clone());
+            each_ordering(&rest, probability.mul(&each), prefix, visit)?;
+            prefix.pop();
+        }
+    }
+    Ok(())
+}
+
 /// The digital states reached by successive unit delays from a state: index
 /// `k` is the state after `k` units, and `forever` holds when the last one
 /// repeats under another unit.
@@ -1536,12 +1590,9 @@ impl<'c> Builder<'_, '_, 'c> {
         let reached = u64::try_from(trajectory.states.len().saturating_sub(1))
             .map_err(|_| fault("delay-count"))?;
         let free = windows.iter().any(|window| window.given.is_none());
-        let given = windows.iter().any(|window| window.given.is_some());
-        if free && !given {
-            return self.free_moves(at, state, local, workload);
-        }
-        // Every racing identity has a given delay: draw each, conditioned on
-        // its window, and take the smallest (ADR-026 SD-3).
+        // Each given delay is drawn conditioned on its window; an identity
+        // with no conditioned mass in its window does not race (ADR-026
+        // SD-2, SD-3).
         let mut racers: Vec<(&Window, Vec<(u64, Rational)>)> = Vec::new();
         for window in &windows {
             let Some(support) = &window.given else {
@@ -1555,7 +1606,7 @@ impl<'c> Builder<'_, '_, 'c> {
             let total = inside
                 .iter()
                 .fold(zero(), |sum, (_, weight)| sum.add(weight));
-            if inside.is_empty() {
+            if total.is_zero() {
                 continue;
             }
             let conditioned = inside
@@ -1569,7 +1620,11 @@ impl<'c> Builder<'_, '_, 'c> {
                 .collect::<Step<Vec<_>>>()?;
             racers.push((window, conditioned));
         }
-        if racers.is_empty() && !free {
+        if racers.is_empty() && free {
+            // Every racing delay is free (FR-204).
+            return self.free_moves(at, state, local, workload);
+        }
+        if racers.is_empty() {
             let mut planned = Vec::new();
             self.running_delays(at, state, local, &mut planned)?;
             if planned.is_empty() {
@@ -1785,78 +1840,39 @@ impl<'c> Builder<'_, '_, 'c> {
             .get(index.min(last))
             .ok_or_else(|| fault("race-delay-is-reachable"))?
             .clone();
-        for (order, ordered) in self.orderings(workload, &identities)? {
-            self.chain_edges(
-                at,
-                &start,
-                &ordered,
-                (probability.mul(&order), delay == 0, representative),
-                Edges {
-                    planned: &mut *out.planned,
-                    scope: out.scope,
-                },
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Every ordering of the tied identities with its probability: drawing
-    /// without replacement by the workload's operation weights, and
-    /// uniformly within an operation (ADR-026 SD-3).
-    fn orderings(
-        &self,
-        workload: &Workload,
-        tied: &[ScheduledIdentity],
-    ) -> Step<Vec<(Rational, Vec<ScheduledIdentity>)>> {
-        if tied.is_empty() {
-            return Ok(vec![(one(), Vec::new())]);
-        }
-        let mut operations: Vec<(String, Rational)> = Vec::new();
-        for identity in tied {
-            if !operations
-                .iter()
-                .any(|(name, _)| *name == identity.operation)
-            {
-                operations.push((
-                    identity.operation.clone(),
-                    self.weight_of(workload, &identity.operation)?,
-                ));
-            }
-        }
-        let total = operations
-            .iter()
-            .fold(zero(), |sum, (_, weight)| sum.add(weight));
-        let mut found = Vec::new();
-        for (name, weight) in &operations {
-            let same: Vec<usize> = tied
-                .iter()
-                .enumerate()
-                .filter(|(_, identity)| identity.operation == *name)
-                .map(|(index, _)| index)
-                .collect();
-            let operation_share = weight
-                .div(&total)
-                .ok_or_else(|| fault("workload-weights-sum"))?;
-            let each = operation_share
-                .div(&Rational::from_integer(Integer::from_big(BigInt::from(
-                    same.len() as u64,
-                ))))
-                .ok_or_else(|| fault("operation-has-identities"))?;
-            for index in same {
-                let rest: Vec<ScheduledIdentity> = tied
-                    .iter()
-                    .enumerate()
-                    .filter(|(position, _)| *position != index)
-                    .map(|(_, identity)| identity.clone())
-                    .collect();
-                for (probability, mut tail) in self.orderings(workload, &rest)? {
-                    let mut ordered = vec![tied[index].clone()];
-                    ordered.append(&mut tail);
-                    found.push((each.mul(&probability), ordered));
+        let weighted = identities
+            .into_iter()
+            .map(|identity| {
+                let weight = self.weight_of(workload, &identity.operation)?;
+                Ok((identity, weight))
+            })
+            .collect::<Step<Vec<_>>>()?;
+        let Edges { planned, scope } = out;
+        each_ordering(
+            &weighted,
+            probability,
+            &mut Vec::with_capacity(weighted.len()),
+            &mut |order, ordered| {
+                self.poll()?;
+                self.chain_edges(
+                    at,
+                    &start,
+                    ordered,
+                    (order, delay == 0, representative),
+                    Edges {
+                        planned: &mut *planned,
+                        scope,
+                    },
+                )?;
+                if self.edges.len().saturating_add(planned.len()) > self.max_transitions {
+                    return Err(Self::stopped(
+                        ModelCheckLimit::ExactProbMaxTransitions,
+                        self.max_transitions,
+                    ));
                 }
-            }
-        }
-        Ok(found)
+                Ok(())
+            },
+        )
     }
 
     /// The edges of one race outcome: the state after the winning delay, then
@@ -1982,7 +1998,8 @@ impl<'c> Builder<'_, '_, 'c> {
 
     /// Under a workload whose racing identities all have free delays: the
     /// scheduler chooses between a unit delay and letting the workload resolve
-    /// the identity now (ADR-028 TA-1, RU-6).
+    /// the identity now (ADR-028 TA-1, RU-6). An identity with a given delay
+    /// does not race here, so the workload resolves among the free ones only.
     fn free_moves(
         &mut self,
         at: usize,
@@ -1992,7 +2009,8 @@ impl<'c> Builder<'_, '_, 'c> {
     ) -> Step<Vec<Planned>> {
         let mut planned = Vec::new();
         self.running_delays(at, state, local, &mut planned)?;
-        let enabled = self.enabled(local, &state.model, &state.clocks)?;
+        let mut enabled = self.enabled(local, &state.model, &state.clocks)?;
+        enabled.retain(|action| self.given(&action.identity.operation).is_none());
         let mut operations: BTreeMap<String, (Rational, u64)> = BTreeMap::new();
         for action in &enabled {
             let operation = action.identity.operation.clone();
