@@ -20,8 +20,11 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
-use quire_exact::{ChargePoint, Integer, LimitKind, Meter, Outcome, Rational, ScalarLimits, Value};
+use quire_exact::{
+    ChargePoint, Integer, LimitKind, Meter, Outcome, Rational, RoundingMode, ScalarLimits, Value,
+};
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -95,6 +98,7 @@ type Charged = (ChargePoint, Option<u64>, Option<u64>, Option<u64>);
 struct Run {
     outcome: Outcome<Value>,
     charges: Vec<Charged>,
+    losses: Vec<LocatedLoss>,
 }
 
 fn call(package: &CheckedPackage, arguments: Vec<Value>, limits: ScalarLimits) -> Run {
@@ -107,11 +111,13 @@ fn call(package: &CheckedPackage, arguments: Vec<Value>, limits: ScalarLimits) -
             &mut meter,
         )
         .expect("the call returns a kernel outcome");
+    let losses = evaluation.losses;
     let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
         panic!("a kernel outcome, not {:?}", evaluation.outcome);
     };
     Run {
         outcome,
+        losses,
         charges: meter
             .admitted_charges()
             .iter()
@@ -141,6 +147,24 @@ impl Run {
             ),
             other => panic!("a completed decimal, not {other:?}"),
         }
+    }
+
+    /// The one decimal loss record of the call: `(exact numerator, exact
+    /// denominator, rounded coefficient, rounded scale, mode)`.
+    fn decimal_loss(&self) -> (Integer, Integer, Integer, u32, RoundingMode) {
+        let [located] = self.losses.as_slice() else {
+            panic!("one loss record, not {:?}", self.losses);
+        };
+        let ValueLoss::Decimal(loss) = &located.loss else {
+            panic!("a decimal loss, not {:?}", located.loss);
+        };
+        (
+            loss.exact_numerator().clone(),
+            loss.exact_denominator(),
+            loss.rounded_coefficient().clone(),
+            loss.rounded_scale(),
+            loss.mode(),
+        )
     }
 
     /// `(limit_kind, limit, consumed, next_charge, charge_point)` of the stop.
@@ -345,6 +369,10 @@ fn d27_a_member_literal_divides_with_the_divisor_side_expansion() {
     .expect("the quotient checks: a nonzero literal divisor discharges its obligation");
     let run = call(&package, vec![], limits(11, 4, 2, 6));
     assert_eq!(run.decimal(), (int(2), 1));
+    assert_eq!(
+        run.decimal_loss(),
+        (int(6), int(35), int(2), 1, RoundingMode::NearestEven)
+    );
     assert_eq!(
         run.points(),
         vec![
