@@ -4780,7 +4780,7 @@ pub(crate) fn bind_parameters(
 
 /// Whether `ty` is, or holds through an option, a collection or a map's
 /// values, a `Float` (the IEEE profile is needed exactly then).
-fn holds_float(mut ty: &ValueType) -> bool {
+pub(super) fn holds_float(mut ty: &ValueType) -> bool {
     loop {
         match ty {
             ValueType::Float(_) => return true,

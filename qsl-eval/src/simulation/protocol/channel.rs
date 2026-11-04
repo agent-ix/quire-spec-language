@@ -16,7 +16,7 @@
 //! queued entry a `head` or `tail` selector removed for it.
 
 use qsl_semantics::check::ProtocolNodeId;
-use qsl_semantics::check::{ChannelOverflow, LossSelector};
+use qsl_semantics::check::{ChannelDelivery, ChannelOverflow, LossSelector};
 use quire_eval::FamilyOutcome;
 use quire_exact::{Meter, Outcome, Value};
 
@@ -58,6 +58,19 @@ type Deliverable<'i> = (Delivery<'i>, Vec<u8>);
 
 /// A deliverable entry's queue and position, and the entry.
 type Delivery<'i> = ((QueueKey, usize), &'i Entry);
+
+/// The inputs for one count choice of a delivery interval send.
+struct IntervalSend<'a, 'p> {
+    ordinal: u64,
+    path: &'a ThreadPath,
+    node: ProtocolNodeId,
+    after: Cursor,
+    channel: &'a Channel<'p>,
+    text: &'a str,
+    payload: Value,
+    key: QueueKey,
+    count: u64,
+}
 
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// The `send` or `receive` `node`.
@@ -139,6 +152,33 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let channel = self.channel_of(node)?;
         let text = self.program.text(node)?.to_owned();
         let instance = Self::instance(state, ordinal)?;
+        if let Some(pending) = instance.pending_sends.get(&(path.clone(), node)) {
+            let payload = pending.payload.clone();
+            let remaining = pending.remaining;
+            let key = match self.queue_key(message.channel, &payload, &state.model, node)? {
+                Ok(key) => key,
+                Err(finding) => {
+                    gathered.findings.push(finding);
+                    return Ok(());
+                }
+            };
+            self.send_interval_count(
+                state,
+                gathered,
+                IntervalSend {
+                    ordinal,
+                    path,
+                    node,
+                    after,
+                    channel,
+                    text: &text,
+                    payload,
+                    key,
+                    count: remaining,
+                },
+            )?;
+            return Ok(());
+        }
         let payloads = self
             .model
             .values_of(
@@ -169,6 +209,31 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     continue;
                 }
             };
+            if let ChannelDelivery::Between { lower, upper } = channel.delivery {
+                let mut count = lower;
+                loop {
+                    self.send_interval_count(
+                        state,
+                        gathered,
+                        IntervalSend {
+                            ordinal,
+                            path,
+                            node,
+                            after,
+                            channel,
+                            text: &text,
+                            payload: payload.clone(),
+                            key: key.clone(),
+                            count,
+                        },
+                    )?;
+                    if count == upper {
+                        break;
+                    }
+                    count = count.checked_add(1).ok_or_else(broken)?;
+                }
+                continue;
+            }
             let enc = Enc::tagged(
                 "queue-entry",
                 vec![
@@ -277,6 +342,183 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((transition, next));
             }
+        }
+        Ok(())
+    }
+
+    /// Expand one interval count for a payload, preserving blocked work on
+    /// the sending thread until a receive frees capacity.
+    fn send_interval_count(
+        &self,
+        state: &ProtocolState<M>,
+        gathered: &mut Gathered<M>,
+        send: IntervalSend<'_, '_>,
+    ) -> Result<(), ExpansionStop> {
+        let IntervalSend {
+            ordinal,
+            path,
+            node,
+            after,
+            channel,
+            text,
+            payload,
+            key,
+            count,
+        } = send;
+        gathered.budget.charge()?;
+        let instance = Self::instance(state, ordinal)?;
+        let fifo = key.fifo.is_some();
+        let fifo_key = key.fifo.as_ref().map(|fifo| fifo.bytes.clone());
+        let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
+        let mut entries = Vec::new();
+        let mut entry_displacements = Vec::new();
+        let mut appended = Vec::new();
+        let mut displaced: Option<(Entry, usize)> = None;
+        let mut removals = Vec::new();
+        let mut pending = 0;
+        for index in 0..count {
+            gathered.budget.charge()?;
+            let enc = Enc::tagged(
+                "queue-entry",
+                vec![
+                    ("send", Enc::text(text.to_owned())),
+                    ("thread", path.enc()),
+                    ("payload", value_enc(&payload, self.model.typing())),
+                ],
+            );
+            let entry = Entry {
+                send: node,
+                payload: payload.clone(),
+                bytes: jcs(&enc)?,
+                enc,
+                carried: self.memory.send(&state.memory, path),
+            };
+            let mut entry_displaced = None;
+            let outcome = if queue.len() < channel.capacity {
+                appended.push(entry.bytes.clone());
+                if fifo {
+                    queue.push(entry);
+                } else {
+                    insert_sorted(&mut queue, entry);
+                }
+                SendOutcome::Accepted
+            } else {
+                match channel.overflow {
+                    ChannelOverflow::Block => {
+                        pending = count - index;
+                        break;
+                    }
+                    ChannelOverflow::Reject => SendOutcome::Rejected,
+                    ChannelOverflow::Loss(selector) => {
+                        let dropped = match selector {
+                            LossSelector::Head if !queue.is_empty() => Some(0),
+                            LossSelector::Tail => queue.len().checked_sub(1),
+                            LossSelector::Head | LossSelector::New => None,
+                        };
+                        if let Some(at) = dropped {
+                            let removed = queue.remove(at);
+                            entry_displaced = Some(removed.enc.clone());
+                            let before = queue[..at.min(queue.len())]
+                                .iter()
+                                .filter(|queued| queued.bytes == removed.bytes)
+                                .count();
+                            if displaced.is_none() {
+                                displaced = Some((removed.clone(), before));
+                            }
+                            removals.push(self.program.text(removed.send)?.to_owned());
+                            let bytes = entry.bytes.clone();
+                            if fifo {
+                                queue.push(entry);
+                            } else {
+                                insert_sorted(&mut queue, entry);
+                            }
+                            appended.push(bytes);
+                            SendOutcome::Accepted
+                        } else {
+                            removals.push(text.to_owned());
+                            SendOutcome::Lost
+                        }
+                    }
+                }
+            };
+            entries.push(outcome);
+            entry_displacements.push(entry_displaced);
+        }
+
+        if pending > 0 && entries.is_empty() && appended.is_empty() {
+            return Ok(());
+        }
+
+        let mut next = state.clone();
+        let target = Self::instance_mut(&mut next, ordinal)?;
+        store(target, key, queue);
+        let payload_enc = value_enc(&payload, self.model.typing());
+        if pending > 0 {
+            target.pending_sends.insert(
+                (path.clone(), node),
+                super::PendingSend {
+                    payload: payload.clone(),
+                    enc: payload_enc.clone(),
+                    remaining: pending,
+                },
+            );
+        } else {
+            target.pending_sends.remove(&(path.clone(), node));
+            Self::bind(
+                target,
+                node,
+                path,
+                Bound {
+                    value: Some(payload.clone()),
+                    enc: payload_enc.clone(),
+                },
+            );
+        }
+        let record = SendRecord::interval(
+            channel.name.clone(),
+            payload_enc.clone(),
+            count,
+            entries,
+            entry_displacements,
+            pending,
+            displaced.as_ref().map(|(entry, _)| entry.enc.clone()),
+        );
+        let mut transition = ProtocolTransition::record(
+            StepKind::Send,
+            path.clone(),
+            text.to_owned(),
+            payload_enc,
+            payload,
+        )
+        .recording(record);
+        if let Some(entry) = appended.first() {
+            transition = transition.flowing(QueueFlow {
+                key: fifo_key,
+                entry: entry.clone(),
+                before: 0,
+                displaced: displaced
+                    .as_ref()
+                    .map(|(entry, before)| (entry.bytes.clone(), *before)),
+            });
+        }
+        for send in removals {
+            transition = transition.removing(QueueEvent {
+                channel: channel.name.clone(),
+                instance: ordinal,
+                send,
+                removal: Removal::Lost,
+            });
+        }
+        if pending == 0 {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
+                self.normalize(&mut next, ordinal)?;
+                gathered.successors.push((transition, next));
+            }
+        } else {
+            self.normalize(&mut next, ordinal)?;
+            gathered.successors.push((transition, next));
         }
         Ok(())
     }

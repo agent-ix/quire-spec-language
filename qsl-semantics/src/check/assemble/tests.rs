@@ -3470,9 +3470,9 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
             "undefined_expression/unproved-nonzero",
         ),
         (
-            "function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }",
+            "function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 0 ms = e / 0 ms }",
             default,
-            "d / 3 ms",
+            "d / 0 ms",
             "undefined_expression/unproved-nonzero",
         ),
         (
@@ -3497,6 +3497,70 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
             "{declarations}: expected {code} at {at:?}: {refusals:?}"
         );
         assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+    }
+}
+
+/// QSpec FR-146 "Accepted proof forms" (TC-191, the literal-divisor clauses
+/// of FR-146-AC-9): a quantity division by a quantity literal of nonzero
+/// magnitude, written as an integer, a decimal or a `rational(n,d)` (a
+/// negative one included), is admitted with no range obligation; a
+/// zero-magnitude literal and every non-literal divisor (a parameter, a
+/// `let` name bound to a literal, a product) are `unproved-nonzero` at the
+/// division whatever guard encloses them.
+#[trace("QSpec-TC-191")]
+#[test]
+fn only_a_nonzero_quantity_literal_divisor_proves_a_quantity_division_defined() {
+    let check = |body: &str| {
+        let source = format!("{TIME_UNITS}{QUANTITY_F}{body}");
+        assemble(&source)
+            .1
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+    };
+    for divisor in [
+        "3 ms",
+        "0.5 s",
+        "1.50 s",
+        "rational(3, 2) s",
+        "rational(-3, 2) s",
+    ] {
+        let body = format!(
+            "function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure \
+             {{ d / {divisor} = e / {divisor} }}"
+        );
+        check(&body).unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    }
+    for (body, at) in [
+        (
+            "function q using v(d: Quantity<ms>): Boolean pure { d / 0 s = d / 3 s }",
+            "d / 0 s",
+        ),
+        (
+            "function q using v(d: Quantity<ms>): Boolean pure \
+             { d / rational(0, 1) s = d / 3 s }",
+            "d / rational(0, 1) s",
+        ),
+        (
+            "function q using v(d: Quantity<ms>): Boolean pure { d / 0.0 s = d / 3 s }",
+            "d / 0.0 s",
+        ),
+        (
+            "function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure \
+             { e != 0 ms and d / e = d / 3 ms }",
+            "d / e",
+        ),
+        (
+            "function q using v(d: Quantity<ms>): Boolean pure \
+             { let x = 3 ms in d / x = d / 3 ms }",
+            "d / x",
+        ),
+    ] {
+        let refusals = quantity_refusals(body, CheckingLimits::default(), at);
+        assert_eq!(
+            refusals,
+            [("undefined_expression/unproved-nonzero".to_owned(), true)],
+            "{body}"
+        );
     }
 }
 
