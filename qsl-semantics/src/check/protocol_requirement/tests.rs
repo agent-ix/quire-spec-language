@@ -358,6 +358,8 @@ fn an_emitted_requirement_keeps_its_temporal_clause_position() {
 #[test]
 fn one_package_checks_three_families_and_binds_the_requirement() {
     let unit = "predicate Positive using v (amount: M::Total): Boolean { amount >= 0 }\n\
+        temporal Earlier using t over (view: M::Node) clock \"orders\" on origin \
+        { always holds(Positive(view.total)) }\n\
         temporal Due using t over (view: M::Node) clock \"orders\" \
         on each (started: M::Node) when (Positive(started.total)) \
         { capture saved: M::Total = started.total; \
@@ -387,15 +389,17 @@ fn one_package_checks_three_families_and_binds_the_requirement() {
     let graph = assembled
         .check_with_protocol_results(CheckingLimits::default())
         .expect("every declaration of the three families checks");
-    let [clause] = graph.temporal_clauses() else {
-        panic!("one temporal clause");
+    let [earlier, clause] = graph.temporal_clauses() else {
+        panic!("two temporal clauses");
     };
+    assert_eq!(earlier.clause().name(), "Earlier");
+    assert_eq!(clause.clause().name(), "Due");
     assert_eq!(clause.captures.len(), 1);
     let flow = graph.protocol("Flow").expect("the protocol checks");
     let [due] = flow.requirements.as_slice() else {
         panic!("one requirement, got {:?}", flow.requirements);
     };
-    assert_eq!(due.temporal, 0);
+    assert_eq!(due.temporal, 1, "Due follows Earlier");
 }
 
 /// QSL-1679 (the spine successor of the composed report's `exports()`
@@ -404,7 +408,7 @@ fn one_package_checks_three_families_and_binds_the_requirement() {
 /// scalar `M::Total` is the integer interval `0..1000` and `M::Node` is a
 /// reference to the model object, and a binder written `M::Tally` resolves
 /// to the scalar `0..3`, so a wrong target changes a value asserted here.
-#[trace("TC-1056", "FR-218-AC-16")]
+#[trace("TC-1056", "FR-218-AC-37")]
 #[test]
 fn a_model_type_in_a_clause_binder_resolves_to_the_models_own_type() {
     use quire_exact::{Integer, IntegerInterval, ValueType};
@@ -436,8 +440,14 @@ fn a_model_type_in_a_clause_binder_resolves_to_the_models_own_type() {
     );
     let (_, over) = clause.over();
     let (_, trigger) = clause.trigger().expect("an `on each` clause has a trigger");
-    assert!(matches!(over, ValueType::Reference(_)), "{over:?}");
-    assert_eq!(over, trigger);
+    let node = ValueType::Reference(
+        graph
+            .scope()
+            .object_type_named(None, "M::Node")
+            .expect("the model's object type Node"),
+    );
+    assert_eq!(over, &node);
+    assert_eq!(trigger, &node);
     assert_ne!(over, &interval(0, 1000));
 }
 
@@ -448,7 +458,7 @@ fn a_model_type_in_a_clause_binder_resolves_to_the_models_own_type() {
 /// request order, the protocol's requirement binds the clause declared in
 /// the other unit, and without the clause's unit the same requirement is
 /// refused.
-#[trace("FR-480-AC-2", "FR-218-AC-16")]
+#[trace("TC-1056", "FR-218-AC-38")]
 #[test]
 fn three_units_bind_a_predicate_a_clause_and_a_protocol_across_units() {
     use crate::check::assemble::AssemblyLimits;
@@ -462,6 +472,11 @@ fn three_units_bind_a_predicate_a_clause_and_a_protocol_across_units() {
     let predicate = format!(
         "{}predicate Positive using v (amount: M::Total): Boolean {{ amount >= 0 }}\n",
         header("profile v = \"quire.value.complete/v1\";\n")
+    );
+    let earlier = format!(
+        "{}temporal Earlier using t over (view: M::Node) clock \"orders\" on origin \
+         {{ always holds(Positive(view.total)) }}\n",
+        header("profile t = \"quire.temporal.infinite-trace/v1\";\n")
     );
     let clause = format!(
         "{}temporal Due using t over (view: M::Node) clock \"orders\" \
@@ -510,8 +525,14 @@ fn three_units_bind_a_predicate_a_clause_and_a_protocol_across_units() {
         .unwrap_or_else(|refusal| panic!("the units assemble: {refusal:?}"))
     };
 
-    for order in [[0, 1, 2], [2, 1, 0], [1, 2, 0]] {
-        let all = [("a", &predicate), ("b", &clause), ("c", &protocol)];
+    // Units sort by identity: `Earlier`, in `a1`, precedes `Due`, in `b`.
+    for order in [[0, 1, 2, 3], [3, 2, 1, 0], [2, 3, 0, 1]] {
+        let all = [
+            ("a", &predicate),
+            ("a1", &earlier),
+            ("b", &clause),
+            ("c", &protocol),
+        ];
         let texts: Vec<_> = order
             .iter()
             .map(|&i| (all[i].0, all[i].1.as_str()))
@@ -519,25 +540,35 @@ fn three_units_bind_a_predicate_a_clause_and_a_protocol_across_units() {
         let graph = assemble(&texts)
             .check_with_protocol_results(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{order:?}: the package checks: {refusals:?}"));
-        let [node] = graph.temporal_clauses() else {
-            panic!("{order:?}: one temporal clause");
+        let [first, node] = graph.temporal_clauses() else {
+            panic!("{order:?}: two temporal clauses");
         };
+        assert_eq!(first.clause().name(), "Earlier");
         assert_eq!(node.clause().name(), "Due");
         assert_eq!(node.clause().captures().len(), 1);
         let flow = graph.protocol("Flow").expect("the protocol checks");
         let [due] = flow.requirements.as_slice() else {
             panic!("{order:?}: one requirement, got {:?}", flow.requirements);
         };
-        assert_eq!(due.temporal, 0, "{order:?}");
+        assert_eq!(due.temporal, 1, "{order:?}: Due follows Earlier");
     }
 
-    let refusals = assemble(&[("a", &predicate), ("c", &protocol)])
+    let refusals = assemble(&[("a", &predicate), ("a1", &earlier), ("c", &protocol)])
         .check(CheckingLimits::default())
         .expect_err("the requirement names a clause no unit declares");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(
+        (refusal.cause.code().as_str(), refusal.cause.cause()),
+        ("missing_declaration", Some("missing-name"))
+    );
+    let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+        panic!("a protocol anchor refusal, got {refusal:?}");
+    };
     assert!(
-        refusals
-            .iter()
-            .any(|refusal| matches!(&refusal.cause, CheckCause::ProtocolAnchor(_))),
-        "{refusals:?}"
+        matches!(cause.as_ref(), ProtocolAnchorCause::MissingRequirement { name, .. }
+            if name == "Due"),
+        "{cause:?}"
     );
 }

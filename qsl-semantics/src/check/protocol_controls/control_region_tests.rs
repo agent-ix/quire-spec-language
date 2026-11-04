@@ -1,7 +1,7 @@
 //! QSL-1678: S3 checking charges a protocol only for its own control region.
 //!
 //! The composed binder once proved this with a read-count ceiling over 200
-//! protocols. The checked route proves it with the exact `s3.nodes` and
+//! protocols. The checked route proves it with the `s3.nodes` and
 //! `s3.work_units` it spends: a protocol's charge is a function of that
 //! protocol alone, so the same protocol costs the same beside any neighbour
 //! and a package of `k` equal protocols costs `k` times one of them. A check
@@ -104,11 +104,11 @@ const KINDS: [(Cap, CheckingLimitKind); 2] = [
     (WORK, CheckingLimitKind::WorkBudget),
 ];
 
-/// A protocol's exact charge does not depend on the controls of the
+/// A protocol's charge does not depend on the controls of the
 /// protocols beside it: a 60-check neighbour adds nothing to a 3-check
 /// protocol's cost, and the 60-check protocol costs the same with or without
 /// it.
-#[trace("TC-1172", "FR-218-AC-30", "FR-258-AC-4")]
+#[trace("TC-1172", "FR-218-AC-36")]
 #[test]
 fn a_protocol_is_charged_for_its_own_controls_whatever_its_neighbours() {
     for (make, kind) in KINDS {
@@ -130,7 +130,7 @@ fn a_protocol_is_charged_for_its_own_controls_whatever_its_neighbours() {
 
 /// `k` equal protocols cost `k` times one protocol above the empty unit's
 /// charge: linear, not quadratic, in the package's control count.
-#[trace("TC-1172", "FR-218-AC-30", "FR-258-AC-4")]
+#[trace("TC-1172", "FR-218-AC-36")]
 #[test]
 fn a_package_of_equal_protocols_is_charged_linearly() {
     let many = |count: usize| {
