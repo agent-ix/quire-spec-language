@@ -1063,7 +1063,7 @@ fn twins_pair_their_clock_rows_by_key_and_an_absent_or_unknown_selector_is_refus
     assert!(meter.admitted_charges().is_empty());
 }
 
-#[trace("FR-526-AC-12", "FR-526-AC-13", "TC-1321")]
+#[trace("FR-526-AC-12", "TC-1321")]
 #[test]
 fn a_lineage_stop_is_an_ok_result_with_the_requests_ledger_and_the_ceiling_completes() {
     let (env, p) = each();
@@ -1376,7 +1376,7 @@ fn the_spec_vector_of_silent_samples_measures_its_exact_usage() {
     assert_eq!(meter.admitted_charges().len(), 13);
 }
 
-#[trace("FR-516-AC-27", "TC-1311")]
+#[trace("FR-516-AC-27", "FR-516-AC-44", "TC-1311")]
 #[test]
 fn a_support_pair_at_a_silent_sample_names_no_observed_fact_and_is_skipped() {
     // `always[0, 3] holds(p)` with `p` true at the one observation and false
@@ -1397,7 +1397,7 @@ fn a_support_pair_at_a_silent_sample_names_no_observed_fact_and_is_skipped() {
     );
 }
 
-#[trace("FR-516-AC-3", "TC-1311")]
+#[trace("FR-516-AC-3", "FR-516-AC-43", "TC-1311")]
 #[test]
 fn a_withdrawn_valuation_names_its_atom_and_position_in_one_exact_text() {
     let (env, p) = each();
@@ -1412,33 +1412,114 @@ fn a_withdrawn_valuation_names_its_atom_and_position_in_one_exact_text() {
     let named = result.non_value.expect("a non-value");
     assert_eq!(named.code, "fact-withdrawn");
     assert_eq!(named.dimension.as_deref(), Some("valuation:1@1"));
+    // The first absent valuation the evaluator read, whether or not the
+    // decision rests on it: only position 2 is absent here.
+    let mut late: Vec<_> = (0..3)
+        .map(|i| position(i, &[(p, Valuation::True)]))
+        .collect();
+    late[2].valuations.clear();
+    let mut later = request(&env, late);
+    later.deliveries = vec![delivery("t1", "r", "payload", &["5"])];
+    later.trigger = Some(id("t1"));
+    let result = call(&env, &env.subject(&[]), &later).expect("a result");
+    assert_eq!(
+        result.non_value.expect("a non-value").dimension.as_deref(),
+        Some("valuation:1@2")
+    );
 }
 
-#[trace("FR-516-AC-2", "TC-1311")]
+#[trace("FR-516-AC-42", "TC-1311")]
 #[test]
 fn a_refusal_of_the_evaluation_after_charges_is_an_ok_active_refused_result() {
-    // Two observations of one stamp with no usable order, in a `since`.
-    let env = env("on origin", "holds(p) until[0, 1] holds(q)");
-    let (p, q) = (env.atom("p"), env.atom("q"));
-    let positions = vec![
-        position(0, &[(p, Valuation::True), (q, Valuation::False)]),
-        {
-            let mut tie = position(0, &[(p, Valuation::True), (q, Valuation::True)]);
-            tie.observation = qsl_eval::temporal::evidence::EvidenceRef::named("obs0b");
-            tie
-        },
-    ];
-    let mut asked = request(&env, positions);
-    asked.origins = vec![origin("o1", "a")];
-    asked.trigger = Some(id("o1"));
-    let result = call(&env, &env.subject(&[]), &asked).expect("an Ok result");
+    // Two observations of one stamp with no usable order.
+    let tied = |body: &str, reads_q: bool| {
+        let env = env("on origin", body);
+        let p = env.atom("p");
+        let q = if reads_q { env.atom("q") } else { p };
+        let mut positions = vec![
+            position(
+                0,
+                &[
+                    (p, Valuation::True),
+                    (
+                        q,
+                        if reads_q {
+                            Valuation::False
+                        } else {
+                            Valuation::True
+                        },
+                    ),
+                ],
+            ),
+            {
+                let mut tie = position(0, &[(p, Valuation::True), (q, Valuation::True)]);
+                tie.observation = qsl_eval::temporal::evidence::EvidenceRef::named("obs0b");
+                tie
+            },
+        ];
+        positions.truncate(2);
+        let mut asked = request(&env, positions);
+        asked.origins = vec![origin("o1", "a")];
+        asked.trigger = Some(id("o1"));
+        call(&env, &env.subject(&[]), &asked).expect("an Ok result")
+    };
+    let result = tied("holds(p) until[0, 5] holds(q)", true);
     assert_eq!(result.activation, ActivationState::Active);
     assert_eq!(result.truth, None);
     let named = result.non_value.expect("a non-value");
     assert_eq!(named.kind, NonValueKind::Refused);
     assert_eq!(named.code, "temporal-refusal");
-    assert_eq!(
-        named.dimension.as_deref(),
-        Some("the positions of equal stamp at TemporalPosition(1) have no comparable order key")
-    );
+    assert_eq!(named.dimension.as_deref(), Some("unordered-tie"));
+    assert_eq!(named.detail, [("position".to_owned(), "1".to_owned())]);
+    // The same tied pair under `eventually` has no order-sensitive operator.
+    assert!(tied("eventually[0, 1] holds(p)", false).truth.is_some());
+}
+
+fn silent_request(env: &Env, body_atom: u64) -> EvidenceRequest {
+    exact_silent_request(env, body_atom)
+}
+
+#[trace("FR-523-AC-24", "FR-516-AC-27", "TC-1318", "TC-1311")]
+#[test]
+fn the_reach_of_the_clause_bounds_the_silent_samples_that_are_materialized() {
+    // `eventually[0, 1]` reaches one sample past the observation, so one
+    // silent sample is materialized although the watermark is 3.
+    let fixed = fixed_env("on origin", "eventually[0, 1] holds(p)");
+    let p = fixed.atom("p");
+    let mut meter = unlimited();
+    let result =
+        evaluate_temporal_evidence(&fixed.subject(&[]), &silent_request(&fixed, p), &mut meter)
+            .expect("a result");
+    let usage = result.usage;
+    assert_eq!(usage.get(EvidenceCounter::EvaluationSteps), 4);
+    assert_eq!(usage.get(EvidenceCounter::Positions), 1);
+    assert_eq!(usage.get(EvidenceCounter::Valuations), 2);
+    assert_eq!(usage.get(EvidenceCounter::Visited), 5);
+    assert_eq!(meter.admitted_charges().len(), 7);
+}
+
+#[trace("FR-523-AC-10", "FR-516-AC-27", "TC-1318", "TC-1311")]
+#[test]
+fn a_meter_ceiling_of_nine_stops_at_the_tenth_charge_the_observed_lookup() {
+    let fixed = fixed_env("on origin", "eventually[0, 3] holds(p)");
+    let p = fixed.atom("p");
+    let mut tight = Meter::new(ScalarLimits {
+        work_units: 9,
+        ..SCALAR_LIMITS_UNLIMITED
+    });
+    let result =
+        evaluate_temporal_evidence(&fixed.subject(&[]), &silent_request(&fixed, p), &mut tight)
+            .expect("an Ok result");
+    assert!(matches!(
+        result.incomplete,
+        Some(EvidenceIncomplete::Meter { .. })
+    ));
+    assert_eq!(tight.admitted_charges().len(), 9);
+    // Three materializations, the origin, `eventually` at 0, the scan at the
+    // observed position and the scans at the three silent samples came
+    // first; the tenth charge is the lookup at the observed position 0.
+    let usage = result.usage;
+    assert_eq!(usage.get(EvidenceCounter::EvaluationSteps), 3);
+    assert_eq!(usage.get(EvidenceCounter::Positions), 1);
+    assert_eq!(usage.get(EvidenceCounter::Valuations), 0);
 }

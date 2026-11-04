@@ -178,6 +178,7 @@ impl Outcome {
             kind,
             code,
             dimension,
+            detail: Vec::new(),
         });
         self
     }
@@ -1357,11 +1358,18 @@ fn evaluate(
                 // A refusal of the evaluation itself (for example two
                 // positions of one stamp with no usable order) is a result
                 // of a call that ran, not a refusal before any charge.
-                other => Ok(Outcome::of(ActivationState::Active).with_non_value(
-                    NonValueKind::Refused,
-                    "temporal-refusal",
-                    Some(other.to_string()),
-                )),
+                other => {
+                    let (kind, detail) = refusal_kind(&other);
+                    let mut outcome = Outcome::of(ActivationState::Active).with_non_value(
+                        NonValueKind::Refused,
+                        "temporal-refusal",
+                        Some(kind.to_owned()),
+                    );
+                    if let Some(non_value) = outcome.non_value.as_mut() {
+                        non_value.detail = detail;
+                    }
+                    Ok(outcome)
+                }
             };
         }
     };
@@ -1530,5 +1538,76 @@ fn conclude(facts: &Facts<'_>, outcome: Outcome, _meter: &Meter) -> EvidenceResu
         },
         authenticated: facts.authenticated.clone(),
         instances: outcome.instances,
+    }
+}
+
+/// The stable kebab-case kind of an evaluation refusal and its fields as
+/// ordered name/value pairs (FR-516). `Fault` is not a refusal result.
+fn refusal_kind(refused: &TemporalRefusal) -> (&'static str, Vec<(String, String)>) {
+    use crate::temporal::position::PositionRefusal;
+    let pair = |name: &str, value: String| vec![(name.to_owned(), value)];
+    let position = |at: &TemporalPosition| pair("position", at.index().to_string());
+    let profile = |profile: &qsl_semantics::check::TemporalProfile| {
+        pair("profile", profile.identity().to_string())
+    };
+    match refused {
+        TemporalRefusal::EmptyTrace => ("empty-trace", Vec::new()),
+        TemporalRefusal::TupleArity { expected, found } => (
+            "tuple-arity",
+            vec![
+                ("expected".to_owned(), expected.to_string()),
+                ("found".to_owned(), found.to_string()),
+            ],
+        ),
+        TemporalRefusal::AlignSkipNotLockstep => ("align-skip-not-lockstep", Vec::new()),
+        TemporalRefusal::NotProjectionAligned => ("not-projection-aligned", Vec::new()),
+        TemporalRefusal::EmptyLoop => ("empty-loop", Vec::new()),
+        TemporalRefusal::TraceTooLong => ("trace-too-long", Vec::new()),
+        TemporalRefusal::LassoUnderBoundedProfile { profile: of } => {
+            ("lasso-under-bounded-profile", profile(of))
+        }
+        TemporalRefusal::ProfileNotEvaluated { profile: of } => {
+            ("profile-not-evaluated", profile(of))
+        }
+        TemporalRefusal::TraceCarriesNoStamps { profile: of } => {
+            ("trace-carries-no-stamps", profile(of))
+        }
+        TemporalRefusal::NotFiniteWindowProfile { profile: of } => {
+            ("not-finite-window-profile", profile(of))
+        }
+        TemporalRefusal::UnorderedTie { position: at } => ("unordered-tie", position(at)),
+        TemporalRefusal::NotTimedProfile { profile: of } => ("not-timed-profile", profile(of)),
+        TemporalRefusal::NonPositiveLoopDelay => ("non-positive-loop-delay", Vec::new()),
+        TemporalRefusal::LoopReentersBeforeLastStamp => {
+            ("loop-reenters-before-last-stamp", Vec::new())
+        }
+        TemporalRefusal::NegativeStamp { position: at } => ("negative-stamp", position(at)),
+        TemporalRefusal::DecreasingStamp { position: at } => ("decreasing-stamp", position(at)),
+        TemporalRefusal::Position(inner) => (
+            "position-refusal",
+            pair(
+                "kind",
+                match inner {
+                    PositionRefusal::NotDecimal => "not-decimal",
+                    PositionRefusal::LeadingZero => "leading-zero",
+                    PositionRefusal::Overflow => "overflow",
+                    PositionRefusal::OutsideTrace { .. } => "outside-trace",
+                }
+                .to_owned(),
+            ),
+        ),
+        TemporalRefusal::Window(inner) => (
+            "window-refusal",
+            pair(
+                "kind",
+                match inner {
+                    super::super::WindowRefusal::OutsideTrace { .. } => "outside-trace",
+                    super::super::WindowRefusal::WindowKindMismatch => "window-kind-mismatch",
+                    super::super::WindowRefusal::TimestampsDecrease => "timestamps-decrease",
+                }
+                .to_owned(),
+            ),
+        ),
+        TemporalRefusal::Fault(_) => ("fault", Vec::new()),
     }
 }

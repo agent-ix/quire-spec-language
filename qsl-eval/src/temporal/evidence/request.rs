@@ -253,6 +253,9 @@ pub struct NonValue {
     pub code: &'static str,
     /// The dimension or input the non-value names.
     pub dimension: Option<String>,
+    /// Further fields as ordered name/value pairs; informational, and in no
+    /// identity.
+    pub detail: Vec<(String, String)>,
 }
 
 /// A fact reference inside a decision support.
