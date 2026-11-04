@@ -6,7 +6,9 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// A running total of counted units that a shared reference adds to, so every
 /// pass over one scope counts into the same total and the scope stays `Sync`.
 /// It is a field of one check's scope, never global state: a new scope starts
-/// at zero, and a clone starts from the total its source had reached.
+/// at zero, and a clone starts from the total its source had reached. This
+/// keeps TC-160's intent (FR-062-AC-3): the check stage reaches no global or
+/// thread-local state. The atomic is only what lets a shared `&Scope` count.
 #[derive(Debug, Default)]
 pub struct Tally(AtomicU64);
 

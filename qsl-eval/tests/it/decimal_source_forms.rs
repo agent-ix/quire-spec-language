@@ -813,8 +813,6 @@ fn a_negated_literal_is_a_member_when_its_operand_is() {
          function f using v(): Q pure { -decimal(5, 0) }\n",
     )
     .expect("-decimal(5, 0) at Q checks");
-    // The negation retains the value -5 at the type's maximum scale 2: the
-    // operation rounds into the target scale (QSpec FR-140).
     assert_eq!(call(&wide, vec![], UNLIMITED).decimal(), (int(-500), 2));
 }
 
@@ -892,4 +890,156 @@ fn only_a_nonzero_literal_discharges_a_divisors_obligation() {
             "{name}"
         );
     }
+}
+
+const QUANTUM: &str = "type Q = Decimal[-99999, 99999; 0, 2; nearest-even];\n";
+
+/// FR-093-AC-39 (TC-1232): the constructors at `Q` evaluate as written, and a
+/// literal beside a typed operand takes its type: `c1` returns coefficient
+/// 125, scale 2, and `add` at coefficient 100, scale 2 returns 225, scale 2.
+/// The lowered node structure and IR's read are asserted with the emitter.
+#[trace("FR-093-AC-39", "TC-1232")]
+#[test]
+fn the_constructors_at_q_evaluate_as_written() {
+    let c1 = compile(&format!(
+        "{QUANTUM}function f using v(): Q pure {{ decimal(125, 2) }}\n"
+    ))
+    .expect("c1 checks");
+    assert_eq!(call(&c1, vec![], UNLIMITED).decimal(), (int(125), 2));
+    let add = compile(&format!(
+        "{QUANTUM}function f using v(p: Q): Q pure {{ p + decimal(125, 2) }}\n"
+    ))
+    .expect("add checks");
+    let p = Value::Decimal(quire_exact::Decimal::new(int(100), 2));
+    assert_eq!(call(&add, vec![p], UNLIMITED).decimal(), (int(225), 2));
+}
+
+/// FR-093-AC-40 (TC-1232): a literal takes only a decimal type it is a
+/// member of by value; the non-members refuse `ill_typed`/`type-mismatch` at
+/// the literal, and the members by value check.
+#[trace("FR-093-AC-40", "TC-1232")]
+#[test]
+fn a_literal_that_is_no_member_is_refused_and_a_member_by_value_checks() {
+    let big = format!("1{}", "0".repeat(41));
+    for (name, result, body) in [
+        ("a2", "Int[0, 9]".to_owned(), "decimal(1, 0)".to_owned()),
+        ("a3", "Boolean".to_owned(), "decimal(1, 0)".to_owned()),
+        (
+            "a4",
+            "Decimal[-9, 9; 0, 0; toward-zero]".to_owned(),
+            "decimal(150, 2)".to_owned(),
+        ),
+        (
+            "a5",
+            "Decimal[-1000, 1000; 0, 1; nearest-even]".to_owned(),
+            "decimal(1234, 3)".to_owned(),
+        ),
+        (
+            "a6",
+            "Decimal[-9, 9; 0, 0; toward-zero]".to_owned(),
+            "decimal(10, 0)".to_owned(),
+        ),
+        ("a7", "Q".to_owned(), format!("decimal({big}, 2)")),
+    ] {
+        assert_eq!(
+            refusal(&format!(
+                "{QUANTUM}function {name} using v(): {result} pure {{ {body} }}\n"
+            )),
+            mismatch(),
+            "{name}"
+        );
+    }
+    for (result, body) in [
+        ("Decimal[-9, 9; 0, 0; toward-zero]", "decimal(100, 2)"),
+        (
+            "Decimal[-1000, 1000; 0, 1; nearest-even]",
+            "decimal(1200, 3)",
+        ),
+        ("Decimal[-9, 9; 0, 0; toward-zero]", "decimal(0, 7)"),
+    ] {
+        compile(&format!(
+            "function f using v(): {result} pure {{ {body} }}\n"
+        ))
+        .unwrap_or_else(|refusals| panic!("{body} is a member by value: {refusals:?}"));
+    }
+}
+
+/// FR-093-AC-42 (TC-1232): a `Float64` is no operand of a decimal
+/// conversion (`ill_typed`/`type-mismatch`, FR-397-AC-18).
+#[trace("FR-093-AC-42", "TC-1232")]
+#[test]
+fn a_float_converts_to_no_decimal() {
+    let text = "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function f using v(a: Float64[nearest-even]): Decimal[0, 100; 0, 3; nearest-even] pure \
+         { convert<Decimal[0, 100; 0, 3; nearest-even]>(a) }\n";
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the unit assembles");
+    declarations.ieee_profile = Some(
+        qsl_semantics::value::admit_ieee_profile(
+            &[qsl_semantics::value::DefinitionRole::IeeeProfile.reference()],
+            &[],
+        )
+        .expect("the pinned IEEE profile admits"),
+    );
+    let Err(refusals) = declarations.check(CheckingLimits::default()) else {
+        panic!("a float to decimal conversion is refused");
+    };
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(refusal.cause.code().as_str(), "ill_typed");
+    assert_eq!(refusal.cause.cause(), Some("type-mismatch"));
+}
+
+/// FR-093-AC-53 (TC-1232): a unit declaration's `decimal(1, 5000)` is refused
+/// by `s3.decimal_scale` with bound 4096, not by either literal setting.
+#[trace("FR-093-AC-53", "TC-1232")]
+#[test]
+fn a_unit_declarations_scale_is_limited_by_the_assembly_setting() {
+    let text = "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         dimension Length;\nunit m : Length = rational(1, 1);\n\
+         unit c : Length = decimal(1, 5000) * m;\n";
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let Err(refusal) = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    ) else {
+        panic!("scale 5000 is above the assembly bound");
+    };
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {:?}", refusal.errors);
+    };
+    let rendered = format!("{:?}", error.cause);
+    assert!(rendered.contains("DecimalScaleLimit"), "{rendered}");
+    assert!(
+        rendered.contains("4096") && rendered.contains("5000"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("S3DecimalScale"), "{rendered}");
 }

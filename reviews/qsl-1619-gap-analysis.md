@@ -47,6 +47,12 @@ Stale tests: the qsl-forms value_forms case that expected decimal(1, 2) to be un
 | --- | --- | --- | --- |
 | FND-007 | medium | FR-104-AC-13's `function d using v(a: P, b: P): P pure { a / b }` is stated to check and evaluate, but the checker refuses it undefined_expression/unproved-nonzero (probed; P admits zero and nothing proves b nonzero), and no test covers the AC's division, `convert<W>`, `-a = b` or `a / b = a` with `b: R` clauses although FR-104-AC-13 is claimed by tests. Either the AC example lacks a nonzero premise (spec lane) or the checker is wrong. | spec/functional/FR-104-check-state-clauses.md:391 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The merged FR-093 ACs are only partly asserted. FR-093-AC-39: spellings c1..c5 only (no c6 "1.250"), no shared-node assertion for two functions over decimal(125, 2), no lowered quire.op.decimal.negate or quire.op.decimal.add node check, no IR v2 reader admission. FR-093-AC-40 and FR-093-AC-42 have no trace-tagged test (AC-40 lacks the Boolean result and coefficient 10^41 refusals and the admitted decimal(1200, 3) and decimal(0, 7) cases; AC-42 lacks the convert node and literal "1.5" at R's type node and the Float64 to Decimal mismatch). FR-093-AC-41 asserts checking and the value but not the quire.op.decimal.div node. FR-093-AC-53 is tagged but no test refuses the unit declaration `unit c : Length = decimal(1, 5000) * m;` by s3.decimal_scale. | qsl-eval/tests/it/decimal_source_forms.rs; qsl-semantics/src/check/lowering/tests/rows.rs:819 |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -57,7 +63,13 @@ Stale tests: the qsl-forms value_forms case that expected decimal(1, 2) to be un
 | FND-004 | fixed | qsl-cst tests/it/decimal_constructor.rs names the malformed and well-formed constructors and the reserved name, tagged FR-091-AC-58 and TC-1232. |
 | FND-005 | deferred | Spec defect owned by the spec lane (titan:QSL:plan): FR-093 still has no AC-38 to AC-42 or Decimal constructors section; the PR changes no spec file, so a code fix round cannot resolve it. The lead must record a spec ticket before TC-1232 is called covered. |
 | FND-006 | deferred | QSpec TC-185 vector wording (work_units figures one low for a source call) lives in agent-ix/quire-specification, outside this PR; the PR's test records the call charge in a comment. Low severity, no behavior wrong. |
+| FND-005 | fixed | FR-093 now has the Decimal constructors section and AC-38 to AC-42, AC-45, AC-52 to AC-57 (QSL PR #2293). Coverage of those ACs is FND-008. |
+| FND-007 | fixed | FR-104-AC-13 now uses `a / decimal(8, 2)` and states the parameter divisor refusal; every clause is asserted: a_quotient_is_typed_by_its_operands... (d, e, d2, f, g, h), the_conversion_negation_and_mismatch_forms_of_the_criterion (convert<W>, convert<W>(a + b), -a = b, a / b with b: R), sums_differences_and_products... and a_literal_beside_a_typed_operand_evaluates_at_the_peer_type, all tagged FR-104-AC-13 and TC-1084. |
 
 ## Disposition verdict (pass 1)
 
 Fixed: FND-001 to FND-004. Deferred to the spec lane: FND-005, FND-006. New: FND-007 (spec or checker, AC-13's division example). Gate and mutation evidence is in SR-2277001's Disposition verdict.
+
+## Disposition verdict (pass 2)
+
+Tagged value-asserting coverage per merged AC at head 0b062ccd5: AC-38, AC-45, AC-52, AC-54, AC-55 and AC-56 are asserted as stated; AC-41 (value, not node shape), AC-53 (no unit-declaration case) and AC-57 (m1 to m4 as stated; the Q case asserts (-500, 2), not the AC's (-5, 0), the evaluator follows FR-140 and the AC needs the spec fix, see judgment (c) in SR-2277001's pass 2 verdict) are partial; AC-39 is partial; AC-40 and AC-42 are untagged and partial. FND-008 routes these to the coder. Gate, mutation and judgment evidence is in SR-2277001's pass 2 verdict.
