@@ -328,25 +328,32 @@ fn formula_nodes(
 /// Write the plan root and entries onto the package `base` was emitted as,
 /// reading it back through IR first (the writer works on the admitted
 /// graph).
+///
+/// `retained` is the emission `base` was written from. Every witness row it
+/// retained from its acquisition (selected model rows, equality producer and
+/// fact rows, temporal binding rows, omissions) is carried onto the returned
+/// emission, re-keyed to the nodes this writer renames, so a consumer of the
+/// plan root never rebuilds or re-acquires them.
 pub fn emit_monitor_plan_over(
-    base: &EmittedPackage,
+    retained: &Emission,
     identity: qsl_semantics::library::LibraryName,
     evidence: &quire_contract_model::CheckedPackageEvidence,
     plan: &MonitorPlanWire<'_>,
 ) -> Result<Emission, EmitRefusal> {
     let read = crate::checked_v2::read_checked_package_v2(
-        base.bytes(),
+        retained.package().bytes(),
         identity,
         crate::checked_v2::V2ReadLimits::default(),
         evidence,
     )
     .map_err(|_| invariant("the base package does not read back"))?;
-    emit_monitor_plan(&read.into_value().admitted, plan)
+    emit_monitor_plan(&read.into_value().admitted, retained, plan)
 }
 
 /// Write the plan root and entries onto the admitted package `base`.
-pub fn emit_monitor_plan(
+fn emit_monitor_plan(
     base: &CheckedPackageV2,
+    retained: &Emission,
     plan: &MonitorPlanWire<'_>,
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
@@ -386,6 +393,7 @@ pub fn emit_monitor_plan(
     for node in nodes.iter_mut() {
         rename_projections(&mut node.body, &renamed_types, plan.renames)?;
     }
+    let mut all_changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
     let mut changes = Vec::new();
     for node in nodes.iter_mut() {
         if node.semantic_form.as_ref() == "record_value"
@@ -399,6 +407,7 @@ pub fn emit_monitor_plan(
         }
     }
     rekey(&mut nodes, &mut source_map, &changes);
+    all_changes.extend(changes);
 
     // 2. The entries: declaration-less function nodes keyed by content. A
     // function the entries call stays a named declaration, keyed by its
@@ -442,6 +451,7 @@ pub fn emit_monitor_plan(
         entry_ids.push(new);
     }
     rekey(&mut nodes, &mut source_map, &changes);
+    all_changes.extend(changes);
 
     // 3. The nodes the root names.
     let node_of = |name: &str| -> Result<CheckedNodeId, EmitRefusal> {
@@ -635,6 +645,11 @@ pub fn emit_monitor_plan(
     path.push(text_segment(uncertainty_text));
     path.push(node(&entry_ids[3])?);
     path.push(text_segment(plan.activation_capacity.to_string()));
+    let mut closure_roots: Vec<&CheckedNodeId> = entry_ids.iter().collect();
+    closure_roots.push(&clause.node_id);
+    for body_root in call_closure_body_roots(&nodes, &closure_roots)? {
+        path.push(node(&body_root)?);
+    }
     let root_id = CheckedNodeId {
         package: package.as_str().into(),
         path,
@@ -668,12 +683,45 @@ pub fn emit_monitor_plan(
         owner: None,
         body,
     });
-    finish(base, nodes, source_map, inspection)
+    finish(base, retained, &all_changes, nodes, source_map, inspection)
+}
+
+/// The body-root node of every declared `function` node the `roots` reach
+/// through their bodies, directly or through the body of another reached
+/// function, once each, in ascending node-id order of the called functions
+/// (QSpec FR-487 "call closure"). A reached helper stays a declared node; its
+/// body root is what the plan root's key covers.
+fn call_closure_body_roots(
+    nodes: &[CheckedSemanticNodeV2],
+    roots: &[&CheckedNodeId],
+) -> Result<Vec<CheckedNodeId>, EmitRefusal> {
+    let by_id: std::collections::BTreeMap<&CheckedNodeId, &CheckedSemanticNodeV2> =
+        nodes.iter().map(|node| (&node.node_id, node)).collect();
+    let mut seen: BTreeSet<&CheckedNodeId> = BTreeSet::new();
+    let mut stack: Vec<&CheckedNodeId> = roots.to_vec();
+    let mut called: std::collections::BTreeMap<&CheckedNodeId, CheckedNodeId> =
+        std::collections::BTreeMap::new();
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let node = by_id
+            .get(id)
+            .ok_or_else(|| invariant("a node of the call closure is in the graph"))?;
+        if node.node_tag.as_ref() == "function" && node.declaration.is_some() {
+            let (_, body) = param_targets(node)?;
+            called.insert(&node.node_id, body);
+        }
+        stack.extend(node.body.reference_targets());
+    }
+    Ok(called.into_values().collect())
 }
 
 /// The shared tail: index the graph, encode and wrap the bytes.
 fn finish(
     base: &CheckedPackageV2,
+    retained: &Emission,
+    changes: &[(CheckedNodeId, CheckedNodeId)],
     nodes: Vec<CheckedSemanticNodeV2>,
     source_map: Vec<CheckedSourceMapEntry>,
     inspection_source_map: qsl_foundation::source::provenance::PackageSourceMap,
@@ -717,21 +765,63 @@ fn finish(
         )
         .map_err(EmitRefusal::from)
     })?;
+    let rekeyed = |id: &mut CheckedNodeId| {
+        for (old, new) in changes {
+            if *id == *old {
+                *id = new.clone();
+            }
+        }
+    };
+    let mut selected_operation_member_rows = retained.selected_operation_member_rows.clone();
+    for row in &mut selected_operation_member_rows {
+        rekeyed(&mut row.anchor);
+    }
+    let mut selected_tuple_declaration_rows = retained.selected_tuple_declaration_rows.clone();
+    for row in &mut selected_tuple_declaration_rows {
+        rekeyed(&mut row.structural_node);
+    }
+    let mut selected_source_unit_rows = retained.selected_source_unit_rows.clone();
+    for row in &mut selected_source_unit_rows {
+        rekeyed(&mut row.structural_node);
+    }
+    let mut selected_model_enum_declaration_rows =
+        retained.selected_model_enum_declaration_rows.clone();
+    for row in &mut selected_model_enum_declaration_rows {
+        rekeyed(&mut row.structural_node);
+    }
+    let mut selected_model_enum_member_rows = retained.selected_model_enum_member_rows.clone();
+    for row in &mut selected_model_enum_member_rows {
+        rekeyed(&mut row.structural_node);
+        rekeyed(&mut row.declaration_node);
+    }
+    let mut equality_producer_identity_rows = retained.equality_producer_identity_rows.clone();
+    for row in &mut equality_producer_identity_rows {
+        rekeyed(&mut row.checked_node);
+        rekeyed(&mut row.source_map_entry.node_id);
+    }
+    let mut equality_fact_witness_rows = retained.equality_fact_witness_rows.clone();
+    for row in &mut equality_fact_witness_rows {
+        rekeyed(&mut row.checked_application);
+        rekeyed(&mut row.structural_node);
+        rekeyed(&mut row.source_map_entry.node_id);
+    }
     Ok(Emission {
         package,
-        omitted: Vec::new(),
+        omitted: retained.omitted.clone(),
         evidence: own_evidence(&lock),
         capability_report,
         source_map: inspection_source_map,
-        selected_operation_member_rows: Vec::new(),
-        selected_tuple_declaration_rows: Vec::new(),
-        selected_source_unit_rows: Vec::new(),
-        selected_model_enum_declaration_rows: Vec::new(),
-        selected_model_enum_member_rows: Vec::new(),
-        equality_producer_identity_rows: Vec::new(),
-        equality_fact_witness_rows: Vec::new(),
+        selected_operation_member_rows,
+        selected_tuple_declaration_rows,
+        selected_source_unit_rows,
+        selected_model_enum_declaration_rows,
+        selected_model_enum_member_rows,
+        selected_exact_declaration_rows: retained.selected_exact_declaration_rows.clone(),
+        selected_exact_field_rows: retained.selected_exact_field_rows.clone(),
+        equality_producer_identity_rows,
+        equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
-        temporal_binding_rows: super::TemporalBindingRows::default(),
+        temporal_binding_rows: retained.temporal_binding_rows.clone(),
     })
 }
 

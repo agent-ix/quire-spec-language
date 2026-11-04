@@ -376,3 +376,178 @@ fn a_function_named_like_a_generated_type_writes_no_plan_root() {
     let refusal = root_of(&unit, "C", &target()).unwrap_err();
     assert!(matches!(refusal, PlanRootRefusal::Write(_)), "{refusal:?}");
 }
+
+/// The unit with `bump` and `twice` helpers called by the clause's atom,
+/// `bump` adding `step`.
+fn helper_unit(step: i64) -> String {
+    let helpers = format!(
+        "function bump using v(x: Int[0, 1000]): Integer pure {{ x + {step} }}\n\
+         function twice using v(x: Int[0, 1000]): Integer pure {{ bump(x) + bump(x) }}\n"
+    );
+    unit_source(
+        "always holds(twice(c.versionNumber) = 5)",
+        &helpers,
+        true,
+        "on origin",
+    )
+}
+
+/// QSpec FR-487-AC-13 / FR-251-AC-38 (TC-1081): two plans that differ only
+/// in the body of a declared helper an atom calls (one directly, one through
+/// another helper) have different root keys; the entries' keys and the
+/// helpers' own declaration-path ids are unchanged, the helpers stay
+/// declared, and an equal helper body gives an equal root key.
+#[trace("TC-1081", "FR-251-AC-38")]
+#[test]
+fn the_root_key_covers_the_bodies_of_called_helpers() {
+    let one = root_of(&helper_unit(1), "C", &target()).expect("step 1");
+    let one_again = root_of(&helper_unit(1), "C", &target()).expect("step 1 again");
+    let two = root_of(&helper_unit(2), "C", &target()).expect("step 2");
+    let [a, a2, b] = [&one, &one_again, &two].map(admitted);
+    let (ka, ka2, kb) = (keys(&a), keys(&a2), keys(&b));
+    assert_eq!(ka, ka2, "an equal helper body gives an equal root key");
+    assert_ne!(
+        ka.root, kb.root,
+        "a swapped helper body changes the root key"
+    );
+    assert_eq!(
+        ka.entries, kb.entries,
+        "the entries' own keys are unchanged"
+    );
+
+    let wire = [&one, &two].map(json);
+    let declared = |wire: &serde_json::Value, name: &str| -> serde_json::Value {
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let found: Vec<&serde_json::Value> = nodes
+            .iter()
+            .filter(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+            .collect();
+        assert_eq!(found.len(), 1, "{name} stays one declared node");
+        assert_eq!(found[0]["node_tag"], "function");
+        found[0]["node_id"].clone()
+    };
+    for name in ["bump", "twice"] {
+        assert_eq!(declared(&wire[0], name), declared(&wire[1], name), "{name}");
+    }
+    // The key's path ends with the call closure: the graph position of the
+    // body root of each called helper, `bump` and `twice` among them.
+    let nodes = wire[0]["semantic_graph"]["nodes"].as_array().unwrap();
+    let position =
+        |id: &serde_json::Value| nodes.iter().position(|n| &n["node_id"] == id).unwrap() as u64;
+    let plan = nodes
+        .iter()
+        .find(|n| n["semantic_form"] == "monitor_plan")
+        .unwrap();
+    let path = plan["node_id"]["path"].as_array().unwrap();
+    let capacity = path
+        .iter()
+        .position(|segment| segment == "8")
+        .expect("the activation capacity text ends the premises");
+    let tail: Vec<u64> = path[capacity + 1..]
+        .iter()
+        .map(|segment| segment["node"].as_u64().expect("an index segment"))
+        .collect();
+    for name in ["bump", "twice"] {
+        let helper = nodes
+            .iter()
+            .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+            .unwrap();
+        let body = helper["body"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["name"] == "body")
+            .unwrap();
+        assert!(
+            tail.contains(&position(&body["value"]["target"])),
+            "{name}'s body root is in the call closure"
+        );
+    }
+}
+
+/// FR-251-AC-42: the plan root's emission retains every witness row of the
+/// acquisition it was written from, so a consumer never rebuilds them: the
+/// selected model declaration and field rows equal the unit's own
+/// acquisition, every retained row names a node of the emitted package, and
+/// IR's join accepts the exact rows against the package read back.
+#[trace("TC-1081", "FR-251-AC-42")]
+#[test]
+fn the_plan_root_retains_the_acquisitions_witness_rows() {
+    let unit = authored(ROOT_SHAPES[0]);
+    let root = root_of(&unit, "C", &target()).expect("the plan root");
+    let emission = &root.emission;
+
+    let domain = Domain::config_version();
+    let packages =
+        qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
+    let source = SourceIdentity::new("agent-ix", "monitor-root");
+    let cancel = Cancel::new();
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: unit.as_bytes(),
+        },
+        SpineLimits::default().source,
+        &cancel,
+    )
+    .map_err(|_| "parses")
+    .expect("the stage succeeds")
+    .into_value();
+    let selected =
+        qsl_replay::spine::select(&parsed, &packages, SpineLimits::default().model, &cancel)
+            .map_err(|_| "selects")
+            .expect("the stage succeeds")
+            .into_value();
+    let acquisition = qsl_replay::spine::check(
+        &parsed,
+        "fixture".to_owned(),
+        &selected,
+        &qsl_replay::spine::DependencyInput::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .map_err(|_| "checks")
+    .expect("the stage succeeds")
+    .into_value();
+    let graph = acquisition.package().graph();
+    assert!(!graph.selected_exact_declaration_rows().is_empty());
+    assert_eq!(
+        emission.selected_exact_declaration_rows(),
+        graph.selected_exact_declaration_rows()
+    );
+    assert_eq!(
+        emission.selected_exact_field_rows(),
+        graph.selected_exact_field_rows()
+    );
+    assert!(!emission.selected_source_unit_rows().is_empty());
+    assert!(!emission.equality_producer_identity_rows().is_empty());
+    assert!(!emission.equality_fact_witness_rows().is_empty());
+
+    let package = admitted(&root);
+    let wire = json(&root);
+    let ids: Vec<&serde_json::Value> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| &node["node_id"])
+        .collect();
+    let known = |id: &CheckedNodeId| ids.contains(&&serde_json::to_value(id).unwrap());
+    for row in emission.selected_source_unit_rows() {
+        assert!(known(&row.structural_node), "{row:?}");
+    }
+    for row in emission.equality_producer_identity_rows() {
+        assert!(known(row.checked_node()), "{row:?}");
+        assert!(known(&row.source_map_entry().node_id), "{row:?}");
+    }
+    for row in emission.equality_fact_witness_rows() {
+        assert!(known(row.checked_application()), "{row:?}");
+        assert!(known(row.structural_node()), "{row:?}");
+    }
+    quire_contract_model::SelectedExactIdentities::from_stage_rows(
+        &package,
+        emission.selected_exact_declaration_rows().iter().cloned(),
+        emission.selected_exact_field_rows().iter().cloned(),
+    )
+    .expect("IR joins the retained exact rows to the plan-root package");
+}

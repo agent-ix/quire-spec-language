@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30 and FR-251-AC-32 to FR-251-AC-39 and FR-251-AC-41.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41 and FR-251-AC-42.
 
 ## Test Procedure
 
@@ -43,6 +43,7 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 23. `always eventually holds(p)` and `eventually always holds(p)` with `activation_capacity` 2 over the traces of AC-35 and AC-36.
 24. Derive the plan of AC-1 and variants differing only in an atom body, the guard body, or a called helper's body; build `TimedMonitorPlan` through its public constructor with an atom body swapped (AC-37, AC-38, AC-39).
 25. Run the AC-7 differential over the unbounded past traces of steps 15 to 19 against the `HistoryCutoff` evaluator and the infinite-trace evaluator (AC-41).
+26. Emit the plan-root package of a unit that selects a model, and read the returned `Emission`'s selected model declaration and field rows, source-unit rows and equality producer and fact rows; read the package back through IR and join the exact rows to it.
 
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
@@ -73,3 +74,4 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 23: the third instance of each settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`; the first `p` settles the two `eventually` instances `true`; for `eventually always` no instance settles true on a `p` and a false `p` settles both `false`, the outer staying `Pending`.
 - Step 24: each variant has a different `PlanId`, the helper variant also a different plan-root key with the helper's `node_id` unchanged; equal bodies give an equal `PlanId`.
 - Step 25: monitor and `HistoryCutoff` evaluator equal on every trace; every definite monitor verdict equals the infinite-trace verdict; `indeterminate` verdicts are not compared.
+- Step 26: the declaration and field rows equal the unit's acquisition rows, the source-unit and equality rows are non-empty and each names a node of the package, and the IR join accepts the exact rows.
