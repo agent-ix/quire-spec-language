@@ -90,6 +90,7 @@ A new directory containing exactly:
 | `inventory.json` | `qsl_replay::qsl_inventory` over the unit, with the formal identity the writer selects (FR-514), in the encoding "The inventory file" states; the writer runs the replay spine over the unit's source to obtain the `check` outcome `qsl_inventory` takes (FR-517-AC-11). |
 | `selection.json` | the selection sidecar, `quire.checked-handoff.selection/1` |
 | `identities.json` | the identity file, `quire.checked-handoff.identities/1`: the selected model identity rows of the in-process unit (FR-390), in the encoding FR-531 "The identity file" states, read by a bytes-only consumer with the package to evaluate a protocol slot (FR-531) |
+| `equality.json` | the equality file, `quire.checked-handoff.equality/1`: the equality application rows, equality fact rows and selected source-unit rows of the in-process unit, in the encoding FR-531 "The equality file" states, read by a bytes-only consumer with the package to evaluate a protocol slot whose walk holds an `==` or `!=` application (FR-533) |
 | `mutations/manifest.json`, `mutations/<case>.json` | present only for `corpus = Standard` (FR-518) |
 
 The sidecar holds, per temporal clause: the clause `NodeId`, declared name, the
@@ -113,6 +114,15 @@ compares an admitted package with it, counting every `temporal_bindings` row,
 those of clauses and those of compensation templates; `SelectionRefusal` carries one
 `SelectionAxis` (FR-518). Both are QSL-owned so a consumer parses and compares
 with no copy of the format.
+
+The writer builds `equality.json` from the in-process unit's `Emission` rows
+(`equality_producer_identity_rows`, `equality_fact_witness_rows` and
+`selected_source_unit_rows`). The emitted package bytes are used for one join only:
+every node and key member is written as the wire node id of that node, which the
+writer reads from `WireGraph::of_package_bytes` over the emitted bytes, as for the
+`node` member of `inventory.json`. A unit that holds no
+equality application writes the file with `applications`, `facts` and `source_units`
+empty, so the directory has the same paths for every unit.
 
 ### The inventory file
 
@@ -354,6 +364,8 @@ the three directories. The packages hold:
 | FR-517-AC-18 | A measurement unit that the selected model's types name is part of the emitted package even when no expression of the compiled source reaches it: the package holds its `dimension` and `unit` nodes, and Contract IR's reader admits a package whose model `typeRef` names it. Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source that reads no unit-typed member is written and admitted. | Test (TC-1312) |
 | FR-517-AC-19 | A model alias is a source type name: over **R**'s model, `sum<M::Total>` and `capture targetFull: M::Total` resolve to the alias's unit-bearing bounded type, with its bounds, and neither refuses `UnresolvedTypeName`. | Test (TC-1312) |
 | FR-517-AC-20 | `sum<N>` checks a summand of any numeric family QSpec FR-145 and FR-322 give a `quire.op.collection.sum` identity for, the carried-quantity family included, and lowers to that family's identity; over **R**, the `Healthy` invariant's receipt sum over `Quantity<U>` checks and evaluates to the sum of the receipts' magnitudes in `U`. | Test (TC-1312) |
+| FR-517-AC-21 | The handoff directory written for TC-1070 fixture E contains `equality.json`, whose bytes equal the encoding FR-531 states of the rows of the in-process unit, with the three row lists non-empty (the unit holds integer `=` applications) and each row's node members naming nodes of `checked-package.json`; the directory written for the unit of the inventory vector (`unit.native`, which holds no `==` or `!=` application) contains `equality.json` with the three lists empty; two writes of equal requests give byte-identical files. | Test (TC-1312) |
+| FR-517-AC-22 | A writer given a unit whose equality rows name a node the package does not hold returns `Error::Unnameable` and writes nothing, as for `inventory.json`; the written file holds no source text, no digest and no member the encoding of FR-531 does not list. | Test (TC-1312) |
 
 ## Dependencies
 
