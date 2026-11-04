@@ -530,6 +530,24 @@ impl TemporalVerdict {
             | Self::ProgressLimitReached(_) => Category::Incomplete,
         }
     }
+
+    /// FR-266's Temporal row: `closed-scope` for `Completed(true)`,
+    /// `Completed(false)` and an `Undefined` that is a violation, `unsettled`
+    /// for a pending result and `unavailable` for every other verdict.
+    pub fn basis(&self) -> SettlementBasis {
+        use quire_semantic_value::catalog::Category;
+        match self.category() {
+            Category::Success | Category::Violation => SettlementBasis::ClosedScope,
+            Category::Pending => SettlementBasis::Unsettled,
+            Category::Undefined
+            | Category::Refusal
+            | Category::Unsupported
+            | Category::Incomplete
+            | Category::Indeterminate
+            | Category::Inconclusive
+            | Category::InternalFailure => SettlementBasis::Unavailable,
+        }
+    }
 }
 
 /// Why closed finite-window evidence cannot determine a Boolean result.
@@ -865,6 +883,11 @@ pub struct ClauseRunReport {
     /// FR-330, FR-501 "Result report": the basis, decision support, premises
     /// and result identity of a finite-window run; `None` for every other run.
     pub finite_window: Option<FiniteWindowReport>,
+    /// FR-330 Outputs: the observed-arm counterexample (QSpec FR-364) of a
+    /// temporal `violation`, a `Completed(false)` or an `Undefined` that is
+    /// a violation, built from what the entry ran; `None` for every other
+    /// report.
+    pub counterexample: Option<crate::ObservedTemporalCounterexample>,
 }
 
 impl ClauseRunReport {
@@ -989,6 +1012,7 @@ pub fn run_clause_with_temporal_selections(
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
+        counterexample: None,
         ledger: None,
     };
 
@@ -1025,15 +1049,16 @@ pub fn run_clause_with_temporal_selections(
             &cancel,
         )?
         .into_value();
-        front_end::package_with_temporal_selections(
+        let emitted = front_end::package_with_temporal_selections(
             &checked,
             temporal_selections,
             front_end::PackageLimits::default(),
             &cancel,
-        )?;
-        Ok(checked)
+        )?
+        .into_value();
+        Ok((checked, emitted))
     };
-    let checked = match front_end() {
+    let (checked, emitted) = match front_end() {
         Ok(compiled) => compiled,
         Err(failure) => {
             let disposition = match front_end::refusal_or_fault(failure) {
@@ -1095,6 +1120,7 @@ pub fn run_clause_with_temporal_selections(
                 trace,
                 over,
                 ledger: ledger.as_ref(),
+                clock_rows: emitted.temporal_binding_rows(),
             },
         )),
     }
@@ -1133,6 +1159,7 @@ impl CompiledRun<'_> {
             usage: ClauseRunUsage::default(),
             consequent_source_events: ConsequentSourceEvents::Unavailable,
             finite_window: None,
+            counterexample: None,
             ledger: None,
         }
     }
@@ -1550,6 +1577,7 @@ fn run_function(
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
+        counterexample: None,
         ledger: None,
     };
 

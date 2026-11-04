@@ -3101,7 +3101,7 @@ fn artifact_locus(pointer: &str) -> Locus {
 /// FR-096-AC-9: IR's refusal of the contract version is
 /// `unknown_wire`/`unsupported-wire`, naming the version the bytes carry and
 /// the one this reader admits, located at `/contract_version`. Bytes that are not JSON refuse with no locus.
-#[trace("TC-429", "FR-096-AC-9")]
+#[trace("TC-429", "FR-096-AC-9", "FR-054-AC-3", "FR-513-AC-11")]
 #[test]
 fn an_unknown_contract_version_is_unsupported_wire_at_contract_version() {
     let lock = base_lock(vec![]);
@@ -3129,6 +3129,28 @@ fn an_unknown_contract_version_is_unsupported_wire_at_contract_version() {
             ("expected", "quire.checked-package/v2".to_owned()),
         ])
     );
+
+    for legacy_version in [
+        "quire.compiled-protocol/1",
+        "quire.compiled-protocol/2",
+        "quire.compiled-protocol/3",
+    ] {
+        envelope["contract_version"] = json!(legacy_version);
+        let Read::Refused(refusal) = read(&jcs(&envelope)) else {
+            panic!("the checked-package reader must refuse {legacy_version}");
+        };
+        assert_eq!(refusal.locus(), Some(&expected_locus));
+        let record = refusal
+            .unsupported_wire_record()
+            .expect("an incompatible protocol envelope is unsupported-wire");
+        assert_eq!(
+            record.fields(),
+            &BTreeMap::from([
+                ("actual", legacy_version.to_owned()),
+                ("expected", "quire.checked-package/v2".to_owned()),
+            ])
+        );
+    }
 
     let not_json = b"not json";
     match read(not_json) {

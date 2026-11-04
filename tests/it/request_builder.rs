@@ -48,7 +48,7 @@ const TWO_CALLEES: &str = "function g using v(p: Int[0, 10]): Boolean pure { tru
 /// Trace: FR-003-AC-9
 pub(super) fn check(declarations: &str) -> CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
-    crate::support::front_end::emitted(
+    crate::support::front_end::emitted_with_default_clocks(
         SourceIdentity::new("a", "u"),
         "unit.native",
         text.as_bytes(),

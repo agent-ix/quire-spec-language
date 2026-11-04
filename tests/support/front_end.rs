@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{
-    check, package, parse, select, CheckedUnit, CompileRefusal, DependencyInput, EmittedUnit,
-    PackageLimits, ParseRequest, SpineLimits, SuppliedLibrary,
+    check, package_with_temporal_selections, parse, select, CheckedUnit, CompileRefusal,
+    DependencyInput, EmittedUnit, PackageLimits, ParseRequest, SpineLimits, SuppliedLibrary,
 };
 use quire_exact::Cancel;
 
@@ -40,7 +40,65 @@ pub fn emitted_with_authority(
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
-    let original = emitted_once(source.clone(), path, bytes, packages, dependencies, limits)?;
+    emitted_selecting(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        Clocks::Unselected,
+    )
+}
+
+/// The same identity oracle for a fixture that declares configured temporal
+/// clauses and is not about clock selection: each clause is given the default
+/// clock configuration of its profile, so emission (which refuses a configured
+/// clause with no explicit selection, FR-322-AC-294) is not what the fixture
+/// exercises.
+pub fn emitted_with_default_clocks(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &qsl_semantics::model::intake::PackageInput,
+    dependencies: &DependencyInput,
+) -> Result<EmittedUnit, Box<CompileRefusal>> {
+    emitted_selecting(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        SpineLimits::default(),
+        Clocks::ProfileDefault,
+    )
+}
+
+/// Whether emission is given an explicit clock selection per temporal clause.
+#[derive(Clone, Copy)]
+enum Clocks {
+    Unselected,
+    ProfileDefault,
+}
+
+fn emitted_selecting(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &qsl_semantics::model::intake::PackageInput,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    clocks: Clocks,
+) -> Result<EmittedUnit, Box<CompileRefusal>> {
+    let original = emitted_once(
+        source.clone(),
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        clocks,
+    )?;
     assert_format_identity(
         &original,
         source,
@@ -48,7 +106,7 @@ pub fn emitted_with_authority(
         bytes,
         packages,
         dependencies,
-        limits,
+        (limits, clocks),
     );
     Ok(original)
 }
@@ -63,7 +121,7 @@ fn assert_format_identity(
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
-    limits: SpineLimits,
+    (limits, clocks): (SpineLimits, Clocks),
 ) {
     // AC-9 isolates semantic identity; the AC-4/5/6 tests exercise exhaustion.
     // Give a fixture with an exact original S1 byte bound enough bytes for
@@ -98,6 +156,7 @@ fn assert_format_identity(
         packages,
         dependencies,
         formatted_limits,
+        clocks,
     )
     .unwrap_or_else(|refusal| panic!("{path}: formatted fixture must check: {refusal}"));
     assert_eq!(
@@ -119,11 +178,67 @@ fn emitted_once(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
+    clocks: Clocks,
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
     let checked = checked_once(&source, path, bytes, packages, dependencies, limits)?;
-    Ok(package(&checked, PackageLimits::default(), &Cancel::new())
-        .map_err(refusal)?
-        .into_value())
+    let selections = match clocks {
+        Clocks::Unselected => Vec::new(),
+        Clocks::ProfileDefault => default_clock_selections(&checked),
+    };
+    Ok(package_with_temporal_selections(
+        &checked,
+        &selections,
+        PackageLimits::default(),
+        &Cancel::new(),
+    )
+    .map_err(refusal)?
+    .into_value())
+}
+
+/// One default selection per configured temporal clause of `checked`, keyed by
+/// the checked source and the clause's declaration span.
+fn default_clock_selections(checked: &CheckedUnit) -> Vec<qsl_package::TemporalClockSelection> {
+    use qsl_semantics::check::TemporalProfile;
+    let graph = checked.package().graph();
+    graph
+        .temporal_clauses()
+        .iter()
+        .filter_map(|node| {
+            let clause = node.clause();
+            let clock = match clause.profile() {
+                TemporalProfile::EventPositionFalseExtension => {
+                    quire_contract_model::ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    }
+                }
+                TemporalProfile::TimestampedEventFiniteWindow => {
+                    quire_contract_model::ClockConfiguration::TimestampedEvent {
+                        timestamp_unit: "millisecond".into(),
+                    }
+                }
+                TemporalProfile::FixedSampleFalseExtension => {
+                    use quire_contract_model::ClockExactNumber::{Integer, Rational};
+                    quire_contract_model::ClockConfiguration::FixedSample {
+                        epoch: Integer {
+                            decimal: "0".into(),
+                        },
+                        period: Rational {
+                            numerator: "1".into(),
+                            denominator: "10".into(),
+                        },
+                        unit: "milliseconds".into(),
+                    }
+                }
+                // Every other profile is not clock-configured and takes no selection.
+                _ => return None,
+            };
+            Some(qsl_package::TemporalClockSelection {
+                source: graph.source().clone(),
+                declaration_span: clause.span(),
+                clock,
+            })
+        })
+        .collect()
 }
 
 fn refusal(failure: qsl_replay::spine::FrontEndFailure) -> Box<CompileRefusal> {

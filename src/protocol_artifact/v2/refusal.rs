@@ -4,6 +4,7 @@
 use std::fmt;
 
 use crate::protocol_artifact::wire::ArtifactRef;
+use qsl_package::protocol_artifact_v2::RefusalCode as V2Code;
 
 /// The side of the temporal inventory that is incomplete or excessive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -165,57 +166,65 @@ impl Refusal {
     /// Stable refusal code. Codes are append-only and are never message-derived.
     pub const fn code(self) -> &'static str {
         match self {
-            Self::Header(HeaderField::Wire) => "v2.header.wire",
-            Self::Header(HeaderField::Media) => "v2.header.media",
-            Self::Header(HeaderField::Schema) => "v2.header.schema",
-            Self::Header(HeaderField::PackageType) => "v2.header.package-type",
-            Self::Header(HeaderField::Encoding) => "v2.header.encoding",
-            Self::Header(HeaderField::Numeric) => "v2.header.numeric",
-            Self::Header(HeaderField::ArtifactKind) => "v2.header.artifact-kind",
-            Self::Header(HeaderField::ArtifactWire) => "v2.header.artifact-wire",
-            Self::Header(HeaderField::ArtifactVersion) => "v2.header.artifact-version",
+            Self::Header(HeaderField::Wire) => V2Code::HeaderWire.as_str(),
+            Self::Header(HeaderField::Media) => V2Code::HeaderMedia.as_str(),
+            Self::Header(HeaderField::Schema) => V2Code::HeaderSchema.as_str(),
+            Self::Header(HeaderField::PackageType) => V2Code::HeaderPackageType.as_str(),
+            Self::Header(HeaderField::Encoding) => V2Code::HeaderEncoding.as_str(),
+            Self::Header(HeaderField::Numeric) => V2Code::HeaderNumeric.as_str(),
+            Self::Header(HeaderField::ArtifactKind) => V2Code::HeaderArtifactKind.as_str(),
+            Self::Header(HeaderField::ArtifactWire) => V2Code::HeaderArtifactWire.as_str(),
+            Self::Header(HeaderField::ArtifactVersion) => V2Code::HeaderArtifactVersion.as_str(),
             Self::Binding {
                 side: InventorySide::Offer,
                 cause: BindingCause::Missing,
-            } => "v2.binding.offer-missing",
+            } => V2Code::BindingOfferMissing.as_str(),
             Self::Binding {
                 side: InventorySide::Offer,
                 cause: BindingCause::Surplus,
-            } => "v2.binding.offer-surplus",
+            } => V2Code::BindingOfferSurplus.as_str(),
             Self::Binding {
                 side: InventorySide::Expected,
                 cause: BindingCause::Missing,
-            } => "v2.binding.expected-missing",
+            } => V2Code::BindingExpectedMissing.as_str(),
             Self::Binding {
                 side: InventorySide::Expected,
                 cause: BindingCause::Surplus,
-            } => "v2.binding.expected-surplus",
+            } => V2Code::BindingExpectedSurplus.as_str(),
             Self::Binding {
                 side: InventorySide::Producer,
                 cause: BindingCause::Missing,
-            } => "v2.binding.producer-missing",
+            } => V2Code::BindingProducerMissing.as_str(),
             Self::Binding {
                 side: InventorySide::Producer,
                 cause: BindingCause::Surplus,
-            } => "v2.binding.producer-surplus",
+            } => V2Code::BindingProducerSurplus.as_str(),
             Self::Binding {
                 side: InventorySide::Offer,
                 cause: BindingCause::Duplicate,
-            } => "v2.binding.offer-duplicate",
+            } => V2Code::BindingOfferDuplicate.as_str(),
             Self::Binding {
                 side: InventorySide::Expected,
                 cause: BindingCause::Duplicate,
-            } => "v2.binding.expected-duplicate",
+            } => V2Code::BindingExpectedDuplicate.as_str(),
             Self::Binding {
                 side: InventorySide::Producer,
                 cause: BindingCause::Duplicate,
-            } => "v2.binding.producer-duplicate",
-            Self::ClockName => "v2.binding.offer-clock-name",
-            Self::OfferOrder => "v2.binding.offer-order",
-            Self::ForeignOwner(SelectionSide::Expected) => "v2.binding.expected-foreign-owner",
-            Self::ForeignOwner(SelectionSide::Producer) => "v2.binding.producer-foreign-owner",
-            Self::OfferIndex(BindingIndex::Declaration) => "v2.binding.offer-declaration-index",
-            Self::OfferIndex(BindingIndex::Definition) => "v2.binding.offer-definition-index",
+            } => V2Code::BindingProducerDuplicate.as_str(),
+            Self::ClockName => V2Code::BindingOfferClockName.as_str(),
+            Self::OfferOrder => V2Code::BindingOfferOrder.as_str(),
+            Self::ForeignOwner(SelectionSide::Expected) => {
+                V2Code::BindingExpectedForeignOwner.as_str()
+            }
+            Self::ForeignOwner(SelectionSide::Producer) => {
+                V2Code::BindingProducerForeignOwner.as_str()
+            }
+            Self::OfferIndex(BindingIndex::Declaration) => {
+                V2Code::BindingOfferDeclarationIndex.as_str()
+            }
+            Self::OfferIndex(BindingIndex::Definition) => {
+                V2Code::BindingOfferDefinitionIndex.as_str()
+            }
             Self::Declaration(DeclarationField::Name) => "v2.declaration.name",
             Self::Declaration(DeclarationField::Requirement) => "v2.declaration.requirement",
             Self::Declaration(DeclarationField::Clause) => "v2.declaration.clause",

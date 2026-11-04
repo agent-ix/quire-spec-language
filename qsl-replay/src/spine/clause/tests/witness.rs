@@ -1291,7 +1291,7 @@ fn tc_741_clause_reports_carry_the_derived_basis_and_witness() {
 
 /// A current snapshot of `config_history` holding `objects`, `complete`
 /// as given, and its `ParentOrder` request with self `child`.
-fn parent_order_request(
+pub(super) fn parent_order_request(
     identity: &str,
     objects: Vec<serde_json::Value>,
     complete: bool,

@@ -66,7 +66,10 @@ fn structural(wire: &Value, id: &Value) -> CheckedNodeId {
     "TC-1061",
     "TC-1062",
     "TC-1194",
-    "FR-449-AC-2"
+    "FR-449-AC-2",
+    "FR-054-AC-2",
+    "FR-054-AC-4",
+    "FR-513-AC-11"
 )]
 #[test]
 fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
@@ -247,7 +250,15 @@ fn requirement_wire_mutations_refuse() {
     );
 }
 
-#[trace("FR-383-AC-13", "TC-1062", "TC-1194", "FR-449-AC-3")]
+#[trace(
+    "FR-383-AC-13",
+    "TC-1062",
+    "TC-1194",
+    "FR-449-AC-3",
+    "FR-054-AC-2",
+    "FR-054-AC-4",
+    "FR-513-AC-11"
+)]
 #[test]
 fn requirement_order_does_not_change_the_emitted_set() {
     let declarations = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
@@ -365,7 +376,15 @@ fn a_function_can_reference_a_protocol_with_a_temporal_requirement() {
 /// FR-218-AC-17, FR-383-AC-13: an unrequired temporal clause contributes no
 /// activation relation dependency, while adding it to the requirement set
 /// changes the protocol clause identity.
-#[trace("FR-218-AC-17", "FR-383-AC-13", "TC-1062", "TC-1194", "FR-449-AC-2")]
+#[trace(
+    "FR-218-AC-17",
+    "FR-383-AC-13",
+    "TC-1062",
+    "TC-1194",
+    "FR-449-AC-2",
+    "FR-054-AC-2",
+    "FR-513-AC-11"
+)]
 #[test]
 fn a_protocol_requirement_changes_the_clause_key_and_empty_set_has_no_row() {
     let temporal = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
@@ -407,7 +426,14 @@ fn a_protocol_requirement_changes_the_clause_key_and_empty_set_has_no_row() {
 
 /// FR-464-AC-13: the activation relation binds a required temporal clause to
 /// the clause's exact `each` trigger node.
-#[trace("FR-464-AC-13", "TC-946", "TC-1194", "FR-449-AC-1")]
+#[trace(
+    "FR-464-AC-13",
+    "TC-946",
+    "TC-1194",
+    "FR-449-AC-1",
+    "FR-054-AC-4",
+    "FR-513-AC-11"
+)]
 #[test]
 fn a_required_clause_relation_carries_the_each_trigger() {
     let unit = format!(
@@ -453,7 +479,14 @@ fn a_required_clause_relation_carries_the_each_trigger() {
 
 /// A different clock and a shared clock both leave unrequired clauses out
 /// of the relation; source trivia and another compilation preserve its keys.
-#[trace("TC-1194", "FR-449-AC-3", "FR-449-AC-4")]
+#[trace(
+    "TC-1194",
+    "FR-449-AC-3",
+    "FR-449-AC-4",
+    "FR-054-AC-2",
+    "FR-054-AC-4",
+    "FR-513-AC-11"
+)]
 #[test]
 fn activation_rows_ignore_unrequired_temporals_and_source_trivia() {
     let temporal = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
@@ -495,7 +528,7 @@ fn activation_rows_ignore_unrequired_temporals_and_source_trivia() {
 
 /// A missing required temporal is rejected during checking, before a
 /// checked package can be linked or emitted.
-#[trace("TC-1194", "FR-449-AC-6")]
+#[trace("TC-1194", "FR-449-AC-6", "FR-054-AC-2", "FR-513-AC-11")]
 #[test]
 fn a_missing_required_temporal_refuses_at_its_authored_name() {
     let unit = flow_over(
@@ -532,7 +565,14 @@ fn a_missing_required_temporal_refuses_at_its_authored_name() {
 
 /// Graph membership is checked before the activation relation is available.
 /// Missing dependency edges and missing target nodes are different defects.
-#[trace("TC-1194", "FR-449-AC-5", "FR-383-AC-2", "FR-383-AC-13")]
+#[trace(
+    "TC-1194",
+    "FR-449-AC-5",
+    "FR-383-AC-2",
+    "FR-383-AC-13",
+    "FR-054-AC-2",
+    "FR-513-AC-11"
+)]
 #[test]
 fn activation_targets_must_exist_and_be_clause_dependencies() {
     let unit = format!(

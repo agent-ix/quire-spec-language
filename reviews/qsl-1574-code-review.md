@@ -28,3 +28,19 @@ Gates (QSPEC_DIR=/Users/peter/dev/quire-specification at cceef5918, via qsl-slot
 ## Verdict
 
 Not mergeable as is: FND-001 is a regression the PR introduces (a previously green qsl-replay test is red and the monitor exit for a pending clause changes from 0 to 22). Fix inside this PR: carry Pending and Indeterminate through QSL's temporal and monitor path as the catalog categories (FND-002), or at minimum restate the qsl-replay assertion to what FR-285 requires and route pending clauses to Category::Pending. The test change and Cargo.lock bump are otherwise correct.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-004 | medium | The fix head 53a92d0f9 does not merge on current origin/main (079cf0200): QSL-1566 (#2239) added `TemporalVerdict::basis()` in qsl-replay/src/spine/clause.rs, which matches on `self.temporal_category()` and `TemporalCategory`, both of which this PR deletes. The merge stops with a content conflict in that file. The resolution is mechanical (match `self.category()`: Success or Violation to ClosedScope, Pending to Unsettled, anything else to Unavailable); with it, fmt, check, clippy (both feature sets) and both arch-lint rules pass. The PR must be rebased and the conflict resolved by the coder, and the merge gate rerun. | qsl-replay/src/spine/clause.rs:basis | implementation-bug-despite-evidence |
+
+## Dispositions
+
+Round 1 against fix head 53a92d0f9e41cded134760a474f9a3d9d2cb10be. Trial merge on origin/main 37b4a8ffb was clean, then on 079cf0200 (after QSL-1566 landed) conflicts in qsl-replay/src/spine/clause.rs (FND-004); gates below ran on 079cf0200 with that conflict resolved in a scratch copy: fmt, check --locked --workspace --all-targets, clippy -D warnings (default and --no-default-features), arch-lint qualified-core and api-surface --qsl-only all exit 0. qsl-foundation, qsl-semantics and qsl-replay failing names identical to clean main (14 qsl-replay lib, 29 and 4 and 1 elsewhere, none new). Root it suite: 10 failures on main and on the trial, the same names (the nine known plus layer_crate_reexports::the_root_crate_reexports_no_layer_crate_item from QSL-1506), 861 passed against 860 on main (the extra one is t07b). TC-769 step-10 greps over production src/ of every workspace member and the root crate: zero hits for the "pending"/0 and "indeterminate"/11 literal pairs and zero hits for a match over TemporalCategory, ClauseDisposition or an equivalent yielding a label or exit.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | OutcomeDocument::settled now ranks by item.category.exit_code() with no Monitor or trace_exit_code branch, and the test is restated: a Pending item gives Category::Pending exit 0, an Indeterminate item outranks it and loses to a violation, and an Inconclusive item under Prove stays Inconclusive (22). The old assertion that encoded Inconclusive-as-pending was replaced, not weakened. qsl-replay outcome::tests::the_document_category_is_the_most_severe_items passes. |
+| FND-002 | fixed | TemporalCategory, temporal_category, shared_category, label_and_exit and the label and exit methods on TemporalVerdict are deleted; TemporalVerdict::category returns the catalog Category including Pending and Indeterminate; ClauseDisposition::category_label and exit_code call as_str and exit_code on that category; temporal_batch_outcome reads the catalog category. Production greps are clean (zero hits). Residual: no production code builds a Pending or Indeterminate OutcomeItem for a monitor document (see SR-1574002 FND-004). |
+| FND-003 | fixed | The tc_769 doc comment reads ten table rows and OutcomeDocument::settled documents the order 30, 20, 21, 22, 10, 11, 0. |

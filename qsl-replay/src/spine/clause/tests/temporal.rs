@@ -81,13 +81,16 @@ enum Unit {
     /// TC-144 `Window` and `Other`: `eventually[0,5] holds(c.value = 2)` under
     /// finite-window, `on origin`.
     OwnerWindow,
+    /// `Safety`: FR-328-AC-1's `always holds(c.value <= 1)` under
+    /// infinite-trace.
+    Safety,
 }
 
 impl Unit {
     fn profile(self) -> &'static str {
         match self {
             Self::Bounded => "profile t = \"quire.temporal.event-position.false-extension/v1\";\n",
-            Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
+            Self::Infinite | Self::Safety => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
             Self::Undefined | Self::Guarded | Self::GuardUndefined => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
@@ -214,6 +217,10 @@ impl Unit {
                  on origin { eventually[0,5] holds(c.value = 2) }\n\
                  temporal Other using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { eventually[0,5] holds(c.value > 1) }\n"
+            }
+            Self::Safety => {
+                "temporal Safety using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always holds(c.value <= 1) }\n"
             }
         }
     }
@@ -1069,7 +1076,10 @@ fn observed_replay_request(
                 .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
                 .and_then(|index| clause_node.clause().formula().node_id(index))
                 .expect("the formula has a holds atom");
-            crate::ObservedTemporalKind::UndefinedEvaluation { locus, cause }
+            crate::ObservedTemporalKind::UndefinedEvaluation {
+                locus: qsl_eval::temporal::ObservedLocus::Atom(locus),
+                cause,
+            }
         }
         ObservedReplayExpectation::UndefinedAtNode(cause, index) => {
             let locus = clause_node
@@ -1077,7 +1087,10 @@ fn observed_replay_request(
                 .formula()
                 .node_id(index)
                 .expect("the formula node exists");
-            crate::ObservedTemporalKind::UndefinedEvaluation { locus, cause }
+            crate::ObservedTemporalKind::UndefinedEvaluation {
+                locus: qsl_eval::temporal::ObservedLocus::Atom(locus),
+                cause,
+            }
         }
     };
     let payload = crate::ObservedTemporalCounterexample {
@@ -1186,6 +1199,7 @@ fn an_undefined_evaluation_over_a_finite_trace_is_a_violation_at_its_position() 
 /// no truth. Over a lasso with loop 0, 1 it violates at position 0; over a
 /// lasso with loop 0, 1, 2 it holds.
 #[trace("TC-840", "FR-330-AC-2")]
+#[trace("TC-769", "FR-285-AC-9")]
 #[test]
 fn an_infinite_trace_clause_reads_a_finite_prefix_as_pending_and_a_lasso_exactly() {
     let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
@@ -1293,10 +1307,9 @@ fn a_zero_work_budget_is_incomplete_and_a_repeated_run_reports_equal() {
 /// `Fair` (`always eventually holds(c.value = 2)` under `fair weak noop`)
 /// over a lasso is unsupported: an observed trace carries no enabledness.
 ///
-/// The report carries the outcome, not a catalog code: the wire cause
-/// `unsupported_projection`/`missing-fairness-premise` is implied by
-/// `MissingFairnessPremise` and its only writer refuses temporal dispositions
-/// until the wire form is specified.
+/// The report carries the outcome, not a catalog code: the FR-267 writer
+/// derives the wire cause `unsupported_projection`/`missing-fairness-premise`
+/// from `MissingFairnessPremise`.
 #[trace("TC-848", "FR-330-AC-6")]
 #[test]
 fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
@@ -1344,13 +1357,15 @@ fn a_temporal_run_refuses_consequent_events_typed() {
 /// record half does not exist in QSL yet, so the test is not tagged.
 #[test]
 fn a_clause_run_over_a_trace_settles_no_item() {
+    // FR-266's Temporal row: the verdict is decided over the whole trace
+    // (`closed-scope`), and no separating witness is derived.
     let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
     assert_eq!(outcome(&held), &TemporalVerdict::Holds);
-    assert_eq!(held.basis, SettlementBasis::Unavailable);
+    assert_eq!(held.basis, SettlementBasis::ClosedScope);
     assert!(held.witness.is_none());
 
     let violated = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
-    assert_eq!(violated.basis, SettlementBasis::Unavailable);
+    assert_eq!(violated.basis, SettlementBasis::ClosedScope);
     assert!(violated.witness.is_none());
 }
 
@@ -2611,6 +2626,7 @@ fn timestamped_mixed_authorities_have_one_canonical_order() {
 /// dimension, before any position is visited.
 #[trace("TC-1295", "FR-330-AC-9")]
 #[trace("TC-1317", "FR-330-AC-11")]
+#[trace("TC-1317", "FR-522-AC-6")]
 #[test]
 fn timestamped_binding_is_required_and_authenticated() {
     let refusal = |request: ClauseRunRequest| {
@@ -2650,6 +2666,39 @@ fn timestamped_binding_is_required_and_authenticated() {
     assert_eq!(
         profile.get("mismatched_dimension").map(String::as_str),
         Some("Profile")
+    );
+    // FR-522-AC-6: a timestamp unit other than the `temporal_bindings` row's
+    // is refused with `TimestampUnit`, naming both units.
+    let unit = refusal(timestamped_changed(base(), |trace| {
+        trace.window.binding.as_mut().unwrap().parameters =
+            qsl_package::ClockConfiguration::TimestampedEvent {
+                timestamp_unit: "us".into(),
+            };
+    }));
+    assert_eq!(
+        unit.get("mismatched_dimension").map(String::as_str),
+        Some("TimestampUnit")
+    );
+    assert_eq!(unit.get("asserted").map(String::as_str), Some("us"));
+    assert_eq!(unit.get("expected").map(String::as_str), Some("ms"));
+    // FR-522-AC-3: another configuration alternative is `ClockParameters`.
+    let alternative = refusal(timestamped_changed(base(), |trace| {
+        trace.window.binding.as_mut().unwrap().parameters =
+            qsl_package::ClockConfiguration::EventPosition {
+                sequence_authority: "ms".into(),
+            };
+    }));
+    assert_eq!(
+        alternative.get("mismatched_dimension").map(String::as_str),
+        Some("ClockParameters")
+    );
+    assert_eq!(
+        alternative.get("asserted").map(String::as_str),
+        Some("event_position")
+    );
+    assert_eq!(
+        alternative.get("expected").map(String::as_str),
+        Some("timestamped_event")
     );
     // An agreeing binding runs.
     assert_eq!(outcome(&report(base())), &TemporalVerdict::Holds);
@@ -3135,3 +3184,4 @@ fn timestamped_progress_is_admitted_into_the_ledger() {
 
 mod checked_route_owner;
 mod progressed;
+mod wire;

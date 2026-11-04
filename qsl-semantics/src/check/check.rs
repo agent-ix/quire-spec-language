@@ -412,6 +412,9 @@ pub struct PackageDeclarations {
     pub variant_types: Vec<VariantTypeDeclaration>,
     /// `type Name = T;` aliases, which create no declaration identity.
     pub aliases: Vec<(String, ValueType)>,
+    /// Each package-owned type name's spelling under a further `model`
+    /// alias of the same package (FR-480 "Selections and imports").
+    pub(crate) model_spellings: super::model_spelling::ModelSpellings,
     /// The unit's own `profile p = ...;` and `model M = ...;` selection
     /// aliases (FR-091), each with which kind it is, independent of
     /// whether the model's domain package admitted (FR-113 "Refusals"
@@ -714,6 +717,7 @@ impl PackageDeclarations {
             enums: Vec::new(),
             variant_types: Vec::new(),
             aliases: Vec::new(),
+            model_spellings: super::model_spelling::ModelSpellings::default(),
             alias_names: std::collections::BTreeMap::new(),
             native_names: std::collections::BTreeSet::new(),
             model_operations: Vec::new(),
@@ -1298,6 +1302,21 @@ impl Scope {
     pub(crate) fn with_variant_types(mut self, variant_types: Vec<VariantTypeDeclaration>) -> Self {
         self.index.variant_types(&variant_types);
         self.variant_types = variant_types;
+        self
+    }
+
+    /// This scope with each package-owned type, object type and variant
+    /// type also named by its spelling under a further `model` alias of the
+    /// same package (FR-480 "Selections and imports"). Call it after
+    /// [`Self::with_variant_types`], so variant types and their cases gain
+    /// their spellings too.
+    pub(crate) fn with_model_spellings(
+        mut self,
+        spellings: &super::model_spelling::ModelSpellings,
+    ) -> Self {
+        spellings.bind_all(&mut self.index.types);
+        spellings.bind_unique(&mut self.index.object_types);
+        spellings.bind_unique(&mut self.index.variant_cases);
         self
     }
 

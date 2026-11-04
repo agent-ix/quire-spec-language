@@ -8,9 +8,9 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
-    evaluate_observed, HoldsStop, PositionRefusal, ProgressedRefusal, TemporalOutcome,
-    TemporalRefusal, TemporalTrace, TimestampedTrace, UndefinedCause, UndefinedEvaluation,
-    WindowRefusal,
+    evaluate_observed, FirstUndefined, HoldsStop, PositionRefusal, ProgressedRefusal,
+    TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimestampedTrace,
+    UndefinedCause, UndefinedEvaluation, WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{FormulaNode, TemporalProfile};
@@ -390,41 +390,55 @@ pub(super) struct TemporalRun<'a> {
     pub(super) over: &'a OverObject,
     /// The caller's ledger, when it carries one.
     pub(super) ledger: Option<&'a ProgressLedger>,
+    /// The compiled package's `temporal_bindings` rows, keyed by clause
+    /// identity (FR-522 "Authentication").
+    pub(super) clock_rows: &'a qsl_package::TemporalBindingRows,
 }
 
 /// FR-522 "Authentication": the refusal of a `TraceBinding` that is absent or
-/// that asserts another profile or clock binding name than the clause's, at
-/// stage `admit`, `invalid_runtime_input`/`invalid-value` with
-/// `mismatched_dimension` and the asserted and expected values. The dimensions
-/// are tested in the order `Profile`, `Clock`.
-///
-/// The clock parameters (`ClockParameters` and the member dimensions) compare
-/// against the `temporal_bindings` row of the declaration, which the replay
-/// side of the checked package does not expose; they are not compared here.
+/// that differs from the clause's selection, at stage `admit`,
+/// `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` and the
+/// asserted and expected values. The dimensions are tested in the order
+/// `Profile`, `Clock`, `ClockParameters`, then the member dimensions; the
+/// clock and its parameters compare with `row`, the `temporal_bindings` row of
+/// the clause's declaration and claim occurrence. A clause with no row refuses
+/// any binding with `Clock` and no `expected` value.
 fn binding_refusal(
     binding: Option<&TraceBinding>,
     clause: &qsl_semantics::check::CheckedTemporalClause,
+    row: Option<&qsl_package::TemporalBinding>,
 ) -> Option<ClauseDisposition> {
     let Some(binding) = binding else {
         return Some(refused("invalid-value", BTreeMap::new()));
     };
-    let differ = |dimension: &'static str, asserted: &str, expected: &str| {
-        Some(refused(
-            "invalid-value",
-            BTreeMap::from([
-                ("mismatched_dimension", dimension.to_owned()),
-                ("asserted", asserted.to_owned()),
-                ("expected", expected.to_owned()),
-            ]),
-        ))
+    let differ = |dimension: &'static str, asserted: &str, expected: Option<&str>| {
+        let mut fields = BTreeMap::from([
+            ("mismatched_dimension", dimension.to_owned()),
+            ("asserted", asserted.to_owned()),
+        ]);
+        if let Some(expected) = expected {
+            fields.insert("expected", expected.to_owned());
+        }
+        Some(refused("invalid-value", fields))
     };
     if binding.profile != clause.profile().identity() {
-        return differ("Profile", &binding.profile, clause.profile().identity());
+        return differ(
+            "Profile",
+            &binding.profile,
+            Some(clause.profile().identity()),
+        );
     }
-    if binding.clock_name != clause.clock() {
-        return differ("Clock", &binding.clock_name, clause.clock());
-    }
-    None
+    let mismatch = qsl_eval::temporal::evidence::authenticate_clock(
+        &binding.clock_name,
+        &binding.parameters,
+        row,
+    )
+    .err()?;
+    differ(
+        mismatch.dimension.name(),
+        &mismatch.asserted,
+        mismatch.expected.as_deref(),
+    )
 }
 
 fn refused(cause: &'static str, fields: BTreeMap<&'static str, String>) -> ClauseDisposition {
@@ -443,12 +457,16 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         trace,
         over,
         ledger,
-        ..
+        clock_rows,
     } = *request;
     // A trace is evidence for that trace only: it settles no item and
     // derives no witness (FR-332).
     let report = |disposition: ClauseDisposition, usage: ClauseRunUsage| ClauseRunReport {
-        basis: SettlementBasis::Unavailable,
+        // FR-266's Temporal row.
+        basis: match &disposition {
+            ClauseDisposition::Temporal(verdict) => verdict.basis(),
+            _ => SettlementBasis::Unavailable,
+        },
         witness: None,
         // A completed temporal verdict names no consequent events: it
         // refuses typed rather than reporting an empty list.
@@ -462,6 +480,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         // A refused request leaves the caller's ledger as it was.
         ledger: ledger.cloned(),
         finite_window: None,
+        counterexample: None,
     };
     let early = |disposition| report(disposition, ClauseRunUsage::default());
 
@@ -476,6 +495,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         });
     };
     let clause = node.clause();
+    let row = clock_rows.get(&node.identity(), node.claim().ordinal());
 
     let trace_matches_profile = match trace {
         TraceInput::Progressed { .. } => matches!(
@@ -498,7 +518,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     if let TraceInput::Progressed { binding, .. } = trace {
         // FR-522: the same authentication precedes every position of a
         // progressed trace (FR-330-AC-11).
-        if let Some(refusal) = binding_refusal(Some(binding), clause) {
+        if let Some(refusal) = binding_refusal(Some(binding), clause, row) {
             return early(refusal);
         }
     }
@@ -512,7 +532,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         // FR-522: the trace's binding is authenticated before any position is
         // visited, any stamp or completeness is checked or the meter is
         // charged (FR-330-AC-11).
-        if let Some(refusal) = binding_refusal(window.binding.as_ref(), clause) {
+        if let Some(refusal) = binding_refusal(window.binding.as_ref(), clause, row) {
             return early(refusal);
         }
         if observations.is_empty() {
@@ -717,7 +737,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
 
     if let Some(window_trace) = progressed {
         let silent_from = u64::try_from(window_trace.observed()).ok();
-        let (disposition, visits, window_report) = run_window(
+        let window = run_window(
             run,
             node,
             &window_trace,
@@ -726,15 +746,18 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             reference,
             &mut meter,
         );
+        let (disposition, counterexample) =
+            with_counterexample(node, trace, window.disposition, window.undefined);
         let accepted = !matches!(
             disposition.category(),
             quire_semantic_value::catalog::Category::Refusal
                 | quire_semantic_value::catalog::Category::InternalFailure
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
-        usage.temporal_visits = visits;
+        usage.temporal_visits = window.visits;
         let mut finished = report(disposition, usage);
-        finished.finite_window = window_report;
+        finished.finite_window = window.report;
+        finished.counterexample = counterexample;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -751,17 +774,19 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             progress: *progress,
             window,
         };
-        let (disposition, visits, window_report) =
-            run_finite_window(run, node, &view, &environments, reference, &mut meter);
+        let window = run_finite_window(run, node, &view, &environments, reference, &mut meter);
+        let (disposition, counterexample) =
+            with_counterexample(node, trace, window.disposition, window.undefined);
         let accepted = !matches!(
             disposition.category(),
             quire_semantic_value::catalog::Category::Refusal
                 | quire_semantic_value::catalog::Category::InternalFailure
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
-        usage.temporal_visits = visits;
+        usage.temporal_visits = window.visits;
         let mut finished = report(disposition, usage);
-        finished.finite_window = window_report;
+        finished.finite_window = window.report;
+        finished.counterexample = counterexample;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -795,12 +820,15 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
         (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
     };
+    let (disposition, counterexample) =
+        with_counterexample(node, trace, disposition, observed.undefined);
     let accepted = !matches!(
         disposition.category(),
         quire_semantic_value::catalog::Category::Refusal
             | quire_semantic_value::catalog::Category::InternalFailure
     );
     let mut report = report(disposition, ClauseRunUsage::from_meter(&meter, admitted));
+    report.counterexample = counterexample;
     if accepted {
         report.ledger = accepted_ledger.or_else(|| ledger.cloned());
     }
@@ -810,7 +838,6 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
 /// FR-501: evaluate the finite-window clause `node` over the admitted
 /// `environments`, one per observation in canonical order, and report its
 /// verdict with its basis, decision support, premises and result identity.
-/// Returns the disposition, the `temporal.visit` charges made and the report.
 fn run_finite_window(
     run: &CompiledRun<'_>,
     node: &qsl_semantics::check::TemporalClauseNode,
@@ -818,19 +845,15 @@ fn run_finite_window(
     environments: &[ObjectEnvironment],
     over: &quire_exact::ObjectReference,
     meter: &mut Meter,
-) -> (ClauseDisposition, u64, Option<FiniteWindowReport>) {
+) -> WindowRun {
     use qsl_eval::temporal::{
         LowerBoundary, TimestampedObservation as WindowObservation, Watermark, WindowClock,
         WindowProgress,
     };
     let fault = |invariant: &'static str| {
-        (
-            ClauseDisposition::EvaluateFault(quire_semantic_value::catalog::InternalFault::new(
-                "temporal", invariant,
-            )),
-            0,
-            None,
-        )
+        WindowRun::stopped(ClauseDisposition::EvaluateFault(
+            quire_semantic_value::catalog::InternalFault::new("temporal", invariant),
+        ))
     };
     let clause = node.clause();
     let ordered = ordered_timestamped_positions(input);
@@ -933,7 +956,7 @@ fn run_window(
     environments: &[ObjectEnvironment],
     over: &quire_exact::ObjectReference,
     meter: &mut Meter,
-) -> (ClauseDisposition, u64, Option<FiniteWindowReport>) {
+) -> WindowRun {
     let classes = atom_classes(run, node);
     let observed = qsl_eval::temporal::evaluate_observed_finite_window(
         run.package,
@@ -948,6 +971,7 @@ fn run_window(
         },
         meter,
     );
+    let undefined = observed.undefined;
     match (observed.stopped, observed.result) {
         (Some(HoldsStop::Refused(evaluation)), _) => {
             let disposition = match convert_outcome(evaluation, run.package.graph(), run.sources) {
@@ -957,14 +981,14 @@ fn run_window(
                     other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
                 },
             };
-            (disposition, 0, None)
+            WindowRun::stopped(disposition)
         }
         (Some(HoldsStop::Failed(failure)), _) => {
             let disposition = match *convert_call_failure(failure) {
                 RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
                 other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
             };
-            (disposition, 0, None)
+            WindowRun::stopped(disposition)
         }
         (None, Ok(evaluation)) => {
             let names = |atom: qsl_semantics::check::FormulaNodeId| atom_name(run, node, atom);
@@ -977,35 +1001,173 @@ fn run_window(
                 visits,
             } = evaluation;
             let Some(verdict) = window_verdict(verdict, &names, guard_location(node)) else {
-                return (
-                    ClauseDisposition::EvaluateFault(
-                        quire_semantic_value::catalog::InternalFault::new(
-                            "temporal",
-                            "unresolved-guard-has-a-guard",
-                        ),
+                return WindowRun::stopped(ClauseDisposition::EvaluateFault(
+                    quire_semantic_value::catalog::InternalFault::new(
+                        "temporal",
+                        "unresolved-guard-has-a-guard",
                     ),
-                    0,
-                    None,
-                );
+                ));
             };
-            (
-                ClauseDisposition::Temporal(verdict),
+            WindowRun {
+                disposition: ClauseDisposition::Temporal(verdict),
                 visits,
-                Some(finite_window_report(
+                report: Some(finite_window_report(
                     run,
                     node,
                     (basis, support, premises, identity),
                 )),
-            )
+                undefined,
+            }
         }
         (None, Err(TemporalRefusal::Fault(internal))) => {
-            (ClauseDisposition::EvaluateFault(internal), 0, None)
+            WindowRun::stopped(ClauseDisposition::EvaluateFault(internal))
         }
-        (None, Err(refusal)) => (
-            ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
-            0,
+        (None, Err(refusal)) => {
+            WindowRun::stopped(ClauseDisposition::TemporalRefusal(trace_refusal(refusal)))
+        }
+    }
+}
+
+/// What a finite-window or progressed run returns.
+struct WindowRun {
+    /// The run's disposition.
+    disposition: ClauseDisposition,
+    /// The `temporal.visit` charges made.
+    visits: u64,
+    /// FR-501's result report, for a verdict.
+    report: Option<FiniteWindowReport>,
+    /// The first undefined reading.
+    undefined: Option<FirstUndefined>,
+}
+
+impl WindowRun {
+    /// A run that stopped with `disposition` before any verdict.
+    fn stopped(disposition: ClauseDisposition) -> Self {
+        Self {
+            disposition,
+            visits: 0,
+            report: None,
+            undefined: None,
+        }
+    }
+}
+
+/// `disposition` with its FR-330 counterexample. A violation or an
+/// `Undefined` that is a violation whose counterexample the run cannot build
+/// is an internal failure: FR-267 writes no such verdict without one.
+fn with_counterexample(
+    node: &qsl_semantics::check::TemporalClauseNode,
+    trace: &TraceInput,
+    disposition: ClauseDisposition,
+    undefined: Option<FirstUndefined>,
+) -> (
+    ClauseDisposition,
+    Option<crate::ObservedTemporalCounterexample>,
+) {
+    let needed = matches!(
+        &disposition,
+        ClauseDisposition::Temporal(TemporalVerdict::Violated { .. })
+    ) || matches!(
+        &disposition,
+        ClauseDisposition::Temporal(TemporalVerdict::Undefined { cause, .. })
+            if !matches!(cause, TemporalUndefinedCause::InsufficientData { .. })
+    );
+    match counterexample(node, trace, &disposition, undefined) {
+        Some(counterexample) => (disposition, Some(counterexample)),
+        None if needed => (
+            ClauseDisposition::EvaluateFault(quire_semantic_value::catalog::InternalFault::new(
+                "temporal",
+                "violation-has-its-counterexample",
+            )),
             None,
         ),
+        None => (disposition, None),
+    }
+}
+
+/// The first `Steps` interval of the clause's operators, in operator order.
+/// A time-bounded operator's interval names ticks, not trace positions, and
+/// FR-364's observed arm carries none.
+fn step_interval(
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+) -> Option<qsl_foundation::bound::TemporalInterval> {
+    clause
+        .operators()
+        .iter()
+        .find_map(|operator| match operator.interval.as_ref() {
+            Some(qsl_semantics::check::CheckedInterval::Steps(interval)) => Some(*interval),
+            _ => None,
+        })
+}
+
+/// FR-330 Outputs: the observed-arm counterexample (QSpec FR-364) of a
+/// `Completed(false)` or of an `Undefined` that is a violation, built from what
+/// the entry ran: one `{document}` step per represented position (for an
+/// `Undefined` result, the positions 0 to the failing position and no loop),
+/// the clause's fairness set, the clause's first `Steps` interval (none for
+/// an `Undefined` result) and the trace position. `None` for every other
+/// disposition, and for an `Undefined` result whose first undefined reading
+/// the evaluator did not record at its position.
+fn counterexample(
+    node: &qsl_semantics::check::TemporalClauseNode,
+    trace: &TraceInput,
+    disposition: &ClauseDisposition,
+    undefined: Option<FirstUndefined>,
+) -> Option<crate::ObservedTemporalCounterexample> {
+    use crate::{ObservedTemporalCounterexample, ObservedTemporalKind, ObservedTemporalStep};
+    let clause = node.clause();
+    let documents: Vec<&DocumentRef> = trace.documents().collect();
+    let step = |document: &DocumentRef| ObservedTemporalStep {
+        document: document.clone(),
+    };
+    match disposition {
+        ClauseDisposition::Temporal(TemporalVerdict::Violated { at }) => {
+            Some(ObservedTemporalCounterexample {
+                prefix: documents.iter().map(|document| step(document)).collect(),
+                loop_start: match trace {
+                    TraceInput::Lasso { prefix, .. } => Some(u64::try_from(prefix.len()).ok()?),
+                    _ => None,
+                },
+                fairness: clause.fairness().to_vec(),
+                interval: step_interval(clause),
+                kind: ObservedTemporalKind::Formula,
+                trace_position: TemporalPosition::new(*at),
+            })
+        }
+        ClauseDisposition::Temporal(TemporalVerdict::Undefined { at, cause })
+            if !matches!(cause, TemporalUndefinedCause::InsufficientData { .. }) =>
+        {
+            let first = undefined.filter(|first| first.position.index() == *at)?;
+            // A lasso position past its represented positions re-enters the
+            // loop.
+            let (prefix_len, loop_len) = match trace {
+                TraceInput::Lasso { prefix, repeat } => (prefix.len(), repeat.len()),
+                _ => (documents.len(), 0),
+            };
+            let slot = |index: usize| {
+                if index < prefix_len || loop_len == 0 {
+                    index
+                } else {
+                    prefix_len + (index - prefix_len) % loop_len
+                }
+            };
+            let last = usize::try_from(*at).ok()?;
+            let prefix = (0..=last)
+                .map(|index| documents.get(slot(index)).map(|document| step(document)))
+                .collect::<Option<Vec<_>>>()?;
+            Some(ObservedTemporalCounterexample {
+                prefix,
+                loop_start: None,
+                fairness: clause.fairness().to_vec(),
+                interval: None,
+                kind: ObservedTemporalKind::UndefinedEvaluation {
+                    locus: first.locus,
+                    cause: first.cause,
+                },
+                trace_position: TemporalPosition::new(*at),
+            })
+        }
+        _ => None,
     }
 }
 

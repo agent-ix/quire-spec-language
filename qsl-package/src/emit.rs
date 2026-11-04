@@ -467,6 +467,44 @@ pub struct Emission {
     /// bare execution point) are not decodable through serde outside its
     /// admitting reader, so protocol results read these rather than the bytes.
     pub(crate) wire_nodes: Vec<CheckedSemanticNodeV2>,
+    /// The `temporal_bindings` rows of the checked graph's temporal and
+    /// hyper clauses, keyed by the graph's own clause identity.
+    pub(crate) temporal_binding_rows: TemporalBindingRows,
+}
+
+/// The `temporal_bindings` rows (FR-050, FR-515) an emission wrote for the
+/// checked graph's clauses, keyed by the clause's [`NodeKey`] and claim
+/// occurrence ordinal, so a reader of the in-process package finds a
+/// declaration's row without the wire's node identities (FR-522
+/// "Authentication").
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TemporalBindingRows {
+    rows: Vec<(NodeKey, quire_contract_model::TemporalBinding)>,
+}
+
+impl TemporalBindingRows {
+    /// The row of `declaration`'s claim occurrence `occurrence`, `None` when
+    /// the lock selects no clock configuration for it.
+    pub fn get(
+        &self,
+        declaration: &NodeKey,
+        occurrence: u64,
+    ) -> Option<&quire_contract_model::TemporalBinding> {
+        self.rows
+            .iter()
+            .find(|(key, row)| key == declaration && row.occurrence == occurrence)
+            .map(|(_, row)| row)
+    }
+
+    /// The number of keyed rows.
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Whether no clause has a row.
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
 }
 
 /// A protocol's result from checked-package emission (FR-383).
@@ -587,6 +625,7 @@ impl DebugWith for Emission {
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
+            temporal_binding_rows,
         } = self;
         f.debug_struct("Emission")
             .field("package", package)
@@ -617,6 +656,7 @@ impl DebugWith for Emission {
             )
             .field("equality_fact_witness_rows", equality_fact_witness_rows)
             .field("wire_node_count", &wire_nodes.len())
+            .field("temporal_binding_row_count", &temporal_binding_rows.len())
             .finish()
     }
 }
@@ -771,6 +811,14 @@ impl Emission {
     /// The v2 bytes and their manifest package name.
     pub fn package(&self) -> &EmittedPackage {
         &self.package
+    }
+
+    /// The `temporal_bindings` rows of the checked graph's clauses, keyed by
+    /// clause identity (FR-522). An emission re-encoded from a read package
+    /// (timed models, a monitor plan) keys none: the read package's rows are
+    /// keyed by wire identity only.
+    pub fn temporal_binding_rows(&self) -> &TemporalBindingRows {
+        &self.temporal_binding_rows
     }
 
     /// Every node of the checked graph the wire omits, ascending by node id.
@@ -4745,6 +4793,7 @@ pub fn emit_timed_models(
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
+        temporal_binding_rows: TemporalBindingRows::default(),
     })
 }
 
@@ -5645,7 +5694,7 @@ fn emit_package_inner(
         &mut step_rows,
         &mut schedulability_claim_rows,
     )?;
-    let (temporal_bindings, temporal_clause_names) =
+    let (temporal_bindings, temporal_clause_names, temporal_binding_rows) =
         temporal_binding_rows(graph, &emitted_node_ids, &nodes, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
@@ -5784,6 +5833,7 @@ fn emit_package_inner(
         equality_producer_identity_rows,
         equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
+        temporal_binding_rows,
     })
 }
 
@@ -5931,6 +5981,7 @@ fn temporal_binding_rows(
     (
         Vec<quire_contract_model::TemporalBinding>,
         Vec<quire_contract_model::TemporalClauseName>,
+        TemporalBindingRows,
     ),
     EmitRefusal,
 > {
@@ -5952,6 +6003,7 @@ fn temporal_binding_rows(
     }
 
     let mut rows = Vec::new();
+    let mut keyed = TemporalBindingRows::default();
     let mut names = Vec::new();
     for site in graph.hybrid_claim_sites() {
         names.push(quire_contract_model::TemporalClauseName {
@@ -6009,12 +6061,14 @@ fn temporal_binding_rows(
             .get(&declaration_key)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        rows.push(quire_contract_model::TemporalBinding {
+        let row = quire_contract_model::TemporalBinding {
             declaration,
             occurrence: temporal.claim().ordinal(),
             clock_name: clause.clock().into(),
             clock: clock.clone(),
-        });
+        };
+        keyed.rows.push((declaration_key, row.clone()));
+        rows.push(row);
     }
 
     for hyper in graph.hyper_clauses() {
@@ -6079,12 +6133,14 @@ fn temporal_binding_rows(
             .get(&wrapper)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        rows.push(quire_contract_model::TemporalBinding {
+        let row = quire_contract_model::TemporalBinding {
             declaration,
             occurrence: occurrence.origin().ordinal(),
             clock_name: clock_name.into(),
             clock: clock.clone(),
-        });
+        };
+        keyed.rows.push((wrapper.clone(), row.clone()));
+        rows.push(row);
     }
 
     // QSpec FR-322-AC-305: a `compensate` node reads a clock too, so it is
@@ -6171,7 +6227,7 @@ fn temporal_binding_rows(
     names.sort_by(|left, right| {
         (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
     });
-    Ok((rows, names))
+    Ok((rows, names, keyed))
 }
 
 /// The ids `node` holds that this emitter can reach through IR's public

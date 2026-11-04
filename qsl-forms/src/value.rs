@@ -206,16 +206,16 @@ pub(crate) fn function(construct: Construct<'_>) -> Result<DeclarationForm, Form
     function_like(construct, DeclarationKind::Function)
 }
 
-/// `predicate name using alias(parameters): Boolean { body }` (FR-091
-/// "Predicate form"): the `forms` `FunctionDeclaration` of kind
-/// `Predicate`, with a `Boolean` result type form and no measure.
+/// `predicate name using alias(parameters): Boolean [decreases(m)] { body }`
+/// (FR-091 "Predicate form"): the `forms` `FunctionDeclaration` of kind
+/// `Predicate`, with a `Boolean` result type form and the measure when one
+/// is written.
 pub(crate) fn predicate(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     function_like(construct, DeclarationKind::Predicate)
 }
 
 /// The one `FunctionDeclaration` reading `function` and `predicate` share:
-/// they differ in the result type's spelling and in the `decreases` clause
-/// only the `Function` production has.
+/// they differ only in the result type's spelling.
 fn function_like(
     construct: Construct<'_>,
     kind: DeclarationKind,

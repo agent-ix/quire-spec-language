@@ -155,23 +155,7 @@ impl TraceBinding {
                 expected: Some(expected_profile.to_string()),
             });
         }
-        let Some(row) = selection.clock else {
-            return Err(BindingMismatch {
-                dimension: MismatchedDimension::Clock,
-                asserted: self.clock_name.to_string(),
-                expected: None,
-            });
-        };
-        if self.clock_name != row.clock_name {
-            return Err(BindingMismatch {
-                dimension: MismatchedDimension::Clock,
-                asserted: self.clock_name.to_string(),
-                expected: Some(row.clock_name.to_string()),
-            });
-        }
-        if let Some(mismatch) = parameters_mismatch(&self.parameters, &row.clock) {
-            return Err(mismatch);
-        }
+        let row = authenticate_clock(&self.clock_name, &self.parameters, selection.clock)?;
         Ok(AuthenticatedBinding {
             package: selection.declaration.package.clone(),
             declaration: selection.declaration.clone(),
@@ -179,6 +163,46 @@ impl TraceBinding {
             clock_name: row.clock_name.clone(),
             clock: row.clock.clone(),
         })
+    }
+}
+
+/// FR-522 "Authentication" after the profile: compare an asserted clock
+/// binding name and clock configuration with the declaration's
+/// `temporal_bindings` row, in the order `Clock`, `ClockParameters`, then the
+/// member dimensions, and return the row they agree with.
+///
+/// Both the evidence call ([`TraceBinding::authenticate`]) and the spine's
+/// `Progressed` and `Timestamped` traces authenticate through this one
+/// comparison.
+///
+/// # Errors
+///
+/// [`BindingMismatch`] naming the first differing dimension: `Clock` when
+/// `row` is `None` (the lock selects no clock for the declaration) or names
+/// another clock, `ClockParameters` for another configuration alternative,
+/// else the first differing member.
+pub fn authenticate_clock<'r>(
+    clock_name: &str,
+    parameters: &ClockConfiguration,
+    row: Option<&'r TemporalBinding>,
+) -> Result<&'r TemporalBinding, BindingMismatch> {
+    let Some(row) = row else {
+        return Err(BindingMismatch {
+            dimension: MismatchedDimension::Clock,
+            asserted: clock_name.to_owned(),
+            expected: None,
+        });
+    };
+    if clock_name != row.clock_name.as_ref() {
+        return Err(differs(
+            MismatchedDimension::Clock,
+            clock_name.to_owned(),
+            row.clock_name.to_string(),
+        ));
+    }
+    match parameters_mismatch(parameters, &row.clock) {
+        Some(mismatch) => Err(mismatch),
+        None => Ok(row),
     }
 }
 
