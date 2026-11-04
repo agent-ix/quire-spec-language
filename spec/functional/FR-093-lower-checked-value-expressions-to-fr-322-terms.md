@@ -287,8 +287,9 @@ no FR-322 node here: a distribution's support value (FR-185), an
 expected-reward threshold (FR-195), a quantile threshold or horizon
 (FR-186), and a time declaration's period or bound and a timed interval's
 bounds (FR-393, TC-1078). The probabilistic positions are checked by the same
-magnitude and unit reading and recorded in their form, and a package holding
-such a form is refused at S4 as FR-185 "Package emission" states.
+magnitude and unit reading and recorded in their form. A support value or
+reward is refused at S4 as FR-185 "Package emission" states; a claim's
+threshold or horizon is in no emitted body (FR-498).
 
 **Refusals.** `check` reads a quantity literal in this order: it measures
 the magnitude against the ceiling, reduces it, resolves the unit name, then

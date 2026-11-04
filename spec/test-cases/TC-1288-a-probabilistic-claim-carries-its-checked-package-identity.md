@@ -10,27 +10,51 @@ relationships:
 
 ## Description
 
-Verify that emission writes one `probabilistic_claims` row per probabilistic claim
-declaration, that `CheckedProbabilisticClaim` exposes the same identity, and that
-the FR-421 causes carry it. Scope: FR-498-AC-1 to FR-498-AC-4.
+Verify that the checked-package producer emits one local
+`claim`/`probabilistic_claim` node and one declared `claim` occurrence per
+included `CheckedProbabilisticClaim`, writes one matching
+`probabilistic_claims` row, that the checked claim exposes the same
+producer-owned identity, and that the FR-421 causes carry it. Scope:
+FR-498-AC-1 to FR-498-AC-4.
 
 ## Test Procedure
 
-1. Compile the QSpec TC-233 claims `PC-01` and `PC-02` (equal display names and
-   spans) by reference, emit the package and read the rows; permute source order
-   and re-emit.
-2. Read each `CheckedProbabilisticClaim` and compare its identity with its row.
+1. Compile one unit with three probabilistic claims: two sharing a declared
+   name and differing in written content (the QSL counterpart of QSpec
+   TC-233 `PC-01` and `PC-02`, referenced by ID; one source cannot give two
+   declarations equal spans) and a third with another name. Emit the package
+   and record each claim's `{declaration, occurrence}`, telling the claims
+   apart by their written content, never by the identity under test.
+   Re-emit every tested permutation of the three declarations and record the
+   identities again.
+2. For each claim, match the checked claim, its local `claim` node with
+   `semantic_form` `probabilistic_claim`, its declared `claim` occurrence and
+   its sidecar row by `{declaration, occurrence}`. Rename the third claim,
+   whose name no other claim shares, and
+   re-emit; parse a claim moved, reformatted and commented, and one with a
+   changed token, and compare their written content. Compile two claims
+   written identically.
 3. Check an elapsed-time claim with an unsupported form and a punctual interval
-   in a non-admitted form over those claims and read the settled causes.
-4. Check a claim without emission and compare its identity and cause; compare
-   an emitted package with its rows against the graph of one without them.
+   in a non-admitted form, each sharing its name with another claim, and read
+   the settled causes' `{declaration, occurrence}`.
+4. Read the emitted package with the strict reader and check every row names
+   a node of the emitted graph with that node's own `claim` occurrence.
 
 Tag the test `#[trace("FR-498-AC-1", "FR-498-AC-2", "FR-498-AC-3", "FR-498-AC-4", "TC-1288")]`.
 Vectors are referenced by QSpec case ID, never copied.
 
 ## Expected Results
 
-- Step 1: two rows, two distinct declarations, equal across permutations.
-- Step 2: each claim's identity equals its row.
-- Step 3: each cause carries the selected claim's identity and member path.
-- Step 4: the unemitted claim exposes no identity and keeps the span-locus refusal with no synthesized locus; the graphs are equal.
+- Step 1: three local claim nodes, each with one declared `claim`
+  occurrence, and three matching rows with distinct declaration identities in
+  structural order; every permutation keeps each claim's identity and emits
+  byte-identical rows.
+- Step 2: each checked claim, its graph node and its row expose the same
+  `{declaration, occurrence}`; renaming changes only the renamed claim's
+  identity; moving, reformatting and commenting leave written content equal
+  and a changed token makes it differ; the identical twins have distinct
+  identities.
+- Step 3: each cause carries the selected claim's `{declaration, occurrence}`
+  and no other claim's.
+- Step 4: the strict reader admits the package and every row joins its node
+  and occurrence.
