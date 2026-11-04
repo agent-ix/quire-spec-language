@@ -420,6 +420,15 @@ impl Kind {
     }
 }
 
+/// Whether `spelling` is exactly one token the recognizer classifies as
+/// [`Kind::Unsupported`]: a spelling reserved by another edition or facet
+/// (`helper`, `rec`, `cast`, `Tuple`), not a longer identifier that starts
+/// with one.
+pub(crate) fn unsupported_spelling(spelling: &str) -> bool {
+    let mut tokens = Kind::lexer(spelling);
+    matches!(tokens.next(), Some(Ok(Kind::Unsupported))) && tokens.next().is_none()
+}
+
 pub(crate) fn identifier_spelling(spelling: &str) -> bool {
     let mut bytes = spelling.bytes();
     bytes

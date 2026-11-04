@@ -210,6 +210,7 @@ pub(super) fn parse(
     );
     let cst = LosslessCst::new(source.clone(), tokens, nodes, root, recoveries);
     diagnostics.extend(interval_bounds(&source, &cst));
+    diagnostics.extend(reserved_declaration_names(&source, &cst));
     Ok(ParsedSource::from_parts(
         source,
         cst,
@@ -1006,6 +1007,51 @@ fn interval_bounds(source: &Source, cst: &LosslessCst) -> Vec<CompleteDiagnostic
         }
     }
     diagnostics
+}
+
+/// FR-035-AC-7: a function or predicate named by a spelling the recognizer
+/// reserves as unsupported (`helper`, `rec`, `cast`, `Tuple`) is refused at
+/// the name. The grammar's identifier terminal matches by spelling shape, so
+/// without this refusal the declaration would be admitted with a name the
+/// lexer never classified as an identifier.
+#[ix_trace_rs::string_edge]
+fn reserved_declaration_names(source: &Source, cst: &LosslessCst) -> Vec<CompleteDiagnostic> {
+    cst.nodes()
+        .iter()
+        .filter_map(|node| {
+            let what = match node.production() {
+                Production::FunctionDeclaration => "function",
+                Production::Predicate => "predicate",
+                _ => return None,
+            };
+            // `function name ...` / `predicate name ...`: the name is the
+            // second significant direct child token.
+            let name = node
+                .children()
+                .iter()
+                .filter_map(|child| match child {
+                    CstElement::Token(index) => cst
+                        .tokens()
+                        .get(*index)
+                        .filter(|token| token.class() == TokenClass::Token),
+                    CstElement::Node(_) => None,
+                })
+                .nth(1)?;
+            let spelling = std::str::from_utf8(name.spelling()).ok()?;
+            crate::token::unsupported_spelling(spelling).then(|| {
+                let span = name.span();
+                *super::diagnostic::error(
+                    source,
+                    CompleteCode::InvalidSyntax,
+                    CompleteCause::UnexpectedToken,
+                    Phase::Parse,
+                    span.start,
+                    span.end,
+                    format!("`{spelling}` is a reserved spelling and cannot name a {what}"),
+                )
+            })
+        })
+        .collect()
 }
 
 #[ix_trace_rs::string_edge]
