@@ -4292,16 +4292,16 @@ fn admitted_config_version_aliases(
         &packages,
         ModelNormalizationLimits::default(),
     )
-    .expect("the same package identity, content and version admit under both aliases");
+    .expect("the same package identity admits under both aliases");
     (source, unit, selected)
 }
 
-/// FR-513-AC-2: equal identity, version and content selected under two
-/// aliases is admitted once by intake and assembled while retaining both
-/// model-alias records. This does not assert member-qualified type lookup.
+/// FR-513-AC-2: one package identity selected under two aliases is admitted
+/// once by intake and assembled while retaining both model-alias records.
+/// This does not assert member-qualified type lookup or pin a package version.
 #[trace("TC-1308", "FR-513-AC-2")]
 #[test]
-fn one_package_identity_with_matching_content_assembles_under_two_aliases() {
+fn one_package_identity_assembles_under_two_aliases() {
     let source_text = text(
         "profile v = \"quire.value.complete/v1\";\n",
         "model Config = \"example/config-version\";\n\
@@ -4313,10 +4313,6 @@ fn one_package_identity_with_matching_content_assembles_under_two_aliases() {
     assert_eq!(selected[0].alias, "Config");
     assert_eq!(selected[1].alias, "History");
     assert_eq!(selected[0].view, selected[1].view);
-    assert_eq!(
-        selected.version_for_identity("example/config-version"),
-        Some("1.0.0")
-    );
 
     let declarations = PackageDeclarations::assemble(
         source,

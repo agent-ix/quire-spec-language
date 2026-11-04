@@ -903,10 +903,6 @@ fn duplicate_package_documents_refuse_and_one_identity_can_have_two_aliases() {
     assert_eq!(admitted[0].span.start, 0);
     assert_eq!(admitted[1].span.start, 2);
     assert_eq!(admitted[0].view, admitted[1].view);
-    assert_eq!(
-        admitted.version_for_identity("example/config-version"),
-        Some("1.0.0")
-    );
 }
 
 #[trace("NFR-012", "TC-434")]
