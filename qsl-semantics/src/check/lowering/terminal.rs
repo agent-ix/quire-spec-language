@@ -48,6 +48,9 @@ pub(crate) struct TerminalInput<'a> {
     pub(crate) index: usize,
     /// The model alias the declaration is on.
     pub(crate) model: &'a str,
+    /// The identity of the package the declaration's unit binds the alias
+    /// to.
+    pub(crate) package: &'a str,
     /// The checked declaration: never [`TerminalDeclaration::None`].
     pub(crate) declaration: &'a TerminalDeclaration,
 }
@@ -59,7 +62,7 @@ impl Lowering<'_> {
         let claim_at = terminal_location(input.index, TerminalSite::Claim);
         let boolean = self.type_node(&ValueType::Boolean, &claim_at)?;
         self.record(boolean.clone(), OccurrenceRole::Type, claim_at.clone());
-        let object = self.terminal_object(input.model, &claim_at)?;
+        let object = self.terminal_object(input.model, input.package, &claim_at)?;
         let model = self.object_node(object.clone(), &claim_at)?;
 
         let (mode, parameters, condition) = match input.declaration {
@@ -98,18 +101,20 @@ impl Lowering<'_> {
         Ok(key)
     }
 
-    /// The object type the model `alias`'s `self` ranges over: the one object
+    /// The object type `self` of the model `alias`, selecting `package`,
+    /// ranges over: the one object
     /// type its populations range over (FR-124), else its least object type,
     /// so that a `terminal any` over a model with no population still names
     /// a model node.
     fn terminal_object(
         &self,
         alias: &str,
+        package: &str,
         location: &Location,
     ) -> Result<EffectiveId, CheckRefusal> {
         self.models
             .iter()
-            .find(|model| model.alias() == Some(alias))
+            .find(|model| model.alias() == Some(alias) && model.selection().identity == package)
             .and_then(|model| model.terminal_object())
             .ok_or_else(|| {
                 super::fault(

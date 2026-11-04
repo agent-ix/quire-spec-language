@@ -335,6 +335,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::AmbiguousQualified(_)
         | CheckCause::UnsupportedNavigation(_)
         | CheckCause::NonBooleanRoot
+        | CheckCause::UnitMismatch
         | CheckCause::IntegerOutsideI128(_)
         | CheckCause::TextLiteralOutsideBounds { .. }
         | CheckCause::MalformedUuidLiteral { .. }
