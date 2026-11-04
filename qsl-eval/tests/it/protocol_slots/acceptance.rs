@@ -3052,11 +3052,15 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
 
 /// Selection refusals have the same locus on both views and leave their
 /// meters unchanged, including refusals only the view can make (an absent
-/// node, a node of another tag). This covers the refusal clause of AC-15 only,
-/// so it is tagged AC-4 alone.
+/// node, a node of another tag). The ignored AC-15 matrix reuses the assertion
+/// so its criterion trace includes the refusal path too.
 #[test]
 #[trace("TC-1071", "FR-390-AC-4")]
 fn selection_refusals_match_across_the_checked_and_reader_views() {
+    assert_selection_refusals_match_across_the_checked_and_reader_views();
+}
+
+fn assert_selection_refusals_match_across_the_checked_and_reader_views() {
     let package = fixture_from_source(&SOURCE.replace(
         "  run sequence Main {",
         "  terminal any;\n  run sequence Main {",
@@ -3160,6 +3164,10 @@ fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);
     let reader_view = read.evaluation_view().expect("the read retains its view");
+    // AC-15 includes refusal parity and unchanged meters for absent and
+    // malformed selected descriptors. The same assertion also has a focused
+    // AC-4 test, while this full matrix remains gated on QSL-1625.
+    assert_selection_refusals_match_across_the_checked_and_reader_views();
     let (checked_observation, checked_reference) = observation(&package, &model_view);
     let (reader_observation, reader_reference) =
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
