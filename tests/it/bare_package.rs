@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 use super::checked_handoff::{admitted, request, tree, KINDS};
 use super::temporal_package_route::{
-    clause_ids, event_clauses, recipe, request as evidence_request, run,
+    clause_ids, event_clauses, event_clauses_over, recipe, request as evidence_request, run,
 };
 use quire_spec_language::checked_handoff::{evidence, write, Corpus};
 
@@ -433,39 +433,50 @@ fn read_source(relative: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-/// The names of the `fn` items declared between the line that holds `start`
-/// and the next line that closes the block at the same indentation.
-fn public_fns(text: &str, start: &str) -> Vec<String> {
+/// The names of the public methods of the `impl` of `type_name` (or the
+/// methods of the trait `type_name`) in the Rust source `text`, read with
+/// `syn`.
+fn method_names(text: &str, type_name: &str) -> Vec<String> {
+    let file = syn::parse_file(text).expect("the source parses");
     let mut names = Vec::new();
-    let mut inside = false;
-    let mut indent = 0;
-    for line in text.lines() {
-        if !inside {
-            if line.contains(start) {
-                inside = true;
-                indent = line.len() - line.trim_start().len();
+    for item in &file.items {
+        match item {
+            syn::Item::Impl(item) if item.trait_.is_none() => {
+                if let syn::Type::Path(path) = &*item.self_ty {
+                    if path
+                        .path
+                        .segments
+                        .last()
+                        .is_some_and(|s| s.ident == type_name)
+                    {
+                        for member in &item.items {
+                            if let syn::ImplItem::Fn(method) = member {
+                                if matches!(method.vis, syn::Visibility::Public(_)) {
+                                    names.push(method.sig.ident.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            continue;
-        }
-        let here = line.len() - line.trim_start().len();
-        if line.trim() == "}" && here == indent {
-            break;
-        }
-        let trimmed = line.trim_start();
-        let trimmed = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
-        if let Some(rest) = trimmed.strip_prefix("fn ") {
-            if here == indent + 4 {
-                names.push(rest.split(['(', '<']).next().unwrap_or("").to_owned());
+            syn::Item::Trait(item) if item.ident == type_name => {
+                for member in &item.items {
+                    if let syn::TraitItem::Fn(method) = member {
+                        names.push(method.sig.ident.to_string());
+                    }
+                }
             }
+            _ => {}
         }
     }
     names
 }
 
 /// FR-531-AC-9 (TC-1331): every public method of `EvidencePackage` and every
-/// method of `CheckedPackageEvaluation` has a row in the capability
-/// inventory.
-#[trace("TC-1331")]
+/// method of the `CheckedPackageEvaluation` trait, read from the crate source
+/// with `syn`, has a row in the capability inventory; a method with no row
+/// fails the test.
+#[trace("FR-531-AC-9", "TC-1331")]
 #[test]
 fn every_evaluation_method_has_an_inventory_row() {
     let spec = read_source(
@@ -481,29 +492,28 @@ fn every_evaluation_method_has_an_inventory_row() {
         .filter(|line| line.starts_with("| `"))
         .filter_map(|line| line.split('|').nth(1))
         .collect();
-    let package = read_source("qsl-eval/src/temporal/evidence/package.rs");
-    let mut methods = public_fns(&package, "impl<'p> EvidencePackage<'p> {");
-    methods.retain(|name| {
-        !matches!(
-            name.as_str(),
-            "with_rows" | "from_emission" | "from_read" | "from_package"
-        )
-    });
-    let evaluation = read_source("qsl-eval/src/value/expression/mod.rs");
-    methods.extend(public_fns(
-        &evaluation,
-        "pub trait CheckedPackageEvaluation: family::sealed::Sealed {",
+    let mut methods = method_names(
+        &read_source("qsl-eval/src/temporal/evidence/package.rs"),
+        "EvidencePackage",
+    );
+    methods.extend(method_names(
+        &read_source("qsl-eval/src/value/expression/mod.rs"),
+        "CheckedPackageEvaluation",
     ));
-    assert!(methods.len() >= 10, "{methods:?}");
+    assert!(methods.len() >= 12, "{methods:?}");
     for name in &methods {
         assert!(
-            firsts.iter().any(|row| row.contains(&format!("`{name}`"))),
+            firsts.iter().any(|row| row.contains(&format!("{name}`"))),
             "`{name}` has no row in the capability inventory"
         );
     }
-    for constructor in ["from_emission", "from_read"] {
-        assert!(firsts.iter().any(|row| row.contains(constructor)));
-    }
+    // The probe is real: a method the inventory lacks is found missing.
+    assert!(!firsts.iter().any(|row| row.contains("`not_a_method`")));
+    let fake = method_names(
+        "impl EvidencePackage { pub fn not_a_method(&self) {} }",
+        "EvidencePackage",
+    );
+    assert_eq!(fake, ["not_a_method"]);
 }
 
 /// FR-531-AC-2 (TC-1331): no public signature of the bare entry names the
@@ -534,7 +544,7 @@ fn no_bare_signature_names_the_source_side() {
         }
     }
     // `BarePackage` has the one constructor.
-    let constructors = public_fns(&bare, "impl<'p> BarePackage<'p> {");
+    let constructors = method_names(&bare, "BarePackage");
     assert_eq!(constructors.iter().filter(|name| *name == "new").count(), 1);
     assert!(!constructors.iter().any(|name| name.starts_with("from_")));
 }
@@ -626,9 +636,10 @@ fn the_consumer_entry_sections_name_the_bare_entry() {
     }
 }
 
-/// A node that is not a temporal clause, and a node the package does not
+/// FR-531-AC-4 (temporal half): a node that is not a temporal clause, and a node the package does not
 /// hold, refuse `clause-root-unresolved` over the bare package with an empty
 /// charge log, and the same call over a clause evaluates.
+#[trace("FR-531-AC-4", "TC-1331")]
 #[test]
 fn a_node_that_is_no_temporal_clause_is_unresolved_over_the_bare_package() {
     let (_holder, _files, package) = directory("event_position");
@@ -812,4 +823,330 @@ fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route()
         .map(|(name, ty)| (name.to_owned(), ty.clone()))
         .collect();
     assert_eq!(held, declared);
+}
+
+const LEAF: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.model.complete/v1\";\n\
+    model Config = \"example/config-version\";\n\
+    predicate Leaf using v (x: Boolean): Boolean { x }";
+
+fn through(import: &str, name: &str, callee: &str) -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         {import}\nmodel Config = \"example/config-version\";\n\
+         predicate {name} using v (x: Boolean): Boolean {{ {callee}(x) }}"
+    )
+}
+
+const CLAUSE: &str =
+    "temporal Due using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { \
+     always[0,2] holds(%CALL%(c.versionNumber >= 1)) }";
+
+/// IR-1325 AC3: the closure over a chain (root, mid, leaf) and a diamond
+/// (root, left and right, one shared leaf) is read from the retained direct
+/// dependencies, nearest first, each retained package once.
+#[test]
+fn the_dependency_closure_follows_a_chain_and_lists_a_diamond_once() {
+    let names = |built: &super::temporal_package_route::Built| {
+        let read = built.read(&built.emission);
+        let direct: Vec<String> = read
+            .admitted()
+            .direct_dependencies()
+            .map(|package| package.name().to_owned())
+            .collect();
+        let bare = BarePackage::new(read.admitted());
+        let closure: Vec<String> = bare
+            .dependencies()
+            .iter()
+            .map(|package| package.name().to_owned())
+            .collect();
+        (direct, closure)
+    };
+    let mid = through("import \"t/leaf\" as K;", "Mid", "K::Leaf");
+    let chain = event_clauses_over(
+        "import \"t/mid\" as M;\n",
+        &[("t/leaf", LEAF), ("t/mid", mid.as_str())],
+        &CLAUSE.replace("%CALL%", "M::Mid"),
+        &[("Due", "authority")],
+    );
+    let (direct, closure) = names(&chain);
+    assert_eq!(direct, ["t/mid"]);
+    assert_eq!(
+        closure,
+        ["t/mid", "t/leaf"],
+        "the chain's second hop is read"
+    );
+
+    let left = through("import \"t/leaf\" as K;", "Left", "K::Leaf");
+    let right = through("import \"t/leaf\" as K;", "Right", "K::Leaf");
+    let diamond = event_clauses_over(
+        "import \"t/left\" as A;\nimport \"t/right\" as B;\n",
+        &[
+            ("t/leaf", LEAF),
+            ("t/left", left.as_str()),
+            ("t/right", right.as_str()),
+        ],
+        "temporal Due using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { \
+         always[0,2] holds(A::Left(c.versionNumber >= 1) and B::Right(c.versionNumber >= 1)) }",
+        &[("Due", "authority")],
+    );
+    let (direct, closure) = names(&diamond);
+    assert_eq!(direct, ["t/left", "t/right"]);
+    assert_eq!(
+        closure,
+        ["t/left", "t/right", "t/leaf"],
+        "the shared leaf is listed once"
+    );
+}
+
+const ONE_CLAUSE: &str =
+    "temporal Due using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { \
+     always[0,3] holds(c.versionNumber >= 1) }";
+
+/// Rewrite the interval of the `always` node of `built`'s package.
+fn with_interval(
+    built: &super::temporal_package_route::Built,
+    interval: serde_json::Value,
+) -> qsl_package::Emission {
+    forged(built, |wire| {
+        for node in wire["semantic_graph"]["nodes"]
+            .as_array_mut()
+            .expect("nodes")
+        {
+            if node["body"]["operation"]["identity"] == "quire.op.temporal.always" {
+                node["body"]["operation"]["member"]["interval"] = interval.clone();
+            }
+        }
+    })
+}
+
+/// FR-532-AC-2 (clock row), FR-532-AC-7 (TC-1332): a package the reader
+/// admits with one clock row replaced gives `from_package` the result of the
+/// replaced row (a request that asserts the genuine row is refused
+/// `binding-mismatch`), while `from_emission` refuses the construction with
+/// `PackageMismatch::Bindings`. An interval replaced in a formula node is
+/// refused by the reader (`OperationMemberMismatch`: the node's operation
+/// member is part of its identity), so the unbounded-operator reason of
+/// `clause-unreadable` cannot be met by an admitted package; its
+/// `ClauseFormula` is unit-tested in `temporal_causes`.
+#[trace("FR-532-AC-2", "TC-1332")]
+#[test]
+fn bytes_that_differ_from_the_source_drive_the_bare_result() {
+    let built = event_clauses(ONE_CLAUSE, &[("Due", "authority")]);
+    let genuine_read = built.read(&built.emission);
+    let genuine_bare = BarePackage::new(genuine_read.admitted());
+    let genuine = EvidencePackage::from_package(&genuine_bare).expect("bare");
+    let [clause] = clause_ids(&genuine).try_into().expect("one clause");
+    let asked = evidence_request(&genuine, &clause, None, 5);
+    assert!(run(&genuine, &clause, &asked).0.is_ok());
+
+    let renamed = forged(&built, |wire| {
+        wire["temporal_bindings"][0]["clock"]["sequence_authority"] = json!("another-authority");
+    });
+    let read = built.read(&renamed);
+    let bare = BarePackage::new(read.admitted());
+    let package = EvidencePackage::from_package(&bare).expect("bare");
+    let (refused, charges) = run(&package, &clause, &asked);
+    assert_eq!(
+        super::temporal_package_route::cause(&refused.expect_err("another clock row")),
+        "binding-mismatch"
+    );
+    assert!(charges.is_empty());
+    // A request that asserts the replaced row evaluates.
+    let own = evidence_request(&package, &clause, None, 5);
+    assert!(run(&package, &clause, &own).0.is_ok());
+    // The route that holds the genuine emission refuses the construction.
+    assert!(matches!(
+        EvidencePackage::from_emission(&built.emission, &read),
+        Err(qsl_eval::temporal::evidence::PackageMismatch::Bindings)
+    ));
+
+    // One finite interval replaced by another: the bytes drive the result,
+    // and the routes that hold the genuine source refuse the difference.
+    let longer = with_interval(&built, json!({"lower": "0", "upper": "4"}));
+    let read = built.read(&longer);
+    let bare = BarePackage::new(read.admitted());
+    let package = EvidencePackage::from_package(&bare).expect("bare");
+    let (baseline, _) = run(&genuine, &clause, &asked);
+    let baseline = baseline.expect("the genuine package evaluates");
+    let (replaced, _) = run(&package, &clause, &asked);
+    let replaced = replaced.expect("the replaced interval evaluates");
+    assert_ne!(
+        format!("{:?}", replaced.usage),
+        format!("{:?}", baseline.usage),
+        "the replaced interval changes the work the call charges"
+    );
+    for source_route in [
+        EvidencePackage::from_read(&read).expect("read"),
+        EvidencePackage::from_emission(&longer, &read).expect("emission"),
+    ] {
+        let mut meter = super::temporal_package_route::unlimited();
+        let refused = source_route.evaluate_temporal_evidence(&clause, &asked, &mut meter);
+        let refused = refused.expect_err("the source differs from the bytes");
+        assert_eq!(
+            super::temporal_package_route::cause(&refused),
+            "clause-unreadable"
+        );
+        assert_eq!(reason(&refused), "formula-differs");
+        assert!(meter.admitted_charges().is_empty());
+    }
+    // An operator without a finite upper bound is a reader refusal.
+    let unbounded = with_interval(&built, json!({"lower": "0", "upper": null}));
+    assert!(built.try_read(&unbounded).is_err());
+}
+
+/// FR-531-AC-6 (TC-1331): Contract IR refuses a package whose clause has no
+/// `temporal_bindings` row (`TimedNodeReference`) and a lock with no
+/// `profile_selections` row, before any evaluation, so neither the absent
+/// clock row's `Unavailable` result nor the `profile-selection` reason can be
+/// met by an admitted package; the reader's refusals are the behavior.
+#[trace("TC-1331")]
+#[test]
+fn the_reader_refuses_absent_clock_rows_and_a_missing_profile_row() {
+    let built = event_clauses(ONE_CLAUSE, &[("Due", "authority")]);
+    let no_clock = forged(&built, |wire| {
+        wire.as_object_mut()
+            .expect("object")
+            .remove("temporal_bindings");
+    });
+    let refused = built.try_read(&no_clock).err().expect("the reader refuses");
+    assert!(format!("{refused:?}").contains("TimedNodeReference"));
+
+    let no_profile = forged(&built, |wire| {
+        wire["lock"]["profile_selections"] = json!([]);
+    });
+    let refused = built
+        .try_read(&no_profile)
+        .err()
+        .expect("the reader refuses");
+    // The refusal names the lock or the nodes that select the removed row.
+    assert!(!format!("{refused:?}").is_empty());
+}
+
+/// FR-532-AC-3 (TC-1332): one clause per operator of FR-337's temporal list
+/// gives, over the three routes, the same result and charges for each of a
+/// set of traces that distinguish the operator.
+#[trace("FR-532-AC-3", "TC-1332")]
+#[test]
+fn every_temporal_operator_gives_the_same_result_over_the_three_routes() {
+    use qsl_eval::temporal::evidence::EvidencePosition;
+    use qsl_eval::temporal::Valuation;
+    let p = "holds(c.versionNumber >= 1)";
+    let q = "holds(c.versionNumber >= 2)";
+    let bodies = [
+        format!("eventually[0,2] {p}"),
+        format!("always[0,2] {p}"),
+        format!("once[0,2] {p}"),
+        format!("historically[0,2] {p}"),
+        format!("{p} until[0,2] {q}"),
+        format!("{p} release[0,2] {q}"),
+        format!("{p} since[0,2] {q}"),
+        format!("{p} triggered[0,2] {q}"),
+        format!("not {p}"),
+        format!("{p} and {q}"),
+        format!("{p} or {q}"),
+        format!("{p} implies {q}"),
+    ];
+    use Valuation::{False as F, True as T};
+    let traces: [[(Valuation, Valuation); 3]; 4] = [
+        [(T, T), (T, T), (T, T)],
+        [(F, F), (F, F), (F, F)],
+        [(T, F), (F, T), (T, F)],
+        [(F, T), (T, T), (F, F)],
+    ];
+    let mut outcomes = std::collections::BTreeSet::new();
+    for body in &bodies {
+        let built = event_clauses(
+            &format!(
+                "temporal Due using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {{ {body} }}"
+            ),
+            &[("Due", "authority")],
+        );
+        let read = built.read(&built.emission);
+        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("emission");
+        let back = EvidencePackage::from_read(&read).expect("read");
+        let bare = BarePackage::new(read.admitted());
+        let bytes = EvidencePackage::from_package(&bare).expect("bare");
+        let [clause] = clause_ids(&bytes).try_into().expect("one clause");
+        for trace in &traces {
+            let mut asked = evidence_request(&emitted, &clause, None, 3);
+            asked.positions = trace
+                .iter()
+                .enumerate()
+                .map(|(index, (first, second))| EvidencePosition {
+                    observation: qsl_eval::temporal::evidence::EvidenceRef::named(format!(
+                        "obs{index}"
+                    )),
+                    position: index as u64,
+                    valuations: [(0, first.clone()), (1, second.clone())]
+                        .into_iter()
+                        .filter(|(atom, _)| {
+                            *atom
+                                < emitted
+                                    .subject(&clause, None)
+                                    .expect("reads")
+                                    .facts
+                                    .formula()
+                                    .atom_count() as u64
+                        })
+                        .collect(),
+                    ..EvidencePosition::default()
+                })
+                .collect();
+            let (left, left_charges) = run(&emitted, &clause, &asked);
+            let (middle, middle_charges) = run(&back, &clause, &asked);
+            let (right, right_charges) = run(&bytes, &clause, &asked);
+            let (left, middle, right) = (
+                left.unwrap_or_else(|failure| panic!("{body}: {failure:?}")),
+                middle.unwrap_or_else(|failure| panic!("{body}: {failure:?}")),
+                right.unwrap_or_else(|failure| panic!("{body}: {failure:?}")),
+            );
+            assert_eq!(format!("{left:?}"), format!("{right:?}"), "{body}");
+            assert_eq!(format!("{middle:?}"), format!("{right:?}"), "{body}");
+            assert_eq!(left_charges, right_charges, "{body}");
+            assert_eq!(middle_charges, right_charges, "{body}");
+            outcomes.insert((
+                body.clone(),
+                format!("{:?}/{:?}", right.truth, right.settlement),
+            ));
+        }
+    }
+    let distinct: std::collections::BTreeSet<_> = outcomes
+        .iter()
+        .map(|(_, outcome)| outcome.clone())
+        .collect();
+    assert!(
+        distinct
+            .iter()
+            .any(|outcome| outcome.starts_with("Some(True)"))
+            && distinct
+                .iter()
+                .any(|outcome| outcome.starts_with("Some(False)")),
+        "the traces distinguish the operators: {distinct:?}"
+    );
+}
+
+/// FR-532-AC-5 (replay route): the replay route has no emitted package, and
+/// binds progress under the identity string of the unit's source. Where an
+/// emitted package for the same source exists, that string is its
+/// `package.name()`, on all three routes.
+#[trace("FR-532-AC-5", "TC-1332")]
+#[test]
+fn the_replay_binding_names_the_package_the_source_emits() {
+    for kind in KINDS {
+        let built = recipe(kind);
+        let read = built.read(&built.emission);
+        let bare = BarePackage::new(read.admitted());
+        let package = EvidencePackage::from_package(&bare).expect("bare");
+        for clause in clause_ids(&package) {
+            let subject = package.subject(&clause, None).expect("reads");
+            assert_eq!(
+                subject.progress.package,
+                built.replay_package_identity(),
+                "{kind}"
+            );
+        }
+        assert_eq!(read.admitted().name(), built.replay_package_identity());
+    }
 }

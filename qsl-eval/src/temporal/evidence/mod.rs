@@ -24,7 +24,7 @@ mod request;
 mod trigger;
 mod work;
 
-pub use super::facts::{atom_numbers, ClauseFacts, ClauseFormula};
+pub use super::facts::{ClauseFacts, ClauseFormula};
 pub use activation::{
     activate, scope_disposition, Activation, ActivationFault, ActivationInput, ActivationStop,
     ClauseShape, Completeness, Contradiction, Disposition, ExecutionDisposition, FaultKind,

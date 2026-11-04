@@ -31,7 +31,7 @@ use super::call::{evaluate_temporal_evidence, refusal, select_occurrence};
 use super::request::{
     ActivationRow, EvidenceRequest, EvidenceResult, EvidenceSubject, SubjectOccurrence,
 };
-use crate::temporal::facts::{atom_numbers, ClauseFacts, ClauseFormula};
+use crate::temporal::facts::{atom_numbers, counts_ticks, ClauseFacts, ClauseFormula};
 use crate::temporal::ledger::LedgerBinding;
 use crate::temporal::DEFAULT_COVERED_POSITIONS;
 
@@ -492,6 +492,7 @@ fn finite_window_profile(identity: &str) -> Option<TemporalProfile> {
 /// instance binder (`reads`, FR-515 `instance_bound_atoms`). A shared atom
 /// node has one index. `None` when `reads` and the `holds` entries differ in
 /// number (FR-516 `clause-unreadable` `atom-count`).
+#[doc(hidden)]
 pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Option<BTreeSet<u64>> {
     let holds = graph
         .iter()
@@ -619,29 +620,19 @@ fn graph_key(node: &FormulaNodeUse<'_>) -> Option<Option<IntervalKey>> {
             upper,
             lower_end,
             upper_end,
-        }) => {
-            let integral = |bound: &qsl_package::CheckedOperationRational| {
-                u64::try_from(&bound.denominator).is_ok_and(|denominator| denominator == 1)
-            };
-            match upper {
-                Some(upper)
-                    if *lower_end == Closed
-                        && *upper_end == Closed
-                        && integral(lower)
-                        && integral(upper) =>
-                {
-                    Some(IntervalKey::Steps {
-                        lower: u64::try_from(&lower.numerator).ok()?,
-                        upper: Some(u64::try_from(&upper.numerator).ok()?),
-                    })
-                }
-                _ => Some(IntervalKey::Timed {
-                    lower: pair(lower),
-                    upper: upper.as_ref().map(pair),
-                    closed: (*lower_end == Closed, *upper_end == Closed),
-                }),
+        }) => match upper {
+            Some(upper) if counts_ticks(lower, upper, lower_end, upper_end) => {
+                Some(IntervalKey::Steps {
+                    lower: u64::try_from(&lower.numerator).ok()?,
+                    upper: Some(u64::try_from(&upper.numerator).ok()?),
+                })
             }
-        }
+            _ => Some(IntervalKey::Timed {
+                lower: pair(lower),
+                upper: upper.as_ref().map(pair),
+                closed: (*lower_end == Closed, *upper_end == Closed),
+            }),
+        },
     })
 }
 

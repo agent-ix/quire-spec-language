@@ -55,6 +55,12 @@ impl Built {
             .expect("the reader admits the emission")
     }
 
+    /// The identity string the replay route binds progress under: the unit's
+    /// source identity.
+    pub(super) fn replay_package_identity(&self) -> String {
+        self.unit.source().identity().identity.clone()
+    }
+
     /// The read of `emission`, which the reader may refuse.
     pub(super) fn try_read(
         &self,
@@ -548,6 +554,17 @@ fn each_clause_pairs_with_its_own_clock_row() {
 /// profile, each clause named in `authorities` given the sequence authority
 /// beside it.
 pub(super) fn event_clauses(clauses: &str, authorities: &[(&str, &str)]) -> Built {
+    event_clauses_over("", &[], clauses, authorities)
+}
+
+/// [`event_clauses`] importing `libraries` (identity, source), with `imports`
+/// the unit's own import lines.
+pub(super) fn event_clauses_over(
+    imports: &str,
+    libraries: &[(&str, &str)],
+    clauses: &str,
+    authorities: &[(&str, &str)],
+) -> Built {
     let packages = qsl_semantics::model::intake::package_input([
         crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
     ])
@@ -556,14 +573,23 @@ pub(super) fn event_clauses(clauses: &str, authorities: &[(&str, &str)]) -> Buil
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
-         model Config = \"example/config-version\";\n{clauses}\n"
+         {imports}model Config = \"example/config-version\";\n{clauses}\n"
     );
+    let supplied: Vec<SuppliedLibrary> = libraries
+        .iter()
+        .map(|(identity, text)| SuppliedLibrary {
+            identity: (*identity).to_owned(),
+            source: SourceIdentity::new("local", format!("library:{identity}")),
+            path: (*identity).to_owned(),
+            bytes: text.as_bytes().to_vec(),
+        })
+        .collect();
     let unit = crate::support::front_end::checked(
         SourceIdentity::new("local", "source:route"),
         "route.native",
         source.as_bytes(),
         &packages,
-        &DependencyInput::default(),
+        &DependencyInput::new(supplied).expect("the libraries"),
     )
     .expect("S1 to S4 check the unit");
     let clocks: Vec<_> = authorities
@@ -835,5 +861,138 @@ pub(super) fn same_named_clauses() -> Built {
         unit,
         emission,
         packages,
+    }
+}
+
+/// FR-532-AC-8 (TC-1332): the twins' rows pair by key over `from_package`, as
+/// over the read-back route.
+#[trace("FR-532-AC-8", "TC-1332")]
+#[test]
+fn twins_pair_their_rows_by_key_over_the_bytes_only_route() {
+    let built = twins();
+    let read = built.read(&built.emission);
+    let bare = qsl_package::BarePackage::new(read.admitted());
+    let back = EvidencePackage::from_package(&bare).expect("the bare package");
+    let [node] = clause_ids(&back).try_into().expect("one shared node");
+
+    let view = back.temporal_subject(&node).expect("the twins read");
+    let ordinals: Vec<_> = view
+        .occurrences()
+        .iter()
+        .map(|found| found.ordinal)
+        .collect();
+    assert_eq!(ordinals, [7, 3]);
+    assert_eq!(
+        back.rows()
+            .bindings()
+            .iter()
+            .map(|row| row.occurrence)
+            .collect::<Vec<_>>(),
+        [3, 7]
+    );
+    assert_eq!(back.clock(&view), None);
+    let [seven, three] = view.occurrences() else {
+        panic!("two occurrences");
+    };
+    assert_eq!(
+        authority_of(back.clock_of(three).expect("ordinal 3")),
+        "second-authority"
+    );
+    assert_eq!(
+        authority_of(back.clock_of(seven).expect("ordinal 7")),
+        "first-authority"
+    );
+
+    for (ordinal, name, own, other) in [
+        (3, "Second", "second-authority", "first-authority"),
+        (7, "First", "first-authority", "second-authority"),
+    ] {
+        // The selector picks the clause occurrence once, and the subject the
+        // call reads carries it: the clause named by that occurrence's name
+        // row and progress retained under its ordinal.
+        let chosen = back
+            .subject(&node, Some(&claim(ordinal)))
+            .expect("the occurrence reads");
+        assert_eq!(chosen.facts.name(), name);
+        assert_eq!(chosen.progress.occurrence, ordinal);
+        let mut asked = request(&back, &node, Some(ordinal), 3);
+        let result = evaluated(run(&back, &node, &asked).0);
+        assert_eq!(result.activation, ActivationState::Active);
+        asked.binding.parameters = ClockConfiguration::EventPosition {
+            sequence_authority: other.into(),
+        };
+        let mut meter = unlimited();
+        let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+        assert_eq!(
+            cause(&refused.expect_err("the other row")),
+            "binding-mismatch"
+        );
+        assert!(meter.admitted_charges().is_empty());
+        asked.binding.parameters = ClockConfiguration::EventPosition {
+            sequence_authority: own.into(),
+        };
+        assert!(run(&back, &node, &asked).0.is_ok());
+    }
+
+    let mut asked = request(&back, &node, Some(3), 3);
+    asked.occurrence = None;
+    let mut meter = unlimited();
+    let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+    assert_eq!(
+        cause(&refused.expect_err("no selector")),
+        "occurrence-required"
+    );
+    assert!(meter.admitted_charges().is_empty());
+    asked.occurrence = Some(claim(5));
+    let mut meter = unlimited();
+    let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+    assert_eq!(cause(&refused.expect_err("unknown")), "occurrence-unknown");
+    assert!(meter.admitted_charges().is_empty());
+
+    // A node with one occurrence needs no selector.
+    let single = event_clauses(
+        "temporal Only using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { eventually[0,1] holds(c.versionNumber <= 1) }",
+        &[("Only", "only-authority")],
+    );
+    let read = single.read(&single.emission);
+    let package = EvidencePackage::from_read(&read).expect("the read-back package");
+    let [clause] = clause_ids(&package).try_into().expect("one clause");
+    let mut asked = request(&package, &clause, None, 3);
+    asked.occurrence = None;
+    assert!(run(&package, &clause, &asked).0.is_ok());
+}
+
+/// FR-532-AC-8 (TC-1332): each clause pairs with its own clock row over
+/// `from_package`, and another clause's row is `binding-mismatch`.
+#[trace("FR-532-AC-8", "TC-1332")]
+#[test]
+fn each_clause_pairs_with_its_own_clock_row_over_the_bytes_only_route() {
+    let built = event_clauses(
+        "temporal First using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { eventually[0,1] holds(c.versionNumber <= 1) }\n\
+         temporal Second using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { eventually[0,2] holds(c.versionNumber <= 2) }",
+        &[("First", "first-authority"), ("Second", "second-authority")],
+    );
+    let read = built.read(&built.emission);
+    let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
+    let bare = qsl_package::BarePackage::new(read.admitted());
+    let back = EvidencePackage::from_package(&bare).expect("the bare package");
+    let ids = clause_ids(&emitted);
+    assert_eq!(ids.len(), 2, "two nodes");
+    for package in [&emitted, &back] {
+        for clause in &ids {
+            let own = request(package, clause, None, 3);
+            let (result, _) = run(package, clause, &own);
+            assert_eq!(evaluated(result).activation, ActivationState::Active);
+            let other = ids.iter().find(|other| *other != clause).expect("another");
+            let mut foreign = request(package, other, None, 3);
+            foreign.occurrence = None;
+            let mut meter = unlimited();
+            let refused = package.evaluate_temporal_evidence(clause, &foreign, &mut meter);
+            assert_eq!(
+                cause(&refused.expect_err("another clause's row")),
+                "binding-mismatch"
+            );
+            assert!(meter.admitted_charges().is_empty());
+        }
     }
 }
