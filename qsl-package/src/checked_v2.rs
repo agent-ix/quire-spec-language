@@ -965,38 +965,6 @@ pub struct AdmittedPackageRead<'package> {
 }
 
 impl AdmittedPackageRead<'_> {
-    /// Resolve one structural key to its node in the admitted graph.
-    pub(crate) fn reader_node_id(
-        &self,
-        key: &NodeKey,
-    ) -> Result<Option<quire_contract_model::CheckedNodeId>, InternalFault> {
-        let graph = wire_graph(&self.read.admitted).map_err(|_| {
-            InternalFault::new("FR-390", "reader-protocol-graph-has-structural-keys")
-        })?;
-        Ok(self
-            .read
-            .admitted
-            .graph()
-            .nodes
-            .iter()
-            .find(|node| {
-                graph
-                    .key(&node.node_id)
-                    .is_ok_and(|candidate| candidate == *key)
-            })
-            .map(|node| node.node_id.clone()))
-    }
-
-    /// The exact admitted graph emitted for this reader-backed package.
-    pub(crate) fn admitted_graph(&self) -> &CheckedPackageV2 {
-        &self.read.admitted
-    }
-
-    /// The producer evidence paired with the bytes admitted by this read.
-    pub(crate) fn emission(&self) -> &Emission {
-        &self.emission
-    }
-
     /// The structural exports admitted for this package.
     pub fn import_view(&self) -> &ImportView {
         &self.read.package
@@ -1028,13 +996,19 @@ impl AdmittedPackageRead<'_> {
         &self.dependencies
     }
 
-    /// Create the evaluation view over this successful I2 read.
+    /// Create the evaluation view over this successful I2 read. Every
+    /// protocol slot of the package is projected here, once (FR-390): a slot
+    /// walk whose applications and `protocol_locations` rows do not pair
+    /// refuses the whole view, and a slot with an unsupported form keeps its
+    /// typed refusal for its own evaluation.
     pub fn evaluation_view(
         &self,
     ) -> Result<
         crate::evaluation_view::AdmittedEvaluationView<'_>,
         crate::evaluation_view::ViewFailure,
     > {
+        use crate::evaluation_view::ViewFailure;
+        use crate::reader_protocol_projection::{project_package, PackageRefusal};
         let source_nodes: BTreeSet<_> = self
             .source
             .graph()
@@ -1043,11 +1017,71 @@ impl AdmittedPackageRead<'_> {
             .map(|node| node.key())
             .collect();
         if !source_nodes.is_subset(&self.reader_nodes) {
-            return Err(crate::evaluation_view::ViewFailure::ReaderSourceMismatch(
-                InternalFault::new("FR-390", "reader-evaluation-view-retains-source-nodes"),
-            ));
+            return Err(ViewFailure::ReaderSourceMismatch(InternalFault::new(
+                "FR-390",
+                "reader-evaluation-view-retains-source-nodes",
+            )));
         }
-        Ok(crate::evaluation_view::AdmittedEvaluationView::reader(self))
+        let slots = project_package(
+            self.source.graph(),
+            &self.read.admitted,
+            &self.emission,
+            self.emission.package.name(),
+            self.slot_requests(),
+            self.read.effective_limits.work,
+        )
+        .map_err(|refusal| match refusal {
+            PackageRefusal::Unsupported(view) => ViewFailure::Unsupported(Box::new(view)),
+            PackageRefusal::Fault(fault) => ViewFailure::Fault(fault),
+        })?;
+        Ok(crate::evaluation_view::AdmittedEvaluationView::reader(
+            self, slots,
+        ))
+    }
+
+    /// Every slot of every emitted protocol, as FR-383's site-name registry
+    /// lists it, with its root, origin name and binders in local-slot order.
+    /// The source package selects the slots and names their binders; their
+    /// expressions come from the admitted graph alone.
+    fn slot_requests(&self) -> Vec<crate::reader_protocol_projection::SlotRequest> {
+        let graph = self.source.graph();
+        let mut requests = Vec::new();
+        let mut seen = BTreeSet::new();
+        for protocol in graph.protocols() {
+            let Some(keys) = graph.protocol_node_keys(&protocol.name) else {
+                continue;
+            };
+            for body in crate::emit::protocol_locations::slot_bodies(protocol) {
+                let location = body.root().location();
+                let (Some(origin), Some(root)) = (
+                    crate::protocol_selection::slot_origin(body),
+                    crate::protocol_selection::root_node(self.source, body),
+                ) else {
+                    continue;
+                };
+                if !self.reader_nodes.contains(&root) || !seen.insert(location) {
+                    continue;
+                }
+                let binders = keys
+                    .expressions
+                    .iter()
+                    .find(|expression| expression.location == *location)
+                    .map(|expression| {
+                        expression
+                            .binders
+                            .iter()
+                            .map(|binder| binder.node.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                requests.push(crate::reader_protocol_projection::SlotRequest {
+                    root,
+                    origin: origin.to_owned(),
+                    binders,
+                });
+            }
+        }
+        requests
     }
 
     pub(crate) fn source_package(&self) -> &CheckedPackage {
@@ -1056,357 +1090,6 @@ impl AdmittedPackageRead<'_> {
 
     pub(crate) fn has_node(&self, node: &NodeKey) -> bool {
         self.reader_nodes.contains(node)
-    }
-
-    /// Resolve a reader-retained expression reference to its supplied frame
-    /// slot. The field operation, selected identity and value type come from
-    /// the admitted graph.
-    pub(crate) fn protocol_reference_slot(
-        &self,
-        node: &NodeKey,
-        binders: &[Option<NodeKey>],
-    ) -> Result<Option<crate::evaluation_view::ReaderProtocolProjection>, InternalFault> {
-        let graph = wire_graph(&self.read.admitted).map_err(|_| {
-            InternalFault::new("FR-390", "reader-protocol-graph-has-structural-keys")
-        })?;
-        let Some(selected) = self.read.admitted.graph().nodes.iter().find(|candidate| {
-            graph
-                .key(&candidate.node_id)
-                .is_ok_and(|candidate_key| candidate_key == *node)
-        }) else {
-            return Err(InternalFault::new(
-                "FR-390",
-                "reader-selected-protocol-node-is-retained",
-            ));
-        };
-        let identities = self
-            .source
-            .graph()
-            .selected_exact_identities(&self.read.admitted)
-            .map_err(|_| InternalFault::new("FR-390", "reader-selected-identities-are-admitted"))?;
-        let value_type = match self.read.admitted.project_exact_type(
-            &selected.node_id,
-            &identities,
-            self.read.effective_limits.work,
-        ) {
-            Ok(projected) => projected.value_type().clone(),
-            Err(error)
-                if matches!(
-                    error.code,
-                    quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
-                        | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
-                ) && (error.form.as_ref() == "composite_type/record"
-                    || error.code
-                        == quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
-                        && self
-                            .read
-                            .admitted
-                            .graph()
-                            .nodes
-                            .iter()
-                            .any(|type_node| {
-                                type_node.node_id == selected.semantic_type
-                                    && type_node.node_tag.as_ref() == "model"
-                                    && type_node.semantic_form.as_ref() == "record_value_type"
-                            })) =>
-            {
-                // A package-local record's checked type declaration is its
-                // exact structural identity. This wire node is scoped by the
-                // `record_value_type` form, so equal-shaped declarations keep
-                // distinct identities; no member-shape inference is used.
-                let record = identities
-                    .declaration_rows()
-                    .find(|row| row.structural_node == selected.semantic_type)
-                    .and_then(|row| match &row.exact_identity {
-                        quire_contract_model::SelectedExactIdentity::Record(key) => {
-                            Some(key.clone())
-                        }
-                        _ => None,
-                    })
-                    .or_else(|| {
-                        self.read
-                            .admitted
-                            .graph()
-                            .nodes
-                            .iter()
-                            .find(|candidate| candidate.node_id == selected.semantic_type)
-                            .filter(|type_node| {
-                                type_node.node_tag.as_ref() == "model"
-                                    && type_node.semantic_form.as_ref() == "record_value_type"
-                            })
-                            .and_then(|_| graph.key(&selected.semantic_type).ok())
-                    });
-                record.map_or_else(
-                    || Err(InternalFault::new("FR-390", "reader-selected-node-has-exact-type")),
-                    |key| Ok(quire_exact::ValueType::Composite(key)),
-                )?
-            }
-            Err(error)
-                if error.code
-                    == quire_contract_model::ExactTypeProjectionErrorCode::UnavailableIdentityWitness
-                    && error.form.as_ref() == "composite_type/union" =>
-            {
-                let declaration = error.at.as_deref().ok_or_else(|| {
-                    InternalFault::new("FR-390", "reader-union-type-error-has-node")
-                })?;
-                let union = identities
-                    .declaration_rows()
-                    .find(|row| row.structural_node == *declaration)
-                    .and_then(|row| match &row.exact_identity {
-                        quire_contract_model::SelectedExactIdentity::Union(key) => {
-                            Some(key.clone())
-                        }
-                        _ => None,
-                    })
-                    .or_else(|| {
-                        let checked_type = self
-                            .read
-                            .admitted
-                            .graph()
-                            .nodes
-                            .iter()
-                            .find(|node| node.node_id == *declaration)?;
-                        (checked_type.node_tag.as_ref() == "composite_type"
-                            && checked_type.semantic_form.as_ref() == "union")
-                            .then(|| graph.key(declaration).ok())
-                            .flatten()
-                    })
-                    .ok_or_else(|| {
-                        InternalFault::new("FR-390", "reader-union-type-has-exact-identity")
-                    })?;
-                quire_exact::ValueType::Composite(union)
-            }
-            Err(error)
-                if matches!(
-                    error.code,
-                    quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
-                        | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
-                ) && matches!(error.form.as_ref(), "scalar_type/unit" | "scalar_type/dimension") =>
-            {
-                let unit = error
-                    .at
-                    .as_deref()
-                    .and_then(|_| {
-                        identities
-                            .declaration_rows()
-                            .find(|row| row.structural_node == selected.semantic_type)
-                    })
-                    .and_then(|row| match &row.exact_identity {
-                        quire_contract_model::SelectedExactIdentity::DeclaredUnit(unit) => {
-                            Some(unit.clone())
-                        }
-                        _ => None,
-                    })
-                    .or_else(|| {
-                        // A checked `scalar_type/unit` node is itself the exact
-                        // declaration identity when no selected identity row
-                        // exists. The full structural key distinguishes units
-                        // with the same spelling in different packages.
-                        let declaration = &selected.semantic_type;
-                        let unit_node = self
-                            .read
-                            .admitted
-                            .graph()
-                            .nodes
-                            .iter()
-                            .find(|candidate| candidate.node_id == *declaration)?;
-                        (unit_node.node_tag.as_ref() == "scalar_type"
-                            && unit_node.semantic_form.as_ref() == "unit")
-                            .then(|| graph.key(declaration).ok())
-                            .flatten()
-                            .map(quire_exact::UnitId::declared)
-                    })
-                    .ok_or_else(|| {
-                        InternalFault::new("FR-390", "reader-selected-unit-is-exact")
-                    })?;
-                quire_exact::ValueType::Quantity(unit)
-            }
-            Err(error)
-                if matches!(
-                    error.code,
-                    quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
-                        | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
-                ) && error.form.as_ref() == "scalar_type/compound_unit" =>
-            {
-                let unit_node = error.at.as_deref().ok_or_else(|| {
-                    InternalFault::new("FR-390", "reader-compound-unit-type-has-node")
-                })?;
-                quire_exact::ValueType::Quantity(
-                    compound_unit(&self.read.admitted, unit_node).ok_or_else(|| {
-                        InternalFault::new("FR-390", "reader-compound-unit-has-exact-identity")
-                    })?,
-                )
-            }
-            Err(_) => {
-                return Err(InternalFault::new(
-                    "FR-390",
-                    "reader-selected-node-has-exact-type",
-                ));
-            }
-        };
-        if let quire_contract_model::CheckedTerm::Reference { target } = &selected.body {
-            let target_key = graph.key(target).map_err(|_| {
-                InternalFault::new("FR-390", "reader-protocol-reference-has-structural-key")
-            })?;
-            if let Some(slot) = binders
-                .iter()
-                .position(|binder| binder.as_ref() == Some(&target_key))
-            {
-                return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
-                    slot,
-                    field: crate::evaluation_view::ReaderProtocolField::Local,
-                    optional: false,
-                    derefed: false,
-                    value_type: value_type.clone(),
-                }));
-            }
-            return Ok(None);
-        }
-        let quire_contract_model::CheckedTerm::Application {
-            operation,
-            arguments,
-            ..
-        } = &selected.body
-        else {
-            return Ok(None);
-        };
-        if operation.identity() != Some("quire.op.record.project") {
-            return Ok(None);
-        }
-        let admitted_operation = operation
-            .read()
-            .map_err(|_| InternalFault::new("FR-390", "reader-projection-field-is-admitted"))?;
-        let Some(quire_contract_model::CheckedOperationMember::Field {
-            declaration,
-            name: field,
-            read_form,
-        }) = admitted_operation.member
-        else {
-            return Ok(None);
-        };
-        let mut pending = arguments
-            .iter()
-            .flat_map(quire_contract_model::CheckedTerm::reference_targets)
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut visited = BTreeSet::new();
-        while let Some(target) = pending.pop() {
-            let key = graph.key(&target).map_err(|_| {
-                InternalFault::new("FR-390", "reader-protocol-reference-has-structural-key")
-            })?;
-            if let Some(index) = binders
-                .iter()
-                .position(|binder| binder.as_ref() == Some(&key))
-            {
-                let exact_identity = identities
-                    .declaration_rows()
-                    .find(|row| row.structural_node == *declaration)
-                    .map(|row| &row.exact_identity)
-                    .ok_or_else(|| {
-                        InternalFault::new("FR-390", "reader-field-owner-is-selected")
-                    })?;
-                let (field, optional) = match exact_identity {
-                    quire_contract_model::SelectedExactIdentity::Object(owner) => {
-                        let fields = self
-                            .read
-                            .admitted
-                            .model_object_fields(declaration)
-                            .map_err(|_| {
-                                InternalFault::new("FR-390", "reader-field-declaration-is-admitted")
-                            })?;
-                        let member_type = fields
-                            .field(field)
-                            .ok_or_else(|| {
-                                InternalFault::new("FR-390", "reader-field-member-is-admitted")
-                            })?
-                            .member_type();
-                        let optional = matches!(
-                            member_type,
-                            Some(quire_contract_model::CheckedMemberType::Option(_))
-                        );
-                        (
-                            crate::evaluation_view::ReaderProtocolField::Attribute {
-                                owner: owner.clone(),
-                                name: field.to_string(),
-                            },
-                            optional,
-                        )
-                    }
-                    quire_contract_model::SelectedExactIdentity::Record(record_key) => {
-                        // The I2 selected identity is already joined to this
-                        // source declaration above. Read presence from the
-                        // checked source type: the wire projector does not
-                        // yet recurse through Option and Collection members.
-                        let record = self
-                            .source
-                            .graph()
-                            .scope()
-                            .types()
-                            .composite(record_key.clone())
-                            .ok_or_else(|| {
-                                InternalFault::new(
-                                    "FR-390",
-                                    "reader-record-field-declaration-is-admitted",
-                                )
-                            })?;
-                        let quire_semantic_value::declaration::CompositeShape::Record(fields) =
-                            record.shape()
-                        else {
-                            return Err(InternalFault::new(
-                                "FR-390",
-                                "reader-record-field-view-is-admitted",
-                            ));
-                        };
-                        let selected_field = fields
-                            .iter()
-                            .find(|selected| selected.name() == field.as_ref())
-                            .ok_or_else(|| {
-                                InternalFault::new(
-                                    "FR-390",
-                                    "reader-record-field-member-is-admitted",
-                                )
-                            })?;
-                        (
-                            crate::evaluation_view::ReaderProtocolField::RecordField {
-                                declaration: record_key.clone(),
-                                name: field.to_string(),
-                            },
-                            selected_field.presence() == quire_exact::Presence::Optional,
-                        )
-                    }
-                    _ => {
-                        return Err(InternalFault::new(
-                            "FR-390",
-                            "reader-field-owner-is-selected",
-                        ));
-                    }
-                };
-                return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
-                    slot: index,
-                    field,
-                    optional,
-                    derefed: matches!(
-                        read_form,
-                        Some(quire_contract_model::CheckedFieldReadForm::ExplicitDeref)
-                    ),
-                    value_type: value_type.clone(),
-                }));
-            }
-            if !visited.insert(target.clone()) {
-                continue;
-            }
-            if let Some(operand) = self
-                .read
-                .admitted
-                .graph()
-                .nodes
-                .iter()
-                .find(|candidate| candidate.node_id == target)
-            {
-                pending.extend(operand.body.reference_targets().into_iter().cloned());
-            }
-        }
-        Ok(None)
     }
 }
 

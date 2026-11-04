@@ -131,6 +131,24 @@ fn occurrence_record(
     }
 }
 
+/// FR-390 "Typed projection admission": a reader-backed slot whose admitted
+/// expression has no projection is refused `unknown_required_feature`/
+/// `unsupported-feature` at its node, before evaluation and with no charge.
+fn unsupported_projection(unsupported: &qsl_package::UnsupportedView) -> CallFailure {
+    let (code, cause) = unsupported.catalog();
+    let mut record = occurrence_record(code, cause, Vec::new());
+    record
+        .fields
+        .insert("package", unsupported.package().to_owned());
+    record
+        .fields
+        .insert("reason", format!("{:?}", unsupported.reason()));
+    let locus = CallAdmissionLocus::Node(unsupported.locus().key.clone());
+    CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
+        quire_eval::CallAdmissionRecord { record, locus },
+    )))
+}
+
 /// FR-358: evaluate `node`, a closed subexpression of a checked function
 /// body (it reads no local), to its outcome under `meter`. `slots` is the
 /// function's evaluation slot count, so a `let` inside the subexpression
@@ -1939,73 +1957,51 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .and_then(|admission| admission.authority().ok())
             .map(|observation| observation.environment())
             .unwrap_or(&empty);
-        let body = selected.checked_body();
-        frame.resize(body.frame_slots(frame.len()), None);
-        let reader_projection = if view.is_reader_backed() && selected.reader_projection().is_none()
-        {
-            let projected = selected
-                .root()
-                .view()
-                .project_reader_protocol_root(
+        let no_reads = std::collections::BTreeMap::new();
+        // One machine over either node source: the checked body, or the
+        // reader's projection of the same slot.
+        macro_rules! machine {
+            () => {
+                Machine::with_pre(
+                    self.graph().scope(),
                     self.graph(),
-                    selected.root().node(),
-                    selected.sources(),
-                    selected.checked_body().root().location(),
+                    current,
+                    None,
+                    Some(&no_reads),
+                    meter,
+                    self.graph().dispatch_tables(),
                 )
-                .map_err(CallFailure::Fault)?;
-            if projected.is_none() && selected.reader_projection().is_none() {
-                return Err(CallFailure::Fault(InternalFault::new(
-                    "FR-390",
-                    "reader-computed-root-is-projected-or-typed-refused",
-                )));
-            }
-            projected
-        } else {
-            None
-        };
-        let result = if let Some(reader_projection) = reader_projection {
-            let root = evaluate::reader_source::ReaderNode::root(&reader_projection);
-            Machine::with_pre(
-                self.graph().scope(),
-                self.graph(),
-                current,
-                None,
-                Some(&std::collections::BTreeMap::new()),
-                meter,
-                self.graph().dispatch_tables(),
-            )
-            .run_protocol_frame(root, None, frame, unavailable)
-            .map_err(CallFailure::Fault)?
-        } else {
-            let reader_root = if view.is_reader_backed() {
-                let Some(projection) = selected.reader_projection() else {
-                    return Err(CallFailure::Fault(InternalFault::new(
-                        "FR-390",
-                        "reader-protocol-root-has-supported-plain-data-projection",
-                    )));
-                };
-                Some(evaluate::ReaderRoot {
-                    slot: projection.slot(),
-                    field: projection.field().clone(),
-                    optional: projection.optional(),
-                    derefed: projection.derefed(),
-                    value_type: projection.value_type().clone(),
-                })
-            } else {
-                None
             };
-            Machine::with_pre(
-                self.graph().scope(),
-                self.graph(),
-                current,
-                None,
-                Some(&std::collections::BTreeMap::new()),
-                meter,
-                self.graph().dispatch_tables(),
-            )
-            .run_protocol_frame(body.root(), reader_root, frame, unavailable)
-            .map_err(CallFailure::Fault)?
-        };
+        }
+        // FR-390-AC-16: a reader-backed view evaluates every slot root, of
+        // whatever kind, through its admitted projection on the one machine.
+        let result = match selected.reader_slot() {
+            None => {
+                let body = selected.checked_body();
+                frame.resize(body.frame_slots(frame.len()), None);
+                machine!().run_protocol_frame(body.root(), frame, unavailable)
+            }
+            Some(qsl_package::ReaderSlot::Projected(projection)) => {
+                for source in selected.sources() {
+                    if projection.local_slot(source.binder()) != Some(source.index()) {
+                        return Err(CallFailure::Fault(InternalFault::new(
+                            "FR-390",
+                            "reader-slot-binder-is-the-selected-frame-slot",
+                        )));
+                    }
+                }
+                frame.resize(projection.frame_slots().max(frame.len()), None);
+                let root = evaluate::reader_source::ReaderNode::root(projection);
+                machine!().run_protocol_frame(root, frame, unavailable)
+            }
+            Some(qsl_package::ReaderSlot::Unsupported(unsupported)) => {
+                return Err(unsupported_projection(unsupported));
+            }
+            Some(qsl_package::ReaderSlot::Fault(fault)) => {
+                return Err(CallFailure::Fault(fault.clone()));
+            }
+        }
+        .map_err(CallFailure::Fault)?;
         match result {
             Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation)),
             Err((binder, cause, location)) => Ok(ProtocolSlotEvaluation::Unavailable {

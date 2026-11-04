@@ -2394,7 +2394,10 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         ))
         .expect("reader view selects the capture term");
     assert!(
-        selected.reader_projection().is_some(),
+        matches!(
+            selected.reader_slot(),
+            Some(qsl_package::ReaderSlot::Projected(_))
+        ),
         "reader view owns the root projection"
     );
     let unavailable = reader_view
@@ -2863,9 +2866,9 @@ fn read_checked_package_with_model_document<'p>(
     .expect("strict I2 admission accepts the emitted TC-1070 package")
 }
 
-/// A call result with its location removed. A reader-backed result carries no
-/// location (the admitted wire has none for a leaf root yet, and a reader view
-/// never takes one from the source package), so parity is compared on
+/// A call result with its location removed. A reader-backed read of a leaf
+/// carries no location (the admitted wire has none for a leaf, and a reader
+/// view never takes one from the source package), so parity is compared on
 /// everything else: outcome, value, binder, cause and losses.
 fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> String {
     match result {
@@ -3049,9 +3052,15 @@ fn reader_backed_tc1070_slots_match_the_checked_view_for_supported_roots() {
                 ),
                 "{label}: the in-process halt is located"
             );
+            // FR-390-AC-64: the halt is at a `Local` read, a leaf whose
+            // admitted wire carries no location of its own, so the reader
+            // reports none and never the source package's.
             assert!(
-                matches!(on_reader, Ok(ProtocolSlotEvaluation::Unavailable { .. })),
-                "{label}: the reader halt preserves the unavailable outcome"
+                matches!(
+                    on_reader,
+                    Ok(ProtocolSlotEvaluation::Unavailable { location: None, .. })
+                ),
+                "{label}: the reader halt reports no location, never the source package's"
             );
             charges_and_usage_match(
                 &format!("{label} unavailable"),

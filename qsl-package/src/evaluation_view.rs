@@ -23,13 +23,24 @@ use crate::CheckedPackage;
 
 #[cfg(feature = "std")]
 use crate::checked_v2::AdmittedPackageRead;
+#[cfg(feature = "std")]
+use crate::reader_protocol_projection::{ReaderProtocolSlots, ReaderSlot};
 
 /// An S4 view tied to one successfully linked in-process package.
 pub struct AdmittedEvaluationView<'package> {
     package: &'package CheckedPackage,
     identity: Arc<()>,
     #[cfg(feature = "std")]
-    reader: Option<&'package AdmittedPackageRead<'package>>,
+    reader: Option<ReaderBacking<'package>>,
+}
+
+/// A reader-backed view's successful I2 read and every protocol slot
+/// projected from it once, at view creation.
+#[cfg(feature = "std")]
+#[derive(Clone)]
+struct ReaderBacking<'package> {
+    read: &'package AdmittedPackageRead<'package>,
+    slots: Arc<ReaderProtocolSlots>,
 }
 
 impl<'package> AdmittedEvaluationView<'package> {
@@ -43,54 +54,18 @@ impl<'package> AdmittedEvaluationView<'package> {
     }
 
     #[cfg(feature = "std")]
-    pub(crate) fn reader(read: &'package AdmittedPackageRead<'package>) -> Self {
+    pub(crate) fn reader(
+        read: &'package AdmittedPackageRead<'package>,
+        slots: ReaderProtocolSlots,
+    ) -> Self {
         Self {
             package: read.source_package(),
             identity: Arc::new(()),
-            reader: Some(read),
+            reader: Some(ReaderBacking {
+                read,
+                slots: Arc::new(slots),
+            }),
         }
-    }
-
-    /// Project one selected reader-backed protocol expression into the closed
-    /// evaluator vocabulary. Wire terms and producer evidence remain private
-    /// to qsl-package; callers receive only owned nodes, exact types, locations,
-    /// equality decisions, and the admitted function table.
-    #[cfg(feature = "std")]
-    pub fn project_reader_protocol_root(
-        &self,
-        source_graph: &qsl_semantics::check::CheckedGraph,
-        key: &NodeKey,
-        sources: &[ProtocolSource],
-        root_provenance: &quire_semantic_value::location::Location,
-    ) -> Result<Option<crate::ReaderProtocolProjection>, InternalFault> {
-        let Some(read) = self.reader else {
-            return Err(InternalFault::new(
-                "FR-390",
-                "reader-view-has-admitted-graph",
-            ));
-        };
-        let root = read.reader_node_id(key)?.ok_or_else(|| {
-            InternalFault::new("FR-390", "reader-selected-protocol-node-is-retained")
-        })?;
-        let locals = sources
-            .iter()
-            .map(|source| {
-                read.reader_node_id(source.binder())?
-                    .map(|node| (node, source.index()))
-                    .ok_or_else(|| {
-                        InternalFault::new("FR-390", "reader-protocol-binder-is-retained")
-                    })
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
-        crate::reader_protocol_projection::project_protocol_root(
-            source_graph,
-            read.admitted_graph(),
-            read.emission(),
-            &root,
-            &locals,
-            root_provenance.clone(),
-            read.effective_limits().work,
-        )
     }
 
     /// Admit one current snapshot for a model selected by this package.
@@ -128,7 +103,7 @@ impl<'package> AdmittedEvaluationView<'package> {
                     package: self.package,
                     view_identity: Arc::clone(&self.identity),
                     #[cfg(feature = "std")]
-                    reader: self.reader,
+                    reader: self.reader.clone(),
                     model_selection: model.clone(),
                     identity: selected.clone(),
                     observation: Observation {
@@ -158,8 +133,8 @@ impl<'package> AdmittedEvaluationView<'package> {
         } = protocol_selection::select(self.package, descriptor)?;
         let present = {
             #[cfg(feature = "std")]
-            if let Some(reader) = self.reader {
-                reader.has_node(&root_node)
+            if let Some(reader) = &self.reader {
+                reader.read.has_node(&root_node)
             } else {
                 self.package
                     .graph()
@@ -179,22 +154,25 @@ impl<'package> AdmittedEvaluationView<'package> {
         if !present {
             return Err(SlotSelectionFailure::MissingNode(root_node));
         }
+        // The reader takes the slot's projection by its root and its
+        // type-declaration origin name, both of which the selector names.
         #[cfg(feature = "std")]
-        let reader_projection = if let Some(reader) = self.reader {
-            let binders = frame
-                .iter()
-                .map(|source| source.node.clone())
-                .collect::<Vec<_>>();
-            // The admitted wire carries no semantic location for a leaf
-            // root, and this projection does not yet pair the
-            // `protocol_locations` rows with its visits (QSL-1625), so it
-            // reports no location. It never takes one from the source
-            // package's CheckedBody (FR-390).
-            reader
-                .protocol_reference_slot(&root_node, &binders)
-                .map_err(SlotSelectionFailure::Fault)?
-        } else {
-            None
+        let reader_slot = match &self.reader {
+            Some(reader) => {
+                let origin = protocol_selection::slot_origin(body).ok_or_else(|| {
+                    SlotSelectionFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "selected-protocol-slot-has-a-site-name",
+                    ))
+                })?;
+                Some(reader.slots.slot(&root_node, origin).ok_or_else(|| {
+                    SlotSelectionFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "selected-protocol-slot-is-projected",
+                    ))
+                })?)
+            }
+            None => None,
         };
         let root = TermHandle {
             view: self,
@@ -249,8 +227,14 @@ impl<'package> AdmittedEvaluationView<'package> {
             sources,
             frame_len,
             #[cfg(feature = "std")]
-            reader_projection,
+            reader_slot,
         })
+    }
+
+    /// Every protocol slot this reader-backed view projected at creation.
+    #[cfg(all(test, feature = "std"))]
+    pub(crate) fn reader_slots(&self) -> Option<&ReaderProtocolSlots> {
+        self.reader.as_ref().map(|reader| reader.slots.as_ref())
     }
 
     /// Whether this view came from successful I2 admission of emitted bytes.
@@ -398,7 +382,7 @@ pub struct SelectedProtocolTerm<'view, 'package> {
     sources: Vec<ProtocolSource>,
     frame_len: usize,
     #[cfg(feature = "std")]
-    reader_projection: Option<ReaderProtocolProjection>,
+    reader_slot: Option<&'view ReaderSlot>,
 }
 
 impl SelectedProtocolTerm<'_, '_> {
@@ -418,75 +402,11 @@ impl SelectedProtocolTerm<'_, '_> {
     pub fn frame_len(&self) -> usize {
         self.frame_len
     }
-    /// Plain data projected from the retained reader graph for this slot.
+    /// The slot's projection from the retained reader graph, made when the
+    /// reader-backed view was created; `None` for an in-process view.
     #[cfg(feature = "std")]
-    pub fn reader_projection(&self) -> Option<&ReaderProtocolProjection> {
-        self.reader_projection.as_ref()
-    }
-}
-
-/// A protocol slot's reader-derived field and supplied local slot.
-#[cfg(feature = "std")]
-pub struct ReaderProtocolProjection {
-    pub(crate) slot: usize,
-    pub(crate) field: ReaderProtocolField,
-    pub(crate) optional: bool,
-    pub(crate) derefed: bool,
-    pub(crate) value_type: quire_exact::ValueType,
-}
-
-/// The admitted field projection selected by a reader-backed protocol slot.
-///
-/// This is throwaway: it exists only until the reader returns canonical
-/// `NodeRead`s (FR-390-AC-16, AC-50), after which the evaluator matches the
-/// one `NodeKind` enum and this type is deleted.
-#[cfg(feature = "std")]
-#[doc(hidden)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReaderProtocolField {
-    /// A direct selected reference to one of the supplied frame slots.
-    Local,
-    /// A field on an admitted model object, with its exact effective owner.
-    Attribute {
-        /// The selected model object's effective identity.
-        owner: quire_exact::EffectiveId,
-        /// The field name admitted from the checked operation member.
-        name: String,
-    },
-    /// A field on an admitted record value, with its exact selected declaration.
-    RecordField {
-        /// The record declaration identity joined from the selected identity row.
-        declaration: quire_exact::NodeKey,
-        /// The field name admitted from the checked operation member.
-        name: String,
-    },
-}
-
-#[cfg(feature = "std")]
-impl ReaderProtocolProjection {
-    /// The field operation admitted by the reader.
-    pub fn field(&self) -> &ReaderProtocolField {
-        &self.field
-    }
-
-    /// Whether the admitted field member type is optional.
-    pub fn optional(&self) -> bool {
-        self.optional
-    }
-
-    /// Whether the admitted operation retained an explicit dereference.
-    pub fn derefed(&self) -> bool {
-        self.derefed
-    }
-
-    /// The selected expression result type projected from the admitted graph.
-    pub fn value_type(&self) -> &quire_exact::ValueType {
-        &self.value_type
-    }
-
-    /// The selected expression's supplied frame slot admitted by the reader.
-    pub fn slot(&self) -> usize {
-        self.slot
+    pub fn reader_slot(&self) -> Option<&ReaderSlot> {
+        self.reader_slot
     }
 }
 
@@ -495,6 +415,12 @@ impl ReaderProtocolProjection {
 pub enum ViewFailure {
     /// An emitted source node was absent from the admitted I2 graph.
     ReaderSourceMismatch(InternalFault),
+    /// A projection the admitted package needs is unsupported (FR-390
+    /// "Typed projection admission"); no view exists.
+    #[cfg(feature = "std")]
+    Unsupported(Box<crate::reader_protocol_projection::UnsupportedView>),
+    /// The admitted package broke a projection invariant; no view exists.
+    Fault(InternalFault),
 }
 
 /// The successful, immutable current-snapshot authority for protocol slots.
@@ -522,7 +448,7 @@ pub struct AdmittedProtocolObservation<'view> {
     package: &'view CheckedPackage,
     view_identity: Arc<()>,
     #[cfg(feature = "std")]
-    reader: Option<&'view AdmittedPackageRead<'view>>,
+    reader: Option<ReaderBacking<'view>>,
     model_selection: DomainPackageRef,
     identity: DocumentRef,
     observation: Observation,
@@ -547,7 +473,7 @@ impl<'view> AdmittedProtocolObservation<'view> {
             package: self.package,
             identity: Arc::clone(&self.view_identity),
             #[cfg(feature = "std")]
-            reader: self.reader,
+            reader: self.reader.clone(),
         }
     }
 

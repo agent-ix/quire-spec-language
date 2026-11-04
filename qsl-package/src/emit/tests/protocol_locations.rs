@@ -10,6 +10,7 @@ use super::protocol_controls::{
     E_C_TRIED_PICKED,
 };
 use super::*;
+use crate::ViewFailure;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -604,4 +605,314 @@ fn a_term_with_no_recorded_application_is_refused_not_dropped() {
         Some(EmitRefusal::UnrecordedProtocolTerm { location: retry })
     );
     assert!(pending.is_empty());
+}
+
+/// The reader-backed view over `source`'s emission with its wire edited by
+/// `edit`, admitted by QSL's I2 reader; the view's creation result.
+fn reader_view_over(
+    source: &str,
+    edit: impl FnOnce(&mut Value),
+    check: impl FnOnce(Result<&crate::reader_protocol_projection::ReaderProtocolSlots, &ViewFailure>),
+) {
+    let (package, _) = checked_and_emitted(source);
+    let mut emission = emit_checked(&package).expect("fixture emits");
+    let mut edited = wire(&emission);
+    edit(&mut edited);
+    let name = emission.package.name().to_owned();
+    emission.package =
+        crate::checked::EmittedPackage::new(&name, |_| Ok::<_, ()>(jcs(&edited))).unwrap();
+    let document = domain();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let read = crate::read_evaluation_emission(
+        &package,
+        &emission,
+        LibraryName::new(name).unwrap(),
+        &packages,
+        V2ReadLimits::default(),
+    )
+    .expect("the I2 reader admits the edited package");
+    match read.evaluation_view() {
+        Ok(view) => check(Ok(view.reader_slots().expect("a reader-backed view"))),
+        Err(failure) => check(Err(&failure)),
+    }
+}
+
+/// The location of each application position of the slot under `origin`.
+fn slot_term_paths(
+    slots: &crate::reader_protocol_projection::ReaderProtocolSlots,
+    origin: &str,
+) -> Vec<Vec<usize>> {
+    let Some(crate::ReaderSlot::Projected(projection)) = slots.slot_named(origin) else {
+        panic!("{origin} is projected");
+    };
+    projection
+        .term_locations()
+        .into_iter()
+        .map(|location| {
+            let location = location.expect("every slot-walk application is located");
+            assert_eq!(
+                location.origin,
+                Origin::TypeDeclaration {
+                    name: origin.to_owned()
+                },
+                "a row of the slot's own origin"
+            );
+            location.path()
+        })
+        .collect()
+}
+
+fn swap_locations(wire: &mut Value, left: usize, right: usize) {
+    let rows = wire["checked_term_data"]["protocol_locations"]
+        .as_array_mut()
+        .unwrap();
+    let held = rows[left]["location"].clone();
+    rows[left]["location"] = rows[right]["location"].clone();
+    rows[right]["location"] = held;
+}
+
+fn row_index(wire: &Value, origin: &str, at: &[u64]) -> usize {
+    let row = row_at(wire, origin, at);
+    rows(wire).iter().position(|found| found == row).unwrap()
+}
+
+fn missing_location(failure: &ViewFailure) -> &crate::MissingLocation {
+    let ViewFailure::Unsupported(view) = failure else {
+        panic!("a typed unsupported view: {failure:?}");
+    };
+    assert_eq!(
+        view.catalog(),
+        ("unknown_required_feature", "unsupported-feature")
+    );
+    let crate::UnsupportedReason::MissingLocationProjection(missing) = view.reason() else {
+        panic!("MissingLocationProjection: {view:?}");
+    };
+    assert_eq!(view.locus().key, missing.application);
+    assert_eq!(missing.defect, ("invalid_package", "invalid-value"));
+    missing
+}
+
+/// FR-390-AC-31/52/53: each visit of an application reads the row of its
+/// own slot's origin at its visit number: `earlier.tally`, visited twice in
+/// `Refund`'s retry relation, reads its two rows in walk order, and
+/// `target >= 0`, held by the trigger guard and the retry relation, reads
+/// the row of each slot's own origin.
+#[trace("TC-1070", "FR-390-AC-31", "FR-390-AC-52", "FR-390-AC-53")]
+#[test]
+fn reader_pairs_each_visit_with_its_slots_own_row() {
+    reader_view_over(
+        tc1070::SOURCE,
+        |_| {},
+        |slots| {
+            let slots = slots.expect("the reader view is created");
+            let retry = slot_term_paths(slots, &refunds("retry 0"));
+            let less = retry.iter().position(|path| *path == [0, 0, 0, 0]);
+            let plus = retry.iter().position(|path| *path == [0, 0, 1, 1, 0]);
+            assert!(less.is_some() && less < plus, "{retry:?}");
+            assert!(retry.contains(&vec![0, 1]), "{retry:?}");
+            let guard = slot_term_paths(slots, &refunds("trigger-guard 0"));
+            assert!(guard.contains(&vec![1]), "{guard:?}");
+            assert!(!guard.contains(&vec![0, 1]), "{guard:?}");
+        },
+    );
+}
+
+/// FR-390-AC-33/54: with the `Location`s of the two retry-origin
+/// `earlier.tally` rows swapped, and separately of the guard- and
+/// retry-origin `target >= 0` rows, each handle reads the swapped row.
+#[trace("TC-1070", "FR-390-AC-33", "FR-390-AC-54")]
+#[test]
+fn reader_handles_read_swapped_row_locations() {
+    let retry_origin = refunds("retry 0");
+    let guard_origin = refunds("trigger-guard 0");
+    reader_view_over(
+        tc1070::SOURCE,
+        |wire| {
+            let less = row_index(wire, &retry_origin, &[0, 0, 0, 0]);
+            let plus = row_index(wire, &retry_origin, &[0, 0, 1, 1, 0]);
+            swap_locations(wire, less, plus);
+        },
+        |slots| {
+            let retry = slot_term_paths(slots.expect("the view is created"), &retry_origin);
+            let first = retry.iter().position(|path| *path == [0, 0, 1, 1, 0]);
+            let second = retry.iter().position(|path| *path == [0, 0, 0, 0]);
+            assert!(first.is_some() && first < second, "{retry:?}");
+        },
+    );
+    reader_view_over(
+        tc1070::SOURCE,
+        |wire| {
+            let in_guard = row_index(wire, &guard_origin, &[1]);
+            let in_retry = row_index(wire, &retry_origin, &[0, 1]);
+            // Swap the child paths and keep each row's origin: the rows are
+            // paired by origin, so each slot reads the other's path.
+            let rows = wire["checked_term_data"]["protocol_locations"]
+                .as_array_mut()
+                .unwrap();
+            let held = rows[in_guard]["location"]["path"].clone();
+            rows[in_guard]["location"]["path"] = rows[in_retry]["location"]["path"].clone();
+            rows[in_retry]["location"]["path"] = held;
+        },
+        |slots| {
+            let slots = slots.expect("the view is created");
+            let guard = slot_term_paths(slots, &guard_origin);
+            let retry = slot_term_paths(slots, &retry_origin);
+            assert!(guard.contains(&vec![0, 1]), "{guard:?}");
+            assert!(retry.contains(&vec![1]), "{retry:?}");
+        },
+    );
+}
+
+/// FR-390-AC-35: with the occurrence-1 retry-origin `earlier.tally` row
+/// removed, the second visit has no row and view creation refuses.
+#[trace("TC-1070", "FR-390-AC-35")]
+#[test]
+fn reader_refuses_a_visit_without_its_row() {
+    let origin = refunds("retry 0");
+    let remaining = std::cell::Cell::new(0);
+    reader_view_over(
+        tc1070::SOURCE,
+        |wire| {
+            let index = occurrence_one_tally(wire);
+            wire["checked_term_data"]["protocol_locations"]
+                .as_array_mut()
+                .unwrap()
+                .remove(index);
+            remaining.set(row_index(wire, &origin, &[0, 0, 0, 0]));
+        },
+        |view| {
+            let failure = view.err().expect("view creation refuses");
+            let missing = missing_location(failure);
+            assert_eq!(missing.origin, origin);
+            assert_eq!((missing.index, missing.visits, missing.rows), (1, 2, 1));
+            assert_eq!(
+                missing.pointer,
+                format!("{ROWS}/{}/location/origin", remaining.get())
+            );
+        },
+    );
+}
+
+/// FR-390-AC-37: a third retry-origin `earlier.tally` row (occurrence 1,
+/// `term_ordinal` 1) has no visit and view creation refuses at row index 2.
+#[trace("TC-1070", "FR-390-AC-37")]
+#[test]
+fn reader_refuses_a_row_beyond_the_visits() {
+    let origin = refunds("retry 0");
+    let first = std::cell::Cell::new(0);
+    reader_view_over(
+        tc1070::SOURCE,
+        |wire| {
+            let index = occurrence_one_tally(wire);
+            first.set(row_index(wire, &origin, &[0, 0, 0, 0]));
+            let rows = wire["checked_term_data"]["protocol_locations"]
+                .as_array_mut()
+                .unwrap();
+            let mut extra = rows[index].clone();
+            extra["term_ordinal"] = json!(1);
+            rows.insert(index + 1, extra);
+        },
+        |view| {
+            let missing = missing_location(view.err().expect("view creation refuses"));
+            assert_eq!(missing.origin, origin);
+            assert_eq!((missing.index, missing.visits, missing.rows), (2, 2, 3));
+            assert_eq!(
+                missing.pointer,
+                format!("{ROWS}/{}/location/origin", first.get())
+            );
+        },
+    );
+}
+
+/// FR-390-AC-38: a retry-origin row for `order >= 0` of `Applied`, which the
+/// retry relation's walk never visits, refuses view creation at row 0 with
+/// zero visits and the added row's pointer.
+#[trace("TC-1070", "FR-390-AC-38")]
+#[test]
+fn reader_refuses_a_row_its_slot_never_visits() {
+    let origin = refunds("retry 0");
+    let added = std::cell::Cell::new(0);
+    reader_view_over(
+        tc1070::SOURCE,
+        |wire| {
+            let applied = row_index(wire, "protocol Refunds run Main Applied body", &[]);
+            let rows = wire["checked_term_data"]["protocol_locations"]
+                .as_array_mut()
+                .unwrap();
+            let mut extra = rows[applied].clone();
+            extra["term_ordinal"] = json!(1);
+            extra["location"]["origin"]["name"] = json!(origin);
+            added.set(applied + 1);
+            rows.insert(applied + 1, extra);
+        },
+        |view| {
+            let missing = missing_location(view.err().expect("view creation refuses"));
+            assert_eq!(missing.origin, origin);
+            assert_eq!((missing.index, missing.visits, missing.rows), (0, 0, 1));
+            assert_eq!(
+                missing.pointer,
+                format!("{ROWS}/{}/location/origin", added.get())
+            );
+        },
+    );
+}
+
+/// FR-390-AC-57: in E-C with the `Tried`-origin row of `order >= 0` removed,
+/// `Tried`'s one visit has no row and view creation refuses with the bare
+/// rows pointer.
+#[trace("TC-1070", "FR-390-AC-57")]
+#[test]
+fn reader_refuses_a_slot_whose_origin_has_no_row() {
+    let tried = composed("Tried");
+    reader_view_over(
+        E_C_TRIED_PICKED,
+        |wire| {
+            let index = row_index(wire, &tried, &[]);
+            wire["checked_term_data"]["protocol_locations"]
+                .as_array_mut()
+                .unwrap()
+                .remove(index);
+        },
+        |view| {
+            let missing = missing_location(view.err().expect("view creation refuses"));
+            assert_eq!(missing.origin, tried);
+            assert_eq!((missing.index, missing.visits, missing.rows), (0, 1, 0));
+            assert_eq!(missing.pointer, ROWS);
+        },
+    );
+}
+
+/// FR-390 "Typed projection admission": a slot whose admitted root has no
+/// projection yet (E-C's conditional) keeps a typed
+/// `MissingOperationProjection` at its node, not a runtime fault, and the
+/// package's other slots stay projected.
+#[trace("TC-1070", "FR-390-AC-17")]
+#[test]
+fn an_unprojected_slot_root_is_a_typed_refusal_at_its_node() {
+    reader_view_over(
+        &e_c_with_let(false),
+        |_| {},
+        |slots| {
+            let slots = slots.expect("the view is created");
+            let Some(crate::ReaderSlot::Unsupported(view)) = slots.slot_named(&composed("Branch"))
+            else {
+                panic!("the conditional root is a typed refusal");
+            };
+            assert_eq!(
+                view.catalog(),
+                ("unknown_required_feature", "unsupported-feature")
+            );
+            assert_eq!(
+                view.reason(),
+                &crate::UnsupportedReason::MissingOperationProjection {
+                    operation: "quire.op.control.if".to_owned()
+                }
+            );
+            assert_eq!(view.locus().location, None);
+            assert!(matches!(
+                slots.slot_named(&composed("Tried")),
+                Some(crate::ReaderSlot::Projected(_))
+            ));
+        },
+    );
 }

@@ -50,10 +50,8 @@ impl<'arena> NodeSource<'arena> for ReaderNode<'arena> {
             .expect("projection node index is valid")
     }
 
-    fn location(self) -> &'arena Location {
-        self.projection
-            .location(self.index)
-            .expect("projection node index is valid")
+    fn location(self) -> Option<&'arena Location> {
+        self.projection.location(self.index)
     }
 
     fn is_ordering_part(self) -> bool {

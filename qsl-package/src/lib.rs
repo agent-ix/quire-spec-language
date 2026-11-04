@@ -73,8 +73,8 @@ pub use emit::{
     TemporalClockSelection, TemporalRows, TimedOrderFault,
 };
 pub use evaluation_view::{
-    AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, ReaderProtocolField,
-    SelectedProtocolTerm, TermHandle, ViewFailure,
+    AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, SelectedProtocolTerm,
+    TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 #[cfg(feature = "std")]
@@ -86,7 +86,10 @@ pub use protocol_occurrence::{
 };
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 #[cfg(feature = "std")]
-pub use reader_protocol_projection::{ReaderProtocolFunction, ReaderProtocolProjection};
+pub use reader_protocol_projection::{
+    MissingLocation, ReaderProtocolFunction, ReaderProtocolProjection, ReaderSlot,
+    UnsupportedReason, UnsupportedView, ViewLocus,
+};
 
 #[cfg(feature = "std")]
 pub use quire_contract_model::{

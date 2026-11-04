@@ -764,12 +764,27 @@ pub(crate) fn select<'a>(
             }
         }
     }
+    let root_node = root_node(package, body).ok_or_else(|| {
+        SlotSelectionFailure::Fault(InternalFault::new(
+            "FR-390",
+            "selected-protocol-expression-has-a-keyed-root",
+        ))
+    })?;
+    Ok(Selected {
+        body,
+        frame,
+        root_node,
+    })
+}
+
+/// The structural node a slot expression's root was lowered to.
+pub(crate) fn root_node(package: &CheckedPackage, body: &CheckedBody) -> Option<NodeKey> {
     let root_location = body.root().location();
     let required_form = match body.root().kind() {
         quire_checked::node::NodeKind::Attribute { .. } => Some("query"),
         _ => None,
     };
-    let root_node = package
+    package
         .graph()
         .occurrences()
         .find_map(|(key, origin, location)| {
@@ -783,15 +798,14 @@ pub(crate) fn select<'a>(
             (origin.role().as_str() == "expression" && location == root_location && form_matches)
                 .then(|| key.clone())
         })
-        .ok_or_else(|| {
-            SlotSelectionFailure::Fault(InternalFault::new(
-                "FR-390",
-                "selected-protocol-expression-has-a-keyed-root",
-            ))
-        })?;
-    Ok(Selected {
-        body,
-        frame,
-        root_node,
-    })
+}
+
+/// The type-declaration origin name (FR-383's site name) a slot expression
+/// is located under, which keys its `protocol_locations` rows.
+#[cfg(feature = "std")]
+pub(crate) fn slot_origin(body: &CheckedBody) -> Option<&str> {
+    match &body.root().location().origin {
+        quire_semantic_value::location::Origin::TypeDeclaration { name } => Some(name),
+        _ => None,
+    }
 }
