@@ -500,7 +500,10 @@ fn a_node_that_is_no_temporal_clause_is_unresolved_over_the_bare_package() {
     let (_holder, _files, package) = directory("event_position");
     let bare = BarePackage::new(&package);
     let evaluation = EvidencePackage::from_package(&bare).expect("bare");
-    let due = clause_ids(&evaluation).into_iter().next().expect("a clause");
+    let due = clause_ids(&evaluation)
+        .into_iter()
+        .next()
+        .expect("a clause");
     let asked = evidence_request(&evaluation, &due, None, 3);
     let other = package
         .graph()
