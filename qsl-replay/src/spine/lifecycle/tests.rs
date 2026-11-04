@@ -1102,12 +1102,30 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
         (refusal, identities)
     }
 
-    fn assert_region_source(refusal: &CompileRefusal, expected: &SourceIdentity) {
+    fn assert_region_source(
+        refusal: &CompileRefusal,
+        expected_source: &SourceIdentity,
+        source_body: &str,
+        declaration_kind: &str,
+        declaration_name: &str,
+    ) {
         let region = refusal
             .region()
             .expect("the declaration has a source region");
-        assert_eq!(region.source().identity(), expected);
-        assert!(region.start() < region.end());
+        assert_eq!(region.source().identity(), expected_source);
+        let source = format!("{HEADER}{source_body}");
+        let marker = format!("{declaration_kind} {declaration_name}");
+        let start = source
+            .find(&marker)
+            .expect("the expected declaration is in its source")
+            + declaration_kind.len()
+            + 1;
+        let end = start + declaration_name.len();
+        assert_eq!(
+            region.start(),
+            u64::try_from(start).expect("source is small")
+        );
+        assert_eq!(region.end(), u64::try_from(end).expect("source is small"));
     }
 
     let document_one = (
@@ -1121,12 +1139,18 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     let (zero_scale, identities) = refusal(&[document_one, document_two]);
     assert_eq!(zero_scale.code(), Code::InvalidPackage);
     assert_eq!(zero_scale.cause(), Some("invalid-value"));
-    assert_region_source(&zero_scale, &identities[0]);
+    assert_region_source(&zero_scale, &identities[0], document_one.1, "unit", "z");
 
     let (single_cycle, identities) = refusal(&[document_two, document_one]);
     assert_eq!(single_cycle.code(), Code::InvalidPackage);
     assert_eq!(single_cycle.cause(), Some("definition-cycle"));
-    assert_region_source(&single_cycle, &identities[0]);
+    assert_region_source(
+        &single_cycle,
+        &identities[0],
+        document_two.1,
+        "unit",
+        "u_self",
+    );
     let CompileRefusal::Assembly { refusal, .. } = single_cycle.as_ref() else {
         panic!("quantity cycles are assembler refusals");
     };
@@ -1148,7 +1172,13 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     ]);
     assert_eq!(cross_unit_cycle.code(), Code::InvalidPackage);
     assert_eq!(cross_unit_cycle.cause(), Some("definition-cycle"));
-    assert_region_source(&cross_unit_cycle, &identities[0]);
+    assert_region_source(
+        &cross_unit_cycle,
+        &identities[0],
+        "dimension T; unit z : T = z2 * rational(2, 1);",
+        "unit",
+        "z",
+    );
     let CompileRefusal::Assembly { refusal, .. } = cross_unit_cycle.as_ref() else {
         panic!("quantity cycles are assembler refusals");
     };
@@ -1164,7 +1194,13 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     ]);
     assert_eq!(dimension_cycle.code(), Code::InvalidPackage);
     assert_eq!(dimension_cycle.cause(), Some("definition-cycle"));
-    assert_region_source(&dimension_cycle, &identities[0]);
+    assert_region_source(
+        &dimension_cycle,
+        &identities[0],
+        "dimension A = B;",
+        "dimension",
+        "A",
+    );
     let CompileRefusal::Assembly { refusal, .. } = dimension_cycle.as_ref() else {
         panic!("dimension cycles are assembler refusals");
     };
