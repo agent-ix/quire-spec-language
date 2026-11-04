@@ -18,7 +18,7 @@ referenced by QSpec case ID and never copied.
 
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
-| 1 | 1 | ConfigVersion package; change a field bound, an operation frame entry, and an unused declaration's field bound separately; then change only the source package `version` metadata | each semantic mutation changes the checked package bytes; the metadata-only mutation leaves them equal to the base. `ModelSelection` has no source revision, digest, version, or content pin |
+| 1 | 1 | ConfigVersion package; change the `VersionNumber` field bound and an operation frame entry separately; then change only the source package `version` metadata | each semantic mutation changes the checked package bytes; the version-only mutation leaves them equal to the base. `ModelSelection` has no version, digest, or content pin |
 | 2 | 1 | same package, operations and populations reordered | bytes equal to the base |
 | 3 | 1 | unit `model M` naming identity `other` | `missing_import` |
 | 4 | 2 | two documents with identity `p`, equal; then differing | `invalid_package`/`conflicting-definition` naming both, in both cases; no binding |
