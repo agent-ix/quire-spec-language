@@ -3621,3 +3621,27 @@ fn window_and_next_event_pending_runs_are_bare_pending_items() {
         }
     }
 }
+
+/// FR-286-AC-10 (TC-770 step 9): a violated item carries a `witness` member
+/// exactly when the report holds a separating witness record, in the
+/// `native-run-result/2` writer's spelling; the closed-scope run holds none.
+#[trace("TC-770", "FR-286-AC-10")]
+#[test]
+fn a_violated_item_carries_a_witness_exactly_when_the_report_holds_one() {
+    let mut run = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
+    assert!(run.witness.is_none());
+    assert!(item_json("Bounded", &run).get("witness").is_none());
+
+    run.witness = super::witness::run("AllBelow", super::witness::Snapshot::High, "mid").witness;
+    let item = item_json("Bounded", &run);
+    let expected = super::witness::decisive_witness_wire();
+    assert!(expected.is_object());
+    assert_eq!(item["witness"], expected);
+    assert_eq!(item["position"], 0);
+    assert_eq!(item["counterexample"]["trace_position"], 0);
+    assert!(item["cause"].is_null());
+
+    let mut pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
+    pending.witness = run.witness.clone();
+    assert!(item_json("Reaches", &pending).get("witness").is_none());
+}

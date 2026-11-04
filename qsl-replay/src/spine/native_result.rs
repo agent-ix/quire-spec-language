@@ -2355,8 +2355,7 @@ fn format_model_selection(
 pub(crate) use temporal::ReasonWire;
 
 /// The members of FR-283's record a monitor item carries besides its label
-/// and cause (a temporal violation carries its counterexample and no witness,
-/// FR-267) (FR-286 "Monitor documents from clause runs"), each written by
+/// and cause (FR-286 "Monitor documents from clause runs"), each written by
 /// the one `native-run-result/2` writer.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ItemRecord {
@@ -2367,6 +2366,8 @@ pub(crate) struct ItemRecord {
     /// FR-283's `TemporalCounterexample` of a violation or an undefined
     /// evaluation.
     pub counterexample: Option<serde_json::Value>,
+    /// The report's QSpec FR-351 separating witness, when it holds one.
+    pub witness: Option<serde_json::Value>,
     /// The values an insufficient-data window held.
     pub count: Option<u64>,
     /// The window's `min_count`.
@@ -2374,14 +2375,26 @@ pub(crate) struct ItemRecord {
 }
 
 pub(crate) fn item_record(report: &ClauseRunReport) -> Result<ItemRecord, NativeRunResultError> {
+    let witness = report
+        .witness
+        .as_ref()
+        .map(|witness| RecordWire::of(witness).and_then(|wire| Ok(serde_json::to_value(wire)?)))
+        .transpose()?;
     let ClauseDisposition::Temporal(verdict) = &report.disposition else {
-        return Ok(ItemRecord::default());
+        return Ok(ItemRecord {
+            witness,
+            ..ItemRecord::default()
+        });
     };
     let (wire, _) = temporal::verdict_wire(verdict, report.counterexample.as_ref())?;
     let wire = serde_json::to_value(wire)?;
     let member = |name: &str| wire.get(name).cloned();
     let number = |name: &str| wire.get(name).and_then(serde_json::Value::as_u64);
     let mut record = ItemRecord::default();
+    let violated = wire.get("kind").and_then(serde_json::Value::as_str) == Some("violated");
+    if violated {
+        record.witness = witness;
+    }
     match wire.get("kind").and_then(serde_json::Value::as_str) {
         Some("violated" | "undefined") => {
             record.position = number("position");
