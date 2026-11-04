@@ -556,14 +556,12 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         "the root crate's tests name qsl-route through a dev dependency"
     );
     // ADR-011 §7.3 X-8: no shipped root-crate module calls layer
-    // 5 yet, and every test that did moved into `qsl-eval`, so the root
-    // crate names `qsl-eval` in no table. This comes out when the layer-6
-    // `command`/`replay` caller makes the normal edge real.
-    for (kind, dependencies) in [
-        ("normal", &root.normal),
-        ("dev", &root.dev),
-        ("build", &root.build),
-    ] {
+    // 5 yet, so the root crate names `qsl-eval` in neither `[dependencies]`
+    // nor `[build-dependencies]`. Its tests evaluate checked packages through
+    // `qsl-eval` (`call_requirements_items`), so a dev dependency is
+    // admitted. This comes out when the layer-6 `command`/`replay` caller
+    // makes the normal edge real.
+    for (kind, dependencies) in [("normal", &root.normal), ("build", &root.build)] {
         assert!(
             !dependencies
                 .iter()
@@ -571,6 +569,10 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             "the root crate has a {kind} dependency on qsl-eval, which no root-crate code calls"
         );
     }
+    assert!(
+        root.dev.iter().any(|dependency| dependency == "qsl-eval"),
+        "the root crate's tests name qsl-eval through a dev dependency"
+    );
 }
 
 /// The FCD crates `qsl-semantics` depends on are named by

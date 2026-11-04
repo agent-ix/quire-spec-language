@@ -111,17 +111,17 @@ fn syntax_clause_kind_qualified_spelling_gains_no_new_consumer_file() {
             files_naming_it.push(relative);
         }
     }
-    // Six pre-existing, already-reviewed occurrences, measured against the
-    // live tree rather than assumed: `runtime/validation/inventory.rs` and
-    // `checking/bindings.rs` (`use crate::syntax::ClauseKind;`),
-    // `runtime/validation/values.rs` (same), `package/view.rs` and
-    // `protocol_artifact/native/layout.rs` (both match on its variants
-    // directly), and `check/identity.rs` (this requirement's own module
-    // doc, explaining why it does *not* touch this type). None of these
-    // was added by this requirement -- FR-088 adds no new one.
+    // Three pre-existing, already-reviewed occurrences, measured against the
+    // live tree rather than assumed: `checking/bindings.rs`
+    // (`use crate::syntax::ClauseKind;`), `protocol_artifact/native/layout.rs`
+    // (matches on its variants directly), and `check/identity.rs` (this
+    // requirement's own module doc, explaining why it does *not* touch this
+    // type). The native 0-draft runtime and package view that also named it
+    // were deleted with that runtime. None of these was added by this
+    // requirement -- FR-088 adds no new one.
     assert_eq!(
         files_naming_it.len(),
-        6,
+        3,
         "unexpected change in files naming syntax::ClauseKind by its qualified path: {files_naming_it:?}"
     );
 }
