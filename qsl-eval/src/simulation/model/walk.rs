@@ -50,7 +50,7 @@ impl Budget {
     ///
     /// `resource_exhausted`/`insufficient-next-charge` when the count would
     /// exceed the bound.
-    pub(super) fn charge(&mut self) -> Result<(), ExpansionStop> {
+    pub(crate) fn charge(&mut self) -> Result<(), ExpansionStop> {
         self.used = self.used.saturating_add(1);
         if self.used > self.max {
             Err(exhausted(ExpansionLimit::MaxCandidates))

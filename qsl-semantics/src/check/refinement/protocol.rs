@@ -538,6 +538,7 @@ fn entries(clause: &ProtocolClause<'_>, concrete: &AdmittedModel) -> Vec<Entry> 
                 true
             }
             (_, ChannelDelivery::ExactlyOncePremise)
+            | (_, ChannelDelivery::Between { .. })
             | (ChannelStepKind::Duplicate, ChannelDelivery::AtMostOnce)
             | (ChannelStepKind::Lose, ChannelDelivery::AtLeastOnce) => false,
         };

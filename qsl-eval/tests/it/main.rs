@@ -46,6 +46,7 @@ mod named_population;
 mod native_literals;
 mod native_scalar_equality;
 mod property_automata;
+mod protocol_delivery_interval;
 mod protocol_reference;
 mod protocol_slots;
 mod quantity_literals;

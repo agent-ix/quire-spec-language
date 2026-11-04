@@ -443,6 +443,16 @@ struct Compensating {
     attempt: Option<Bound>,
 }
 
+/// A bounded delivery interval send that filled a blocking queue before all
+/// requested entries were appended. The original payload is retained so the
+/// sender can continue the same send after a receive frees capacity.
+#[derive(Clone, Debug)]
+struct PendingSend {
+    payload: Value,
+    enc: Enc,
+    remaining: u64,
+}
+
 /// A role instance's status (ADR-027 RR-3).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RoleStatus {
@@ -480,6 +490,9 @@ struct Instance {
     /// Each non-empty queue, a `fifo` one in delivery order and an
     /// `unordered` one in ascending JCS bytes of its entries (PS-7).
     queues: BTreeMap<QueueKey, Vec<Entry>>,
+    /// The unfinished count of each interval delivery send, keyed by its
+    /// sending thread and static send node.
+    pending_sends: BTreeMap<(ThreadPath, qsl_semantics::check::ProtocolNodeId), PendingSend>,
     /// Each compensation registration (CP-1).
     registrations: BTreeMap<Registered, Registration>,
     /// Each compensation thread, by its path (CP-3).
@@ -1373,6 +1386,29 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     ));
                 }
                 control.push((path.enc(), Enc::tagged("thread-state", members)));
+            }
+            for ((path, node), pending) in &instance.pending_sends {
+                let node = self
+                    .program
+                    .text(*node)
+                    .map_or(Enc::Unencodable("a pending send node"), Enc::text);
+                control.push((
+                    Enc::tagged(
+                        "send-pending",
+                        vec![
+                            ("instance", Enc::text(ordinal.to_string())),
+                            ("thread", path.enc()),
+                            ("node", node),
+                        ],
+                    ),
+                    Enc::tagged(
+                        "pending-send-state",
+                        vec![
+                            ("remaining", Enc::text(pending.remaining.to_string())),
+                            ("payload", pending.enc.clone()),
+                        ],
+                    ),
+                ));
             }
             for (key, parallel) in &instance.parallels {
                 let node = self
