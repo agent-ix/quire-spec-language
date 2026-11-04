@@ -523,7 +523,9 @@ enum Task<'a, N> {
     /// FR-322: the `case` at this node has evaluated its scrutinee; select
     /// the arm of its active member and evaluate only that arm's body.
     Select(N),
-    Retain(N),
+    /// The right operand of a connective is evaluated; carries the left
+    /// operand's owner, which the connective's own operation absorbs.
+    Retain(N, Owner),
     /// A function call's body has returned; its result now belongs to the
     /// call application at `node`.
     ObserveApplication(N),
@@ -600,6 +602,8 @@ struct Iteration<N> {
     sources: Vec<usize>,
     accumulator: Option<Value>,
     count: Integer,
+    /// The binder the source derives from; element slots take it.
+    source_owner: Owner,
     /// The binder the source and every result so far derive from.
     owner: Owner,
 }
@@ -613,6 +617,8 @@ struct SeqIteration<N> {
     high: Integer,
     awaiting: bool,
     results: Vec<Value>,
+    /// The binder the bounds derive from; the element slot takes it.
+    source_owner: Owner,
     /// The binder the bounds and every result so far derive from.
     owner: Owner,
 }
@@ -1157,7 +1163,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 | Task::Branch(node)
                 | Task::Short(node)
                 | Task::Select(node)
-                | Task::Retain(node)
+                | Task::Retain(node, _)
                 | Task::ObserveApplication(node)
                 | Task::ChargeElement(node) => *node,
                 Task::Iterate(iteration) => iteration.node,
@@ -1777,7 +1783,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let NodeKind::Connective(connective, origin, _, right) = node.kind() else {
                     return Err(invariant("evaluation-connective-node-expected"));
                 };
-                let left = self.pop_boolean()?;
+                let (left, left_owner) = match self.pop_owned()? {
+                    (Value::Boolean(value), owner) => (value, owner),
+                    _ => return Err(invariant("boolean-value-expected")),
+                };
                 // Only a connective the source wrote has a decision (FR-265);
                 // the checker's own composition of a float ordering has none.
                 if matches!(origin, ConnectiveOrigin::Authored) {
@@ -1794,13 +1803,14 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         self.push_value(Value::Boolean(result), false);
                     }
                     None => {
-                        self.tasks.push(Task::Retain(node));
+                        self.tasks.push(Task::Retain(node, left_owner));
                         self.tasks.push(Task::Eval(node.at(*right)));
                     }
                 }
                 Ok(())
             }
-            Task::Retain(_) => {
+            Task::Retain(_, left_owner) => {
+                self.absorb_owner(left_owner);
                 let result = retain_boolean(self.pop_boolean()?, self.meter)?;
                 self.push_value(Value::Boolean(result), false);
                 Ok(())
@@ -3457,6 +3467,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             high,
             awaiting: false,
             results: Vec::new(),
+            source_owner: self.step_owner(),
             owner: self.step_owner(),
         }))
     }
@@ -3486,7 +3497,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         charge_visit(self.meter)?;
         *self.slot(*slot)? = Some(Value::Integer(iteration.next.clone()));
         iteration.owner = self.step_owner();
-        self.set_slot_owner(*slot, iteration.owner)?;
+        self.set_slot_owner(*slot, iteration.source_owner)?;
         iteration.next = iteration.next.add(&Integer::one());
         iteration.awaiting = true;
         self.tasks.push(Task::IterateSeq(iteration));
@@ -3993,6 +4004,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             sources: Vec::new(),
             accumulator: identity,
             count: Integer::zero(),
+            source_owner: self.step_owner(),
             owner: self.step_owner(),
         });
         if reduce {
@@ -4129,7 +4141,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 self.note_element(node.at(*source), &iteration.source, *slot, position);
                 *self.slot(*slot)? = Some(element);
                 iteration.owner = self.step_owner();
-                self.set_slot_owner(*slot, iteration.owner)?;
+                self.set_slot_owner(*slot, iteration.source_owner)?;
                 body
             }
             NodeKind::Fold {
@@ -4150,7 +4162,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 *self.slot(*binder)? = Some(element);
                 iteration.owner = self.step_owner();
                 self.set_slot_owner(*accumulator, iteration.owner)?;
-                self.set_slot_owner(*binder, iteration.owner)?;
+                self.set_slot_owner(*binder, iteration.source_owner)?;
                 step
             }
             _ => return Err(invariant("iteration-node-invalid")),
