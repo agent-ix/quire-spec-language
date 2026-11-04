@@ -79,6 +79,7 @@ mod abstraction;
 mod hybrid;
 mod hyper;
 mod model;
+mod probabilistic;
 mod protocol;
 mod refinement_rows;
 mod state;

@@ -219,6 +219,40 @@ fn a_channel_delivery_interval_builds_its_bounds() {
     }
 }
 
+/// FR-509-AC-7 (TC-1304): the grammar admits `delivery [<lo>,<hi>]` as the
+/// fifth delivery form beside the four policy words, so a channel that
+/// declares an interval parses with no syntax error and builds the interval
+/// form, while each policy word still builds its own form.
+#[trace("FR-509-AC-7", "TC-1304")]
+#[test]
+fn the_interval_is_the_fifth_delivery_form_beside_the_four_policy_words() {
+    for (spelling, expected) in [
+        ("unknown", ChannelDelivery::Unknown),
+        ("at-most-once", ChannelDelivery::AtMostOnce),
+        ("at-least-once", ChannelDelivery::AtLeastOnce),
+        ("exactly-once-premise", ChannelDelivery::ExactlyOncePremise),
+        ("[1,2]", ChannelDelivery::Between { lower: 1, upper: 2 }),
+    ] {
+        let text = source(
+            &format!(
+                "channel Pay from R to S carries {OBJECT} ordering unordered delivery {spelling} \
+                 capacity 1 overflow reject;"
+            ),
+            RUN,
+        );
+        let parsed = parse(&text);
+        assert!(
+            parsed.is_admissible() && parsed.diagnostics().is_empty(),
+            "{spelling}: no syntax error: {:?}",
+            parsed.diagnostics()
+        );
+        let unit = build(&text);
+        let channel = only_channel(protocol(&unit));
+        assert_eq!(channel.delivery.value, expected, "{spelling}");
+        assert_eq!(slice(&text, channel.delivery.span), spelling);
+    }
+}
+
 /// FR-308-AC-13 (TC-1065 rows 1 and 2): the five overflow spellings build
 /// `Reject`, `Block` and `Loss` with their selector, each span slicing to its
 /// text; `overflow loss` with no selector and `overflow block head` fail at

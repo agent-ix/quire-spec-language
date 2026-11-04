@@ -100,7 +100,7 @@ checked-package identity from the producer to the carrier and to those causes.
   checked claim without exactly one corresponding node and occurrence. No
   protocol-location row is substituted for a claim row.
 - The `TimedFormShape` cause (FR-203, FR-204) and the `PunctualInterval` cause
-  (FR-235) SHALL carry the claim's `{declaration, occurrence}`. Where QSpec
+  (FR-235) SHALL carry the claim's FR-331 locus `{node, occurrence}` (`node` the claim's declaration `NodeRef`). Where QSpec
   defines a `probabilistic_claim` body, the cause SHALL also carry the member
   path of the unsupported form or interval operator within that body, as
   QSpec FR-421 states its loci. A claim with no identity (one checked outside an assembled package) SHALL keep the
@@ -119,7 +119,7 @@ checked-package identity from the producer to the carrier and to those causes.
 | --- | --- | --- |
 | FR-498-AC-1 | A unit with two checked probabilistic claims that share a declared name and differ in written content (the QSL counterpart of QSpec FR-322-AC-297 `PC-01` and `PC-02`; one source cannot give two declarations equal spans), and a third claim with another name, emits exactly three local `claim` nodes with `semantic_form` `probabilistic_claim`, each with one declared `claim` occurrence, and exactly three matching `probabilistic_claims` rows with distinct declaration `NodeRef`s in ascending structural order. Every permutation of the three declarations keeps each claim's `{declaration, occurrence}` and emits byte-identical rows. | Test (TC-1288) |
 | FR-498-AC-2 | Each emitted claim node, its `probabilistic_claims` row and its associated `CheckedProbabilisticClaim` expose the same `{declaration, occurrence}`. Renaming a claim whose name no other claim shares changes its identity and no other claim's (renaming or editing a member of a same-named group may re-rank the rest of its group); moving, reformatting or commenting a claim leaves its written content, and so its identity, unchanged; changing a token of it changes its written content. Two claims written identically are two declarations with distinct identities. | Test (TC-1288) |
-| FR-498-AC-3 | An elapsed-time claim with an unsupported form and a claim with a punctual interval in a non-admitted form settle `Unsupported(TimedFormShape)` and `Unsupported(PunctualInterval)` carrying the selected claim's `{declaration, occurrence}` (QSpec FR-421-AC-7); for two claims with equal names the cause names the selected claim only. | Test (TC-1288) |
+| FR-498-AC-3 | An elapsed-time claim with an unsupported form and a claim with a punctual interval in a non-admitted form settle `Unsupported(TimedFormShape)` and `Unsupported(PunctualInterval)` carrying the selected claim's FR-331 locus `{node, occurrence}`, whose `node` is the claim's declaration `NodeRef` (QSpec FR-421-AC-7); for two claims with equal names the cause names the selected claim only. | Test (TC-1288) |
 | FR-498-AC-4 | An emitted package has a one-to-one correspondence among each included `CheckedProbabilisticClaim`, one local `claim`/`probabilistic_claim` node with one declared `claim` occurrence, and one matching sidecar row; it has no unmatched node, row or checked claim, every row names a node already in the emitted graph with that node's own occurrence, and the strict reader admits the package. | Test (TC-1288) |
 
 ## Dependencies
@@ -133,4 +133,4 @@ checked-package identity from the producer to the carrier and to those causes.
   claim and FR-322 sidecar row.
 - **Open:** the causes' member path within the claim body waits for a QSpec
   `probabilistic_claim` body definition; until one exists the node body is
-  empty and the causes carry `{declaration, occurrence}` alone.
+  empty and the causes carry the `{node, occurrence}` locus alone.

@@ -30,6 +30,7 @@ mod collection_queries;
 mod composite_values;
 mod decimal_source_forms;
 mod dispatch_calls;
+mod duplicate_preserving_queries;
 mod equality_matrix;
 mod evaluation_ignores_display_strings;
 mod fairness_kernels;

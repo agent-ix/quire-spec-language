@@ -66,6 +66,8 @@ pub use protocol_control::{
     ChannelOverflow, FenceForm, JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm,
     ProtocolMemberForm, RepeatForm, SchedulingForm, TerminalForm,
 };
+/// A declaration's written content (FR-498), as [`ProbabilisticForm::content`] carries it.
+pub use qsl_cst::SignificantContent;
 pub use refinement::{
     AbstractSideForm, ArgumentForm, FairnessRowForm, FairnessSide, FieldRowForm,
     HistoryLiteralForm, HistoryRowForm, HistoryUpdateForm, ObjectRowForm, PopulationRowForm,
