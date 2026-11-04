@@ -198,11 +198,6 @@ impl ProtocolInput<'_> {
         let form = self.form;
         let slots = &self.checked.slots;
         let mut unemitted = Vec::new();
-        if self.checked.roles.iter().any(|role| {
-            !role.replicated && role.context.is_none() && role.model_selection.is_none()
-        }) {
-            unemitted.push(ProtocolConstruct::WholeModelRole);
-        }
         if self
             .checked
             .channels
