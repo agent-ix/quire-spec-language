@@ -79,7 +79,7 @@ domain bound (NFR-001).
 
 ## Default derivation
 
-- **Decimal literal scale, 65535, and total, 1048576.** A literal's wire spelling has exactly its written scale in fractional digits, and a zero coefficient is a member at every scale, so one literal can spell as many digits as its scale. 65535 is a few times the 19729 digits of the rational-bits default and bounds one literal at 64 KiB. The total, 1048576 digits (sixteen literals at the limit, and 1 MiB, the size of the default source-byte ceiling), bounds what a package's literals spell together, because distinct scales are distinct nodes and the node ceiling alone would allow gigabytes of spelling.
+- **Decimal literal scale, 65535, and total, 1048576.** A literal's wire spelling has exactly its written scale in fractional digits, and a zero coefficient is a member at every scale, so one literal can spell as many digits as its scale. 65535 is a few times the 19729 digits of the rational-bits default and bounds one literal at 64 KiB. The total, 1048576 digits (1 MiB, the size of the default source-byte ceiling; sixteen literals at the per-literal limit total 1048560), bounds what a package's literals spell together, because distinct scales are distinct nodes and the node ceiling alone would allow gigabytes of spelling.
 - **Rational bits, 65536.** FR-185's rational-bits ceiling: a value of
   2^65536 has a 19729-digit decimal expansion, ample for any written
   exact value, and bounds the reduction and the weight sum's growth.

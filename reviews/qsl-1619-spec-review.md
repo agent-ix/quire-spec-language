@@ -76,12 +76,19 @@ FR-091-AC-58 versus code: at head 530aee5c8 the code matches the spec. `decimal(
 | FND-010 | fixed | FR-093 gains depends_on NFR-011 and QSpec FR-140 and FR-146 and traces_to FR-255; FR-104 gains traces_to FR-093. |
 | FND-011 | fixed | AC-42 adds the lowering of the convert node and the float-to-decimal refusal (FR-397-AC-18, checked); AC-40 a7 adds the oversize coefficient. The "convert of a constructor builds no node" check is not restored; low and accepted. |
 | FND-012 | fixed | a1 removed from AC-40, AC-38/45 and AC-41/54/55 split, the Rust format-width rationale dropped from NFR-011. |
+| FND-013 | fixed | Round 2: AC-57 and the step-4 sentence now apply membership to the source operand. m1 `-decimal(5, 0)` and m2 `decimal(5, 0)` at `Decimal[-9, 0; 0, 0; toward-zero]` refuse `ill_typed`/`type-mismatch` before any charge (QSpec FR-140-AC-8 and its operand-membership text; the #2277 code does the same, its negate operand takes the expected type as hint); m3 `-decimal(-5, 0)` checks (-5 is a member) and evaluates to `decimal_out_of_domain`/`outside-domain` (the negated value 5 is outside; QSpec FR-140 result-membership rule, TC-185 D08's one-over case); m4 `-decimal(0, 0)` checks and evaluates to 0; `-decimal(5, 0)` at `Q` checks and evaluates to -5. The evaluator behavior of m3 and m4 has no #2277 test; code follow-up. |
+| FND-014 | fixed | Round 2: "per checked package" is used in FR-093 step 3, the FR-093 rationale and AC-52, FR-255, NFR-011 (table and text), FR-096 and TC-1232, matching NFR-011's node and work rows. Wording residue, low and accepted: NFR-011 says "1048576 digits (sixteen literals at the limit, and 1 MiB ...)"; sixteen literals of 65535 total 1048560, 16 short of 1048576 (= 16 x 65536); AC-52 states 1048560 correctly. |
+| FND-007 | fixed | Round 2: closed by FND-013's fix; the direction AC-57 now fixes agrees with QSpec FR-140 and the #2277 code. |
 
 Verified in this round: `quire validate --scope .` exit 0 for all nine changed spec files; FR-093 AC ids 1 to 57 each appear once with no duplicate and no id taken from main (45 was a gap); the FR-093 table rows are not in numeric order (45, 52, 53 after 38; 54, 55 after 41; 56, 57 after 42), which no tool or text reads as order and `quire matrix` keys on ids, so accepted (low); no ticket id appears in any added spec line (the only `QSL-1619` in the diff is the review file's own Summary).
 
 ## Verdict
 
 Round 1: NOT mergeable yet on FND-013 (medium, a new rule introduced by the fix round that departs from QSpec FR-140 and the #2277 code; either restore the QSpec reading of AC-57, refusing `m1` and treating `m3` as a runtime out-of-domain, or land the QSpec FR-140 amendment first). FND-001 to FND-006 and FND-008 to FND-012 are fixed; FND-007 is superseded by FND-013; FND-014 is low and non-blocking.
+
+## Round 2 verdict
+
+PASS. FND-013, FND-014 and FND-007 are closed; `quire validate --scope .` exit 0 on all nine changed spec files at c05acc685. Only low, non-blocking residue: NFR-011's "sixteen literals at the limit" parenthetical is 16 short of 1048576. Code follow-ups for #2277 unchanged (quotient typing test, `inexact_decimal` code assertion in the exact 2/3 test, per-package total counter, `facts.rs` interval arm, tests for m3/m4 evaluation, AC-39 negate, AC-41 y6, AC-42 f).
 
 ## Round 0 verdict
 
