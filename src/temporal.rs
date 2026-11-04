@@ -1296,11 +1296,31 @@ fn checked_interval(
             });
             Ok(w::Nullable(Some(w::Interval { lower, upper })))
         }
-        Some(CheckedInterval::Timed(_)) => Err(Refusal::Binding {
-            dimension: Dimension::Interval,
-            subject,
+        // Only the timestamped-window profile reaches this route with a timed
+        // interval (the clock-unit profile is refused at its profile binding):
+        // its step bounds are clock ticks, written closed at both ends.
+        Some(CheckedInterval::Timed(interval)) => {
+            if !(interval.lower_closed()
+                && interval.upper_closed()
+                && interval.lower().is_integer()
+                && interval.upper().is_integer())
+            {
+                return Err(Refusal::Binding {
+                    dimension: Dimension::Interval,
+                    subject,
+                }
+                .into());
+            }
+            let tick = |value: &quire_exact::Rational| {
+                w::Integer(crate::number::NumberWire::Integer {
+                    decimal: value.numerator().to_string(),
+                })
+            };
+            Ok(w::Nullable(Some(w::Interval {
+                lower: tick(interval.lower()),
+                upper: tick(interval.upper()),
+            })))
         }
-        .into()),
     }
 }
 

@@ -166,12 +166,18 @@ fn assert_emitted_vector_key(
     let expected_key =
         qsl_foundation::node_wire::node_key_from_json(&expand_vector_key(keys, expected))
             .expect("the published vector key is a structural NodeKey");
+    // FR-322 "Operand index segments": an emitted id names each operand node
+    // by its index in the node table, so the document supplies the context
+    // that resolves it back to the structural key the vector publishes.
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(document)
+        .expect("the emitted document supplies its operand-index context");
     let matches: Vec<_> = document["semantic_graph"]["nodes"]
         .as_array()
         .expect("the emitted semantic graph")
         .iter()
         .filter(|node| {
-            qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+            graph
+                .key_of_value(&node["node_id"])
                 .is_ok_and(|key| key == expected_key)
         })
         .collect();
