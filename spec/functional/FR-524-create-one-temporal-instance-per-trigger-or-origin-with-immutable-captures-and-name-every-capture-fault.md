@@ -130,8 +130,9 @@ An `Activation`: a `disposition`, the `instances` and the updated `ledger`.
   `contradicted_identity` (the trigger or origin identity bytes). The evidence
   call reports it as `Err(CallFailure::Admission)` with an empty charge log.
 - A surplus-capture refusal: `invalid_runtime_input`/`invalid-value` carrying
-  `surplus_capture_identity` (the delivery or origin identity bytes) and the index
-  of the first capture fact beyond the clause's declared captures. It is malformed
+  `surplus_capture_identity` (the delivery or origin identity bytes) and
+  `surplus_capture_index` (the index of the first capture fact beyond the clause's
+  declared captures). It is malformed
   input, not a fault of an activation, and the evidence call reports it as
   `Err(CallFailure::Admission)` with an empty charge log.
 - A counter or meter stop while establishing instances is not an error and not a
@@ -175,6 +176,12 @@ No output holds a truth value.
   SHALL keep the delivery's instance in `instances` as `Unavailable` with an
   `ActivationFault` naming the guard with `non_value.kind` `Missing`, and the
   delivery has no activation.
+- The evaluator SHALL record a faulted instance in the updated `ledger` as an
+  `Unavailable` entry holding its identity, payload, receipts and fault and no
+  capture environment, and SHALL NOT count it in the `instances` counter, which
+  counts instances created in the call. A later delivery of that identity with an
+  equal payload adds its receipt and reports the retained fault, a different
+  payload is the contradiction refusal, and no initializer runs again.
 - A delivery with a false guard SHALL NOT appear in `instances`.
 - The evaluator SHALL NOT read an unestablished guard as false.
 
@@ -188,7 +195,10 @@ No output holds a truth value.
   facts than the clause declares captures, with the surplus-capture refusal, and
   SHALL NOT ignore the surplus facts.
 - The evaluator SHALL examine the refusals of the whole call before it charges
-  anything, in list order: a redelivery contradiction, then a surplus capture.
+  anything: first the contradiction check over every delivery or origin in list
+  order, and only when none contradicts, the surplus-capture check over every
+  delivery or origin in list order. A call that carries both refusals returns the
+  contradiction refusal.
 - The evaluator SHALL examine a delivery's faults in this order: the guard, the
   number of captures, the delivery anchor, then each capture in authored order, an
   evicted record before the capture's fact.
@@ -265,6 +275,8 @@ No output holds a truth value.
   whatever the closure.
 - The evaluator SHALL report `Unknown(open)` with incomplete completeness for a
   `Closed` scope whose trigger record is incomplete.
+- The evaluator SHALL carry the input `execution` disposition in each `Unknown`
+  disposition and SHALL NOT let it change which disposition is reported.
 - A scope whose every admitted delivery has a false guard SHALL report as a scope
   with no instance.
 - No disposition SHALL be a truth value.
@@ -308,8 +320,11 @@ No output holds a truth value.
 | FR-524-AC-32 | Over a clause `on origin` with one capture, an origin that supplies one `Value` capture creates one instance with that capture in its environment, an origin that supplies none reports an `ActivationFault` naming the capture with `Missing`, and an origin whose capture is `WrongType` reports `Refused`. | Test (TC-1319) |
 | FR-524-AC-33 | A delivery or an origin that supplies one capture fact more than the clause declares returns the surplus-capture refusal naming its identity and the index of the surplus fact, through `activate` and through `evaluate_temporal_evidence` as `Err(CallFailure::Admission)` with an empty charge log, and no instance of the call is created. | Test (TC-1319) |
 | FR-524-AC-34 | A call with a guard-`None` delivery `t1`, a guard-`Some(false)` delivery `t2` and a healthy delivery `t3` lists `t1` as `Unavailable` and `t3` as `Active` in `instances`, and does not list `t2`. | Test (TC-1319) |
-| FR-524-AC-35 | A call with a ledger holding `t1`, a redelivery of `t1`, one healthy new delivery `t2` and one faulted new delivery `t3` charges `instances` 1, and lists three instances. | Test (TC-1319) |
+| FR-524-AC-35 | A call with a ledger holding `t1`, a redelivery of `t1`, one healthy new delivery `t2` and one faulted new delivery `t3` charges `instances` 1, lists three instances, and returns a ledger holding `t1`, `t2` and `t3`, with `t3` an `Unavailable` entry without a capture environment. | Test (TC-1319) |
 | FR-524-AC-36 | An instance whose first capture and second capture are both in `evicted` charges one `evicted` visit, and a retained-valuation lookup that matches one evicted record charges one `evicted` visit, and one that matches none charges none. | Test (TC-1319) |
+| FR-524-AC-37 | A later call with the ledger of AC-35 that delivers `t3` again with an equal payload and complete captures adds the receipt, reports the retained fault, evaluates no initializer and keeps `t3` `Unavailable`; with a different payload it returns the contradiction refusal. | Test (TC-1319) |
+| FR-524-AC-38 | A call that carries a contradiction on `t1` and a surplus capture on `t2` returns the contradiction refusal naming `t1`; the same call without the contradiction returns the surplus-capture refusal with `surplus_capture_identity` `t2` and `surplus_capture_index` equal to the declared capture count. | Test (TC-1319) |
+| FR-524-AC-39 | An open scope with no instance returns `Unknown(open)` carrying `Failed` under `execution` `Failed` and `Completed` under `execution` `Completed`; `Unknown(missing)` and `Unknown(refused)` carry it likewise; `Inactive` carries neither, and the reported disposition kind is the same for both values. | Test (TC-1319) |
 
 ## Dependencies
 

@@ -98,8 +98,8 @@ no truth), not an error (FR-523).
   refuse the relation with cause `correspondence-changed`.
 - The evaluator SHALL compute `lineage` with checked `u64` arithmetic.
 - When the sum does not fit or exceeds the `lineage` ceiling (FR-523), the
-  evaluator SHALL return an `Incomplete` result naming `lineage`, and SHALL NOT
-  record a ledger entry for it.
+  evaluator SHALL return an `Incomplete` result naming `lineage`, and SHALL return the
+  request's `ledger` unchanged, with no entry recorded for it.
 - When a call succeeds, the evaluator SHALL record the result's entry as the
   latest for its key, including for `Original`.
 - The evaluator SHALL leave every earlier result and the replaced entry's value as

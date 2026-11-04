@@ -149,19 +149,25 @@ only when one is written.
 - Two structurally equal clauses share one node; each declaration keeps its own
   `ClauseOccurrence`, and the view of the shared node returns both. Under a
   clock-configured temporal profile the writer emits one `temporal_bindings`
-  row per declaration and Contract IR's reader refuses the second row for the
-  shared node (`invalid_package`/`timed-node-reference`), so that case has no
-  admitted package until the Contract IR decision (IR-1279, FR-515-AC-13) lands.
+  row per clause occurrence, keyed by the declaration and the occurrence
+  `{ role, ordinal }` with the producer-assigned ordinal (QSpec FR-322 "Temporal
+  clock bindings"), and the reader admits one row per occurrence of a shared
+  node. `clock_of(&ClauseOccurrence) -> Option<&TemporalBinding>` returns the row
+  whose key equals that occurrence's `{ role, ordinal }`; it never pairs by the
+  position of the occurrence or of the row, because producer-assigned ordinals
+  need not run consecutively from zero. `clock()` returns the row of the node's
+  only occurrence and is `None` for a node with several occurrences, which
+  `clock_of` answers.
 
 ### The in-process package
 
 The in-memory checked package that QSL's I2 write holds before the lock is
 emitted answers both views with the facts the read-back package answers them
 with. It carries, at construction, each clause's `profile_selections` row and one
-`TemporalBinding` row per clause occurrence, and a `CheckedNodeId` pairs with its
-clause's occurrence by ordinal: occurrence `k` of a node pairs with the `k`-th
-clock row of that node in declaration order, so the pairing needs no emitted lock.
-Two clauses with different nodes never read each other's rows. A view over the
+`TemporalBinding` row per clause occurrence, and a clause occurrence pairs with
+its row by the row's key `{ declaration, role, ordinal }`, never by position, so
+the pairing needs no emitted lock. Two clauses with different nodes never read
+each other's rows. A view over the
 in-memory package therefore equals the view over the package read back from its
 bytes.
 
@@ -181,19 +187,20 @@ bytes.
 | FR-515-AC-10 | For a clause whose guard `g` is a different node from every `holds` operand, `checked_predicate` of `g` is `ActivationGuard` and `g` is absent from `predicate_leaves()`. | Test (TC-1310) |
 | FR-515-AC-11 | For a clause whose guard is equal to a `holds` operand, so that the two are one node, `checked_predicate` of that node is `ActivationGuard` and the node is present in `predicate_leaves()` once for each `holds` atom that reads it. | Test (TC-1310) |
 | FR-515-AC-12 | `checked_predicate` of a leaf the clause reads and for which the package source map holds no entry refuses `LeafHasNoSource` and returns no partial view. | Test (TC-1310) |
-| FR-515-AC-13 | Two structurally equal clauses under a clock-configured temporal profile give one node and two `ClauseOccurrence` values, and the package is admitted by `read_checked_package`. This is gated on a Contract IR decision for the shared node's `temporal_bindings` row (IR-1279). | Test (TC-1310) |
+| FR-515-AC-13 | Two structurally equal clauses under a clock-configured temporal profile give one node and two `ClauseOccurrence` values, and the package is admitted by `read_checked_package` with one `temporal_bindings` row per occurrence (QSpec FR-322 vectors BO-P1 to BO-R9). | Test (TC-1310) |
 | FR-515-AC-14 | With a reader that implements IR-1278, `name()` of a view returns the clause's declared name, equal to the name in the selection sidecar. This is gated on IR-1278. | Test (TC-1310) |
 | FR-515-AC-15 | `requirements()` of a temporal clause that no protocol `requirements` entry names is empty, and of a clause that a protocol's `requirements` entry names holds that protocol clause's node id. | Test (TC-1310) |
 | FR-515-AC-16 | `checked_predicate` of an activation guard returns a view whose `source_span` is one of the source map entries of the guard node. | Test (TC-1310) |
 | FR-515-AC-17 | `checked_predicate` of a `ClauseLeaf` returns a view whose `source_span` is the entry of the leaf node whose regions lie inside the source regions of the clause's formula root node. | Test (TC-1310) |
 | FR-515-AC-18 | Over the in-memory package of the I2 write before emit, `temporal_subject` returns the `profile()` and `clock()` equal to those of the package read back from the emitted bytes, for each of **R**'s clauses. | Test (TC-1310) |
-| FR-515-AC-19 | In a package with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row by ordinal, in the in-memory and the read-back package alike. | Test (TC-1310) |
+| FR-515-AC-19 | In a package with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row, in the in-memory and the read-back package alike. | Test (TC-1310) |
+| FR-515-AC-20 | Over twins of one node with occurrence ordinals 7 and 3 (listed in that order) and different clock configurations, `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3 and `clock_of` of ordinal 7 returns the row keyed ordinal 7, `clock()` is `None`, and the same holds for the in-memory and the read-back package; a pairing by position fails this criterion. | Test (TC-1310) |
 
 ## Dependencies
 
 - **Upstream:** FR-337, FR-383, FR-449, FR-051 (retired modules), QSL-303,
   QSL-1270 (digest removal), `quire_contract_model::CheckedPackageV2`; IR-1278
-  (the clause name, gates FR-515-AC-14); IR-1279 (the shared
-  node's clock row, gates FR-515-AC-13).
+  (the clause name, gates FR-515-AC-14); QSpec FR-322 (the per-occurrence clock
+  rows FR-515-AC-13 and AC-20 read).
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/result/record.rs`
   (QSL-1549).

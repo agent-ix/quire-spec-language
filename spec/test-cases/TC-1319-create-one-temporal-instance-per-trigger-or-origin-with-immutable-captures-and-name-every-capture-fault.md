@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-524-AC-1 to FR-524-AC-36. The vectors are the FR-044 cases and TC-123 and TC-1278, re-stated on the spine activation function. Captures are `Int` values at the delivery anchor.
+Verify FR-524-AC-1 to FR-524-AC-39. The vectors are the FR-044 cases and TC-123 and TC-1278, re-stated on the spine activation function. Captures are `Int` values at the delivery anchor.
 
 ## Test Procedure
 
@@ -50,10 +50,13 @@ Verify FR-524-AC-1 to FR-524-AC-36. The vectors are the FR-044 cases and TC-123 
 | 32 | 32 | `on origin` with one capture: an origin with one `Value`; with none; with `WrongType` | one instance holding the capture; `Missing` naming the capture; `Refused` |
 | 33 | 33 | a delivery with one capture fact too many; an origin with one too many; each through `activate` and `evaluate_temporal_evidence` | surplus-capture refusal naming the identity and surplus index; `Err(CallFailure::Admission)`, empty charge log; no instance created |
 | 34 | 34 | deliveries `t1` (guard `None`), `t2` (`Some(false)`), `t3` (healthy), guarded clause | `instances` lists `t1` `Unavailable` and `t3` `Active`, not `t2` |
-| 35 | 35 | ledger holding `t1`; redelivery of `t1`; new healthy `t2`; new faulted `t3` | `instances` charge 1; three instances listed |
+| 35 | 35 | ledger holding `t1`; redelivery of `t1`; new healthy `t2`; new faulted `t3` | `instances` charge 1; three instances listed; ledger holds `t1`, `t2`, `t3` with `t3` `Unavailable` |
 | 36 | 36 | two evicted captures of one instance; a valuation lookup matching one evicted record; one matching none | one `evicted` visit; one; none |
+| 37 | 37 | the ledger of row 35; `t3` redelivered with equal payload and complete captures; with a different payload | receipt added, retained fault reported, no initializer, still `Unavailable`; contradiction refusal |
+| 38 | 38 | contradiction on `t1` plus surplus capture on `t2`; the same without the contradiction | contradiction naming `t1`; surplus-capture refusal with `surplus_capture_identity` `t2` and `surplus_capture_index` |
+| 39 | 39 | open scope with `execution` `Failed` and `Completed`; missing and refused evidence likewise; closed complete scope | `Unknown` carrying each value; `Inactive` carries none; same kind |
 
-Tag the test `#[trace("FR-524-AC-1", ..., "FR-524-AC-36", "TC-1319")]`.
+Tag the test `#[trace("FR-524-AC-1", ..., "FR-524-AC-39", "TC-1319")]`.
 
 ## Expected Results
 

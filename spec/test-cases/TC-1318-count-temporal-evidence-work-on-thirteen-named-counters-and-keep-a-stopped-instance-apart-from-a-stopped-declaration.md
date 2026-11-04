@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-523-AC-1 to FR-523-AC-22. Each counter is driven to its exact usage and to one below. The vectors of FR-501-AC-12 and FR-516-AC-7 are referenced, not copied.
+Verify FR-523-AC-1 to FR-523-AC-23. Each counter is driven to its exact usage and to one below. The vectors of FR-501-AC-12 and FR-516-AC-7 are referenced, not copied.
 
 ## Test Procedure
 
@@ -39,11 +39,12 @@ Verify FR-523-AC-1 to FR-523-AC-22. Each counter is driven to its exact usage an
 | 21 | 17 | a formula nested 100,000 deep, ceilings raised, on a 512 KiB stack | evaluates |
 | 22 | 18 | the `usage` of a call; two requests differing in one ceiling | all thirteen counters reported; distinct `result_identity` |
 | 23 | 20 | ledger holding `t1`; redelivery of `t1`; new healthy delivery; new faulted delivery | `instances` usage 1 |
-| 24 | 21 | fixed-sample clause reading silent samples | meter usage rises; `evaluation_steps` unchanged; thirteen counters |
+| 24 | 21 | fixed-sample clause reading silent samples | each silent lookup: `valuations`, `visited` and the meter at `temporal.visit` +1; `evaluation_steps`, `positions` unchanged; thirteen counters |
 | 25 | 22 | the stops of rows 7 to 9, 16, 17 and 20 | each `Ok`, `Unavailable`, `incomplete` naming the counter, no truth; no `Err` |
-| 23 | 19 | the first call replayed with a fresh `Meter` after row 18's second call stopped | a result equal to the first call's result |
+| 26 | 19 | the first call replayed with a fresh `Meter` after row 18's second call stopped | a result equal to the first call's result |
+| 27 | 23 | each stop of rows 7 to 9, 16, 17 after an instance was created | `ledger` and `progress_ledger` equal the request's |
 
-Tag the test `#[trace("FR-523-AC-1", ..., "FR-523-AC-22", "TC-1318")]`; rows 4a to 4c carry FR-523-AC-4 and rows 5a to 5c carry FR-523-AC-5. Row 5a to 5c also carry FR-516-AC-7 where it is the same vector.
+Tag the test `#[trace("FR-523-AC-1", ..., "FR-523-AC-23", "TC-1318")]`; rows 4a to 4c carry FR-523-AC-4 and rows 5a to 5c carry FR-523-AC-5. Row 5a to 5c also carry FR-516-AC-7 where it is the same vector.
 
 ## Expected Results
 

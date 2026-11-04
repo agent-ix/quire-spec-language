@@ -95,8 +95,10 @@ at each eligible position and one scan per position).
 | `member_bytes` | peak | one byte of the longest single opaque member | `string_bytes` |
 
 - The evaluator SHALL charge a counter only for work it performs.
-- The evaluator SHALL charge a lookup at a silent sample (FR-504) to the call's
-  meter and SHALL NOT charge it to the `evaluation_steps` counter.
+- The evaluator SHALL charge a lookup at a silent sample (FR-504) as the lookup
+  that finds no valuation that it is: one unit of `valuations` and its `visited`
+  unit, and one meter unit at the `temporal.visit` charge point. It SHALL NOT
+  charge it to `evaluation_steps` or to `positions`.
 - The evaluator SHALL keep the counters at thirteen: no counter is added for
   silent samples or for evicted records, whose visit is one hit charged on
   `evaluation_steps` and `visited` (FR-524).
@@ -112,6 +114,9 @@ at each eligible position and one scan per position).
 - After an `Incomplete`, a retry under sufficient ceilings from the same
   inputs SHALL give the result the first call would have given with those
   ceilings.
+- An `Incomplete` result SHALL carry the request's `ledger` and `progress_ledger`
+  unchanged, for a counter, meter, evicted-valuation, clause and lineage stop
+  alike (FR-516).
 - The evaluator SHALL charge the counter before it charges the meter.
 - The evaluator SHALL report a denied counter by its name.
 - When the meter denies a `temporal.visit` charge that every counter admitted,
@@ -179,7 +184,8 @@ at each eligible position and one scan per position).
 | FR-523-AC-18 | The `usage` of a call reports all thirteen counters, and two requests that differ only in one ceiling give distinct `result_identity` values (FR-522-AC-17). | Test (TC-1318) |
 | FR-523-AC-19 | After the second call of AC-14 stopped, the first call replayed with a fresh `Meter` returns a result equal to the first call's result. | Test (TC-1318) |
 | FR-523-AC-20 | A call with a ledger holding `t1`, a redelivery of `t1`, one new healthy delivery and one new faulted delivery reports `instances` usage 1. | Test (TC-1318) |
-| FR-523-AC-21 | Over a fixed-sample clause that reads silent samples, the lookups at silent samples raise the meter's work-unit usage and leave `evaluation_steps` unchanged, and `usage` holds the same thirteen counters. | Test (TC-1318) |
+| FR-523-AC-21 | Over a fixed-sample clause that reads silent samples, each lookup at a silent sample raises `valuations`, `visited` and the meter's work-unit usage at the `temporal.visit` charge point by one and leaves `evaluation_steps` and `positions` unchanged, and `usage` holds the same thirteen counters. | Test (TC-1318) |
+| FR-523-AC-23 | For each stop of AC-5, AC-12, AC-13 and AC-16 after a call has created an instance, the result's `ledger` and `progress_ledger` equal the request's byte for byte. | Test (TC-1318) |
 | FR-523-AC-22 | Every stop of AC-5, AC-12, AC-13 and AC-16 is an `Ok` result with `activation = Unavailable`, `incomplete` naming the counter and no truth, and none is an `Err`. | Test (TC-1318) |
 
 ## Dependencies

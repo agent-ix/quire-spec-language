@@ -30,15 +30,16 @@ FR-515-AC-17. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 10 | 10 | a guard `g` that is no `holds` operand; `checked_predicate` of `g` | `ActivationGuard`; `g` absent from `predicate_leaves()` |
 | 11 | 11 | a guard equal to a `holds` operand (one node); `checked_predicate` of it | `ActivationGuard`; the node present in `predicate_leaves()` once per reading `holds` atom |
 | 12 | 12 | a leaf the clause reads whose source map entry is removed | `LeafHasNoSource`; no partial view |
-| 13 | 13 | two structurally equal clauses under a clock-configured profile | one node, two occurrences, admitted; gated on the Contract IR decision |
+| 13 | 13 | two structurally equal clauses under a clock-configured profile | one node, two occurrences, one clock row per occurrence, admitted |
 | 14 | 14 | a reader that implements IR-1278; `name()` | the declared name, equal to the sidecar's; gated on IR-1278 |
 | 15 | 15 | a clause named by no protocol `requirements` entry; a clause named by one | empty; the protocol clause's node id |
 | 16 | 16 | `checked_predicate` of an activation guard | `source_span` is an entry of the guard node |
 | 17 | 17 | `checked_predicate` of a `ClauseLeaf` that is neither a `holds` operand nor the guard | `source_span` inside the formula root's source regions |
 | 18 | 18 | the in-memory package before emit vs the read-back package, each of **R**'s clauses | equal `profile()` and `clock()` |
-| 19 | 19 | two clauses of different nodes and clock rows | each node's `clock()` is its own row by ordinal, in both packages |
+| 19 | 19 | two clauses of different nodes and clock rows | each node's `clock()` is its own row, in both packages |
+| 20 | 20 | twins of one node, ordinals 7 and 3 listed in that order, different clock configurations | `clock_of` returns the row keyed by each ordinal; `clock()` `None`; same in both packages |
 
-Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-19", "TC-1310")]` for the criteria each row covers.
+Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-20", "TC-1310")]` for the criteria each row covers.
 
 ## Expected Results
 
