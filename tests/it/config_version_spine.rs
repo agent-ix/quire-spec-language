@@ -1001,6 +1001,48 @@ fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
     );
 }
 
+/// FR-047-AC-8 (TC-131): ConfigVersion's parent semantics on the checked
+/// route. An update that keeps the child's `parent` evaluates true; one that
+/// rewrites it is refused at admission with `FrameViolation` -- the frame
+/// forbids the parent write, so no graph semantics is invented for it -- and
+/// a `parent` naming no row is refused `DanglingReference` (catalog `frame_violation`, `dangling_reference`). Each refusal reports stage `Admit`, no Boolean and no evaluation outcome.
+#[trace("TC-131", "FR-047-AC-8")]
+#[test]
+fn a_parent_the_frame_forbids_is_refused_not_given_graph_semantics() {
+    let directory = tempfile::tempdir().unwrap();
+    let run = |case: Case| run_case(&directory.path().join(case.id()), case);
+
+    let kept = run(Case::Unchanged);
+    assert_eq!(kept.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(kept.disposition.truth(), Some(true));
+
+    for (case, code) in [
+        (Case::ForbiddenParent, Code::FrameViolation),
+        (Case::Dangling, Code::DanglingReference),
+    ] {
+        let report = run(case);
+        assert_eq!(
+            report.disposition.stage(),
+            ClauseRunStage::Admit,
+            "{}",
+            case.id()
+        );
+        assert_eq!(
+            report.disposition.category(),
+            Category::Refusal,
+            "{}",
+            case.id()
+        );
+        assert_eq!(report.disposition.truth(), None, "{}", case.id());
+        assert_eq!(
+            disposition_code(&report.disposition),
+            Some(code),
+            "{}",
+            case.id()
+        );
+    }
+}
+
 /// All independently checked corpus outcomes survive the FR-267 result writer
 /// and strict reader without reverting to the retired native value envelope.
 #[trace("TC-469", "FR-108-AC-2", "FR-267-AC-9")]
