@@ -4647,8 +4647,9 @@ fn named_population_read(
     let mut pending = vec![root];
     while let Some(expression) = pending.pop() {
         let population_operand = match expression.node() {
-            ExprNode::AllInstances { population, .. }
-            | ExprNode::Lookup { population, .. } => Some(*population),
+            ExprNode::AllInstances { population, .. } | ExprNode::Lookup { population, .. } => {
+                Some(*population)
+            }
             ExprNode::Query { source, .. }
             | ExprNode::Count { source, .. }
             | ExprNode::Sum { source, .. }
