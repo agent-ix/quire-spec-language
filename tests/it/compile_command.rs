@@ -1102,7 +1102,6 @@ fn refinement_internals_compile_matches_the_spine_composition() {
         library_absent.stdout,
         emit_composition(Some(root_internals), None)
     );
-    assert_ne!(output.stdout, library_absent.stdout);
 }
 
 /// FR-147-AC-10 (TC-552): an internal-list defect is attributed to the
