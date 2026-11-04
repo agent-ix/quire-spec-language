@@ -22,7 +22,7 @@ fn read_protocol(wire: &Value) -> Read {
     read_protocol_over(wire, &document())
 }
 
-fn read_protocol_over(wire: &Value, document: &[u8]) -> Read {
+pub(super) fn read_protocol_over(wire: &Value, document: &[u8]) -> Read {
     let mut evidence = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
@@ -42,7 +42,7 @@ fn refused_at(
     assert_refused_at(read_protocol(wire), code, cause, pointer)
 }
 
-fn assert_refused_at(
+pub(super) fn assert_refused_at(
     outcome: Read,
     code: CheckedPackageRefusalCode,
     cause: Option<CheckedPackageRefusalCause>,
@@ -1336,7 +1336,7 @@ fn a_decision_that_calls_a_function_reads_back() {
 }
 
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
-mod tc1070;
+pub(super) mod tc1070;
 
 /// Finds an existing emitted subexpression below the given expression reference.
 fn expression_with_operation<'a>(
@@ -1437,7 +1437,7 @@ fn activation_capture_self_and_foreign_reads_are_refused_by_the_reader() {
 
 /// The `expression` occurrences the checked package records for the one node
 /// that has an `expression` occurrence at `at`, in ordinal order.
-fn expression_occurrences_of_node_at(
+pub(super) fn expression_occurrences_of_node_at(
     graph: &qsl_semantics::check::CheckedGraph,
     at: &Location,
 ) -> Vec<(u64, Location)> {
@@ -1508,7 +1508,7 @@ fn each_position_of_an_application_has_its_own_occurrence_in_document_order() {
 /// both constrain `order >= 0` over the protocol capture `order`. The result
 /// binders use `M::Flag` from fixture E's model; neither constraint reads
 /// them, so the shared application is unchanged.
-const E_C_TRIED_PICKED: &str = r#"
+pub(super) const E_C_TRIED_PICKED: &str = r#"
 language "ix:native" edition "1-draft";
 profile P = "quire.protocol.finite-global/v1";
 model M = "test/orders";

@@ -289,6 +289,14 @@ pub enum EmitRefusal {
         /// The exact checked application key retained by QSL lowering.
         application: NodeKey,
     },
+    /// A term of an emitted protocol slot expression has no single emitted
+    /// application, recorded occurrence or slot site name to write its
+    /// FR-383 `protocol_locations` row from.
+    #[error("protocol slot term {application:?} has no complete emitted location context")]
+    MissingProtocolLocationContext {
+        /// The checked application key lowered at the term.
+        application: NodeKey,
+    },
 }
 
 /// One explicit clock configuration selected for an exact checked temporal
@@ -345,7 +353,8 @@ impl EmitRefusal {
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
             Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
-            Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::MissingDispatchIdentityContext { .. }
+            | Self::MissingProtocolLocationContext { .. } => Code::RuntimeInvariant,
             Self::ProtocolResultInvariant => Code::RuntimeInvariant,
         }
     }
@@ -383,7 +392,8 @@ impl EmitRefusal {
             | Self::TemporalClockProfileMismatch { .. } => Some("timed-node-reference"),
             Self::InvalidTemporalClockValue { .. } => Some("invalid-value"),
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
-            Self::MissingDispatchIdentityContext { .. } => None,
+            Self::MissingDispatchIdentityContext { .. }
+            | Self::MissingProtocolLocationContext { .. } => None,
             Self::ProtocolResultInvariant => None,
         }
     }
@@ -3129,6 +3139,8 @@ fn checked_term_data(
     )?
     .unwrap_or_default();
     term_data.dispatch_tables = checked_dispatch_tables(graph, emitted_node_ids, source_map)?;
+    term_data.protocol_locations =
+        protocol_locations::checked_protocol_locations(graph, emitted_node_ids)?;
     Ok((!term_data.equality_decisions.is_empty()
         || !term_data.protocol_locations.is_empty()
         || !term_data.dispatch_tables.is_empty())
@@ -6488,6 +6500,7 @@ pub(crate) mod tests;
 #[cfg(test)]
 mod extent_agreement;
 mod monitor_plan;
+mod protocol_locations;
 pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;

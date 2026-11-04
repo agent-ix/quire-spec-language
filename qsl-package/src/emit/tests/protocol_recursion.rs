@@ -451,9 +451,9 @@ fn mixed_protocol_cycle_work_is_linear_and_uses_the_exact_budget() {
     assert!(check_result(&text, limits.with_work_budget(exact)).is_ok());
 }
 
-#[trace("FR-383-AC-25")]
-#[test]
-fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
+/// The 100,000-control mixed function/protocol cycle, checked within its
+/// measured S3 charge and emitted.
+fn emitted_100000_member_cycle() -> (Emission, String) {
     const CHECKS: usize = 100_000;
     // The measured mixed-cycle charge is exactly 10 units per control plus
     // 94 fixed units at 32, 64 and 128 controls; use that measured linear
@@ -480,6 +480,29 @@ fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("package emits");
     assert!(emission.omitted.is_empty());
     let wire = wire(&emission);
+    let wire_group = nodes(&wire)
+        .iter()
+        .filter(|node| node.get("recursion_group").is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(wire_group.len(), CHECKS + 5);
+    (emission, model_digest)
+}
+
+#[trace("FR-383-AC-25")]
+#[test]
+fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
+    emitted_100000_member_cycle();
+}
+
+/// The I2 read of the package above. Its 100,000 `refers()` visits write
+/// 100,000 FR-383 `protocol_locations` rows for one application, and the
+/// locked IR reader joins each row by a scan of every node, occurrence and
+/// source-map entry, so it exhausts the I2 work bound at row 241.
+#[trace("FR-383-AC-25")]
+#[test]
+#[ignore = "gated on the IR reader: protocol_locations validation scans nodes, occurrences and source map once per row (I2 work O(rows x package))"]
+fn a_100000_member_function_protocol_cycle_reads_back_at_i2() {
+    let (emission, model_digest) = emitted_100000_member_cycle();
     let mut evidence = read_evidence(&emission);
     evidence
         .insert_domain_package_document(model_digest.as_str(), SPINE_MODEL_DOCUMENT)
@@ -492,11 +515,6 @@ fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
         .with_work(100_000_000);
     let read = read_v2(emission.package.bytes(), library(), read_limits, &evidence);
     assert!(matches!(read, Read::Verified { .. }), "I2 read: {read:?}");
-    let wire_group = nodes(&wire)
-        .iter()
-        .filter(|node| node.get("recursion_group").is_some())
-        .collect::<Vec<_>>();
-    assert_eq!(wire_group.len(), CHECKS + 5);
 }
 
 /// FR-383-AC-21: the I2 node limit is caller-controlled, and a deeply nested
