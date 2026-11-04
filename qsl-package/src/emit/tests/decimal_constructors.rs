@@ -189,28 +189,36 @@ fn a_quotient_by_a_nonzero_literal_lowers_one_div_node() {
 #[trace("FR-093-AC-42", "TC-1232")]
 #[test]
 fn a_literal_beside_a_typed_operand_lowers_at_the_peers_type() {
+    // `p_literal` pins P's own type node: its literal is typed by P.
     let emission = emitted(
         "type P = Decimal[0, 1000; 2, 2; exact];\n\
          type R = Decimal[0, 1000; 1, 1; exact];\n\
-         function f using v(r: R): P pure { convert<P>(decimal(15, 1) + r) }\n",
+         function f using v(r: R): P pure { convert<P>(decimal(15, 1) + r) }\n\
+         function p_literal using v(): P pure { decimal(150, 2) }\n",
     );
     let literals = decimal_literals(&emission);
-    let [(value, literal_type)] = literals.as_slice() else {
-        panic!("one decimal literal, got {literals:?}");
+    let type_of = |text: &str| {
+        literals
+            .iter()
+            .find(|(value, _)| value == text)
+            .unwrap_or_else(|| panic!("the {text} literal in {literals:?}"))
+            .1
+            .clone()
     };
-    assert_eq!(value, "1.5");
+    let (r_type, p_type) = (type_of("1.5"), type_of("1.50"));
+    assert_ne!(r_type, p_type, "R and P are two type nodes");
     let sums = applications(&emission, "quire.op.decimal.add");
     let [sum] = sums.as_slice() else {
         panic!("one sum, got {sums:?}");
     };
-    assert_eq!(sum["result_type"], *literal_type, "the sum is typed R");
+    assert_eq!(sum["result_type"], r_type, "the sum is typed R");
     let converts = applications(&emission, "quire.op.numeric.convert");
     let [convert] = converts.as_slice() else {
         panic!("one convert node, got {converts:?}");
     };
-    assert_ne!(
-        convert["result_type"], *literal_type,
-        "the conversion's result is P's node, not R's"
+    assert_eq!(
+        convert["result_type"], p_type,
+        "the conversion's result_type is P's type node"
     );
     assert_eq!(convert["arguments"].as_array().map(Vec::len), Some(1));
     admitted(&emission);

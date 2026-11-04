@@ -15,7 +15,8 @@ use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckingLimitKind, DecimalLiteralLimits, PackageDeclarations,
+    AssemblyCause, CheckCause, CheckRefusal, CheckingLimitKind, DecimalLiteralLimits,
+    PackageDeclarations,
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
@@ -1035,11 +1036,10 @@ fn a_unit_declarations_scale_is_limited_by_the_assembly_setting() {
     let [error] = refusal.errors.as_slice() else {
         panic!("one error, not {:?}", refusal.errors);
     };
-    let rendered = format!("{:?}", error.cause);
-    assert!(rendered.contains("DecimalScaleLimit"), "{rendered}");
-    assert!(
-        rendered.contains("4096") && rendered.contains("5000"),
-        "{rendered}"
-    );
-    assert!(rendered.contains("S3DecimalScale"), "{rendered}");
+    let AssemblyCause::DecimalScaleLimit(limit) = &error.cause else {
+        panic!("a decimal-scale limit, not {:?}", error.cause);
+    };
+    assert_eq!(limit.configured_bound(), 4096);
+    assert_eq!(limit.actual(), 5000);
+    assert_eq!(limit.setting(), qsl_foundation::Setting::S3DecimalScale);
 }
