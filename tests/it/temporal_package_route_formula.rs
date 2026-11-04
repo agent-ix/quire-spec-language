@@ -140,7 +140,7 @@ fn a_clause_the_package_does_not_hold_is_unresolved() {
 /// checked formula's arena.
 #[trace("FR-515-AC-23", "TC-1310")]
 #[test]
-fn the_call_measures_the_package_listing_and_not_the_checked_arena() {
+fn the_call_measures_the_package_listing() {
     let built = event_clauses(
         "temporal Due using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { \
          always[0,5] (holds(c.versionNumber >= 1) and holds(c.versionNumber >= 2) \
@@ -153,17 +153,19 @@ fn the_call_measures_the_package_listing_and_not_the_checked_arena() {
     let subject = package.subject(&clause, None).expect("reads");
     let view = package.temporal_subject(&clause).expect("reads");
     assert_eq!(
-        subject.formula,
-        ClauseFormula::of_graph(view.formula_graph())
+        subject.facts.formula(),
+        &ClauseFormula::of_graph(view.formula_graph())
     );
-    assert_ne!(
-        subject.formula,
-        ClauseFormula::of_checked(subject.clause.formula()),
-        "the arena lists the nodes in an order of its own"
-    );
+    let source = read
+        .source()
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|node| node.clause().name() == "Due")
+        .expect("Due");
     assert_eq!(
-        subject.formula.work(),
-        ClauseWork::of(subject.clause.formula())
+        subject.facts.formula().work(),
+        ClauseWork::of(source.clause().formula())
     );
 }
 

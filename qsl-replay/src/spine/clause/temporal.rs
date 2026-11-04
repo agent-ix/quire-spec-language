@@ -642,7 +642,12 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
                 },
             };
             let identities = documents.iter().map(observation_identity).collect();
-            match TimestampedTrace::admit_progressed(clause, identities, assertion, &mut meter) {
+            match TimestampedTrace::admit_progressed(
+                &qsl_eval::temporal::evidence::ClauseFacts::of_checked(clause),
+                identities,
+                assertion,
+                &mut meter,
+            ) {
                 Ok(Ok(admitted)) => Some(admitted),
                 Ok(Err(inconsistent)) => {
                     let member = match inconsistent {
@@ -758,7 +763,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             ));
         };
         let binding = LedgerBinding {
-            package: package_identity,
+            package: package_identity.identity.clone(),
             clause: node.identity(),
             occurrence: node.claim().ordinal(),
             clock: clause.clock().to_owned(),

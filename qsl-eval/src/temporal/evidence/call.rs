@@ -81,8 +81,7 @@ pub(super) fn refusal(
 /// The subject with the occurrence the request selected and its clock row.
 struct ResolvedSubject<'p> {
     selection: ClauseSelection<'p>,
-    clause: &'p qsl_semantics::check::CheckedTemporalClause,
-    formula: &'p super::work::ClauseFormula,
+    facts: &'p crate::temporal::facts::ClauseFacts,
     instance_bound: &'p BTreeSet<u64>,
     activation_map: &'p [super::request::ActivationRow],
     progress: crate::temporal::ledger::LedgerBinding,
@@ -93,7 +92,7 @@ struct ResolvedSubject<'p> {
 
 impl ResolvedSubject<'_> {
     fn shape(&self) -> ClauseShape {
-        ClauseShape::of(self.clause)
+        ClauseShape::of(self.facts)
     }
 }
 
@@ -134,8 +133,7 @@ fn resolve<'p>(
             profile: subject.profile,
             clock: chosen.clock,
         },
-        clause: subject.clause,
-        formula: &subject.formula,
+        facts: &subject.facts,
         instance_bound: &subject.instance_bound,
         activation_map: subject.activation_map,
         progress: crate::temporal::ledger::LedgerBinding {
@@ -299,7 +297,7 @@ fn admit<'a>(
         .map_err(|_| fault("identity-members-encode"))?;
     let (result_identity, input_identity) = (identity.result_identity(), identity.input_identity());
     let lineage = admit_relation(request, &obligation, &input_identity)?;
-    match subject.clause.activation() {
+    match subject.facts.activation() {
         ClauseActivation::Each { .. } if !request.origins.is_empty() => {
             return Err(refusal("activation-list-mismatch", "origins", &[]));
         }
@@ -500,7 +498,7 @@ fn encode_trace(subject: &ResolvedSubject<'_>, request: &EvidenceRequest) -> Vec
     let mut encoder = MemberEncoder::new().u64(request.positions.len() as u64);
     // The listing is the order of an event-position or fixed-sample trace;
     // a timestamped trace has the canonical order of FR-501.
-    let ordered = if subject.clause.profile() == TemporalProfile::TimestampedEventFiniteWindow {
+    let ordered = if subject.facts.profile() == TemporalProfile::TimestampedEventFiniteWindow {
         canonical(&request.positions)
     } else {
         request.positions.iter().collect()
@@ -852,6 +850,7 @@ struct EvidenceLetters<'a> {
     request: &'a EvidenceRequest,
     trace: &'a TimestampedTrace,
     bound: &'a BTreeSet<u64>,
+    formula: &'a crate::temporal::facts::ClauseFormula,
     assessed: Option<&'a SemanticTriggerIdentity>,
     evicted: Option<EvidenceIncomplete>,
     holders: BTreeMap<(u64, u64), Vec<SemanticTriggerIdentity>>,
@@ -887,7 +886,10 @@ impl TemporalLetters for EvidenceLetters<'_> {
         position: TemporalPosition,
         _meter: &mut Meter,
     ) -> Result<Valuation, LetterStop> {
-        let atom_index = u64::try_from(atom.index()).map_err(|_| Self::invariant("atom-in-u64"))?;
+        let atom_index = self
+            .formula
+            .atom_index(atom.index())
+            .ok_or_else(|| Self::invariant("letter-read-is-an-atom"))?;
         let Some(supplied) = self
             .trace
             .supplied_index(position)
@@ -983,7 +985,7 @@ fn admit_trace(
     meter: &mut Meter,
 ) -> Result<Result<TimestampedTrace, Box<Outcome>>, CallFailure> {
     let request = facts.request;
-    let clause = facts.subject.clause;
+    let clause_facts = facts.subject.facts;
     let completeness = request
         .completeness
         .as_ref()
@@ -996,7 +998,7 @@ fn admit_trace(
         LowerBoundary::HistoryCutoff
     };
     if matches!(
-        clause.profile(),
+        clause_facts.profile(),
         TemporalProfile::EventPositionFalseExtension | TemporalProfile::FixedSampleFalseExtension
     ) {
         // Position `i` of the listing has coordinate `i` (FR-504). A withdrawn
@@ -1015,7 +1017,8 @@ fn admit_trace(
             .iter()
             .map(|position| position.observation.identity.clone())
             .collect();
-        return match TimestampedTrace::admit_progressed(clause, observations, progress, meter) {
+        return match TimestampedTrace::admit_progressed(clause_facts, observations, progress, meter)
+        {
             Err(_) => Err(fault("trace-admits")),
             Ok(Ok(trace)) => Ok(Ok(trace)),
             Ok(Err(ProgressedRefusal::Incomplete(incomplete))) => {
@@ -1039,7 +1042,7 @@ fn admit_trace(
         | qsl_package::ClockConfiguration::FixedSample { .. } => String::new(),
     };
     TimestampedTrace::admit(
-        clause.name(),
+        clause_facts.name(),
         WindowClock {
             unit,
             cover: request.cover,
@@ -1199,7 +1202,7 @@ fn assess(
         .get(activation_position)
         .map(|position| position.stamp)
         .ok_or_else(|| fault("activation-position-is-admitted"))?;
-    match facts.subject.formula.work() {
+    match facts.subject.facts.formula().work() {
         Ok(_) | Err(ReachFault::Overflow) => {}
         Err(unreadable) => {
             return Err(refusal(
@@ -1260,7 +1263,7 @@ fn run_instance(
         ClockCover::Exact => None,
         ClockCover::Counter { uncertainty } => Some(uncertainty),
     };
-    match call.admit_work(subject.formula.work(), uncertainty, [*anchor_tick]) {
+    match call.admit_work(subject.facts.formula().work(), uncertainty, [*anchor_tick]) {
         Ok(_) => {}
         Err(ClauseStop::Limit(limit)) => {
             return Ok(Outcome::stopped(EvidenceIncomplete::Limit(limit)));
@@ -1358,11 +1361,12 @@ fn evaluate(
     call: &mut CallMeter<'_>,
 ) -> Result<Outcome, CallFailure> {
     let request = facts.request;
-    let clause = facts.subject.clause;
+    let clause_facts = facts.subject.facts;
     let mut letters = EvidenceLetters {
         request,
         trace,
         bound: facts.subject.instance_bound,
+        formula: facts.subject.facts.formula(),
         assessed: Some(trigger),
         evicted: None,
         holders: BTreeMap::new(),
@@ -1371,7 +1375,7 @@ fn evaluate(
     let mut scratch = Meter::new(*call.meter().limits());
     let mut charger = UnitCharger { call, stop: None };
     let evaluation = evaluate_finite_window_at(
-        clause,
+        clause_facts,
         trace,
         activation_position,
         &mut letters,
@@ -1427,7 +1431,12 @@ fn evaluate(
         WindowVerdict::Indeterminate { reason, .. } => {
             let (indeterminate, kind, code) = match reason {
                 IndeterminateReason::MissingValuation { position, atom } => {
-                    let atom = u64::try_from(atom.index()).map_err(|_| fault("atom-in-u64"))?;
+                    let atom = facts
+                        .subject
+                        .facts
+                        .formula()
+                        .atom_index(atom.index())
+                        .ok_or_else(|| fault("indeterminate-atom-is-an-atom"))?;
                     let bound = facts.subject.instance_bound.contains(&atom);
                     (
                         Indeterminate::MissingValuation {
@@ -1447,7 +1456,12 @@ fn evaluate(
                 IndeterminateReason::ConflictingValuation { position, atom } => (
                     Indeterminate::ConflictingValuation {
                         position: position.index(),
-                        atom: u64::try_from(atom.index()).map_err(|_| fault("atom-in-u64"))?,
+                        atom: facts
+                            .subject
+                            .facts
+                            .formula()
+                            .atom_index(atom.index())
+                            .ok_or_else(|| fault("indeterminate-atom-is-an-atom"))?,
                     },
                     NonValueKind::Refused,
                     "conflicting-valuation",
@@ -1500,7 +1514,12 @@ fn evaluate(
         };
         outcome.support.push(SupportRef {
             observation,
-            atom: u64::try_from(pair.atom.index()).map_err(|_| fault("atom-in-u64"))?,
+            atom: facts
+                .subject
+                .facts
+                .formula()
+                .atom_index(pair.atom.index())
+                .ok_or_else(|| fault("support-atom-is-an-atom"))?,
         });
     }
     if outcome.truth.is_some() {

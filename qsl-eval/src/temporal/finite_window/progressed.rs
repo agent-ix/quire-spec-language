@@ -10,7 +10,8 @@
 //! translated once, here, into the progress the evaluator reads, and the
 //! request's own assertion is kept for the report and the result identity.
 
-use qsl_semantics::check::{CheckedTemporalClause, TemporalProfile};
+use crate::temporal::facts::ClauseFacts;
+use qsl_semantics::check::TemporalProfile;
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 
 use super::cover::ClockCover;
@@ -20,7 +21,7 @@ use super::trace::{
 };
 use crate::temporal::ledger::{ProgressClosure, ProgressCompleteness};
 use crate::temporal::outcome::TemporalRefusal;
-use crate::temporal::plan::{fault, Plan};
+use crate::temporal::plan::fault;
 
 /// The progress a finite trace of event-position or fixed-sample positions
 /// asserts (FR-504 Inputs).
@@ -74,7 +75,7 @@ impl TimestampedTrace {
     /// A [`TemporalRefusal`] for an empty trace or a fault; a
     /// [`ProgressedRefusal`] for an assertion the trace contradicts.
     pub fn admit_progressed(
-        clause: &CheckedTemporalClause,
+        clause: &ClauseFacts,
         observations: Vec<String>,
         progress: SampleProgress,
         meter: &mut Meter,
@@ -132,8 +133,8 @@ impl TimestampedTrace {
             (seen, ProgressCompleteness::Complete { through: seen })
         };
         let silent = if fixed {
-            let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
-            let reach = *reaches(&plan)
+            let plan = clause.formula().plan().map_err(TemporalRefusal::Fault)?;
+            let reach = *reaches(plan)
                 .map_err(TemporalRefusal::Fault)?
                 .get(plan.root)
                 .ok_or_else(|| TemporalRefusal::Fault(fault("plan-index-in-arena")))?;

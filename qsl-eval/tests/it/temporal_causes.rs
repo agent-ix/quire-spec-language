@@ -7,7 +7,7 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{
-    evaluate_temporal_evidence, instance_bound_indices, ActivationState, ClauseFormula, ClauseWork,
+    bound_atom_indices, evaluate_temporal_evidence, ActivationState, ClauseFormula, ClauseWork,
     CompletenessRecord, EvidenceCounter, EvidenceIncomplete, EvidenceRef, EvidenceRequest,
     EvidenceResult, ReachFault, SubjectOccurrence,
 };
@@ -26,12 +26,32 @@ fn interval(value: serde_json::Value) -> Option<CheckedOperationInterval> {
     Some(serde_json::from_value(value).expect("an interval"))
 }
 
+fn placeholder_node() -> &'static qsl_package::CheckedNodeId {
+    static NODE: std::sync::OnceLock<qsl_package::CheckedNodeId> = std::sync::OnceLock::new();
+    NODE.get_or_init(|| node_id(0))
+}
+
+fn node_id(ordinal: u64) -> qsl_package::CheckedNodeId {
+    serde_json::from_value(json!({"package": "p", "path": ["n"], "ordinal": ordinal}))
+        .expect("a node id")
+}
+
+/// The entries of `uses`, each a distinct node: no entry is a second use.
+fn numbered(mut uses: Vec<FormulaNodeUse<'static>>) -> Vec<FormulaNodeUse<'static>> {
+    for (position, entry) in uses.iter_mut().enumerate() {
+        let id: &'static qsl_package::CheckedNodeId = Box::leak(Box::new(node_id(position as u64)));
+        entry.node = id;
+    }
+    uses
+}
+
 fn use_of(
     operation: &'static str,
     interval: Option<CheckedOperationInterval>,
     operands: &[usize],
 ) -> FormulaNodeUse<'static> {
     FormulaNodeUse {
+        node: placeholder_node(),
         operation,
         interval,
         operands: operands.to_vec(),
@@ -217,13 +237,16 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
     ];
 
     let mut subject = env.subject(&[]);
-    subject.formula = ClauseFormula::of_graph(&readable);
+    subject.facts = subject
+        .facts
+        .clone()
+        .with_formula(ClauseFormula::of_graph(&numbered(readable)));
     assert!(evaluate_temporal_evidence(&subject, &asked, &mut unlimited()).is_ok());
     for (what, graph, fault) in unreadable {
-        let formula = ClauseFormula::of_graph(&graph);
+        let formula = ClauseFormula::of_graph(&numbered(graph));
         assert_eq!(formula.work(), Err(fault), "{what}");
         let mut subject = env.subject(&[]);
-        subject.formula = formula;
+        subject.facts = subject.facts.clone().with_formula(formula);
         let mut meter = unlimited();
         expect_refusal(
             evaluate_temporal_evidence(&subject, &asked, &mut meter),
@@ -240,7 +263,10 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         use_of(HOLDS, None, &[]),
     ];
     let mut subject = env.subject(&[]);
-    subject.formula = ClauseFormula::of_graph(&overflow);
+    subject.facts = subject
+        .facts
+        .clone()
+        .with_formula(ClauseFormula::of_graph(&numbered(overflow)));
     let result = evaluate_temporal_evidence(&subject, &asked, &mut unlimited())
         .expect("an overflowing sum is a result");
     assert_eq!(result.activation, ActivationState::Unavailable);
@@ -266,21 +292,44 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
 #[trace("FR-516-AC-39", "FR-515-AC-22", "TC-1311", "TC-1310")]
 #[test]
 fn a_leaf_count_that_differs_from_the_holds_count_maps_no_atoms() {
-    let env = env("on origin", "eventually[0, 2] holds(p)");
-    let p = env.atom("p");
-    let formula = env.fixture.clause.formula();
-    let nodes = formula.nodes().len();
+    let graph = numbered(vec![
+        use_of(ALWAYS, interval(json!({"lower": "0", "upper": "2"})), &[1]),
+        use_of(HOLDS, None, &[]),
+    ]);
+    assert_eq!(bound_atom_indices(&graph, &[true]), Some([0].into()));
+    // A count of reads that differs from the `holds` count maps no atoms.
+    assert_eq!(bound_atom_indices(&graph, &[true, false]), None);
+    assert_eq!(bound_atom_indices(&graph, &[]), None);
+    assert_eq!(bound_atom_indices(&graph, &[false]), Some([].into()));
+    // Two `holds` nodes are atoms 0 and 1 in first-use order; the second
+    // alone reads an instance binder.
+    let two = numbered(vec![
+        use_of(NOT, None, &[1]),
+        use_of(HOLDS, None, &[]),
+        use_of(HOLDS, None, &[]),
+    ]);
+    assert_eq!(bound_atom_indices(&two, &[false, true]), Some([1].into()));
+    // A shared atom node is one index, and instance-bound when its operand is.
+    let shared = numbered(vec![
+        use_of(NOT, None, &[1]),
+        use_of(HOLDS, None, &[]),
+        use_of(HOLDS, None, &[]),
+    ]);
+    let mut same = shared.clone();
+    same[2].node = same[1].node;
+    assert_eq!(bound_atom_indices(&same, &[true, true]), Some([0].into()));
+    // A distinct atom after a shared one is atom 1.
+    let mut after = numbered(vec![
+        use_of(NOT, None, &[1, 2, 3]),
+        use_of(HOLDS, None, &[]),
+        use_of(HOLDS, None, &[]),
+        use_of(HOLDS, None, &[]),
+    ]);
+    after[2].node = after[1].node;
     assert_eq!(
-        instance_bound_indices(formula, &[true], nodes),
-        Some([p].into())
+        bound_atom_indices(&after, &[false, false, true]),
+        Some([1].into())
     );
-    assert_eq!(
-        instance_bound_indices(formula, &[false], nodes),
-        Some([].into())
-    );
-    assert_eq!(instance_bound_indices(formula, &[true, false], nodes), None);
-    assert_eq!(instance_bound_indices(formula, &[], nodes), None);
-    assert_eq!(instance_bound_indices(formula, &[true], 1), None);
 }
 
 /// FR-516-AC-40, FR-516-AC-41 (TC-1311 rows 40 and 41): each cause of the
@@ -462,8 +511,13 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
     let reach = env("on origin", "eventually[0, 2] holds(p)");
     let reach_p = reach.atom("p");
     let mut unreadable = reach.subject(&[]);
-    unreadable.formula =
-        ClauseFormula::of_graph(&[use_of(ALWAYS, None, &[1]), use_of(HOLDS, None, &[])]);
+    unreadable.facts = unreadable
+        .facts
+        .clone()
+        .with_formula(ClauseFormula::of_graph(&numbered(vec![
+            use_of(ALWAYS, None, &[1]),
+            use_of(HOLDS, None, &[]),
+        ])));
     let asked = origin_request(&reach, reach_p);
     let mut meter = unlimited();
     expect_refusal(

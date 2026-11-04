@@ -216,7 +216,12 @@ pub fn evaluate_observed_finite_window(
         classes: valuations.classes,
         silent_from: valuations.silent_from,
     };
-    let result = evaluate_finite_window(clause.clause(), trace, &mut letters, meter);
+    let result = evaluate_finite_window(
+        &crate::temporal::facts::ClauseFacts::of_checked(clause.clause()),
+        trace,
+        &mut letters,
+        meter,
+    );
     ObservedWindowRun {
         result,
         stopped: letters.stopped,

@@ -75,9 +75,16 @@ pub enum OperatorDirection {
     Past,
 }
 
+/// The work limit of projecting one capture's declared type.
+const CAPTURE_TYPE_WORK: u64 = 256;
+
 /// One formula node of a clause with the positions of its operands.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FormulaNodeUse<'p> {
+    /// The checked node this entry is a use of. Equal terms share one node
+    /// (FR-337), so two entries with one `node` are two uses of one formula
+    /// node, which FR-532 counts as one atom or one operator.
+    pub node: &'p CheckedNodeId,
     /// The `quire.op.temporal.*` operation identity.
     pub operation: &'p str,
     /// The interval member, `None` for an unbounded or interval-free node.
@@ -263,7 +270,7 @@ impl<'p> TemporalSubjectView<'p> {
     }
 
     /// The declared name of each capture, in source order.
-    pub(super) fn capture_names(&self) -> &[String] {
+    pub fn capture_names(&self) -> &[String] {
         &self.capture_names
     }
 
@@ -282,6 +289,31 @@ impl<'p> TemporalSubjectView<'p> {
     /// node, so a guard equal to a `holds` operand is among these entries.
     pub fn predicate_leaves(&self) -> &[CheckedNodeId] {
         &self.predicate_leaves
+    }
+
+    /// The structural key of the clause node (FR-502 `clause`).
+    pub fn declaration_key(&self) -> Option<quire_exact::NodeKey> {
+        wire_graph(self.package).ok()?.key(self.declaration).ok()
+    }
+
+    /// The declared value type of each capture, in source order, projected
+    /// from the typed result type of its initializer term as FR-390
+    /// projects a binder type (FR-532 `captures`). `None` when a type has no
+    /// kernel representation under `identities`, the selected model identity
+    /// rows a declaration-bearing type (a record, an object) needs.
+    pub fn capture_value_types(
+        &self,
+        identities: &quire_contract_model::SelectedExactIdentities,
+    ) -> Option<Vec<quire_exact::ValueType>> {
+        self.captures
+            .iter()
+            .map(|initializer| {
+                self.package
+                    .project_exact_type(initializer, identities, CAPTURE_TYPE_WORK)
+                    .ok()
+                    .map(|projected| projected.value_type().clone())
+            })
+            .collect()
     }
 
     /// Whether `package` is the package this view was read from.
@@ -603,6 +635,10 @@ fn formula_reads<'p>(
                 .push(position);
         }
         uses.push(FormulaNodeUse {
+            node: graph
+                .node(at)
+                .map(|node| &node.node_id)
+                .ok_or(ViewRefusal::UnresolvedClause)?,
             operation,
             interval,
             operands: Vec::new(),
