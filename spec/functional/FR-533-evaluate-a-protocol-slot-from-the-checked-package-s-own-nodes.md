@@ -118,8 +118,8 @@ the in-process route does. Until the wire projector carries those members it
 refuses `MissingTypeRepresentation`: the code today supplies the exact recursive
 value type from the source root, and the projector does not recurse through Option
 and Collection members. The bare route has no source root, and no bare result
-substitutes a guessed type. This is unmet parity with an unmet dependency, a Contract
-IR change to project recursive, Option and Collection members of the wire (FR-390:
+substitutes a guessed type. This is unmet parity with an unmet dependency, Contract IR-1324 (project
+recursive, Option and Collection members of the wire) (FR-390:
 an unsupported projection of a type QSL emits and evaluates is an unmet dependency,
 not a scope reduction).
 
@@ -161,6 +161,9 @@ FR-520-AC-11 states.
   `protocol_locations` rows with visits) and QSL-1626 (compound `UnitId` in the
   reader projection). Until they land the bare route faults or refuses for those
   slots, which is unmet parity, not a scope reduction.
-- **Contract IR (ticket id to be added by the coordinator):** projection of
-  recursive, Option and Collection members of the wire (FR-533-AC-7).
+- **Contract IR:** IR-1324 (the wire projector carries recursive record types and
+  Option and Collection members; owner luna:IR:codex2) is the unmet-parity
+  dependency of FR-533-AC-7. A public read access to the direct dependencies a
+  `CheckedPackageV2` retains from its read evidence is a further Contract IR
+  dependency of the bare route over a package that has dependencies (FR-531).
 - **Downstream:** quire-protocol FR-045.

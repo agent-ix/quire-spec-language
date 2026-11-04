@@ -70,8 +70,6 @@ PackageMismatch>` (FR-531). It takes no supply. The call is
 - The bare route SHALL evaluate every formula entry the package carries,
   window aggregate atoms included, and SHALL give for one package and one request
   the result and charges of the in-process routes.
-- Where no route evaluates a form, the requirement is unmet parity and is listed
-  under "Unmet parity".
 
 ### One clause value, from the bytes
 
@@ -104,24 +102,25 @@ else.
 
 ### Atom index
 
-An atom is a distinct `holds` node of the formula. Two `holds` uses with one node
-id (`formula_graph()` entry `node`; equal terms share one node, FR-337) are one
-atom, as the evaluator already keys its letters by node id. The atom index is the
-number of the atom among the distinct `holds` nodes, counted from 0 in the order
-of the first use of each in `formula_graph()` pre-order, over `holds` nodes only:
-no connective, constant or temporal entry takes an index. Valuations are keyed by
-this index on every route (the request's valuations, the evicted records, the
-`valuation:<atom>@<pos>` dimension, `instance_bound`). The in-process routes map
-the checked formula's own arena node of an atom to this index, so the arena index
-is no spelling of an atom, because a package carries no arena. For a formula
-without a shared `holds` node the index of the `k`-th `holds` use is `k`, the
-order FR-515 gives `predicate_leaves()`.
+An atom is a distinct `holds` node or window aggregate node of the formula. Two uses
+with one node id (`formula_graph()` entry `node`; equal terms share one node,
+FR-337) are one atom, as the evaluator already keys its letters by node id. The atom
+index is the number of the atom among the distinct atom nodes, counted from 0 in the
+order of the first use of each in `formula_graph()` pre-order, over atom nodes only:
+no connective, constant or temporal entry takes an index. Valuations and aggregate
+samples are keyed by this index on every route (the request's valuations and
+samples, the evicted records, the `valuation:<atom>@<pos>` dimension,
+`instance_bound`). The in-process routes map the checked formula's own arena node of
+an atom to this index, so the arena index is no spelling of an atom, because a
+package carries no arena. For a formula without a shared atom node the index of the
+`k`-th atom use is `k`, the order FR-515 gives `predicate_leaves()` for `holds`
+atoms.
 
-A shared `holds` atom has one valuation at a position and is looked up once per
-visited position: the evaluator activates each distinct formula node once per
-position (FR-523: a shared node counts once in `formula_nodes`), so a repeated
-operand adds no `valuations`, `visited` or `evaluation_steps` unit beyond the
-atom's one lookup (FR-501-AC-12's lookup charge).
+A shared atom has one valuation at a position and is looked up once per visited
+position: the evaluator activates each distinct formula node once per position
+(FR-523: a shared node counts once in `formula_nodes`), so a repeated operand adds
+no `valuations`, `visited` or `evaluation_steps` unit beyond the atom's one lookup
+(FR-501-AC-12's lookup charge).
 
 ### Truth from the graph
 
@@ -137,24 +136,16 @@ without a finite upper bound, a timed interval under a bounded profile and a
 ### Window aggregates
 
 A clause with a window aggregate atom is emitted as a `quire.op.temporal.aggregate`
-entry whose typed argument carries the window, `min_count`, expression, comparison
-and threshold (FR-337-AC-15). The bare route SHALL evaluate such an atom from
-those members and the request, with FR-194's semantics for the aggregate. Today no
-package route does: `temporal_subject` cannot read the aggregate entry (its
-argument is no reference), so every call over such a clause refuses
-`clause-root-unresolved`, and the truth plan of the in-process formula would fault
-`aggregate-formula-not-emitted` if it were reached. `clause-unreadable` is not the
-cause raised. Parity is the requirement, not the refusal: `formula_graph()` SHALL
-read the entry (FR-515) and every route SHALL evaluate it. The evidence request
-carries a valuation per atom and no per-position value for an aggregate's
-expression, so the request member that carries those values is a gap of FR-516.
-
-### Unmet parity
-
-- Window aggregate atoms: no route evaluates them (above). Dependency: the FR-516
-  request member for per-position aggregate expression values, and FR-194
-  evaluation over the evidence route. Until both exist a call over such a clause
-  refuses as it does today; this is an unmet dependency, not a scope reduction.
+entry whose typed argument carries the aggregate kind, the filter, the window,
+`min_count`, the value expression, the comparison and the converted threshold
+(FR-337-AC-15; QSpec FR-370-AC-14). Every route SHALL evaluate such an atom as
+FR-516 "Window aggregate atoms" states, from the entry's members read from the
+bytes and the per-position samples the request carries. `formula_graph()` SHALL read
+the entry (FR-515: `aggregate` member), and a call over such a clause SHALL NOT
+refuse `clause-root-unresolved`, which every package route raised for it before this
+requirement because `temporal_subject` could not read the entry. The in-process truth
+plan, which faulted `aggregate-formula-not-emitted`, SHALL walk the entry as the atom
+it is. No unmet parity remains for aggregate atoms.
 
 ### The package identity of a progress binding and a result
 
@@ -188,7 +179,7 @@ the three routes. Construction charges nothing.
 | FR-532-AC-3 | For a unit the test authors over `examples/config-version` (capture, `on each` activation, guard) with four `holds` atoms, one clause per operator of FR-337's temporal list (`always`, `eventually`, `once`, `historically`, `until`, `release`, `since`, `triggered`, `not`, `and`, `or`, `implies`), the verdict, settlement, support and per-counter usage over `from_package` equal those over the other two routes at every position of a trace that distinguishes the operator. | Test (TC-1332) |
 | FR-532-AC-4 | A clause with the four distinct `holds` atoms of FR-515-AC-22 in formula order gives the instance-bound set `{0, 3}` on `from_package` and on the other routes, as atom indices 0 to 3 over the `holds` nodes only; swapping the first two atoms gives `{1, 3}`; for a clause whose checked formula has an arena order that differs from first-use order, valuations are keyed by first-use atom index on all three routes, and a request keyed by the arena index reads a different atom (an absent valuation, a `Missing` non-value with dimension `valuation:<atom>@<pos>`). | Test (TC-1332) |
 | FR-532-AC-10 | A clause `always[0,3] (holds(p) and holds(p))` with one shared `holds` node used twice has one atom, index 0: a request with one valuation of atom 0 per position returns a verdict and no `Missing` non-value; a valuation of atom 1 is not read; `usage` counts one `valuations` lookup per visited position, equal to that of `always[0,3] holds(p)`; `instance_bound` holds 0 once when `p` reads a capture; the three routes agree on all of it. | Test (TC-1332) |
-| FR-532-AC-11 | The package of a clause with a window aggregate atom (FR-337-AC-15) is read by `temporal_subject`, and `formula_graph()` returns the entry with its window, `min_count`, expression node, comparison and threshold; the call over it no longer refuses `clause-root-unresolved`. Until the request member of "Unmet parity" exists the call returns the refusal that gap gives, identically on the three routes, and the test records the unmet parity. | Test (TC-1332) |
+| FR-532-AC-11 | The package of a clause `always[0,2] (sum(v) over past[0, 2] <= 15)` with the samples 3, 4, 5, 6 at positions 0 to 3 (FR-516-AC-47) is read by `temporal_subject`; `formula_graph()` returns the aggregate entry with its kind, window, `min_count`, expression node, comparison and threshold; the call over `from_package`, `from_emission` and `from_read` returns the same result and charges, with the atom true at position 3 and false for a threshold of 14, and none refuses `clause-root-unresolved`. | Test (TC-1332) |
 | FR-532-AC-12 | An occurrence with no `temporal_clause_names` row refuses `clause-unreadable` with reason `clause-name`, and a capture whose initializer type has no kernel representation refuses `clause-unreadable` with reason `capture-type`, each with an empty charge log on `from_package`; with the rows present the capture names, in authored order, and their value types equal those of the in-process clause on all three routes. | Test (TC-1332) |
 | FR-532-AC-5 | A `LedgerBinding` and a `result_identity` produced over `from_package` hold `package.name()` as their package component and no source authority or identity label, and over the same package `from_emission` and `from_read` produce byte-equal values; a ledger produced under the labels is progress for a different binding and is not read. | Test (TC-1332) |
 | FR-532-AC-6 | `from_package` over a package with two `temporal_clause_names` rows that pair to one `{ declaration, occurrence }` returns `PackageMismatch::AmbiguousName` and charges nothing; no package makes it return `ClauseRow`, `ProfileSelections` or `Bindings`, which an inspection of the constructor confirms. | Test (TC-1332) |

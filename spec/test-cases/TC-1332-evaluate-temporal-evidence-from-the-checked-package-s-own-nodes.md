@@ -25,7 +25,7 @@ Verify temporal evidence evaluated from a bare package and its equality with the
 | 7 | 7 | unbounded operator, timed interval, cycle, out-of-range operand, window aggregate, count mismatch; their readable counterparts; an overflowing tick sum | `clause-unreadable`, empty charge log; results; `history_span` `Incomplete` |
 | 8 | 8 | two clauses of different nodes; a foreign `binding`; several occurrences with and without a selector; ordinals 7 then 3 | own rows; `binding-mismatch`; `occurrence-required`, `occurrence-unknown`; paired by key |
 | 9 | 10 | `always[0,3] (holds(p) and holds(p))` against `always[0,3] holds(p)`; valuations of atom 0 and of atom 1 | one atom; one lookup per visited position; atom 1 not read; routes agree |
-| 10 | 11 | a clause with a window aggregate atom | the view reads the entry; no `clause-root-unresolved`; the unmet parity recorded |
+| 10 | 11 | `always[0,2] (sum(v) over past[0, 2] <= 15)` with samples 3, 4, 5, 6; threshold 14 | the view reads the entry; true at position 3 and false for 14, equal on the three routes; no `clause-root-unresolved` |
 | 11 | 12 | an occurrence with no name row; a capture of unprojectable type; the rows present | `clause-name`, `capture-type`, empty charge log; equal capture names and types on all routes |
 | 12 | 9 | search the evaluator and constructors for source activation, profile and clock reads and for `SourceIdentity` in `LedgerBinding` | none outside the cross-check |
 

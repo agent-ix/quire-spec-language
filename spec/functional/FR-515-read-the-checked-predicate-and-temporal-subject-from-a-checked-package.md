@@ -248,8 +248,9 @@ starts from an emission.
   the evaluator's atom indices is by formula order: the `k`-th entry of
   `predicate_leaves()` (one per `holds` use in formula pre-order) is the `k`-th
   `holds` use of the clause's formula. The atom index is numbered over the
-  distinct `holds` atoms only, 0 to n-1, a `holds` node shared by two parents
-  being one atom numbered at its first use in pre-order (FR-532 "Atom index").
+  distinct atoms only (the `holds` nodes and the window aggregate nodes), 0 to
+  n-1, a node shared by two parents being one atom numbered at its first use in
+  pre-order (FR-532 "Atom index").
   `EvidenceSubject.instance_bound` is the set of those indices computed from the
   view on every route, and no caller supplies it.
   When `predicate_leaves()` and the formula's `holds` nodes differ in count, the
