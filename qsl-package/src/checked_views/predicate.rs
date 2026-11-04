@@ -261,13 +261,13 @@ fn leaf_source<'p>(
 /// instance binder, one entry per atom in formula pre-order (so entry `k`
 /// belongs to the `k`-th `holds` node and to `predicate_leaves()[k]`).
 ///
-/// The instance binders of a clause are the trigger binder of an `on each`
-/// activation and the binder of each capture, which is the `parameter` node
-/// named like the capture (the captures argument holds the initializers, not
-/// the binders); the `over` binder is neither, and the activation guard is no
+/// The instance binders of a clause are the binders of its captures, each the
+/// `parameter` node named like the capture (the captures argument holds the
+/// initializers, not the binders); the `over` binder is not one, and a `holds`
+/// condition cannot read the trigger binder. The activation guard is no
 /// `holds` atom and has no entry. An atom is
 /// instance-bound when [`CheckedPredicateView::binders`] of its operand
-/// includes an instance binder.
+/// includes a capture binder.
 ///
 /// Refuses [`ViewRefusal::UnresolvedClause`] when the clause's
 /// `predicate_leaves()` and the `holds` nodes of its `formula_graph()` differ
@@ -295,21 +295,16 @@ pub fn instance_bound_atoms(subject: &TemporalSubjectView<'_>) -> Result<Vec<boo
                 },
             )?;
             Ok(view.binders().iter().any(|binder| {
-                let trigger = matches!(
-                    subject.activation(),
-                    Activation::Each { trigger, .. } if trigger == binder
-                );
-                trigger
-                    || subject
-                        .package()
-                        .term(binder)
-                        .and_then(super::subject::parameter_name)
-                        .is_some_and(|name| {
-                            subject
-                                .capture_names()
-                                .iter()
-                                .any(|capture| capture == name)
-                        })
+                subject
+                    .package()
+                    .term(binder)
+                    .and_then(super::subject::parameter_name)
+                    .is_some_and(|name| {
+                        subject
+                            .capture_names()
+                            .iter()
+                            .any(|capture| capture == name)
+                    })
             }))
         })
         .collect()

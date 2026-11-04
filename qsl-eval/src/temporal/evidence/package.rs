@@ -16,7 +16,7 @@
 use std::collections::BTreeSet;
 
 use qsl_package::checked_views::{
-    activation_relation, instance_bound_atoms, temporal_subject, ClauseOccurrence,
+    activation_relation, instance_bound_atoms, temporal_subject, ClauseOccurrence, FormulaNodeUse,
     TemporalSubjectView, ViewRefusal,
 };
 use qsl_package::{
@@ -62,30 +62,39 @@ impl PackageRows {
     /// graph's clause of that name is the in-process clause. A name row of a
     /// declaration that is no temporal clause of the graph (a hyper or
     /// hybrid clause) has no clause here.
-    pub fn of_read(read: &AdmittedPackageRead<'_>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`PackageMismatch::AmbiguousName`] when two clauses of the checked
+    /// graph carry one name or two name rows pair to one clause: the pairing
+    /// by name would name a clause the bytes do not.
+    pub fn of_read(read: &AdmittedPackageRead<'_>) -> Result<Self, PackageMismatch> {
         let package = read.admitted();
         let graph = read.source().graph();
-        let clauses = package
-            .temporal_clause_names()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|row| {
-                let clause = graph
-                    .temporal_clauses()
-                    .iter()
-                    .position(|node| node.clause().name() == row.name.as_ref())?;
-                Some(TemporalClauseRef {
-                    declaration: row.declaration.clone(),
-                    occurrence: row.occurrence,
-                    clause,
-                })
-            })
-            .collect();
-        Self {
+        let mut clauses: Vec<TemporalClauseRef> = Vec::new();
+        for row in package.temporal_clause_names().unwrap_or_default() {
+            let mut named = graph
+                .temporal_clauses()
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| node.clause().name() == row.name.as_ref());
+            let Some((clause, _)) = named.next() else {
+                continue;
+            };
+            if named.next().is_some() || clauses.iter().any(|found| found.clause == clause) {
+                return Err(PackageMismatch::AmbiguousName);
+            }
+            clauses.push(TemporalClauseRef {
+                declaration: row.declaration.clone(),
+                occurrence: row.occurrence,
+                clause,
+            });
+        }
+        Ok(Self {
             clauses,
             profile_selections: package.lock().profile_selections.clone(),
             bindings: package.temporal_bindings().unwrap_or_default().to_vec(),
-        }
+        })
     }
 
     /// One reference per clause occurrence.
@@ -104,11 +113,13 @@ impl PackageRows {
     }
 }
 
-/// The emission is not the one the package was read from.
+/// The rows are not the package's: an emission that is not the one the
+/// package was read from, or names that cannot pair the package's clauses to
+/// the checked graph's.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum EmissionMismatch {
+pub enum PackageMismatch {
     /// An emission clause occurrence is no `temporal_clause_names` row of
-    /// the package.
+    /// the package, or the clause at its position carries another name.
     #[error("a clause reference of the emission is no name row of the package")]
     ClauseRow,
     /// The emission's `profile_selections` differ from the package lock's.
@@ -117,6 +128,10 @@ pub enum EmissionMismatch {
     /// The emission's `temporal_bindings` differ from the package's.
     #[error("the emission's temporal bindings differ from the package's")]
     Bindings,
+    /// Two clauses of the checked graph carry one name, or two name rows pair
+    /// to one clause.
+    #[error("a clause name does not pair one name row to one clause")]
+    AmbiguousName,
 }
 
 /// The evaluation package of one emission, whichever route built it.
@@ -142,34 +157,45 @@ impl<'p> EvidencePackage<'p> {
     ///
     /// # Errors
     ///
-    /// [`EmissionMismatch`] when `emission` is not the one `read` was read
+    /// [`PackageMismatch`] when `emission` is not the one `read` was read
     /// from.
     pub fn from_emission(
         emission: &Emission,
         read: &'p AdmittedPackageRead<'p>,
-    ) -> Result<Self, EmissionMismatch> {
+    ) -> Result<Self, PackageMismatch> {
         let rows = PackageRows::of_emission(emission);
         let package = read.admitted();
         let names = package.temporal_clause_names().unwrap_or_default();
+        let graph = read.source().graph();
         if !rows.clauses.iter().all(|found| {
+            let held = graph
+                .temporal_clauses()
+                .get(found.clause)
+                .map(|node| node.clause().name());
             names.iter().any(|row| {
-                row.declaration == found.declaration && row.occurrence == found.occurrence
+                row.declaration == found.declaration
+                    && row.occurrence == found.occurrence
+                    && held == Some(row.name.as_ref())
             })
         }) {
-            return Err(EmissionMismatch::ClauseRow);
+            return Err(PackageMismatch::ClauseRow);
         }
         if rows.profile_selections != package.lock().profile_selections {
-            return Err(EmissionMismatch::ProfileSelections);
+            return Err(PackageMismatch::ProfileSelections);
         }
         if rows.bindings != package.temporal_bindings().unwrap_or_default() {
-            return Err(EmissionMismatch::Bindings);
+            return Err(PackageMismatch::Bindings);
         }
         Ok(Self::with_rows(read, rows))
     }
 
     /// The package constructed from the emitted bytes read back.
-    pub fn from_read(read: &'p AdmittedPackageRead<'p>) -> Self {
-        Self::with_rows(read, PackageRows::of_read(read))
+    ///
+    /// # Errors
+    ///
+    /// [`PackageMismatch::AmbiguousName`] as [`PackageRows::of_read`] states.
+    pub fn from_read(read: &'p AdmittedPackageRead<'p>) -> Result<Self, PackageMismatch> {
+        Ok(Self::with_rows(read, PackageRows::of_read(read)?))
     }
 
     fn with_rows(read: &'p AdmittedPackageRead<'p>, rows: PackageRows) -> Self {
@@ -301,6 +327,9 @@ impl<'p> EvidencePackage<'p> {
             .ok_or_else(|| unreadable("profile-selection"))?;
 
         let graph = view.formula_graph();
+        if !same_formula(graph, checked.formula()) {
+            return Err(unreadable("formula-differs"));
+        }
         let reads = instance_bound_atoms(&view).map_err(|_| unreadable("atom-count"))?;
         let instance_bound = instance_bound_indices(checked.formula(), &reads, graph.len())
             .ok_or_else(|| unreadable("atom-count"))?;
@@ -382,4 +411,180 @@ pub fn instance_bound_indices(
             .filter_map(|(atom, bound)| bound.then_some(atom))
             .collect()
     })
+}
+
+/// The part of an interval the two formulas compare.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum IntervalKey {
+    Steps {
+        lower: u64,
+        upper: Option<u64>,
+    },
+    Timed {
+        lower: (String, String),
+        upper: Option<(String, String)>,
+        closed: (bool, bool),
+    },
+}
+
+/// The operation identity of `node` and its interval, `None` for a node the
+/// package route does not read (a window aggregate).
+fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>)> {
+    use qsl_foundation::bound::TemporalUpper;
+    use qsl_semantics::check::{BinaryTemporal, CheckedInterval, UnaryTemporal};
+    let key = |interval: &Option<CheckedInterval>| {
+        interval.as_ref().map(|interval| match interval {
+            CheckedInterval::Steps(steps) => IntervalKey::Steps {
+                lower: steps.lower(),
+                upper: match steps.upper() {
+                    TemporalUpper::Finite(upper) => Some(upper),
+                    TemporalUpper::Open => None,
+                },
+            },
+            CheckedInterval::Timed(timed) => {
+                // Closed ends and integral bounds count ticks, as the work
+                // counters read them (`ClauseWork`), and are the integer
+                // interval the package lists.
+                match timed.closed_integral_bounds() {
+                    Some((lower, upper)) => IntervalKey::Steps {
+                        lower,
+                        upper: Some(upper),
+                    },
+                    None => IntervalKey::Timed {
+                        lower: (
+                            timed.lower().numerator().to_string(),
+                            timed.lower().denominator().to_string(),
+                        ),
+                        upper: Some((
+                            timed.upper().numerator().to_string(),
+                            timed.upper().denominator().to_string(),
+                        )),
+                        closed: (timed.lower_closed(), timed.upper_closed()),
+                    },
+                }
+            }
+        })
+    };
+    Some(match node {
+        FormulaNode::Constant(true) => ("quire.op.temporal.true", None),
+        FormulaNode::Constant(false) => ("quire.op.temporal.false", None),
+        FormulaNode::Holds { .. } => ("quire.op.temporal.holds", None),
+        FormulaNode::Not(_) => ("quire.op.temporal.not", None),
+        FormulaNode::And(..) => ("quire.op.temporal.and", None),
+        FormulaNode::Or(..) => ("quire.op.temporal.or", None),
+        FormulaNode::Implies(..) => ("quire.op.temporal.implies", None),
+        FormulaNode::Unary {
+            operator, interval, ..
+        } => (
+            match operator {
+                UnaryTemporal::Eventually => "quire.op.temporal.eventually",
+                UnaryTemporal::Always => "quire.op.temporal.always",
+                UnaryTemporal::Once => "quire.op.temporal.once",
+                UnaryTemporal::Historically => "quire.op.temporal.historically",
+            },
+            key(interval),
+        ),
+        FormulaNode::Binary {
+            operator, interval, ..
+        } => (
+            match operator {
+                BinaryTemporal::Until => "quire.op.temporal.until",
+                BinaryTemporal::Release => "quire.op.temporal.release",
+                BinaryTemporal::Since => "quire.op.temporal.since",
+                BinaryTemporal::Triggered => "quire.op.temporal.triggered",
+            },
+            key(interval),
+        ),
+        FormulaNode::Aggregate { .. } => return None,
+    })
+}
+
+/// The interval of a package entry as [`operation_of`] keys the checked one.
+fn graph_key(node: &FormulaNodeUse<'_>) -> Option<Option<IntervalKey>> {
+    use qsl_package::CheckedIntervalEnd::Closed;
+    use qsl_package::CheckedOperationInterval as Interval;
+    let pair = |bound: &qsl_package::CheckedOperationRational| {
+        (bound.numerator.to_string(), bound.denominator.to_string())
+    };
+    Some(match node.interval.as_ref() {
+        None => None,
+        Some(Interval::Integer { lower, upper }) => Some(IntervalKey::Steps {
+            lower: u64::try_from(lower).ok()?,
+            upper: match upper {
+                None => None,
+                Some(upper) => Some(u64::try_from(upper).ok()?),
+            },
+        }),
+        Some(Interval::Timed {
+            lower,
+            upper,
+            lower_end,
+            upper_end,
+        }) => {
+            let integral = |bound: &qsl_package::CheckedOperationRational| {
+                u64::try_from(&bound.denominator).is_ok_and(|denominator| denominator == 1)
+            };
+            match upper {
+                Some(upper)
+                    if *lower_end == Closed
+                        && *upper_end == Closed
+                        && integral(lower)
+                        && integral(upper) =>
+                {
+                    Some(IntervalKey::Steps {
+                        lower: u64::try_from(&lower.numerator).ok()?,
+                        upper: Some(u64::try_from(&upper.numerator).ok()?),
+                    })
+                }
+                _ => Some(IntervalKey::Timed {
+                    lower: pair(lower),
+                    upper: upper.as_ref().map(pair),
+                    closed: (*lower_end == Closed, *upper_end == Closed),
+                }),
+            }
+        }
+    })
+}
+
+/// Whether the package's `graph` and the in-process `formula` are the same
+/// formula: walked in pre-order, one entry per use of a node, each entry has
+/// the same operation, interval and operand positions, and the two have the
+/// same length. The evaluator's truth is computed on the in-process formula
+/// and its work counters and atom mapping on the package's, so the two must
+/// agree for the call to assess the clause the package holds (FR-515 "One
+/// evaluator formula").
+fn same_formula(graph: &[FormulaNodeUse<'_>], formula: &CheckedFormula) -> bool {
+    let mut position = 0_usize;
+    let mut operands: Vec<Vec<usize>> = vec![Vec::new(); graph.len()];
+    let mut pending = vec![(formula.root(), None::<usize>)];
+    while let Some((id, parent)) = pending.pop() {
+        let (Some(entry), Some(node)) = (graph.get(position), formula.nodes().get(id.index()))
+        else {
+            return false;
+        };
+        let Some((operation, interval)) = operation_of(node) else {
+            return false;
+        };
+        if entry.operation != operation || graph_key(entry) != Some(interval) {
+            return false;
+        }
+        if let Some(parent) = parent {
+            let Some(listed) = operands.get_mut(parent) else {
+                return false;
+            };
+            listed.push(position);
+        }
+        let own: Vec<_> = node.operands().collect();
+        pending.extend(
+            own.into_iter()
+                .rev()
+                .map(|operand| (operand, Some(position))),
+        );
+        position += 1;
+    }
+    position == graph.len()
+        && graph
+            .iter()
+            .zip(&operands)
+            .all(|(entry, listed)| entry.operands == *listed)
 }

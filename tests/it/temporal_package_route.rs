@@ -35,14 +35,14 @@ use super::checked_handoff::{request as handoff_request, KINDS};
 use quire_spec_language::checked_handoff::Corpus;
 
 /// A compiled unit with the emission its clock selections give.
-struct Built {
+pub(super) struct Built {
     unit: qsl_replay::spine::CheckedUnit,
-    emission: Emission,
+    pub(super) emission: Emission,
     packages: qsl_semantics::model::intake::PackageInput,
 }
 
 impl Built {
-    fn read(&self, emission: &Emission) -> AdmittedPackageRead<'_> {
+    pub(super) fn read(&self, emission: &Emission) -> AdmittedPackageRead<'_> {
         read_evaluation_emission(
             self.unit.package(),
             emission,
@@ -150,13 +150,13 @@ fn claim(ordinal: u64) -> CheckedOccurrence {
     }
 }
 
-fn unlimited() -> Meter {
+pub(super) fn unlimited() -> Meter {
     Meter::new(SCALAR_LIMITS_UNLIMITED)
 }
 
 /// An origin-activated request over a clause of `package`, valuing its one
 /// `holds` atom true at each of `ticks`, and asserting the clause's own row.
-fn request(
+pub(super) fn request(
     package: &EvidencePackage<'_>,
     clause: &CheckedNodeId,
     occurrence: Option<u64>,
@@ -230,7 +230,7 @@ fn request(
 }
 
 /// The result and the charge log of one call.
-fn run(
+pub(super) fn run(
     package: &EvidencePackage<'_>,
     clause: &CheckedNodeId,
     asked: &EvidenceRequest,
@@ -248,7 +248,7 @@ fn charges(meter: &Meter) -> Vec<String> {
         .collect()
 }
 
-fn cause(failure: &CallFailure) -> String {
+pub(super) fn cause(failure: &CallFailure) -> String {
     match failure {
         CallFailure::Admission(failure) => match &**failure {
             CallAdmissionFailure::Refused(record) => record
@@ -270,7 +270,7 @@ fn evaluated(result: Result<EvidenceResult, CallFailure>) -> EvidenceResult {
 
 /// The declaration ids of the clause occurrences of `package`'s rows, one
 /// per named clause.
-fn clause_ids(package: &EvidencePackage<'_>) -> Vec<CheckedNodeId> {
+pub(super) fn clause_ids(package: &EvidencePackage<'_>) -> Vec<CheckedNodeId> {
     let mut ids: Vec<CheckedNodeId> = package
         .rows()
         .clauses()
@@ -295,7 +295,7 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
         let built = recipe(kind);
         let read = built.read(&built.emission);
         let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read);
+        let back = EvidencePackage::from_read(&read).expect("the read-back package");
 
         let rows = built.emission.temporal_rows();
         assert_eq!(emitted.rows(), &PackageRows::of_emission(&built.emission));
@@ -364,7 +364,7 @@ fn both_routes_give_the_evaluator_the_same_formula() {
         let built = recipe(kind);
         let read = built.read(&built.emission);
         let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read);
+        let back = EvidencePackage::from_read(&read).expect("the read-back package");
         for clause in clause_ids(&emitted) {
             let left = emitted.subject(&clause, None).expect("the clause reads");
             let right = back.subject(&clause, None).expect("the clause reads");
@@ -382,7 +382,7 @@ fn both_routes_give_the_evaluator_the_same_formula() {
     // with one operand naming the holds entry has two nodes.
     let built = recipe("event_position");
     let read = built.read(&built.emission);
-    let back = EvidencePackage::from_read(&read);
+    let back = EvidencePackage::from_read(&read).expect("the read-back package");
     let due = clause_ids(&back)
         .into_iter()
         .find(|clause| {
@@ -430,7 +430,7 @@ fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs(
         let built = recipe(kind);
         let read = built.read(&built.emission);
         let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read);
+        let back = EvidencePackage::from_read(&read).expect("the read-back package");
         for clause in clause_ids(&emitted) {
             let subject = emitted.subject(&clause, None).expect("the clause reads");
             if !matches!(subject.clause.name(), "Due" | "DueSample" | "DueTimestamp") {
@@ -508,7 +508,7 @@ fn each_clause_pairs_with_its_own_clock_row() {
     );
     let read = built.read(&built.emission);
     let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-    let back = EvidencePackage::from_read(&read);
+    let back = EvidencePackage::from_read(&read).expect("the read-back package");
     let ids = clause_ids(&emitted);
     assert_eq!(ids.len(), 2, "two nodes");
     for package in [&emitted, &back] {
@@ -533,7 +533,7 @@ fn each_clause_pairs_with_its_own_clock_row() {
 /// A unit of `clauses` over the ConfigVersion model under the event-position
 /// profile, each clause named in `authorities` given the sequence authority
 /// beside it.
-fn event_clauses(clauses: &str, authorities: &[(&str, &str)]) -> Built {
+pub(super) fn event_clauses(clauses: &str, authorities: &[(&str, &str)]) -> Built {
     let packages = qsl_semantics::model::intake::package_input([
         crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
     ])
@@ -570,7 +570,7 @@ fn event_clauses(clauses: &str, authorities: &[(&str, &str)]) -> Built {
 /// whose emitted occurrence ordinals 0 and 1 are renumbered 7 and 3, so that
 /// the node's `occurrences` array runs 7 then 3 while the lock's rows ascend 3
 /// then 7, each with its own clock configuration. No emitter produces it.
-fn twins() -> Built {
+pub(super) fn twins() -> Built {
     let body = "eventually[0,1] holds(c.versionNumber <= 1)";
     let built = event_clauses(
         &format!(
@@ -632,7 +632,7 @@ fn authority_of(row: &qsl_package::TemporalBinding) -> String {
 fn twins_pair_their_rows_by_key_over_the_read_back_route() {
     let built = twins();
     let read = built.read(&built.emission);
-    let back = EvidencePackage::from_read(&read);
+    let back = EvidencePackage::from_read(&read).expect("the read-back package");
     let [node] = clause_ids(&back).try_into().expect("one shared node");
 
     let view = back.temporal_subject(&node).expect("the twins read");
@@ -663,10 +663,18 @@ fn twins_pair_their_rows_by_key_over_the_read_back_route() {
         "first-authority"
     );
 
-    for (ordinal, own, other) in [
-        (3, "second-authority", "first-authority"),
-        (7, "first-authority", "second-authority"),
+    for (ordinal, name, own, other) in [
+        (3, "Second", "second-authority", "first-authority"),
+        (7, "First", "first-authority", "second-authority"),
     ] {
+        // The selector picks the clause occurrence once, and the subject the
+        // call reads carries it: the clause named by that occurrence's name
+        // row and progress retained under its ordinal.
+        let chosen = back
+            .subject(&node, Some(&claim(ordinal)))
+            .expect("the occurrence reads");
+        assert_eq!(chosen.clause.name(), name);
+        assert_eq!(chosen.progress.occurrence, ordinal);
         let mut asked = request(&back, &node, Some(ordinal), 3);
         let result = evaluated(run(&back, &node, &asked).0);
         assert_eq!(result.activation, ActivationState::Active);
@@ -707,7 +715,7 @@ fn twins_pair_their_rows_by_key_over_the_read_back_route() {
         &[("Only", "only-authority")],
     );
     let read = single.read(&single.emission);
-    let package = EvidencePackage::from_read(&read);
+    let package = EvidencePackage::from_read(&read).expect("the read-back package");
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let mut asked = request(&package, &clause, None, 3);
     asked.occurrence = None;
@@ -734,7 +742,7 @@ fn instance_bound_atoms_are_derived_and_equal_over_both_routes() {
     let atom_indices = |built: &Built| {
         let read = built.read(&built.emission);
         let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read);
+        let back = EvidencePackage::from_read(&read).expect("the read-back package");
         let [clause] = clause_ids(&emitted).try_into().expect("one clause");
         let left = emitted.subject(&clause, None).expect("reads");
         let right = back.subject(&clause, None).expect("reads");
@@ -782,4 +790,15 @@ fn instance_bound_atoms_are_derived_and_equal_over_both_routes() {
         .collect();
     ranks.sort_unstable();
     assert_eq!(ranks, [1, 3], "the indices move with the atoms");
+}
+
+/// Edit the wire of `built` with `edit` and present the bytes as its emission.
+pub(super) fn edited(built: Built, edit: impl FnOnce(&mut Value)) -> Built {
+    let mut wire: Value = serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    edit(&mut wire);
+    let bytes = serde_json::to_vec(&wire).expect("the wire encodes");
+    Built {
+        emission: built.emission.clone().with_package_bytes(bytes),
+        ..built
+    }
 }

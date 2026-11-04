@@ -306,17 +306,39 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
         asked.trigger = Some(id(trigger));
         asked
     };
-    let check = |env: &Env,
-                 subject: &qsl_eval::temporal::evidence::EvidenceSubject<'_>,
-                 refused: EvidenceRequest,
-                 met: EvidenceRequest,
-                 cause: &str| {
+    // Each refusal charges nothing and returns the request's ledgers as they
+    // were: the request carries both and neither gains an entry.
+    let check_between = |env: &Env,
+                         refused_subject: &qsl_eval::temporal::evidence::EvidenceSubject<'_>,
+                         met_subject: &qsl_eval::temporal::evidence::EvidenceSubject<'_>,
+                         mut refused: EvidenceRequest,
+                         met: EvidenceRequest,
+                         cause: &str| {
+        refused.ledger.get_or_insert_with(EvidenceLedger::default);
+        refused
+            .progress_ledger
+            .get_or_insert_with(ProgressLedger::new);
+        let before = format!("{:?}", (&refused.ledger, &refused.progress_ledger));
         let mut meter = unlimited();
-        let result = evaluate_temporal_evidence(subject, &refused, &mut meter);
+        let result = evaluate_temporal_evidence(refused_subject, &refused, &mut meter);
         expect_refusal(result, cause);
         assert!(meter.admitted_charges().is_empty(), "{cause}");
-        assert!(call(env, subject, &met).is_ok(), "{cause}: the unmet twin");
+        assert_eq!(
+            format!("{:?}", (&refused.ledger, &refused.progress_ledger)),
+            before,
+            "{cause}: the ledgers"
+        );
+        assert!(
+            call(env, met_subject, &met).is_ok(),
+            "{cause}: the unmet twin"
+        );
     };
+    let check =
+        |env: &Env,
+         subject: &qsl_eval::temporal::evidence::EvidenceSubject<'_>,
+         refused: EvidenceRequest,
+         met: EvidenceRequest,
+         cause: &str| { check_between(env, subject, subject, refused, met, cause) };
 
     let subject = each.subject(&[]);
     let mut none = delivered("t1");
@@ -400,6 +422,23 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
         missing,
         mapped,
         "activation-mapping-missing",
+    );
+    // A row that names another temporal clause.
+    let elsewhere = vec![qsl_eval::temporal::evidence::ActivationRow {
+        control: node("Ctl"),
+        clause: node("Else"),
+    }];
+    let mut other = with_row.subject(&[]);
+    other.activation_map = &elsewhere;
+    let mut mapped = delivered("t1");
+    mapped.control = Some(node("Ctl"));
+    check_between(
+        &with_row,
+        &other,
+        &mapped_subject,
+        mapped.clone(),
+        mapped,
+        "activation-mapping-mismatch",
     );
 
     // A progress assertion that contradicts the retained ledger.

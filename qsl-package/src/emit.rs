@@ -901,6 +901,16 @@ impl Emission {
         self
     }
 
+    /// The emission with `clauses` as its clause references: how a test
+    /// presents an emission whose references name a clause position the
+    /// emitter did not write. Every other member is the emission's own.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_temporal_clause_refs(mut self, clauses: Vec<TemporalClauseRef>) -> Self {
+        self.temporal_rows.clauses = clauses;
+        self
+    }
+
     /// The temporal clause references, `profile_selections` and
     /// `temporal_bindings` rows as written into [`Self::package`] (FR-337).
     pub fn temporal_rows(&self) -> &TemporalRows {

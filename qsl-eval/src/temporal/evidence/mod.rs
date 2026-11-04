@@ -43,7 +43,7 @@ pub use ledger::{
     SourceBinding,
 };
 pub use limits::{CounterKind, EvidenceCounter, EvidenceUsage, TemporalEvidenceLimits};
-pub use package::{instance_bound_indices, EmissionMismatch, EvidencePackage, PackageRows};
+pub use package::{instance_bound_indices, EvidencePackage, PackageMismatch, PackageRows};
 pub use request::{
     ActivationRow, ActivationState, CompletenessRecord, EvidenceIncomplete, EvidencePosition,
     EvidenceRef, EvidenceRequest, EvidenceResult, EvidenceSubject, Indeterminate, NonValue,
