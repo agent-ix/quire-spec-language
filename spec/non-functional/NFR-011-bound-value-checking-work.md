@@ -42,7 +42,7 @@ type's depth is bounded only by them
 ([FR-258](../functional/FR-258-check-and-lower-expressions-at-any-depth.md),
 ADR-030). The ceilings a check ran
 under are recorded with its result (`CheckedGraph::effective_limits`,
-`CheckedExpression::effective_limits`). An implementation ceiling is not a
+`CheckedExpression::effective_limits`), except the two decimal literal limits, which are carried in the assembly limits and recorded on the package declarations (`PackageDeclarations.decimal_literal_limits`). An implementation ceiling is not a
 domain bound (NFR-001).
 
 ## Measurement and Evaluation
