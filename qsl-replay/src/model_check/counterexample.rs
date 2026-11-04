@@ -313,10 +313,11 @@ pub struct ObservedTemporalStep {
 pub enum ObservedTemporalKind {
     /// A formula evaluated false.
     Formula,
-    /// An undefined formula evaluation, naming its first undefined atom.
+    /// An undefined evaluation, naming the first expression read as
+    /// undefined: a `holds` atom, the activation guard or a capture.
     UndefinedEvaluation {
         /// The expression that had no value.
-        locus: FormulaNodeId,
+        locus: qsl_eval::temporal::ObservedLocus,
         /// Why that expression had no value.
         cause: UndefinedCause,
     },

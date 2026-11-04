@@ -850,7 +850,11 @@ impl ObservedTemporalResult {
                 ObservedTemporalKind::UndefinedEvaluation { locus, cause },
                 TemporalOutcome::Undefined(actual),
                 Some(actual_locus),
-            ) => actual.at == expected_position && actual_locus == *locus && actual.cause == *cause,
+            ) => {
+                actual.at == expected_position
+                    && *locus == qsl_eval::temporal::ObservedLocus::Atom(actual_locus)
+                    && actual.cause == *cause
+            }
             _ => false,
         };
         let limit = match &outcome {

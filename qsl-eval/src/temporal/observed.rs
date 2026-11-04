@@ -45,8 +45,31 @@ pub struct ObservedRun {
     pub result: Result<TemporalOutcome, TemporalRefusal>,
     /// The condition stop that ended the run, if one did.
     pub stopped: Option<HoldsStop>,
-    /// The first undefined atom read, with its trace position and cause.
-    pub undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+    /// The first undefined reading, with its locus, trace position and cause.
+    pub undefined: Option<FirstUndefined>,
+}
+
+/// The expression an observed run first read as undefined: a `holds` atom,
+/// the `on each` activation guard or a capture initializer (FR-337).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ObservedLocus {
+    /// A `holds` atom, by its formula node.
+    Atom(FormulaNodeId),
+    /// The `when` condition of the clause's guarded `on each` activation.
+    Activation,
+    /// A capture's initializer, by the capture's name.
+    Capture(String),
+}
+
+/// The first undefined reading of an observed run.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FirstUndefined {
+    /// The expression read as undefined.
+    pub locus: ObservedLocus,
+    /// The trace position it was read at.
+    pub position: TemporalPosition,
+    /// Why it had no value.
+    pub cause: UndefinedCause,
 }
 
 /// Evaluate `clause`, a temporal clause of `package`, over `environments`,
@@ -159,6 +182,8 @@ pub struct ObservedWindowRun {
     pub result: Result<WindowEvaluation, TemporalRefusal>,
     /// The condition stop that ended the run, if one did.
     pub stopped: Option<HoldsStop>,
+    /// The first undefined reading, with its locus, trace position and cause.
+    pub undefined: Option<FirstUndefined>,
 }
 
 /// Evaluate `clause` under the finite-window profile (FR-501) over the object
@@ -195,6 +220,7 @@ pub fn evaluate_observed_finite_window(
     ObservedWindowRun {
         result,
         stopped: letters.stopped,
+        undefined: letters.undefined,
     }
 }
 
@@ -220,7 +246,9 @@ struct ObservedLetters<'a> {
     trace: TemporalTrace,
     over: &'a ObjectReference,
     stopped: Option<HoldsStop>,
-    undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+    /// The first undefined reading (the evaluator reports its position and
+    /// cause, not its locus).
+    undefined: Option<FirstUndefined>,
     /// The `(position, atom node)` valuations the finite-window input names
     /// as absent from the admitted observation (QSpec FR-160).
     absent: &'a [(u64, u64)],
@@ -231,6 +259,27 @@ struct ObservedLetters<'a> {
 }
 
 impl ObservedLetters<'_> {
+    /// Keep the first undefined reading at the earliest position read, the
+    /// position the evaluator reports (ADR-018 UE-1).
+    fn note(
+        &mut self,
+        locus: impl FnOnce() -> ObservedLocus,
+        position: TemporalPosition,
+        cause: &UndefinedCause,
+    ) {
+        if self
+            .undefined
+            .as_ref()
+            .is_none_or(|first| position.index() < first.position.index())
+        {
+            self.undefined = Some(FirstUndefined {
+                locus: locus(),
+                position,
+                cause: cause.clone(),
+            });
+        }
+    }
+
     /// Whether `position` is a silent sample (FR-504).
     fn is_silent(&self, position: TemporalPosition) -> bool {
         self.silent_from
@@ -338,9 +387,7 @@ impl TemporalLetters for ObservedLetters<'_> {
         );
         let reading = self.reading(evaluation, HOLDS_CODES)?;
         if let AtomReading::Undefined(cause) = &reading {
-            if self.undefined.is_none() {
-                self.undefined = Some((atom, position, cause.clone()));
-            }
+            self.note(|| ObservedLocus::Atom(atom), position, cause);
         }
         Ok(reading)
     }
@@ -381,7 +428,11 @@ impl TemporalLetters for ObservedLetters<'_> {
             objects,
             meter,
         );
-        self.reading(evaluation, ACTIVATION_CODES)
+        let reading = self.reading(evaluation, ACTIVATION_CODES)?;
+        if let AtomReading::Undefined(cause) = &reading {
+            self.note(|| ObservedLocus::Activation, position, cause);
+        }
+        Ok(reading)
     }
 
     fn captures(
@@ -433,10 +484,13 @@ impl ObservedLetters<'_> {
                 continue;
             }
             return match self.reading(Ok(evaluation), CAPTURE_CODES)? {
-                AtomReading::Undefined(cause) => Ok(CaptureReading::Undefined {
-                    capture: name.to_owned(),
-                    cause,
-                }),
+                AtomReading::Undefined(cause) => {
+                    self.note(|| ObservedLocus::Capture(name.to_owned()), position, &cause);
+                    Ok(CaptureReading::Undefined {
+                        capture: name.to_owned(),
+                        cause,
+                    })
+                }
                 AtomReading::True | AtomReading::False => Err(LetterStop::Fault(
                     InternalFault::new("temporal.observed", CAPTURE_CODES[2]),
                 )),
