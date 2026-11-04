@@ -2532,6 +2532,294 @@ fn u29_integer_target_charges_integer_bits_only() {
     );
 }
 
+/// A carried `Decimal[lower, upper; smin, smax; mode]` conversion target.
+fn carried_decimal(
+    lower: i64,
+    upper: i64,
+    scales: (u64, u64),
+    mode: RoundingMode,
+) -> QuantityTarget {
+    QuantityTarget::Carried(quire_exact::QuantityCarrier::Decimal(
+        DecimalType::new(int(lower), int(upper), scales.0, scales.1, mode).unwrap(),
+    ))
+}
+
+/// A carried `Int[lower, upper; mode]` conversion target.
+fn carried_integer(lower: i64, upper: i64, rounding: RoundingMode) -> QuantityTarget {
+    QuantityTarget::Carried(quire_exact::QuantityCarrier::Integer {
+        domain: IntegerInterval::new(int(lower), int(upper)).unwrap(),
+        rounding,
+    })
+}
+
+fn is_inexact_conversion(outcome: &Outcome<ConvertedValue>) -> bool {
+    matches!(outcome, Outcome::Refused(Refusal::InexactConversion { .. }))
+}
+
+/// FR-497-AC-4 (U07, U16, U29; `CQ-E01`, `CQ-E02`, `CQ-E07`, `CQ-E08`,
+/// `CQ-E12`, `CQ-E13`, `CQ-E20`): an off-grid value into an exact carrier
+/// refuses `inexact_conversion` with the carrier as `expected`, after one
+/// read, one edge and two rational events and before `unit.target-domain`,
+/// and stays a refusal under work limits six and four; on-grid values convert.
+#[trace(
+    "FR-497-AC-4",
+    "TC-1287",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-28",
+    "QSpec-FR-142-AC-29"
+)]
+#[test]
+fn an_off_grid_value_into_an_exact_carrier_refuses_before_the_target_domain() {
+    let f = fixture();
+    let inch = f.quantity(whole(1), f.inch.clone());
+    let metre = f.unit(f.m.clone());
+    let decimal = carried_decimal(-100, 100, (2, 2), RoundingMode::Exact);
+    let integer = carried_integer(-2, 2, RoundingMode::Exact);
+    let below_smax = carried_decimal(-100, 100, (0, 2), RoundingMode::Exact);
+
+    for (label, target) in [
+        ("Decimal[-100, 100; 2, 2]", &decimal),
+        ("Int[-2, 2]", &integer),
+        ("Decimal[-100, 100; 0, 2]", &below_smax),
+    ] {
+        for work in [6, 4] {
+            let mut meter = limits(15, 5, 1, 1, work, 1);
+            let outcome = converted(f.at(&inch), &metre, target, &mut meter);
+            assert!(
+                is_inexact_conversion(&outcome),
+                "{label} under work {work}: {outcome:?}"
+            );
+            assert_eq!(
+                admitted_points(&meter).as_slice(),
+                [
+                    ChargePoint::UnitIdentityRead,
+                    ChargePoint::UnitEdge,
+                    ChargePoint::UnitRationalArithmetic,
+                    ChargePoint::UnitRationalArithmetic,
+                ],
+                "{label} under work {work}: refused before unit.target-domain"
+            );
+            assert_eq!(
+                meter.consumed(LimitKind::ResultUnits),
+                0,
+                "{label}: no value"
+            );
+        }
+    }
+
+    let mut meter = unlimited();
+    let Outcome::Refused(Refusal::InexactConversion { target }) =
+        converted(f.at(&inch), &metre, &decimal, &mut meter)
+    else {
+        panic!("1 in into an exact Decimal carrier refuses");
+    };
+    let quire_exact::InexactTarget::Decimal(expected) = target else {
+        panic!("the expected type is the Decimal carrier: {target:?}");
+    };
+    assert_eq!(
+        (expected.lower(), expected.upper()),
+        (&int(-100), &int(100))
+    );
+    let Outcome::Refused(Refusal::InexactConversion { target }) =
+        converted(f.at(&inch), &metre, &integer, &mut unlimited())
+    else {
+        panic!("1 in into an exact Int carrier refuses");
+    };
+    assert!(matches!(
+        target,
+        quire_exact::InexactTarget::Integer(interval)
+            if *interval == IntegerInterval::spanning(int(-2), int(2))
+    ));
+
+    let centimetres = f.quantity(whole(25), f.cm.clone());
+    let Outcome::Completed(ConvertedValue::Decimal(result)) =
+        converted(f.at(&centimetres), &metre, &decimal, &mut unlimited())
+    else {
+        panic!("25 cm into an exact Decimal carrier converts");
+    };
+    assert_eq!(result.value().representation().coefficient(), &int(25));
+    assert_eq!(result.value().representation().scale(), 2);
+    assert!(result.loss().is_none(), "an on-grid value has no loss");
+
+    let two = f.quantity(whole(2), f.m.clone());
+    assert_eq!(
+        converted(f.at(&two), &metre, &integer, &mut unlimited()),
+        Outcome::Completed(ConvertedValue::Integer {
+            value: IntegerInterval::new(int(-2), int(2))
+                .unwrap()
+                .admit(int(2))
+                .unwrap(),
+            loss: None,
+        })
+    );
+}
+
+/// FR-497-AC-5 (U08, U17, U18, U29; QSpec FR-142-AC-29): an on-grid value
+/// outside the carrier's bounds refuses by membership after
+/// `unit.target-domain` and before `unit.result-retain`; a denied
+/// `unit.target-domain` charge is `incomplete` there; an inexact value that is
+/// also out of bounds refuses `inexact_conversion`.
+#[trace("FR-497-AC-5", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-29")]
+#[test]
+fn carrier_bounds_are_checked_after_the_target_domain_charge() {
+    let f = fixture();
+    let metre = f.unit(f.m.clone());
+    let target = carried_decimal(-2, 2, (0, 0), RoundingMode::Exact);
+    for value in [-2, 2] {
+        let source = f.quantity(whole(value), f.m.clone());
+        let mut meter = unlimited();
+        let Outcome::Completed(ConvertedValue::Decimal(result)) =
+            converted(f.at(&source), &metre, &target, &mut meter)
+        else {
+            panic!("{value} m is inside the carrier");
+        };
+        assert_eq!(value_of(result.value()), value);
+        assert_eq!(
+            admitted_points(&meter).as_slice().last(),
+            Some(&ChargePoint::UnitResultRetain)
+        );
+    }
+    for value in [-3, 3] {
+        let source = f.quantity(whole(value), f.m.clone());
+        let mut meter = unlimited();
+        assert!(
+            matches!(
+                converted(f.at(&source), &metre, &target, &mut meter),
+                Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+            ),
+            "{value} m refuses by membership"
+        );
+        assert_eq!(
+            admitted_points(&meter).as_slice(),
+            [ChargePoint::UnitIdentityRead, ChargePoint::UnitTargetDomain],
+            "{value} m: after unit.target-domain, before unit.result-retain"
+        );
+        assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
+    }
+
+    let three = f.quantity(whole(3), f.m.clone());
+    assert!(matches!(
+        converted(f.at(&three), &metre, &target, &mut limits(2, 1, 0, 1, 2, 0)),
+        Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+    ));
+    assert_eq!(
+        converted(f.at(&three), &metre, &target, &mut limits(2, 1, 0, 1, 1, 0)),
+        Outcome::Incomplete(work_denied(1, ChargePoint::UnitTargetDomain))
+    );
+
+    let huge_scale = carried_decimal(0, 1, (0, u64::from(u32::MAX)), RoundingMode::Exact);
+    let one = f.quantity(whole(1), f.m.clone());
+    let mut meter = limits(u64::MAX, 64, 0, 1, 2, 1);
+    assert_eq!(
+        converted(f.at(&one), &metre, &huge_scale, &mut meter),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::DecimalDigits,
+            limit: 64,
+            consumed: 0,
+            next_charge: Integer::from(4_294_967_296_u64),
+            charge_point: ChargePoint::UnitTargetDomain,
+        })
+    );
+    assert_eq!(
+        meter.consumed(LimitKind::DecimalDigits),
+        0,
+        "the retained coefficient is never materialized"
+    );
+
+    let integer = carried_integer(-2, 2, RoundingMode::Exact);
+    let mut meter = unlimited();
+    assert!(matches!(
+        converted(f.at(&three), &metre, &integer, &mut meter),
+        Outcome::Refused(Refusal::IntegerOutOfDomain { target })
+            if *target == IntegerInterval::spanning(int(-2), int(2))
+    ));
+    assert!(!admitted_points(&meter).contains(&ChargePoint::UnitResultRetain));
+
+    // 3 m plus one inch is off the integer grid and above the bound: the
+    // inexactness refusal comes first, and stays a refusal under a work limit
+    // that would deny the later `unit.target-domain` charge.
+    let inexact_outside = f.quantity(ratio(15127, 5000), f.m.clone());
+    for work in [u64::MAX, 1] {
+        let outcome = converted(
+            f.at(&inexact_outside),
+            &metre,
+            &integer,
+            &mut limits(u64::MAX, u64::MAX, 0, 1, work, 1),
+        );
+        assert!(
+            is_inexact_conversion(&outcome),
+            "inexact and outside under work {work}: {outcome:?}"
+        );
+    }
+}
+
+/// FR-497-AC-6 (U44; `CQ-E17` to `CQ-E19`): a `nearest-even` carrier rounds
+/// with a `DecimalLoss` record before the bounds check, and the U07, U16 and
+/// U29 `nearest-even` outcomes are those of the uncarried targets.
+#[trace("FR-497-AC-6", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-30")]
+#[test]
+fn a_rounding_carrier_rounds_before_its_bounds_with_a_loss_record() {
+    let f = fixture();
+    let metre = f.unit(f.m.clone());
+    let inch = f.quantity(whole(1), f.inch.clone());
+
+    let carried = carried_decimal(-1000, 1000, (2, 2), RoundingMode::NearestEven);
+    let uncarried = decimal_type(-1000, 1000, 2, RoundingMode::NearestEven);
+    let mut carried_meter = limits(15, 5, 1, 1, 6, 1);
+    let mut uncarried_meter = limits(15, 5, 1, 1, 6, 1);
+    let carried_outcome = converted(f.at(&inch), &metre, &carried, &mut carried_meter);
+    assert_eq!(
+        carried_outcome,
+        converted(f.at(&inch), &metre, &uncarried, &mut uncarried_meter),
+        "U07/U16: the carried nearest-even outcome is the uncarried one"
+    );
+    assert_eq!(
+        admitted_points(&carried_meter),
+        admitted_points(&uncarried_meter)
+    );
+    let Outcome::Completed(ConvertedValue::Decimal(result)) = carried_outcome else {
+        panic!("nearest-even completes");
+    };
+    assert_eq!(value_of(result.value()), 3);
+    let loss = result.loss().expect("the rounding is recorded");
+    assert_eq!(loss.mode(), RoundingMode::NearestEven);
+    assert_eq!(
+        converted(
+            f.at(&inch),
+            &metre,
+            &carried,
+            &mut limits(15, 5, 1, 1, 4, 1)
+        ),
+        Outcome::Incomplete(work_denied(4, ChargePoint::UnitTargetDomain)),
+        "U16: rounding then a denied unit.target-domain"
+    );
+
+    let carried_int = carried_integer(-2, 2, RoundingMode::NearestEven);
+    let Outcome::Completed(ConvertedValue::Integer { value, loss }) = converted(
+        f.at(&inch),
+        &metre,
+        &carried_int,
+        &mut limits(15, 0, 1, 1, 6, 1),
+    ) else {
+        panic!("U29 nearest-even completes");
+    };
+    assert_eq!(value.value(), &int(0));
+    assert!(loss.is_some(), "U29: the scale-zero rounding is recorded");
+
+    // Rounding precedes the bounds check: 2.4 m rounds into Int[-2, 2] and
+    // 2.6 m rounds to 3, outside it.
+    let inside = f.quantity(ratio(12, 5), f.m.clone());
+    assert!(matches!(
+        converted(f.at(&inside), &metre, &carried_int, &mut unlimited()),
+        Outcome::Completed(ConvertedValue::Integer { loss: Some(_), .. })
+    ));
+    let outside = f.quantity(ratio(13, 5), f.m.clone());
+    assert!(matches!(
+        converted(f.at(&outside), &metre, &carried_int, &mut unlimited()),
+        Outcome::Refused(Refusal::IntegerOutOfDomain { .. })
+    ));
+}
+
 fn integer_target(lower: i64, upper: i64, rounding: RoundingMode) -> QuantityTarget {
     QuantityTarget::Integer {
         domain: IntegerInterval::new(int(lower), int(upper)).unwrap(),
