@@ -92,6 +92,47 @@ the same document (QSpec FR-300-AC-3). The document's members are:
     raises it, which for an accounting counter is the counter name `K`. `B` and `C` are
     ASCII decimal strings in FR-038's integer spelling.
 
+## Monitor documents from clause runs
+
+A `monitor` document is built from clause runs. The producer lives with the
+outcome types in `qsl-replay` (the one renderer a core crate may hold,
+FR-284): `OutcomeItem::from_clause_run(request_index, clause, &ClauseRunReport)`
+builds one item from one FR-109 / FR-330 clause run, and
+`OutcomeDocument::from_clause_runs(last_stage, runs)` builds the document
+with operation `monitor` through `OutcomeDocument::settled`, one item per
+selected clause in request order. `qsl-inspect` and the driver read the
+document and build no item of their own. No other code path builds an item for
+a clause run.
+
+Each item takes its category from `ClauseRunReport::category()` (the catalog's
+`Category`, FR-285) and from nowhere else, and its `result` label from that
+category:
+
+| Category of the run | `result` label | `cause` |
+| --- | --- | --- |
+| success (`Completed(true)`, FR-283's `Tested`) | `tested` | none |
+| violation (`Completed(false)`, or an `Undefined` evaluation) | `refuted` | FR-331's cause; `undefined-evaluation{where, cause}` for an undefined evaluation |
+| pending (a finite-trace or finite-window `Pending`) | `pending` | none |
+| indeterminate (FR-501's `Indeterminate`) | `indeterminate` | FR-501's reason, as its result report spells it |
+| incomplete | `incomplete` | the exhausted limit |
+| unsupported (for example a missing fairness premise) | `unsupported` | the refusal cause |
+| refusal | `declined` | the refusal cause |
+| undefined (FR-283's `InsufficientData`) | `undefined` | `insufficient-data` |
+
+`pending` and `indeterminate` are catalog labels (`Category::as_str`), not
+FR-331 terminal-record labels: a clause run that did not settle has no terminal
+record, so these two items carry no record and the label is the catalog's.
+Every item built from a clause run also carries `clause`, the clause's
+qualified name, so that a consumer names the pending clauses (FR-285's status
+`pending` and the ids of the pending clauses) from the document alone. An
+evaluator fault is not an item: it fails the whole request (FR-283).
+
+The document's category is the most severe item's under FR-285's order, so a
+`monitor` document whose only item is a pending clause has category pending,
+exit 0, and a document with a pending and an indeterminate item has category
+indeterminate, exit 11, and with a violated item beside either it has category
+violation, exit 10.
+
 `quire-outcome/1` is the outcome document of every operation, `execute`
 included; it replaces FR-100's `spine-run-result/1` when the driver's verbs
 land (ADR-029 CB-1).
@@ -139,6 +180,15 @@ The outcome document's bytes.
   the selected profile prohibits), with QSpec FR-272's cause
   `backend-not-supplied` and `backend` the engine's name (`aot` or `jit`), in
   category unsupported (FR-285, exit 21).
+- `OutcomeDocument::from_clause_runs` shall build a `monitor` document with
+  one item per clause run, the item's category read from
+  `ClauseRunReport::category()` and its label and cause as the "Monitor
+  documents from clause runs" table states, the pending and indeterminate
+  items included.
+- A `monitor` item for a pending clause shall have `result` `pending` and
+  `clause` naming the clause.
+- A `monitor` document whose only item is a pending clause shall have category
+  pending and exit 0.
 - The serialization shall write an `execute` outcome's completed value,
   undefined reason or exhausted limit as the `result` member, and `result`
   `null` on every other document.
@@ -154,6 +204,8 @@ The outcome document's bytes.
 | FR-286-AC-5 | The `execute` outcome of FR-100-AC-1's `seven` serializes with `category` success and `result` `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`; FR-100-AC-10's empty `sum` with `category` undefined and `result` `{"kind": "undefined", "reason": "sum-out-of-domain"}`; FR-100-AC-6's `seven` with `call.accounting` `{"work_units": 0}` with `category` incomplete and `result` `{"kind": "incomplete", "limit": {"kind": "work_units", "bound": "0", "counter": "1", "field": "work_units", "setting": "accounting.work_units"}}`. A `check` called with a `Cancel` already cancelled serializes with `category` incomplete, `last_stage` `null`, `items` `[]` and `result` `null`. | Test (TC-770) |
 | FR-286-AC-6 | `OutcomeDocument::from_run` over a completed run holds the call's document and `artifacts` an empty array; over `run` refusing `ill_typed` source, `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; over an unknown function, `category` refusal at S6a with `missing_declaration`; over `run` with a cancelled handle, `category` incomplete, `last_stage` null and one `cancelled` diagnostic with cause `requested`; over an internal fault, internal failure with its catalog code; and a driver's `OutcomeDocument::new(Execute, None, Unsupported)` for an unbuilt engine holds one diagnostic whose code serializes as `unimplemented_capability` with cause `backend-not-supplied` and `backend` naming the engine, with `category` unsupported, `last_stage` `null`, and exits 21. | Test (TC-770) |
 | FR-286-AC-7 | TC-792's present lookup through the public spine run entry serializes through `OutcomeDocument::from_run` as one `quire-outcome/1` execute document, with category success, one compiled package artifact and `result` `{"kind":"completed","value":{"kind":"reference","universe":U,"type":T,"object_identity":O}}`. All three components equal the actual returned shared Reference. A second source-compiled Reference-valued function returning a different admitted reference from its input serializes the returned reference, not the input. The existing Boolean/Integer completions remain unchanged; no Reference completion is emitted as a `/2` clause truth or a Population payload. | Test |
+| FR-286-AC-8 | `OutcomeDocument::from_clause_runs` over one clause run of `always p` over a finite supplied trace that ends pending serializes to a document with operation `monitor`, `category` pending, exactly one item with `result` `pending`, `category` pending and `clause` naming the clause, no `cause`, no terminal record and no `undefined` label, and FR-285 maps the document to exit 0; the same run through the FR-283 `monitor` operation gives the same item. | Test (TC-770) |
+| FR-286-AC-9 | `OutcomeDocument::from_clause_runs` over FR-501-AC-4's `Indeterminate` run serializes one item with `result` `indeterminate`, category indeterminate and FR-501's reason, and the document exits 11; over that run and a pending run it is category indeterminate; over those two and a `Completed(false)` run (item `refuted`, category violation) it is category violation, exit 10; over a `Completed(true)` run it holds the item `tested`, category success. Every item's category equals `ClauseRunReport::category()` and equals the label and exit FR-285-AC-10 reads. | Test (TC-770) |
 
 ## Status
 
@@ -170,6 +222,8 @@ outcomes.
 
 ## Dependencies
 
+- [FR-109](FR-109-run-a-state-clause-through-the-spine.md), [FR-330](FR-330-run-a-temporal-clause-through-the-spine.md), [FR-501](FR-501-evaluate-a-temporal-clause-under-the-timestamped-event-finite-window-profile.md) and [FR-283](FR-283-monitor-a-supplied-trace-offline.md): the clause runs and verdicts the monitor document reports.
+- **Delivery:** FR-286-AC-8 and FR-286-AC-9 (the monitor producer) are delivered by QSL-1622.
 - ADR-029 CB-4: the document members.
 - ADR-013 O-16, T-5: category and `Locus`.
 - [FR-095](FR-095-occurrence-keyed-source-map-and-locus.md): `Locus`.
