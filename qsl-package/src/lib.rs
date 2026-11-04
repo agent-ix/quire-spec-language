@@ -44,7 +44,7 @@ mod protocol_selection;
 pub mod protocol_view;
 
 #[cfg(feature = "std")]
-pub use bare::BarePackage;
+pub use bare::{BarePackage, BareSupply, IdentityFileRefusal, ReadIdentityRows, IDENTITIES_FORMAT};
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};
