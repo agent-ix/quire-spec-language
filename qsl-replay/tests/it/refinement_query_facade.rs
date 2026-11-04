@@ -545,3 +545,37 @@ fn a_request_key_from_another_refinement_cannot_define_the_selected_rows() {
         ));
     });
 }
+
+#[trace("TC-1275", "FR-492-AC-8", "FR-492-AC-13")]
+#[test]
+fn removing_steps_from_a_model_with_operations_is_not_a_zero_row_selection() {
+    use qsl_replay::{AdmittedRefusal, CompileRefusal};
+    use qsl_semantics::check::{CheckCause, RefinementCause};
+    let documents = packages(Variant::CAS);
+    let missing = cas_refines_counter()
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("step "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = unit_text(&documents, &missing, Variant::CAS);
+    let result = acquire_checked_closure(
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "missing-step-refinement"),
+            package_name: "missing-step".to_owned(),
+            path: "missing.native",
+            bytes: source.as_bytes(),
+        },
+        documents.values().map(Vec::as_slice),
+        &DependencyInput::default(),
+        StageLimits::default(),
+        ReplayLimits::default(),
+    );
+    let Err(AdmittedRefusal::Package(refusal)) = result else {
+        panic!("missing operation rows must not produce a retained closure");
+    };
+    let CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("operation completeness must reach the checker");
+    };
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause,
+        CheckCause::Refinement(refusal) if matches!(refusal.cause, RefinementCause::MissingRow { .. }))));
+}
