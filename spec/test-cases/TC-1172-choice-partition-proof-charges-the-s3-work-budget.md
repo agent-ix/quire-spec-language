@@ -17,7 +17,7 @@ independent-atom abstraction, charge one `s3.work_units` unit per valuation,
 stop with a named limit outcome at the construct being proved and are raised
 by the setting at every entry point, with no proof-specific ceiling.
 
-Scope: FR-218-AC-30, FR-218-AC-32, FR-096-AC-22.
+Scope: FR-218-AC-30, FR-218-AC-32, FR-218-AC-36, FR-096-AC-22.
 
 ## Test Procedure
 
@@ -35,7 +35,9 @@ Fixture: TC-1056's fixture P with a protocol whose `choice` lists the Boolean fa
    successful limit through the library builder, replay `stage_limits` and
    FR-255's settings operation.
 
-Tag the tests `#[trace("TC-1172", "FR-218-AC-30")]`,
+6. Check a protocol of three `check` controls beside no neighbour and beside a neighbour of sixty `check` controls declared before and after it; then check packages of 1, 2 and 8 equal protocols of twenty `check` controls each; read each unit's measured `s3.nodes` and `s3.work_units` spend.
+
+Tag the tests `#[trace("TC-1172", "FR-218-AC-30")]`, `#[trace("TC-1172", "FR-218-AC-36")]`,
 `#[trace("TC-1172", "FR-218-AC-32")]` and
 `#[trace("TC-1172", "FR-096-AC-22")]`.
 
@@ -54,3 +56,4 @@ Tag the tests `#[trace("TC-1172", "FR-218-AC-30")]`,
   `stage_limit_exceeded`, cause `work-budget-exceeded`, naming the bound, the
   denied charge count and `s3.work_units`; it does not report an enclosing
   progress refusal. Each raised entry point checks.
+- Step 6: the three-check protocol spends the same `s3.nodes` and `s3.work_units` in all three arrangements; a package of `k` equal protocols spends `k` times one protocol's spend.
