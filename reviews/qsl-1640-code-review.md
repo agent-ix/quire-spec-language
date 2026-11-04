@@ -59,3 +59,10 @@ Disposition round 1 at PR head `28eeb158e76a5956b7e99b08332a3bbe38d20b6a` (conta
 | FND-002 | fixed | `evaluate_protocol_slot` and `AdmittedEvaluationViewEvaluation::evaluate_protocol_slot` document that the call drains the caller's open interval without adding it to the log and restores capture; FR-520 states it; `a_call_restores_the_meters_capture_state_and_drains_a_caller_interval_it_found` seeds a non-empty caller interval. Mutation M5 (inverted restore) is killed. |
 | FND-003 | fixed | Unattributed routing and the root-frame gate are now pinned: M4 (drop unattributed) fails 7 tests, M6 (remove the frame gate) fails the callee-frame test. |
 | FND-004 | deferred | Pre-existing on origin/main, not caused by this PR; tracked as QSL-1645 per the coordinator. Re-run on the head: still the same single extra name. |
+
+Round 2: Disposition round 2 at PR head `6bc6489f951546e8c26919f24a51d6fe07e3e7f9` (contains current origin/main; trial merge is the head).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | The hidden `popped` state and `set_callee_owners` are removed; `pop_many_forwarded` returns `PoppedArguments { values, provenance, owners }` and calls use `push_frame_owned`. `a_one_argument_call_after_a_two_argument_call_takes_its_own_argument_owner` asserts target [4,0,0,0,0,0,0,2,9,2] and recovered [4,0,0,0,0,0,0,2,10,3] with nothing unattributed; mutation M9 (call owners dropped) fails 3 tests. |
+| FND-006 | fixed | Dispatch pushes per-argument owners (receiver first) into the precondition and body frames via `DispatchGuard.owners`, and the guard absorbs the argument owners before `charge_call`; `set_uniform_owner` is gone. Mutation M10a (dispatch owners dropped) fails `a_dispatched_call_binds_the_receivers_owner_to_its_callee_frames`. |

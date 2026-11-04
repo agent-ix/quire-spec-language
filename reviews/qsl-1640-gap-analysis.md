@@ -48,3 +48,9 @@ Disposition round 1 at PR head `28eeb158e76a5956b7e99b08332a3bbe38d20b6a` (conta
 | FND-001 | fixed | `a_literal_only_subexpression_is_unattributed_wherever_it_runs` asserts a nonzero unattributed entry; mutation M4 is killed. |
 | FND-002 | fixed | `a_call_made_before_any_read_registers_no_binder_in_the_callee_frame` calls a model function before any read; mutation M6 (frame gate removed) is killed. |
 | FND-003 | fixed | `without_location` now includes the `BinderCharges` of both variants and the reader-backed test is tagged FR-520-AC-9; the 51 `protocol_slots` tests pass. |
+
+Round 2: Disposition round 2 at PR head `6bc6489f951546e8c26919f24a51d6fe07e3e7f9` (contains current origin/main; trial merge is the head).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | One value-asserting test per path: one-argument and two-argument calls, call over two binders, let (through a pure function), dispatch, query, seq and fold. M9, M10a, M11 and M15 are all killed. The query, seq and fold tests are Machine-level unit tests because the slot fixture cannot express them; acceptable, since they drive the same `iterate` and `iterate_seq` code the slot path uses. The dispatch test covers the receiver's owner; per-argument owners for a dispatch over two binders are covered only by mutation M10a, not by a two-binder dispatch assertion (residual, no finding). |

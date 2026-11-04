@@ -50,3 +50,9 @@ Disposition round 1 at PR head `28eeb158e76a5956b7e99b08332a3bbe38d20b6a` (conta
 | FND-001 | fixed | The outcome map now defines "made by binder B" by operand provenance (reading B, or an operation whose binder-derived operands all come from B; operations over two binders and literal-only computations are made by no binder). |
 | FND-002 | fixed | AC-11 adds the adverse cases: a literal-only subexpression and an operation over two binders are under no binder, commuting the operands leaves the log unchanged, an operation over one binder is under that binder; TC-1315 row 12 lists the matching procedure and expected results. |
 | FND-003 | fixed | The outcome-map row states that the call drains an interval the caller had open, does not add it to the log, and leaves capture as found; TC-1315 row 12 includes a caller-enabled interval holding a charge. |
+
+Round 2: Disposition round 2 at PR head `6bc6489f951546e8c26919f24a51d6fe07e3e7f9` (contains current origin/main; trial merge is the head).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | The outcome map now states that ownership passes through let bindings, through each argument of a call or dispatched call (receiver and every argument keep their own binder), and through the element and accumulator bindings of a query, `seq` or fold; TC-1315 row 12 lists the matching procedure. The text matches the code: `push_frame_owned` per argument, `DispatchGuard.owners`, `iteration.owner` on the element slots. 
