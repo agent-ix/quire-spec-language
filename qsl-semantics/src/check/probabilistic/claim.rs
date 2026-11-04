@@ -36,6 +36,7 @@ use qsl_forms::{
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::selection::DefinitionRef;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{
     Identifier, IllTypedCause, Integer, IntegerInterval, Meter, NodeKey, Quantity, Rational,
@@ -380,9 +381,24 @@ pub struct CheckedProbabilisticClaim {
     pub normal_form: ClaimNormalForm,
     /// The declaration's source order, as [`Reward`](super::Reward)'s.
     pub(super) declared: usize,
+    /// The claim's written content, which ranks claims sharing its name
+    /// (FR-498).
+    pub(crate) content: qsl_forms::SignificantContent,
+    /// The `claim` occurrence of the claim's `claim`/`probabilistic_claim`
+    /// node, set when a package is assembled (FR-498 "Outputs").
+    pub(crate) occurrence: Option<OccurrenceKey>,
 }
 
 impl CheckedProbabilisticClaim {
+    /// The claim's producer-owned checked-package identity: the `claim`
+    /// occurrence `[node, "claim", ordinal]` of its
+    /// `claim`/`probabilistic_claim` node, whose `node` is the declaration's
+    /// structural `NodeRef` (FR-498). `None` for a claim checked outside an
+    /// assembled package, whose causes keep their span locus.
+    pub fn occurrence(&self) -> Option<&OccurrenceKey> {
+        self.occurrence.as_ref()
+    }
+
     /// Whether only exact evidence decides the claim (ADR-028 XF-7): an
     /// unbounded reachability or expected-reward form, a claim `under every
     /// scheduler`, or a claim that states no confidence parameters
@@ -418,6 +434,12 @@ impl CheckedProbabilisticClaim {
             ClaimExtent::from_domains(domains),
         )
         .with_evidence(evidence)
+    }
+
+    /// The location of the whole claim declaration: its `claim`
+    /// occurrence's site.
+    pub(crate) fn declaration_location(&self) -> Location {
+        site_location(self.declared, Site::Declaration)
     }
 
     /// Whether the claim's form is one only exact evidence decides: an
@@ -729,6 +751,8 @@ impl Pass<'_, '_> {
             over,
             normal_form,
             declared: index,
+            content: form.content.clone(),
+            occurrence: None,
         })
     }
 

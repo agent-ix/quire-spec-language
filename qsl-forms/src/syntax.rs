@@ -4352,6 +4352,10 @@ pub struct ProbabilisticForm {
     pub confidence: Vec<ConfidenceItemForm>,
     /// The claim body.
     pub body: ProbabilisticBody,
+    /// The whole claim's written content, with no span or position: the
+    /// producer ranks claims that share a name by it, so a claim's identity
+    /// does not depend on where it is declared (FR-498).
+    pub content: crate::SignificantContent,
     /// The span of the whole claim, closing `}` included.
     pub span: Span,
 }

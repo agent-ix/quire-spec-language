@@ -313,6 +313,11 @@ impl CheckedProbabilisticModel {
         &self.claims
     }
 
+    /// The checked claims, to assemble into a package (FR-498).
+    pub(crate) fn claims_mut(&mut self) -> &mut [CheckedProbabilisticClaim] {
+        &mut self.claims
+    }
+
     /// The claim named `name`.
     pub fn claim(&self, name: &str) -> Option<&CheckedProbabilisticClaim> {
         self.claims.iter().find(|claim| claim.name == name)
@@ -327,10 +332,12 @@ impl CheckedProbabilisticModel {
             && self.claims.is_empty()
     }
 
-    /// The first checked declaration in source order, with its feature:
-    /// what S4 names when it refuses the package (FR-185 "Package
-    /// emission"). A random parameter is named `operation(parameter)`, a
-    /// reward, a workload and a claim by their declared names.
+    /// The first checked declaration in source order that S4 has no node
+    /// for, with its feature: what S4 names when it refuses the package
+    /// (FR-185 "Package emission"). A claim is emitted as its own node
+    /// (FR-498), so it is never named. A random parameter is named
+    /// `operation(parameter)`, a reward, a workload and a delay by their
+    /// declared names.
     pub fn first_declaration(&self) -> Option<(ProbabilisticFeature, String)> {
         let random = self.random_parameters.iter().map(|random| {
             (
@@ -360,18 +367,10 @@ impl CheckedProbabilisticModel {
                 delay.operation.name.clone(),
             )
         });
-        let claims = self.claims.iter().map(|claim| {
-            (
-                claim.declared,
-                ProbabilisticFeature::Claim,
-                claim.name.clone(),
-            )
-        });
         random
             .chain(rewards)
             .chain(workloads)
             .chain(delays)
-            .chain(claims)
             .min_by_key(|(declared, _, _)| *declared)
             .map(|(_, feature, name)| (feature, name))
     }
@@ -389,8 +388,6 @@ pub enum ProbabilisticFeature {
     Reward,
     /// A `delay` declaration: `delay`.
     Delay,
-    /// A `probabilistic` claim: `probabilistic-claim`.
-    Claim,
 }
 
 impl ProbabilisticFeature {
@@ -401,7 +398,6 @@ impl ProbabilisticFeature {
             Self::Workload => "workload",
             Self::Reward => "reward",
             Self::Delay => "delay",
-            Self::Claim => "probabilistic-claim",
         }
     }
 }
@@ -539,6 +535,7 @@ pub(crate) fn site_spans(
                     }
                 }
                 ProbabilisticDeclaration::Claim(form) => {
+                    sites.push((Site::Declaration, spanned(form.span)));
                     for (position, expression) in super::claim::claim_expressions(form)
                         .into_iter()
                         .enumerate()

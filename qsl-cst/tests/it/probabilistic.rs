@@ -301,3 +301,34 @@ fn delay_declarations_parse_each_family_and_reserve_no_word() {
         ["1 ms: 9", "3 ms: 1"]
     );
 }
+
+/// The significant content of every `probabilistic` claim, in source order.
+fn claim_contents(text: &str) -> Vec<qsl_cst::SignificantContent> {
+    let parsed = parse(text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let cst = parsed.cst();
+    cst.nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProbabilisticClause)
+        .map(|node| cst.significant_content(node))
+        .collect()
+}
+
+/// FR-498: a claim's written content is its significant tokens alone.
+/// Declaring it elsewhere, reformatting it or commenting it leaves the
+/// content equal; changing a token changes it.
+#[trace("FR-498-AC-2", "TC-1288")]
+#[test]
+fn a_claims_content_is_independent_of_its_position_and_layout() {
+    let a = "probabilistic A using ev on M under every scheduler on origin { probability >= 0.5 [ holds(true) ] }";
+    let b = "probabilistic B using ev on M under every scheduler on origin { probability >= 0.25 [ holds(true) ] }";
+    let a_laid_out = "probabilistic   A using ev on M // a comment\n  under every scheduler on origin {\n    probability >= 0.5 [ holds(true) ]\n  }";
+    let forward = claim_contents(&source(&format!("{a}\n{b}")));
+    let reversed = claim_contents(&source(&format!("{b}\n\n{a_laid_out}")));
+    assert_eq!(forward, [reversed[1].clone(), reversed[0].clone()]);
+    assert_ne!(forward[0], forward[1]);
+    let tokens: Vec<&[u8]> = forward[0].tokens().take(2).collect();
+    assert_eq!(tokens, [&b"probabilistic"[..], b"A"]);
+    let changed = claim_contents(&source(&a.replace("0.5", "0.75")));
+    assert_ne!(changed[0], forward[0]);
+}

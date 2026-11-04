@@ -1313,12 +1313,12 @@ fn the_adr_024_claims_check_and_record_their_forms() {
     );
 }
 
-/// FR-186 "Outputs": a claim declared first in the source is the first
-/// declaration S4 emission would refuse the package for
-/// (`probabilistic-claim`), since FR-322's v2 vocabulary has no node for it.
+/// FR-186 "Outputs", FR-498: a claim is emitted as its own node, so the
+/// first declaration S4 would refuse a package for is the first other
+/// probabilistic declaration, wherever the claim is declared.
 #[trace("TC-621")]
 #[test]
-fn a_checked_claim_is_a_declaration_s4_would_refuse() {
+fn a_checked_claim_is_no_declaration_s4_would_refuse() {
     let first = format!("{LATENCY}\n{}\n{}", no_fault(), service(None, ""));
     let graph = checked(&first);
     let model = graph.probabilistic_model();
@@ -1331,9 +1331,11 @@ fn a_checked_claim_is_a_declaration_s4_would_refuse() {
     let graph = checked(&claim_first);
     assert_eq!(
         graph.probabilistic_model().first_declaration(),
-        Some((ProbabilisticFeature::Claim, "NoFault".to_owned()))
+        Some((ProbabilisticFeature::Reward, "latency".to_owned()))
     );
-    assert_eq!(ProbabilisticFeature::Claim.name(), "probabilistic-claim");
+    assert!(graph.probabilistic_model().claims()[0]
+        .occurrence()
+        .is_some());
 }
 
 /// The checked claim `C` of `body`.

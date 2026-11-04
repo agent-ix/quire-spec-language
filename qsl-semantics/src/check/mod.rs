@@ -5581,6 +5581,15 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-498: each checked probabilistic claim's node.
+        let lowered_probabilistic =
+            match lowering.probabilistic_claims(probabilistic_model.claims()) {
+                Ok(keys) => Some(keys),
+                Err(refusal) => {
+                    refusals.push(refusal);
+                    None
+                }
+            };
         // FR-447, QSpec FR-481: each checked hybrid model, then each claim
         // over one, after every function their terms may call.
         let mut lowered_hybrids = Vec::with_capacity(checked_hybrid_models.len());
@@ -6065,6 +6074,7 @@ impl PackageDeclarations {
         if lowered_state_graph.len() != checked_state_graph_claims.len() {
             return Err(unlowered());
         }
+        let lowered_probabilistic = lowered_probabilistic.ok_or_else(unlowered)?;
         // FR-488 "Outputs": each hyper clause carries its `claim`
         // occurrence, the `clause` of FR-315's `HyperProductIdentity`.
         // The sites no declared form spans (slots, conjunct slots, skipped
@@ -6212,6 +6222,25 @@ impl PackageDeclarations {
             state_graph_nodes.push(
                 checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)),
             );
+        }
+        // FR-498 "Outputs": each probabilistic claim carries its node's one
+        // `claim` occurrence.
+        let mut probabilistic_model = probabilistic_model;
+        for (claim, key) in probabilistic_model
+            .claims_mut()
+            .iter_mut()
+            .zip(lowered_probabilistic)
+        {
+            let location = claim.declaration_location();
+            let origin = occurrences
+                .first_origin(&key, family::OccurrenceRole::Claim, |at| *at == location)
+                .ok_or_else(|| {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                })?;
+            claim.occurrence = Some(OccurrenceKey::new(claims::wire(key), origin));
         }
         let named_scope = NamedScope::of(&models, &scope);
         let lowered_temporal = lowered_temporal
