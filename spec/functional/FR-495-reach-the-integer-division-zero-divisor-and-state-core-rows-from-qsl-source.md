@@ -21,6 +21,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-110
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-335
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-044
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-140
@@ -40,10 +42,12 @@ stages: a refusal the checker issues from source, and a kernel outcome the
 evaluator meets only when the checker did not prove the obligation. This
 requirement states which QSL source text reaches each row and which
 observation each stage gives, so a row is never classified admission-only for
-lack of a source route. It owns four things: the range the checker gives an
+lack of a source route. It owns five things: the range the checker gives an
 integer `div`, `rem` or `mod` (QSL-1389), the two observations of a bounded
 result domain (QSL-1389), the two observations of a zero divisor (QSL-1393),
-and the order in which a state-core declaration is refused (QSL-1392).
+the order in which a state-core declaration is refused (QSL-1392), and
+the finite-backend negotiation of an integer division over unbounded operands
+(QSL-1485).
 
 ## Inputs
 
@@ -129,6 +133,24 @@ and the order in which a state-core declaration is refused (QSL-1392).
   consumer's lock the row is pending with that missing provider as its owner
   work, and no synthetic verdict counts. QSL adds no verdict route of its own.
 
+- **Finite-backend negotiation (QSpec FR-147-AC-3).** An integer `div`,
+  `rem` or `mod` application is a `value-validity` claim site (FR-062), and
+  its requirement record's extent is computed from the checked operand types,
+  never narrowed. When an operand's domain is a mathematical `Integer`, the
+  derived domain is not complete, so a finite (bounded-mode) backend has no
+  complete operand, intermediate and result bound to work in. The request
+  writer SHALL write the item with its `Unbounded` extent over those roots and
+  `finite_bound_available` true, as FR-335 states for any boundable integer
+  root. A `requires-bound` disposition SHALL settle it `requires-bound` with
+  no harness emitted and no S6a evaluation, and QSL SHALL NOT narrow the
+  `Integer` operands to any `Int[..]`. The disposition is the same whether or
+  not an SMT backend is in the lock, so the SMT verdict row above leaves it
+  unchanged (QSpec FR-147-AC-8's second clause).
+- **QSpec FR-147 trace.** FR-495-AC-5 is QSpec FR-147-AC-7 and AC-8 through
+  QSL, and FR-495-AC-7 is QSpec FR-147-AC-3 and AC-8's unchanged-disposition
+  clause. A test that asserts one of these ACs also carries the QSpec AC's
+  trace tag.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -139,6 +161,7 @@ and the order in which a state-core declaration is refused (QSL-1392).
 | FR-495-AC-4 | Under a header profile `quire.state.core/v1` alone, `function f using v(a: Int[0, 9]): Int[0, 9] pure { a div 3 }` refuses `unsupported_construct`/`declaration-form` at the function declaration, naming `quire.state.core/v1`, and no `expression-form` refusal is made for its `div`; the same unit with `rem` and with `mod`, and a function whose only operator is the dead branch of `if true then 1 else (7 div 3)`, each refuse once, as a declaration. The same operators in the body of `invariant`, `pre` and `post` clauses over a model object type (FR-361-AC-5's unit) each refuse `unsupported_construct`/`expression-form` at the operator, naming `quire.state.core/v1`: `1 + 7 div 3 * 2 = 0`, `7 rem 3 = 0` and `-7 mod 3 = 0` (QSpec TC-192 DIV-17, state-only), and `(if true then 1 else (7 div 3)) = 0`, `(if true then 1 else (7 rem 3)) = 0` and `(if true then 1 else (7 mod 3)) = 0` (DIV-18, dead branch), the operator located at its own span. Under `quire.value.complete/v1` the same function bodies check and evaluate. | Test (TC-1284) |
 | FR-495-AC-5 | With a cvc5 provider registered, QSpec TC-192 DIV-14's holding obligation settles `proved` and its violated obligation settles `refuted` through the FR-349 route, and the `refuted` counterexample replays through the QSL complete-V1 executor to the violation (FR-098); a lock with no provider reports DIV-14 pending on the provider and never `proved` or `refuted`; Z3 absent leaves cvc5's verdict settled with the absent-cross-check warning. | Test (TC-1284) |
 | FR-495-AC-6 | Under a header profile `quire.state.core/v1` alone, an `invariant`, `pre` or `post` clause body over a model object type that states `7 / 3 = rational(7, 3)` refuses `ill_typed`/`type-mismatch` at the `/` operator, because the integer operands are never implicitly converted to a rational (QSpec FR-044 and TC-192 DIV-18: no ambient integer-to-rational conversion), and the same body refuses the same way when no rational type is expected; under `quire.value.complete/v1` the same body checks with the rational type expected (result 7/3) and refuses `ill_typed`/`type-mismatch` when no rational type is expected. This is the state-only subcase of QSpec TC-192 DIV-18's slash row. | Test (TC-1284) |
+| FR-495-AC-7 | Finite-backend negotiation (QSL-1485; QSpec FR-147-AC-3, AC-8). Under `quire.value.complete/v1` and each of the three division definitions, `function q using v(a: Integer, b: Integer): Integer pure { if b != 0 then a div b else 0 }` checks, and its `div` application has one `value-validity` requirement record whose extent is `Unbounded` over the parameter nodes of `a` and `b` (domain kind integer); the same with `rem` and with `mod`. With only a test descriptor advertising (`value-validity`, `bounded`) and a `requires-bound` disposition, each item is written with `finite_bound_available` true and settles `requires-bound`, no harness is emitted, S6a evaluates nothing, and the request names `a` and `b` as `Integer`, not as any `Int[..]`. With a lock that also holds no SMT provider, each item still settles `requires-bound`. | Test (TC-1284) |
 
 ## Dependencies
 

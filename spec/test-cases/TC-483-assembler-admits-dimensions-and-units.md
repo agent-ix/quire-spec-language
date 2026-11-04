@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46.
+Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-091-AC-71, FR-091-AC-72, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46.
 
 ## Test Procedure
 
@@ -63,6 +63,14 @@ form and read `units`; repeat with source-owner identity `w` and the same requir
 13. Assemble FR-091-AC-62's `Force` units with and without `dimension R::Mass ~ F::Mass by 1 R::kg = 1 F::kg;`, and read the classes of the admitted graph over `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` and over Q12; assemble FR-091-AC-64's three spellings of the unequal-root pair, read the class root and the identification edge, and the cycle with `1000` and `1001`.
 14. Declare FR-093-AC-43's `Period`, `sec`, `msec` and `dimension Period ~ Time by 1 sec = 1 s;` beside FR-091-AC-44's units. Check and lower each of `c1` to `c4`, pass each checked package to IR's v2 reader, and evaluate `c1` to `c3` with the operand values AC-43 lists; check `c1` again without the equivalence. Declare FR-093-AC-46's `Beat`, `beat`, `bar` and `dimension Beat ~ Time by 1 beat = rational(1, 4) s;`, check and lower `u1` to `u5`, evaluate `u1` to `u4` with the values AC-46 lists, and check `u1`, `u2` and `u5` again under `by 1 beat = 1 s`.
 15. Under the same units check each of FR-093-AC-44's `a1` to `a4`, then check and lower `a5` to `a8`, pass each package to IR's v2 reader and evaluate each with the operand values AC-44 lists.
+
+16. Read the retained fields of each topology refusal of steps 4 and 7 as
+    values (FR-091-AC-71); assemble the U11p, U11w, U11x, U11n, U11o and
+    U11z3 units of FR-091-AC-71 and read each refusal's code, cause, locus and
+    fields.
+17. With `acme/rpc` declaring base dimension `Rate` and root unit `us`,
+    assemble FR-091-AC-72's `tick` and `tock` units, check and evaluate `k1`
+    for `d` = `2 tick`, and assemble each of its refused units.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -117,3 +125,13 @@ Tag the tests with the AC ids they back and `TC-483`.
 - Step 13: the equivalence naming `F::kg` refuses `missing-name`, and `Force` refuses the base-dimension rule at `F::Mass` naming `ix://acme/flow/dimension/Mass` and `n` with and without any equivalence; the graph holds one class of `R::Time` and `F::Time` and one of `Distance` and `Length`, and no class for a graph with no equivalence; the unequal-root spellings give one structural key for the clock pair, class root the `acme/rpc` `s` and an identification edge of scale `1/1000` from the `acme/clock` root; the `1001` cycle refuses at itself.
 - Step 14: `c1` to `c3` check and lower to `quire.op.quantity.convert` (mode `rounding` = `exact`) with the verdicts AC-43 lists; IR's v2 reader admits each package; `c4` and the no-equivalence `c1` refuse `ill_typed` at the conversion; `u1` to `u4` check and lower with the verdicts AC-46 lists, `u1` false for `1 beat` and true for `rational(1, 4) beat` under ratio 1, and `u5` refuses `ill_typed`/`type-mismatch` under either declaration.
 - Step 15: `a1` to `a4` refuse `ill_typed`/`type-mismatch`; `a5` to `a8` check and lower with the node shapes and verdicts AC-44 lists, `a7`'s two divisions sharing one dimensionless compound-unit node and `a8`'s two products one compound-unit node.
+- Step 16: each refusal carries the fields the "Topology error fields" table
+  lists, as values: the scale and offset rationals, the target name as
+  written, both dimension nodes, the roots in source order and the cycle
+  edges in order; the step (-1) refusals carry the owning dimension and the
+  term (`D` and `K`, `A` and `K`) or the cycle edges, at the dimension
+  FR-091-AC-71 names.
+- Step 17: `tick` and `tock` assemble with scales `1/2` and `3/2` to `us`;
+  `k1` is `true`; `bad` refuses row 3 carrying `bad`, `s`, `M::Rate` and
+  `Time`; `r2` row 4 carrying `us` and `r2`; `z` row 1 with scale `0`; the
+  `M::ghost` target row 2 with the name as written.
