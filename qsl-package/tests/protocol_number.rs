@@ -2,11 +2,52 @@
 //! FR-038: independent exact vectors and strict numeric wire refusal controls.
 
 use ix_trace_rs::trace;
-use quire_spec_language::number::{
+use qsl_package::number::{
     ExactInteger, ExactRational, NumberComponent, NumberError, NumberWire, ProtocolNumber,
     NUMERIC_PROFILE,
 };
 use serde_json::{json, Value};
+
+/// FR-511-AC-3: the checked-package v2 implementation has no dependency on
+/// the legacy numeric profile; this crate only exposes its codec API.
+#[test]
+#[trace("TC-1306", "FR-511-AC-3")]
+fn checked_package_source_does_not_use_the_legacy_numeric_profile() {
+    fn walk(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, found);
+                continue;
+            }
+            if path.file_name().is_some_and(|name| name == "number.rs") {
+                continue;
+            }
+            if path.extension().is_some_and(|extension| extension == "rs") {
+                let source = std::fs::read_to_string(&path).unwrap();
+                if [
+                    "crate::number",
+                    "qsl_package::number",
+                    "NUMERIC_PROFILE",
+                    "quire.protocol.numeric/1",
+                ]
+                .iter()
+                .any(|needle| source.contains(needle))
+                {
+                    found.push(path);
+                }
+            }
+        }
+    }
+
+    let source_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut found = Vec::new();
+    walk(&source_root, &mut found);
+    assert!(
+        found.is_empty(),
+        "checked-package source imports the legacy numeric profile: {found:?}"
+    );
+}
 
 #[test]
 #[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-1")]
