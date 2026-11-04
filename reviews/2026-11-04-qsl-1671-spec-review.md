@@ -51,6 +51,32 @@ FR-218-AC-35 against `qsl-semantics/src/check/protocol_clause/tests/graph.rs` (`
 | FND-008 | low | TC-1026 step 4's fourth read is under-specified: the header it lists has no `ev` alias or declared event-position clock (FR-488-AC-25 refuses an absent clock selection), no operation named in the `fair weak` constraint, and the third read's "checking match and body" is not pinned to an encodable read (FR-488 cause 5). A tester can hit a different refusal than the `NotEmitted` the step expects. FR-362-AC-7 says the refusal names "the clause and its span" where the step says the constraint's span. | spec/test-cases/TC-1026-one-source-yields-both-and-a-checked-unit-is.md:20 |
 | FND-009 | low | ADR-033 "Moved and unmoved families" still says a checked relation or hyper clause "is refused only as `NotEmitted` ... until an S4 emission writes it". FR-362 item 8 now contradicts it. FR-362 also gains citations of FR-488 with no relationship edge to it. | spec/decisions/ADR-033-one-source-text-for-the-checked-graph-and-the-type-report.md:234 |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | medium | TC-1026 step 4's fourth read reuses the hyper clause's body `always holds(...)` (no interval) under the event-position false-extension profile `ev`. Under a bounded profile every temporal operator needs a closed interval; an operator with none is refused `unsupported_construct`/`expression-form` at the operator (qsl-semantics `temporal_clause.rs` header rules, QSpec TC-238), so the read stops at S3 and never reaches the `NotEmitted` the step expects. The #2331 package tests for FR-488-AC-19 and AC-20 use `always [0, 3]` and `eventually [0, 2]` for this reason. | spec/test-cases/TC-1026-one-source-yields-both-and-a-checked-unit-is.md:20 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-361-AC-4 now says a checked hyper clause over `behaviours` is emitted as `claim`/`hyperproperty` and refused `NotEmitted` only in FR-488's cases; it agrees with TC-1015 step 2 and FR-362. |
+| FND-002 | fixed | The await bullet and AC-35 name `missing_declaration`/`missing-name` at the undeclared alias, which is `ProtocolAnchorCause::MissingProfile` in the code; TC-663 step 9 agrees. |
+| FND-003 | fixed | AC-8 and TC-1302 row 8 drop the `global-conformance` item carrying `item_kind`. The four derived `temporal-satisfaction` items carry their `item_kind` and read `temporal-trace`; the two anchored on the protocol clause node are said to run although `temporal-satisfaction` applies to `protocol` nowhere (FR-290 family table: protocol kinds are finite-replay, global-conformance, monitorability, local-projection, refinement, realizability, composition), so an anchor-node reader would settle them `inapplicable-kind` with `family` `protocol`. Schema-valid: QSpec FR-368 allows `deadlock-freedom` over a protocol subject (FR-429) and `race-freedom` over a protocol subject, empty `fairness`, anchored on the subject's anchor; TC-271 NG-23 lists both anchored on a `protocol`/`protocol_clause` node; FR-290 "Reading the family from a request item" fixes `temporal-trace` whatever the anchor. The `global-conformance` `formula` item stays the protocol-family item. Row 8 counts five running items. |
+| FND-004 | fixed | AC-7 and fixture `M` say proof-eligible (FR-322-AC-91) with the reason. |
+| FND-005 | fixed | AC-7 and TC-1302 row 7 agree: five occurrences, five `schedulability` items (R and R' share one). |
+| FND-006 | fixed | The await bullet and AC-35 add the selected protocol profile to the awaited-form refusal; the code's `AwaitedForm` carries `profile` (awaits.rs, refusal.rs). |
+| FND-007 | fixed | AC-35 and TC-663 step 9 add a `receive` (over a channel, of a `send`) and an `effect` (of an `attempt`) match, each checking and recording `Wait`; `awaits.rs` admits `Receive`, `Effect` and `Event` (no #2331 test yet, a coder deliverable). |
+| FND-008 | still-open | The `ev` alias, the declared clock (FR-488-AC-25), the `fair weak V::ConfigVersion::step` constraint, the third read's `match { a.step.op = b.step.op }` and body, and the constraint's span in AC-7 are now stated. The fourth read's body is still the unbounded `always holds(...)`, which a bounded profile refuses before emission: FND-010. |
+| FND-009 | fixed | ADR-033 now says S4 emits relation and hyper clauses and `NotEmitted` covers FR-337's and FR-488's cases; FR-362 gains `references` edges to FR-488 and FR-180. |
+
+Verified this round: `quire validate --scope .` exit 0 for all nine spec files and the author's SR file; no ticket id in added spec lines; FR-218-AC-35 unique.
+
 ## Verdict
+
+Round 1: MERGEABLE after FND-010 (one-line fix: the fourth read's body is `always [0, 3] holds(v.versionNumber @ a = v.versionNumber @ b)` as the FR-488-AC-19/AC-20 tests write it). FND-001 to FND-007 and FND-009 are fixed and verified; FND-008 closes with FND-010. FND-003's new reading is right against FR-290, FR-368 and TC-271.
+
+## Round 0 verdict
 
 MERGEABLE after FND-001 and FND-002 are fixed. FND-003 should be fixed or dropped (a clause with no QSpec support is the riskiest part of the PR); FND-004 to FND-009 are low. The FR-507 Dependencies note, the FR-362 hyper rewording against FR-488 and the code, and FR-218-AC-35's vectors (including the alias refusal's existence and position, the closed-window and open-end refusals, the cycle and the repeat back edge) were verified against the code and QSpec. All three criteria rewritten in FR-507 can fail; they cannot be satisfied by the code until the node-to-family reader and a `relation-claim` `operation-contract` adapter land, as the note says.
