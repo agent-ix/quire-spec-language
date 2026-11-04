@@ -226,7 +226,6 @@ fn the_directory_holds_the_outputs_table_except_the_inventory() {
         paths,
         [
             "checked-package.json",
-            "identities.json",
             "models/0.json",
             "selection.json",
             "sources/library:examples/checked-handoff/library.native",

@@ -5,9 +5,8 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{ActivationState, EvidencePackage, Truth};
-use qsl_package::{BarePackage, IdentityFileRefusal, ReadIdentityRows};
+use qsl_package::BarePackage;
 use quire_contract_model::CheckedPackageV2;
-use serde_json::{json, Value};
 
 use super::checked_handoff::{admitted, request, tree, KINDS};
 use super::temporal_package_route::{
@@ -168,112 +167,6 @@ fn directory(
         &evidence(&asked).expect("evidence"),
     );
     (holder, files, package)
-}
-
-/// FR-531-AC-1, FR-531-AC-3, FR-531-AC-8: the package read from the handoff
-/// directory gives a `BarePackage` and a temporal call that returns a result;
-/// `identities.json` is the format's file, written deterministically.
-#[trace("FR-531-AC-8", "FR-517-AC-1", "TC-1331")]
-#[test]
-fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
-    let (_holder, files, package) = directory("event_position");
-    let bare = BarePackage::new(&package);
-    let evaluation = EvidencePackage::from_package(&bare).expect("bare");
-    let due = clause_ids(&evaluation)
-        .into_iter()
-        .find(|clause| {
-            evaluation
-                .subject(clause, None)
-                .is_ok_and(|subject| subject.facts.name() == "Due")
-        })
-        .expect("Due");
-    let asked = evidence_request(&evaluation, &due, None, 3);
-    let (result, charges) = run(&evaluation, &due, &asked);
-    let result = result.expect("a result from the bytes alone");
-    assert_eq!(result.activation, ActivationState::Active);
-    assert_eq!(result.truth, Some(Truth::True));
-    assert!(!charges.is_empty());
-
-    let file: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
-    assert_eq!(file["format"], "quire.checked-handoff.identities/1");
-    assert!(files["identities.json"].ends_with(b"}\n"));
-    let rows = ReadIdentityRows::read(&files["identities.json"], &package).expect("reads");
-    assert_eq!(rows.package_name(), package.name());
-    assert_eq!(
-        file["declarations"].as_array().map(Vec::len),
-        Some(rows.declarations().len())
-    );
-    assert_eq!(
-        rows.to_bytes(&package).expect("encodes"),
-        files["identities.json"],
-        "the file is the encoding of the rows it holds"
-    );
-    let (_again, second, _) = directory("event_position");
-    assert_eq!(files["identities.json"], second["identities.json"]);
-}
-
-/// FR-531-AC-12, FR-531-AC-13: the identity file's refusals are closed and
-/// name what they found.
-#[trace("FR-531-AC-12", "FR-531-AC-13", "TC-1331")]
-#[test]
-fn the_identity_file_refuses_what_it_cannot_join() {
-    let (_holder, files, package) = directory("event_position");
-    let good: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
-    let read = |value: &Value| {
-        ReadIdentityRows::read(&serde_json::to_vec(value).expect("bytes"), &package)
-    };
-    assert!(read(&good).is_ok());
-
-    assert!(matches!(
-        ReadIdentityRows::read(b"not json", &package),
-        Err(IdentityFileRefusal::Malformed { .. })
-    ));
-    let mut unknown = good.clone();
-    unknown["extra"] = json!(1);
-    assert_eq!(
-        read(&unknown),
-        Err(IdentityFileRefusal::Malformed {
-            member: "extra".to_owned()
-        })
-    );
-    let repeated = String::from_utf8(files["identities.json"].clone())
-        .expect("UTF-8")
-        .replacen(
-            "\"declarations\"",
-            "\"declarations\": [], \"declarations\"",
-            1,
-        );
-    assert!(matches!(
-        ReadIdentityRows::read(repeated.as_bytes(), &package),
-        Err(IdentityFileRefusal::Malformed { .. })
-    ));
-    let mut format = good.clone();
-    format["format"] = json!("quire.checked-handoff.identities/2");
-    assert_eq!(
-        read(&format),
-        Err(IdentityFileRefusal::Format(
-            "quire.checked-handoff.identities/2".to_owned()
-        ))
-    );
-    let declarations = good["declarations"].as_array().expect("rows");
-    assert!(!declarations.is_empty(), "R selects declarations");
-    let mut absent = good.clone();
-    absent["declarations"][0]["structural_node"]["package"] = json!("another-package");
-    assert_eq!(
-        read(&absent),
-        Err(IdentityFileRefusal::Unjoined {
-            member: "declarations",
-            index: 0
-        })
-    );
-    let mut mismatched = good.clone();
-    let form = declarations[0]["form"].as_str().expect("form");
-    mismatched["declarations"][0]["form"] = json!(if form == "union" {
-        "object_type"
-    } else {
-        "union"
-    });
-    assert!(read(&mismatched).is_err());
 }
 
 /// IR-1325 AC3: the bytes-only dependency closure (the slot call that

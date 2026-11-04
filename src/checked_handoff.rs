@@ -289,7 +289,6 @@ pub fn write_with(
     files.insert("checked-package.json", bytes.clone())?;
     insert_inputs(&mut files, &compiled)?;
     files.insert("selection.json", selection.to_bytes()?)?;
-    files.insert("identities.json", identity_file(&compiled, &package)?)?;
     if request.corpus == Corpus::Standard {
         let cases = corpus::build(&bytes, &selection, &evidence, environment)?;
         for (path, contents) in cases.files()? {
@@ -297,39 +296,6 @@ pub fn write_with(
         }
     }
     tree::publish(directory, &files, environment)
-}
-
-/// `identities.json` (FR-531 "The identity file"): the selected model identity
-/// rows of the in-process unit that join the admitted `package`, in the order
-/// the emitter holds them.
-fn identity_file(
-    compiled: &Compiled,
-    package: &quire_contract_model::CheckedPackageV2,
-) -> Result<Vec<u8>, Error> {
-    let unnameable = |what: String| Error::Unnameable { what };
-    let graph = compiled.checked.package().graph();
-    let joined = graph
-        .selected_exact_identities(package)
-        .map_err(|refused| unnameable(format!("selected identities: {refused:?}")))?;
-    let declarations: Vec<_> = graph
-        .selected_exact_declaration_rows()
-        .iter()
-        .filter(|row| {
-            joined
-                .declaration_rows()
-                .any(|kept| kept.structural_node == row.structural_node)
-        })
-        .cloned()
-        .collect();
-    let fields: Vec<_> = graph
-        .selected_exact_field_rows()
-        .iter()
-        .filter(|row| joined.field_rows().contains(row))
-        .cloned()
-        .collect();
-    qsl_package::ReadIdentityRows::of_rows(package, declarations, fields)
-        .to_bytes(package)
-        .map_err(|refused| unnameable(format!("identity file: {refused}")))
 }
 
 /// The exact input bytes under `sources/` and `models/`.
