@@ -20,9 +20,9 @@ FR-498-AC-1 to FR-498-AC-4.
 ## Test Procedure
 
 1. Compile the QSpec TC-233 claims `PC-01` and `PC-02` (equal display names and
-   spans) by reference. Emit the package and inspect the checked semantic graph
-   nodes, their declared occurrences and the sidecar rows. Permute source
-   order and re-emit.
+   spans) by reference. Emit the package and record the node/occurrence identity
+   associated with each vector ID. Permute source order and re-emit, recording
+   the identities again.
 2. For each claim, match the checked claim, local `claim` node with
    `semantic_form` `probabilistic_claim`, its declared `claim` occurrence and
    sidecar row by producer-owned identity; compare the identity exposed by the
@@ -41,8 +41,8 @@ Vectors are referenced by QSpec case ID, never copied.
 
 - Step 1: two local claim nodes, each with one declared `claim` occurrence,
   and two matching rows with distinct declaration identities; source
-  permutation preserves the set of producer-owned identities and the rows
-  remain in structural order.
+  permutation preserves each vector ID's associated node/occurrence identity
+  and the rows remain in structural order.
 - Step 2: each checked claim, its graph node and its row expose the same
   `{declaration, occurrence}` identity; no name, span, normal form, display
   text or order-derived key participates.
