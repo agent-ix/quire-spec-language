@@ -135,6 +135,7 @@ fn composite() -> Emission {
                 },
             },
         )],
+        declarations: Vec::new(),
     };
     base.temporal_rows = crate::emit::TemporalRows {
         clauses: vec![crate::emit::TemporalClauseRef {

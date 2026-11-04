@@ -604,6 +604,7 @@ fn dispositions_the_gate_never_produces_are_tool_failures() {
             consequent_source_events: Default::default(),
             finite_window: None,
             counterexample: None,
+            authenticated_temporal_selection: None,
             ledger: None,
             disposition,
         };
@@ -767,6 +768,7 @@ fn a_clause_run_compile_type_admission_limit_names_the_limit() {
         consequent_source_events: Default::default(),
         finite_window: None,
         counterexample: None,
+        authenticated_temporal_selection: None,
         ledger: None,
         disposition: ClauseDisposition::Compile(Box::new(check(vec![CheckCause::TypeAdmission {
             code: Code::StageLimitExceeded,
@@ -899,6 +901,7 @@ fn a_cancelled_argument_refusal_is_refused_at_admit() {
         consequent_source_events: Default::default(),
         finite_window: None,
         counterexample: None,
+        authenticated_temporal_selection: None,
         ledger: None,
         disposition: ClauseDisposition::ArgumentRefusal(Box::new(RunRefusal::Cancelled(
             quire_exact::CancelCause::Requested,

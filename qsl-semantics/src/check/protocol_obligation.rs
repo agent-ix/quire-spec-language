@@ -238,6 +238,8 @@ pub struct CheckedObligations {
     pub captures: Vec<CheckedCapture>,
     /// The templates, in source order.
     pub compensations: Vec<CheckedCompensation>,
+    /// Compound units formed while checking protocol obligation expressions.
+    pub(crate) formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
 /// What [`check`] found.
@@ -439,6 +441,7 @@ pub(crate) fn check<'a>(
         nodes: declarations.nodes_used,
         refusals: Vec::new(),
         incomplete: false,
+        formed_units: quire_semantic_value::quantity::UnitTable::default(),
     };
     let mut scope_cx = cx.reborrow(declarations.scope);
     let checked = checker.run(&mut scope_cx);
@@ -465,6 +468,7 @@ struct Checker<'c, 'a> {
     refusals: Vec<(Span, CheckRefusal)>,
     /// Some part did not check and produced no refusal of this checker.
     incomplete: bool,
+    formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
 impl Checker<'_, '_> {
@@ -491,7 +495,10 @@ impl Checker<'_, '_> {
             );
         }
         match checked {
-            Some(checked) if !self.incomplete => {
+            Some(mut checked) if !self.incomplete => {
+                checked
+                    .formed_units
+                    .append(std::mem::take(&mut self.formed_units));
                 Obligations::Checked(Box::new(checked), self.nodes)
             }
             Some(_) | None => Obligations::Unresolved,
@@ -586,6 +593,7 @@ impl Checker<'_, '_> {
             activation: activation?,
             captures,
             compensations,
+            formed_units: quire_semantic_value::quantity::UnitTable::default(),
         })
     }
 
@@ -1200,13 +1208,14 @@ impl Checker<'_, '_> {
         };
         let typed = type_named_body(form, &site.bound, goal, &declarations, &mut nodes, cx);
         self.nodes = nodes;
-        let (body, slot_names) = match typed {
+        let (body, slot_names, formed_units) = match typed {
             Ok(named) => named,
             Err(refusal) => {
                 self.convert(site, form, goal, refusal, cx);
                 return None;
             }
         };
+        self.formed_units.append(formed_units);
         if site.stage.bars_model_state() {
             let reads = model_state_reads(&body, form, site.input);
             if !reads.is_empty() {
@@ -1325,7 +1334,7 @@ pub(super) fn type_body(
     nodes: &mut u64,
     cx: &mut CheckContext<'_, Scope>,
 ) -> Result<CheckedBody, CheckRefusal> {
-    type_named_body(form, bound, goal, input, nodes, cx).map(|(body, _)| body)
+    type_named_body(form, bound, goal, input, nodes, cx).map(|(body, _, _)| body)
 }
 
 /// [`type_body`], with the name each slot of the body is bound under,
@@ -1338,7 +1347,14 @@ pub(super) fn type_named_body(
     input: &ClauseDeclarations<'_>,
     nodes: &mut u64,
     cx: &mut CheckContext<'_, Scope>,
-) -> Result<(CheckedBody, Vec<String>), CheckRefusal> {
+) -> Result<
+    (
+        CheckedBody,
+        Vec<String>,
+        quire_semantic_value::quantity::UnitTable,
+    ),
+    CheckRefusal,
+> {
     let mut typer = Typer::new(
         input.scope,
         input.signatures,
@@ -1372,7 +1388,9 @@ pub(super) fn type_named_body(
         }
         Goal::Infer => typer.infer(&form.expression, None, input.location)?,
     };
-    Ok((body, typer.slot_names().to_vec()))
+    let slot_names = typer.slot_names().to_vec();
+    let formed_units = typer.into_formed_units();
+    Ok((body, slot_names, formed_units))
 }
 
 /// The span of the node `location` reaches in `form`, or the whole

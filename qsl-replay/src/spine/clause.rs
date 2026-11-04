@@ -900,6 +900,25 @@ pub struct ClauseRunReport {
     /// a violation, built from what the entry ran; `None` for every other
     /// report.
     pub counterexample: Option<crate::ObservedTemporalCounterexample>,
+    /// The exact temporal profile and clock selected by the checked package
+    /// when a clock-bearing trace was authenticated.
+    pub authenticated_temporal_selection: Option<AuthenticatedTemporalSelection>,
+}
+
+/// FR-050 provenance retained after a clock-bearing trace agrees with the
+/// checked package's exact declaration, profile and temporal binding row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedTemporalSelection {
+    /// The checked package declaration identity.
+    pub declaration: quire_contract_model::CheckedNodeId,
+    /// The exact checked source regions joined to this declaration.
+    pub source_regions: Vec<quire_contract_model::CheckedSourceRegion>,
+    /// The selected profile definition identity.
+    pub profile: quire_contract_model::CheckedArtifactRef,
+    /// The selected temporal clock name.
+    pub clock_name: Box<str>,
+    /// The selected typed clock configuration.
+    pub clock: quire_contract_model::ClockConfiguration,
 }
 
 impl ClauseRunReport {
@@ -1032,6 +1051,7 @@ pub fn run_clause_with_temporal_selections(
         finite_window: None,
         counterexample: None,
         ledger: None,
+        authenticated_temporal_selection: None,
     };
 
     if let Some(language) = unit.language {
@@ -1074,9 +1094,9 @@ pub fn run_clause_with_temporal_selections(
             &cancel,
         )?
         .into_value();
-        Ok((checked, emitted))
+        Ok((models, checked, emitted))
     };
-    let (checked, emitted) = match front_end() {
+    let (models, checked, emitted) = match front_end() {
         Ok(compiled) => compiled,
         Err(failure) => {
             let disposition = match front_end::refusal_or_fault(failure) {
@@ -1108,6 +1128,41 @@ pub fn run_clause_with_temporal_selections(
         sources: &sources,
         progress_capacity: request.limits.progress.covered_positions,
     };
+    let admitted_package = if matches!(&request.selection, ClauseRunSelection::Temporal { .. }) {
+        let evidence = match super::bind::admission_evidence(
+            &models,
+            &checked,
+            &emitted,
+            request.limits.imports,
+        ) {
+            Ok(evidence) => evidence,
+            Err(_) => {
+                return Ok(report(ClauseDisposition::EvaluateFault(
+                    quire_semantic_value::catalog::InternalFault::new(
+                        "FR-050",
+                        "checked-package-admission-evidence-is-retained",
+                    ),
+                )))
+            }
+        };
+        match quire_contract_model::CheckedPackageV2::read(
+            emitted.package().bytes(),
+            quire_contract_model::CheckedPackageReadLimits::bounded(),
+            &evidence,
+        ) {
+            quire_contract_model::CheckedPackageV2ReadResult::Admitted(package) => Some(package),
+            _ => {
+                return Ok(report(ClauseDisposition::EvaluateFault(
+                    quire_semantic_value::catalog::InternalFault::new(
+                        "FR-050",
+                        "emitted-checked-package-strict-read-admits",
+                    ),
+                )))
+            }
+        }
+    } else {
+        None
+    };
     match request.selection {
         ClauseRunSelection::Clause(ref selection) => {
             let Some(clause) = package.graph().state_clause(&selection.name) else {
@@ -1131,16 +1186,27 @@ pub fn run_clause_with_temporal_selections(
             ref trace,
             ref over,
             ref ledger,
-        } => Ok(temporal::run_temporal(
-            &run,
-            &TemporalRun {
-                name,
-                trace,
-                over,
-                ledger: ledger.as_ref(),
-                clock_rows: emitted.temporal_binding_rows(),
-            },
-        )),
+        } => {
+            let Some(admitted_package) = admitted_package.as_deref() else {
+                return Ok(report(ClauseDisposition::EvaluateFault(
+                    quire_semantic_value::catalog::InternalFault::new(
+                        "FR-050",
+                        "temporal-selection-retains-strictly-admitted-package",
+                    ),
+                )));
+            };
+            Ok(temporal::run_temporal(
+                &run,
+                &TemporalRun {
+                    name,
+                    trace,
+                    over,
+                    ledger: ledger.as_ref(),
+                    clock_rows: emitted.temporal_binding_rows(),
+                    admitted_package,
+                },
+            ))
+        }
     }
 }
 
@@ -1179,6 +1245,7 @@ impl CompiledRun<'_> {
             finite_window: None,
             counterexample: None,
             ledger: None,
+            authenticated_temporal_selection: None,
         }
     }
 }
@@ -1597,6 +1664,7 @@ fn run_function(
         finite_window: None,
         counterexample: None,
         ledger: None,
+        authenticated_temporal_selection: None,
     };
 
     let selected = match select(package, name) {
