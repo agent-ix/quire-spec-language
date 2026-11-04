@@ -703,3 +703,34 @@ fn an_equivalences_aliases_name_its_own_units_packages() {
     packages.sort_unstable();
     assert_eq!(packages, ["acme/flow", "acme/rpc"]);
 }
+
+/// FR-480 "Selections and imports" (QSL-1638): two units write the same
+/// equivalence spelling over different bindings of `R`. Unit `a` binds `R`
+/// to `acme/clock`, which declares no unit `s`, so its `R::s` is unresolved
+/// and refuses; it is never read through unit `b`'s binding of `R`.
+#[trace("FR-480")]
+#[test]
+fn two_units_writing_one_spelling_resolve_each_through_its_own_bindings() {
+    let [(_, _, rpc), (_, _, flow), (_, _, clock)] = packages();
+    let equivalence = "dimension R::Time ~ F::Time by 1 R::s = 1 F::s;";
+    let a = format!(
+        "profile v = \"quire.model.complete/v1\";\nmodel R = \"acme/clock\";\n\
+         model F = \"acme/flow\";\n{equivalence}"
+    );
+    let b = format!(
+        "profile v = \"quire.model.complete/v1\";\nmodel R = \"acme/rpc\";\n\
+         model F = \"acme/flow\";\n{equivalence}"
+    );
+    let refusal = crate::model_operations::try_assemble_units(
+        &[("a", &a), ("b", &b)],
+        &[rpc.as_slice(), flow.as_slice(), clock.as_slice()],
+    )
+    .expect_err("unit a's `R::s` is unresolved");
+    assert!(
+        refusal
+            .errors
+            .iter()
+            .any(|error| matches!(error.cause, AssemblyCause::UnresolvedQuantityName { .. })),
+        "{refusal:?}"
+    );
+}

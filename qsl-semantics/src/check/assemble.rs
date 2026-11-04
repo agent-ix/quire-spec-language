@@ -3308,6 +3308,7 @@ impl PackageDeclarations {
         let sources: Vec<_> = units.iter().map(|(source, _)| source.clone()).collect();
         let mut state_clause_index = 0usize;
         let mut time_source_index = 0usize;
+        let mut equivalence_index = 0usize;
         for (source, unit) in &units {
             for form in unit.forms() {
                 if matches!(form.form(), qsl_forms::DeclarationForm::StateClause(_)) {
@@ -3320,9 +3321,12 @@ impl PackageDeclarations {
                     time_source_index += 1;
                 }
                 match form.form() {
-                    qsl_forms::DeclarationForm::DimensionEquivalence(equivalence) => {
-                        source_owners
-                            .insert(equivalence::source_owner_key(equivalence), source.clone());
+                    qsl_forms::DeclarationForm::DimensionEquivalence(_) => {
+                        source_owners.insert(
+                            equivalence::source_owner_key(equivalence_index),
+                            source.clone(),
+                        );
+                        equivalence_index += 1;
                     }
                     qsl_forms::DeclarationForm::Dimension(dimension) => {
                         source_owners.insert(dimension.name.name.clone(), source.clone());

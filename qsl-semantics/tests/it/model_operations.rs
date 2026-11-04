@@ -976,6 +976,15 @@ pub(super) fn admit_and_assemble_with_profiles(
 /// `language` line, with their model selections admitted together over the
 /// package documents `documents` and assembled as one package.
 pub(super) fn assemble_units(units: &[(&str, &str)], documents: &[&[u8]]) -> PackageDeclarations {
+    try_assemble_units(units, documents)
+        .unwrap_or_else(|refusal| panic!("the units assemble: {refusal:?}"))
+}
+
+/// [`assemble_units`], returning the assembly's refusal.
+pub(super) fn try_assemble_units(
+    units: &[(&str, &str)],
+    documents: &[&[u8]],
+) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
     use qsl_semantics::check::AssemblyLimits;
     use qsl_semantics::model::intake::admit_units_with_cancel;
     use quire_exact::Cancel;
@@ -1016,7 +1025,6 @@ pub(super) fn assemble_units(units: &[(&str, &str)], documents: &[&[u8]]) -> Pac
         AssemblyLimits::default(),
         &Cancel::new(),
     )
-    .unwrap_or_else(|refusal| panic!("the units assemble: {refusal:?}"))
 }
 
 /// A domain-package operation `name(params): <returns>` with `frame`, on

@@ -1320,3 +1320,66 @@ fn two_units_timing_one_package_under_one_alias_is_a_duplicate() {
         "{refusals:?}"
     );
 }
+
+/// FR-230 (FND-003): two units bind two different aliases to one package and
+/// each writes `time` over its alias. The package is one state model with at
+/// most one `time` member, so the second refuses as a duplicate.
+#[trace("FR-230")]
+#[test]
+fn two_aliases_of_one_package_timed_twice_are_a_duplicate() {
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n");
+    let b = format!("model Other = {PACKAGE:?};\ntime Other dense unit ms;\n");
+    let refusals = check_units(&[("a", &a), ("b", &b)], &[rpc_document(&["x"]).as_slice()])
+        .expect_err("the second time source is a duplicate");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [CheckRefusal {
+                cause: CheckCause::Temporal(cause),
+                ..
+            }] if matches!(**cause, TemporalCause::DuplicateTimeSource { .. })
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// The package `rpc_document(&["x"])` with `x` a Boolean field, which a
+/// `tick` time source admits, and a copy of it under the identity `other`.
+fn clockless_pair(other: &str) -> (String, String) {
+    let first = String::from_utf8(rpc_document(&["x"]))
+        .expect("the document is UTF-8")
+        .replace("ix://quire/native/Clock", "ix://quire/native/Boolean");
+    let second = first.replace(PACKAGE, other);
+    (first, second)
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): two units bind `Config` to
+/// two packages and each writes a `tick` time source over its own package's
+/// `Config::Call::bump`. Each source's operation anchor resolves through the
+/// package its own unit binds, never the first model of the shared alias.
+#[trace("FR-480")]
+#[test]
+fn each_units_tick_anchor_is_its_own_packages_operation() {
+    const OTHER: &str = "example/other-config-version";
+    let (first, other) = clockless_pair(OTHER);
+    let tick = "time Config tick Config::Call::bump period 1 ms unit ms;\n";
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}{tick}");
+    let b = format!("model Config = {OTHER:?};\n{tick}");
+    let graph = check_units(
+        &[("a", &a), ("b", &b)],
+        &[first.as_bytes(), other.as_bytes()],
+    )
+    .unwrap_or_else(|refusals| panic!("each unit anchors its own package: {refusals:?}"));
+    let [first, second] = graph.time_sources() else {
+        panic!("two time sources: {:?}", graph.time_sources());
+    };
+    let (Some(first_anchor), Some(second_anchor)) =
+        (&first.tick_operation_anchor, &second.tick_operation_anchor)
+    else {
+        panic!(
+            "every tick source has its operation anchor: {:?}",
+            graph.time_sources()
+        );
+    };
+    assert_ne!(first_anchor, second_anchor);
+}

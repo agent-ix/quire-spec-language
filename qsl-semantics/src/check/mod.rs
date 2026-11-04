@@ -1743,7 +1743,11 @@ impl PackageDeclarations {
                                 self.source_owners.get(owner),
                                 alias,
                             );
-                            let key = (alias, timed.map(|model| &model.selection().identity));
+                            // FR-230: at most one `time` member per state model, so
+                            // two aliases of one package are one key; an alias
+                            // that did not resolve keys by its spelling.
+                            let identity = timed.map(|model| &model.selection().identity);
+                            let key = (identity, if identity.is_some() { "" } else { alias });
                             if let Some(&first) = seen_time_sources.get(&key) {
                                 return Some(CheckRefusal {
                                     location: root(Origin::Expression),

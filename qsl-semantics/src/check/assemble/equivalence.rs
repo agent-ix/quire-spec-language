@@ -350,17 +350,17 @@ struct Scope<'a> {
 impl Scope<'_> {
     /// The model the unit declaring `form` binds `alias` to (FR-480
     /// "Selections and imports").
-    fn model(&self, form: &DimensionEquivalenceForm, alias: &str) -> Option<&AdmittedModel> {
+    fn model(&self, at: usize, alias: &str) -> Option<&AdmittedModel> {
         self.spellings
-            .model(self.models, self.units.get(&source_owner_key(form)), alias)
+            .model(self.models, self.units.get(&source_owner_key(at)), alias)
     }
 
     #[ix_trace_rs::string_edge]
-    fn dimension(&self, form: &DimensionEquivalenceForm, name: &NameForm) -> Option<Dimension> {
+    fn dimension(&self, at: usize, name: &NameForm) -> Option<Dimension> {
         let Some((alias, rest)) = name.name.split_once("::") else {
             return self.source.dimension(&name.name);
         };
-        let model = self.model(form, alias)?;
+        let model = self.model(at, alias)?;
         let dimension = model.dimensions.iter().find(|d| d.name == rest)?;
         let (key, map, _) = super::units::package_dimension(model, dimension, &mut Vec::new())?;
         Some(Dimension {
@@ -373,11 +373,11 @@ impl Scope<'_> {
     }
 
     #[ix_trace_rs::string_edge]
-    fn unit(&self, form: &DimensionEquivalenceForm, name: &str) -> Option<Unit> {
+    fn unit(&self, at: usize, name: &str) -> Option<Unit> {
         let Some((alias, rest)) = name.split_once("::") else {
             return self.source.unit(name);
         };
-        let model = self.model(form, alias)?;
+        let model = self.model(at, alias)?;
         let unit = model.units.iter().find(|unit| unit.name == rest)?;
         Some(Unit {
             name: name.to_owned(),
@@ -390,6 +390,8 @@ impl Scope<'_> {
 
 /// A declaration past steps 1 and 2.
 struct Resolved<'f> {
+    /// The declaration's position among the package's equivalences.
+    at: usize,
     form: &'f DimensionEquivalenceForm,
     dimensions: [Dimension; 2],
     units: [Unit; 2],
@@ -489,11 +491,8 @@ pub(super) enum Phase {
 
 /// Stable declaration key used to retain the source owner of an
 /// equivalence form while admitted units are combined.
-pub(super) fn source_owner_key(form: &DimensionEquivalenceForm) -> String {
-    format!(
-        "@dimension-equivalence:{}:{}",
-        form.dimensions[0].name, form.dimensions[1].name
-    )
+pub(super) fn source_owner_key(at: usize) -> String {
+    format!("dimension_equivalence:{at}")
 }
 
 /// Who owns the equivalences being decided: the unit's own owner, the
@@ -538,10 +537,10 @@ pub(super) fn assemble(
     // Steps 1 and 2, in source order.
     let mut base = Vec::new();
     let mut derived = Vec::new();
-    'forms: for form in forms {
+    'forms: for (at, form) in forms.iter().enumerate() {
         let mut dimensions = Vec::with_capacity(2);
         for name in &form.dimensions {
-            match scope.dimension(form, name) {
+            match scope.dimension(at, name) {
                 Some(dimension) => dimensions.push(dimension),
                 None => {
                     errors.push(error(
@@ -556,7 +555,7 @@ pub(super) fn assemble(
         }
         let mut units = Vec::with_capacity(2);
         for term in &form.ratio {
-            match scope.unit(form, &term.unit.name) {
+            match scope.unit(at, &term.unit.name) {
                 Some(unit) => units.push(unit),
                 None => {
                     errors.push(error(
@@ -586,6 +585,7 @@ pub(super) fn assemble(
             continue;
         }
         let resolved = Resolved {
+            at,
             form,
             dimensions,
             units,
@@ -723,7 +723,7 @@ pub(super) fn assemble(
         };
         let [first, second] = resolved.emitted_keys().ok_or_else(non_canonical)?;
         let source_owner = source_owners
-            .get(&source_owner_key(resolved.form))
+            .get(&source_owner_key(resolved.at))
             .unwrap_or(owner);
         let node_owner = source_owner.node_owner(package_name);
         let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)
