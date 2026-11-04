@@ -785,6 +785,33 @@ impl<'a> Typer<'a> {
         Ok(std::mem::take(&mut self.body).finish(root))
     }
 
+    /// Type `expression`, then convert it to `unit_of` when both are
+    /// quantities whose units convert into one another and differ (FR-337-AC-15's
+    /// converted aggregate threshold). Any other type is returned unconverted
+    /// for the caller to judge.
+    pub(crate) fn infer_in_unit_of(
+        &mut self,
+        expression: &Expression,
+        unit_of: &ValueType,
+        location: &Location,
+    ) -> Result<CheckedBody, CheckRefusal> {
+        let root = self.run(Goal::Infer(expression.root(), None, location.clone()))?;
+        let root = match (&root.value_type, unit_of) {
+            (ValueType::Quantity(source), ValueType::Quantity(target))
+                if source != target
+                    && self
+                        .units
+                        .get(source.clone())
+                        .zip(self.units.get(target.clone()))
+                        .is_some_and(|(source, target)| source.converts_to(target)) =>
+            {
+                self.convert(unit_of, root, location)?
+            }
+            _ => root,
+        };
+        Ok(std::mem::take(&mut self.body).finish(root))
+    }
+
     /// Type the subexpression of `expression` rooted at `root`, located at
     /// `location`: a `match` conjunct is one subtree of its block.
     pub(crate) fn infer_subtree(

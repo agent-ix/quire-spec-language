@@ -407,29 +407,28 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
-    /// The selected model's Port roles, each with its qualified source
-    /// artifact, declaration key and owning effective object type.
-    pub(crate) fn port_roles(&self) -> Vec<(String, String, DeclarationKey, EffectiveId)> {
-        let Some(alias) = self.alias.as_ref() else {
-            return Vec::new();
-        };
-        self.records
-            .values()
-            .filter_map(|record| {
-                let DomainPackageRecord::Endpoint(port) = record else {
-                    return None;
-                };
-                let artifact =
-                    crate::model::intake::type_identity_segment(&port.key.package, &port.key.node)?;
-                let DomainPackageRecord::Component(part) =
-                    self.records.get(&port.owning_component)?
-                else {
-                    return None;
-                };
-                let owner = self.object_type_id(&part.owning_type)?;
-                Some((alias.clone(), artifact.to_owned(), port.key.clone(), owner))
-            })
-            .collect()
+    /// The selected model's Port roles, each keyed by its package identity
+    /// and source artifact, with its declaration key and owning effective
+    /// object type.
+    pub(crate) fn port_roles(
+        &self,
+    ) -> impl Iterator<Item = ((String, String), (DeclarationKey, EffectiveId))> + '_ {
+        self.records.values().filter_map(|record| {
+            let DomainPackageRecord::Endpoint(port) = record else {
+                return None;
+            };
+            let artifact =
+                crate::model::intake::type_identity_segment(&port.key.package, &port.key.node)?;
+            let DomainPackageRecord::Component(part) = self.records.get(&port.owning_component)?
+            else {
+                return None;
+            };
+            let owner = self.object_type_id(&part.owning_type)?;
+            Some((
+                (self.selection.identity.clone(), artifact.to_owned()),
+                (port.key.clone(), owner),
+            ))
+        })
     }
 
     /// The effective object types at the ends of an admitted FR-152
@@ -2610,7 +2609,11 @@ impl<'a> Lowering<'a> {
     /// an empty body, and a unit typed by its dimension. A node already in the graph
     /// is left as it is. The walk is a heap work list, bounded by the unit
     /// table's size.
-    fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
+    pub(super) fn unit_nodes(
+        &mut self,
+        unit: NodeKey,
+        location: &Location,
+    ) -> Result<(), CheckRefusal> {
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
             let Some(node) = self.units.nominal_node(&key).cloned() else {
