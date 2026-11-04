@@ -217,6 +217,87 @@ fn the_configversion_state_clauses_check() {
     );
 }
 
+/// TC-044 / FR-015-AC-5 on the checked route: a dereference field resolves
+/// through the reference carrier to the target type's declared field, a
+/// `pre`/`post` clause resolves the named operation with its declared result,
+/// and a missing field, a missing operation, a scalar used as a reference and
+/// a field read straight off the reference carrier each refuse with no
+/// checked clause.
+#[trace("TC-044", "FR-015-AC-5")]
+#[test]
+fn dereference_fields_and_operation_roles_resolve_on_the_checked_route() {
+    let document = config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let guarded = "invariant Parent using v on Config::ConfigVersion at current { \
+        present(self.parent) implies deref(value(self.parent)).versionNumber <= self.versionNumber \
+        and reaches(self, self, parent) }\n\
+        pre Before using v on Config::ConfigVersion::attemptUpdate { self.versionNumber >= 0 }\n\
+        post After using v on Config::ConfigVersion::attemptUpdate { result and \
+        self.versionNumber = pre(self.versionNumber) }\n";
+    let graph = check(&document, guarded).expect("the dereference and operation clauses check");
+
+    // The dereferenced field is the target's `versionNumber`, typed with the
+    // package-declared bound, and `self.parent` is the optional reference.
+    let parent = graph.state_clause("Parent").expect("Parent checked");
+    assert!(parent.operation().is_none());
+    let attributes: Vec<&ValueType> = descendants(parent.body())
+        .into_iter()
+        .filter(|node| matches!(node.kind(), NodeKind::Attribute { .. }))
+        .map(|node| node.value_type())
+        .collect();
+    let bound = version_number_bound();
+    assert_eq!(
+        attributes.iter().filter(|ty| ***ty == bound).count(),
+        2,
+        "the dereferenced and the self versionNumber reads: {attributes:?}"
+    );
+    assert!(attributes.contains(&&ValueType::option(ValueType::Reference(parent.context()))));
+
+    // Both operation clauses resolve the one declared operation, declared by
+    // the context type itself.
+    for (name, kind) in [
+        ("Before", StateClauseKind::Precondition),
+        ("After", StateClauseKind::Postcondition),
+    ] {
+        let clause = graph.state_clause(name).expect("operation clause checked");
+        assert_eq!(clause.kind(), kind);
+        let operation = clause.operation().expect("the clause names its operation");
+        assert_eq!(operation.declaration.name(), "attemptUpdate");
+        assert_eq!(operation.declaring, clause.context());
+    }
+    assert!(graph.state_clause("After").unwrap().binds_result());
+
+    // Refusals: no partial graph.
+    for (body, expected) in [
+        (
+            "pre B using v on Config::ConfigVersion::missing { true }\n",
+            (Code::MissingDeclaration, Some("missing-name")),
+        ),
+        (
+            "invariant M using v on Config::ConfigVersion at current { \
+             present(self.parent) implies deref(value(self.parent)).missing <= 1 }\n",
+            (Code::IllTyped, Some("type-mismatch")),
+        ),
+        (
+            "invariant S using v on Config::ConfigVersion at current { \
+             deref(self.versionNumber).versionNumber = 1 }\n",
+            (Code::IllTyped, Some("type-mismatch")),
+        ),
+        (
+            "invariant C using v on Config::ConfigVersion at current { \
+             present(self.parent) implies self.parent.versionNumber = 1 }\n",
+            (Code::IllTyped, Some("type-mismatch")),
+        ),
+    ] {
+        let refusals = check(&document, body).expect_err(body);
+        assert_eq!(refusals, vec![expected], "{body}");
+    }
+}
+
 /// V1-TYPE-024: a subtype source and base-type target traverse an inherited
 /// edge without erasing either operand's checked reference identity.
 #[test]
