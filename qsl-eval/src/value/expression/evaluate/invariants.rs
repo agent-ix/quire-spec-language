@@ -95,6 +95,7 @@ fn iteration<'a>(node: CheckedNode<'a>) -> Box<Iteration<CheckedNode<'a>>> {
         sources: vec![],
         accumulator: None,
         count: Integer::zero(),
+        source_owner: Owner::None,
         owner: Owner::None,
     })
 }
@@ -2614,6 +2615,7 @@ fn a_query_binds_each_element_to_the_owner_of_its_source() {
     });
     let owner = slot_owner_after_step!(2, 0, |m| {
         let mut pending = iteration(query.root());
+        pending.source_owner = Owner::Binder(7);
         pending.owner = Owner::Binder(7);
         m.iterate(pending)
     });
@@ -2633,6 +2635,7 @@ fn a_fold_binds_its_accumulator_and_element_to_the_owner_of_its_source() {
     for slot in [0, 1] {
         let owner = slot_owner_after_step!(2, slot, |m| {
             let mut pending = iteration(fold.root());
+            pending.source_owner = Owner::Binder(7);
             pending.owner = Owner::Binder(7);
             pending.accumulator = Some(Value::Boolean(true));
             m.iterate(pending)
@@ -2657,6 +2660,91 @@ fn a_seq_binds_each_integer_to_the_owner_of_its_bounds() {
             high: Integer::one(),
             awaiting: false,
             results: Vec::new(),
+            source_owner: Owner::Binder(7),
+            owner: Owner::Binder(7),
+        }))
+    });
+    assert_eq!(owner, Owner::Binder(7));
+}
+
+/// A result of the previous body, owned by a binder other than the source's,
+/// is on the stack: the machine tracks owners and the step has just begun.
+fn push_other_binders_result<'a, N: NodeSource<'a>>(m: &mut Machine<'a, '_, N>, result: Value) {
+    if let Some(owners) = m.owners.as_mut() {
+        owners.absorb(Owner::Binder(9));
+    }
+    m.push_value(result, false);
+    if let Some(owners) = m.owners.as_mut() {
+        owners.begin_step();
+    }
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_query_element_after_the_first_keeps_its_source_owner_not_the_merged_results() {
+    let query = body(|ids| NodeKind::Query {
+        visit: Visit::Exists,
+        slot: 0,
+        source: ids[0],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        let mut pending = iteration(query.root());
+        pending.source = collection(vec![Value::Boolean(true), Value::Boolean(true)]);
+        pending.source_owner = Owner::Binder(7);
+        pending.owner = Owner::Binder(7);
+        pending.awaiting = true;
+        pending.next = 1;
+        push_other_binders_result(m, Value::Boolean(false));
+        m.iterate(pending)
+    });
+    assert_eq!(owner, Owner::Binder(7));
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_fold_element_after_the_first_keeps_its_source_owner_and_the_accumulator_takes_the_merge() {
+    let fold = body(|ids| NodeKind::Fold {
+        accumulator: 0,
+        binder: 1,
+        source: ids[0],
+        step: ids[1],
+        identity: Some(ids[0]),
+    });
+    for (slot, expected) in [(0, Owner::Mixed), (1, Owner::Binder(7))] {
+        let owner = slot_owner_after_step!(2, slot, |m| {
+            let mut pending = iteration(fold.root());
+            pending.source = collection(vec![Value::Boolean(true), Value::Boolean(true)]);
+            pending.source_owner = Owner::Binder(7);
+            pending.owner = Owner::Binder(7);
+            pending.accumulator = Some(Value::Boolean(true));
+            pending.awaiting = true;
+            pending.next = 1;
+            push_other_binders_result(m, Value::Boolean(true));
+            m.iterate(pending)
+        });
+        assert_eq!(owner, expected, "slot {slot}");
+    }
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_seq_integer_after_the_first_keeps_its_bounds_owner_not_the_merged_results() {
+    let seq = body(|ids| NodeKind::Seq {
+        slot: 0,
+        low: ids[0],
+        high: ids[1],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        push_other_binders_result(m, Value::Boolean(true));
+        m.iterate_seq(Box::new(SeqIteration {
+            node: seq.root(),
+            next: Integer::one(),
+            high: Integer::one().add(&Integer::one()),
+            awaiting: true,
+            results: Vec::new(),
+            source_owner: Owner::Binder(7),
             owner: Owner::Binder(7),
         }))
     });
