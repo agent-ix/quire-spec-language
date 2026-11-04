@@ -5765,8 +5765,12 @@ fn emit_package_inner(
         &mut step_rows,
         &mut schedulability_claim_rows,
     )?;
-    let (temporal_bindings, temporal_clause_names, temporal_binding_rows, temporal_clause_refs) =
-        temporal_binding_rows(graph, &emitted_node_ids, &nodes, temporal_selections)?;
+    let WrittenTemporalRows {
+        bindings: temporal_bindings,
+        names: temporal_clause_names,
+        keyed: temporal_binding_rows,
+        refs: temporal_clause_refs,
+    } = temporal_binding_rows(graph, &emitted_node_ids, &nodes, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
         &emitted_node_ids,
@@ -6048,20 +6052,20 @@ fn validate_temporal_clock(
     Ok(())
 }
 
+/// The temporal rows one emission writes.
+struct WrittenTemporalRows {
+    bindings: Vec<quire_contract_model::TemporalBinding>,
+    names: Vec<quire_contract_model::TemporalClauseName>,
+    keyed: TemporalBindingRows,
+    refs: Vec<TemporalClauseRef>,
+}
+
 fn temporal_binding_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     nodes: &[CheckedSemanticNodeV2],
     selections: &[TemporalClockSelection],
-) -> Result<
-    (
-        Vec<quire_contract_model::TemporalBinding>,
-        Vec<quire_contract_model::TemporalClauseName>,
-        TemporalBindingRows,
-        Vec<TemporalClauseRef>,
-    ),
-    EmitRefusal,
-> {
+) -> Result<WrittenTemporalRows, EmitRefusal> {
     use qsl_semantics::check::TemporalProfile;
 
     let mut selected = BTreeMap::new();
@@ -6314,7 +6318,12 @@ fn temporal_binding_rows(
     refs.sort_by(|left, right| {
         (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
     });
-    Ok((rows, names, keyed, refs))
+    Ok(WrittenTemporalRows {
+        bindings: rows,
+        names,
+        keyed,
+        refs,
+    })
 }
 
 /// The ids `node` holds that this emitter can reach through IR's public
