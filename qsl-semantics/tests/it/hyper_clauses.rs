@@ -1815,3 +1815,57 @@ fn an_atom_may_call_a_declared_function() {
     );
     clause(&["V"], &declaration);
 }
+
+/// Unit `a`, admitted first, binding `V` to the saving device, whose
+/// `ConfigVersion` has no `step`; and unit `b` binding `V` to the vault and
+/// holding `declaration`, both under the value and infinite-trace profiles.
+fn one_alias_two_packages(declaration: &str) -> PackageDeclarations {
+    let header = format!("profile v = \"quire.value.complete/v1\";\nprofile inf = {INFINITE:?};\n");
+    let a = format!("{header}model V = {SAVING:?};\ntype Pad = Integer;");
+    let b = format!("{header}model V = {VAULT:?};\n{declaration}");
+    let (vault, saving) = (vault(), device(SAVING));
+    crate::model_operations::assemble_units(
+        &[("a", &a), ("b", &b)],
+        &[vault.as_slice(), saving.as_slice()],
+    )
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): a `hyper` clause's model
+/// alias names the package its own unit binds it to. Unit `b`'s
+/// `NonInterference` over `V` binds the vault, whose `step` its `match`
+/// reads, though unit `a`'s `V`, the device, is admitted first.
+#[trace("FR-480")]
+#[test]
+fn a_hyper_clauses_alias_names_its_own_units_package() {
+    let package = one_alias_two_packages(&non_interference());
+    let [checked] = check_hyper_clauses(&package)
+        .try_into()
+        .unwrap_or_else(|checked: Vec<_>| panic!("one clause: {checked:?}"));
+    let Ok(CheckedHyper::Behaviours(clause)) = checked else {
+        panic!("b's clause checks: {checked:?}");
+    };
+    assert_eq!(clause.mu_universal().len(), 2);
+    package
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("b's clause checks and emits: {refusals:?}"));
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): a step relation's executions
+/// are operations of the package its own unit binds their alias to: unit
+/// `b`'s `Det` over `V::ConfigVersion::step` is the vault's `step`.
+#[trace("FR-480")]
+#[test]
+fn a_step_relations_executions_are_its_own_units_packages_operations() {
+    let graph = one_alias_two_packages(DET)
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("b's relation checks: {refusals:?}"));
+    let [relation] = graph.step_relations() else {
+        panic!("one relation: {:?}", graph.step_relations());
+    };
+    let packages: Vec<&str> = relation
+        .executions()
+        .iter()
+        .map(|(_, key)| key.declaring.package.as_str())
+        .collect();
+    assert_eq!(packages, [VAULT, VAULT]);
+}

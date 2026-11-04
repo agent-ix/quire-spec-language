@@ -1430,6 +1430,19 @@ impl Scope {
         self.source_owners.get(name)
     }
 
+    /// The model of `models` that the unit declaring the top-level
+    /// declaration `name` reads its model alias `alias` as (FR-480
+    /// "Selections and imports").
+    pub(crate) fn declared_model<'m>(
+        &self,
+        models: &'m [super::lowering::AdmittedModel],
+        name: &str,
+        alias: &str,
+    ) -> Option<&'m super::lowering::AdmittedModel> {
+        self.model_spellings
+            .model(models, self.source_of(name), alias)
+    }
+
     /// This scope as the unit declaring the top-level declaration `name`
     /// reads its type names.
     pub(crate) fn for_declaration(&self, name: &str) -> SourceScope<'_> {

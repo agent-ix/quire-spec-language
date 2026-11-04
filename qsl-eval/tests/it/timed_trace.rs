@@ -84,7 +84,15 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     package.time_sources = vec![ModelTimeSource {
         model: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 1 },
-        model_node: crate::support::ids::node_key([0]),
+        // The model node of `M`'s state object, which names the timed
+        // model's package.
+        model_node: qsl_semantics::model::key::object_type_node_key(
+            &quire_checked::key::DeclarationKey {
+                package: PACKAGE.to_owned(),
+                node: format!("ix://{PACKAGE}/Counter"),
+            },
+        )
+        .expect("a model node key"),
         tick_operation_key: None,
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),

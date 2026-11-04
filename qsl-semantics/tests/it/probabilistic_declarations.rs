@@ -3196,3 +3196,38 @@ fn a_process_in_the_package_does_not_make_a_workload_incomplete() {
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
 }
+
+/// FR-480 "Selections and imports" (QSL-1638): a probabilistic claim's
+/// subject is the package its own unit binds the alias to. Unit `a`,
+/// admitted first, binds `Service` to the copy `OTHER`; unit `b` binds it
+/// to the service package and states a claim over it. The claim and the
+/// declarations read no `Service::` enumeration, whose literal names both
+/// packages would declare.
+#[trace("FR-480")]
+#[test]
+fn a_claims_subject_is_its_own_units_package() {
+    let claim = format!(
+        "probabilistic C using ev on Service {OVER} under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.0005 \
+         {{ probability >= 0.999 [ always[0,1000] holds(true) ] }}"
+    );
+    let (b, _) = service_unit(&service(Some((OUTCOME, "")), &claim));
+    let b = b
+        .strip_prefix("language \"ix:native\" edition \"1-draft\";\n")
+        .expect("the unit's language line");
+    let a = format!(
+        "profile v = \"quire.model.complete/v1\";\nmodel Service = {OTHER:?};\n\
+                     type Pad = Integer;"
+    );
+    let (service, other) = (service_document(), other_document());
+    let graph = crate::model_operations::assemble_units(
+        &[("a", &a), ("b", b)],
+        &[service.as_slice(), other.as_slice()],
+    )
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("b's claim checks: {refusals:?}"));
+    let [claim] = graph.probabilistic_model().claims() else {
+        panic!("one claim: {:?}", graph.probabilistic_model().claims());
+    };
+    assert_eq!(claim.subject.package.identity, P);
+}

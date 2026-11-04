@@ -145,7 +145,17 @@ pub struct HyperDeclarations<'a> {
         std::cell::RefCell<Option<qsl_foundation::source::provenance::RawSourceRef>>,
 }
 
-impl HyperDeclarations<'_> {
+impl<'a> HyperDeclarations<'a> {
+    /// The model the clause checked now reads its model alias `alias` as
+    /// (FR-480 "Selections and imports").
+    fn model_of(&self, alias: &str) -> Option<&'a AdmittedModel> {
+        self.temporal.scope.model_spellings().model(
+            self.models,
+            self.clause_source.borrow().as_ref(),
+            alias,
+        )
+    }
+
     /// The object type `name`, written in the clause checked now, names.
     fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
         self.temporal
@@ -1614,11 +1624,6 @@ fn profile_selection(found: &[TemporalSelection], span: Span) -> StageFailure<Ch
     .into_failure()
 }
 
-/// The model of `alias`, when the unit selects one.
-fn model_of<'m>(models: &'m [AdmittedModel], alias: &str) -> Option<&'m AdmittedModel> {
-    models.iter().find(|model| model.alias() == Some(alias))
-}
-
 /// The quantifiers, each bound to its alias and its fairness set. A quantifier
 /// with no alias, one naming no model and a constraint naming an operation of
 /// another model push their refusals onto `found`.
@@ -1649,7 +1654,7 @@ fn checked_quantifiers(
             }));
             continue;
         };
-        if model_of(declarations.models, &alias.name).is_none() {
+        if declarations.model_of(&alias.name).is_none() {
             found.push(Found::Hyper(HyperCause::UnresolvedAlias {
                 alias: alias.name.clone(),
                 span: alias.span,
@@ -1752,11 +1757,11 @@ fn distinct_aliases(quantifiers: &[CheckedQuantifier]) -> Vec<ModelAlias> {
 
 /// The operation key of `operation` in the model of `alias`.
 fn operation_key(
-    models: &[AdmittedModel],
+    declarations: &HyperDeclarations<'_>,
     alias: &str,
     operation: &FairnessOperation,
 ) -> Option<OperationKey> {
-    let model = model_of(models, alias)?;
+    let model = declarations.model_of(alias)?;
     Some(OperationKey {
         declaring: model.declaration_key(operation.declaring_type())?.clone(),
         operation: Identifier::new(operation.name()).ok()?,
@@ -2141,11 +2146,11 @@ fn qualify(declarations: &HyperDeclarations<'_>, name: &NameForm) -> Qualified {
     let [alias, object, member] = segments[..] else {
         return Qualified::Other;
     };
-    if model_of(declarations.models, alias).is_none() {
+    if declarations.model_of(alias).is_none() {
         return Qualified::Other;
     }
     if let Ok((operation, _)) = resolve_operation(declarations, alias, name) {
-        return match operation_key(declarations.models, alias, &operation) {
+        return match operation_key(declarations, alias, &operation) {
             Some(key) => Qualified::Operation(alias.to_owned(), key),
             None => Qualified::Nothing,
         };
@@ -2540,7 +2545,7 @@ fn step_read(
             }
             Ok(StepRead::Argument(Box::new(ArgumentRead {
                 trace: trace.to_owned(),
-                operation: operation_key(declarations.models, alias.as_str(), &resolved)
+                operation: operation_key(declarations, alias.as_str(), &resolved)
                     .ok_or_else(unresolved)?,
                 written: operation.clone(),
                 parameter: parameter.clone(),
@@ -2572,7 +2577,7 @@ pub fn decodable_argument(value_type: &ValueType) -> bool {
 /// that has a receiver (QSpec FR-395 "Step labels"); `None` when those
 /// operations are declared by more than one type, or by none.
 fn receiver_object(declarations: &HyperDeclarations<'_>, alias: &str) -> Option<EffectiveId> {
-    let model = model_of(declarations.models, alias)?;
+    let model = declarations.model_of(alias)?;
     let objects: Vec<&quire_checked::key::DeclarationKey> =
         model.object_types().map(|(key, _)| key).collect();
     let mut declaring: Vec<EffectiveId> = Vec::new();
@@ -2618,7 +2623,7 @@ fn checked_align_skip(
         }
         let key = resolve_operation(declarations, alias, entry)
             .ok()
-            .and_then(|(operation, _)| operation_key(declarations.models, alias, &operation));
+            .and_then(|(operation, _)| operation_key(declarations, alias, &operation));
         match key {
             None => found.push(Found::Hyper(HyperCause::AlignSkipUnbound {
                 span: entry.span,
@@ -3336,7 +3341,8 @@ fn check_relation(
             .split("::")
             .next()
             .unwrap_or_default();
-        let resolved = model_of(declarations.models, alias)
+        let resolved = declarations
+            .model_of(alias)
             .and_then(|_| resolve_operation(declarations, alias, &binding.operation).ok());
         let Some((operation, declaration)) = resolved else {
             found.push(Found::Hyper(HyperCause::ExecutionNotAnOperation {
@@ -3345,7 +3351,7 @@ fn check_relation(
             }));
             continue;
         };
-        let Some(key) = operation_key(declarations.models, alias, &operation) else {
+        let Some(key) = operation_key(declarations, alias, &operation) else {
             return Err(fault("execution-operation-keyed"));
         };
         roots.push(ValueType::Reference(operation.declaring_type()));
@@ -3489,6 +3495,7 @@ pub fn check_hyper_clauses(
     .with_known_populations(super::refinement::population_names(&package.models))
     .with_complete_model(!package.models.is_empty())
     .with_model_spellings(package.model_spellings.clone())
+    .with_source_owners(package.source_owners.clone())
     .with_declared_units(&package.units);
     // The declared functions' signatures, which a body's calls resolve
     // against; a function that does not resolve is left out.
@@ -3559,7 +3566,8 @@ pub fn check_hyper_clauses(
                 &mut meter,
                 &mut diagnostics,
                 &mut scopes,
-            );
+            )
+            .with_source_owner(package.source_owners.get(clause.name()).cloned());
             HyperTraceFamily::check(clause, &mut cx).map(Staged::into_value)
         })
         .collect()
