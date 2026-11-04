@@ -35,8 +35,8 @@ pub(super) struct Envelope<'a> {
 pub(super) struct CompileRequest {
     #[serde(deserialize_with = "deserialize_objects")]
     pub models: Vec<Model>,
-    #[serde(deserialize_with = "from_object")]
-    pub program: Program,
+    #[serde(deserialize_with = "compile_program")]
+    pub program: CompileProgram,
     /// FR-147/FR-099: the unit's unchecked internal-list value.
     #[serde(default, deserialize_with = "present_json_value")]
     pub refinement_internals: Option<serde_json::Value>,
@@ -44,6 +44,50 @@ pub(super) struct CompileRequest {
     /// when absent.
     #[serde(default, deserialize_with = "deserialize_objects")]
     pub libraries: Vec<Library>,
+}
+
+/// The compiler accepts its legacy single-program object or FR-480's ordered
+/// array of source selections. Extraction is retained only for FR-031's typed
+/// refusal before source files are opened.
+pub(super) struct CompileProgram {
+    pub sources: Vec<SourceFile>,
+    pub extraction: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SingleCompileProgram {
+    #[serde(deserialize_with = "from_object")]
+    source: SourceFile,
+    #[serde(default, deserialize_with = "present_json_value")]
+    extraction: Option<serde_json::Value>,
+}
+
+fn compile_program<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<CompileProgram, D::Error> {
+    let value = serde_json::Value::deserialize(decoder)?;
+    let (sources, extraction) = match value {
+        serde_json::Value::Object(_) => {
+            let program =
+                SingleCompileProgram::deserialize(value).map_err(serde::de::Error::custom)?;
+            (vec![program.source], program.extraction.is_some())
+        }
+        serde_json::Value::Array(value) => {
+            let sources = Vec::<SourceFile>::deserialize(serde_json::Value::Array(value))
+                .map_err(serde::de::Error::custom)?;
+            (sources, false)
+        }
+        other => {
+            return Err(serde::de::Error::custom(format!(
+                "expected a compile program object or source array, found {other}"
+            )))
+        }
+    };
+    Ok(CompileProgram {
+        sources,
+        extraction,
+    })
 }
 
 /// One supplied library: its identity and source selection.

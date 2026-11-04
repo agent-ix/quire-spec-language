@@ -1342,10 +1342,36 @@ pub fn check_units(
     )
 }
 
+/// S3 and S4 over an admitted source-unit list, with the root request's
+/// unchecked refinement-internal-list value carried into the combined unit.
+pub fn check_units_with_refinement_internals(
+    admitted: &AdmittedUnitList,
+    package_name: String,
+    refinement_internals: Option<serde_json::Value>,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<Vec<CheckedUnit>>, FrontEndFailure> {
+    check_units_with_options(
+        admitted,
+        package_name,
+        models,
+        dependencies,
+        UnitCheckOptions {
+            refinement_internals: refinement_internals.as_ref(),
+            ..UnitCheckOptions::default()
+        },
+        limits,
+        cancel,
+    )
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct UnitCheckOptions<'a> {
     pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
     pub(crate) continue_protocol_refusals: bool,
+    pub(crate) refinement_internals: Option<&'a serde_json::Value>,
 }
 
 pub(crate) fn check_units_with_options(
@@ -1396,7 +1422,12 @@ pub(crate) fn check_units_with_options(
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
-        let package = resolution.check_unit_list(admitted, package_name, models.models.clone())?;
+        let package = resolution.check_unit_list(
+            admitted,
+            package_name,
+            models.models.clone(),
+            options.refinement_internals.cloned(),
+        )?;
         resolution.check_unimported_refinement_values()?;
         let package = Arc::new(package);
         let sources: Vec<_> = admitted
@@ -3257,8 +3288,9 @@ impl<'a> Resolution<'a> {
         admitted: &AdmittedUnitList,
         package_name: String,
         models: SelectedModels,
+        refinement_internals: Option<serde_json::Value>,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let root = Frame::new_units(admitted, package_name, models, None);
+        let root = Frame::new_units(admitted, package_name, models, refinement_internals);
         self.check_frame(root)
     }
 

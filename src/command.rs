@@ -189,6 +189,12 @@ pub enum RunCause {
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
     CompleteSelection(CompleteSelection),
+    /// FR-031: an extracted program is a run input, not a source-only compile.
+    #[error("an extracted program requires run")]
+    ExtractionRequiresRun,
+    /// FR-027/FR-480: a source-unit list must not be empty.
+    #[error("the compile program has no source units")]
+    EmptyCompileProgram,
     /// The request's `libraries` are refused before any library is read.
     #[error("the request's libraries are refused: {0}")]
     Libraries(LibrarySelection),
@@ -256,9 +262,11 @@ impl RunCause {
             Self::Limit(_) => Code::ResourceExhausted,
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
-            Self::CompleteSelection(_) | Self::Libraries(_) | Self::CompleteRunSelection(_) => {
-                Code::InvalidRequest
-            }
+            Self::CompleteSelection(_)
+            | Self::Libraries(_)
+            | Self::CompleteRunSelection(_)
+            | Self::EmptyCompileProgram => Code::InvalidRequest,
+            Self::ExtractionRequiresRun => Code::ExtractionRequiresRun,
             Self::Spine(failure) => failure.refusal.code(),
             Self::SpineRun(refusal) => refusal.code(),
         }
@@ -451,24 +459,37 @@ pub fn read_clause_run_request(
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes| {
         let request: wire::CompileRequest = request(bytes)?;
+        if request.program.extraction {
+            return Err(RunCause::ExtractionRequiresRun);
+        }
+        if request.program.sources.is_empty() {
+            return Err(RunCause::EmptyCompileProgram);
+        }
         let mut intake = intake_with_fixed_bytes(
             directory,
             FileCounts {
                 // A library source is a program source a `1-draft` program
                 // imports, and counts toward the same file limits (FR-027).
-                programs: request.libraries.len().saturating_add(1),
+                programs: request
+                    .libraries
+                    .len()
+                    .saturating_add(request.program.sources.len()),
                 models: request.models.len(),
                 observations: 0,
             },
             TOTAL_BYTES,
         )?;
-        // The edition is decided before any model is read: a `1-draft`
-        // program takes domain packages only, and a request selecting a
-        // native rule model for it refuses whatever state the model files
-        // are in.
-        let source = intake.source(&request.program.source)?;
-        require_complete_edition(source.source())?;
-        complete(&request, &mut intake, source.source())
+        // Every unit's edition is decided before any model is read: a
+        // `1-draft` program takes domain packages only, and a request
+        // selecting a native rule model for it refuses whatever state the
+        // model files are in.
+        let mut sources = Vec::with_capacity(request.program.sources.len());
+        for selection in &request.program.sources {
+            let source = intake.source(selection)?;
+            require_complete_edition(source.source())?;
+            sources.push(source);
+        }
+        complete(&request, &mut intake, &sources)
     })
 }
 
@@ -513,6 +534,17 @@ fn require_complete_edition(source: &Source) -> Result<()> {
 /// read it; the v2 wire has no member for them, so they do not reach the
 /// bytes (FR-027 Outputs).
 fn complete(
+    request: &wire::CompileRequest,
+    intake: &mut Intake<'_>,
+    sources: &[FormalSource],
+) -> Result<Vec<u8>> {
+    if sources.len() == 1 {
+        return complete_single(request, intake, sources[0].source());
+    }
+    complete_units(request, intake, sources)
+}
+
+fn complete_single(
     request: &wire::CompileRequest,
     intake: &mut Intake<'_>,
     source: &Source,
@@ -609,6 +641,120 @@ fn complete(
     .into_value();
     let emitted = qsl_replay::spine::package(
         &checked,
+        qsl_replay::spine::PackageLimits::default(),
+        &cancel,
+    )
+    .map_err(failure)?
+    .into_value();
+    Ok(emitted.package().bytes().to_vec())
+}
+
+/// Compile FR-480's ordered program-unit list as one checked package.
+fn complete_units(
+    request: &wire::CompileRequest,
+    intake: &mut Intake<'_>,
+    sources: &[FormalSource],
+) -> Result<Vec<u8>> {
+    if request.models.iter().any(|model| !is_domain_package(model)) {
+        return Err(RunCause::CompleteSelection(CompleteSelection::NativeModels));
+    }
+    let documents = request
+        .models
+        .iter()
+        .map(|model| intake.source(&model.source))
+        .collect::<Result<Vec<_>>>()?;
+    let packages = qsl_semantics::model::intake::package_input(
+        documents
+            .iter()
+            .map(|document| document.source().text().as_bytes()),
+    )
+    .map_err(|refusal| RunCause::ClauseRequest {
+        member: "models".to_owned(),
+        reason: refusal.detail,
+    })?;
+    let libraries = library_sources(request, intake)?;
+    let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
+        let located = refusal
+            .region()
+            .and_then(|region| {
+                sources
+                    .iter()
+                    .map(FormalSource::source)
+                    .chain(libraries.iter().map(|(_, read)| read.source()))
+                    .find(|candidate| candidate.reference() == region.source())
+            })
+            .unwrap_or_else(|| sources[0].source());
+        RunCause::Spine(Box::new(SpineFailure {
+            source: located.identity().clone(),
+            path: located.path().to_owned(),
+            span: refusal.region().and_then(|region| located.render(region)),
+            refusal,
+        }))
+    };
+    let dependencies =
+        qsl_replay::spine::DependencyInput::new(libraries.iter().map(|(library, read)| {
+            qsl_replay::spine::SuppliedLibrary {
+                identity: library.identity.clone(),
+                source: read.source().identity().clone(),
+                path: read.source().path().to_owned(),
+                bytes: read.source().text().as_bytes().to_vec(),
+            }
+        }))
+        .and_then(|dependencies| {
+            dependencies.with_refinement_internals(libraries.iter().filter_map(|(library, _)| {
+                library
+                    .refinement_internals
+                    .clone()
+                    .map(|value| (library.identity.clone(), value))
+            }))
+        })
+        .map_err(|refusal| {
+            spine_failure(qsl_replay::spine::CompileRefusal::DependencyInput(refusal))
+        })?;
+    let parse_requests: Vec<_> = sources
+        .iter()
+        .map(|source| qsl_replay::spine::ParseRequest {
+            source: source.source().identity(),
+            path: source.source().path(),
+            bytes: source.source().text().as_bytes(),
+        })
+        .collect();
+    qsl_replay::spine::preflight_unit_list(&parse_requests, &dependencies)
+        .map_err(|refusal| spine_failure(*refusal))?;
+    let cancel = quire_exact::Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let failure = |failure| match qsl_replay::spine::refusal_or_fault(failure) {
+        Ok(refusal) => spine_failure(*refusal),
+        Err(fault) => RunCause::SpineRun(Box::new(qsl_replay::spine::RunRefusal::Fault(fault))),
+    };
+    let parsed = parse_requests
+        .iter()
+        .map(|parse_request| {
+            qsl_replay::spine::parse(parse_request, limits.source, &cancel)
+                .map(|stage| stage.into_value())
+                .map_err(failure)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let admitted = qsl_replay::spine::admit_parsed_unit_list(parsed, &dependencies)
+        .map_err(|refusal| spine_failure(*refusal))?;
+    let models =
+        qsl_replay::spine::select_units(&admitted, &packages, limits.model, limits.source, &cancel)
+            .map_err(failure)?
+            .into_value();
+    let checked = qsl_replay::spine::check_units_with_refinement_internals(
+        &admitted,
+        package_name(canonical_unit_source(sources).source().identity()),
+        request.refinement_internals.clone(),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(failure)?
+    .into_value();
+    let checked = checked.first().ok_or(RunCause::EmptyCompileProgram)?;
+    let emitted = qsl_replay::spine::package(
+        checked,
         qsl_replay::spine::PackageLimits::default(),
         &cancel,
     )
@@ -885,6 +1031,39 @@ fn package_name(identity: &qsl_foundation::source::SourceIdentity) -> String {
     identity
         .label(qsl_foundation::source::SourceLabel::Identity)
         .to_owned()
+}
+
+fn canonical_unit_source(sources: &[FormalSource]) -> &FormalSource {
+    sources
+        .iter()
+        .min_by(|left, right| {
+            use qsl_foundation::source::SourceLabel;
+            left.source()
+                .identity()
+                .label(SourceLabel::Authority)
+                .as_bytes()
+                .cmp(
+                    right
+                        .source()
+                        .identity()
+                        .label(SourceLabel::Authority)
+                        .as_bytes(),
+                )
+                .then_with(|| {
+                    left.source()
+                        .identity()
+                        .label(SourceLabel::Identity)
+                        .as_bytes()
+                        .cmp(
+                            right
+                                .source()
+                                .identity()
+                                .label(SourceLabel::Identity)
+                                .as_bytes(),
+                        )
+                })
+        })
+        .expect("the compile program has at least one source")
 }
 
 /// The call's accounting limits (FR-100): each named counter uses the
