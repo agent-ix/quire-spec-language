@@ -211,6 +211,19 @@ fn check_channel(
             ));
         }
     }
+    if let ChannelDelivery::Between { lower, upper } = channel.delivery.value {
+        if lower > upper {
+            refusals.push((
+                channel.delivery.span,
+                refusal(ProtocolAnchorCause::ChannelDeliveryRange {
+                    channel: channel.name.name.clone(),
+                    lower,
+                    upper,
+                    span: channel.delivery.span,
+                }),
+            ));
+        }
+    }
     let carries = match resolve_form(scope, &channel.carries) {
         Ok(ValueType::Reference(_) | ValueType::Population(_)) => {
             let name = match &channel.carries.head {
@@ -1003,6 +1016,43 @@ mod tests {
         assert_ne!(*base, same_but_place(tail));
         assert_ne!(*base, same_but_place(new));
         assert_ne!(same_but_place(tail), same_but_place(new));
+    }
+
+    /// FR-509-AC-2/AC-3 (TC-1304): valid u64 intervals are retained as
+    /// independent channel premises, while a descending interval refuses at
+    /// its authored bounds.
+    #[trace("FR-509-AC-2", "FR-509-AC-3", "TC-1304")]
+    #[test]
+    fn delivery_interval_checks_order_and_retains_valid_bounds() {
+        for (spelling, lower, upper) in [
+            ("[2,2]", 2, 2),
+            ("[0,0]", 0, 0),
+            ("[0,18446744073709551615]", 0, u64::MAX),
+        ] {
+            let graph = checks(&pipeline(
+                &channel("Pay", ENDS, "Plain", spelling, "2", "block"),
+                RUN,
+            ));
+            let [checked] = recorded(&graph) else {
+                panic!("one checked channel: {:?}", recorded(&graph));
+            };
+            assert_eq!(checked.delivery, ChannelDelivery::Between { lower, upper });
+            assert_eq!(checked.capacity, ChannelCapacity::Literal(2));
+            assert_eq!(checked.overflow, ChannelOverflow::Block);
+        }
+
+        let source = pipeline(&channel("Pay", ENDS, "Plain", "[4,3]", "2", "block"), RUN);
+        let (text, cause, code, tag) = only_refusal(&source);
+        assert_eq!((code, tag.as_str()), ("ill_typed", "type-mismatch"));
+        assert_eq!(located(&text, &cause), "[4,3]");
+        assert!(matches!(
+            cause,
+            ProtocolAnchorCause::ChannelDeliveryRange {
+                lower: 4,
+                upper: 3,
+                ..
+            }
+        ));
     }
 
     /// FR-218-AC-22 (TC-1065 rows 4 and 5): two cases or two branches of

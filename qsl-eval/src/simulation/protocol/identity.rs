@@ -458,15 +458,24 @@ pub struct QueueFlow {
 
 /// A `send` step's send record (ADR-027 ST-3), the step's result: carried
 /// by the step (PX-1), and neither a binder value, nor part of the state
-/// key, nor part of the transition identity. Its canonical form is
-/// `{"type":"send-record","channel","payload","outcome","displaced"}`, with
-/// `displaced` the queued entry (PS-7) or `null`.
+/// key, nor part of the transition identity. An ordinary send carries scalar
+/// `outcome` and `displaced` fields; an interval send records those fields
+/// for each attempted entry in its `entries` array.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SendRecord {
     channel: String,
     payload: Enc,
     outcome: SendOutcome,
     displaced: Option<Enc>,
+    interval: Option<IntervalSend>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IntervalSend {
+    count: u64,
+    outcomes: Vec<SendOutcome>,
+    displacements: Vec<Option<Enc>>,
+    pending: u64,
 }
 
 impl SendRecord {
@@ -483,6 +492,33 @@ impl SendRecord {
             payload,
             outcome,
             displaced,
+            interval: None,
+        }
+    }
+
+    /// The record of one interval send step: `count` entries were requested,
+    /// `entries` records each attempted append, and `pending` remains blocked.
+    pub(crate) fn interval(
+        channel: String,
+        payload: Enc,
+        count: u64,
+        entries: Vec<SendOutcome>,
+        entry_displacements: Vec<Option<Enc>>,
+        pending: u64,
+        displaced: Option<Enc>,
+    ) -> Self {
+        let outcome = entries.first().copied().unwrap_or(SendOutcome::Accepted);
+        Self {
+            channel,
+            payload,
+            outcome,
+            displaced,
+            interval: Some(IntervalSend {
+                count,
+                outcomes: entries,
+                displacements: entry_displacements,
+                pending,
+            }),
         }
     }
 
@@ -496,6 +532,23 @@ impl SendRecord {
         self.outcome
     }
 
+    /// The count requested by this interval send step, when this is one.
+    pub fn count(&self) -> Option<u64> {
+        self.interval.as_ref().map(|interval| interval.count)
+    }
+
+    /// The outcome of each attempted interval entry, in send order.
+    pub fn entries(&self) -> Option<&[SendOutcome]> {
+        self.interval
+            .as_ref()
+            .map(|interval| interval.outcomes.as_slice())
+    }
+
+    /// The entries still pending behind a blocking full queue.
+    pub fn pending(&self) -> Option<u64> {
+        self.interval.as_ref().map(|interval| interval.pending)
+    }
+
     /// This record with `outcome` in place of its own, as a changed
     /// counterexample may record it (FR-217-AC-5).
     #[cfg(any(test, feature = "test-support"))]
@@ -505,15 +558,38 @@ impl SendRecord {
     }
 
     fn enc(&self) -> Enc {
-        Enc::tagged(
-            "send-record",
-            vec![
-                ("channel", Enc::text(self.channel.clone())),
-                ("payload", self.payload.clone()),
+        let mut fields = vec![
+            ("channel", Enc::text(self.channel.clone())),
+            ("payload", self.payload.clone()),
+        ];
+        if let Some(interval) = &self.interval {
+            fields.extend([
+                ("count", Enc::text(interval.count.to_string())),
+                (
+                    "entries",
+                    Enc::Array(
+                        interval
+                            .outcomes
+                            .iter()
+                            .zip(&interval.displacements)
+                            .map(|(outcome, displaced)| {
+                                Enc::Object(vec![
+                                    ("outcome", Enc::text(outcome.text())),
+                                    ("displaced", displaced.clone().unwrap_or(Enc::Null)),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+                ("pending", Enc::text(interval.pending.to_string())),
+            ]);
+        } else {
+            fields.extend([
                 ("outcome", Enc::text(self.outcome.text())),
                 ("displaced", self.displaced.clone().unwrap_or(Enc::Null)),
-            ],
-        )
+            ]);
+        }
+        Enc::tagged("send-record", fields)
     }
 }
 
@@ -1425,4 +1501,65 @@ pub struct BlockedThread {
     pub rest_point: RestPoint,
     /// Why it waits.
     pub cause: WaitCause,
+}
+
+#[cfg(test)]
+mod send_record_encoding_tests {
+    use super::{Enc, SendOutcome, SendRecord};
+    use serde_json::Value;
+
+    fn json(record: &SendRecord) -> Value {
+        let bytes = quire_canonical::to_vec(record, quire_canonical::Limits::new(1 << 20))
+            .expect("send record encodes");
+        serde_json::from_slice(&bytes).expect("send record is JSON")
+    }
+
+    #[test]
+    fn interval_entries_encode_outcomes_and_displacements_without_legacy_scalars() {
+        let no_displacement = SendRecord::interval(
+            "Flow::Pay".to_owned(),
+            Enc::Bool(true),
+            2,
+            vec![SendOutcome::Accepted, SendOutcome::Rejected],
+            vec![None, None],
+            0,
+            None,
+        );
+        let no_displacement = json(&no_displacement);
+        assert_eq!(no_displacement["entries"][0]["outcome"], "accepted");
+        assert_eq!(no_displacement["entries"][0]["displaced"], Value::Null);
+        assert_eq!(no_displacement["entries"][1]["outcome"], "rejected");
+        assert_eq!(no_displacement["entries"][1]["displaced"], Value::Null);
+        assert!(no_displacement.get("outcome").is_none());
+        assert!(no_displacement.get("displaced").is_none());
+
+        let with_displacement = SendRecord::interval(
+            "Flow::Pay".to_owned(),
+            Enc::Bool(true),
+            2,
+            vec![SendOutcome::Accepted, SendOutcome::Accepted],
+            vec![None, Some(Enc::text("removed-queue-entry"))],
+            0,
+            Some(Enc::text("removed-queue-entry")),
+        );
+        let with_displacement = json(&with_displacement);
+        assert_eq!(with_displacement["entries"][0]["displaced"], Value::Null);
+        assert_eq!(
+            with_displacement["entries"][1]["displaced"],
+            "removed-queue-entry"
+        );
+        assert!(with_displacement.get("outcome").is_none());
+        assert!(with_displacement.get("displaced").is_none());
+
+        let ordinary = SendRecord::new(
+            "Flow::Pay".to_owned(),
+            Enc::Bool(true),
+            SendOutcome::Accepted,
+            Some(Enc::text("removed-queue-entry")),
+        );
+        let ordinary = json(&ordinary);
+        assert_eq!(ordinary["outcome"], "accepted");
+        assert_eq!(ordinary["displaced"], "removed-queue-entry");
+        assert!(ordinary.get("entries").is_none());
+    }
 }

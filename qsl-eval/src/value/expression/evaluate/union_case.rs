@@ -12,7 +12,7 @@ use super::*;
 use ix_trace_rs::trace;
 use qsl_semantics::check::union_fixture as fixture;
 use qsl_semantics::check::{scope_with, CheckedBody, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
-use quire_checked::node::CaseArm;
+use quire_checked::node::{CaseArm, CheckedLiteral};
 use quire_exact::{CollectionType, ScalarLimits};
 use quire_semantic_value::checking::CheckingLimits;
 

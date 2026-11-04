@@ -12,7 +12,7 @@ relationships:
 
 Verify the two checked-package views that succeed the retired
 `checked_predicate` and `temporal_subject` modules. Scope: FR-515-AC-1 to
-FR-515-AC-24. **R** is the package FR-517 emits from the ported IT-001 recipe.
+FR-515-AC-28. **R** is the package FR-517 emits from the ported IT-001 recipe.
 
 ## Test Procedure
 
@@ -41,9 +41,14 @@ FR-515-AC-24. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 21 | 21 | each `TemporalClauseRef` vs the read-back `temporal_clause_names` row; the `EvidencePackage`'s ids vs the read-back package's | equal ids; no id derivation in the API |
 | 22 | 22 | in a unit authored over the `config-version` model, a clause with a trigger-reading guard and four `holds` atoms at indices 0 to 3 (capture; `over()` only; no binder; capture and `over()`); the first and second swapped | the derived set is `{0, 3}`, none for the guard, equal in both packages; after the swap `{1, 3}`; no caller-supplied set |
 | 23 | 23 | the evaluator formula from each route for **R**'s clauses and AC-22's clause, from `formula_graph()`; `formula()` of AC-3's clause; a view with a cyclic or out-of-range `operands` | equal node for node; `formula()` as AC-3; the bad view is unreadable |
-| 24 | 24 | in a unit authored over the `config-version` model, a `from_emission` package whose in-memory clause is altered in one operation, one interval and one operand edge, each in its own run; the unaltered clause; the `from_read` package over the same bytes | each altered run `clause-unreadable` at the first call reaching the clause; the unaltered clause evaluated; the `from_read` package evaluated |
+| 24 | 24 | in a unit authored over the `config-version` model, an emitter fixture mutating one written operation, one interval and one operand edge (each in its own run) so the written package differs from the source clause; the `from_emission` route; the unmutated package | each mutated run `clause-unreadable` at the first call reaching the clause; the unmutated package evaluated |
+| 25 | 24 | the same mutated packages and the unmutated package through the `from_read` route | each mutated run `clause-unreadable` at the first call reaching the clause; the unmutated package evaluated |
+| 26 | 25 | `from_emission` over an `Emission` whose clause reference points at a clause carrying another name than the name row | `PackageMismatch::ClauseRow`, no call |
+| 27 | 26 | `from_read` over a package with two clauses of one name; over one with two name rows pairing to one clause; `from_emission` over the first | `PackageMismatch::AmbiguousName` from each `from_read` run; `from_emission` constructs |
+| 28 | 27 | `from_emission` over an `Emission` whose `profile_selections` differ from the package | `PackageMismatch::ProfileSelections` |
+| 29 | 28 | `from_emission` over an `Emission` whose `temporal_bindings` rows differ from the package | `PackageMismatch::Bindings` |
 
-Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-24", "TC-1310")]` for the criteria each row covers.
+Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-28", "TC-1310")]` for the criteria each row covers.
 
 ## Expected Results
 

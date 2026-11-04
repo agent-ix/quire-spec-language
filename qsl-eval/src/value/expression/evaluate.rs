@@ -8,8 +8,8 @@
 //! make no charge.
 
 use quire_checked::node::{
-    Arithmetic, AuthoredBound, CheckedLiteral, Connective, ConnectiveOrigin, EndSide,
-    IntegerDivisionOperator, NodeKind, OrderedKind, RecordSlot, Visit,
+    Arithmetic, AuthoredBound, Connective, ConnectiveOrigin, EndSide, IntegerDivisionOperator,
+    NodeKind, OrderedKind, RecordSlot, Visit,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
@@ -24,11 +24,12 @@ use super::s6a::separation::{
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
 use super::slot_admission;
+use node_source::NodeSource;
 use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_semantics::check::{
-    CheckedGraph, CheckedNode, DispatchTable, NodeId, Operator, Scope, Slot,
-};
+use qsl_semantics::check::{CheckedGraph, DispatchTable, Operator, Scope, Slot};
+#[cfg(test)]
+use qsl_semantics::check::{CheckedNode, NodeId};
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::observation::OutOfRange;
 use qsl_semantics::model::population::PopulationBinding;
@@ -376,7 +377,7 @@ fn charge_call(meter: &mut Meter) -> Result<(), Stop> {
 /// The declaration identity of the concrete population a refinement row's
 /// `only` ranges over, for the undefined cause's payload: the population
 /// under any `where` filter of `source`.
-fn population_of(source: CheckedNode<'_>) -> Result<String, Halt> {
+fn population_of<'a, N: NodeSource<'a>>(source: N) -> Result<String, Halt> {
     let mut node = source;
     loop {
         match node.kind() {
@@ -397,7 +398,7 @@ fn charge_visit(meter: &mut Meter) -> Result<(), Stop> {
 }
 
 /// Whether `node` is a named population operand (FR-391).
-fn is_named(node: CheckedNode<'_>) -> bool {
+fn is_named<'a, N: NodeSource<'a>>(node: N) -> bool {
     matches!(node.kind(), NodeKind::NamedPopulation { .. })
 }
 
@@ -497,29 +498,29 @@ pub(crate) struct ReaderRoot {
     pub(crate) value_type: quire_exact::ValueType,
 }
 
-enum Task<'a> {
-    Eval(CheckedNode<'a>),
+enum Task<'a, N> {
+    Eval(N),
     ReaderRead(Box<ReaderRoot>),
-    Apply(CheckedNode<'a>),
-    Branch(CheckedNode<'a>),
-    Short(CheckedNode<'a>),
+    Apply(N),
+    Branch(N),
+    Short(N),
     /// FR-322: the `case` at this node has evaluated its scrutinee; select
     /// the arm of its active member and evaluate only that arm's body.
-    Select(CheckedNode<'a>),
-    Retain(CheckedNode<'a>),
+    Select(N),
+    Retain(N),
     /// A function call's body has returned; its result now belongs to the
     /// call application at `node`.
-    ObserveApplication(CheckedNode<'a>),
+    ObserveApplication(N),
     Bind(Slot),
-    ChargeElement(CheckedNode<'a>),
+    ChargeElement(N),
     Return,
-    Iterate(Box<Iteration<'a>>),
+    Iterate(Box<Iteration<N>>),
     /// FR-139: a `seq(i in low .. high: e)` in progress.
-    IterateSeq(Box<SeqIteration<'a>>),
+    IterateSeq(Box<SeqIteration<N>>),
     /// FR-151 (TC-196 D06): the pushed frame's own effective-precondition
     /// body has just evaluated; decide it, then continue to the selected
     /// candidate's own body.
-    DispatchGuard(Box<DispatchGuard<'a>>),
+    DispatchGuard(Box<DispatchGuard<N>>),
     /// Restore the anchor a `pre(..)` or a `Call` saved before evaluating its
     /// operand/callee body.
     RestoreAnchor(Anchor),
@@ -541,7 +542,7 @@ struct PackageContext<'a> {
 
 /// A dispatched call's linked candidate body, awaiting its effective
 /// precondition's decision (TC-196 D06).
-struct DispatchGuard<'a> {
+struct DispatchGuard<N> {
     body_function: usize,
     arguments: Vec<Value>,
     /// The `precondition-false` payload to report if the guard fails.
@@ -551,7 +552,7 @@ struct DispatchGuard<'a> {
     /// if the guard fails. Without it, the location lookup falls back to
     /// the whole expression's root and `precondition-false`'s
     /// `UndefinedRecord` reports the wrong locus.
-    node: CheckedNode<'a>,
+    node: N,
 }
 
 /// Which population an `allInstances`/`lookup` reads: the ambient post
@@ -570,8 +571,8 @@ enum Anchor {
 }
 
 /// A one-binder query or fold in progress.
-struct Iteration<'a> {
-    node: CheckedNode<'a>,
+struct Iteration<N> {
+    node: N,
     source: Arc<CollectionValue>,
     next: usize,
     awaiting: bool,
@@ -584,8 +585,8 @@ struct Iteration<'a> {
 }
 
 /// A `seq(i in low .. high: e)` in progress (FR-139).
-struct SeqIteration<'a> {
-    node: CheckedNode<'a>,
+struct SeqIteration<N> {
+    node: N,
     /// The integer the next element binds.
     next: Integer,
     /// The last integer.
@@ -614,7 +615,7 @@ enum EvaluationFamily {
     Protocol,
 }
 
-pub(crate) struct Machine<'a, 'm> {
+pub(crate) struct Machine<'a, 'm, N> {
     scope: &'a Scope,
     /// The checked package's functions, read by index where a call runs
     /// one: each one's body, slot count, and declared name (the FR-151
@@ -678,7 +679,7 @@ pub(crate) struct Machine<'a, 'm> {
     /// protocol-slot API can retain the exact read location. A reader-backed
     /// read has no location.
     unavailable_read: Option<UnavailableRead>,
-    tasks: Vec<Task<'a>>,
+    tasks: Vec<Task<'a, N>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
     /// it for its operand and `Task::RestoreAnchor` restores it after.
@@ -697,7 +698,7 @@ pub(crate) struct Machine<'a, 'm> {
     /// first. A halt inside a library body is located at the outermost one,
     /// the call in the caller's own graph: the library's node locations
     /// name another package's source (ADR-015 D-5).
-    imported: Vec<CheckedNode<'a>>,
+    imported: Vec<N>,
     /// FR-265: what a state-clause evaluation records beside its outcome;
     /// `None` for every other evaluation.
     trail: Option<Trail>,
@@ -740,7 +741,7 @@ struct AbsentParameter {
     key: Option<ObjectReference>,
 }
 
-impl<'a, 'm> Machine<'a, 'm> {
+impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     pub(crate) fn new(
         scope: &'a Scope,
         graph: &'a CheckedGraph,
@@ -961,7 +962,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// (FR-096-AC-15).
     pub(crate) fn run(
         mut self,
-        root: CheckedNode<'a>,
+        root: N,
         slots: usize,
         arguments: Vec<Value>,
     ) -> Result<Evaluation, InternalFault> {
@@ -974,7 +975,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// (ADR-027 ST-1: a protocol slot reads only the binders bound at it).
     pub(crate) fn run_frame(
         mut self,
-        root: CheckedNode<'a>,
+        root: N,
         frame: Vec<Option<Value>>,
     ) -> Result<Evaluation, InternalFault> {
         let provenance = vec![false; frame.len()];
@@ -987,7 +988,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// local slot, preserving all charges made before that read.
     pub(crate) fn run_protocol_frame(
         mut self,
-        root: CheckedNode<'a>,
+        root: N,
         reader_root: Option<ReaderRoot>,
         frame: Vec<Option<Value>>,
         unavailable: std::collections::BTreeMap<
@@ -1019,7 +1020,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// a trail ([`Self::with_trail`]).
     pub(crate) fn run_traced(
         mut self,
-        root: CheckedNode<'a>,
+        root: N,
         slots: usize,
         arguments: Vec<Value>,
     ) -> Result<(Evaluation, Trail), InternalFault> {
@@ -1054,13 +1055,13 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// Evaluate `root` on the current frame to its outcome: the task loop
     /// [`Self::run`] and FR-268's separation check share.
-    fn drive(&mut self, root: CheckedNode<'a>) -> Result<Evaluation, InternalFault> {
+    fn drive(&mut self, root: N) -> Result<Evaluation, InternalFault> {
         self.drive_from(root, Task::Eval(root), false)
     }
 
     fn drive_reader_root(
         &mut self,
-        root: CheckedNode<'a>,
+        root: N,
         read: ReaderRoot,
     ) -> Result<Evaluation, InternalFault> {
         self.drive_from(root, Task::ReaderRead(Box::new(read)), true)
@@ -1068,8 +1069,8 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     fn drive_from(
         &mut self,
-        root: CheckedNode<'a>,
-        initial: Task<'a>,
+        root: N,
+        initial: Task<'a, N>,
         reader_backed: bool,
     ) -> Result<Evaluation, InternalFault> {
         self.tasks.push(initial);
@@ -1077,7 +1078,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
             // one, never once per task.
-            let located: CheckedNode<'a> = match &task {
+            let located: N = match &task {
                 Task::Eval(node)
                 | Task::Apply(node)
                 | Task::Branch(node)
@@ -1198,8 +1199,8 @@ impl<'a, 'm> Machine<'a, 'm> {
         mut self,
         slots: usize,
         arguments: Vec<Value>,
-        lets: &[CheckedNode<'a>],
-        quantifier: CheckedNode<'a>,
+        lets: &[N],
+        quantifier: N,
         claim: WitnessClaim<'_>,
     ) -> Result<Separation, InternalFault> {
         let fault = || InternalFault::new("S6a", "separation-check-over-a-checked-claim");
@@ -1267,11 +1268,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// collection with no stored location (computed by a call), the
     /// collection the expression at `node` builds inside the claim
     /// (QSpec FR-207).
-    fn provenance_of(
-        &self,
-        collection: &Arc<CollectionValue>,
-        node: CheckedNode<'_>,
-    ) -> Option<Provenance> {
+    fn provenance_of(&self, collection: &Arc<CollectionValue>, node: N) -> Option<Provenance> {
         let trail = self.trail.as_ref()?;
         if let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(collection))) {
             return Some(provenance.clone());
@@ -1416,7 +1413,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn record(&mut self, node: CheckedNode<'_>, loss: ValueLoss) {
+    fn record(&mut self, node: N, loss: ValueLoss) {
         self.losses.push(LocatedLoss {
             location: node.location().clone(),
             loss,
@@ -1426,7 +1423,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Evaluate a decimal operation into `target`, recording its loss.
     fn decimal(
         &mut self,
-        node: CheckedNode<'_>,
+        node: N,
         operation: DecimalOperation<'_>,
         target: &DecimalType,
     ) -> Result<Value, Stop> {
@@ -1476,7 +1473,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// that arm's body. Selecting and binding charge nothing. A scrutinee that
     /// matches no arm broke an invariant admission (FR-321) and
     /// exhaustiveness (FR-318) establish.
-    fn select_arm(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn select_arm(&mut self, node: N) -> Result<(), Halt> {
         let NodeKind::Case {
             declaration, arms, ..
         } = node.kind()
@@ -1622,7 +1619,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
-    fn step(&mut self, task: Task<'a>) -> Result<(), Halt> {
+    fn step(&mut self, task: Task<'a, N>) -> Result<(), Halt> {
         match task {
             Task::Eval(node) => self.eval(node),
             Task::ReaderRead(read) => self.eval_reader_read(*read),
@@ -1718,9 +1715,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         StateModelUndefined::PreconditionFalse(failure),
                     ))));
                 }
-                let callable = self
-                    .graph
-                    .function_state(body_function)
+                let callable = node
+                    .callee(self.graph, body_function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
@@ -1810,10 +1806,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
-    fn eval(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn eval(&mut self, node: N) -> Result<(), Halt> {
         match node.kind() {
-            NodeKind::Literal(CheckedLiteral(value)) => {
-                self.push_value(value.clone(), false);
+            NodeKind::Literal(literal) => {
+                self.push_value(N::literal(literal).clone(), false);
                 return Ok(());
             }
             NodeKind::Local(slot) => return self.eval_local(*slot),
@@ -1914,7 +1910,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// (or expressed as a refutable `let ... else`, which this lint does not
     /// reach) rather than left to this `deny` -- see each site's own note.
     #[deny(clippy::wildcard_enum_match_arm)]
-    fn apply(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn apply(&mut self, node: N) -> Result<(), Halt> {
         let value = match node.kind() {
             NodeKind::Literal(_)
             | NodeKind::Local(_)
@@ -2494,9 +2490,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 function,
                 arguments,
             } => {
-                let callable = self
-                    .graph
-                    .function_state(*function)
+                let callable = node
+                    .callee(self.graph, *function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
@@ -2534,7 +2529,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     return Err(invariant("evaluation-imported-graph-unresolved"));
                 };
-                let Some(callable) = library.function_state(*function) else {
+                let Some(callable) = node.callee(library, *function) else {
                     if let Some(unavailable) = self.unavailable_imported_call.as_deref_mut() {
                         *unavailable = true;
                     }
@@ -2910,13 +2905,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 full_arguments.extend(arguments);
                 match candidate.precondition {
                     Some(precondition_function) => {
-                        let callable = self
-                            .graph
-                            .function_state(precondition_function)
+                        let callable = node
+                            .callee(self.graph, precondition_function)
                             .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
-                        let selected = self
-                            .graph
-                            .function_state(candidate.body)
+                        let selected = node
+                            .callee(self.graph, candidate.body)
                             .ok_or_else(|| invariant("evaluation-callable-unresolved"))?
                             .name
                             .to_owned();
@@ -2939,9 +2932,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         return Ok(());
                     }
                     None => {
-                        let callable = self
-                            .graph
-                            .function_state(candidate.body)
+                        let callable = node
+                            .callee(self.graph, candidate.body)
                             .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                         charge_call(self.meter)?;
                         let mut frame: Vec<Option<Value>> =
@@ -2977,7 +2969,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// arm exists so the case has a typed result, the same rationale
     /// `select_anchor` above already documents for the population-read
     /// case (SR-750 FND-013).
-    fn objects_for(&self, node: CheckedNode<'_>) -> Result<&'a ObjectEnvironment, Halt> {
+    fn objects_for(&self, node: N) -> Result<&'a ObjectEnvironment, Halt> {
         if let Some(components) = &self.components {
             if let Some(component) = components.reads.get(node.location()) {
                 return components
@@ -3009,7 +3001,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// when it keeps one, under the instant the attribute node observes.
     fn log_field_read(
         &self,
-        node: CheckedNode<'_>,
+        node: N,
         objects: &ObjectEnvironment,
         reference: &ObjectReference,
         field: &FieldRef,
@@ -3065,11 +3057,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// FR-139: the objects of the concrete population `population` in the
     /// observed state, in ascending key order, as the set a refinement row
     /// reads.
-    fn population_objects(
-        &mut self,
-        node: CheckedNode<'a>,
-        population: &DeclarationKey,
-    ) -> Result<Value, Halt> {
+    fn population_objects(&mut self, node: N, population: &DeclarationKey) -> Result<Value, Halt> {
         let objects = self.objects_for(node)?;
         let members = objects
             .population_members(&population.node)
@@ -3089,7 +3077,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// member type covers `T`.
     fn named_all_instances(
         &mut self,
-        node: CheckedNode<'a>,
+        node: N,
         population: &DeclarationKey,
         members: &[quire_exact::EffectiveId],
     ) -> Result<Value, Halt> {
@@ -3152,7 +3140,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// row not `complete`, whichever path admitted it.
     fn named_members(
         &self,
-        node: CheckedNode<'a>,
+        node: N,
         population: &DeclarationKey,
     ) -> Result<&'a [ObjectReference], Halt> {
         let objects = self.objects_for(node)?;
@@ -3175,7 +3163,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// and `lookup`'s conformance of the reference to `T`.
     fn named_lookup(
         &mut self,
-        node: CheckedNode<'a>,
+        node: N,
         population: &DeclarationKey,
         members: &[quire_exact::EffectiveId],
         absence: quire_semantic_value::absence::AbsenceMode,
@@ -3263,7 +3251,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     /// FR-139: start `seq(i in low .. high: e)` over its evaluated bounds.
-    fn start_seq(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn start_seq(&mut self, node: N) -> Result<(), Halt> {
         let (Value::Integer(high), Value::Integer(low)) = (self.pop()?, self.pop()?) else {
             return Err(invariant("seq-integer-bounds-expected"));
         };
@@ -3279,7 +3267,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// FR-139: bind the next integer and evaluate the element, charging one
     /// work unit per element; the sequence is empty when `high < low`.
-    fn iterate_seq(&mut self, mut iteration: Box<SeqIteration<'a>>) -> Result<(), Halt> {
+    fn iterate_seq(&mut self, mut iteration: Box<SeqIteration<N>>) -> Result<(), Halt> {
         let node = iteration.node;
         let NodeKind::Seq { slot, body, .. } = node.kind() else {
             return Err(invariant("seq-node-expected"));
@@ -3318,7 +3306,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// determined value is bounded and retained.
     fn navigate(
         &mut self,
-        node: CheckedNode<'_>,
+        node: N,
         relationship: &DeclarationKey,
         near: EndSide,
         unique: bool,
@@ -3413,7 +3401,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `graph.result-retain`.
     fn evaluate_reaches(
         &mut self,
-        node: CheckedNode<'a>,
+        node: N,
         source: &ObjectReference,
         target: &ObjectReference,
         edge: &FieldRef,
@@ -3453,7 +3441,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// charged last. No neighbour count is compared with a multiplicity.
     fn evaluate_reaches_end(
         &mut self,
-        node: CheckedNode<'a>,
+        node: N,
         source: &ObjectReference,
         target: &ObjectReference,
         relationship: &DeclarationKey,
@@ -3544,7 +3532,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// is a valid zero-target read or a broken invariant.
     fn edge_targets(
         &self,
-        node: CheckedNode<'a>,
+        node: N,
         current: &ObjectReference,
         edge: &FieldRef,
     ) -> Result<Vec<ObjectReference>, Halt> {
@@ -3703,7 +3691,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Whether `operand` reads a slot FR-106 check 6.5 witnessed out of
     /// range: an `Attribute` node whose latest read was witnessed, seen
     /// through `value(..)`.
-    fn reads_witnessed(&self, operand: CheckedNode<'_>) -> bool {
+    fn reads_witnessed(&self, operand: N) -> bool {
         match operand.kind() {
             NodeKind::Attribute { .. } => self.witnessed_reads.contains(operand.location()),
             NodeKind::Value(inner) => self.reads_witnessed(operand.at(*inner)),
@@ -3763,7 +3751,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         outcome_into_stop(order_numbers(operator, operands, self.meter)).map_err(Into::into)
     }
 
-    fn start_iteration(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn start_iteration(&mut self, node: N) -> Result<(), Halt> {
         self.iterations = self.iterations.saturating_add(1);
         let (identity, reduce) = match node.kind() {
             NodeKind::Fold { identity, .. } => (
@@ -3821,7 +3809,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.iterate(iteration)
     }
 
-    fn iterate(&mut self, mut iteration: Box<Iteration<'a>>) -> Result<(), Halt> {
+    fn iterate(&mut self, mut iteration: Box<Iteration<N>>) -> Result<(), Halt> {
         let node = iteration.node;
         if iteration.awaiting {
             iteration.awaiting = false;
@@ -3969,7 +3957,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// FR-265: record `value` as the decision of the `and`, `or`,
     /// `implies` or `if` at `node`, on the claim's own level.
-    fn decide(&mut self, node: CheckedNode<'_>, value: bool) {
+    fn decide(&mut self, node: N, value: bool) {
         if self.on_claim_level() {
             if let Some(trail) = self.trail.as_mut() {
                 trail.decide(node.location(), value);
@@ -3979,7 +3967,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// FR-265: a collection literal at `node` on the claim's own level is
     /// built inside the claim (QSpec FR-207-AC-9).
-    fn note_built(&mut self, node: CheckedNode<'_>, value: &Value) {
+    fn note_built(&mut self, node: N, value: &Value) {
         if !matches!(value, Value::Collection(_)) {
             return;
         }
@@ -4000,13 +3988,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// FR-265: a collection or record read from `member` of `object` at
     /// `node` on the claim's own level is stored there, in the observation
     /// the read observes.
-    fn note_member(
-        &mut self,
-        node: CheckedNode<'_>,
-        object: &ObjectReference,
-        member: &str,
-        value: &Value,
-    ) {
+    fn note_member(&mut self, node: N, object: &ObjectReference, member: &str, value: &Value) {
         if !locatable(value) || !self.on_claim_level() {
             return;
         }
@@ -4043,8 +4025,8 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// read. `reference` is the object an attribute selection read from.
     fn note_read(
         &mut self,
-        node: CheckedNode<'_>,
-        operand: NodeId,
+        node: N,
+        operand: N::Child,
         step: ReadStep<'_>,
         reference: Option<&ObjectReference>,
     ) {
@@ -4063,8 +4045,8 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// frame.
     fn read_path(
         &self,
-        node: CheckedNode<'_>,
-        operand: NodeId,
+        node: N,
+        operand: N::Child,
         step: ReadStep<'_>,
         reference: Option<&ObjectReference>,
     ) -> Option<RuntimeValuePath> {
@@ -4122,7 +4104,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// Whether `node` is a relationship navigation, possibly under `value`,
     /// `pre` or a coercion.
-    fn navigated(node: CheckedNode<'_>) -> bool {
+    fn navigated(node: N) -> bool {
         match node.kind() {
             NodeKind::Navigate { .. } => true,
             NodeKind::Value(operand) | NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
@@ -4133,7 +4115,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     /// Whether `node` is a field or member selection.
-    fn selected(node: CheckedNode<'_>) -> bool {
+    fn selected(node: N) -> bool {
         matches!(
             node.kind(),
             NodeKind::Attribute { .. } | NodeKind::Field { .. }
@@ -4143,7 +4125,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// The path of the value `node` evaluated to, when it has one: a clause
     /// binding, a quantifier element, a selection or the payload of an
     /// optional value read from one.
-    fn located(&self, node: CheckedNode<'_>) -> Option<RuntimeValuePath> {
+    fn located(&self, node: N) -> Option<RuntimeValuePath> {
         let trail = self.trail.as_ref()?;
         match node.kind() {
             NodeKind::Local(slot) => trail.element_paths.get(slot).cloned().or_else(|| {
@@ -4173,7 +4155,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `domain`, bound to `slot`, is located where FR-265 locates it.
     fn note_element(
         &mut self,
-        source: CheckedNode<'_>,
+        source: N,
         domain: &Arc<CollectionValue>,
         slot: Slot,
         position: usize,
@@ -4314,7 +4296,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn note_computed(
         &mut self,
         source_value: &Arc<CollectionValue>,
-        source: CheckedNode<'_>,
+        source: N,
         sources: &[usize],
         results: &[Value],
         value: &Value,
@@ -4339,7 +4321,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// stopped at its last visited element; on the claim's own level,
     /// report it with its quantifier, the element, its source position and
     /// value path.
-    fn note_stop(&mut self, iteration: &Iteration<'a>) -> Result<(), Halt> {
+    fn note_stop(&mut self, iteration: &Iteration<N>) -> Result<(), Halt> {
         if !self.on_claim_level() {
             return Ok(());
         }
@@ -4380,7 +4362,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
-    fn finish(&mut self, iteration: Iteration<'a>) -> Result<(), Halt> {
+    fn finish(&mut self, iteration: Iteration<N>) -> Result<(), Halt> {
         self.iterations = self.iterations.saturating_sub(1);
         let node = iteration.node;
         let value = match node.kind() {
@@ -4461,6 +4443,12 @@ impl<'a, 'm> Machine<'a, 'm> {
 #[cfg(test)]
 mod invariants;
 
+mod node_source;
+
+/// The machine over checked bodies, the one source every test drives.
+#[cfg(test)]
+type CheckedMachine<'a, 'm> = Machine<'a, 'm, CheckedNode<'a>>;
+
 #[cfg(test)]
 mod union_case;
 
@@ -4538,6 +4526,7 @@ mod tests {
         PopulationDocument, PopulationMember,
     };
     use quire_checked::key::DeclarationKey;
+    use quire_checked::node::CheckedLiteral;
     use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;
@@ -5332,7 +5321,7 @@ mod tests {
             authority: "test".to_owned(),
             identity: "current".to_owned(),
         };
-        let mut machine = Machine::new(
+        let mut machine = CheckedMachine::new(
             package.graph().scope(),
             package.graph(),
             &objects,
@@ -5411,10 +5400,15 @@ mod tests {
         );
         let optional = ValueType::option(range);
         let outside = FieldValue::Present(Value::Integer(Integer::from(-1_i64)));
-        assert!(
-            Machine::project(&TypeEnvironment::default(), &outside, true, &optional, true).is_ok()
-        );
-        assert!(Machine::project(
+        assert!(CheckedMachine::project(
+            &TypeEnvironment::default(),
+            &outside,
+            true,
+            &optional,
+            true
+        )
+        .is_ok());
+        assert!(CheckedMachine::project(
             &TypeEnvironment::default(),
             &outside,
             true,
@@ -5423,7 +5417,7 @@ mod tests {
         )
         .is_err());
         let wrong_kind = FieldValue::Present(Value::Boolean(true));
-        assert!(Machine::project(
+        assert!(CheckedMachine::project(
             &TypeEnvironment::default(),
             &wrong_kind,
             true,

@@ -1795,7 +1795,12 @@ fn protocol(g: &mut Grammar) {
             x("at-most-once"),
             x("at-least-once"),
             x("exactly-once-premise"),
+            r(P::DeliveryInterval),
         ]),
+    );
+    g.insert(
+        P::DeliveryInterval,
+        s(vec![x("["), uint(), x(","), uint(), x("]")]),
     );
     g.insert(
         P::Capacity,

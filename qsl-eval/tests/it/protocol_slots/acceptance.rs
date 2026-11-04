@@ -319,6 +319,27 @@ fn ep_observation_state<'a>(
     relationship_target: Option<(&str, &str)>,
     extra_other_nodes: &[&str],
 ) -> ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>> {
+    let evaluation_view = package.evaluation_view();
+    ep_observation_state_through_view(
+        package,
+        &evaluation_view,
+        other_spare,
+        other_nodes_complete,
+        ghost_next,
+        relationship_target,
+        extra_other_nodes,
+    )
+}
+
+fn ep_observation_state_through_view<'a>(
+    package: &'a CheckedPackage,
+    evaluation_view: &qsl_package::AdmittedEvaluationView<'a>,
+    other_spare: Option<(bool, &[&str])>,
+    other_nodes_complete: bool,
+    ghost_next: Option<(&str, &str)>,
+    relationship_target: Option<(&str, &str)>,
+    extra_other_nodes: &[&str],
+) -> ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>> {
     let domain = serde_json::to_vec(&document_ep()).unwrap();
     let packages = qsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
     let selected = DocumentRef {
@@ -371,7 +392,7 @@ fn ep_observation_state<'a>(
     let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
         .into_iter()
         .collect();
-    package.evaluation_view().admit_protocol_observation(
+    evaluation_view.admit_protocol_observation(
         &package.graph().model_selections()[0],
         &packages,
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
@@ -2829,7 +2850,14 @@ fn limits_at(measured: &Meter) -> ScalarLimits {
 
 fn read_checked_package(package: &CheckedPackage) -> qsl_package::AdmittedPackageRead<'_> {
     let bytes = serde_json::to_vec(&document()).unwrap();
-    let domain_packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    read_checked_package_with_model_document(package, &bytes)
+}
+
+fn read_checked_package_with_model_document<'p>(
+    package: &'p CheckedPackage,
+    model_document: &[u8],
+) -> qsl_package::AdmittedPackageRead<'p> {
+    let domain_packages = qsl_semantics::model::intake::package_input([model_document]).unwrap();
     qsl_package::read_evaluation_package(
         package,
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
@@ -3623,7 +3651,6 @@ fn bare_and_explicit_dereference_reads_keep_their_charge_logs_through_the_reader
 /// `Receipt` value.
 #[test]
 #[trace("TC-1070", "FR-390-AC-18")]
-#[ignore = "gated on QSL-1624: reader admission must retain nested Option/Collection type selections"]
 fn reader_backed_projection_preserves_nested_option_and_collection_value_types() {
     let source = SOURCE.replace(
         "capture target: M::Total = forward.total;",
@@ -3632,7 +3659,7 @@ fn reader_backed_projection_preserves_nested_option_and_collection_value_types()
     );
     let model_bytes = serde_json::to_vec(&document_ep()).unwrap();
     let (package, model_view) = fixture_from_document(&source, &model_bytes);
-    let read = read_checked_package(&package);
+    let read = read_checked_package_with_model_document(&package, &model_bytes);
     let reader_view = read.evaluation_view().expect("the read retains its view");
     let peer = other_reference(&model_view, "ghost");
     let nested = other_reference(&model_view, "nested-1");
@@ -3675,6 +3702,15 @@ fn reader_backed_projection_preserves_nested_option_and_collection_value_types()
         Some((true, &["ghost", "option-1"])),
         true,
     );
+    let reader_observation = ep_observation_state_through_view(
+        &package,
+        &reader_view,
+        Some((true, &["ghost", "option-1"])),
+        true,
+        None,
+        None,
+        &[],
+    );
     let values = || {
         ep_supply(
             &package,
@@ -3691,15 +3727,28 @@ fn reader_backed_projection_preserves_nested_option_and_collection_value_types()
         Some(1),
     );
     let mut checked_meter = Meter::new(UNLIMITED);
-    let checked = package
-        .evaluate_protocol_slot(&selected, &values(), &mut checked_meter)
-        .expect("checked view evaluates the nested record capture");
+    let checked_evaluation =
+        package.evaluate_protocol_slot(&selected, &values(), &mut checked_meter);
     let mut reader_meter = Meter::new(UNLIMITED);
-    let reader = reader_view
-        .evaluate_protocol_slot(&selected, &values(), &mut reader_meter)
-        .expect("reader view projects the nested record capture");
-    let expected = completed(checked);
-    let actual = completed(reader);
+    let reader_values = || {
+        ep_supply(
+            &package,
+            receipt.clone(),
+            references.clone(),
+            Some(&reader_observation),
+        )
+    };
+    let reader_evaluation =
+        reader_view.evaluate_protocol_slot(&selected, &reader_values(), &mut reader_meter);
+    assert_eq!(
+        without_location(&checked_evaluation),
+        without_location(&reader_evaluation),
+        "nested record capture result parity"
+    );
+    let expected =
+        completed(checked_evaluation.expect("checked view evaluates the nested record capture"));
+    let actual =
+        completed(reader_evaluation.expect("reader view projects the nested record capture"));
     assert_value_eq!(expected, expected_bundle, "checked nested bundle");
     assert_value_eq!(actual, expected_bundle, "reader nested bundle");
     charges_and_usage_match(
@@ -3825,7 +3874,7 @@ fn reader_backed_projection_preserves_declared_and_compound_quantity_units() {
 /// the reader-backed protocol slot view.
 #[test]
 #[trace("FR-390-AC-25")]
-#[ignore = "gated on QSL-1626: compound UnitId must be held by the selected unit table"]
+#[ignore = "gated on QSL-1625: reader NodeRead must evaluate computed protocol-slot roots"]
 fn reader_backed_projection_preserves_compound_quantity_identity() {
     let source = SOURCE
         .replace(
@@ -3892,6 +3941,35 @@ fn reader_backed_projection_preserves_compound_quantity_identity() {
         )
         .expect("reader view evaluates equality of separately constructed compound units");
     assert_value_eq!(completed(reader), Value::Boolean(true));
+}
+
+/// QSL-1626: compound units formed in a protocol capture initializer are
+/// retained by the package unit table and equality uses their exact identity.
+#[test]
+fn protocol_capture_compound_quantity_identity_is_held() {
+    let source = SOURCE
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\n\
+             dimension Length;\n\
+             unit m : Length = rational(1, 1);",
+        )
+        .replace(
+            "capture order: M::Total = view.total;",
+            "capture order: M::Total = view.total;\n\
+             capture compoundUnit: Boolean = (1 m * 1 m) = (1 m * (1 m));",
+        );
+    let package = fixture_from_source(&source).0;
+    let selected = slot(&package, "Refunds", "Refunds", "captures", Some(1));
+    let mut meter = Meter::new(UNLIMITED);
+    let result = package
+        .evaluate_protocol_slot(
+            &selected,
+            &supply(&package, "Refunds", Vec::new(), None),
+            &mut meter,
+        )
+        .expect("the checked protocol retains the compound unit identity");
+    assert_value_eq!(completed(result), Value::Boolean(true));
 }
 
 /// FR-390-AC-26: aliases to native scalars, Quantity and Union keep the target

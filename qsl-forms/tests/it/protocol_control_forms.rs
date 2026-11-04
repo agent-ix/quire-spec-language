@@ -11,7 +11,7 @@ use qsl_forms::{
     Outstanding, ParsedUnit, ProtocolConstructKind, ProtocolDeclarationForm, ProtocolMemberForm,
     ProtocolNodeKind, SchedulingForm, TerminalForm,
 };
-use qsl_foundation::{Code, MemoryModelName, SourceIdentity, Span};
+use qsl_foundation::{Code, MemoryModelName, Phase, SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
@@ -160,6 +160,63 @@ fn each_delivery_capacity_and_ordering_spelling_builds_its_own_value() {
         .constructs
         .iter()
         .any(|construct| construct.kind == ProtocolConstructKind::FifoOrdering));
+}
+
+/// FR-509-AC-1/AC-2 (TC-1304): delivery count intervals retain both u64
+/// bounds and their authored spelling in the channel form.
+#[trace("FR-509-AC-1", "FR-509-AC-2", "TC-1304")]
+#[test]
+fn a_channel_delivery_interval_builds_its_bounds() {
+    for (spelling, lower, upper) in [
+        ("[0,3]", 0, 3),
+        ("[ 2 , 2 ]", 2, 2),
+        ("[0,18446744073709551615]", 0, u64::MAX),
+    ] {
+        let member = format!(
+            "channel Pay from R to S carries {OBJECT} ordering unordered delivery {spelling} \
+             capacity 1 overflow reject;"
+        );
+        let text = source(&member, RUN);
+        let unit = build(&text);
+        let channel = only_channel(protocol(&unit));
+        assert_eq!(
+            channel.delivery.value,
+            ChannelDelivery::Between { lower, upper }
+        );
+        assert_eq!(slice(&text, channel.delivery.span), spelling);
+    }
+
+    for (spelling, offending) in [
+        ("[0,18446744073709551616]", "18446744073709551616"),
+        ("[-1,3]", "-"),
+        ("[0.5,3]", "0.5"),
+    ] {
+        let text = source(
+            &format!(
+                "channel Pay from R to S carries {OBJECT} ordering unordered delivery {spelling} \
+                 capacity 1 overflow reject;"
+            ),
+            RUN,
+        );
+        let parsed = parse(&text);
+        assert!(!parsed.is_admissible(), "{spelling}");
+        let diagnostic = &parsed.diagnostics()[0];
+        assert_eq!(diagnostic.code, Code::InvalidSyntax, "{spelling}");
+        assert_eq!(diagnostic.phase, Phase::Parse, "{spelling}");
+        let spelling_start = text.find(spelling).expect("interval appears");
+        let expected_start =
+            spelling_start + spelling.find(offending).expect("offending token appears");
+        assert_eq!(
+            diagnostic
+                .byte_span()
+                .expect("located invalid interval bound"),
+            Span {
+                start: expected_start,
+                end: expected_start + offending.len(),
+            },
+            "{spelling}: {diagnostic:?}"
+        );
+    }
 }
 
 /// FR-308-AC-13 (TC-1065 rows 1 and 2): the five overflow spellings build

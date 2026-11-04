@@ -289,6 +289,22 @@ pub enum EmitRefusal {
         /// The exact checked application key retained by QSL lowering.
         application: NodeKey,
     },
+    /// A term of an emitted protocol slot expression has no single emitted
+    /// application, recorded occurrence or slot site name to write its
+    /// FR-383 `protocol_locations` row from.
+    #[error("protocol slot term {application:?} has no complete emitted location context")]
+    MissingProtocolLocationContext {
+        /// The checked application key lowered at the term.
+        application: NodeKey,
+    },
+    /// A term of an emitted protocol slot expression whose kind always
+    /// lowers to an application has no application recorded at its
+    /// `Location`, so FR-383's one row per term cannot be written.
+    #[error("protocol slot term at {location:?} has no recorded application")]
+    UnrecordedProtocolTerm {
+        /// The checker's `Location` of the term.
+        location: Location,
+    },
 }
 
 /// One explicit clock configuration selected for an exact checked temporal
@@ -345,7 +361,9 @@ impl EmitRefusal {
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
             Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
-            Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::MissingDispatchIdentityContext { .. }
+            | Self::MissingProtocolLocationContext { .. }
+            | Self::UnrecordedProtocolTerm { .. } => Code::RuntimeInvariant,
             Self::ProtocolResultInvariant => Code::RuntimeInvariant,
         }
     }
@@ -383,7 +401,9 @@ impl EmitRefusal {
             | Self::TemporalClockProfileMismatch { .. } => Some("timed-node-reference"),
             Self::InvalidTemporalClockValue { .. } => Some("invalid-value"),
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
-            Self::MissingDispatchIdentityContext { .. } => None,
+            Self::MissingDispatchIdentityContext { .. }
+            | Self::MissingProtocolLocationContext { .. }
+            | Self::UnrecordedProtocolTerm { .. } => None,
             Self::ProtocolResultInvariant => None,
         }
     }
@@ -489,6 +509,7 @@ pub struct Emission {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TemporalBindingRows {
     rows: Vec<(NodeKey, quire_contract_model::TemporalBinding)>,
+    declarations: Vec<(NodeKey, u64, quire_contract_model::CheckedNodeId)>,
 }
 
 impl TemporalBindingRows {
@@ -503,6 +524,19 @@ impl TemporalBindingRows {
             .iter()
             .find(|(key, row)| key == declaration && row.occurrence == occurrence)
             .map(|(_, row)| row)
+    }
+
+    /// The checked-package declaration identity for one exact checked
+    /// temporal clause occurrence.
+    pub fn declaration(
+        &self,
+        declaration: &NodeKey,
+        occurrence: u64,
+    ) -> Option<&quire_contract_model::CheckedNodeId> {
+        self.declarations
+            .iter()
+            .find(|(key, ordinal, _)| key == declaration && *ordinal == occurrence)
+            .map(|(_, _, checked)| checked)
     }
 
     /// The number of keyed rows.
@@ -3130,6 +3164,8 @@ fn checked_term_data(
     )?
     .unwrap_or_default();
     term_data.dispatch_tables = checked_dispatch_tables(graph, emitted_node_ids, source_map)?;
+    term_data.protocol_locations =
+        protocol_locations::checked_protocol_locations(graph, emitted_node_ids)?;
     Ok((!term_data.equality_decisions.is_empty()
         || !term_data.protocol_locations.is_empty()
         || !term_data.dispatch_tables.is_empty())
@@ -6054,6 +6090,14 @@ fn temporal_binding_rows(
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
         let profile = clause.profile();
+        keyed.declarations.push((
+            temporal.identity(),
+            temporal.claim().ordinal(),
+            emitted_node_ids
+                .get(&temporal.identity())
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?,
+        ));
         names.push(quire_contract_model::TemporalClauseName {
             declaration: emitted_node_ids
                 .get(&temporal.identity())
@@ -6489,6 +6533,7 @@ pub(crate) mod tests;
 #[cfg(test)]
 mod extent_agreement;
 mod monitor_plan;
+mod protocol_locations;
 pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;

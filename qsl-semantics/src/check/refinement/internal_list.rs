@@ -574,6 +574,7 @@ impl ProtocolClasses {
                     ChannelDelivery::AtMostOnce => (false, true),
                     ChannelDelivery::AtLeastOnce => (true, false),
                     ChannelDelivery::ExactlyOncePremise => (false, false),
+                    ChannelDelivery::Between { .. } => (false, false),
                 };
                 (channel.name.clone(), (duplicate, lose))
             })

@@ -2644,6 +2644,7 @@ fn timestamped_binding_is_required_and_authenticated() {
     let refusal = |request: ClauseRunRequest| {
         let refused = report(request);
         assert_eq!(refused.disposition.stage(), ClauseRunStage::Admit);
+        assert!(refused.authenticated_temporal_selection.is_none());
         assert_eq!(refused.usage.temporal_visits, 0);
         assert_eq!(refused.usage.admission_consumed.objects, 0);
         let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = refused.disposition
@@ -2714,6 +2715,50 @@ fn timestamped_binding_is_required_and_authenticated() {
     );
     // An agreeing binding runs.
     assert_eq!(outcome(&report(base())), &TemporalVerdict::Holds);
+}
+
+/// The successful checked-spine run strictly reads its emitted package and
+/// retains the exact declaration locus, profile and typed clock row used to
+/// authenticate it.
+#[trace("TC-138", "TC-150", "FR-050-AC-6")]
+#[test]
+fn strict_readback_temporal_run_retains_authenticated_selection() {
+    let successful = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
+    let selection = successful
+        .authenticated_temporal_selection
+        .as_ref()
+        .expect("a matching clock-bearing trace retains its checked selection");
+
+    assert_eq!(
+        selection.profile.identity.as_ref(),
+        "quire.temporal.timestamped-event.finite-window/v1"
+    );
+    assert_eq!(selection.clock_name.as_ref(), "ms");
+    assert_eq!(
+        selection.clock,
+        qsl_package::ClockConfiguration::TimestampedEvent {
+            timestamp_unit: "ms".into(),
+        }
+    );
+    assert!(!selection.declaration.path.is_empty());
+    assert_eq!(selection.source_regions.len(), 1);
+    let source_region = &selection.source_regions[0];
+    assert_eq!(source_region.source.authority.as_ref(), "agent-ix");
+    assert_eq!(source_region.source.identity.as_ref(), "clause-run-fixture");
+    let mut request = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
+    let source_bytes = program_source_bytes(&mut request);
+    let source_text = std::str::from_utf8(source_bytes).expect("fixture source is UTF-8");
+    let declaration = "temporal Window using t over (c: Counters::Counter) clock \"ms\"";
+    let declaration_start = source_text
+        .find(declaration)
+        .expect("fixture declares the checked Window temporal clause");
+    let declaration_name_start = declaration_start + "temporal ".len();
+    let expected_start = u64::try_from(declaration_name_start).expect("fixture offset fits");
+    let expected_end = expected_start + u64::try_from("Window".len()).expect("name length fits");
+    assert_eq!(
+        (source_region.start, source_region.end),
+        (expected_start, expected_end)
+    );
 }
 
 /// `request` with its `Window` clause body replaced by `body`.
@@ -3392,6 +3437,7 @@ fn the_undefined_label_is_written_only_for_the_undefined_category() {
         consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        authenticated_temporal_selection: None,
         ledger: None,
     };
     let insufficient = synthetic(ClauseDisposition::Temporal(TemporalVerdict::Undefined {
@@ -3432,6 +3478,7 @@ fn synthetic_report(disposition: ClauseDisposition) -> ClauseRunReport {
         consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        authenticated_temporal_selection: None,
         ledger: None,
     }
 }
