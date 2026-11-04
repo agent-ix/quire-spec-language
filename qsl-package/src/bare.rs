@@ -26,6 +26,25 @@ use crate::checked_v2::wire_graph;
 pub const IDENTITIES_FORMAT: &str = "quire.checked-handoff.identities/1";
 
 /// A checked package as a bytes-only consumer holds it (FR-531).
+///
+/// `BarePackage::new` is the one constructor; nothing builds one from bytes,
+/// from a decoded graph or from a term (FR-531-AC-2):
+///
+/// ```compile_fail,E0599
+/// let _ = qsl_package::BarePackage::from_bytes(b"{}");
+/// ```
+///
+/// ```compile_fail,E0599
+/// fn forge(graph: quire_contract_model::CheckedPackageV2) {
+///     let _ = qsl_package::BarePackage::from_graph(&graph);
+/// }
+/// ```
+///
+/// ```compile_fail,E0599
+/// fn forge(term: &quire_contract_model::CheckedTerm) {
+///     let _ = qsl_package::BarePackage::from_term(term);
+/// }
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct BarePackage<'p> {
     package: &'p CheckedPackageV2,

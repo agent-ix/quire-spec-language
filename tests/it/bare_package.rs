@@ -173,7 +173,7 @@ fn directory(
 /// FR-531-AC-1, FR-531-AC-3, FR-531-AC-8: the package read from the handoff
 /// directory gives a `BarePackage` and a temporal call that returns a result;
 /// `identities.json` is the format's file, written deterministically.
-#[trace("FR-531-AC-1", "FR-531-AC-3", "FR-531-AC-8", "FR-517-AC-1", "TC-1331")]
+#[trace("FR-531-AC-8", "FR-517-AC-1", "TC-1331")]
 #[test]
 fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     let (_holder, files, package) = directory("event_position");
@@ -276,9 +276,10 @@ fn the_identity_file_refuses_what_it_cannot_join() {
     assert!(read(&mismatched).is_err());
 }
 
-/// FR-531-AC-5 (bytes-only dependency closure), IR-1325: the closure is built
+/// IR-1325 AC3: the bytes-only dependency closure (the slot call that
+/// consumes it is not delivered, so no FR-531/FR-533 criterion is claimed): the closure is built
 /// from the direct dependencies the reader retained in the package.
-#[trace("FR-531-AC-5", "FR-533-AC-1", "TC-1331")]
+#[trace("TC-1331")]
 #[test]
 fn the_dependency_closure_is_read_from_the_retained_direct_dependencies() {
     let (_holder, _files, package) = directory("event_position");
@@ -489,4 +490,35 @@ fn the_consumer_entry_sections_name_the_bare_entry() {
             assert!(!text.contains("separate future capability"));
         }
     }
+}
+
+/// A node that is not a temporal clause, and a node the package does not
+/// hold, refuse `clause-root-unresolved` over the bare package with an empty
+/// charge log, and the same call over a clause evaluates.
+#[test]
+fn a_node_that_is_no_temporal_clause_is_unresolved_over_the_bare_package() {
+    let (_holder, _files, package) = directory("event_position");
+    let bare = BarePackage::new(&package);
+    let evaluation = EvidencePackage::from_package(&bare).expect("bare");
+    let due = clause_ids(&evaluation).into_iter().next().expect("a clause");
+    let asked = evidence_request(&evaluation, &due, None, 3);
+    let other = package
+        .graph()
+        .nodes
+        .iter()
+        .map(|node| node.node_id.clone())
+        .find(|id| !clause_ids(&evaluation).contains(id))
+        .expect("a node that is no clause");
+    let mut absent = due.clone();
+    absent.ordinal += 1_000;
+    for id in [other, absent] {
+        let mut meter = super::temporal_package_route::unlimited();
+        let refused = evaluation.evaluate_temporal_evidence(&id, &asked, &mut meter);
+        assert_eq!(
+            super::temporal_package_route::cause(&refused.expect_err("refused")),
+            "clause-root-unresolved"
+        );
+        assert!(meter.admitted_charges().is_empty());
+    }
+    assert!(run(&evaluation, &due, &asked).0.is_ok());
 }
