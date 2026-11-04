@@ -74,7 +74,7 @@ in the same change.
 | 1 | `header-wire-version-substitution` (`header.version`) | `v2.header.*` | reader: replace `contract_version` by `quire.checked-package/v1` | `unknown_contract_version` |
 | 2 | `binding-missing` (`temporal_bindings.inventory`) | `v2.binding.*` | reader: delete a clause's row | `invalid_package`/`timed-node-reference` at that clause node's `/semantic_graph/nodes/{N}/body` |
 | 3 | `binding-surplus` (`temporal_bindings.inventory`) | `v2.binding.*` | reader: append a row whose declaration is an id the graph does not hold | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/declaration` |
-| 4 | `binding-duplicate` (`temporal_bindings.uniqueness`) | `v2.binding.*` | reader: repeat a row | `invalid_package`/`timed-node-reference` at the second `/temporal_bindings/{i}` |
+| 4 | `binding-duplicate` (`temporal_bindings.uniqueness`) | `v2.binding.*` | reader: repeat a row | `invalid_package`/`conflicting-definition` at the second `/temporal_bindings/{i}` (a repeated `(declaration, occurrence)` pair, QSpec FR-322-AC-364) |
 | 5 | `binding-reordered` (`temporal_bindings.order`) | `v2.binding.*` | reader: swap two rows | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/declaration` of the row out of `NodeRef` order |
 | 6 | `declaration-index` (`temporal_binding.declaration`) | `v2.binding.*` | reader: a row's declaration becomes the id of a non-clause node | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/declaration` |
 | 7 | `definition-index` (`temporal_binding.definition`) | `v2.binding.*` | reader: remove the lock `profile_selections` row of one clause's `temporal_profile` law | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/clock/kind` |

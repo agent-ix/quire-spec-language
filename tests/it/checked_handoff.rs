@@ -906,7 +906,7 @@ fn table() -> Vec<Row> {
             "binding-duplicate",
             EP,
             "invalid_package",
-            TIMED,
+            Some("conflicting-definition"),
             "/temporal_bindings/4",
         ),
         reader(
