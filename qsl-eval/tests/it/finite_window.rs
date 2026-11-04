@@ -244,7 +244,12 @@ fn run_with(
     let trace = request.admit(fixture).expect("the trace admits");
     let mut letters = Letters::new(fixture, request, &trace);
     let mut meter = Meter::new(budget);
-    let result = evaluate_finite_window(&fixture.clause, &trace, &mut letters, &mut meter);
+    let result = evaluate_finite_window(
+        &qsl_eval::temporal::evidence::ClauseFacts::of_checked(&fixture.clause),
+        &trace,
+        &mut letters,
+        &mut meter,
+    );
     (result, meter.consumed(LimitKind::WorkUnits))
 }
 
@@ -1175,7 +1180,12 @@ fn a_clause_under_another_profile_is_refused() {
     let trace = request.admit(&control).expect("admits");
     let mut letters = Letters::new(&control, &request, &trace);
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-    let refused = evaluate_finite_window(&control.clause, &trace, &mut letters, &mut meter);
+    let refused = evaluate_finite_window(
+        &qsl_eval::temporal::evidence::ClauseFacts::of_checked(&control.clause),
+        &trace,
+        &mut letters,
+        &mut meter,
+    );
     assert!(matches!(
         refused,
         Err(TemporalRefusal::NotFiniteWindowProfile { .. })

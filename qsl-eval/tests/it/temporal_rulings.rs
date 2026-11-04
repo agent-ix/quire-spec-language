@@ -189,7 +189,9 @@ fn a_faulted_instance_is_retained_and_the_instances_counter_counts_creations_onl
     let mut call_meter =
         qsl_eval::temporal::evidence::CallMeter::new(TemporalEvidenceLimits::default(), &mut meter);
     let activation = qsl_eval::temporal::evidence::activate(
-        &qsl_eval::temporal::evidence::ClauseShape::of(&env.fixture.clause),
+        &qsl_eval::temporal::evidence::ClauseShape::of(
+            &qsl_eval::temporal::evidence::ClauseFacts::of_checked(&env.fixture.clause),
+        ),
         &env.obligation(),
         later,
         &mut call_meter,
@@ -248,7 +250,9 @@ fn one_evicted_visit_is_charged_per_hit() {
         let mut one = input(vec![delivery("t1", "r", "p", &["1", "2"])]);
         one.evicted = evicted;
         qsl_eval::temporal::evidence::activate(
-            &qsl_eval::temporal::evidence::ClauseShape::of(&env.fixture.clause),
+            &qsl_eval::temporal::evidence::ClauseShape::of(
+                &qsl_eval::temporal::evidence::ClauseFacts::of_checked(&env.fixture.clause),
+            ),
             &env.obligation(),
             one,
             &mut call_meter,

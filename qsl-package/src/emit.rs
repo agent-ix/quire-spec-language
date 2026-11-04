@@ -167,6 +167,14 @@ pub enum EmitRefusal {
     /// already-admitted base package.
     #[error("typed timed models do not match the admitted package's timed-node set")]
     TimedModelNodeSetMismatch,
+    /// A checked probabilistic claim has no emitted node or `claim`
+    /// occurrence to write its FR-322 row from (FR-498): lowering keys every
+    /// claim of an assembled package, so this is a broken invariant.
+    #[error("probabilistic claim `{claim}` has no emitted claim node and occurrence")]
+    UnkeyedProbabilisticClaim {
+        /// The claim's declared name (diagnostic text only).
+        claim: String,
+    },
     /// The timed nodes cannot be put in QSpec FR-322's declared order.
     #[error("timed aggregate order: {0}")]
     TimedOrder(#[source] timed_order::OrderFault),
@@ -349,7 +357,9 @@ impl EmitRefusal {
                 Code::UnsupportedConstruct
             }
             Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
-            Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
+            Self::TimedModelNodeSetMismatch
+            | Self::UnkeyedProbabilisticClaim { .. }
+            | Self::TimedOrder(_) => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
             | Self::RefinementSubjectNotEmitted => Code::RuntimeInvariant,
@@ -384,6 +394,7 @@ impl EmitRefusal {
             | Self::Abstraction(_)
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
+            | Self::UnkeyedProbabilisticClaim { .. }
             | Self::TimedOrder(_)
             | Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
@@ -3326,10 +3337,48 @@ fn checked_term_data(
     term_data.dispatch_tables = checked_dispatch_tables(graph, emitted_node_ids, source_map)?;
     term_data.protocol_locations =
         protocol_locations::checked_protocol_locations(graph, emitted_node_ids)?;
+    term_data.probabilistic_claims = checked_probabilistic_claims(graph, emitted_node_ids)?;
     Ok((!term_data.equality_decisions.is_empty()
         || !term_data.protocol_locations.is_empty()
-        || !term_data.dispatch_tables.is_empty())
+        || !term_data.dispatch_tables.is_empty()
+        || !term_data.probabilistic_claims.is_empty())
     .then_some(term_data))
+}
+
+/// FR-498: one `{declaration, occurrence}` row per checked probabilistic
+/// claim, naming the node and `claim` occurrence lowering keyed it at, in
+/// ascending structural `NodeRef` order, then occurrence order. Nothing is
+/// read from the claim's name, span or form.
+fn checked_probabilistic_claims(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<quire_contract_model::CheckedProbabilisticClaim>, EmitRefusal> {
+    let claims = graph.probabilistic_model().claims();
+    let mut rows = Vec::with_capacity(claims.len());
+    for claim in claims {
+        let unkeyed = || EmitRefusal::UnkeyedProbabilisticClaim {
+            claim: claim.name.clone(),
+        };
+        let occurrence = claim.occurrence().ok_or_else(unkeyed)?;
+        let declaration = emitted_node_ids
+            .get(occurrence.node())
+            .cloned()
+            .ok_or_else(unkeyed)?;
+        let occurrence = checked_occurrence(occurrence.origin()).ok_or_else(unkeyed)?;
+        rows.push(quire_contract_model::CheckedProbabilisticClaim {
+            declaration,
+            occurrence,
+        });
+    }
+    rows.sort_by(|left, right| {
+        left.declaration
+            .package
+            .cmp(&right.declaration.package)
+            .then_with(|| left.declaration.path.cmp(&right.declaration.path))
+            .then_with(|| left.declaration.ordinal.cmp(&right.declaration.ordinal))
+            .then_with(|| left.occurrence.cmp(&right.occurrence))
+    });
+    Ok(rows)
 }
 
 fn equality_enum_members(

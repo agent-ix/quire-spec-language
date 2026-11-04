@@ -3033,6 +3033,9 @@ pub enum KeyFault {
     RecordSlotCount,
     /// An IEEE arithmetic node whose left operand is not an IEEE type.
     UntypedIeeeOperand,
+    /// A `DropFirst` node whose operand is not a sequence or an ordered set,
+    /// the only families with a first occurrence (QSpec FR-322).
+    UnorderedFirstOccurrence,
     /// The compiler-owned IEEE catalog row failed admission, retaining the
     /// semantic-value owner's typed refusal.
     IeeeProfileAdmission(quire_semantic_value::definition::PackageRefusal),
@@ -3099,6 +3102,7 @@ impl KeyFault {
             Self::DispatchTableOutOfRange { .. } => "dispatch-table-index-in-range",
             Self::RecordSlotCount => "record-slots-match-fields",
             Self::UntypedIeeeOperand => "ieee-operand-typed",
+            Self::UnorderedFirstOccurrence => "drop-first-operand-ordered",
             Self::IeeeProfileAdmission(_) => "catalog-ieee-profile-admitted",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
             Self::ModelRootKey(_) => "model-root-keyed",

@@ -121,7 +121,7 @@ pub(super) enum Node {
 }
 
 /// A checked formula as the evaluator reads it.
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Plan {
     pub(super) nodes: Vec<Node>,
     pub(super) root: usize,
@@ -211,9 +211,19 @@ impl Plan {
                 }
             });
         }
+        Self::from_nodes(nodes, formula.root().index(), atoms)
+    }
+
+    /// The plan of `nodes`, in an order that lists an operator before its
+    /// operands, rooted at `root`, whose atoms are at `atoms`.
+    pub(super) fn from_nodes(
+        nodes: Vec<Node>,
+        root: usize,
+        atoms: Vec<usize>,
+    ) -> Result<Self, InternalFault> {
         let mut plan = Self {
             nodes,
-            root: formula.root().index(),
+            root,
             atoms,
             left_floor: Vec::new(),
         };

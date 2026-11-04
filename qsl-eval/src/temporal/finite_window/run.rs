@@ -5,7 +5,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use qsl_semantics::check::{Activation, CaptureSite, CheckedTemporalClause, TemporalProfile};
+use crate::temporal::facts::ClauseFacts;
+use qsl_semantics::check::{Activation, CaptureSite, TemporalProfile};
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 use quire_semantic_value::catalog::InternalFault;
 
@@ -118,7 +119,7 @@ enum Tail {
 }
 
 struct Run<'a, L: TemporalLetters> {
-    clause: &'a CheckedTemporalClause,
+    clause: &'a ClauseFacts,
     trace: &'a TimestampedTrace,
     plan: Plan,
     /// Each node's future reach, in ticks: the greatest sum of the upper
@@ -162,7 +163,7 @@ struct Run<'a, L: TemporalLetters> {
 /// positions that take part in an order-sensitive operator without a
 /// comparable order key, or a letter that fails.
 pub fn evaluate_finite_window<L: TemporalLetters>(
-    clause: &CheckedTemporalClause,
+    clause: &ClauseFacts,
     trace: &TimestampedTrace,
     letters: &mut L,
     meter: &mut Meter,
@@ -180,7 +181,7 @@ pub fn evaluate_finite_window<L: TemporalLetters>(
 ///
 /// As [`evaluate_finite_window`].
 pub fn evaluate_finite_window_at<L: TemporalLetters>(
-    clause: &CheckedTemporalClause,
+    clause: &ClauseFacts,
     trace: &TimestampedTrace,
     anchor: usize,
     letters: &mut L,
@@ -191,7 +192,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
 }
 
 fn run_window<'a, L: TemporalLetters>(
-    clause: &'a CheckedTemporalClause,
+    clause: &'a ClauseFacts,
     trace: &'a TimestampedTrace,
     letters: &'a mut L,
     meter: &'a mut Meter,
@@ -208,7 +209,11 @@ fn run_window<'a, L: TemporalLetters>(
             profile: clause.profile(),
         });
     }
-    let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
+    let plan = clause
+        .formula()
+        .plan()
+        .map_err(TemporalRefusal::Fault)?
+        .clone();
     let reach = reaches(&plan).map_err(TemporalRefusal::Fault)?;
     let classes = (0..plan.nodes.len())
         .map(|index| {
