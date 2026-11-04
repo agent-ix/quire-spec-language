@@ -868,6 +868,48 @@ fn spine_refuses_post_test_repeat_guard_with_typed_construct_evidence() {
     );
 }
 
+/// FR-048-AC-4 successor: repeat guards refuse a sibling-branch binder at
+/// the spine with the typed FR-218 visible-entry cause, including when the
+/// unavailable read is in a skipped Boolean operand.
+#[trace("FR-048-AC-4", "FR-218-AC-17", "FR-513-AC-12", "TC-1308")]
+#[test]
+fn spine_refuses_repeat_guard_reads_outside_entry_visibility() {
+    use qsl_semantics::check::{CheckCause, ProtocolAnchorCause};
+
+    for (case, guard) in [("direct", "left.ready"), ("skipped", "true or left.ready")] {
+        let source = format!(
+            "{HEADER}model M = \"acme/orders\";\n\
+             record Plain {{ ready: Boolean; }}\n\
+             protocol Flow using Complete over (input: M::Widget) on origin {{\n\
+               role R on M::Widget; role S on M::Widget;\n\
+               run parallel Both {{\n\
+                 branch left sequence Left {{ event Early by R as (left: Plain) {{ true }}; }}\n\
+                 branch right sequence Right {{\n\
+                   repeat Loop by S visible () max 1 while {{ {guard} }}\n\
+                     sequence Body {{ event Tick by S as (tick: Plain) {{ true }}; }}\n\
+                   exhausted sequence Exhausted {{ }}\n\
+                 }}\n\
+               }} join all [left, right];\n\
+               finish End as (outcome: Boolean) {{ true }};\n\
+             }}"
+        );
+        let failure = protocol_check_stage(source.as_bytes(), CheckingLimits::default())
+            .expect_err("repeat guard with invisible sibling-branch binder refuses");
+        let refusal = refusal_or_fault(failure).expect("typed S3 refusal");
+        let CompileRefusal::Check { refusals, .. } = *refusal else {
+            panic!("the spine reaches protocol checking: {refusal:?}");
+        };
+        assert!(
+            refusals.iter().any(|refusal| matches!(
+                &refusal.cause,
+                CheckCause::ProtocolAnchor(cause)
+                    if matches!(cause.as_ref(), ProtocolAnchorCause::SlotClause { .. })
+            )),
+            "the {case} repeat guard retains an FR-218 typed visible-entry refusal: {refusals:?}"
+        );
+    }
+}
+
 fn checked_protocol_source(bytes: &[u8]) -> CheckedUnit {
     protocol_check_stage(bytes, CheckingLimits::default())
         .unwrap_or_else(|failure| panic!("protocol source checks: {failure:?}"))
