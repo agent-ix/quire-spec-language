@@ -141,7 +141,7 @@ ported recipe is **R**; its elements and their spine requirements:
 
 | Recipe element | In **R** |
 | --- | --- |
-| `model.json` scalars `ObjectId` (text, 128), `Amount` 1..20, `Total` 0..100, `Tally` 0..5, `Wide` (signed 64-bit) | one domain package document with the same bounds, selected by a `model` declaration; `Amount` and `Total` carry no unit (FR-517-AC-13) |
+| `model.json` scalars `ObjectId` (text, 128), `Amount` 1..20, `Total` 0..100, `Tally` 0..5, `Wide` (signed 64-bit) | one domain package document with the same bounds, selected by a `model` declaration; `Amount` and `Total` carry no unit until QSL-1558 (FR-517-AC-13), for the refusals FR-517-AC-15 pins |
 | scalars `Ratio` and `Exact` (bounded rationals) | none (FR-517-AC-12) |
 | records `Workflow`, `Notice`, `Provider`; sequence `receipts` (maximum 5); the compensations' `attempts`, `retry` and `recover` binders typed by the object type `Workflow` | the object types `Workflow` and `Provider`, the record value type `Notice` and the bounded sequence `receipts`; `Workflow` stays the `over`, role and forward-binder type; the `attempts` type and the `retry` binders are the record value type `Attempt` (field `tally`), and the `recover` binder the record value type `Recovery` (field `receipts`) |
 | `predicates` and `state` bodies: cross-unit calls, bounded `sum`/`size` queries, the extrema literals `-9223372036854775808` and `9223372036854775807` | predicates and functions in a library unit imported by the main unit, with the same literals |
@@ -164,6 +164,28 @@ reads its recovery binder is checked and emitted, and analysis of **R**
 reports that compensation item `unsupported` with cause
 `recovery-view{predicate}` (QSpec FR-427): no rule derives a recovery view
 from a model state, so this is the expected result, not a defect of **R**.
+
+The unit `U` on `Amount` and `Total` is not portable yet. In the model it is
+an alias of `ix://quire/unit/U` whose `min` and `max` name the alias (QSpec
+FR-154 "Unit bounds"; FR-230-AC-26), and each source declares
+`dimension Money;` and `unit U : Money = rational(1, 1);`. Unit-typed members
+check against unit literals (`amount >= 1 U` in `BeforeApply`), but **R**
+refuses at three points (QSL-1558):
+
+- A measurement unit that no expression of the compiled source reaches is not
+  emitted, although the selected model's types name it, so Contract IR's reader refuses the first
+  model `typeRef` that reaches it, `Recovery.receipts` of type `Amount`:
+  `missing_declaration`/`missing-name` at `/types/7/fields/0/typeRef`. **R**'s
+  library and its fixed-sample and timestamped-event units read no unit-typed
+  member.
+- A model alias has no node and is not a source type name (FR-230), so
+  `sum<M::Total>` and `capture targetFull: M::Total` refuse
+  `UnresolvedTypeName` at assembly.
+- `sum<N>` checks an integer summand only (FR-093's `Query{visit: Sum}` row
+  lowers to `quire.op.collection.sum.integer`), so the `Healthy` invariant's
+  receipt sum over `Quantity<U>` refuses `IllTyped(TypeMismatch)` at the
+  clause, where QSpec FR-145 and FR-322 define `quire.op.collection.sum` per
+  numeric family, the quantity family included.
 
 **R** is three packages, one per clock kind, because the emitter admits one
 temporal profile selection per unit and the checker refuses a unit that selects
@@ -196,9 +218,10 @@ the three directories. The packages hold:
 | FR-517-AC-13 | With the model admitting a unit on a bounded scalar (QSL-1558, FR-497), the `Amount` and `Total` scalars of **R** carry the unit `U`. | Test (TC-1312) |
 | FR-517-AC-14 | With a `sum` query binder admitted inside `recover` (QSL-1555), the `recover` condition of `Full` is that the receipt sum equals the captured target, and that of `Partial` is that the receipt sum is positive and below the captured target. | Test (TC-1312) |
 | FR-517-AC-15 | `emit_checked_v2` run with `--clock-selections` naming a file that holds the clock configuration of each temporal clause and compensation template of an **R** package emits the bytes `emit_checked_v2::emit` returns for the equal `Request`; an empty object, a repeated name, an unknown `kind`, a member the configuration does not define and a member it requires that is missing are each a refusal naming the file that writes no bytes, and a name matching no clause or template is the `UnknownClause` refusal that writes no bytes. | Test (TC-1312) |
+| FR-517-AC-16 | Until QSL-1558, over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`: a source whose `pre` compares the `Amount` parameter with `1 U` is written and admitted; a source that reads no unit-typed member is refused by the reader with `missing_declaration`/`missing-name` at `/types/7/fields/0/typeRef`; `sum<M::Total>` refuses `UnresolvedTypeName` for `M::Total`; and `sum<Cash>` over the receipts, with `type Cash = Quantity<U>;`, refuses `IllTyped(TypeMismatch)` at its state clause. | Test (TC-1312) |
 
 ## Dependencies
 
-- **Upstream:** QSL-1512 (`qsl_inventory` over the spine unit, FR-517-AC-11), QSL-1522 (FR-517-AC-12), QSL-1558 (FR-517-AC-13), QSL-1555 (FR-517-AC-14), FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
+- **Upstream:** QSL-1512 (`qsl_inventory` over the spine unit, FR-517-AC-11), QSL-1522 (FR-517-AC-12), QSL-1558 (FR-517-AC-13, AC-16), QSL-1555 (FR-517-AC-14), FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
   FR-505, FR-514, FR-515, `emit_checked_v2`, `qsl_package::emit_checked_with_temporal_selections`.
 - **Downstream:** quire-protocol IT-001 (QSL-1549).
