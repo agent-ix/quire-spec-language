@@ -266,27 +266,24 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
                     if format.is_some() {
                         return Err(self.fail(IdentityMember::Repeated("format")));
                     }
-                    format = Some(map.next_value().map_err(|error: A::Error| {
+                    format = Some(map.next_value().inspect_err(|_: &A::Error| {
                         self.problem.set(Some(IdentityMember::Format));
-                        error
                     })?);
                 }
                 "declarations" => {
                     if declarations.is_some() {
                         return Err(self.fail(IdentityMember::Repeated("declarations")));
                     }
-                    declarations = Some(map.next_value().map_err(|error: A::Error| {
+                    declarations = Some(map.next_value().inspect_err(|_: &A::Error| {
                         self.problem.set(Some(IdentityMember::Declarations));
-                        error
                     })?);
                 }
                 "fields" => {
                     if fields.is_some() {
                         return Err(self.fail(IdentityMember::Repeated("fields")));
                     }
-                    fields = Some(map.next_value().map_err(|error: A::Error| {
+                    fields = Some(map.next_value().inspect_err(|_: &A::Error| {
                         self.problem.set(Some(IdentityMember::Fields));
-                        error
                     })?);
                 }
                 other => return Err(self.fail(IdentityMember::Unknown(other.to_owned()))),
