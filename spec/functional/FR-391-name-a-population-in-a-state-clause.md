@@ -63,6 +63,15 @@ result. A function body is not a population position: a function names a
 population only through a `Population<T>[N]` parameter, so no population is
 ambient in a function.
 
+A timed model's `time invariant when` and `urgent when` predicates are not
+yet population positions. They read one model state object as `self`
+(FR-230), and S3 does not yet give them a domain-package population binding;
+that scope is deferred to QSL-1659. Until then, a declared named population
+used in `allInstances`, `lookup`, a quantifier domain or a population form in
+either predicate is refused as a construct S3 does not check yet; the timed
+model is not emitted. This deferral does not remove the population scope of a
+unit-level state clause or a `holds` atom.
+
 Inside a refinement declaration FR-139 governs population names and forms;
 in a population position FR-391 does, with the typing and evaluation of the
 forms that FR-139 states.

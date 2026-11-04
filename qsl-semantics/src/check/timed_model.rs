@@ -4622,6 +4622,14 @@ fn typed_alternative_in(
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
+    if let Some(span) = named_population_read(&alternative.predicate.predicate, declarations) {
+        return Err(refusal(timed(TemporalCause::TimedPredicate {
+            cause: Box::new(CheckCause::PopulationFormNotChecked {
+                what: "timed predicate population scope",
+            }),
+            span,
+        })));
+    }
     let (predicate, used) = typed_in(
         &state_view(
             &alternative.predicate,
@@ -4638,6 +4646,52 @@ fn typed_alternative_in(
         presences: alternative.presences,
         predicate,
     })
+}
+
+/// The first declared population read, in source order, in an S3
+/// timed-model predicate, which has no ambient population scope (FR-230,
+/// FR-391). The returned span is the population reference, so the
+/// unsupported result points at the construct that needs that scope.
+fn named_population_read(
+    form: &ExpressionForm,
+    declarations: &ClauseDeclarations<'_>,
+) -> Option<Span> {
+    let known = &declarations.scope.known_populations;
+    let root = form.expression.get(form.expression.root_id())?;
+    let mut pending = vec![root];
+    while let Some(expression) = pending.pop() {
+        let population_operand = match expression.node() {
+            ExprNode::AllInstances { population, .. } | ExprNode::Lookup { population, .. } => {
+                Some(*population)
+            }
+            ExprNode::Query { source, .. }
+            | ExprNode::Count { source, .. }
+            | ExprNode::Sum { source, .. }
+            | ExprNode::Accumulate { source, .. } => Some(*source),
+            ExprNode::Population {
+                population,
+                population_span,
+                ..
+            } if known.iter().any(|name| name == population) => return Some(*population_span),
+            // No other form names a population operand. `ExprNode` is not
+            // matched exhaustively outside `qsl-forms` (the seam probe), so a
+            // future population-reading form missed here still refuses in
+            // typing, which grants a timed predicate no population scope.
+            _ => None,
+        };
+        if let Some(operand) = population_operand {
+            let operand = expression.at(operand);
+            if let ExprNode::Name(name) = operand.node() {
+                if known.iter().any(|population| population == &name.name) {
+                    return Some(name.span);
+                }
+            }
+        }
+        // Reversed, so the stack pops children in source order and the
+        // first population reference is the one reported.
+        pending.extend(expression.children().into_iter().rev());
+    }
+    None
 }
 
 fn state_view<'v>(
