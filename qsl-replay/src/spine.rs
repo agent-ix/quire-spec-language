@@ -1164,6 +1164,15 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::CarriesMismatch { channel, .. } => format!(
                     "{message}: the binder's type is not the type channel `{channel}` carries"
                 ),
+                ProtocolAnchorCause::ChannelDeliveryRange {
+                    channel,
+                    lower,
+                    upper,
+                    ..
+                } => format!(
+                    "{message}: channel `{channel}` delivers between {lower} and {upper}, \
+                     the lower count above the upper"
+                ),
                 ProtocolAnchorCause::CausalCycle { nodes, .. } => format!(
                     "{message}: the causal edges form a cycle through {}",
                     nodes.join(", ")
@@ -2594,6 +2603,31 @@ mod tests {
             let message = check_message(&[refusal]);
             assert!(message.ends_with(expected), "{message}");
         }
+    }
+
+    /// FR-509-AC-2: a channel interval with its lower count above its upper
+    /// count renders both counts and the channel in the refusal message.
+    #[trace("FR-509-AC-2", "TC-1304")]
+    #[test]
+    fn channel_delivery_range_message_names_the_channel_and_both_counts() {
+        let refusal = CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::ProtocolAnchor(Box::new(
+                ProtocolAnchorCause::ChannelDeliveryRange {
+                    channel: "Pay".to_owned(),
+                    lower: 4,
+                    upper: 3,
+                    span: Span { start: 4, end: 9 },
+                },
+            )),
+        };
+        let message = check_message(&[refusal]);
+        assert!(
+            message.ends_with(
+                "channel `Pay` delivers between 4 and 3, the lower count above the upper"
+            ),
+            "{message}"
+        );
     }
 
     #[trace("FR-383-AC-28")]
