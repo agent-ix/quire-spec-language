@@ -45,3 +45,4 @@ Manually checked the changed AC-to-test-to-code paths and trace tags. Closure te
 | --- | --- | --- |
 | FND-001 | still-open | The added repeat test asserts `PostTestRepeat` construct refusal for a body-produced binder, which is not a visibility refusal. FR-218-AC-33 allows the same-owner completed-body binder; the test does not put an invisible atom in the repeat guard and assert the FR-218 visible-entry cause. |
 | FND-002 | fixed | The proof test now substitutes `Handler { name: different_handler }` while retaining the expected `validate` handler and asserts typed `ExecutionPoint` refusal. |
+| FND-001 | fixed | `spine_refuses_repeat_guard_reads_outside_entry_visibility` exercises both a direct `left.ready` repeat guard and `true or left.ready`; each path asserts a typed `ProtocolAnchorCause::SlotClause` refusal. |
