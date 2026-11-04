@@ -179,7 +179,10 @@ fn a_channel_delivery_interval_builds_its_bounds() {
         let text = source(&member, RUN);
         let unit = build(&text);
         let channel = only_channel(protocol(&unit));
-        assert_eq!(channel.delivery.value, ChannelDelivery::Between { lower, upper });
+        assert_eq!(
+            channel.delivery.value,
+            ChannelDelivery::Between { lower, upper }
+        );
         assert_eq!(slice(&text, channel.delivery.span), spelling);
     }
 }
