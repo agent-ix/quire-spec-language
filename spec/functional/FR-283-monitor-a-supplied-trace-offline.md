@@ -148,6 +148,10 @@ pub struct MonitorRecord {
 }
 ```
 
+Each record is rendered into an FR-286 `monitor` item by
+`OutcomeItem::from_clause_run`, which adds the `clause` member naming the
+record's clause (FR-286 "Monitor documents from clause runs").
+
 `records` holds one record per selected clause, in request order. Each
 record's verdict is one of FR-267's temporal-disposition rows, with `tested`
 in the place of `holds`, under ADR-014 A-4:
@@ -158,6 +162,7 @@ in the place of `holds`, under ADR-014 A-4:
 | `Undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample`, `cause` (`UndefinedEvaluation{where, cause}`) | violation | 10 |
 | `InsufficientData` | FR-327's insufficient-data outcome, `InsufficientData{where, atom, count, min_count}` (a window aggregate short of data, QSpec FR-414), not an `Undefined` | `position`, `count`, `min_count` | undefined, with the label `undefined` and reason `insufficient-data` | 10 |
 | `Pending` | `Pending`, finite trace | none | pending | 0 |
+| `Indeterminate` | `Indeterminate`, a finite-window clause (FR-501) whose window is closed and whose evidence stays unresolved | the FR-501 reason | indeterminate | 11 |
 | `Tested` | `Completed(true)` | none | success | 0 |
 | `MissingFairnessPremise` | `MissingFairnessPremise`, a clause with a non-empty fairness set | `constraint`, the first constraint of the fairness set | unsupported | 21 |
 | `Incomplete` | `Incomplete` | the charge point and limit | incomplete | 22 |
