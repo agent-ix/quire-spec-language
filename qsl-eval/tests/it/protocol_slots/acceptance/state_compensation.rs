@@ -792,7 +792,8 @@ fn recovery_variant(body: &str) -> CheckedPackage {
             )
             + "function plus using v(a: Integer): Integer pure { a + 1 }\n\
                function add using v(a: Integer, b: Integer): Integer pure { a + b }\n\
-               function bump using v(a: Integer): Integer pure { let x = a + 1 in x + 1 }\n"
+               function bump using v(a: Integer): Integer pure { let x = a + 1 in x + 1 }\n\
+               function three using v(n: Integer): Sequence<Integer>[0, 16] pure { sequence[n, n, n] }\n"
     })
 }
 
@@ -822,13 +823,13 @@ fn an_operation_over_two_binders_is_unattributed_and_a_later_single_binder_opera
     assert_eq!(entry(&package, charges, "target"), NOTHING);
     assert_eq!(
         entry(&package, charges, "activated"),
-        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
-        "`not activated` reads one binder after others were read"
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "`not activated` reads one binder after others were read; the `and` over two binders is not its"
     );
     assert_eq!(
         amounts(charges.unattributed()),
-        [0, 0, 0, 0, 0, 0, 0, 1, 5, 1],
-        "`recovered.total = target` reads two binders"
+        [0, 0, 0, 0, 0, 0, 0, 1, 6, 2],
+        "`recovered.total = target` reads two binders, and the `and` joins two binders"
     );
     assert_eq!(
         amounts(&charges.total()),
@@ -854,12 +855,12 @@ fn operations_over_one_binder_each_are_charged_to_that_binder() {
     assert_eq!(entry(&package, charges, "target"), one_operand);
     assert_eq!(
         entry(&package, charges, "activated"),
-        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2]
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1]
     );
     assert_eq!(
         amounts(charges.unattributed()),
-        [0, 0, 0, 0, 0, 0, 0, 1, 5, 1],
-        "only the equality over both sums is unattributed"
+        [0, 0, 0, 0, 0, 0, 0, 1, 6, 2],
+        "only the equality over both sums and the `and` joining two binders are unattributed"
     );
     assert_eq!(amounts(&charges.total()), used);
 }
@@ -881,7 +882,7 @@ fn a_literal_only_subexpression_is_unattributed_wherever_it_runs() {
     }
     assert_eq!(
         amounts(charges.unattributed()),
-        [3, 0, 0, 0, 0, 0, 0, 2, 14, 4],
+        [3, 0, 0, 0, 0, 0, 0, 2, 15, 5],
         "the literal prefix runs before the first binder read"
     );
     assert_eq!(amounts(&charges.total()), used);
@@ -890,7 +891,7 @@ fn a_literal_only_subexpression_is_unattributed_wherever_it_runs() {
     let late_charges = charges_of(&late_result);
     assert_eq!(
         entry(&late, late_charges, "activated"),
-        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
         "a literal-only subexpression after a binder read is not that binder's"
     );
     assert_eq!(amounts(&late_charges.total()), late_used);
@@ -905,6 +906,51 @@ fn a_literal_only_subexpression_is_unattributed_wherever_it_runs() {
 
 #[test]
 #[trace("FR-520-AC-11", "TC-1315")]
+fn a_connective_over_two_binders_is_unattributed_and_leaves_the_right_binder_its_own_operation() {
+    let (alone, alone_result, _) = recovery_log_of("not activated");
+    let (joined, joined_result, used) = recovery_log_of("target = 5 and not activated");
+    let charges = charges_of(&joined_result);
+    assert_eq!(
+        entry(&joined, charges, "activated"),
+        entry(&alone, charges_of(&alone_result), "activated"),
+        "`and` over `target` and `activated` is made by neither"
+    );
+    assert_eq!(
+        entry(&joined, charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1]
+    );
+    assert!(charges.unattributed().amount(LimitKind::WorkUnits) >= 1);
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn every_element_of_a_query_over_one_binder_is_charged_to_that_binder() {
+    let (with_double, double_result, used) =
+        recovery_log_of("forall(x in three(target): x * 2 + recovered.total > 0)");
+    let (without, plain_result, _) =
+        recovery_log_of("forall(x in three(target): x + recovered.total > 0)");
+    let double = charges_of(&double_result);
+    let plain = charges_of(&plain_result);
+    let work =
+        |charges: &BinderCharges, package: &CheckedPackage| entry(package, charges, "target")[8];
+    let elements = 3;
+    assert!(
+        work(double, &with_double) >= work(plain, &without) + elements,
+        "`x * 2` over each of the {elements} elements is made by `target`, not only the first"
+    );
+    for kind in [LimitKind::WorkUnits, LimitKind::ResultUnits] {
+        assert_eq!(
+            double.unattributed().amount(kind),
+            plain.unattributed().amount(kind),
+            "no element's `x * 2` falls to unattributed after a result over `recovered`"
+        );
+    }
+    assert_eq!(amounts(&double.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
 fn commuting_the_operands_of_a_two_binder_operation_leaves_the_log_unchanged() {
     let forward = recovery_variant("recovered.total + target = 10 and not activated");
     let backward = recovery_variant("target + recovered.total = 10 and not activated");
@@ -914,7 +960,7 @@ fn commuting_the_operands_of_a_two_binder_operation_leaves_the_log_unchanged() {
     assert_eq!(charges, charges_of(&backward_result));
     assert_eq!(
         amounts(charges.unattributed()),
-        [4, 0, 0, 0, 0, 0, 0, 2, 8, 2]
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 3]
     );
     assert_eq!(amounts(&charges.total()), used);
 }
@@ -1050,7 +1096,11 @@ fn a_one_argument_call_charges_its_body_to_the_binder_of_its_argument() {
         entry(&package, charges, "target"),
         [4, 0, 0, 0, 0, 0, 0, 2, 9, 2]
     );
-    assert_eq!(amounts(charges.unattributed()), NOTHING);
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "only the `and` over `target` and `activated`"
+    );
     assert_eq!(amounts(&charges.total()), used);
 }
 
@@ -1067,10 +1117,14 @@ fn a_one_argument_call_after_a_two_argument_call_takes_its_own_argument_owner() 
     );
     assert_eq!(
         entry(&package, charges, "recovered"),
-        [4, 0, 0, 0, 0, 0, 0, 2, 10, 3],
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2],
         "`plus(recovered.total)` and its body belong to `recovered`"
     );
-    assert_eq!(amounts(charges.unattributed()), NOTHING);
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+        "the two `and`s each join operands of different binders"
+    );
     assert_eq!(amounts(&charges.total()), used);
 }
 
@@ -1084,7 +1138,7 @@ fn a_call_over_two_binders_charges_its_body_to_no_binder() {
     assert_eq!(entry(&package, charges, "target"), NOTHING);
     assert_eq!(
         amounts(charges.unattributed()),
-        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2]
+        [4, 0, 0, 0, 0, 0, 0, 2, 10, 3]
     );
     assert_eq!(amounts(&charges.total()), used);
 }
@@ -1099,6 +1153,10 @@ fn a_let_bound_value_keeps_the_binder_it_derives_from() {
         [4, 0, 0, 0, 0, 0, 0, 2, 12, 3],
         "`x + 1` over the let-bound `x = a + 1` is made by `target`"
     );
-    assert_eq!(amounts(charges.unattributed()), NOTHING);
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "only the `and` over `target` and `activated`"
+    );
     assert_eq!(amounts(&charges.total()), used);
 }
