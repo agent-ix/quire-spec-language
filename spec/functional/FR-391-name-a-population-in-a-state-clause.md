@@ -63,6 +63,14 @@ result. A function body is not a population position: a function names a
 population only through a `Population<T>[N]` parameter, so no population is
 ambient in a function.
 
+A timed model's `time invariant when` and `urgent when` predicates are not
+population positions. They read one model state object as `self` (FR-230),
+and do not receive an ambient domain-package population binding. A named
+declared named population used in `allInstances`, `lookup`, a quantifier
+domain or a population form in either predicate is refused as an unsupported construct;
+the timed model is not emitted. This restriction does not remove the
+population scope of a unit-level state clause or a `holds` atom.
+
 Inside a refinement declaration FR-139 governs population names and forms;
 in a population position FR-391 does, with the typing and evaluation of the
 forms that FR-139 states.

@@ -287,6 +287,55 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
     );
 }
 
+/// FR-230-AC-55 / TC-1331: S3 has no ambient named-population scope for a
+/// time invariant or `urgent when`, while ordinary state-clause population
+/// scope and self-only timed predicates remain available.
+#[trace("TC-1331", "FR-230-AC-55")]
+#[test]
+fn timed_predicates_refuse_named_populations_without_restricting_state_clauses() {
+    for predicate in [
+        "time invariant HasCalls when { forall(c in Config::calls : true) } { self.x <= 1 ms }\n",
+        "urgent CallsExist when { exists(c in Config::calls : true) };\n",
+    ] {
+        let body = format!("{}{}", rpc("time Config dense unit ms;"), predicate);
+        let (cause, text) = refused(&rpc_document(&["x"]), &body);
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (
+                Code::UnsupportedConstruct,
+                "not-yet-implemented",
+                "Config::calls"
+            ),
+            "the population reference is refused and no TimedModel is produced"
+        );
+        let TemporalCause::TimedPredicate { cause, .. } = cause else {
+            panic!("the named population refusal belongs to the timed predicate: {cause:?}");
+        };
+        assert!(
+            matches!(
+                &*cause,
+                CheckCause::PopulationFormNotChecked {
+                    what: "timed predicate population scope"
+                }
+            ),
+            "the refusal identifies the missing timed-predicate scope: {cause:?}"
+        );
+    }
+
+    let body = format!(
+        "{}{}{}",
+        rpc("time Config dense unit ms;"),
+        "time invariant SelfOnly when { self.inflight } { self.x <= 3 ms }\n\
+         urgent SelfUrgent when { self.waiting };\n",
+        "pre UsesCalls using v on Config::Call::reply { forall(c in Config::calls : true) }\n"
+    );
+    let graph = check(&rpc_document(&["x"]), &body)
+        .expect("self-only timed predicates and a population-reading precondition remain admitted");
+    let model = timed(&graph);
+    assert_eq!(model.invariants().len(), 1);
+    assert_eq!(model.urgency().len(), 1);
+}
+
 /// Part of FR-230-AC-1 (TC-685): under `time dense unit s`, `reply`'s bound
 /// `1 ms` converts to `1/1000`. Not covered: the `s` unit's package identity
 /// differing from `ms`'s, which S4 emits.
