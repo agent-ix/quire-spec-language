@@ -735,6 +735,7 @@ pub(super) struct RetainedRows {
     pub(super) equality_producer_identity_rows: Vec<super::EqualityProducerEmissionRow>,
     pub(super) equality_fact_witness_rows: Vec<super::EqualityFactWitnessRow>,
     pub(super) temporal_binding_rows: super::TemporalBindingRows,
+    pub(super) temporal_rows: super::TemporalRows,
 }
 
 /// Re-keys every node id a retained row holds through `changes`, in order.
@@ -923,6 +924,24 @@ pub(super) fn carry_rows(
         } = row;
         rekey.id(declaration);
     }
+    let mut temporal_rows = retained.temporal_rows.clone();
+    for super::TemporalClauseRef {
+        declaration,
+        occurrence: _,
+        clause: _,
+    } in &mut temporal_rows.clauses
+    {
+        rekey.id(declaration);
+    }
+    for row in &mut temporal_rows.bindings {
+        let m::TemporalBinding {
+            declaration,
+            occurrence: _,
+            clock_name: _,
+            clock: _,
+        } = row;
+        rekey.id(declaration);
+    }
     RetainedRows {
         omitted,
         selected_operation_member_rows: operation,
@@ -935,6 +954,7 @@ pub(super) fn carry_rows(
         equality_producer_identity_rows: producers,
         equality_fact_witness_rows: facts,
         temporal_binding_rows: temporal,
+        temporal_rows,
     }
 }
 
@@ -1004,6 +1024,7 @@ fn finish(
         equality_fact_witness_rows: rows.equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows: rows.temporal_binding_rows,
+        temporal_rows: rows.temporal_rows,
     })
 }
 

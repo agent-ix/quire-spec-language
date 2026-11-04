@@ -677,9 +677,15 @@ fn complete_sources(
         )
         .map_err(failure)?
         .into_value();
-        checked.into_iter().next().ok_or(RunCause::EmptyCompileProgram)?
+        checked
+            .into_iter()
+            .next()
+            .ok_or(RunCause::EmptyCompileProgram)?
     } else {
-        let parsed = parsed.into_iter().next().ok_or(RunCause::EmptyCompileProgram)?;
+        let parsed = parsed
+            .into_iter()
+            .next()
+            .ok_or(RunCause::EmptyCompileProgram)?;
         let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
             .map_err(failure)?
             .into_value();

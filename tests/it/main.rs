@@ -128,6 +128,10 @@ mod source_map;
 mod spine_deletion_boundaries;
 mod spine_run;
 mod temporal_negotiation;
+#[cfg(feature = "checked-handoff")]
+mod temporal_package_route;
+#[cfg(feature = "checked-handoff")]
+mod temporal_package_route_formula;
 mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
