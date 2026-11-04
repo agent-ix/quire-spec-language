@@ -9,8 +9,8 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{
-    evaluate_temporal_evidence, EvidenceCounter, EvidenceRequest, EvidenceResult,
-    TemporalEvidenceLimits,
+    evaluate_temporal_evidence, CaptureFact, Evicted, EvidenceCounter, EvidenceRequest,
+    EvidenceResult, Payload, Receipt, Relation, TemporalEvidenceLimits,
 };
 use qsl_eval::temporal::{
     ClockCover, OrderKey, ProgressClosure, ProgressCompleteness, ProgressLedger, Valuation,
@@ -176,6 +176,28 @@ fn a_differing_binding_is_an_admission_error_that_charges_nothing() {
         assert!(meter.admitted_charges().is_empty(), "{dimension}");
     }
 
+    // A timestamp unit that differs, and a fixed-sample epoch and unit that
+    // both differ (the epoch is reported first, AC-5).
+    let stamped = env("on origin", BODY);
+    let mut asked = origin_request(&stamped);
+    asked.binding.parameters =
+        serde_json::from_value(json!({"kind": "timestamped_event", "timestamp_unit": "s"}))
+            .expect("a clock");
+    let mut meter = unlimited();
+    let failure = evaluate_temporal_evidence(&stamped.subject(&[]), &asked, &mut meter)
+        .expect_err("another timestamp unit");
+    assert_eq!(mismatched_dimension(failure), "TimestampUnit");
+    assert!(meter.admitted_charges().is_empty());
+
+    let mut asked = origin_request(&fixed);
+    asked.binding.parameters =
+        serde_json::from_value(fixed_clock("7", "1", "ms")).expect("a clock");
+    let mut meter = unlimited();
+    let failure = evaluate_temporal_evidence(&fixed.subject(&[]), &asked, &mut meter)
+        .expect_err("epoch and unit differ");
+    assert_eq!(mismatched_dimension(failure), "Epoch");
+    assert!(meter.admitted_charges().is_empty());
+
     let event = event_env("on origin", BODY);
     let mut asked = origin_request(&event);
     asked.binding.parameters = serde_json::from_value(
@@ -240,6 +262,17 @@ fn each_member_of_a_request_changes_its_result_identity_and_leaves_the_first_res
         let env = fixed_with(clock);
         variants.push((name.to_owned(), identity_of(&env, &origin_request(&env))));
     }
+    // The profile and the clock name, in the lock/row and in the binding.
+    let renamed = fixed_env("on origin", BODY).with_clock_name("other-clock");
+    variants.push((
+        "clock name".to_owned(),
+        identity_of(&renamed, &origin_request(&renamed)),
+    ));
+    let reprofiled = fixed_env("on origin", BODY).with_profile("another-profile/v1");
+    variants.push((
+        "profile".to_owned(),
+        identity_of(&reprofiled, &origin_request(&reprofiled)),
+    ));
     // The request's own members.
     let edits: Vec<(&str, RequestEdit)> = vec![
         (
@@ -323,6 +356,103 @@ fn each_member_of_a_request_changes_its_result_identity_and_leaves_the_first_res
     // AC-18: the first request's result is evaluated again after the changed
     // ones, and its bytes equal those it returned before.
     assert_eq!(format!("{:?}", evaluated(&base_env, &base)), first_bytes);
+}
+
+/// FR-522-AC-17 (evidence request members): over a request with deliveries,
+/// changing exactly one of the trigger identity, the relation, a delivery
+/// (identity, receipt, anchor, payload, guard, one capture fact), the order
+/// of two deliveries, one origin (identity or payload), the `anchor`, one
+/// `evicted` record or one member of the `correspondence` gives a
+/// `result_identity` distinct from the unchanged request's and from every
+/// other change.
+#[trace("FR-522-AC-17", "TC-1317")]
+#[test]
+fn each_evidence_member_of_a_request_changes_its_result_identity() {
+    let (env, p) = each_env();
+    let mut base = each_request(&env, p, "t1");
+    base.deliveries.push(delivery("t2", "r", "payload", &["5"]));
+    let reference = evaluated(&env, &base);
+    let reference_id = format!("{:?}", reference.result_identity);
+    let edits: Vec<(&str, RequestEdit)> = vec![
+        ("trigger", Box::new(|r| r.trigger = Some(id("t2")))),
+        (
+            "delivery identity",
+            Box::new(|r| r.deliveries[1].identity = id("t3")),
+        ),
+        (
+            "receipt",
+            Box::new(|r| r.deliveries[1].receipt = Receipt::new(b"other".as_slice())),
+        ),
+        (
+            "delivery anchor",
+            Box::new(|r| r.deliveries[1].anchor = "obs1".to_owned()),
+        ),
+        (
+            "payload",
+            Box::new(|r| r.deliveries[1].payload = Payload::new(b"other".as_slice())),
+        ),
+        ("guard", Box::new(|r| r.deliveries[1].guard = None)),
+        (
+            "capture",
+            Box::new(|r| r.deliveries[1].captures[0] = CaptureFact::Null),
+        ),
+        ("order", Box::new(|r| r.deliveries.reverse())),
+        ("anchor", Box::new(|r| r.anchor = Some("obs1".to_owned()))),
+        (
+            "evicted",
+            Box::new(|r| {
+                r.evicted = vec![Evicted::Capture {
+                    instance: id("t2"),
+                    capture: "amount".to_owned(),
+                }];
+            }),
+        ),
+        (
+            "correspondence",
+            Box::new(|r| r.correspondence = qsl_eval::temporal::evidence::EvidenceRef::named("x")),
+        ),
+    ];
+    let mut seen = vec![("base".to_owned(), reference_id)];
+    for (name, edit) in edits {
+        let mut one = base.clone();
+        edit(&mut one);
+        seen.push((name.to_owned(), identity_of(&env, &one)));
+    }
+    // The relation: against a retained result of a different input (an
+    // equal input is refused), the superseding relation alone differs from
+    // the original one.
+    let mut earlier = base.clone();
+    earlier.anchor = Some("obs1".to_owned());
+    let earlier = evaluated(&env, &earlier);
+    let mut original = base.clone();
+    original.ledger = Some(earlier.ledger.clone());
+    let mut superseding = original.clone();
+    superseding.relation = Relation::Superseding(earlier.result_identity.clone());
+    seen.push(("relation original".to_owned(), identity_of(&env, &original)));
+    seen.push((
+        "relation superseding".to_owned(),
+        identity_of(&env, &superseding),
+    ));
+    // One origin: identity and payload.
+    let origins = self::env("on origin", BODY);
+    let reference = origin_request(&origins);
+    let mut by_payload = reference.clone();
+    by_payload.origins[0].payload = Payload::new(b"b".as_slice());
+    let mut by_identity = reference.clone();
+    by_identity.origins[0].identity = id("o2");
+    by_identity.trigger = Some(id("o2"));
+    for (name, one) in [
+        ("origin base", reference),
+        ("origin payload", by_payload),
+        ("origin identity", by_identity),
+    ] {
+        seen.push((name.to_owned(), identity_of(&origins, &one)));
+    }
+    for (index, (name, left)) in seen.iter().enumerate() {
+        for (other, right) in seen.iter().skip(index + 1) {
+            assert_ne!(left, right, "{name} / {other}");
+        }
+    }
 }
 
 /// FR-522-AC-19: for an event-position request, changing alone the
@@ -432,6 +562,8 @@ fn a_progress_ledger_entry_changes_the_result_identity() {
 /// FR-523-AC-11: a retry of the AC-3 call after an AC-5 stop, with sufficient
 /// ceilings from the same inputs, returns the result of a call that never
 /// stopped, byte for byte.
+/// The clause and request are AC-3's; each counter the call uses is stopped
+/// in turn with its ceiling one below the usage (AC-5).
 #[trace("FR-523-AC-11", "TC-1318")]
 #[test]
 fn a_retry_after_a_counter_stop_equals_a_call_that_never_stopped() {
@@ -450,15 +582,24 @@ fn a_retry_after_a_counter_stop_equals_a_call_that_never_stopped() {
     let never_stopped = call(&env, &subject, &asked).expect("a result");
     assert_eq!(never_stopped.usage.get(EvidenceCounter::Positions), 3);
 
-    let mut stopped = asked.clone();
-    stopped.limits = TemporalEvidenceLimits::default().with_ceiling(EvidenceCounter::Positions, 2);
-    let stop = call(&env, &subject, &stopped).expect("a stop is an Ok result");
-    assert_eq!(stop.truth, None);
-    assert!(
-        stop.incomplete.is_some(),
-        "the lowered ceiling stops the call"
-    );
-
+    for counter in EvidenceCounter::ALL {
+        let used = never_stopped.usage.get(counter);
+        if used == 0 {
+            continue;
+        }
+        let mut stopped = asked.clone();
+        stopped.limits = TemporalEvidenceLimits::default().with_ceiling(counter, used - 1);
+        let stop = call(&env, &subject, &stopped).expect("a stop is an Ok result");
+        assert_eq!(stop.truth, None, "{}", counter.name());
+        assert!(stop.incomplete.is_some(), "{}", counter.name());
+        let retry = call(&env, &subject, &asked).expect("a result");
+        assert_eq!(
+            format!("{retry:?}"),
+            format!("{never_stopped:?}"),
+            "{}",
+            counter.name()
+        );
+    }
     let retry = call(&env, &subject, &asked).expect("a result");
     assert_eq!(format!("{retry:?}"), format!("{never_stopped:?}"));
 }

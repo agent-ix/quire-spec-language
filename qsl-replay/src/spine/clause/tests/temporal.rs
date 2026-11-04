@@ -3289,7 +3289,9 @@ fn a_position_of_another_identity_inside_the_retained_extent_is_refused() {
 /// FR-502-AC-11: the report of a request refused by FR-502 returns the ledger
 /// the request supplied, equal to it: a watermark regression returns the
 /// retained ledger, and a request that outgrows `progress.covered_positions`
-/// returns the empty ledger it carried.
+/// returns the empty ledger it carried. The no-ledger half of the AC is
+/// unreachable: `run_clause` admits progress only against a supplied ledger,
+/// so no FR-502 refusal exists for a request that supplied none.
 #[trace("FR-502-AC-11", "TC-1296")]
 #[test]
 fn a_refused_request_returns_the_ledger_it_supplied() {
@@ -3323,7 +3325,8 @@ fn a_refused_request_returns_the_ledger_it_supplied() {
 
 /// FR-522-AC-14: the `Finite` and `Lasso` traces carry no `TraceBinding`, and
 /// their reports hold no authenticated selection; a progressed trace, which
-/// carries one, does.
+/// carries one, does. This does not exercise a `Model` trace: the replay's
+/// `TraceInput` has none (the model lasso lives in `qsl-analyze`).
 #[trace("FR-522-AC-14", "TC-1317")]
 #[test]
 fn a_finite_trace_and_a_lasso_report_no_authenticated_selection() {

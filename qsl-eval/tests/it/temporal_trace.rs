@@ -1417,6 +1417,17 @@ fn once_and_historically_read_back_from_each_activation() {
         closed_each("historically[0,1] holds(c.level >= 1)"),
         violated(0)
     );
+    // `historically` is not `once`: at position 2 the window holds levels 1
+    // and 2, and `once[0,1] holds(c.level <= 1)` holds there while
+    // `historically[0,1] holds(c.level <= 1)` does not.
+    assert_eq!(
+        closed_each("holds(c.level = 0) or once[0,1] holds(c.level <= 1)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        closed_each("holds(c.level = 0) or historically[0,1] holds(c.level <= 1)"),
+        violated(2)
+    );
 }
 
 /// FR-327-AC-12: `since` and `triggered`, `until` and `release` are Boolean
@@ -1428,6 +1439,20 @@ fn since_triggered_until_and_release_agree_with_their_duals() {
     let dual = closed_each("not (not holds(c.level >= 1) triggered[0,2] not holds(c.level = 1))");
     assert_eq!(since, dual);
     assert_eq!(since, violated(0));
+
+    // `triggered` is not `since`: at position 2 `q` (level <= 1) is false and
+    // `p` (level >= 1) has held only at the end, so `since` holds through
+    // position 1 and `triggered` is false.
+    assert_eq!(
+        closed_each("holds(c.level = 0) or (holds(c.level >= 1) since[0,1] holds(c.level <= 1))"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        closed_each(
+            "holds(c.level = 0) or (holds(c.level >= 1) triggered[0,1] holds(c.level <= 1))"
+        ),
+        violated(2)
+    );
 
     for (operands, expected) in [
         (

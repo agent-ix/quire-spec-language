@@ -446,6 +446,8 @@ fn both_routes_give_the_evaluator_the_same_formula() {
     );
 }
 
+/// FR-522-AC-20 (TC-1317) runs here too, and only under `--features
+/// checked-handoff`.
 /// FR-516-AC-18, FR-516-AC-29 (TC-1311 rows 18 and 29): the result of the call
 /// over the package from the `Emission` equals, field for field, the one over
 /// the read-back package, the charge log and the `result_identity` included,
