@@ -2666,3 +2666,80 @@ fn a_seq_binds_each_integer_to_the_owner_of_its_bounds() {
     });
     assert_eq!(owner, Owner::Binder(7));
 }
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_dispatched_call_binds_the_receivers_owner_to_its_callee_frames() {
+    use qsl_semantics::check::DispatchCandidate;
+    let package = checked_dispatch_package();
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    let receiver = reference();
+    let node = CheckedBody::fixture(
+        vec![ValueType::Reference(receiver.object_type().clone())],
+        |ids| NodeKind::Dispatch {
+            receiver: ids[0],
+            operation: 0,
+            table: 0,
+            arguments: vec![],
+        },
+        ValueType::Boolean,
+    );
+    for guarded in [true, false] {
+        let tables = [DispatchTable::new(
+            vec![(
+                receiver.object_type().clone(),
+                DispatchCandidate {
+                    body: 0,
+                    precondition: guarded.then_some(1),
+                    precondition_clauses: guarded.then_some(1).into_iter().collect(),
+                },
+            )],
+            1,
+        )];
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, &tables);
+        machine.owners = Some(Owners::default());
+        if let Some(owners) = machine.owners.as_mut() {
+            owners.begin_step();
+            owners.absorb(Owner::Binder(3));
+        }
+        machine.push_value(Value::Reference(receiver.clone()), false);
+        if let Some(owners) = machine.owners.as_mut() {
+            owners.begin_step();
+        }
+        machine
+            .apply(node.root())
+            .unwrap_or_else(|_| panic!("linked dispatch"));
+        let owner_of_top_frame = |machine: &CheckedMachine<'_, '_>| {
+            machine
+                .owners
+                .as_ref()
+                .map_or(Owner::None, |owners| owners.slot(0))
+        };
+        assert_eq!(
+            owner_of_top_frame(&machine),
+            Owner::Binder(3),
+            "the frame the dispatch pushes, guarded: {guarded}"
+        );
+        let mut guard_steps = 0;
+        while let Some(task) = machine.tasks.pop() {
+            let is_guard = matches!(task, Task::DispatchGuard(_));
+            if let Some(owners) = machine.owners.as_mut() {
+                owners.begin_step();
+            }
+            machine
+                .step(task)
+                .unwrap_or_else(|_| panic!("linked callable bodies"));
+            if is_guard {
+                guard_steps += 1;
+                assert_eq!(
+                    owner_of_top_frame(&machine),
+                    Owner::Binder(3),
+                    "the body frame the guard pushes"
+                );
+            }
+        }
+        assert_eq!(guard_steps, usize::from(guarded));
+    }
+}
