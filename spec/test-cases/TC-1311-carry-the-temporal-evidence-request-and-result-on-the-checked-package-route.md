@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the typed request and result of the temporal evidence route. Scope:
-FR-516-AC-1 to FR-516-AC-44. The numeric vectors are the QSpec FR-370 and
+FR-516-AC-1 to FR-516-AC-46. The numeric vectors are the QSpec FR-370 and
 FR-043 cases and TC-144; they are referenced, never copied.
 
 ## Test Procedure
@@ -35,7 +35,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 15 | 15 | `control` naming the protocol clause whose FR-449 row names the call's clause | evaluated |
 | 16 | 16 | `control` naming a protocol clause with no FR-449 row; one whose row names another clause | `activation-mapping-missing`; `activation-mapping-mismatch`, each `Err(CallFailure::Admission)` |
 | 17 | 17 | a `progress_ledger` holding W 100: a request at W 60; a request with `Complete { through: 60 }` after `Complete { through: 100 }` | each refused as FR-502-AC-1 and AC-2, empty charge log, progress ledger unchanged |
-| 18 | 18 | **R**'s three clauses: the result over the package from the `Emission` vs over the read-back package; then one clock row, one `CheckedNodeId` or one instance-bound atom replaced on one side | equal fields, canonical bytes, charge log and `result_identity`; the replaced side differs |
+| 18 | 18 | **R**'s four clauses over its three packages: the result over the package from the `Emission` vs over the read-back package; then one clock row, one `CheckedNodeId` or one instance-bound atom replaced on one side | equal fields, canonical bytes, charge log and `result_identity`; the replaced side differs |
 | 19 | 19 | `deliveries` present and a `trigger` that no delivery or ledger entry holds | `trigger-unknown`, `Err(CallFailure::Admission)` |
 | 20 | 20 | `deliveries` present and `trigger` `None` | `trigger-required` |
 | 21 | 21 | `trigger` naming a delivery with a false guard | no truth; FR-524's disposition |
@@ -54,7 +54,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 34 | 34 | `execution` `Failed` vs `Completed`, open scope; the same over an admitted delivery | `Unknown` carrying each; same activation and truth |
 | 35 | 35 | closed admitted scope, no delivery: record `Complete`; record `Incomplete` | `Inactive`; `Unknown(open)`; `execution` echoed |
 | 36 | 36 | `on each` clause with `origins`; `on origin` clause with `deliveries`; the matching lists | `activation-list-mismatch` naming `origins`; naming `deliveries`, empty charge log; evaluated |
-| 37 | 37 | fixed-sample and event-position: `Complete { through }` below the last coordinate; fixed-sample watermark below it; both equal to it; an assertion on a timestamped-event clause | `progress-inconsistent`, empty charge log; evaluated; `progress-inconsistent` |
+| 37 | 37 | fixed-sample and event-position: `Complete { through }` below the last coordinate; fixed-sample watermark below it; both equal to it | `progress-inconsistent`, empty charge log; evaluated |
 | 38 | 38 | `progress.covered_positions` at the total minus one; at the total | `Ok` `Incomplete(LimitReached)` naming `progress.covered_positions`, ledgers unchanged; evaluated |
 | 39 | 39 | formula with an unbounded operator; a timed interval; a cyclic or out-of-range `operands`; a `predicate_leaves()`/`holds` count mismatch; a readable twin of each; a tick sum over `u64` | `clause-unreadable` each, empty charge log; the readable ones return a result; the overflow is the `history_span` `Incomplete` |
 | 40 | 40 | `control` naming a clause with no FR-449 row; a row naming another clause; the call's own row | `activation-mapping-missing`; `activation-mapping-mismatch`; evaluated, each refusal with an empty charge log |
@@ -62,8 +62,10 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 42 | 42 | timestamped-event `p until[0,5] q`, two positions of one stamp without order keys; the same with distinct keys of one authority; `eventually[0,5] holds(p)` over the same two positions | `Ok`, `Active`, no truth, `Refused`/`temporal-refusal`/`unordered-tie`; a truth; a truth |
 | 43 | 43 | a support valuation absent at position 1 of atom 0; present; a read but non-support valuation absent (atom 1, position 2); with the decision closure withdrawn too | `Missing`/`fact-withdrawn`/`valuation:0@1`; no non-value; `valuation:1@2`; `decision_closure` |
 | 44 | 44 | fixed-sample clause with a support pair at a silent sample | support holds the observed pairs' entries only |
+| 45 | 45 | a `CheckedNodeId` absent from the package; the id of a `protocol_clause` node | `Err(CallFailure::Admission)`, cause `clause-root-unresolved`, empty charge log, ledgers unchanged |
+| 46 | 46 | the `from_emission` package of TC-1310 row 24 with its in-memory clause altered in one operation, one interval and one operand edge, each in its own run | each run's first call reaching the clause: `clause-unreadable`, empty charge log, ledgers unchanged |
 
-Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-44", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
+Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-46", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
 
 ## Expected Results
 

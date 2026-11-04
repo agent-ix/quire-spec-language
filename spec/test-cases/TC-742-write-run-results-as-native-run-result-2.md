@@ -14,7 +14,7 @@ Verify FR-267: the `/2` writer encodes FR-266's `basis` and `witness`
 canonically, the reader round-trips them and refuses every malformed
 witness, basis and version, and `run`'s command-error envelope is `/2`.
 
-Scope: FR-267-AC-1 to FR-267-AC-3.
+Scope: FR-267-AC-1 to FR-267-AC-3 and FR-267-AC-19.
 
 ## Test Procedure
 
@@ -29,6 +29,8 @@ Scope: FR-267-AC-1 to FR-267-AC-3.
    `native-run-result/1`; set `format` to `native-run-result/3`.
 3. Call `command`'s `run` in process over a native-run/1 request whose source declares
    `edition "9-draft"`, in the change that lands FR-100's clause runner.
+
+4. Write FR-330-AC-12's `forall` violation report, read it back, and then add a `decisive` member inside the written `temporal` member and read that.
 
 Tag the tests `#[trace("TC-742", "FR-267-AC-n")]`.
 
@@ -45,3 +47,4 @@ Tag the tests `#[trace("TC-742", "FR-267-AC-n")]`.
   `format` `native-run-result/2`, `stage` `profile`,
   `code` `unknown_edition`, `message`, `details` and `basis` `unavailable`,
   with no `witness` member.
+- Step 4: the read-back report has an equal verdict and counterexample and no `decisive`; the written `temporal` member holds none; the edited document is refused naming the `decisive` member.

@@ -18,7 +18,7 @@
 //! does (ADR-013 §8 OQ-C ruling).
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{undefined_contract_code, CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
@@ -944,6 +944,11 @@ fn tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate() {
     assert_eq!(
         record.fields.get("uncovered_subtypes"),
         Some(&"model.A".to_owned())
+    );
+    let code = undefined_contract_code(record.reason).expect("a contract-boundary code");
+    assert_eq!(
+        (code.code(), code.cause()),
+        ("incomplete_population", "unclosed-subtypes")
     );
 }
 

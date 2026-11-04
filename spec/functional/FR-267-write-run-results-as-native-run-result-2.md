@@ -339,10 +339,12 @@ Until it lands, a QSpec FR-352 reader refuses those documents.
 - Writing a temporal report and reading it back SHALL restore an equal
   typed value: the `TemporalVerdict` of a verdict row, the
   `TemporalRefusal` of a `trace-refused` row and the FR-502 contradiction
-  of a `progress-contradicted` row. Two rows restore less, because FR-100's
-  outcome carries less: `incomplete` restores no verdict (the outcome names
-  the limit kind, not the budget's counters), and an `undefined` with a
-  family cause restores its reason with an empty `fields`. The reader SHALL
+  of a `progress-contradicted` row. Three rows restore less. Because FR-100's outcome carries less,
+  `incomplete` restores no verdict (the outcome names the limit kind, not the
+  budget's counters), and an `undefined` with a family cause restores its reason
+  with an empty `fields`. A temporal violation's `decisive` (FR-330 Outputs) is a
+  report member outside the written closed `temporal` member, so the third row
+  restores it as absent. The reader SHALL
   refuse an `undefined` row whose reason is no kernel or family undefined
   reason, naming `disposition.outcome.reason`.
 
@@ -514,6 +516,7 @@ condition is false; the reader refuses `null` or a default in its place.
 | FR-267-AC-16 | Independently: adding `temporal` `{"kind": "holds"}` to FR-109-AC-3's exhausted-work report (stage `evaluate`); adding a `refusal` member to AC-13's `violated` document; setting the `outcome` reason of AC-14's `undefined` document to `insufficient-data`; setting the `outcome` limit of AC-14's `incomplete` document to `max_window_values`; setting the `outcome` of FR-109-AC-3's exhausted-work report to `{"kind": "undefined", "reason": "insufficient-data"}` with category `undefined` (the form FR-109-AC-7's `precondition-false` report takes, with that reason); and setting the `outcome` limit of FR-109-AC-3's exhausted-work report to `max_window_values`, each refuse with a located wire diagnostic naming the member (QSpec FR-352-AC-11, FR-352-AC-12). | Test (TC-1160) |
 | FR-267-AC-17 | A clause-run report over an extracted Markdown clause body is written with a top-level `extraction` member holding exactly QSpec FR-352's `original`, `body`, `binding`, `outcome` and `map` members, plus `original_regions` for a refusal whose locus names a body span, and reads back to an equal record; a report over a unit given as bytes writes no `extraction`; an `extraction` with an unknown top-level member `source`, with `map` missing, with `binding` `null`, with a numeric `body.identity`, and with `map.segments` `[]` each refuse naming `extraction` and the member (QSpec FR-352-AC-13). | Test (TC-109) |
 | FR-267-AC-18 | Each finite-window report writes its row and reads back to an equal verdict: FR-501-AC-4's `Window` run (`eventually[0,5] holds(c.value > 0)` over stamps 0, 2, 5 with `c.value` 0, 2, 0, watermark 5, complete through 5, position 1's valuation absent) settles `TemporalVerdict::Indeterminate` at position 0 with reason `MissingValuation` (position 1, atom `holds(c.value > 0)`) and writes category `indeterminate`, `basis` `unavailable`, no `truth`, no `outcome` and `temporal` `{"kind": "indeterminate", "position": 0, "reason": {"kind": "missing-valuation", "position": 1, "atom": "holds(c.value > 0)"}}`, while the report's exit stays 11 (FR-285-AC-7); the same run at watermark 3 settles `PendingWindow` (position 0, deadline 5) and writes `pending-window` with category `pending` and `basis` `unsettled`; `ActivationIncomplete` writes `activation-incomplete` with its guard location; `ProgressLimitReached` writes `progress-limit-reached` with `limit` `node count` and `setting` `progress.covered_positions`; FR-502-AC-1's watermark contradiction writes `progress-contradicted` with `dimension` `watermark`, `retained` `{"kind": "watermark", "watermark": 100}` and `asserted` `{"kind": "watermark", "watermark": 60}`. Independently setting the `indeterminate` document's category to `undefined`, dropping its `reason`, adding an unknown `reason` member, setting the `pending-window` document's `basis` to `unavailable`, setting the `progress-limit-reached` document's `setting` to another name, and changing a `progress-contradicted` outcome field each refuse with a located wire diagnostic naming the member. | Test (TC-1160) |
+| FR-267-AC-19 | Writing FR-330-AC-12's `forall` violation report and reading it back restores an equal `temporal` verdict and `counterexample` and restores `decisive` as absent; the written `temporal` member holds no `decisive` and the reader refuses a `decisive` member inside it, naming the member. | Test (TC-742) |
 
 ## Dependencies
 

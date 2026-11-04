@@ -815,11 +815,6 @@ pub enum ProtocolReferenceCause {
 /// write yet. Each names the ticket that writes it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ProtocolConstruct {
-    /// A static role `on` a whole model alias (FR-465 "Role": `model` is the
-    /// text identity of a `model_selections` row). IR's protocol reader
-    /// admits only the reference form of
-    /// `model`, so the node cannot be proved admitted: an IR gap, IR-874.
-    WholeModelRole,
     /// A control of the `run` tree other than a `sequence`, by its keyword
     /// (FR-466): QSL-1126.
     Control(&'static str),
@@ -893,7 +888,6 @@ impl ProtocolConstruct {
     /// The ticket that writes this construct's node.
     pub const fn tracking(self) -> &'static str {
         match self {
-            Self::WholeModelRole => "IR-874",
             Self::TerminalReadsOverUnderEach => "IR-1069",
             Self::Control(_) => "QSL-1126",
             Self::ReferenceCycle => "QSL-844",

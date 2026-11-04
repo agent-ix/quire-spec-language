@@ -25,7 +25,7 @@ Each trace is a `quire.monitor-trace/1` document whose positions are snapshot `D
 5. Over a three-position finite trace whose `x` is 0 at position 1, monitor `always (10 / x > 0)` and map the outcome's category through FR-285.
 6. Monitor step 1's clause and step 5's clause in one request over step 5's trace.
 7. Over FR-327-AC-1's closed `Counter` trace as a three-position finite document, monitor `eventually[0,2] holds(c.value = 2)` and `eventually[0,1] holds(c.value = 2)` under event-position false-extension, `on origin`.
-8. Read step 1's `witness`. Over a three-position finite trace whose position-2 snapshot holds `items` 3, 0, 5, monitor `always holds(forall i in self.items : i > 0)`, and evaluate its `holds` atom with FR-107's evaluator over the position-2 observation.
+8. Read step 1's `counterexample` and the `decisive` beside it. Over a three-position finite trace whose position-2 snapshot holds `items` 3, 0, 5, monitor `always holds(forall i in self.items : i > 0)`, and evaluate its `holds` atom with FR-107's evaluator over the position-2 observation.
 9. Over step 7's trace, monitor `always[0,2] (count over past[0, 9] min_count 2 >= 1)` `on origin`.
 10. This is TC-770 step 10 run from the monitor side: render each record of steps 1, 2, 5 and 9, and FR-501-AC-4's indeterminate clause, through `OutcomeItem::from_clause_run`, build the document from them, and compare it with `OutcomeDocument::from_clause_runs` over the same clause runs.
 
@@ -40,6 +40,6 @@ Tag the tests `#[trace("TC-765", "<AC id>")]`.
 - Step 5: a violation at position 1, category violation, cause `UndefinedEvaluation` with `division-by-zero`; no `undefined` label; exit 10.
 - Step 6: two records, in request order.
 - Step 7: `Tested`, category success, exit 0; then `Violated` at position 0.
-- Step 8: step 1's witness has trace position 2, no quantifier or index, deciding element `false` and the root value path; the `forall` clause reports `Violated` at position 2 with a witness naming the `forall` occurrence key, deciding element 0, index 1, the value path to `items` and trace position 2, equal to FR-107's record.
+- Step 8: step 1's record has a `counterexample` with `trace_position` 2, a `decisive` beside it with no quantifier or index, element `false` and the root value path, and no `witness`; the `forall` clause reports `Violated` at position 2 with a `counterexample` of `trace_position` 2 and a `decisive` naming the `forall` occurrence key, element 0, index 1 and the value path to `items`, equal to FR-107's values, and no `witness`.
 - Step 9: `InsufficientData` at position 0, `count` 1, `min_count` 2, category undefined, label `undefined` with reason `insufficient-data`, exit 10.
 - Step 10: the two documents are equal byte for byte.
