@@ -1415,3 +1415,146 @@ fn tc134_v1_contract_version_is_refused_with_clock_selections_present() {
         "expected /1 refusal, got {outcome:?}"
     );
 }
+
+/// An unrelated protocol `name` over W's domain: it shares no declaration
+/// with W.
+fn unrelated_protocol(name: &str) -> String {
+    format!(
+        "protocol {name} using P over (view: M::OrderView) on origin {{\n\
+         role {name}Clerk on M::OrderView;\n\
+         run sequence {name}Steps {{ }}\n\
+         finish {name}Done as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// W between two [`unrelated_protocol`]s, one declared before it and one
+/// after it.
+fn w_between_unrelated_protocols() -> Lowered {
+    let lowered = lower_with(
+        document(),
+        PROFILES_W,
+        &format!(
+            "{}{W}{}",
+            unrelated_protocol("Before"),
+            unrelated_protocol("After")
+        ),
+    );
+    assert!(lowered.verified, "{}", lowered.text);
+    lowered
+}
+
+/// The nodes W's clause reaches through `dependencies`, the clause included,
+/// by structural id, and W's own protocol nodes among them, each as `view`
+/// renders it. A shared node such as the literal `true` is reached but not
+/// W's own: its occurrences list every construct that writes it.
+fn w_closure(
+    wire: &Value,
+    view: impl Fn(&WireGraph, &Value) -> Value,
+) -> (BTreeSet<CheckedNodeId>, BTreeMap<CheckedNodeId, Value>) {
+    let graph = WireGraph::of_package_value(wire).expect("the emitted graph");
+    let clause = nodes(wire)
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "protocol_clause"
+                && node["declaration"]["qualified_name"][0] == "OrderFlow"
+        })
+        .expect("W's clause");
+    let mut reached = BTreeSet::new();
+    let mut own = BTreeMap::new();
+    let mut pending = vec![clause];
+    while let Some(node) = pending.pop() {
+        let key = graph.key_of_value(&node["node_id"]).expect("an emitted id");
+        let id = qsl_semantics::check::wire_id::structural_id(&key);
+        if !reached.insert(id.clone()) {
+            continue;
+        }
+        if node["node_tag"] == "protocol" {
+            own.insert(id, view(&graph, node));
+        }
+        for dependency in node["dependencies"].as_array().expect("dependencies") {
+            pending.push(node_by_id(wire, dependency));
+        }
+    }
+    (reached, own)
+}
+
+/// Assert that W's clause reaches the same nodes in `alone` and `around`,
+/// and that `view` renders each of W's protocol nodes the same in both.
+fn assert_same_w_nodes(alone: &Value, around: &Value, view: impl Fn(&WireGraph, &Value) -> Value) {
+    let (reached, expected) = w_closure(alone, &view);
+    let (reached_around, actual) = w_closure(around, &view);
+    assert_eq!(reached, reached_around, "W reaches the same nodes");
+    assert!(
+        expected.len() > 20,
+        "W's protocol nodes: {}",
+        expected.len()
+    );
+    for (id, node) in &expected {
+        assert_eq!(
+            serde_json::to_string(node).expect("a node serializes"),
+            serde_json::to_string(&actual[id]).expect("a node serializes"),
+            "the bytes of {id:?}"
+        );
+    }
+}
+
+/// `value` with every node id resolved against `graph` to its structural
+/// id, so the rendering names no graph position.
+fn resolved(graph: &WireGraph, value: &Value) -> Value {
+    match value {
+        Value::Object(object)
+            if object.len() == 3
+                && ["package", "path", "ordinal"]
+                    .iter()
+                    .all(|name| object.contains_key(*name)) =>
+        {
+            let key = graph
+                .key_of_value(value)
+                .expect("an id of the emitted graph");
+            serde_json::to_value(qsl_semantics::check::wire_id::structural_id(&key))
+                .expect("a structural id serializes")
+        }
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(name, member)| (name.clone(), resolved(graph, member)))
+                .collect(),
+        ),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|item| resolved(graph, item)).collect())
+        }
+        other => other.clone(),
+    }
+}
+
+/// TC-1062 row 10, the part FR-322's graph-position operand indices allow:
+/// W emitted twice is byte-identical, and W between unrelated protocols
+/// reaches the same nodes, and each of W's protocol nodes has the same bytes
+/// as W's own once its ids are resolved against the graph that holds it. The clause therefore does not change
+/// when only unrelated declarations do.
+#[trace("TC-1062")]
+#[test]
+fn w_nodes_do_not_follow_unrelated_protocols() {
+    let alone = lower_with(document(), PROFILES_W, W);
+    assert!(alone.verified, "{}", alone.text);
+    let again = lower_with(document(), PROFILES_W, W);
+    assert_eq!(alone.wire, again.wire, "W emitted twice");
+    assert_same_w_nodes(&alone.wire, &w_between_unrelated_protocols().wire, resolved);
+}
+
+/// FR-383-AC-15's byte clause: W between unrelated protocols writes the same
+/// wire bytes for each of its protocol nodes as W alone. QSpec FR-322
+/// writes each operand as its index in the whole document's graph, so nodes
+/// the unrelated protocols add ahead of W's operands shift those indices.
+#[ignore = "gated on STD-653: FR-322 operand index segments are document graph positions"]
+#[test]
+fn w_wire_bytes_do_not_follow_unrelated_protocols() {
+    let alone = lower_with(document(), PROFILES_W, W);
+    assert!(alone.verified, "{}", alone.text);
+    assert_same_w_nodes(
+        &alone.wire,
+        &w_between_unrelated_protocols().wire,
+        |_: &WireGraph, node: &Value| node.clone(),
+    );
+}
