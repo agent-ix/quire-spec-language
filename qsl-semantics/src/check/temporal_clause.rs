@@ -195,6 +195,13 @@ pub struct CheckedOperator {
 pub struct FormulaNodeId(usize);
 
 impl FormulaNodeId {
+    /// The id of the node at `index` in an arena a caller built from a
+    /// checked package's `formula_graph()` (FR-532): such an arena is no
+    /// [`CheckedFormula`], so its nodes are named by position.
+    pub const fn from_arena_index(index: usize) -> Self {
+        Self(index)
+    }
+
     /// The node's index in the formula's arena.
     pub fn index(self) -> usize {
         self.0

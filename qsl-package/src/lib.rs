@@ -19,6 +19,8 @@
 // `quire-contract-model` and are behind `std`.
 extern crate alloc;
 
+#[cfg(feature = "std")]
+mod bare;
 mod checked;
 #[cfg(feature = "std")]
 mod checked_v2;
@@ -43,6 +45,11 @@ pub mod protocol_view;
 #[cfg(feature = "std")]
 mod reader_protocol_projection;
 
+#[cfg(feature = "std")]
+pub use bare::{
+    BarePackage, BareSupply, IdentityFileRefusal, IdentityMember, ReadIdentityRows,
+    IDENTITIES_FORMAT,
+};
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};
@@ -95,7 +102,8 @@ pub use reader_protocol_projection::{
 pub use quire_contract_model::{
     CheckedArtifactRef, CheckedIntervalEnd, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedOperationInterval, CheckedOperationRational, CheckedPackageV2,
-    CheckedSelection, ClockConfiguration, ClockExactNumber, TemporalBinding,
+    CheckedSelection, ClockConfiguration, ClockExactNumber, SelectedExactIdentities,
+    TemporalBinding,
 };
 
 // The FR-105-AC-6 fault-injection seam. Public only under

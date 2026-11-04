@@ -22,7 +22,7 @@ use qsl_eval::temporal::evidence::{
     Relation, SemanticTriggerIdentity, Settlement, TemporalEvidenceLimits, TriggerDelivery,
     TriggerEvidence, TriggerRecord, TriggerScope, Truth, UnknownKind,
 };
-use qsl_eval::temporal::evidence::{CallMeter, ClauseShape, TraceBinding};
+use qsl_eval::temporal::evidence::{CallMeter, ClauseFacts, ClauseShape, TraceBinding};
 use qsl_eval::temporal::{
     ClockCover, LedgerBinding, ProgressClosure, ProgressCompleteness, Valuation,
 };
@@ -140,14 +140,11 @@ impl Env {
                 occurrence: claim(self.occurrence),
                 clock: Some(&self.row),
             }],
-            clause: &self.fixture.clause,
-            formula: qsl_eval::temporal::evidence::ClauseFormula::of_checked(
-                self.fixture.clause.formula(),
-            ),
+            facts: ClauseFacts::of_checked(&self.fixture.clause),
             instance_bound: bound.iter().copied().collect(),
             activation_map: &self.rows,
             progress: LedgerBinding {
-                package: qsl_foundation::SourceIdentity::new("a", "u"),
+                package: "a".to_owned(),
                 clause: crate::support::ids::node_key(b"Due"),
                 occurrence: 0,
                 clock: "stamp-clock".to_owned(),
@@ -315,7 +312,7 @@ pub(crate) fn run(
     let mut meter = unlimited();
     let mut call = CallMeter::new(TemporalEvidenceLimits::default(), &mut meter);
     activate(
-        &ClauseShape::of(&env.fixture.clause),
+        &ClauseShape::of(&ClauseFacts::of_checked(&env.fixture.clause)),
         &env.obligation(),
         input,
         &mut call,
@@ -738,7 +735,7 @@ pub(crate) fn charges(env: &Env, input: ActivationInput) -> [u64; 4] {
     let mut meter = unlimited();
     let mut call = CallMeter::new(TemporalEvidenceLimits::default(), &mut meter);
     activate(
-        &ClauseShape::of(&env.fixture.clause),
+        &ClauseShape::of(&ClauseFacts::of_checked(&env.fixture.clause)),
         &env.obligation(),
         input,
         &mut call,

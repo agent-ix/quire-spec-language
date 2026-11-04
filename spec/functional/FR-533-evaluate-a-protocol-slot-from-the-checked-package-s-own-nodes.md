@@ -318,10 +318,9 @@ FR-520-AC-11 states.
   slots, which is unmet parity, not a scope reduction.
 - **Contract IR:** IR-1324 (the exact projection carries Collection members, plain or
   nested, and nested Option members of selected records; owner luna:IR:codex2) is the unmet-parity
-  dependency of FR-533-AC-7. IR-1325 (a public read-only accessor on
-  `CheckedPackageV2` for the direct dependencies it retains from its read evidence;
-  owner luna:IR:codex2) is a further Contract IR dependency of the bare route over a
-  package that has dependencies (FR-531).
+  dependency of FR-533-AC-7. The direct dependencies a package retains from its
+  read evidence are read through `CheckedPackageV2::direct_dependencies()`
+  (FR-531), so a package that has dependencies is no unmet parity.
 - **Downstream:** quire-protocol FR-045.
 - **quire-eval and Contract IR (bytes-route admission and equality):** the `Package`
   locus is a variant of `quire_eval::CallAdmissionLocus`, which has `Node`,

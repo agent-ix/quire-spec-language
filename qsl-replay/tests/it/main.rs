@@ -14,6 +14,7 @@ mod hyper_query;
 mod hyper_smt_settle;
 mod outcome_facade;
 mod parse_outcome_facade;
+mod probability_certificate;
 mod quantity_namespace_source;
 mod quantity_type_source;
 mod query_proof;

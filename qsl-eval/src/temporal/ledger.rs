@@ -30,8 +30,9 @@ const COVERED_POSITIONS_LIMIT: &str = "node count";
 /// profile identity is progress for a different binding.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LedgerBinding {
-    /// The checked package identity.
-    pub package: qsl_foundation::SourceIdentity,
+    /// The checked package's name (`package.name()`, FR-532): the source
+    /// identity labels are no member of a binding.
+    pub package: String,
     /// The checked clause identity: the declaration node, which is keyed by
     /// the clause's content and so is shared by two clauses of one body.
     pub clause: quire_exact::NodeKey,
@@ -357,11 +358,8 @@ mod tests {
         }
     }
 
-    fn package_identity(identity: &str) -> qsl_foundation::SourceIdentity {
-        qsl_foundation::SourceIdentity {
-            authority: "test".to_owned(),
-            identity: identity.to_owned(),
-        }
+    fn package_identity(identity: &str) -> String {
+        identity.to_owned()
     }
 
     fn clause_identity(name: &str, ordinal: u64) -> quire_exact::NodeKey {

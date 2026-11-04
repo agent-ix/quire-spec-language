@@ -8,7 +8,6 @@
 use std::collections::BTreeMap;
 
 use qsl_package::{CheckedNodeId, CheckedOccurrence, CheckedSelection, TemporalBinding};
-use qsl_semantics::check::CheckedTemporalClause;
 
 use super::activation::{ExecutionDisposition, Instance};
 use super::binding::{AuthenticatedBinding, TraceBinding};
@@ -20,7 +19,7 @@ use super::trigger::{
     EmptyIdentity, Evicted, ExecutionOrigin, SemanticTriggerIdentity, TriggerDelivery,
     TriggerEvidence,
 };
-use super::work::ClauseFormula;
+use crate::temporal::facts::ClauseFacts;
 use crate::temporal::finite_window::{ClockCover, OrderKey, Valuation};
 use crate::temporal::ledger::{
     LedgerBinding, ProgressClosure, ProgressCompleteness, ProgressLedger,
@@ -420,14 +419,11 @@ pub struct EvidenceSubject<'p> {
     pub profile: &'p CheckedSelection,
     /// The declaration's occurrences with their clock rows.
     pub occurrences: Vec<SubjectOccurrence<'p>>,
-    /// The checked clause.
-    pub clause: &'p CheckedTemporalClause,
-    /// The clause's formula as the call measures it: built from the checked
-    /// package's `formula_graph()` for a package route, from the checked
-    /// formula otherwise.
-    pub formula: ClauseFormula,
-    /// The node indices of the `holds` atoms whose operand reads the trigger
-    /// binder or a capture (FR-515 `binders()`).
+    /// The clause's activation, profile, clock, name, captures and formula,
+    /// built from the package's own nodes and rows (FR-532).
+    pub facts: ClauseFacts,
+    /// The atom indices (FR-532 "Atom index") of the `holds` atoms whose
+    /// operand reads the trigger binder or a capture (FR-515 `binders()`).
     pub instance_bound: std::collections::BTreeSet<u64>,
     /// The package's FR-449 activation-map rows.
     pub activation_map: &'p [ActivationRow],
