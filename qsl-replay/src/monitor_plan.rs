@@ -198,6 +198,7 @@ pub struct MonitorProgram {
     activation: Activation,
     atoms: Vec<MonitorAtom>,
     guard: Option<(CheckedBody, usize)>,
+    helpers: BTreeMap<NodeKey, CheckedBody>,
 }
 
 impl MonitorProgram {
@@ -215,7 +216,24 @@ impl MonitorProgram {
             activation,
             atoms,
             guard,
+            helpers: BTreeMap::new(),
         }
+    }
+    /// This program with `helpers`, the checked body of every declared
+    /// function an atom or the guard calls, directly, through another
+    /// helper, through every candidate body and precondition of a dispatched
+    /// call, or in an admitted dependency (the call closure of QSpec
+    /// FR-487-AC-13), keyed by the function's structural identity, which
+    /// names its package, so a dependency's function index never aliases
+    /// one of the unit's.
+    #[must_use]
+    pub fn with_helpers(mut self, helpers: BTreeMap<NodeKey, CheckedBody>) -> Self {
+        self.helpers = helpers;
+        self
+    }
+    /// The checked helper bodies of the call closure, by function identity.
+    pub fn helpers(&self) -> &BTreeMap<NodeKey, CheckedBody> {
+        &self.helpers
     }
     /// Formula root.
     pub fn root(&self) -> SubformulaId {
@@ -308,12 +326,15 @@ impl FormulaToken {
 /// The unique key for one immutable plan in its driver's ownership scope.
 ///
 /// It covers everything the plan fixes (FR-251 "Build inputs and identity"):
-/// the subject (whose checked clause key is content-keyed, so it selects the
-/// atom bodies, the activation guard and the captures), the formula
-/// topology and root, the activation, each atom's admitted input slots, the
-/// tick intervals, the buffer capacities and every target premise. Changing
-/// any one yields a different `PlanId`; no new digest is minted.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+/// the subject, the formula topology and root, the activation, the checked
+/// body and admitted input slots of every atom and of the activation guard,
+/// the tick intervals, the buffer capacities and every target premise.
+/// Changing any one yields a different `PlanId`, including through
+/// [`TimedMonitorPlan::new`] with the subject unchanged (FR-251-AC-37,
+/// AC-39), and the checked body of every helper function in the call
+/// closure of the atoms and the guard (FR-251-AC-38): the clause key names a
+/// callee by its declaration, not its body. No new digest is minted.
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanId {
     subject: MonitorSubject,
     binding: ClockBindingKey,
@@ -323,12 +344,24 @@ pub struct PlanId {
     root: SubformulaId,
     topology: Vec<FormulaToken>,
     activation: ActivationToken,
-    atoms: Vec<(AtomId, usize)>,
-    guard_slots: Option<usize>,
+    atoms: Vec<MonitorAtom>,
+    guard: Option<(CheckedBody, usize)>,
+    helpers: BTreeMap<NodeKey, CheckedBody>,
     intervals: Vec<(SubformulaId, TickInterval)>,
     buffers: Vec<(SubformulaId, u64)>,
     activation_capacity: u64,
 }
+
+/// `Eq` rests on reflexivity of `CheckedBody` equality, which is not total
+/// for every literal: `CheckedLiteral::eq` compares a union value through
+/// `quire_exact::compare_keys`, which yields no order for a float or
+/// population payload, so a union literal carrying one is not equal to
+/// itself. Every other literal compares by key, a float by its IEEE bits.
+/// A `PlanId` whose bodies hold such a union literal is therefore not equal
+/// to itself, and admission refuses that plan rather than admitting it
+/// under a mismatched identity: the failure is a refusal, never a false
+/// match.
+impl Eq for PlanId {}
 
 /// The clause activation as part of a plan identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -440,12 +473,9 @@ impl TimedMonitorPlan {
                 Activation::Origin => ActivationToken::Origin,
                 Activation::Each { guarded } => ActivationToken::Each { guarded },
             },
-            atoms: program
-                .atoms()
-                .iter()
-                .map(|atom| (atom.id(), atom.slots()))
-                .collect(),
-            guard_slots: program.guard().map(|(_, slots)| slots),
+            atoms: program.atoms().to_vec(),
+            guard: program.guard.clone(),
+            helpers: program.helpers.clone(),
             intervals: self.intervals.clone(),
             buffers: self.buffers.clone(),
             activation_capacity: self.activation_capacity,
@@ -533,6 +563,26 @@ pub enum MonitorPlanRefusal {
     MissingAtomBody {
         /// The formula arena index.
         index: usize,
+    },
+    /// A checked call names a function the package does not hold.
+    #[error("called function {index} has no checked body")]
+    MissingHelperBody {
+        /// The function index the call names.
+        index: usize,
+    },
+    /// A dispatched call names a dispatch table the package does not hold,
+    /// so its candidate bodies cannot enter the plan identity.
+    #[error("dispatched call names dispatch table {table}, which the package does not hold")]
+    MissingDispatchTable {
+        /// The dispatch table index the call names.
+        table: usize,
+    },
+    /// An imported call names a callee no admitted dependency exports, so
+    /// its body cannot enter the plan identity.
+    #[error("imported call to function {function} resolves to no admitted dependency")]
+    UnresolvedImportedCall {
+        /// The callee's function index in its library.
+        function: usize,
     },
     /// The interval could not be converted exactly.
     #[error("timed interval conversion failed")]
