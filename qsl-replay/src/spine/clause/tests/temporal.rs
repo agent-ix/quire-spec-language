@@ -83,6 +83,9 @@ enum Unit {
     /// TC-144 `Window` and `Other`: `eventually[0,5] holds(c.value = 2)` under
     /// finite-window, `on origin`.
     OwnerWindow,
+    /// `Safety`: FR-328-AC-1's `always holds(c.value <= 1)` under
+    /// infinite-trace.
+    Safety,
 }
 
 impl Unit {
@@ -91,7 +94,7 @@ impl Unit {
             Self::Bounded | Self::RenamedTwin => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
-            Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
+            Self::Infinite | Self::Safety => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
             Self::Undefined | Self::Guarded | Self::GuardUndefined => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
@@ -226,6 +229,10 @@ impl Unit {
                  on origin { eventually[0,5] holds(c.value = 2) }\n\
                  temporal Other using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { eventually[0,5] holds(c.value > 1) }\n"
+            }
+            Self::Safety => {
+                "temporal Safety using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always holds(c.value <= 1) }\n"
             }
         }
     }
@@ -1081,7 +1088,10 @@ fn observed_replay_request(
                 .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
                 .and_then(|index| clause_node.clause().formula().node_id(index))
                 .expect("the formula has a holds atom");
-            crate::ObservedTemporalKind::UndefinedEvaluation { locus, cause }
+            crate::ObservedTemporalKind::UndefinedEvaluation {
+                locus: qsl_eval::temporal::ObservedLocus::Atom(locus),
+                cause,
+            }
         }
         ObservedReplayExpectation::UndefinedAtNode(cause, index) => {
             let locus = clause_node
@@ -1089,7 +1099,10 @@ fn observed_replay_request(
                 .formula()
                 .node_id(index)
                 .expect("the formula node exists");
-            crate::ObservedTemporalKind::UndefinedEvaluation { locus, cause }
+            crate::ObservedTemporalKind::UndefinedEvaluation {
+                locus: qsl_eval::temporal::ObservedLocus::Atom(locus),
+                cause,
+            }
         }
     };
     let payload = crate::ObservedTemporalCounterexample {
@@ -1194,15 +1207,16 @@ fn an_undefined_evaluation_over_a_finite_trace_is_a_violation_at_its_position() 
     assert_eq!(exit_code(&report), 10);
 }
 
-/// `Reaches` over the same `Finite` trace is pending: inconclusive, exit 0,
+/// `Reaches` over the same `Finite` trace is pending: the catalog's pending, exit 0,
 /// no truth. Over a lasso with loop 0, 1 it violates at position 0; over a
 /// lasso with loop 0, 1, 2 it holds.
 #[trace("TC-840", "FR-330-AC-2")]
+#[trace("TC-769", "FR-285-AC-9")]
 #[test]
 fn an_infinite_trace_clause_reads_a_finite_prefix_as_pending_and_a_lasso_exactly() {
     let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
     assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
-    assert_eq!(pending.disposition.category(), Category::Inconclusive);
+    assert_eq!(pending.disposition.category(), Category::Pending);
     assert_eq!(exit_code(&pending), 0);
     assert_eq!(pending.disposition.truth(), None);
 
@@ -1305,10 +1319,9 @@ fn a_zero_work_budget_is_incomplete_and_a_repeated_run_reports_equal() {
 /// `Fair` (`always eventually holds(c.value = 2)` under `fair weak noop`)
 /// over a lasso is unsupported: an observed trace carries no enabledness.
 ///
-/// The report carries the outcome, not a catalog code: the wire cause
-/// `unsupported_projection`/`missing-fairness-premise` is implied by
-/// `MissingFairnessPremise` and its only writer refuses temporal dispositions
-/// until the wire form is specified.
+/// The report carries the outcome, not a catalog code: the FR-267 writer
+/// derives the wire cause `unsupported_projection`/`missing-fairness-premise`
+/// from `MissingFairnessPremise`.
 #[trace("TC-848", "FR-330-AC-6")]
 #[test]
 fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
@@ -1356,13 +1369,15 @@ fn a_temporal_run_refuses_consequent_events_typed() {
 /// record half does not exist in QSL yet, so the test is not tagged.
 #[test]
 fn a_clause_run_over_a_trace_settles_no_item() {
+    // FR-266's Temporal row: the verdict is decided over the whole trace
+    // (`closed-scope`), and no separating witness is derived.
     let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
     assert_eq!(outcome(&held), &TemporalVerdict::Holds);
-    assert_eq!(held.basis, SettlementBasis::Unavailable);
+    assert_eq!(held.basis, SettlementBasis::ClosedScope);
     assert!(held.witness.is_none());
 
     let violated = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
-    assert_eq!(violated.basis, SettlementBasis::Unavailable);
+    assert_eq!(violated.basis, SettlementBasis::ClosedScope);
     assert!(violated.witness.is_none());
 }
 
@@ -2623,6 +2638,7 @@ fn timestamped_mixed_authorities_have_one_canonical_order() {
 /// dimension, before any position is visited.
 #[trace("TC-1295", "FR-330-AC-9")]
 #[trace("TC-1317", "FR-330-AC-11")]
+#[trace("TC-1317", "FR-522-AC-6")]
 #[test]
 fn timestamped_binding_is_required_and_authenticated() {
     let refusal = |request: ClauseRunRequest| {
@@ -2662,6 +2678,39 @@ fn timestamped_binding_is_required_and_authenticated() {
     assert_eq!(
         profile.get("mismatched_dimension").map(String::as_str),
         Some("Profile")
+    );
+    // FR-522-AC-6: a timestamp unit other than the `temporal_bindings` row's
+    // is refused with `TimestampUnit`, naming both units.
+    let unit = refusal(timestamped_changed(base(), |trace| {
+        trace.window.binding.as_mut().unwrap().parameters =
+            qsl_package::ClockConfiguration::TimestampedEvent {
+                timestamp_unit: "us".into(),
+            };
+    }));
+    assert_eq!(
+        unit.get("mismatched_dimension").map(String::as_str),
+        Some("TimestampUnit")
+    );
+    assert_eq!(unit.get("asserted").map(String::as_str), Some("us"));
+    assert_eq!(unit.get("expected").map(String::as_str), Some("ms"));
+    // FR-522-AC-3: another configuration alternative is `ClockParameters`.
+    let alternative = refusal(timestamped_changed(base(), |trace| {
+        trace.window.binding.as_mut().unwrap().parameters =
+            qsl_package::ClockConfiguration::EventPosition {
+                sequence_authority: "ms".into(),
+            };
+    }));
+    assert_eq!(
+        alternative.get("mismatched_dimension").map(String::as_str),
+        Some("ClockParameters")
+    );
+    assert_eq!(
+        alternative.get("asserted").map(String::as_str),
+        Some("event_position")
+    );
+    assert_eq!(
+        alternative.get("expected").map(String::as_str),
+        Some("timestamped_event")
     );
     // An agreeing binding runs.
     assert_eq!(outcome(&report(base())), &TemporalVerdict::Holds);
@@ -2729,8 +2778,8 @@ fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
     );
 }
 
-/// FR-285-AC-10 and AC-12 (TC-769), FR-501-AC-11 (TC-1295 row 24): one
-/// interim mapping gives a finite-window outcome's label and exit, and the
+/// FR-285-AC-10 and AC-12 (TC-769), FR-501-AC-11 (TC-1295 row 24): the
+/// catalog category gives a finite-window outcome's label and exit, and the
 /// multi-item ranking reads the same one: pending `pending`/0, indeterminate
 /// `indeterminate`/11, true `success`/0, false `violation`/10, work stop
 /// `incomplete`/22.
@@ -2784,6 +2833,42 @@ fn timestamped_category_label_and_exit_come_from_one_mapping() {
     assert_eq!(pick(&[0, 3]), 11);
     assert_eq!(pick(&[3, 4]), 22);
     assert_eq!(pick(&[0, 2]), 0);
+}
+
+/// FR-285-AC-11 (TC-769 step 10): a pending finite-window clause is the
+/// catalog's `Category::Pending` and an indeterminate one its
+/// `Category::Indeterminate`; the label and exit are the catalog's, the exits
+/// are 0 and 11, and the trace exit equals the exit.
+#[trace("TC-769", "FR-285-AC-11")]
+#[test]
+fn pending_and_indeterminate_outcomes_read_the_catalog_label_and_exit() {
+    let pending = report(timestamped(&[0], &[0], 1, Some(1)));
+    let indeterminate = report(timestamped(&[0], &[0], 5, None));
+    for (run, category, label, exit) in [
+        (&pending, Category::Pending, "pending", 0),
+        (&indeterminate, Category::Indeterminate, "indeterminate", 11),
+    ] {
+        assert_eq!(run.disposition.category(), category);
+        assert_eq!(run.category_label(), label);
+        assert_eq!(category.as_str(), label);
+        assert_eq!(run.disposition.exit_code(), exit);
+        assert_eq!(category.exit_code(), exit);
+        assert_eq!(category.trace_exit_code(), exit);
+    }
+    let table = [
+        Category::Success,
+        Category::Violation,
+        Category::Undefined,
+        Category::Refusal,
+        Category::Unsupported,
+        Category::Incomplete,
+        Category::Pending,
+        Category::Indeterminate,
+        Category::Inconclusive,
+        Category::InternalFailure,
+    ]
+    .map(Category::exit_code);
+    assert_eq!(table, [0, 10, 10, 20, 21, 22, 0, 11, 22, 30]);
 }
 
 /// FR-501-AC-12 (TC-1295 row 26): running a request twice gives equal outcomes
@@ -3111,6 +3196,7 @@ fn timestamped_progress_is_admitted_into_the_ledger() {
 
 mod checked_route_owner;
 mod progressed;
+mod wire;
 
 /// FR-502 (per-occurrence binding): two clauses with equal bodies and
 /// different names share one checked clause node, so a binding keyed by the

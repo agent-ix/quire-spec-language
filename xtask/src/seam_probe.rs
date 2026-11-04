@@ -103,16 +103,16 @@ pub struct SeamLocation {
 /// adding a second real seam over `FamilyKind` means updating this list in
 /// the same change (FR-063-AC-1/AC-2), or `xtask seam-probe` fails.
 ///
-/// S7 (#185): the two `match`es over `crate::check::Capability`
-/// outside `capability.rs` itself (which owns the probe variant and its
-/// own arm, so is not a seam-probe location) -- `requests::families`
+/// S7 (#185): the applicability table's own
+/// `Capability::applies_to_declaration` match, `requests::families`
 /// (requirement derivation per family, `src/linking/composed/requests.rs`)
 /// and `qsl-route`'s `advertises_kind` helper `same_kind` (registry
-/// advertisement check). Both item names were confirmed empirically by
-/// running this tool under `--cfg seam_probe` and reading the reported
-/// `E0004` locations, not assumed from the source layout: `same_kind` is a
-/// bare `fn` nested inside `advertises_kind`'s body, not an `impl` method,
-/// so it resolves unqualified.
+/// advertisement check). `applies_to_declaration` deliberately leaves the
+/// `#[cfg(seam_probe)]` variant unhandled, so a kind without an applicability
+/// row cannot compile. The other two match names were confirmed empirically
+/// by running this tool under `--cfg seam_probe` and reading rustc's
+/// `E0004` locations: `same_kind` is a bare `fn` nested inside
+/// `advertises_kind`'s body, not an `impl` method, so it resolves unqualified.
 ///
 /// FR-090-AC-6 (TC-387): the `ProtocolClause` snapshot cause's
 /// `catalog_code()` match over `quire_semantic_value::call::WrongSnapshotCause`, whose
@@ -231,6 +231,10 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         SeamLocation {
             file: "qsl-semantics/src/check/lowering.rs".to_owned(),
             item: "Lowering::lower_node".to_owned(),
+        },
+        SeamLocation {
+            file: "qsl-semantics/src/check/capability.rs".to_owned(),
+            item: "Capability::applies_to_declaration".to_owned(),
         },
         SeamLocation {
             file: "qsl-forms/src/dispatch.rs".to_owned(),

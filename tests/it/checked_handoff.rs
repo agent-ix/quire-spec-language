@@ -216,7 +216,7 @@ const SOURCE_LABEL: &str = "sources/source:examples/checked-handoff/unit-event-p
 /// FR-517-AC-1, the paths the writer writes today: everything in the Outputs
 /// table except `inventory.json`, and no `mutations/` for a `None` corpus. The
 /// package bytes are those `emit_checked_v2::emit` returns.
-#[trace("FR-517-AC-1", "TC-1312")]
+#[trace("FR-517-AC-1", "FR-042-AC-15", "TC-1312")]
 #[test]
 fn the_directory_holds_the_outputs_table_except_the_inventory() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
@@ -518,7 +518,7 @@ fn the_extreme_rationals_are_package_values() {
 }
 
 /// FR-517-AC-5: two writes of equal requests give byte-identical trees.
-#[trace("FR-517-AC-5", "TC-1312")]
+#[trace("FR-517-AC-5", "FR-042-AC-15", "TC-1312")]
 #[test]
 fn equal_requests_write_identical_trees() {
     for kind in KINDS {
@@ -654,7 +654,7 @@ fn entries(holder: &Path) -> Vec<String> {
 
 /// FR-517-AC-6: an existing directory is refused and unchanged; a failure
 /// after the temporary tree is built leaves nothing at or beside the path.
-#[trace("FR-517-AC-6", "TC-1312")]
+#[trace("FR-517-AC-6", "FR-042-AC-15", "TC-1312")]
 #[test]
 fn an_existing_directory_is_untouched_and_a_failure_leaves_nothing() {
     let (holder, out) = written("event_position", Corpus::None, &Double::default());
@@ -677,7 +677,7 @@ fn an_existing_directory_is_untouched_and_a_failure_leaves_nothing() {
 
 /// FR-517-AC-7: a refused source, a refused package and an injected
 /// read-back difference each write nothing.
-#[trace("FR-517-AC-7", "TC-1312")]
+#[trace("FR-517-AC-7", "FR-042-AC-15", "TC-1312")]
 #[test]
 fn a_refusal_or_difference_writes_nothing() {
     let fresh = tempfile::tempdir().unwrap();
@@ -717,7 +717,7 @@ fn a_refusal_or_difference_writes_nothing() {
 
 /// FR-517-AC-8: the module is behind `checked-handoff`, which names no
 /// dependency, and the module's sources use no dev-dependency.
-#[trace("FR-517-AC-8", "TC-1312")]
+#[trace("FR-517-AC-8", "FR-042-AC-15", "TC-1312")]
 #[test]
 fn the_feature_adds_no_dependency() {
     let manifest: toml_free::Manifest = toml_free::read("Cargo.toml");
@@ -906,7 +906,7 @@ fn table() -> Vec<Row> {
             "binding-duplicate",
             EP,
             "invalid_package",
-            TIMED,
+            Some("conflicting-definition"),
             "/temporal_bindings/4",
         ),
         reader(

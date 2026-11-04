@@ -206,7 +206,14 @@ fn binding_duplicate(v: &Value) -> Option<Made> {
     let at = bindings(v)?.len();
     let row = bindings(v)?.first()?.clone();
     w.get_mut("temporal_bindings")?.as_array_mut()?.push(row);
-    ok(w, timed(format!("/temporal_bindings/{at}")))
+    ok(
+        w,
+        reader(
+            "invalid_package",
+            Some("conflicting-definition"),
+            format!("/temporal_bindings/{at}"),
+        ),
+    )
 }
 
 fn binding_reordered(v: &Value) -> Option<Made> {

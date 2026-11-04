@@ -276,7 +276,8 @@ pub(super) fn clause_report(
         qsl_replay::spine::write_clause_run_result(report).map_err(RunCause::ClauseOutput)?;
     let value = serde_json::from_slice(&bytes).map_err(RunCause::Output)?;
     Ok(RunResult {
-        exit_code: report.disposition.category().exit_code(),
+        // FR-285: a finite-window `pending` exits 0 and `indeterminate` 11.
+        exit_code: report.disposition.exit_code(),
         value: NativeResult(value),
     })
 }

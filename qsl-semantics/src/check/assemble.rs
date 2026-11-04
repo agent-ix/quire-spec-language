@@ -41,9 +41,9 @@ use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, IdentityLimits, Setting, SettingLimits, Span};
 use quire_exact::{
-    Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, EnumShape, Identifier,
-    IeeeWidth, Integer, IntegerInterval, InvalidNodeKey, NodeKey, Presence, RoundingMode,
-    ValueType,
+    Cancel, CardinalityBound, CarriedQuantityType, CollectionKind, CollectionType, EffectiveId,
+    EnumShape, Identifier, IeeeWidth, Integer, IntegerInterval, InvalidNodeKey, NodeKey, Presence,
+    QuantityCarrier, RoundingMode, ValueType,
 };
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -53,6 +53,7 @@ use super::check::{
 use super::layer::LayerAdmission;
 use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel};
 use super::model_gate::{self, ModelGateRefusal};
+use super::model_spelling::ModelSpellings;
 use super::node_key::{NodeKeyRefusal, NodeTag, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
@@ -1155,6 +1156,28 @@ struct ModelTypes {
     handles: BTreeMap<DeclarationKey, NodeKey>,
 }
 
+impl ModelTypes {
+    /// Every type name these declarations bind, each `alias::T`: object
+    /// types, composites, variant types and scalar types.
+    fn names(&self) -> Vec<String> {
+        self.objects
+            .iter()
+            .map(|declaration| declaration.name().to_owned())
+            .chain(
+                self.composites
+                    .iter()
+                    .map(|declaration| declaration.name().to_owned()),
+            )
+            .chain(
+                self.variant_types
+                    .iter()
+                    .map(|declared| declared.name().to_owned()),
+            )
+            .chain(self.scalars.iter().map(|(name, _)| name.clone()))
+            .collect()
+    }
+}
+
 /// The object types of the domain package admitted for the `model`
 /// declaration `alias`, each named `alias::T` with `T` its artifact id, and
 /// declaring its supertypes by their effective identities and its fields
@@ -2042,6 +2065,26 @@ fn model_value_type(
                         .map_err(|_| Unmapped::Unsupported)?,
                 ),
                 ScalarValueDomain::Text(text) => ValueType::Text(*text),
+                ScalarValueDomain::Rational {
+                    domain: Some(domain),
+                    unit: None,
+                } => ValueType::Rational(domain.clone()),
+                ScalarValueDomain::Rational {
+                    domain: Some(domain),
+                    unit: Some(name),
+                } => {
+                    let unit = units
+                        .get(name)
+                        .ok_or_else(|| Unmapped::QuantityName(name.clone()))?
+                        .clone();
+                    ValueType::carried_quantity(CarriedQuantityType::new(
+                        unit,
+                        QuantityCarrier::Rational(domain.clone()),
+                    ))
+                }
+                ScalarValueDomain::Rational { domain: None, .. } => {
+                    return Err(Unmapped::Unsupported)
+                }
                 ScalarValueDomain::Native(NativeValueType::Uuid) => ValueType::Uuid,
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
                 ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),
@@ -3382,7 +3425,12 @@ impl PackageDeclarations {
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
         let mut type_invariants = Vec::new();
-        let mut materialized_model_identities = BTreeSet::new();
+        // The first alias each package identity is selected under, the
+        // package-owned type names projected under it, and the further
+        // aliases of the same identity (FR-480 "Selections and imports").
+        let mut first_aliases: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut projected_names: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+        let mut further_aliases: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for selection in &selections.models {
             let Some(model) = models.iter().find(|model| {
                 model.alias == selection.alias
@@ -3396,78 +3444,72 @@ impl PackageDeclarations {
                 });
                 continue;
             };
+            admitted.push(AdmittedModel::from_view(&model.view).with_alias(&selection.alias));
             // Model declarations select package-owned records by identity.
             // Several aliases may name that same package, but its type and
-            // population declarations contribute to the environment once.
-            if materialized_model_identities.insert(selection.identity.clone()) {
-                match model_object_types(
-                    &selection.alias,
-                    model,
-                    selection.span,
-                    &mut operations,
-                    &model_units,
-                ) {
-                    Ok(types) => {
-                        for declaration in &types.objects {
-                            object_spans.insert(declaration.name().to_owned(), selection.span);
-                        }
-                        object_types.extend(types.objects);
-                        model_composites.extend(types.composites);
-                        model_variant_types.extend(types.variant_types);
-                        model_scalars.extend(types.scalars);
-                        model_records.extend(types.model_records);
-                        model_relationships.extend(types.relationships);
-                        let handles = types.handles;
-                        match operation_clause_declarations(&selection.alias, model, &operations) {
-                            Ok(resolved) => operation_clauses.extend(resolved),
-                            Err(cause) => errors.push(AssemblyError {
-                                cause,
-                                span: selection.span,
-                            }),
-                        }
-                        match type_invariant_declarations(&selection.alias, model, &handles) {
-                            Ok(resolved) => type_invariants.extend(resolved),
-                            Err(cause) => errors.push(AssemblyError {
-                                cause,
-                                span: selection.span,
-                            }),
-                        }
-                    }
-                    Err(refused) => errors.extend(refused),
+            // population declarations contribute to the environment once,
+            // under its first alias; a further alias spells the same
+            // declarations.
+            if let Some(first) = first_aliases.get(selection.identity.as_str()) {
+                if *first != selection.alias {
+                    further_aliases
+                        .entry(&selection.identity)
+                        .or_default()
+                        .push(&selection.alias);
                 }
+                continue;
             }
-            admitted.push(AdmittedModel::from_view(&model.view).with_alias(&selection.alias));
+            first_aliases.insert(&selection.identity, &selection.alias);
+            match model_object_types(
+                &selection.alias,
+                model,
+                selection.span,
+                &mut operations,
+                &model_units,
+            ) {
+                Ok(types) => {
+                    projected_names.insert(&selection.identity, types.names());
+                    for declaration in &types.objects {
+                        object_spans.insert(declaration.name().to_owned(), selection.span);
+                    }
+                    object_types.extend(types.objects);
+                    model_composites.extend(types.composites);
+                    model_variant_types.extend(types.variant_types);
+                    model_scalars.extend(types.scalars);
+                    model_records.extend(types.model_records);
+                    model_relationships.extend(types.relationships);
+                    let handles = types.handles;
+                    match operation_clause_declarations(&selection.alias, model, &operations) {
+                        Ok(resolved) => operation_clauses.extend(resolved),
+                        Err(cause) => errors.push(AssemblyError {
+                            cause,
+                            span: selection.span,
+                        }),
+                    }
+                    match type_invariant_declarations(&selection.alias, model, &handles) {
+                        Ok(resolved) => type_invariants.extend(resolved),
+                        Err(cause) => errors.push(AssemblyError {
+                            cause,
+                            span: selection.span,
+                        }),
+                    }
+                }
+                Err(refused) => errors.extend(refused),
+            }
+        }
+        let mut model_spellings = ModelSpellings::default();
+        for (identity, aliases) in &further_aliases {
+            if let (Some(first), Some(names)) =
+                (first_aliases.get(identity), projected_names.get(identity))
+            {
+                model_spellings.add(first, aliases, names.iter().map(String::as_str));
+            }
         }
         let mut object_names: BTreeMap<String, EffectiveId> = object_types
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
-        // Keep every source-local alias spelling for a shared model identity
-        // while retaining one structural type declaration in the graph.
-        for selection in &selections.models {
-            let Some(model) = models.iter().find(|model| {
-                model.alias == selection.alias
-                    && model.view.domain_package().model_selection.identity == selection.identity
-            }) else {
-                continue;
-            };
-            let identities = model.view.type_identities();
-            for declaration in &object_types {
-                if !identities
-                    .values()
-                    .any(|identity| identity == &declaration.key())
-                {
-                    continue;
-                }
-                let Some((_, artifact)) = declaration.name().split_once("::") else {
-                    continue;
-                };
-                object_names.insert(
-                    format!("{}::{artifact}", selection.alias),
-                    declaration.key(),
-                );
-            }
-        }
+        model_spellings.bind_unique(&mut object_names);
         // A model composite or a variant type is a declared type name; `M::T`
         // is no source declaration of the unit.
         let model_composite_names: BTreeSet<String> = model_composites
@@ -3479,6 +3521,12 @@ impl PackageDeclarations {
                     .map(|declared| declared.name().to_owned()),
             )
             .chain(model_scalars.iter().map(|(name, _)| name.clone()))
+            .chain(
+                model_spellings
+                    .iter()
+                    .filter(|(_, declared)| !object_names.contains_key(*declared))
+                    .map(|(spelled, _)| spelled.to_owned()),
+            )
             .collect();
 
         // Selection aliases are unique within a unit, and a `using` alias
@@ -3901,12 +3949,12 @@ impl PackageDeclarations {
                 .or_default()
                 .push(ValueType::Composite(composite.key()));
         }
-        for (name, identity) in &object_names {
+        for declaration in &object_types {
             names
                 .types
-                .entry(name.clone())
+                .entry(declaration.name().to_owned())
                 .or_default()
-                .push(ValueType::Reference(identity.clone()));
+                .push(ValueType::Reference(declaration.key()));
         }
         // FR-360 item 4: `M::T` names the variant type `T` as its enum type.
         for declared in &model_variant_types {
@@ -3923,6 +3971,8 @@ impl PackageDeclarations {
                 .or_default()
                 .push(value_type.clone());
         }
+        // A further alias of a package spells each of its type names.
+        model_spellings.bind_all(&mut names.types);
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).
         let mut enums = Vec::with_capacity(unit.enums.len());
@@ -4334,6 +4384,7 @@ impl PackageDeclarations {
         package.operation_clauses = operation_clauses;
         package.type_invariants = type_invariants;
         package.models = admitted;
+        package.model_spellings = model_spellings;
         package.model_inputs = Some((models, model_meter));
         package.selected_exact_identity_rows = (exact_declarations, exact_fields);
         package.selected_tuple_declaration_rows = tuple_declarations;

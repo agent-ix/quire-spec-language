@@ -1057,6 +1057,7 @@ pub struct EmittedUnit {
     evidence: quire_contract_model::CheckedPackageEvidence,
     static_subject: Result<StaticSubject, SubjectUnavailable>,
     build_provenance: BuildProvenance,
+    temporal_binding_rows: pkg::TemporalBindingRows,
 }
 
 impl EmittedUnit {
@@ -1085,6 +1086,12 @@ impl EmittedUnit {
     /// The compile limits and check-stage usage that produced this unit.
     pub fn build_provenance(&self) -> BuildProvenance {
         self.build_provenance
+    }
+
+    /// The `temporal_bindings` rows the package wrote, keyed by the checked
+    /// graph's clause identity (FR-522 "Authentication").
+    pub fn temporal_binding_rows(&self) -> &pkg::TemporalBindingRows {
+        &self.temporal_binding_rows
     }
 }
 
@@ -1830,6 +1837,7 @@ pub fn package_with_temporal_selections(
                 evidence: emission.evidence().clone(),
                 static_subject: checked.static_subject.clone(),
                 build_provenance: checked.build_provenance,
+                temporal_binding_rows: emission.temporal_binding_rows().clone(),
             })
         },
     )

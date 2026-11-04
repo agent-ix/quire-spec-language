@@ -586,6 +586,41 @@ fn selected_relationships_are_rooted_in_the_checked_graph() {
     assert_eq!(generated[0].2, &declaration);
 }
 
+/// FR-480-AC-10 (QSL-1578): a package selected under two aliases roots each
+/// selected relationship once, at its first alias's declaration site.
+#[trace("FR-480-AC-10", "FR-094-AC-9")]
+#[test]
+fn repeated_aliases_root_each_relationship_once_at_the_first_alias() {
+    let acme = admitted("1.0.0");
+    let models = [
+        acme.model.clone().with_alias("M"),
+        acme.model.clone().with_alias("N"),
+    ];
+    let first = type_declaration("M");
+    let locations = BTreeMap::from([
+        ("M".to_owned(), first.clone()),
+        ("N".to_owned(), type_declaration("N")),
+    ]);
+    let (result, graph, occurrences) =
+        lower_with_occurrences(&models, Default::default(), |lowering| {
+            lowering.relationship_nodes(&locations)
+        });
+    result.expect("the selected relationship keys");
+    let relations: Vec<_> = graph
+        .nodes()
+        .filter(|node| node.node_tag() == NodeTag::Relation)
+        .collect();
+    assert_eq!(relations.len(), 1, "billedTo is one relation node");
+    let generated: Vec<_> = occurrences.iter_role(OccurrenceRole::Generated).collect();
+    assert_eq!(
+        generated.len(),
+        1,
+        "the relation has one root over both aliases"
+    );
+    assert_eq!(generated[0].0, relations[0].key());
+    assert_eq!(generated[0].2, &first);
+}
+
 /// FR-093-AC-8: the checked `Attribute`, `AllInstances`, `Lookup` (both
 /// absence modes) and `Dispatch` nodes lower to their rows' operation,
 /// member, mode and arguments. A `Pre` node is checked only in a standalone
@@ -1327,7 +1362,7 @@ mod quantities {
 
     /// FR-497-AC-1 (TC-1287): the carried type's node identity retains its
     /// unit, carrier and rounding; structurally equal forms share a node.
-    #[trace("FR-497-AC-1", "TC-1287")]
+    #[trace("FR-497-AC-1", "FR-505-AC-7", "TC-1287", "TC-1300")]
     #[test]
     fn carried_quantity_types_lower_with_their_complete_carrier_identity() {
         use quire_exact::{CarriedQuantityType, DecimalType, QuantityCarrier, RoundingMode};
@@ -1364,8 +1399,21 @@ mod quantities {
                 .expect("ordered bounds"),
             ),
         ));
+        let rational_domain = quire_exact::RationalDomain::new(
+            IntegerInterval::spanning(Integer::from(-3_i64), Integer::from(7_i64)),
+            IntegerInterval::spanning(Integer::one(), Integer::from(12_i64)),
+        )
+        .expect("valid rational bounds");
+        let rational = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Rational(rational_domain.clone()),
+        ));
+        let same_rational = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Rational(rational_domain),
+        ));
         let (keys, graph) = lower(&[], units(), |lowering| {
-            [&exact, &same, &rounded, &decimal].map(|value_type| {
+            [&exact, &same, &rounded, &decimal, &rational, &same_rational].map(|value_type| {
                 lowering
                     .type_node(value_type, &generated_location())
                     .expect("the carried quantity type lowers")
@@ -1374,7 +1422,11 @@ mod quantities {
         assert_eq!(keys[0], keys[1]);
         assert_ne!(keys[0], keys[2]);
         assert_ne!(keys[0], keys[3]);
-        for key in [&keys[0], &keys[2], &keys[3]] {
+        assert_eq!(keys[4], keys[5], "equal Rational carriers share one node");
+        assert!(graph
+            .nodes()
+            .any(|node| node.semantic_form() == "rational_range"));
+        for key in [&keys[0], &keys[2], &keys[3], &keys[4]] {
             let node = graph.node((*key).clone()).expect("the carried type node");
             assert_eq!(node.node_tag(), NodeTag::ScalarType);
             assert_eq!(node.semantic_form(), "carried_quantity");
@@ -1388,6 +1440,119 @@ mod quantities {
                 .collect();
             assert_eq!(names, ["unit", "carrier", "rounding"]);
         }
+    }
+
+    /// FR-497-AC-1 (TC-1287): a `Rational[..]` carrier lowers to a carried
+    /// type over the `rational_range` node of its bounds with the exact mode;
+    /// equal bounds share a node and each differing bound makes another. The
+    /// FR-505-AC-7 unit binding and its refusals are proved by the intake
+    /// and assembly tests tagged with it.
+    #[trace("FR-497-AC-1", "TC-1287")]
+    #[test]
+    fn a_rational_carrier_lowers_over_its_rational_range_with_exact_mode() {
+        use quire_exact::{CarriedQuantityType, QuantityCarrier, RationalDomain};
+
+        let interval = |low: i64, high: i64| {
+            IntegerInterval::new(Integer::from(low), Integer::from(high)).expect("ordered bounds")
+        };
+        let carried = |numerator: (i64, i64), denominator: (i64, i64)| {
+            ValueType::carried_quantity(CarriedQuantityType::new(
+                UnitId::declared(node_key(METRE)),
+                QuantityCarrier::Rational(
+                    RationalDomain::new(
+                        interval(numerator.0, numerator.1),
+                        interval(denominator.0, denominator.1),
+                    )
+                    .expect("a positive denominator"),
+                ),
+            ))
+        };
+        let base = carried((-3, 7), (1, 12));
+        let same = carried((-3, 7), (1, 12));
+        let other_numerator = carried((-3, 6), (1, 12));
+        let other_denominator = carried((-3, 7), (1, 11));
+        let (keys, graph) = lower(&[], units(), |lowering| {
+            [&base, &same, &other_numerator, &other_denominator].map(|value_type| {
+                lowering
+                    .type_node(value_type, &generated_location())
+                    .expect("the rational carried quantity type lowers")
+            })
+        });
+        assert_eq!(keys[0], keys[1]);
+        assert_ne!(keys[0], keys[2]);
+        assert_ne!(keys[0], keys[3]);
+        assert_ne!(keys[2], keys[3]);
+        let node = graph.node(keys[0].clone()).expect("the carried type node");
+        assert_eq!(node.semantic_form(), "carried_quantity");
+        let node_preimage = preimage(node);
+        let members = node_preimage["body"]["members"]
+            .as_array()
+            .expect("the carried node body bindings");
+        let names: Vec<_> = members
+            .iter()
+            .map(|member| member["name"].as_str().expect("a binding name"))
+            .collect();
+        assert_eq!(names, ["unit", "carrier", "rounding"]);
+        let rational_range: Vec<_> = graph
+            .nodes()
+            .filter(|node| node.semantic_form() == "rational_range")
+            .collect();
+        assert_eq!(
+            rational_range.len(),
+            3,
+            "one range node per distinct bound set"
+        );
+        assert!(
+            members[2].to_string().contains("exact"),
+            "a rational carrier's rounding is exact: {}",
+            members[2]
+        );
+    }
+
+    /// FR-497-AC-3 (TC-1287): converting to a `Rational[..]` carrier carries
+    /// the exact mode, since a rational carrier names none.
+    #[trace("FR-497-AC-3", "TC-1287")]
+    #[test]
+    fn a_rational_carried_conversion_uses_exact_rounding() {
+        use quire_exact::{CarriedQuantityType, QuantityCarrier, RationalDomain};
+
+        let carried = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Rational(
+                RationalDomain::new(
+                    IntegerInterval::new(Integer::from(-3_i64), Integer::from(7_i64))
+                        .expect("ordered bounds"),
+                    IntegerInterval::new(Integer::from(1_i64), Integer::from(12_i64))
+                        .expect("ordered bounds"),
+                )
+                .expect("a positive denominator"),
+            ),
+        ));
+        let checked = check_declarations(PackageDeclarations {
+            types: TypeEnvironment::default().with_units(units()),
+            aliases: vec![
+                ("Length".to_owned(), quantity(METRE)),
+                ("RationalLength".to_owned(), carried),
+            ],
+            functions: vec![function(
+                "to_rational",
+                &[("a", named("Length"))],
+                named("RationalLength"),
+                Expression::convert(named("RationalLength"), name("a")),
+            )],
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        });
+        let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
+        assert_eq!(convert.len(), 1);
+        let convert = preimage(convert[0]);
+        assert_eq!(
+            convert["body"]["operation"]["mode"],
+            json!({"kind": "rounding", "value": "exact"})
+        );
     }
 
     /// TC-419 step 3 (FR-094-AC-7): a compound `UnitId` the unit scope does

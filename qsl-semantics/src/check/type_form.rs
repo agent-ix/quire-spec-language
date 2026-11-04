@@ -478,6 +478,17 @@ fn carried_quantity_type(
             };
             QuantityCarrier::Decimal(decimal)
         }
+        TypeFormHead::Builtin(BuiltinType::Rational) if form.arguments.is_empty() => {
+            optional_bounds(form, 4)?;
+            let domain = match resolve_builtin(names, BuiltinType::Rational, form)? {
+                Step::Leaf(value) => match &value {
+                    ValueType::Rational(domain) => domain.clone(),
+                    _ => return Err(malformed(form)),
+                },
+                Step::Option { .. } | Step::Collection { .. } => return Err(malformed(form)),
+            };
+            QuantityCarrier::Rational(domain)
+        }
         _ => return Err(malformed(form)),
     };
     Ok(CarriedQuantityType::new(unit, carrier))
@@ -871,6 +882,18 @@ mod tests {
             ),
         )
         .expect("a bounded Decimal carrier resolves");
+        let rational = resolve_form(
+            &names,
+            &quantity_form(
+                TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(
+                    ["-3", "7", "1", "12"]
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                ),
+            ),
+        )
+        .expect("a bounded Rational carrier resolves with exact mode");
 
         let ValueType::CarriedQuantity(exact) = &exact else {
             panic!("carried quantity, not {exact:?}");
@@ -897,10 +920,19 @@ mod tests {
                 if matches!(carried.carrier(), QuantityCarrier::Decimal(decimal)
                     if decimal.rounding() == RoundingMode::NearestEven)
         ));
+        assert!(matches!(
+            &rational,
+            ValueType::CarriedQuantity(carried)
+                if matches!(carried.carrier(), QuantityCarrier::Rational(domain)
+                    if domain.numerator().lower() == &Integer::from(-3_i64)
+                        && domain.numerator().upper() == &Integer::from(7_i64)
+                        && domain.denominator().lower() == &Integer::one()
+                        && domain.denominator().upper() == &Integer::from(12_i64))
+        ));
     }
 
-    /// FR-497-AC-1/2: only bounded Int and Decimal forms are carriers; a
-    /// bare numeric type and an inverted carrier bound refuse.
+    /// FR-497-AC-1/2: bounded Int, Decimal and Rational forms are carriers;
+    /// bare numeric types and inverted bounds refuse.
     #[ix_trace_rs::trace(
         "FR-497-AC-1",
         "FR-497-AC-2",
@@ -922,15 +954,8 @@ mod tests {
         assert!(resolve_form(&names, &bare_integer).is_err());
         let bare_decimal = quantity_form(TypeForm::builtin(BuiltinType::Decimal, SPAN));
         assert!(resolve_form(&names, &bare_decimal).is_err());
-        let rational = quantity_form(
-            TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(
-                ["0", "9", "1", "9"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
-            ),
-        );
-        assert!(resolve_form(&names, &rational).is_err());
+        let bare_rational = quantity_form(TypeForm::builtin(BuiltinType::Rational, SPAN));
+        assert!(resolve_form(&names, &bare_rational).is_err());
         let text = quantity_form(
             TypeForm::builtin(BuiltinType::Text, SPAN)
                 .with_bounds(["0", "8", "nfc"].into_iter().map(str::to_owned).collect()),

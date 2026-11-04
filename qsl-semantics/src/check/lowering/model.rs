@@ -12,7 +12,7 @@
 //! `check` is the correspondence's only writer.
 
 use quire_checked::node::{AuthoredBound, EndSide};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
     CarriedQuantityType, EffectiveId, Integer, NodeKey, QuantityCarrier, UnitDomain, UnitId,
@@ -2377,21 +2377,21 @@ impl<'a> Lowering<'a> {
         &mut self,
         locations: &BTreeMap<String, Location>,
     ) -> Result<(), CheckRefusal> {
-        let declarations: Vec<(DeclarationKey, Location)> = self
-            .models
-            .iter()
-            .filter_map(|model| {
-                let alias = model.alias.as_ref()?;
-                let location = locations.get(alias)?.clone();
-                Some(
-                    model
-                        .relationship_declarations()
-                        .map(move |declaration| (declaration.clone(), location.clone()))
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .flatten()
-            .collect();
+        // A package selected under several aliases roots each relationship
+        // once, at its first alias's declaration site (FR-480 "Selections
+        // and imports").
+        let mut rooted = BTreeSet::new();
+        let mut declarations = Vec::new();
+        for model in self.models {
+            let Some(location) = model.alias.as_ref().and_then(|alias| locations.get(alias)) else {
+                continue;
+            };
+            for declaration in model.relationship_declarations() {
+                if rooted.insert(declaration) {
+                    declarations.push((declaration.clone(), location.clone()));
+                }
+            }
+        }
         for (declaration, location) in declarations {
             let key = self.model_node(&declaration, &location)?;
             // A relationship has no checked value or frame occurrence to
@@ -2578,11 +2578,13 @@ impl<'a> Lowering<'a> {
         let carrier_type = match carried.carrier() {
             QuantityCarrier::Decimal(decimal) => ValueType::Decimal(decimal.clone()),
             QuantityCarrier::Integer { domain, .. } => ValueType::Int(domain.clone()),
+            QuantityCarrier::Rational(domain) => ValueType::Rational(domain.clone()),
         };
         let carrier = self.type_node(&carrier_type, location)?;
         let rounding_mode = match carried.carrier() {
             QuantityCarrier::Decimal(decimal) => decimal.rounding(),
             QuantityCarrier::Integer { rounding, .. } => *rounding,
+            QuantityCarrier::Rational(_) => quire_exact::RoundingMode::Exact,
         };
         let rounding = self.text_literal(rounding_mode.as_str(), location)?;
         self.insert(

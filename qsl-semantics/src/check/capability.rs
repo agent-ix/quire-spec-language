@@ -55,8 +55,31 @@
 
 use std::fmt;
 
+/// The declaration family that owns a claim in the checked package.
+///
+/// This is the FR-290 declaration-family axis. It is deliberately separate
+/// from [`crate::family::FamilyKind`] (the semantic checking families) and
+/// from [`Capability::fr290_family`] (a kind-group projection).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DeclarationFamily {
+    /// A value declaration or a pure Boolean claim.
+    Value,
+    /// A state declaration or an operation contract.
+    StateModel,
+    /// A temporal-trace claim.
+    TemporalTrace,
+    /// A relation clause or model refinement claim.
+    RelationClaim,
+    /// A protocol declaration claim.
+    Protocol,
+    /// A probabilistic claim.
+    Probabilistic,
+    /// A real-time task-set claim.
+    RealTime,
+}
+
 macro_rules! capability_kinds {
-    ($($(#[$doc:meta])* $variant:ident => $wire:literal, $family:literal),+ $(,)?) => {
+    ($($(#[$doc:meta])* $variant:ident => $wire:literal, $family:literal, $applies:expr),+ $(,)?) => {
         /// The canonical FR-290 capability-kind value (ADR-013 O-19).
         ///
         /// Two values are equal exactly when their FR-290 labels are byte-equal
@@ -120,6 +143,17 @@ macro_rules! capability_kinds {
                 }
             }
 
+            /// Whether this kind applies to a claim in `family` (FR-507).
+            ///
+            /// This table is independent of [`Self::fr290_family`]: for
+            /// example, a `temporal-satisfaction` claim can belong to either
+            /// `temporal-trace` or `relation-claim`.
+            pub fn applies_to_declaration(self, family: DeclarationFamily) -> bool {
+                match self {
+                    $(Capability::$variant => $applies.contains(&family),)+
+                }
+            }
+
             /// Reads a [`Capability`] from its exact FR-290 wire spelling.
             ///
             /// Matches by exact equality of the decoded bytes against one admitted
@@ -145,29 +179,29 @@ macro_rules! capability_kinds {
 
 capability_kinds! {
     /// `value-validity` (FR-290 family `value`).
-    ValueValidity => "value-validity", "value",
+    ValueValidity => "value-validity", "value", &[DeclarationFamily::Value],
     /// `operation-contract` (FR-290 family `state-model`).
-    OperationContract => "operation-contract", "state-model",
+    OperationContract => "operation-contract", "state-model", &[DeclarationFamily::StateModel, DeclarationFamily::RelationClaim],
     /// `finite-replay` (FR-290 family `finite-replay`).
-    FiniteReplay => "finite-replay", "finite-replay",
+    FiniteReplay => "finite-replay", "finite-replay", &[DeclarationFamily::Protocol],
     /// `temporal-satisfaction` (FR-290 family `temporal-trace`).
-    TemporalSatisfaction => "temporal-satisfaction", "temporal-trace",
+    TemporalSatisfaction => "temporal-satisfaction", "temporal-trace", &[DeclarationFamily::TemporalTrace, DeclarationFamily::RelationClaim],
     /// `global-conformance` (FR-290 family `protocol`).
-    GlobalConformance => "global-conformance", "protocol",
+    GlobalConformance => "global-conformance", "protocol", &[DeclarationFamily::Protocol],
     /// `monitorability` (FR-290 family `protocol`).
-    Monitorability => "monitorability", "protocol",
+    Monitorability => "monitorability", "protocol", &[DeclarationFamily::Protocol],
     /// `local-projection` (FR-290 family `protocol`).
-    LocalProjection => "local-projection", "protocol",
+    LocalProjection => "local-projection", "protocol", &[DeclarationFamily::Protocol],
     /// `refinement` (FR-290 family `protocol`).
-    Refinement => "refinement", "protocol",
+    Refinement => "refinement", "protocol", &[DeclarationFamily::Protocol],
     /// `realizability` (FR-290 family `protocol`).
-    Realizability => "realizability", "protocol",
+    Realizability => "realizability", "protocol", &[DeclarationFamily::Protocol],
     /// `composition` (FR-290 family `protocol`).
-    Composition => "composition", "protocol",
+    Composition => "composition", "protocol", &[DeclarationFamily::Protocol],
     /// `probabilistic-satisfaction` (FR-290 family `probabilistic`).
-    ProbabilisticSatisfaction => "probabilistic-satisfaction", "probabilistic",
+    ProbabilisticSatisfaction => "probabilistic-satisfaction", "probabilistic", &[DeclarationFamily::Probabilistic],
     /// `schedulability` (FR-290 family `real-time`).
-    Schedulability => "schedulability", "real-time",
+    Schedulability => "schedulability", "real-time", &[DeclarationFamily::RealTime],
 }
 
 impl fmt::Display for Capability {
@@ -267,6 +301,63 @@ mod tests {
         (Capability::ProbabilisticSatisfaction, "probabilistic"),
         (Capability::Schedulability, "real-time"),
     ];
+
+    const DECLARATION_FAMILIES: [DeclarationFamily; 7] = [
+        DeclarationFamily::Value,
+        DeclarationFamily::StateModel,
+        DeclarationFamily::TemporalTrace,
+        DeclarationFamily::RelationClaim,
+        DeclarationFamily::Protocol,
+        DeclarationFamily::Probabilistic,
+        DeclarationFamily::RealTime,
+    ];
+
+    #[test]
+    #[trace("TC-1302", "FR-507-AC-1")]
+    fn capability_applicability_is_total_over_the_twelve_by_seven_matrix() {
+        let applicable = [
+            (Capability::ValueValidity, DeclarationFamily::Value),
+            (Capability::OperationContract, DeclarationFamily::StateModel),
+            (
+                Capability::OperationContract,
+                DeclarationFamily::RelationClaim,
+            ),
+            (
+                Capability::TemporalSatisfaction,
+                DeclarationFamily::TemporalTrace,
+            ),
+            (
+                Capability::TemporalSatisfaction,
+                DeclarationFamily::RelationClaim,
+            ),
+            (Capability::FiniteReplay, DeclarationFamily::Protocol),
+            (Capability::GlobalConformance, DeclarationFamily::Protocol),
+            (Capability::Monitorability, DeclarationFamily::Protocol),
+            (Capability::LocalProjection, DeclarationFamily::Protocol),
+            (Capability::Refinement, DeclarationFamily::Protocol),
+            (Capability::Realizability, DeclarationFamily::Protocol),
+            (Capability::Composition, DeclarationFamily::Protocol),
+            (
+                Capability::ProbabilisticSatisfaction,
+                DeclarationFamily::Probabilistic,
+            ),
+            (Capability::Schedulability, DeclarationFamily::RealTime),
+        ];
+
+        let mut applicable_count = 0;
+        for capability in Capability::ALL.iter().copied() {
+            for family in DECLARATION_FAMILIES {
+                let expected = applicable.contains(&(capability, family));
+                assert_eq!(
+                    capability.applies_to_declaration(family),
+                    expected,
+                    "unexpected FR-507 applicability for {capability:?} on {family:?}"
+                );
+                applicable_count += usize::from(expected);
+            }
+        }
+        assert_eq!(applicable_count, 14);
+    }
 
     #[test]
     #[trace("TC-971", "FR-057-AC-13")]

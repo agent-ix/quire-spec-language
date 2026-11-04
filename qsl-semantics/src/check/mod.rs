@@ -95,6 +95,7 @@ mod field_refinement;
 mod identity;
 mod model_conformance;
 mod model_gate;
+mod model_spelling;
 mod navigation;
 // The nested expression forms of TC-415, shared by this crate's tests and the
 // package emitter's tests, so only `test-support` exposes them.
@@ -363,7 +364,7 @@ pub use assemble::{
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
     TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
-pub use capability::{Capability, UnknownCapabilityLabel};
+pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
     DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
     VariantCaseDeclaration, VariantTypeDeclaration,
@@ -2159,6 +2160,7 @@ impl PackageDeclarations {
             self.dispatch_operations,
         )
         .with_variant_types(self.variant_types)
+        .with_model_spellings(&self.model_spellings)
         .with_model_records(self.model_records)
         .with_relationships(self.relationships)
         .with_imports(self.imports)

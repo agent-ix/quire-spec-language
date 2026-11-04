@@ -29,7 +29,12 @@ mod emit;
 pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
+pub mod number;
+#[cfg(feature = "std")]
 mod protocol_activation;
+pub mod protocol_artifact_v1;
+#[cfg(feature = "std")]
+pub mod protocol_artifact_v2;
 #[cfg(feature = "std")]
 mod protocol_occurrence;
 mod protocol_selection;
@@ -62,8 +67,8 @@ pub use emit::{
     emit_checked_with_temporal_selections, emit_checked_with_temporal_selections_and_cancel,
     emit_monitor_plan, emit_monitor_plan_over, emit_package, emit_package_with_temporal_selections,
     emit_timed_models, Emission, EmitRefusal, MonitorPlanWire, OmissionCause, OmittedNode,
-    ProtocolEmission, ProtocolEmissionAggregate, ProtocolEmissionResult, TemporalClockSelection,
-    TimedOrderFault,
+    ProtocolEmission, ProtocolEmissionAggregate, ProtocolEmissionResult, TemporalBindingRows,
+    TemporalClockSelection, TimedOrderFault,
 };
 pub use evaluation_view::{
     AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, ReaderProtocolField,

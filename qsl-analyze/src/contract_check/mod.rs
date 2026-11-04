@@ -38,7 +38,7 @@ use qsl_replay::contract_check::{
 };
 use qsl_replay::{open_systems, Cancel, DeclineCode, ProofRefusalCause, SubjectRefusal};
 use qsl_route::Mode;
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, DeclarationFamily};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{CancelCause, ScalarLimits};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
@@ -286,6 +286,7 @@ pub fn contract_item<'a>(
     AnalyzeItem::new(
         index,
         Capability::OperationContract,
+        Some(DeclarationFamily::StateModel),
         Mode::Bounded,
         manifest::BACKEND_ID,
         move |cancel| {

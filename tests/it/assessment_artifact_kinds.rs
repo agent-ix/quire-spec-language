@@ -4,9 +4,29 @@
 use ix_trace_rs::trace;
 use quire_spec_language::protocol_artifact::wire::{ArtifactKind, BindingKind};
 
-#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-5")]
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-5", "FR-513-AC-16")]
 #[test]
 fn population_and_window_documents_remain_distinct_from_clock_and_model_exports() {
+    assert_eq!(
+        ArtifactKind::Population.as_str(),
+        qsl_package::protocol_artifact_v1::ArtifactKind::Population.as_str()
+    );
+    assert_eq!(
+        ArtifactKind::Window.as_str(),
+        qsl_package::protocol_artifact_v1::ArtifactKind::Window.as_str()
+    );
+    assert_eq!(
+        BindingKind::Population.as_str(),
+        qsl_package::protocol_artifact_v1::BindingKind::Population.as_str()
+    );
+    assert_eq!(
+        BindingKind::Window.as_str(),
+        qsl_package::protocol_artifact_v1::BindingKind::Window.as_str()
+    );
+    assert_eq!(
+        BindingKind::Clock.as_str(),
+        qsl_package::protocol_artifact_v1::BindingKind::Clock.as_str()
+    );
     assert_eq!(
         serde_json::to_string(&ArtifactKind::Population).expect("serialize population kind"),
         r#""population""#

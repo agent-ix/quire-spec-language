@@ -29,8 +29,8 @@ pub use activation::{
     FaultSubject, Instance, InstanceState, SurplusCapture, UnknownKind,
 };
 pub use binding::{
-    AuthenticatedBinding, BindingMismatch, ClauseSelection, MismatchedDimension, TraceBinding,
-    ADMIT_STAGE,
+    authenticate_clock, AuthenticatedBinding, BindingMismatch, ClauseSelection,
+    MismatchedDimension, TraceBinding, ADMIT_STAGE,
 };
 pub use call::evaluate_temporal_evidence;
 pub use counters::{CallMeter, ClauseStop, EvidenceStop, LimitReached, Visit};

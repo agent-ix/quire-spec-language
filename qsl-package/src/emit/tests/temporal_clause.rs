@@ -134,6 +134,16 @@ fn check_graph(unit: &str) -> qsl_semantics::check::CheckedGraph {
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"))
 }
 
+fn check_graph_with_s3_input_limit(
+    unit: &str,
+    input_bytes: u64,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
+    assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default().with_input_bytes(input_bytes))
+}
+
 /// FR-322-AC-294: the emitter joins each explicit clock selection to one
 /// checked source locus and writes the selected typed clock beside the exact
 /// emitted declaration id. The clock name comes from the checked clause.
@@ -240,10 +250,11 @@ fn names_follow_clauses_and_never_enter_node_identity() {
     assert!(none.wire.get("temporal_clause_names").is_none());
 }
 
-/// TC-1308 row 20's I2 half: the reader admits three-binding package bytes at
+/// FR-050-AC-5 / FR-513-AC-10, TC-1308 row 20's I2 half: the reader admits
+/// three-binding package bytes at
 /// their exact size, refuses one byte below it naming `i2.input_bytes`, then
-/// returns an equal admitted read on retry. The temporal declaration path
-/// does not itself exercise `identity.input_bytes`.
+/// returns an equal admitted read on retry.
+#[trace("TC-1308", "FR-050-AC-5", "FR-513-AC-10")]
 #[test]
 fn three_temporal_bindings_observe_i2_input_byte_bounds() {
     let declarations = [
@@ -283,6 +294,81 @@ fn three_temporal_bindings_observe_i2_input_byte_bounds() {
     let second = read(exact);
     assert!(matches!(&first, Read::Verified { .. }));
     assert_eq!(second, first, "retry reproduces the admitted read");
+}
+
+/// FR-050-AC-5 / FR-513-AC-10: S3 bounds checked declaration preimages in a
+/// package with three temporal bindings; an exact bound admits, one byte
+/// short names `s3.input_bytes`, and retry emits the same bytes.
+#[trace("TC-1308", "FR-050-AC-5", "FR-513-AC-10")]
+#[test]
+fn three_temporal_bindings_observe_s3_input_byte_bounds() {
+    use qsl_semantics::check::{CheckCause, CheckingLimitKind};
+
+    let declarations = [
+        "function inputProbe using v(): Boolean pure { not not not true }".to_owned(),
+        declared("BoundA", "eventually[0,1] holds(c.versionNumber = 1)"),
+        declared("BoundB", "eventually[0,1] holds(c.versionNumber = 2)"),
+        declared("BoundC", "eventually[0,1] holds(c.versionNumber = 3)"),
+    ]
+    .join("\n");
+    let source = unit(EVENT, &declarations);
+    let baseline = compile(&source);
+    assert_eq!(
+        baseline.wire["temporal_bindings"].as_array().unwrap().len(),
+        3
+    );
+
+    let mut exact = 0;
+    let graph = loop {
+        match check_graph_with_s3_input_limit(&source, exact) {
+            Ok(graph) => break graph,
+            Err(refusals) => {
+                let required = refusals
+                    .iter()
+                    .filter_map(|refusal| match &refusal.cause {
+                        CheckCause::ResourceExhausted(limit)
+                            if limit.kind == CheckingLimitKind::InputBytes =>
+                        {
+                            Some(limit.actual)
+                        }
+                        _ => None,
+                    })
+                    .max()
+                    .and_then(|actual| u64::try_from(actual).ok())
+                    .expect("the refusal reports s3.input_bytes");
+                assert!(required > exact, "the retry raises the exact bound");
+                exact = required;
+            }
+        }
+    };
+    assert!(exact > 0);
+    let refusals = check_graph_with_s3_input_limit(&source, exact - 1)
+        .expect_err("one byte below the measured S3 limit refuses");
+    assert!(refusals.iter().any(|refusal| {
+        matches!(
+            &refusal.cause,
+            CheckCause::ResourceExhausted(limit)
+                if limit.kind == CheckingLimitKind::InputBytes
+                    && limit.limit == exact - 1
+        )
+    }));
+
+    let selections: Vec<_> = graph
+        .temporal_clauses()
+        .iter()
+        .map(|temporal| crate::emit::TemporalClockSelection {
+            source: graph.source().clone(),
+            declaration_span: temporal.clause().span(),
+            clock: fixture_clock(temporal.clause().profile()).expect("event clock selection"),
+        })
+        .collect();
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &CheckedPackage::link(graph),
+        &selections,
+    )
+    .expect("the exact-limit graph emits");
+    assert_eq!(emission.omitted, []);
+    assert_eq!(emission.package.bytes(), baseline.emission.package.bytes());
 }
 
 /// FR-322-AC-294: the compatibility entry point cannot invent a selection

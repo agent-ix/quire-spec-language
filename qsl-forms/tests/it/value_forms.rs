@@ -1045,6 +1045,14 @@ fn s2_builds_a_predicate_as_a_function_declaration_of_kind_predicate() {
     assert!(predicate.measure.is_none());
     assert_eq!(show(predicate.body.root()), "Greater(x, 0)");
 
+    let (_, unit) = build(
+        "predicate Even using v(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then Even(x - 1) else true }",
+    );
+    let even = function(unit.forms()[0].form());
+    assert_eq!(even.kind(), DeclarationKind::Predicate);
+    let measure = even.measure.as_ref().expect("the measure is carried");
+    assert_eq!(show(measure.root()), "x");
+
     let (_, unit) = build("function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }");
     assert_eq!(
         function(unit.forms()[0].form()).kind(),

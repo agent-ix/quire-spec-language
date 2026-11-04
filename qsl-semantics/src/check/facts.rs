@@ -750,8 +750,51 @@ impl<'a> Definedness<'a> {
                 };
                 self.comparison(condition.at(*left), condition.at(*right), relation, facts)
             }
+            NodeKind::Equality(operator, _, left, right) => {
+                let unchanged = Some(Rc::clone(facts));
+                let Some(path) =
+                    self.rational_zero_comparand(condition.at(*left), condition.at(*right), facts)
+                else {
+                    return (unchanged.clone(), unchanged);
+                };
+                let mut nonzero = Facts::clone(facts);
+                nonzero.nonzero.insert(path, ());
+                let nonzero = Some(Rc::new(nonzero));
+                match operator {
+                    EqualityOperator::NotEqual => (nonzero, unchanged),
+                    EqualityOperator::Equal => (unchanged, nonzero),
+                }
+            }
             _ => (Some(Rc::clone(facts)), Some(Rc::clone(facts))),
         }
+    }
+
+    /// QSpec FR-146 "Accepted proof forms": the rational stable path `x` of
+    /// `x != rational(0,1)` or `rational(0,1) != x` (and of `=`, whose false
+    /// outcome is the nonzero one). Any other comparison yields no fact.
+    fn rational_zero_comparand(
+        &self,
+        left: CheckedNode<'_>,
+        right: CheckedNode<'_>,
+        facts: &Facts,
+    ) -> Option<StablePath> {
+        let is_zero = |node: CheckedNode<'_>| {
+            matches!(
+                node.kind(),
+                NodeKind::Literal(CheckedLiteral(Value::Rational(value))) if value.is_zero()
+            )
+        };
+        let path = if is_zero(right) {
+            left
+        } else if is_zero(left) {
+            right
+        } else {
+            return None;
+        };
+        if !matches!(path.value_type(), ValueType::Rational(_)) {
+            return None;
+        }
+        self.stable_path(path, facts)
     }
 
     fn refuse(node: CheckedNode<'_>, obligation: Obligation) -> CheckRefusal {
@@ -921,12 +964,18 @@ impl<'a> Definedness<'a> {
                 right,
                 domain,
             } => {
+                let divisor = node.at(*right);
                 let (ValueType::Rational(left), ValueType::Rational(right)) =
-                    (node.at(*left).value_type(), node.at(*right).value_type())
+                    (node.at(*left).value_type(), divisor.value_type())
                 else {
                     return Err(Self::refuse(node, Obligation::RationalRange));
                 };
-                if *operator == ArithmeticOperator::Divide && !right.excludes_zero() {
+                if *operator == ArithmeticOperator::Divide
+                    && !right.excludes_zero()
+                    && !self
+                        .stable_path(divisor, facts)
+                        .is_some_and(|path| facts.nonzero.contains(&path))
+                {
                     return Err(Self::refuse(node, Obligation::Nonzero));
                 }
                 if domain.contains_domain(&left.result_of(*operator, right)) {
