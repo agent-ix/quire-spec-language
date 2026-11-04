@@ -1286,7 +1286,8 @@ fn the_package_views_take_the_admitted_package_and_return_node_ids() {
     assert_eq!(found.name, "sent");
 }
 
-/// FR-519-AC-11 (TC-1314 row 11): the `semantic_type` nodes and the literal
+/// FR-519-AC-11 (TC-1314 row 11), over the protocol_view fixture (the TC-134
+/// workflow plus an invariant over the signed-64 extrema): the `semantic_type` nodes and the literal
 /// and reference terms that stand for the retired `Type`, `Value` and `Number`
 /// records are read through `CheckedPackageV2::term` and equal the values the
 /// emitter built in memory, with each number in the FR-322 encoding (a decimal
@@ -1325,8 +1326,10 @@ fn types_values_and_numbers_are_the_terms_the_emitter_built() {
         );
         match term {
             CheckedTerm::Literal {
-                value_kind, value, ..
-            } if format!("{value_kind:?}") == "Integer" => {
+                value_kind: LiteralKind::Integer,
+                value,
+                ..
+            } => {
                 literals.push(
                     value
                         .as_str()
@@ -1362,8 +1365,8 @@ fn types_values_and_numbers_are_the_terms_the_emitter_built() {
 /// FR-519-AC-12 (TC-1314 row 12): the population declaration node of the
 /// model, selected from the admitted package by its node id, equals the node
 /// the emitter built in memory, with its `max` bound in the FR-322 encoding.
-/// **R**'s own model declares no population (`"populations": []`), so this runs
-/// over TC-1054's model, which declares `orders` and `people`.
+/// R of FR-517 declares no population, so, as the merged FR-519-AC-12 states, this
+/// runs over TC-1054's model (TC-1046's fixture with `orders` and `people`).
 #[trace("FR-519-AC-12", "TC-1314")]
 #[test]
 fn the_population_declaration_node_is_selected_by_its_id() {

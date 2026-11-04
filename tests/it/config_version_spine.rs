@@ -1005,8 +1005,7 @@ fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
 /// route. An update that keeps the child's `parent` evaluates true; one that
 /// rewrites it is refused at admission with `FrameViolation` -- the frame
 /// forbids the parent write, so no graph semantics is invented for it -- and
-/// a `parent` naming no row is refused `DanglingReference`. Each report names
-/// the stage and the catalog code, not only an exit status.
+/// a `parent` naming no row is refused `DanglingReference` (catalog `frame_violation`, `dangling_reference`). Each refusal reports stage `Admit`, no Boolean and no evaluation outcome.
 #[trace("TC-131", "FR-047-AC-8")]
 #[test]
 fn a_parent_the_frame_forbids_is_refused_not_given_graph_semantics() {

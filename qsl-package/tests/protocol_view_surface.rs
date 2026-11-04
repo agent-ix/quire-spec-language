@@ -176,7 +176,9 @@ fn causal_relation_is_the_only_derivation_over_checked_package_nodes() {
         for (name, signature) in signatures(&text) {
             let (parameters, returns) = signature.split_once("->").unwrap_or((&signature, ""));
             let over_nodes = parameters.contains("CheckedPackageV2")
-                || parameters.contains("[CheckedSemanticNodeV2]");
+                || parameters.contains("CheckedSemanticNodeV2")
+                || parameters.contains("[Node]")
+                || parameters.contains("&Node");
             let returns_relation =
                 returns.contains("CausalRelation") || returns.contains("CausalEdge");
             if over_nodes && returns_relation {
