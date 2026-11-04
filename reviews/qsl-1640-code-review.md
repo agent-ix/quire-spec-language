@@ -41,3 +41,21 @@ Extra check: making the reader-backed/in-process equality helper `without_locati
 ## Coverage
 
 Examined: FR-520-AC-11, FR-520-AC-9 (charge-log equality, probed), FR-520 outcome map row for per-binder accounting, quire-exact FR-358-AC-16 to AC-21 and the IR-1280 API (read), quire-protocol FR-045-AC-7 and AC-8 (consumer). Files examined with no finding: qsl-eval/src/value/mod.rs, qsl-eval/src/value/expression/protocol_slot.rs, Cargo.lock.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | `Owners::pop_value` (the single-value pop) does not record `popped`, but `set_callee_owners` builds the callee frame from `popped()`. For a one-argument call the callee frame therefore takes the owners of the last multi-value pop, a stale one from an earlier call. Reproduced: `add(target, 1) = 6 and plus(recovered.total) = 6 and not activated` charges the body of `plus` (`a + 1`) to `target` (entries: recovered work 1 result 0, target work 18 value_occurrences 2 integer_bits 4) instead of to `recovered`. A charge lands on the wrong binder, and the value depends on call history. Record the single pop in `popped`, or pass the argument owners to the callee frame explicitly. | qsl-eval/src/value/expression/protocol_slot/charges.rs:171-180,190-192; qsl-eval/src/value/expression/evaluate.rs:1471-1481 |
+| FND-006 | medium | A dispatched call gives every callee slot one owner, the merge of all argument owners (`set_uniform_owner`). When the receiver and another argument derive from different binders every slot is `Mixed`, so an operation over a single binder's parameter inside the dispatched body is recorded unattributed, whereas the same operation in a non-dispatched call is charged to its binder. Conservation holds (under-attribution only), but it contradicts FR-520-AC-11's "an operation over one binder is recorded under that binder", and FR-520 does not state the exception. Use per-argument owners as for ordinary calls, or state the rule in FR-520 and test it. | qsl-eval/src/value/expression/evaluate.rs:3096-3130 |
+
+## Dispositions
+
+Disposition round 1 at PR head `28eeb158e76a5956b7e99b08332a3bbe38d20b6a` (contains current origin/main 137f723a6, so the trial merge is the head).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Operand-provenance attribution is implemented (`Owner` None, Binder or Mixed on every stack value and frame slot, interval drained after each step onto the step's owner). Verified by the new tests: two-binder equality unattributed, `not activated` on its own binder, literal-only subexpression unattributed before and after a read, commuted operands give an identical log. Mutations M1 (all unattributed) and M7 (merge different binders to the left binder) are killed. The call-argument path has a defect, see FND-005. |
+| FND-002 | fixed | `evaluate_protocol_slot` and `AdmittedEvaluationViewEvaluation::evaluate_protocol_slot` document that the call drains the caller's open interval without adding it to the log and restores capture; FR-520 states it; `a_call_restores_the_meters_capture_state_and_drains_a_caller_interval_it_found` seeds a non-empty caller interval. Mutation M5 (inverted restore) is killed. |
+| FND-003 | fixed | Unattributed routing and the root-frame gate are now pinned: M4 (drop unattributed) fails 7 tests, M6 (remove the frame gate) fails the callee-frame test. |
+| FND-004 | deferred | Pre-existing on origin/main, not caused by this PR; tracked as QSL-1645 per the coordinator. Re-run on the head: still the same single extra name. |

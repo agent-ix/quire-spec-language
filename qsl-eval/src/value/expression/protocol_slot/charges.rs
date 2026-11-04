@@ -151,7 +151,6 @@ pub(crate) struct Owners {
     values: Vec<Owner>,
     frames: Vec<Vec<Owner>>,
     step: Option<Owner>,
-    popped: Vec<Owner>,
 }
 
 impl Owners {
@@ -171,27 +170,19 @@ impl Owners {
         self.values.push(self.step());
     }
 
-    pub(crate) fn pop_value(&mut self) -> Option<()> {
-        let owner = self.values.pop()?;
-        self.absorb(owner);
-        Some(())
-    }
-
-    pub(crate) fn pop_values(&mut self, count: usize) -> Option<()> {
+    /// Pop the owners of the top `count` values, merging them into the step,
+    /// and return them in stack order.
+    pub(crate) fn take_values(&mut self, count: usize) -> Option<Vec<Owner>> {
         let start = self.values.len().checked_sub(count)?;
-        self.popped = self.values.split_off(start);
-        for owner in self.popped.clone() {
-            self.absorb(owner);
+        let taken = self.values.split_off(start);
+        for owner in &taken {
+            self.absorb(*owner);
         }
-        Some(())
+        Some(taken)
     }
 
-    /// The owners of the values the last [`Self::pop_values`] took.
-    pub(crate) fn popped(&self) -> &[Owner] {
-        &self.popped
-    }
-
-    pub(crate) fn push_frame(&mut self, owners: Vec<Owner>) {
+    pub(crate) fn push_frame(&mut self, mut owners: Vec<Owner>, slots: usize) {
+        owners.resize(slots, Owner::None);
         self.frames.push(owners);
     }
 

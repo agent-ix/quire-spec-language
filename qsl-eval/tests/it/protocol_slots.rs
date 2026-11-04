@@ -983,6 +983,101 @@ fn gated_package(precondition: bool) -> CheckedPackage {
     package
 }
 
+/// The `gate` capture slot of [`gated_package`] evaluated over the present
+/// object, with the dispatched `ready()` call's precondition as given.
+fn evaluate_gate(precondition: bool) -> ProtocolSlotEvaluation {
+    let package = gated_package(precondition);
+    let keys = package
+        .graph()
+        .protocol_node_keys("Refunds")
+        .expect("the protocol's emitted identity map");
+    let view = keys
+        .binders
+        .iter()
+        .find(|binder| binder.name == "view")
+        .expect("the protocol binds view")
+        .node
+        .clone();
+    let model_view = crate::state_model_family::view();
+    let (_, present, _) = crate::state_model_family::objects(package.graph(), &model_view);
+    let selected = qsl_semantics::model::observation::DocumentRef {
+        authority: "test".to_owned(),
+        identity: "now".to_owned(),
+    };
+    let snapshot = serde_json::json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": selected.authority.clone(),
+            "identity": selected.identity.clone(),
+            },
+        "observation": "current",
+        "model": {"identity": "test/orders", "version": "1.0.0", "digest": "set at admission"},
+        "populations": [{
+            "population": "ix://test/orders/pop",
+            "complete": true,
+            "objects": [{
+                "key": "present",
+                "type": "ix://test/orders/A",
+                "fields": {
+                    "flag": {"boolean": true},
+                    "next": {"reference": {"population": "ix://test/orders/pop", "key": "present"}},
+                },
+            }],
+        }],
+    });
+    let model_bytes = crate::state_model_family::model_document();
+    let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()])
+        .expect("the source model remains an FR-106 package input");
+    let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
+        .into_iter()
+        .collect();
+    let observation = package.evaluation_view().admit_protocol_observation(
+        &package.graph().model_selections()[0],
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    );
+    let slot = ProtocolSlot {
+        node: keys.clause.clone().expect("protocol clause key"),
+        member: "captures".to_owned(),
+        index: Some(1),
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluated = package
+        .evaluate_protocol_slot(
+            &slot,
+            &ProtocolSupply {
+                binders: vec![(
+                    view,
+                    qsl_eval::value::ProtocolSuppliedValue {
+                        value: SuppliedValue::Value(Value::Reference(present)),
+                        references: vec![qsl_eval::value::ProtocolReferenceOccurrence {
+                            path: Vec::new(),
+                            population: quire_exact::NodeKey::new(
+                                "test/orders",
+                                vec![
+                                    quire_exact::PathSegment::Text("relation".to_owned()),
+                                    quire_exact::PathSegment::Text("population".to_owned()),
+                                    quire_exact::PathSegment::Text(
+                                        "ix://test/orders/pop".to_owned(),
+                                    ),
+                                ],
+                                0,
+                            )
+                            .unwrap(),
+                        }],
+                    },
+                )],
+                observation: Some(&observation),
+            },
+            &mut meter,
+        )
+        .expect("the capture slot evaluates");
+    evaluated
+}
+
 /// TC-1072 rows 7 and 8 / FR-390-AC-8: a capture initializer whose
 /// dispatched call has a false precondition gives the capture slot an
 /// `Undefined` result with reason `precondition-false` naming the operation
@@ -993,97 +1088,8 @@ fn gated_package(precondition: bool) -> CheckedPackage {
 #[test]
 fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes() {
     let capture_gate = |precondition: bool| {
-        let package = gated_package(precondition);
-        let keys = package
-            .graph()
-            .protocol_node_keys("Refunds")
-            .expect("the protocol's emitted identity map");
-        let view = keys
-            .binders
-            .iter()
-            .find(|binder| binder.name == "view")
-            .expect("the protocol binds view")
-            .node
-            .clone();
-        let model_view = crate::state_model_family::view();
-        let (_, present, _) = crate::state_model_family::objects(package.graph(), &model_view);
-        let selected = qsl_semantics::model::observation::DocumentRef {
-            authority: "test".to_owned(),
-            identity: "now".to_owned(),
-        };
-        let snapshot = serde_json::json!({
-            "format": "quire.state.snapshot/v1",
-            "identity": {
-                "authority": selected.authority.clone(),
-                "identity": selected.identity.clone(),
-                },
-            "observation": "current",
-            "model": {"identity": "test/orders", "version": "1.0.0", "digest": "set at admission"},
-            "populations": [{
-                "population": "ix://test/orders/pop",
-                "complete": true,
-                "objects": [{
-                    "key": "present",
-                    "type": "ix://test/orders/A",
-                    "fields": {
-                        "flag": {"boolean": true},
-                        "next": {"reference": {"population": "ix://test/orders/pop", "key": "present"}},
-                    },
-                }],
-            }],
-        });
-        let model_bytes = crate::state_model_family::model_document();
-        let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()])
-            .expect("the source model remains an FR-106 package input");
-        let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
-            .into_iter()
-            .collect();
-        let observation = package.evaluation_view().admit_protocol_observation(
-            &package.graph().model_selections()[0],
-            &packages,
-            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
-            &snapshots,
-            &selected,
-            qsl_semantics::model::observation::ObservationLimits::default(),
-        );
-        let slot = ProtocolSlot {
-            node: keys.clause.clone().expect("protocol clause key"),
-            member: "captures".to_owned(),
-            index: Some(1),
-        };
-        let mut meter = Meter::new(UNLIMITED);
-        let evaluated = package
-            .evaluate_protocol_slot(
-                &slot,
-                &ProtocolSupply {
-                    binders: vec![(
-                        view,
-                        qsl_eval::value::ProtocolSuppliedValue {
-                            value: SuppliedValue::Value(Value::Reference(present)),
-                            references: vec![qsl_eval::value::ProtocolReferenceOccurrence {
-                                path: Vec::new(),
-                                population: quire_exact::NodeKey::new(
-                                    "test/orders",
-                                    vec![
-                                        quire_exact::PathSegment::Text("relation".to_owned()),
-                                        quire_exact::PathSegment::Text("population".to_owned()),
-                                        quire_exact::PathSegment::Text(
-                                            "ix://test/orders/pop".to_owned(),
-                                        ),
-                                    ],
-                                    0,
-                                )
-                                .unwrap(),
-                            }],
-                        },
-                    )],
-                    observation: Some(&observation),
-                },
-                &mut meter,
-            )
-            .expect("the capture slot evaluates");
-        let ProtocolSlotEvaluation::Evaluated(evaluation, _) = evaluated else {
-            panic!("the view binder was supplied: {evaluated:?}");
+        let ProtocolSlotEvaluation::Evaluated(evaluation, _) = evaluate_gate(precondition) else {
+            panic!("the view binder was supplied");
         };
         evaluation.outcome
     };
@@ -1104,4 +1110,49 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
     else {
         panic!("a true precondition completes the capture");
     };
+}
+
+/// A dispatched call's receiver and every charge of its body belong to the
+/// binder the receiver is, in both the precondition and the body frame
+/// (FR-520-AC-11).
+#[trace("TC-1072", "FR-520-AC-11", "TC-1315")]
+#[test]
+fn a_dispatched_call_charges_its_body_to_the_binder_of_its_receiver() {
+    let evaluated = evaluate_gate(true);
+    let ProtocolSlotEvaluation::Evaluated(_, charges) = &evaluated else {
+        panic!("the view binder was supplied: {evaluated:?}");
+    };
+    let package = gated_package(true);
+    let keys = package
+        .graph()
+        .protocol_node_keys("Refunds")
+        .expect("the protocol's emitted identity map");
+    let view = keys
+        .binders
+        .iter()
+        .find(|binder| binder.name == "view")
+        .expect("the protocol binds view")
+        .node
+        .clone();
+    let counters = [
+        quire_exact::LimitKind::IntegerBits,
+        quire_exact::LimitKind::DecimalDigits,
+        quire_exact::LimitKind::ScaleExpansion,
+        quire_exact::LimitKind::TextInputBytes,
+        quire_exact::LimitKind::TextScalars,
+        quire_exact::LimitKind::NormalizedScalars,
+        quire_exact::LimitKind::UnitEdges,
+        quire_exact::LimitKind::ValueOccurrences,
+        quire_exact::LimitKind::WorkUnits,
+        quire_exact::LimitKind::ResultUnits,
+    ];
+    let of = |amounts: &qsl_eval::value::ChargeAmounts| counters.map(|kind| amounts.amount(kind));
+    assert_eq!(
+        of(charges.unattributed()),
+        [0; 10],
+        "every charge of the dispatch is made over the receiver"
+    );
+    let entry = of(charges.binder(&view).expect("the receiver binder was read"));
+    assert_eq!(entry, of(&charges.total()));
+    assert!(entry.iter().any(|amount| *amount > 0), "{entry:?}");
 }

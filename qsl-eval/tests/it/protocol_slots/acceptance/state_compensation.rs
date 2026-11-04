@@ -775,15 +775,24 @@ fn variant(edit: impl Fn(String) -> String) -> CheckedPackage {
 }
 
 /// The Refund slot `recovery.predicate` over `recovered`, `target` and
-/// `activated` with `body` as its expression.
+/// `activated` with `body` as its expression, beside the pure functions
+/// `plus` and `add`.
 fn recovery_variant(body: &str) -> CheckedPackage {
     let original =
         "recover (recovered: M::Receipt) { recovered.total = target and not activated };";
     variant(|source| {
-        source.replace(
-            original,
-            &format!("recover (recovered: M::Receipt) {{ {body} }};"),
-        )
+        source
+            .replace(
+                "profile S =",
+                "profile v = \"quire.value.complete/v1\";\nprofile S =",
+            )
+            .replace(
+                original,
+                &format!("recover (recovered: M::Receipt) {{ {body} }};"),
+            )
+            + "function plus using v(a: Integer): Integer pure { a + 1 }\n\
+               function add using v(a: Integer, b: Integer): Integer pure { a + b }\n\
+               function bump using v(a: Integer): Integer pure { let x = a + 1 in x + 1 }\n"
     })
 }
 
@@ -913,18 +922,7 @@ fn commuting_the_operands_of_a_two_binder_operation_leaves_the_log_unchanged() {
 #[test]
 #[trace("FR-520-AC-11", "TC-1315")]
 fn a_call_made_before_any_read_registers_no_binder_in_the_callee_frame() {
-    let package = variant(|source| {
-        source
-            .replace(
-                "profile S =",
-                "profile v = \"quire.value.complete/v1\";\nprofile S =",
-            )
-            .replace(
-                "recover (recovered: M::Receipt) { recovered.total = target and not activated };",
-                "recover (recovered: M::Receipt) { plus(1) = 3 and recovered.total = target and not activated };",
-            )
-            + "function plus using v(a: Integer): Integer pure { a + 1 }\n"
-    });
+    let package = recovery_variant("plus(1) = 3 and recovered.total = target and not activated");
     let (result, used) = recovery_log(&package);
     let charges = charges_of(&result);
     assert_eq!(
@@ -1016,4 +1014,91 @@ fn a_call_restores_the_meters_capture_state_and_drains_a_caller_interval_it_foun
         NOTHING,
         "the caller's interval before the call and the call's own charges are not in it"
     );
+}
+
+/// The log of the Refund `recovery.predicate` slot with `body` as its
+/// expression, supplying only the binders `body` names.
+fn recovery_log_of(body: &str) -> (CheckedPackage, ProtocolSlotEvaluation, [u64; 10]) {
+    let package = recovery_variant(body);
+    let values = [
+        ("recovered", receipt(&package, 5)),
+        ("target", int(5)),
+        ("activated", Value::Boolean(false)),
+    ]
+    .into_iter()
+    .filter(|(name, _)| body.contains(name))
+    .collect();
+    let mut meter = Meter::new(UNLIMITED);
+    let result = run(
+        &package,
+        "Refund",
+        "recovery.predicate",
+        None,
+        values,
+        &mut meter,
+    )
+    .expect("the recovery slot evaluates");
+    (package, result, usage(&meter))
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_one_argument_call_charges_its_body_to_the_binder_of_its_argument() {
+    let (package, result, used) = recovery_log_of("plus(target) = 6 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(
+        entry(&package, charges, "target"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2]
+    );
+    assert_eq!(amounts(charges.unattributed()), NOTHING);
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_one_argument_call_after_a_two_argument_call_takes_its_own_argument_owner() {
+    let (package, result, used) =
+        recovery_log_of("add(target, 1) = 6 and plus(recovered.total) = 6 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(
+        entry(&package, charges, "target"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2],
+        "`add(target, 1)` and its body belong to `target` and nothing after it does"
+    );
+    assert_eq!(
+        entry(&package, charges, "recovered"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 10, 3],
+        "`plus(recovered.total)` and its body belong to `recovered`"
+    );
+    assert_eq!(amounts(charges.unattributed()), NOTHING);
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_call_over_two_binders_charges_its_body_to_no_binder() {
+    let (package, result, used) =
+        recovery_log_of("add(recovered.total, target) = 10 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(entry(&package, charges, "recovered"), NOTHING);
+    assert_eq!(entry(&package, charges, "target"), NOTHING);
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2]
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_let_bound_value_keeps_the_binder_it_derives_from() {
+    let (package, result, used) = recovery_log_of("bump(target) = 7 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(
+        entry(&package, charges, "target"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 12, 3],
+        "`x + 1` over the let-bound `x = a + 1` is made by `target`"
+    );
+    assert_eq!(amounts(charges.unattributed()), NOTHING);
+    assert_eq!(amounts(&charges.total()), used);
 }

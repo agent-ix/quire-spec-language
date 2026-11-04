@@ -420,7 +420,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
                     reference(),
                 ),
                 node: node.root(),
-                owner: Owner::None,
+                owners: Vec::new(),
             })))
         }
     );
@@ -492,7 +492,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
                 receiver.clone(),
             ),
             node: node.root(),
-            owner: Owner::None,
+            owners: Vec::new(),
         })))
         .unwrap_or_else(|_| panic!("linked guard body"));
     finish_tasks(&mut machine).unwrap_or_else(|_| panic!("guard result"));
@@ -1804,7 +1804,7 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
                 ),
             ),
             node: root.root(),
-            owner: Owner::None,
+            owners: Vec::new(),
         })))
     });
     probe!("evaluation-branch-node-expected", m, [], {
@@ -2575,4 +2575,94 @@ fn record_present_value_branch_has_a_local_count_and_zip_proof() {
     // pop_many supplies exactly present values or stops earlier; zip visits
     // only a prefix of slots and consumes one value per Present slot.
     // Thus the defensive values.next() failure has no executable fixture.
+}
+
+/// Run `$step` as one evaluation step of a machine that tracks binder owners
+/// and evaluate to the owner of `$slot` afterwards.
+macro_rules! slot_owner_after_step {
+    ($slots:expr, $slot:expr, |$m:ident| $step:expr) => {{
+        let (package, _) = super::tests::population_function_package();
+        let graph = package.graph();
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(
+            graph.scope(),
+            graph,
+            &objects,
+            &mut meter,
+            graph.dispatch_tables(),
+        );
+        machine.owners = Some(Owners::default());
+        machine.push_frame(vec![None; $slots], Vec::new());
+        if let Some(owners) = machine.owners.as_mut() {
+            owners.begin_step();
+        }
+        machine.iterations = 1;
+        let $m = &mut machine;
+        $step.unwrap_or_else(|_| panic!("the iteration step runs"));
+        machine
+            .owners
+            .as_ref()
+            .map_or(Owner::None, |owners| owners.slot($slot))
+    }};
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_query_binds_each_element_to_the_owner_of_its_source() {
+    let query = body(|ids| NodeKind::Query {
+        visit: Visit::Exists,
+        slot: 0,
+        source: ids[0],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        let mut pending = iteration(query.root());
+        pending.owner = Owner::Binder(7);
+        m.iterate(pending)
+    });
+    assert_eq!(owner, Owner::Binder(7));
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_fold_binds_its_accumulator_and_element_to_the_owner_of_its_source() {
+    let fold = body(|ids| NodeKind::Fold {
+        accumulator: 0,
+        binder: 1,
+        source: ids[0],
+        step: ids[1],
+        identity: Some(ids[0]),
+    });
+    for slot in [0, 1] {
+        let owner = slot_owner_after_step!(2, slot, |m| {
+            let mut pending = iteration(fold.root());
+            pending.owner = Owner::Binder(7);
+            pending.accumulator = Some(Value::Boolean(true));
+            m.iterate(pending)
+        });
+        assert_eq!(owner, Owner::Binder(7), "slot {slot}");
+    }
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_seq_binds_each_integer_to_the_owner_of_its_bounds() {
+    let seq = body(|ids| NodeKind::Seq {
+        slot: 0,
+        low: ids[0],
+        high: ids[1],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        m.iterate_seq(Box::new(SeqIteration {
+            node: seq.root(),
+            next: Integer::zero(),
+            high: Integer::one(),
+            awaiting: false,
+            results: Vec::new(),
+            owner: Owner::Binder(7),
+        }))
+    });
+    assert_eq!(owner, Owner::Binder(7));
 }

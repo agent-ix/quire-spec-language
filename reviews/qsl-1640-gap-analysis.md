@@ -32,3 +32,19 @@ Quoin `gap-analysis` plan completion: not assessed (planless). Code with no owni
 ## Coverage
 
 Examined FR-520-AC-9, FR-520-AC-11 and TC-1315 row 12 against the matrix and the four tagged tests; FR-520 outcome map row for `EvaluationReport` per-binder accounting against `charges.rs`.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | Owner propagation through function-call arguments, dispatch and `let` is unpinned: mutations M9 (callee frame owners dropped), M10 (dispatch callee owner none) and M11 (let-bound slot owner none) each pass all 17 `state_compensation` tests, and no test reads a binder inside an iteration, `seq` or `fold` body or passes a binder as a function argument whose body does arithmetic. This is why the one-argument call defect (SR-1640001 FND-005) escaped. Add one test per propagation path: function call with one and with two arguments, dispatch, let, a collection iteration, a `seq` and a `fold` over a single binder, each asserting the per-binder entry. | qsl-eval/tests/it/protocol_slots/acceptance/state_compensation.rs:915-940 |
+
+## Dispositions
+
+Disposition round 1 at PR head `28eeb158e76a5956b7e99b08332a3bbe38d20b6a` (contains current origin/main 137f723a6, so the trial merge is the head).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_literal_only_subexpression_is_unattributed_wherever_it_runs` asserts a nonzero unattributed entry; mutation M4 is killed. |
+| FND-002 | fixed | `a_call_made_before_any_read_registers_no_binder_in_the_callee_frame` calls a model function before any read; mutation M6 (frame gate removed) is killed. |
+| FND-003 | fixed | `without_location` now includes the `BinderCharges` of both variants and the reader-backed test is tagged FR-520-AC-9; the 51 `protocol_slots` tests pass. |

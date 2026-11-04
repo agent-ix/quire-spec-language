@@ -561,8 +561,8 @@ struct DispatchGuard<N> {
     /// the whole expression's root and `precondition-false`'s
     /// `UndefinedRecord` reports the wrong locus.
     node: N,
-    /// The binder the dispatched call's arguments derive from.
-    owner: Owner,
+    /// The owner of each dispatched argument, receiver first.
+    owners: Vec<Owner>,
 }
 
 /// Which population an `allInstances`/`lookup` reads: the ambient post
@@ -1093,16 +1093,26 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             }
         }
         if let Some(owners) = self.owners.as_mut() {
-            owners.push_frame(vec![Owner::None; frame.len()]);
+            owners.push_frame(Vec::new(), frame.len());
         }
         self.frames.push(frame);
         self.frame_guard_provenance.push(provenance);
     }
 
-    fn push_frame(&mut self, frame: Vec<Option<Value>>, mut provenance: Vec<bool>) {
+    fn push_frame(&mut self, frame: Vec<Option<Value>>, provenance: Vec<bool>) {
+        self.push_frame_owned(frame, provenance, Vec::new());
+    }
+
+    /// Push a frame whose first slots derive from `owners`, one per argument.
+    fn push_frame_owned(
+        &mut self,
+        frame: Vec<Option<Value>>,
+        mut provenance: Vec<bool>,
+        owners: Vec<Owner>,
+    ) {
         provenance.resize(frame.len(), false);
-        if let Some(owners) = self.owners.as_mut() {
-            owners.push_frame(vec![Owner::None; frame.len()]);
+        if let Some(tracked) = self.owners.as_mut() {
+            tracked.push_frame(owners, frame.len());
         }
         self.frames.push(frame);
         self.frame_guard_provenance.push(provenance);
@@ -1357,6 +1367,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     }
 
     fn pop(&mut self) -> Result<Value, Halt> {
+        Ok(self.pop_owned()?.0)
+    }
+
+    /// [`Self::pop`] with the owner of the popped value.
+    fn pop_owned(&mut self) -> Result<(Value, Owner), Halt> {
         let value = self
             .values
             .pop()
@@ -1365,11 +1380,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .value_guard_provenance
             .pop()
             .ok_or_else(|| invariant("evaluation-provenance-stack-underflow"))?;
-        self.pop_owners(1)?;
+        let owner = self.pop_owners(1)?.first().copied().unwrap_or(Owner::None);
         if provenance {
             return Err(self.absent_key_halt(&value)?);
         }
-        Ok(value)
+        Ok((value, owner))
     }
 
     /// Pop a value while preserving whether it forwards the absent-key
@@ -1414,16 +1429,14 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
-    fn pop_owners(&mut self, count: usize) -> Result<(), Halt> {
+    /// Pop the owners of the top `count` values; none when owners are untracked.
+    fn pop_owners(&mut self, count: usize) -> Result<Vec<Owner>, Halt> {
         let Some(owners) = self.owners.as_mut() else {
-            return Ok(());
+            return Ok(Vec::new());
         };
-        let popped = if count == 1 {
-            owners.pop_value()
-        } else {
-            owners.pop_values(count)
-        };
-        popped.ok_or_else(|| invariant("evaluation-owner-stack-underflow"))
+        owners
+            .take_values(count)
+            .ok_or_else(|| invariant("evaluation-owner-stack-underflow"))
     }
 
     fn pop_frame_owners(&mut self) -> Result<(), Halt> {
@@ -1455,31 +1468,12 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
-    /// A callee frame whose every slot derives from `owner`: the arguments of
-    /// a dispatched call.
-    fn set_uniform_owner(&mut self, slots: usize, owner: Owner) -> Result<(), Halt> {
-        match self.owners.as_mut() {
-            Some(owners) => owners
-                .set_frame(vec![owner; slots])
-                .ok_or_else(|| invariant("evaluation-owner-frame-underflow")),
-            None => Ok(()),
-        }
-    }
-
-    /// The owners of a callee frame whose first slots hold the arguments the
-    /// step just popped.
-    fn set_callee_owners(&mut self, slots: usize) -> Result<(), Halt> {
-        let Some(owners) = self.owners.as_mut() else {
-            return Ok(());
-        };
-        let mut frame = owners.popped().to_vec();
-        frame.resize(slots, Owner::None);
-        owners
-            .set_frame(frame)
-            .ok_or_else(|| invariant("evaluation-owner-frame-underflow"))
-    }
-
     fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
+        Ok(self.pop_many_owned(count)?.0)
+    }
+
+    /// [`Self::pop_many`] with the owner of each popped value.
+    fn pop_many_owned(&mut self, count: usize) -> Result<(Vec<Value>, Vec<Owner>), Halt> {
         let start = self
             .values
             .len()
@@ -1487,26 +1481,30 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
         let values = self.values.split_off(start);
         let provenance = self.value_guard_provenance.split_off(start);
-        self.pop_owners(count)?;
+        let owners = self.pop_owners(count)?;
         if let Some(index) = provenance.iter().position(|provenance| *provenance) {
             let reference = values
                 .get(index)
                 .ok_or_else(|| invariant("forwarded-value-missing"))?;
             return Err(self.absent_key_halt(reference)?);
         }
-        Ok(values)
+        Ok((values, owners))
     }
 
-    fn pop_many_forwarded(&mut self, count: usize) -> Result<(Vec<Value>, Vec<bool>), Halt> {
+    fn pop_many_forwarded(
+        &mut self,
+        count: usize,
+    ) -> Result<(Vec<Value>, Vec<bool>, Vec<Owner>), Halt> {
         let start = self
             .values
             .len()
             .checked_sub(count)
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
-        self.pop_owners(count)?;
+        let owners = self.pop_owners(count)?;
         Ok((
             self.values.split_off(start),
             self.value_guard_provenance.split_off(start),
+            owners,
         ))
     }
 
@@ -1834,7 +1832,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     arguments,
                     failure,
                     node,
-                    owner,
+                    owners,
                 } = *guard;
                 let holds = self.pop_boolean()?;
                 self.frames
@@ -1854,13 +1852,16 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let callable = node
                     .callee(self.graph, body_function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                // The call is made over its arguments, so its charge belongs to
+                // the binder they derive from.
+                for owner in &owners {
+                    self.absorb_owner(*owner);
+                }
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let provenance = vec![false; frame.len()];
-                let slots = frame.len();
-                self.push_frame(frame, provenance);
-                self.set_uniform_owner(slots, owner)?;
+                self.push_frame_owned(frame, provenance, owners);
                 self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
@@ -2669,15 +2670,15 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     .callee(self.graph, *function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let arguments_len = arguments.len();
-                let (arguments, provenance) = self.pop_many_forwarded(arguments_len)?;
+                let (arguments, provenance, argument_owners) =
+                    self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
                 frame_provenance.resize(frame.len(), false);
-                self.push_frame(frame, frame_provenance);
-                self.set_callee_owners(callable.slots.max(arguments_len))?;
+                self.push_frame_owned(frame, frame_provenance, argument_owners);
                 // shared-grammar.md: "self, result and pre(...) are ...
                 // unavailable ... inside a reusable predicate" -- a callee's
                 // own body is never anchored by its caller's `pre(..)`, so
@@ -2713,15 +2714,15 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     return Err(invariant("evaluation-callable-unresolved"));
                 };
                 let arguments_len = arguments.len();
-                let (arguments, provenance) = self.pop_many_forwarded(arguments_len)?;
+                let (arguments, provenance, argument_owners) =
+                    self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
                 frame_provenance.resize(frame.len(), false);
-                self.push_frame(frame, frame_provenance);
-                self.set_callee_owners(callable.slots.max(arguments_len))?;
+                self.push_frame_owned(frame, frame_provenance, argument_owners);
                 let previous = self.enter(PackageContext {
                     scope: library.scope(),
                     graph: library,
@@ -3054,10 +3055,13 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 arguments,
                 ..
             } => {
-                let arguments = self.pop_many(arguments.len())?;
-                let Value::Reference(reference) = self.pop()? else {
+                let (arguments, argument_owners) = self.pop_many_owned(arguments.len())?;
+                let (Value::Reference(reference), receiver_owner) = self.pop_owned()? else {
                     return Err(invariant("dispatch-reference-value-expected"));
                 };
+                let mut full_owners = Vec::with_capacity(argument_owners.len() + 1);
+                full_owners.push(receiver_owner);
+                full_owners.extend(argument_owners);
                 let subtype = reference.object_type();
                 // The exact call site that produced this node (`check.rs`'s
                 // `dispatch_call`), never re-derived by searching
@@ -3096,10 +3100,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             full_arguments.clone().into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
-                        let slots = frame.len();
-                        self.push_frame(frame, provenance);
-                        let owner = self.step_owner();
-                        self.set_uniform_owner(slots, owner)?;
+                        self.push_frame_owned(frame, provenance, full_owners.clone());
                         self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
                             body_function: candidate.body,
                             arguments: full_arguments,
@@ -3109,7 +3110,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                                 reference,
                             ),
                             node,
-                            owner,
+                            owners: full_owners,
                         })));
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());
@@ -3123,10 +3124,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             full_arguments.into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
-                        let slots = frame.len();
-                        self.push_frame(frame, provenance);
-                        let owner = self.step_owner();
-                        self.set_uniform_owner(slots, owner)?;
+                        self.push_frame_owned(frame, provenance, full_owners);
                         self.tasks.push(Task::ObserveApplication(node));
                         self.tasks.push(Task::Return);
                         self.tasks.push(Task::Eval(callable.body));

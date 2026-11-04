@@ -34,3 +34,19 @@ Recommendation on the spec decision (owner decides): change the implementation, 
 ## Coverage
 
 Examined: FR-520 outcome-map row for per-binder accounting; FR-520-AC-9, AC-11; FR-520 Dependencies; TC-1315 row 12 (AC-11 step) and its scope line. Context only: quire-exact FR-358-AC-16 to AC-21, quire-protocol FR-045-AC-7 and AC-8. `quire validate` of the two edited spec files passes. The Contract-IR dependency edit and the removal of "gated on IR-1280" are correct and need no change.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The rule at call boundaries is not stated, and the implementation departs from the stated rule on dispatch. The outcome-map row says a value derived only from B "through operations and let bindings" belongs to B and an operation over one binder is under that binder, but says nothing about function-call arguments, dispatched calls, or iteration, and a dispatched call with arguments from two binders makes every callee operation unattributed (SR-1640001 FND-006). State the call, dispatch and iteration rules (or that a dispatched call's body is unattributed when its arguments come from two binders) and add the cases to TC-1315 row 12. | spec/functional/FR-520-evaluate-state-and-compensation-expressions-through-the-checked-package-evaluation-entry-points.md:78 | missing-requirement |
+
+## Dispositions
+
+Disposition round 1 at PR head `28eeb158e76a5956b7e99b08332a3bbe38d20b6a` (contains current origin/main 137f723a6, so the trial merge is the head).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The outcome map now defines "made by binder B" by operand provenance (reading B, or an operation whose binder-derived operands all come from B; operations over two binders and literal-only computations are made by no binder). |
+| FND-002 | fixed | AC-11 adds the adverse cases: a literal-only subexpression and an operation over two binders are under no binder, commuting the operands leaves the log unchanged, an operation over one binder is under that binder; TC-1315 row 12 lists the matching procedure and expected results. |
+| FND-003 | fixed | The outcome-map row states that the call drains an interval the caller had open, does not add it to the log, and leaves capture as found; TC-1315 row 12 includes a caller-enabled interval holding a charge. |
