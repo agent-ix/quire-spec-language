@@ -476,8 +476,13 @@ impl Checker<'_, '_> {
         self.input.scope
     }
 
+    /// The package scope as the protocol's source unit reads its type names.
+    fn types(&self) -> crate::check::check::SourceScope<'_> {
+        self.input.scope.for_declaration(&self.protocol.name.name)
+    }
+
     fn resolve(&self, form: &TypeForm) -> Option<ValueType> {
-        resolve_form(self.scope(), form).ok()
+        resolve_form(&self.types(), form).ok()
     }
 
     fn refuse(&mut self, cause: ObligationCause) {
@@ -1098,7 +1103,7 @@ impl Checker<'_, '_> {
             end: written.span.end,
         };
         let scope = self.input.scope;
-        let Some(object) = scope.object_type_named(context) else {
+        let Some(object) = self.types().object_type_named(context) else {
             self.refuse(ObligationCause::MissingOperation {
                 compensation: name.to_owned(),
                 name: context.to_owned(),
@@ -1165,7 +1170,7 @@ impl Checker<'_, '_> {
     fn attempt_type(&mut self, form: &CompensationForm) -> Option<ValueType> {
         let name = form.name.name.clone();
         let record = &form.attempts.record;
-        match resolve_form(self.scope(), record) {
+        match resolve_form(&self.types(), record) {
             Err(error) => {
                 self.refuse(ObligationCause::AttemptTypeName {
                     compensation: name,

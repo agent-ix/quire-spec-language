@@ -226,9 +226,11 @@ pub fn check(
                 .map_or(role.context.name.as_str(), |(alias, _)| alias);
             CheckedRole {
                 name: role.name.name.clone(),
-                context: port
-                    .map(|(_, owner)| owner.clone())
-                    .or_else(|| scope.object_type_named(&role.context.name)),
+                context: port.map(|(_, owner)| owner.clone()).or_else(|| {
+                    scope
+                        .for_declaration(&protocol.name.name)
+                        .object_type_named(&role.context.name)
+                }),
                 model_member: port.map(|(key, _)| key.clone()),
                 // Only a Port role is written `on M::X` and binds the
                 // model's selection; every other role keeps the whole-name

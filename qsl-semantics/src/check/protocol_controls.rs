@@ -142,7 +142,8 @@ pub(super) fn check(
         }
         // A name that is no type at all is the missing-type refusal of
         // `protocol_clause::content`.
-        if scope.object_type_named(name).is_none() && !scope.named_types(name).is_empty() {
+        let types = scope.for_declaration(&protocol.name.name);
+        if types.object_type_named(name).is_none() && !types.named_types(name).is_empty() {
             refusals.push((
                 role.context.span,
                 refusal(ProtocolAnchorCause::RoleModel {
@@ -224,7 +225,7 @@ fn check_channel(
             ));
         }
     }
-    let carries = match resolve_form(scope, &channel.carries) {
+    let carries = match resolve_form(&scope.for_declaration(protocol), &channel.carries) {
         Ok(ValueType::Reference(_) | ValueType::Population(_)) => {
             let name = match &channel.carries.head {
                 TypeFormHead::Name(name) => name.name.clone(),
@@ -298,7 +299,10 @@ fn check_fifo(
     refusals: &mut Vec<(Span, CheckRefusal)>,
 ) -> Option<CheckedOrdering> {
     let name = channel.name.name.as_str();
-    let binder_type = match resolve_form(keys.declarations.scope, &binder.value_type) {
+    let binder_type = match resolve_form(
+        &keys.declarations.scope.for_declaration(protocol),
+        &binder.value_type,
+    ) {
         Ok(binder_type) => binder_type,
         Err(error) => {
             refusals.push((
@@ -456,7 +460,8 @@ fn check_messages(
             // Two channels of one name refuse at their declarations.
             _ => continue,
         };
-        let Ok(expected) = resolve_form(scope, &channel.carries) else {
+        let types = scope.for_declaration(&protocol.name.name);
+        let Ok(expected) = resolve_form(&types, &channel.carries) else {
             continue;
         };
         if matches!(expected, ValueType::Reference(_) | ValueType::Population(_)) {
@@ -465,7 +470,7 @@ fn check_messages(
         let Some(binder) = super::protocol_clause::record_binder(protocol, index) else {
             continue;
         };
-        let Ok(actual) = resolve_form(scope, &binder.value_type) else {
+        let Ok(actual) = resolve_form(&types, &binder.value_type) else {
             continue;
         };
         if actual != expected {
