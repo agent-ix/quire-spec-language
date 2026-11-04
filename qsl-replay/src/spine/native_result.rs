@@ -2352,6 +2352,86 @@ fn format_model_selection(
     selection.identity.clone()
 }
 
+pub(crate) use temporal::ReasonWire;
+
+/// The members of FR-283's record a monitor item carries besides its label
+/// and cause (FR-286 "Monitor documents from clause runs"), each written by
+/// the one `native-run-result/2` writer.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ItemRecord {
+    /// The trace position of a violation, an undefined evaluation, an
+    /// insufficient-data outcome, or the position an indeterminate reason
+    /// names.
+    pub position: Option<u64>,
+    /// FR-283's `TemporalCounterexample` of a violation or an undefined
+    /// evaluation.
+    pub counterexample: Option<serde_json::Value>,
+    /// The report's QSpec FR-351 separating witness, when it holds one.
+    pub witness: Option<serde_json::Value>,
+    /// The values an insufficient-data window held.
+    pub count: Option<u64>,
+    /// The window's `min_count`.
+    pub min_count: Option<u64>,
+}
+
+pub(crate) fn item_record(report: &ClauseRunReport) -> Result<ItemRecord, NativeRunResultError> {
+    use super::{TemporalIndeterminateReason as Reason, TemporalUndefinedCause, TemporalVerdict};
+    let ClauseDisposition::Temporal(verdict) = &report.disposition else {
+        return Ok(ItemRecord::default());
+    };
+    let counterexample = temporal::item_counterexample(verdict, report.counterexample.as_ref())?;
+    Ok(match verdict {
+        TemporalVerdict::Violated { at } => ItemRecord {
+            position: Some(*at),
+            counterexample,
+            witness: report
+                .witness
+                .as_ref()
+                .map(|witness| {
+                    RecordWire::of(witness).and_then(|wire| Ok(serde_json::to_value(wire)?))
+                })
+                .transpose()?,
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Undefined {
+            at,
+            cause: TemporalUndefinedCause::InsufficientData { count, min_count },
+        } => ItemRecord {
+            position: Some(*at),
+            count: Some(*count),
+            min_count: Some(*min_count),
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Undefined { at, .. } => ItemRecord {
+            position: Some(*at),
+            counterexample,
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Indeterminate {
+            reason:
+                Reason::MissingValuation { position, .. }
+                | Reason::ConflictingValuation { position, .. },
+            ..
+        } => ItemRecord {
+            position: Some(*position),
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Indeterminate {
+            reason: Reason::IncompleteInput | Reason::MissingHistory | Reason::StraddlesBound,
+            ..
+        }
+        | TemporalVerdict::Holds
+        | TemporalVerdict::Pending
+        | TemporalVerdict::PendingWindow { .. }
+        | TemporalVerdict::PendingNextEvent { .. }
+        | TemporalVerdict::MissingFairnessPremise { .. }
+        | TemporalVerdict::Incomplete(_)
+        | TemporalVerdict::ActivationIncomplete { .. }
+        | TemporalVerdict::WindowLimitReached { .. }
+        | TemporalVerdict::ProgressLimitReached(_) => ItemRecord::default(),
+    })
+}
+
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.
 pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, NativeRunResultError> {
     if report.basis.is_decisive() != report.witness.is_some() {

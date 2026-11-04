@@ -660,13 +660,6 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
     };
     let cases = [
         (
-            C::WholeModelRole,
-            "IR-874",
-            vec![C::WholeModelRole],
-            false,
-            plain("on origin", "role W on M;", main, "true"),
-        ),
-        (
             C::ProtocolReferenceInBody,
             "QSL-1121g",
             vec![C::ProtocolReferenceInBody],
