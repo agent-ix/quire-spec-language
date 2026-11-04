@@ -14,7 +14,7 @@ Verify the `Temporal` selection of `run_clause` from source: selection,
 admission, evaluation dispatch by profile and trace shape, categories, exit
 codes.
 
-Scope: FR-330-AC-1 to FR-330-AC-4.
+Scope: FR-330-AC-1 to FR-330-AC-4 and FR-330-AC-12.
 
 ## Test Procedure
 

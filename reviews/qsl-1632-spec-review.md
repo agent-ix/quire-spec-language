@@ -34,6 +34,12 @@ Tickets: QSL-1632 (QSL-1608 pointer). Head 451d551b4b4fe29e59efae8ce393f9d2832ab
 | --- | --- | --- | --- | --- |
 | FND-006 | medium | FR-283 and FR-286 read `decisive` from `ClauseRunReport::decisive`, but no report requirement defines that member: FR-330's Outputs and FR-266 (which adds `basis` and `witness`) do not list it, and FR-267 requires writing a temporal report and reading it back to restore an equal typed value (listing the two rows that restore less) while its closed `violated` row has no `decisive`, so a written-and-read report would lose the member and break the round trip. Add `decisive` to the report requirement (FR-330 Outputs or an FR-266 addition, with its presence rule: only a temporal violation) and say in FR-267 whether it is outside the written form (a third row that restores less) or written. | spec/functional/FR-283-monitor-a-supplied-trace-offline.md:175-195 | missing-requirement |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-007 | low | TC-840 gained step 5 for FR-330-AC-12 but its Scope line still reads FR-330-AC-1 to FR-330-AC-4; add FR-330-AC-12. Separately, the `clause-root-unresolved` row now says the catalog code is FR-337's, but FR-337 defines the name as a lookup result and states no catalog code, so the call has none stated; say 'FR-337 states none' or name one. Non-blocking. | spec/test-cases/TC-840-run-a-temporal-clause-through-the-spine.md:17 | wrong-requirement |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -44,9 +50,14 @@ Tickets: QSL-1632 (QSL-1608 pointer). Head 451d551b4b4fe29e59efae8ce393f9d2832ab
 | FND-004 | fixed | Verified in fix commit b38348989 against the current text. |
 | FND-005 | still-open | The null cause, the conditional Violated witness and the blank line are fixed, but the new `clause-root-unresolved` row says the call reports it 'with the catalog code `invalid_runtime_input`/`clause-root-unresolved`, as it reports the other request-shape causes of this table'. FR-516's table states no catalog code for any other cause (trigger-required, occurrence-required, occurrence-unknown, activation-list-mismatch, activation-mapping-*, progress-inconsistent, clause-unreadable all list a condition only), and line 125 sends the code to the owning requirement, so that comparison is unsupported. FR-337 defines the name as a lookup result with no catalog code, and `invalid_runtime_input` pairs elsewhere with causes such as `invalid-value`, `missing-member`, `wrong-role-mapping` (FR-522, FR-331), so `invalid_runtime_input`/`clause-root-unresolved` would be a new catalog pair no requirement or catalog entry defines. FR-516-AC-45 gives only the code and TC-1311 row 45 the code, while the row gives the pair: the three disagree. Fix: either state one catalog code/cause pair for request-shape refusals in one place (and check the catalog holds it; FR-337's own `missing_declaration`/`missing-name` is the nearest existing pair for an unresolved name), or say `CallFailure::Admission` carries the cause name only and the code is the catalog's; then make the row, AC-45 and TC row 45 agree. |
 | FND-006 | still-open | new this round; see New findings. |
+| FND-005 | fixed | Round 2: row states condition and cause name only, AC-45 and TC row 45 aligned, no invented code. |
+| FND-006 | fixed | Round 2: FR-330 Outputs defines ClauseRunReport::decisive, FR-330-AC-12, TC-840 step 5, FR-267 three rows restore less, FR-267-AC-19, TC-742 step 4. |
+| FND-007 | still-open | low, non-blocking. |
 
 ## Verdict
 
 Not mergeable: FND-001 (high) makes FR-286-AC-10 and TC-770 step 9 unsatisfiable on the machine output. FND-002 and FND-003 are medium.
 
 Round 1: FND-001 to FND-004 fixed; FND-005 (catalog code claim) still open; FND-006 new (ClauseRunReport::decisive undefined). Not mergeable.
+
+Round 2: FND-005 and FND-006 fixed; FND-007 is a new low, non-blocking finding. Mergeable.
