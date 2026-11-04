@@ -65,6 +65,7 @@ mod model_check;
 mod monitor_plan;
 mod object_environment;
 mod outcome;
+mod probability_certificate;
 mod proof_result;
 mod refinement;
 mod refinement_query;
@@ -314,6 +315,12 @@ pub use outcome::{
     ClauseRunNotAnItem, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeDiagnostic,
     OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError, ParityReason,
     ResultLimit, ResultValue, OUTCOME_FORMAT,
+};
+pub use probability_certificate::{
+    ExactProbabilityCertificate, ExactProbabilityCertificateCheck, ExactProbabilityGraphError,
+    ExactProbabilityValue, ProbabilityBoundSide, ProbabilityCertificateLocus,
+    ProbabilityCertificateRejection, ProbabilityCertificateRule, ProbabilityObjective,
+    ProbabilityProductKey,
 };
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,

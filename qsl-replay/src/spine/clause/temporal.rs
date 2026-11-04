@@ -400,13 +400,15 @@ pub(super) struct TemporalRun<'a> {
 /// FR-522 "Authentication": compare a `TraceBinding` against the profile and
 /// clock rows recovered from the strictly admitted package. A mismatch is
 /// refused at stage `admit`, `invalid_runtime_input`/`invalid-value`, with the
-/// first differing dimension and asserted/expected values. The checked
+/// first differing dimension and asserted/expected values. The clock row is
+/// the one keyed by the declaration's `occurrence`. The checked
 /// declaration identity comes from emission's exact `(NodeKey, occurrence)`
 /// mapping; the profile and clock are read from that declaration's admitted
 /// temporal subject.
 fn authenticate_binding(
     binding: Option<&TraceBinding>,
     subject: &qsl_package::checked_views::TemporalSubjectView<'_>,
+    occurrence: u64,
 ) -> Result<crate::spine::AuthenticatedTemporalSelection, Box<ClauseDisposition>> {
     let Some(binding) = binding else {
         return Err(Box::new(refused("invalid-value", BTreeMap::new())));
@@ -420,7 +422,13 @@ fn authenticate_binding(
         .authenticate(&qsl_eval::temporal::evidence::ClauseSelection {
             declaration: subject.declaration(),
             profile: subject.profile(),
-            clock: subject.clock(),
+            // The clock row is the one keyed by this declaration's occurrence:
+            // a node several clauses share has a row per occurrence.
+            clock: subject
+                .occurrences()
+                .iter()
+                .find(|found| found.ordinal == occurrence)
+                .and_then(|found| subject.clock_of(found)),
         })
         .map_err(|mismatch| {
             let mut fields = BTreeMap::from([
@@ -543,10 +551,11 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     if let TraceInput::Progressed { binding, .. } = trace {
         // FR-522: the same authentication precedes every position of a
         // progressed trace (FR-330-AC-11).
-        authenticated_temporal_selection = match authenticate_binding(Some(binding), &subject) {
-            Ok(selection) => Some(selection),
-            Err(refusal) => return early(*refusal),
-        };
+        authenticated_temporal_selection =
+            match authenticate_binding(Some(binding), &subject, node.claim().ordinal()) {
+                Ok(selection) => Some(selection),
+                Err(refusal) => return early(*refusal),
+            };
     }
 
     if let TraceInput::Timestamped {
@@ -559,7 +568,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         // visited, any stamp or completeness is checked or the meter is
         // charged (FR-330-AC-11).
         authenticated_temporal_selection =
-            match authenticate_binding(window.binding.as_ref(), &subject) {
+            match authenticate_binding(window.binding.as_ref(), &subject, node.claim().ordinal()) {
                 Ok(selection) => Some(selection),
                 Err(refusal) => return early(*refusal),
             };

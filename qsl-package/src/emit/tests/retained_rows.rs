@@ -51,6 +51,11 @@ fn composite() -> Emission {
     let enums = emitted_enums(UNIT);
     base.selected_model_enum_declaration_rows = enums.selected_model_enum_declaration_rows.clone();
     base.selected_model_enum_member_rows = enums.selected_model_enum_member_rows.clone();
+    let (_, source_enums) = emit_from_text(super::source_enum_rows::STATUS);
+    base.selected_enum_declaration_rows = source_enums.selected_enum_declaration_rows.clone();
+    base.selected_enum_member_rows = source_enums.selected_enum_member_rows.clone();
+    base.wire_nodes
+        .extend(source_enums.wire_nodes.iter().cloned());
     base.equality_producer_identity_rows
         .extend(enums.equality_producer_identity_rows.iter().cloned());
     base.equality_fact_witness_rows
@@ -137,6 +142,22 @@ fn composite() -> Emission {
         )],
         declarations: Vec::new(),
     };
+    base.temporal_rows = crate::emit::TemporalRows {
+        clauses: vec![crate::emit::TemporalClauseRef {
+            declaration: id("clause"),
+            occurrence: 0,
+            clause: 0,
+        }],
+        profile_selections: Vec::new(),
+        bindings: vec![TemporalBinding {
+            declaration: id("clause"),
+            occurrence: 0,
+            clock_name: "model-time".into(),
+            clock: ClockConfiguration::EventPosition {
+                sequence_authority: "authority".into(),
+            },
+        }],
+    };
     base
 }
 
@@ -171,6 +192,12 @@ fn renames_of(emission: &Emission) -> Vec<(CheckedNodeId, CheckedNodeId)> {
         }
     }
     for (_, row) in &emission.temporal_binding_rows.rows {
+        push(&row.declaration);
+    }
+    for row in &emission.temporal_rows.clauses {
+        push(&row.declaration);
+    }
+    for row in &emission.temporal_rows.bindings {
         push(&row.declaration);
     }
     ids.sort();
@@ -272,6 +299,36 @@ fn every_retained_row_kind_is_carried_with_its_node_ids_rekeyed() {
         );
     }
 
+    assert!(!emission.selected_enum_declaration_rows.is_empty());
+    assert_eq!(
+        rows.selected_enum_declaration_rows.len(),
+        emission.selected_enum_declaration_rows.len()
+    );
+    for (got, was) in rows
+        .selected_enum_declaration_rows
+        .iter()
+        .zip(&emission.selected_enum_declaration_rows)
+    {
+        let mut want = was.clone();
+        want.structural_node = renamed(&was.structural_node);
+        assert_eq!(got, &want, "source enum");
+    }
+    assert!(!emission.selected_enum_member_rows.is_empty());
+    assert_eq!(
+        rows.selected_enum_member_rows.len(),
+        emission.selected_enum_member_rows.len()
+    );
+    for (got, was) in rows
+        .selected_enum_member_rows
+        .iter()
+        .zip(&emission.selected_enum_member_rows)
+    {
+        let mut want = was.clone();
+        want.structural_node = renamed(&was.structural_node);
+        want.declaration_node = renamed(&was.declaration_node);
+        assert_eq!(got, &want, "source member");
+    }
+
     assert_eq!(rows.selected_exact_declaration_rows.len(), 1);
     assert_eq!(
         rows.selected_exact_declaration_rows[0].structural_node,
@@ -357,6 +414,19 @@ fn every_retained_row_kind_is_carried_with_its_node_ids_rekeyed() {
         renamed(&emission.temporal_binding_rows.rows[0].1.declaration),
         "temporal binding declaration"
     );
+    assert_eq!(rows.temporal_rows.clauses.len(), 1);
+    assert_eq!(
+        rows.temporal_rows.clauses[0].declaration,
+        renamed(&emission.temporal_rows.clauses[0].declaration),
+        "temporal clause reference"
+    );
+    assert_eq!(rows.temporal_rows.clauses[0].occurrence, 0);
+    assert_eq!(rows.temporal_rows.bindings.len(), 1);
+    assert_eq!(
+        rows.temporal_rows.bindings[0].declaration,
+        renamed(&emission.temporal_rows.bindings[0].declaration),
+        "temporal row declaration"
+    );
 }
 
 fn emission_id(cause: &OmissionCause) -> CheckedNodeId {
@@ -391,6 +461,7 @@ fn a_row_naming_a_node_no_rename_touches_is_carried_unchanged() {
         emission.equality_fact_witness_rows
     );
     assert_eq!(rows.temporal_binding_rows, emission.temporal_binding_rows);
+    assert_eq!(rows.temporal_rows, emission.temporal_rows);
     let one = emission.omitted[0].node.clone();
     let rows = carry_rows(&emission, &[(one.clone(), renamed(&one))]);
     assert_eq!(rows.omitted[0].node, renamed(&one));

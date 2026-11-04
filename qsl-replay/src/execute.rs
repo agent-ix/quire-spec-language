@@ -1849,6 +1849,7 @@ fn run_spine_units(
         spine::UnitCheckOptions {
             temporal_selections,
             continue_protocol_refusals: true,
+            refinement_internals: None,
         },
         limits,
         &cancel,
