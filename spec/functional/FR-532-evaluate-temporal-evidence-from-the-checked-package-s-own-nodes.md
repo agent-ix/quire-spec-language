@@ -136,9 +136,12 @@ without a finite upper bound, a timed interval under a bounded profile and a
 ### Window aggregates
 
 A clause with a window aggregate atom is emitted as a `quire.op.temporal.aggregate`
-entry whose typed argument carries the aggregate kind, the filter, the window,
-`min_count`, the value expression, the comparison and the converted threshold
-(FR-337-AC-15; QSpec FR-370-AC-14). Every route SHALL evaluate such an atom as
+entry whose typed argument carries the window, normalized `min_count`, expression,
+comparison and converted threshold (FR-337-AC-15) and the aggregate term's kind and
+filter (QSpec FR-414). QSpec defines the aggregate term (FR-414) and no wire members
+for the node, and FR-337-AC-15's citation of QSpec FR-370-AC-14 names a fairness
+criterion, not the aggregate argument, so the member names are FR-337-AC-15's until
+QSpec defines them. Every route SHALL evaluate such an atom as
 FR-516 "Window aggregate atoms" states, from the entry's members read from the
 bytes and the per-position samples the request carries. `formula_graph()` SHALL read
 the entry (FR-515: `aggregate` member), and a call over such a clause SHALL NOT
