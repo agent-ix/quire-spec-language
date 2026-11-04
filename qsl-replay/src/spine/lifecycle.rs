@@ -2677,7 +2677,7 @@ fn protocol_check_outcome(
     if first_failure.is_none() && !graph.unit_refusals().is_empty() {
         first_failure = Some(CompileRefusal::Check {
             refusals: graph.unit_refusals().to_vec(),
-            region: None,
+            region: graph.unit_refusal_region().cloned(),
         });
     }
     if first_failure.is_none() {
@@ -3482,6 +3482,17 @@ impl<'a> Resolution<'a> {
             });
             Box::new(CompileRefusal::Check { region, refusals })
         })?;
+        // The protocol continuation check keeps a refused state clause on the
+        // graph instead of failing: report it the same way (FR-302).
+        let graph = if graph.unit_refusals().is_empty() {
+            graph
+        } else {
+            let refusals = pending.report(graph.unit_refusals().to_vec());
+            let region = refusals
+                .first()
+                .and_then(|refusal| regions.refusal_region(refusal));
+            graph.with_unit_refusals(refusals, region)
+        };
         charged(cancel, &mut self.work.s4, || {
             pkg::CheckedPackage::link_with(graph, links)
         })
