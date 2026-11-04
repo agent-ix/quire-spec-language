@@ -131,14 +131,18 @@ the package means the same whichever order the two files are listed in.
   AC-142; FR-480-AC-3), so a value written through one alias is a value of
   the type the other alias names. A selected relationship is rooted once,
   at the first alias's declaration site (FR-094).
-- The package's type names are one namespace over every unit. When two
-  units bind one alias `N` to two identities and `N::T` would name a
-  declaration of each (a further-alias spelling of one package and the
-  other package's own `N::T`, or two packages' further-alias spellings),
-  `N::T` SHALL resolve to neither declaration in either unit: as a state
-  clause's context or a type form it refuses
-  `missing_declaration`/`missing-name`. A package's names under its first
-  alias are unaffected.
+- A model-qualified type name `N::T` SHALL resolve through the alias `N`
+  of the unit that writes it, in every position a type name is written. When
+  two units bind one alias `N` to two identities that both declare `T` (as a
+  further alias of one package and the first alias of the other, or as the
+  first alias of each), each unit's `N::T` SHALL resolve to the declaration
+  of the package that unit binds `N` to, never to the other unit's. Two
+  units that each select one package under one alias `N` SHALL both resolve
+  `N::T` to its declaration. A unit that binds no model alias `N` SHALL
+  refuse `N::T` with `missing_declaration`/`missing-name`, even when another
+  unit binds `N`, in every position a type name is written: a type form, a
+  state clause's context or operation, an `allInstances` or `lookup` type
+  argument, a variant case `N::T::Case`, and a timed model's predicate.
 - The package SHALL record each selected domain package identity over
   every unit once, by its `model_root` node (FR-110).
 - `dependency_selections` SHALL hold one entry per directly imported
@@ -250,7 +254,13 @@ the package means the same whichever order the two files are listed in.
 | FR-480-AC-9 | One unit selects `example/config-version` as `Config` and then as `History`: an invariant on `History::ConfigVersion`, a `pre` and a `post` on `History::ConfigVersion::attemptUpdate`, `allInstances<History::ConfigVersion>(History::config_history)`, `lookup<History::ConfigVersion>(p, r)`, a `bound` on `History::config_history` and a function over `History::VersionNumber` each check, a `History::ConfigVersion` parameter and a `Config::ConfigVersion` parameter have one type, and the type environment declares `ConfigVersion` once. With unit `a` selecting the package as `Config` and unit `b` as `History`, `b`'s function over `History::ConfigVersion` and `History::VersionNumber` calls `a`'s function over the `Config` spellings, both have one signature, and the package has one object type and one `model_root`. | Test |
 | FR-480-AC-10 | AC-9's unit has the model nodes, the one `model_root`, the operation-effect rows and the operation table of the unit selecting the package once, and a selected relationship has one generated root, at the first alias. | Test |
 | FR-480-AC-11 | Through a second alias of the FR-360 package, in one unit and in a second unit, a variant case, a record field read, an object type and an operation context resolve to the first alias's declarations, and each variant type is declared once. A subtype's inherited fields and operation resolve through a second alias. | Test |
-| FR-480-AC-12 | A profile alias spelled as a model alias refuses `ambiguous_declaration`/`ambiguous-name`, and a unit record sharing a package type's artifact name keeps its bare name apart from both alias spellings. With unit `a` selecting one package as `M` and `N` and unit `b` binding `N` to a second package that declares the same type names, `N::ConfigVersion` as a state clause context or a parameter type refuses `missing_declaration`/`missing-name` in either unit, and `M::ConfigVersion` checks. | Test |
+| FR-480-AC-12 | A profile alias spelled as a model alias refuses `ambiguous_declaration`/`ambiguous-name`. | Test |
+| FR-480-AC-13 | A unit record sharing a package type's artifact name keeps its bare name apart from both alias spellings of the package type. | Test |
+| FR-480-AC-14 | With unit `a` selecting one package as `M` and `N` and unit `b` binding `N` to a second package that declares the same type names, `a`'s `N::ConfigVersion` as a state clause context and a parameter type is the type `M::ConfigVersion` names, and `b`'s is the second package's type. | Test |
+| FR-480-AC-15 | With units `a` and `b` each selecting one of two packages that declare the same type names as `N`, each unit's state clause context and parameter type `N::ConfigVersion` is its own package's type. | Test |
+| FR-480-AC-16 | A unit that binds no `M` refuses `M::ConfigVersion` with `missing_declaration`/`missing-name`, though another unit binds `M`, as a state clause context, a parameter type, an `allInstances` type argument and a `lookup` type argument; and a unit that binds no `Config` refuses the variant case `Config::Tier::Gold` the same way, though another unit binds `Config`. | Test |
+| FR-480-AC-17 | With unit `b` alone selecting `Config`, a timed model in `b` whose time invariant and `urgent when` predicate read `convert<Config::Call>(self)` checks, though the canonically first unit binds no `Config`. | Test |
+| FR-480-AC-18 | Units `a` and `b` each select `example/config-version` as `M`; in the unit lists `[a, b]` and `[b, a]`, each unit's `M::ConfigVersion` as a parameter type and a state clause context is one type. | Test |
 
 ## Dependencies
 

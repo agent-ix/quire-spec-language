@@ -4,7 +4,7 @@
 use num_bigint::BigInt;
 use num_integer::Integer as _;
 use num_traits::{One, ToPrimitive};
-use quire_exact::{Integer as ExactInteger, Rational};
+use quire_exact::{Integer as ExactInteger, NodeKey, Rational};
 
 use qsl_eval::temporal::{TickBound, TickShape};
 
@@ -16,7 +16,13 @@ use qsl_replay::{
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
 };
-use qsl_semantics::check::{CheckedInterval, CheckedTemporalClause, FormulaNode};
+use std::collections::{BTreeMap, BTreeSet};
+
+use quire_checked::node::NodeKind;
+
+use qsl_semantics::check::{
+    CheckedBody, CheckedGraph, CheckedInterval, CheckedTemporalClause, FormulaNode,
+};
 use qsl_semantics::library::LibraryName;
 
 /// The FR-251 default event rate, `one event / microsecond`, expressed per
@@ -174,13 +180,21 @@ pub fn produce(
     let guard = node
         .guard()
         .map(|(body, slots)| (body.body().clone(), slots));
+    let helpers = call_closure(
+        package,
+        atoms
+            .iter()
+            .map(MonitorAtom::body)
+            .chain(guard.as_ref().map(|(body, _)| body)),
+    )?;
     let program = MonitorProgram::new(
         SubformulaId::new(formula.root().index()),
         formula.clone(),
         clause.activation(),
         atoms,
         guard,
-    );
+    )
+    .with_helpers(helpers);
     let plan = TimedMonitorPlan::new(
         subject,
         clock_binding,
@@ -200,6 +214,80 @@ pub fn produce(
     spec_from_plan(&plan)?;
     let obligations = plan_obligations(&plan, settings);
     Ok((plan, obligations))
+}
+
+/// The checked body of every declared function `roots` call, directly or
+/// through another called function (QSpec FR-487-AC-13's call closure),
+/// keyed by the function's structural identity. A dispatched call reaches
+/// every candidate body and every precondition its table links, not only the
+/// one a receiver selects at run time; an imported call reaches the callee's
+/// body in the admitted dependency's own graph, whose calls and dispatch
+/// tables are then read from that graph (FR-251 "Build inputs and identity").
+fn call_closure<'b>(
+    package: &CheckedPackage,
+    roots: impl Iterator<Item = &'b CheckedBody>,
+) -> Result<BTreeMap<NodeKey, CheckedBody>, MonitorPlanRefusal> {
+    let mut helpers = BTreeMap::new();
+    let mut pending: Vec<(&CheckedGraph, CheckedBody)> =
+        roots.map(|body| (package.graph(), body.clone())).collect();
+    while let Some((graph, body)) = pending.pop() {
+        // Only the nodes the root reaches are ever read (`CheckedBody`).
+        let mut seen = BTreeSet::new();
+        let mut walk = vec![body.root()];
+        while let Some(node) = walk.pop() {
+            if !seen.insert(node.id().index()) {
+                continue;
+            }
+            walk.extend(node.children());
+            let mut callees: Vec<(&CheckedGraph, usize)> = Vec::new();
+            match node.kind() {
+                NodeKind::Call { function, .. } => callees.push((graph, *function)),
+                NodeKind::ImportedCall {
+                    callee, function, ..
+                } => {
+                    let library = graph.scope().imported_graph(callee).ok_or(
+                        MonitorPlanRefusal::UnresolvedImportedCall {
+                            function: *function,
+                        },
+                    )?;
+                    callees.push((library, *function));
+                }
+                NodeKind::Dispatch { table, .. } => {
+                    let linked = graph
+                        .dispatch_tables()
+                        .get(*table)
+                        .ok_or(MonitorPlanRefusal::MissingDispatchTable { table: *table })?;
+                    for (_, candidate) in linked.entries() {
+                        callees.push((graph, candidate.body));
+                        callees.extend(candidate.precondition.map(|index| (graph, index)));
+                        callees.extend(
+                            candidate
+                                .precondition_clauses
+                                .iter()
+                                .map(|index| (graph, *index)),
+                        );
+                    }
+                }
+                _ => {}
+            }
+            for (owner, index) in callees {
+                let missing = MonitorPlanRefusal::MissingHelperBody { index };
+                let identity = owner.function_identity_at(index).ok_or(missing.clone())?;
+                if helpers.contains_key(&identity) {
+                    continue;
+                }
+                let callee = owner
+                    .function_state(index)
+                    .ok_or(missing)?
+                    .body
+                    .body()
+                    .clone();
+                helpers.insert(identity, callee.clone());
+                pending.push((owner, callee));
+            }
+        }
+    }
+    Ok(helpers)
 }
 
 /// Why admission refused a candidate plan.
@@ -293,5 +381,122 @@ mod tests {
         let settings = TimingObligationSettings::default();
         assert_eq!(settings.agreement_horizon, 8);
         assert!(settings.timestamp_parameters.is_empty());
+    }
+
+    const CONFIG: &str = "example/config-version";
+    const EXAMPLE: &str = include_str!("../../examples/config-version/model.semantic-ir.json");
+
+    /// The config-version domain with `ConfigVersion` declaring the queries
+    /// `size` and `probe`.
+    fn dispatch_document() -> Vec<u8> {
+        let query = |name: &str| {
+            let identity = format!("ix://{CONFIG}/ConfigVersion/{name}");
+            serde_json::json!({
+                "identity": identity,
+                "name": name,
+                "params": [],
+                "returns": {
+                    "typeRef": "ix://quire/native/Integer",
+                    "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                    "nullable": false,
+                },
+                "pre": [],
+                "post": [],
+                "origin": {"source": {
+                    "sourceIdentity": format!("ix://{CONFIG}/spec"),
+                    "path": "spec.qspec",
+                    "startLine": 1,
+                    "startColumn": 1,
+                }},
+                "frame": {"modifies": [], "creates": [], "deletes": []},
+            })
+        };
+        let mut document: serde_json::Value = serde_json::from_str(EXAMPLE).unwrap();
+        let config = document["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|node| node["identity"] == format!("ix://{CONFIG}/ConfigVersion"))
+            .expect("ConfigVersion");
+        config["operations"] = serde_json::json!([query("size"), query("probe")]);
+        serde_json::to_vec(&document).unwrap()
+    }
+
+    /// The call closure of the precondition `c` of `probe`, which
+    /// dispatches `self.size()`, when `size`'s body returns `size` and its
+    /// precondition is `self.versionNumber >= gate`.
+    fn dispatch_closure(size: i64, gate: i64) -> BTreeMap<NodeKey, CheckedBody> {
+        use qsl_replay::spine::{self, ParseRequest, SpineLimits};
+        fn fail<T>(failure: spine::FrontEndFailure) -> T {
+            panic!("the unit compiles: {:?}", spine::refusal_or_fault(failure))
+        }
+        let document = dispatch_document();
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+        let text = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
+             model Config = {CONFIG:?};\n\
+             body sizeA using v on Config::ConfigVersion::size() {{ {size} }}\n\
+             pre g using v on Config::ConfigVersion::size {{ self.versionNumber >= {gate} }}\n\
+             pre c using v on Config::ConfigVersion::probe {{ self.size() > 0 }}\n"
+        );
+        let source = qsl_foundation::SourceIdentity::new("agent-ix", "dispatch-closure");
+        let cancel = quire_exact::Cancel::new();
+        let limits = SpineLimits::default();
+        let parsed = spine::parse(
+            &ParseRequest {
+                source: &source,
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
+            limits.source,
+            &cancel,
+        )
+        .unwrap_or_else(fail)
+        .into_value();
+        let models = spine::select(&parsed, &packages, limits.model, &cancel)
+            .unwrap_or_else(fail)
+            .into_value();
+        let checked = spine::check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &qsl_replay::DependencyInput::default(),
+            limits,
+            &cancel,
+        )
+        .unwrap_or_else(fail)
+        .into_value();
+        let package = checked.package();
+        assert_eq!(package.graph().dispatch_tables().len(), 1);
+        let root = package.graph().state_clause("c").expect("c").body().body();
+        call_closure(package, std::iter::once(root)).expect("the closure")
+    }
+
+    /// FR-251 "Build inputs and identity" and FR-251-AC-38 (TC-1081): a
+    /// dispatched call reaches the linked candidate's body and its
+    /// precondition, so swapping either changes the helper bodies the
+    /// `PlanId` holds; equal bodies give an equal closure.
+    #[ix_trace_rs::trace("TC-1081", "FR-251-AC-38")]
+    #[test]
+    fn a_dispatched_call_reaches_every_candidate_body_and_precondition() {
+        let base = dispatch_closure(1, 0);
+        assert_eq!(base, dispatch_closure(1, 0), "equal bodies, equal closure");
+        assert!(
+            base.len() >= 2,
+            "the body and precondition: {:?}",
+            base.keys()
+        );
+        let body = dispatch_closure(5, 0);
+        assert_eq!(
+            body.keys().collect::<Vec<_>>(),
+            base.keys().collect::<Vec<_>>()
+        );
+        assert_ne!(body, base, "a swapped candidate body changes the closure");
+        let precondition = dispatch_closure(1, 3);
+        assert_ne!(
+            precondition, base,
+            "a swapped candidate precondition changes the closure"
+        );
     }
 }

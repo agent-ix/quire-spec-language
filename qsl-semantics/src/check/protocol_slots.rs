@@ -976,13 +976,14 @@ pub(crate) fn check(
     profile: Option<&str>,
 ) -> Slots {
     let scope = declarations.scope;
+    let types = scope.for_declaration(&protocol.name.name);
     let mut cx = cx.reborrow(scope);
 
     // Every binder the `run` tree and `finish` can read, in slot order.
     let mut binders = Vec::new();
     let mut unresolved = false;
     let mut push =
-        |binders: &mut Vec<Binder>, name: &str, form, origin| match resolve_form(scope, form) {
+        |binders: &mut Vec<Binder>, name: &str, form, origin| match resolve_form(&types, form) {
             Ok(value_type) => binders.push(Binder {
                 name: name.to_owned(),
                 value_type,
@@ -1061,7 +1062,7 @@ pub(crate) fn check(
         .enumerate()
         .filter(|(_, role)| role.replicated.is_some())
         .filter_map(|(index, role)| {
-            let object = scope.object_type_named(&role.context.name)?;
+            let object = types.object_type_named(&role.context.name)?;
             Some((
                 index,
                 (role.name.name.clone(), ValueType::Reference(object)),
@@ -1454,7 +1455,7 @@ pub(crate) fn check(
             // unsupported replicated form at the alias.
             None
         } else {
-            match role_population(role, replicated, declarations) {
+            match role_population(protocol, role, replicated, declarations) {
                 Ok(population) => Some(population),
                 Err(cause) => {
                     checker.refuse(cause);
@@ -1824,6 +1825,7 @@ fn region(
 /// ADR-027 RR-1: the population `role r each T from pop` is drawn from, the
 /// one the domain package that declares `T` declares under the name `pop`.
 fn role_population(
+    protocol: &ProtocolDeclarationForm,
     role: &RoleForm,
     replicated: &ReplicatedRoleForm,
     declarations: &ClauseDeclarations<'_>,
@@ -1837,6 +1839,7 @@ fn role_population(
     // The package that declares `T` is the one its resolved type belongs to.
     let element = declarations
         .scope
+        .for_declaration(&protocol.name.name)
         .object_type_named(&role.context.name)
         .ok_or_else(missing)?;
     let model = declarations

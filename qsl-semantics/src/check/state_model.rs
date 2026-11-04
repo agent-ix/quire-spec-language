@@ -236,6 +236,7 @@ impl FamilyContract for StateModelFamily {
         cx: &mut CheckContext<'a, Scope>,
     ) -> CheckOutcome<Checked, CheckRefusal> {
         let scope = cx.declarations();
+        let source = cx.source_owner().cloned();
         let location = &request.location;
         let refuse = |at: &Location, cause| CheckRefusal {
             location: at.clone(),
@@ -261,8 +262,12 @@ impl FamilyContract for StateModelFamily {
         let checked = (|| -> Result<Checked, CheckRefusal> {
             Ok(match &request.form {
                 Form::Target(form) => {
-                    let value_type = super::type_form::resolve_type_form(scope, form, location)
-                        .map_err(|error| refuse(&error.location, error.cause))?;
+                    let value_type = super::type_form::resolve_type_form(
+                        &scope.in_source(source.as_ref()),
+                        form,
+                        location,
+                    )
+                    .map_err(|error| refuse(&error.location, error.cause))?;
                     if !matches!(value_type, ValueType::Reference(_)) {
                         return Err(mismatch(location));
                     }

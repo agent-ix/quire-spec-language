@@ -6,6 +6,7 @@
 //! FR-329).
 
 use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 
 use qsl_eval::temporal::{
     evaluate_observed, FirstUndefined, HoldsStop, PositionRefusal, ProgressedRefusal,
@@ -492,6 +493,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         ledger: ledger.cloned(),
         finite_window: None,
         counterexample: None,
+        decisive: None,
         authenticated_temporal_selection,
     };
     let early = |disposition| report(disposition, ClauseRunUsage::default(), None);
@@ -794,9 +796,12 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
+        let decisive =
+            decisive_information(run, node, trace, &environments, reference, &disposition);
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.counterexample = counterexample;
+        finished.decisive = decisive;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -823,9 +828,12 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
+        let decisive =
+            decisive_information(run, node, trace, &environments, reference, &disposition);
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.counterexample = counterexample;
+        finished.decisive = decisive;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -866,12 +874,14 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         quire_semantic_value::catalog::Category::Refusal
             | quire_semantic_value::catalog::Category::InternalFailure
     );
+    let decisive = decisive_information(run, node, trace, &environments, reference, &disposition);
     let mut report = report(
         disposition,
         ClauseRunUsage::from_meter(&meter, admitted),
         authenticated_temporal_selection,
     );
     report.counterexample = counterexample;
+    report.decisive = decisive;
     if accepted {
         report.ledger = accepted_ledger.or_else(|| ledger.cloned());
     }
@@ -1093,6 +1103,104 @@ impl WindowRun {
             undefined: None,
         }
     }
+}
+
+/// FR-330 Outputs, FR-283 `decisive`: the decisive information of a
+/// temporal violation. The deciding atom is the first `holds` atom, in
+/// clause-node order, that evaluates false at the failing position over the
+/// observation there; FR-107's evaluator, its witness channel kept, gives
+/// the quantifier that decided it, its element, index and value path, or,
+/// when no quantifier decides it, the atom's value `false` at the empty path
+/// at the observation's root. `None` for every other disposition, when no
+/// atom evaluates false at a position with an observation (a silent sample
+/// has none), and when the evaluation of an atom fails before one is found
+/// false or the deciding atom's record cannot be built: the search never
+/// passes a failure to report a later atom that did not decide. The atoms
+/// share one meter of their own, so the search does one run budget of work
+/// and the run's usage is the evaluator's alone.
+fn decisive_information(
+    run: &CompiledRun<'_>,
+    node: &qsl_semantics::check::TemporalClauseNode,
+    trace: &TraceInput,
+    environments: &[ObjectEnvironment],
+    over: &quire_exact::ObjectReference,
+    disposition: &ClauseDisposition,
+) -> Option<crate::TemporalDecisive> {
+    use qsl_eval::value::CheckedPackageEvaluation as _;
+    use quire_eval::FamilyOutcome;
+    use quire_exact::{Outcome, Value};
+    let ClauseDisposition::Temporal(TemporalVerdict::Violated { at }) = disposition else {
+        return None;
+    };
+    let slot = observation_slot(trace, usize::try_from(*at).ok()?)?;
+    let document = trace.documents().nth(slot)?;
+    let objects = environments.get(slot)?;
+    let observation = qsl_eval::value::ObservationIdentity {
+        authority: document.authority.clone(),
+        identity: document.identity.clone(),
+    };
+    let formula = node.clause().formula();
+    let atoms = formula
+        .nodes()
+        .iter()
+        .enumerate()
+        .filter(|(_, formula)| matches!(formula, FormulaNode::Holds { .. }))
+        .filter_map(|(index, _)| formula.node_id(index));
+    let mut meter = Meter::new(run.accounting);
+    first_false_atom(atoms, |atom| {
+        let Ok(evaluation) = run.package.evaluate_holds_traced(
+            node,
+            atom,
+            over,
+            objects,
+            observation.clone(),
+            &mut meter,
+        ) else {
+            return ControlFlow::Break(None);
+        };
+        if !matches!(
+            evaluation.evaluation.outcome,
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        ) {
+            return ControlFlow::Continue(());
+        }
+        let decided = node
+            .condition(atom)
+            .and_then(|(condition, _)| crate::witness::decisive_stop(condition, &evaluation).ok());
+        ControlFlow::Break(match decided {
+            Some(Some(report)) => Some(crate::TemporalDecisive::from_stop(report)),
+            Some(None) => evaluation
+                .receiver_path()
+                .cloned()
+                .map(crate::TemporalDecisive::undecided),
+            None => None,
+        })
+    })
+}
+
+/// The trace slot holding the observation at position `at`: a lasso's
+/// position past its prefix wraps into its loop.
+pub(super) fn observation_slot(trace: &TraceInput, at: usize) -> Option<usize> {
+    match trace {
+        TraceInput::Lasso { prefix, repeat } if at >= prefix.len() => {
+            let offset = (at - prefix.len()).checked_rem(repeat.len())?;
+            Some(prefix.len() + offset)
+        }
+        TraceInput::Lasso { .. }
+        | TraceInput::Finite(_)
+        | TraceInput::Progressed { .. }
+        | TraceInput::Timestamped { .. } => Some(at),
+    }
+}
+
+/// The record of the first atom `read` stops at, in `atoms` order. `read`
+/// continues past an atom that is not false and stops at the first that is
+/// false or whose evaluation fails, with that atom's record or `None`.
+pub(super) fn first_false_atom<A, T>(
+    atoms: impl IntoIterator<Item = A>,
+    read: impl FnMut(A) -> ControlFlow<Option<T>>,
+) -> Option<T> {
+    atoms.into_iter().try_for_each(read).break_value().flatten()
 }
 
 /// `disposition` with its FR-330 counterexample. A violation or an

@@ -8,6 +8,7 @@ use qsl_forms::ProtocolDeclarationForm;
 use qsl_foundation::Span;
 
 use super::refusal;
+use crate::check::check::SourceScope;
 use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause, ShadowedDeclaration};
 use crate::check::{Scope, Signatures};
 
@@ -47,7 +48,7 @@ pub(super) fn shadow_refusals(
                     &binder.name.name,
                     alias_names,
                     native_names,
-                    scope,
+                    scope.for_declaration(&protocol.name.name),
                     signatures,
                 )
             });
@@ -73,7 +74,7 @@ fn package_shadow(
     name: &str,
     alias_names: &BTreeMap<String, AliasKind>,
     native_names: &BTreeSet<String>,
-    scope: &Scope,
+    scope: SourceScope<'_>,
     signatures: &Signatures,
 ) -> Option<ShadowedDeclaration> {
     if let Some(alias) = alias_names.get(name) {

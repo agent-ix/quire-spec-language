@@ -31,7 +31,7 @@ pub(crate) enum ResolvedTarget<'a, V> {
 fn unions<'a>(typer: &Typer<'a>, qualifier: &str, member: &str) -> Vec<(NodeKey, usize)> {
     let scope = typer.scope();
     scope
-        .named_types(qualifier)
+        .named_types(typer.source_owner(), qualifier)
         .iter()
         .filter_map(|named| match named {
             ValueType::Composite(declaration) => {
@@ -46,13 +46,16 @@ fn unions<'a>(typer: &Typer<'a>, qualifier: &str, member: &str) -> Vec<(NodeKey,
 /// Whether a declared union is named `qualifier`.
 fn names_a_union(typer: &Typer<'_>, qualifier: &str) -> bool {
     let scope = typer.scope();
-    scope.named_types(qualifier).iter().any(|named| {
-        matches!(named, ValueType::Composite(declaration)
-        if matches!(
-            scope.types().composite(declaration.clone()).map(|declared| declared.shape()),
-            Some(CompositeShape::Union(_))
-        ))
-    })
+    scope
+        .named_types(typer.source_owner(), qualifier)
+        .iter()
+        .any(|named| {
+            matches!(named, ValueType::Composite(declaration)
+            if matches!(
+                scope.types().composite(declaration.clone()).map(|declared| declared.shape()),
+                Some(CompositeShape::Union(_))
+            ))
+        })
 }
 
 /// Resolve `name` at `location` to exactly one target or refuse it.

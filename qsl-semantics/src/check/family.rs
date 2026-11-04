@@ -858,6 +858,8 @@ pub struct DeclarationMetrics {
 /// Model targets are measured as authored syntax and resolved by their hook.
 pub(crate) struct TargetTypes<'a> {
     scope: &'a Scope,
+    /// The source unit whose model aliases the targets are written under.
+    source: Option<&'a qsl_foundation::source::provenance::RawSourceRef>,
     location: &'a CheckLocation,
     cancel: Option<&'a quire_exact::Cancel>,
 }
@@ -867,9 +869,20 @@ impl<'a> TargetTypes<'a> {
     pub(crate) fn new(scope: &'a Scope, location: &'a CheckLocation) -> Self {
         Self {
             scope,
+            source: None,
             location,
             cancel: None,
         }
+    }
+
+    /// These targets, written in the source unit `source`.
+    #[must_use]
+    pub(crate) fn with_source(
+        mut self,
+        source: Option<&'a qsl_foundation::source::provenance::RawSourceRef>,
+    ) -> Self {
+        self.source = source;
+        self
     }
 
     /// These targets, with the measure pass polling `cancel` at every node
@@ -881,7 +894,11 @@ impl<'a> TargetTypes<'a> {
     }
 
     fn resolve(&self, target: &qsl_forms::TypeForm) -> Result<ValueType, CheckRefusal> {
-        super::type_form::resolve_type_form(self.scope, target, self.location)
+        super::type_form::resolve_type_form(
+            &self.scope.in_source(self.source),
+            target,
+            self.location,
+        )
     }
 }
 /// `Value`'s family check code for function application
@@ -1521,6 +1538,7 @@ pub(crate) fn check_declaration_body(
                 &mut nodes,
                 ClauseKind::Body,
             )
+            .with_source_owner(input.source_owner.clone())
             .with_cancel(input.cancel)
             .with_complete_value(input.complete_value)
             .with_context(cx.reborrow(input.scope));
@@ -2055,6 +2073,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             form,
             declarations.own_signature,
             &TargetTypes::new(declarations.scope, declarations.location)
+                .with_source(declarations.source_owner.as_ref())
                 .with_cancel(declarations.cancel),
         );
         let metrics = match measured {

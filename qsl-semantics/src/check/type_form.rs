@@ -21,7 +21,7 @@
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
-use super::check::Scope;
+use super::check::SourceScope;
 use super::refusal::{CheckCause, CheckRefusal};
 use qsl_forms::{BuiltinType, NameForm, TypeForm, TypeFormHead};
 use qsl_foundation::Span;
@@ -46,17 +46,17 @@ pub(crate) trait TypeNames {
     fn unit_named(&self, name: &str) -> Option<UnitId>;
 }
 
-impl TypeNames for Scope {
+impl TypeNames for SourceScope<'_> {
     fn named_types(&self, name: &str) -> &[ValueType] {
-        Scope::named_types(self, name)
+        self.scope.named_types(self.source, name)
     }
 
     fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
-        Scope::object_type_named(self, name)
+        self.scope.object_type_named(self.source, name)
     }
 
     fn unit_named(&self, name: &str) -> Option<UnitId> {
-        Scope::unit_named(self, name)
+        self.scope.unit_named(name)
     }
 }
 
@@ -235,14 +235,14 @@ fn named_type(
 /// (FR-153) name their queried type `T` this way (ADR-013 O-11: "name ->
 /// node id by the checker only"), resolving to `ValueType::Reference`.
 pub(crate) fn resolve_named_type(
-    scope: &Scope,
+    names: &impl TypeNames,
     name: &str,
     location: &Location,
 ) -> Result<ValueType, CheckRefusal> {
     let span = Span { start: 0, end: 0 };
     let name = NameForm::new(name, span);
     let form = TypeForm::new(TypeFormHead::Name(name.clone()), span);
-    named_type(scope, &name, &form).map_err(|error| error.into_refusal(location))
+    named_type(names, &name, &form).map_err(|error| error.into_refusal(location))
 }
 
 fn bound_text(form: &TypeForm, index: usize) -> Result<&str, TypeFormError> {
@@ -499,7 +499,7 @@ fn carried_quantity_type(
 /// type node from `T`, which `ValueType::Population` does not carry; a `T`
 /// that names no object type refuses `ill_typed`/`type-mismatch`.
 pub(crate) fn population_target(
-    scope: &Scope,
+    names: &impl TypeNames,
     form: &TypeForm,
     location: &Location,
 ) -> Result<Option<EffectiveId>, CheckRefusal> {
@@ -507,7 +507,7 @@ pub(crate) fn population_target(
         return Ok(None);
     }
     let argument = only_argument(form).map_err(|error| error.into_refusal(location))?;
-    match &resolve_type_form(scope, argument, location)? {
+    match &resolve_type_form(names, argument, location)? {
         ValueType::Reference(target) => Ok(Some(target.clone())),
         _ => Err(CheckRefusal::ill_typed(
             location,
@@ -653,16 +653,17 @@ impl<N: TypeNames> Resolver<'_, '_, N> {
 /// Resolve a syntactic `TypeForm` against the package `scope`, refusing at
 /// `location` (see the module doc).
 pub(crate) fn resolve_type_form(
-    scope: &Scope,
+    names: &impl TypeNames,
     form: &TypeForm,
     location: &Location,
 ) -> Result<ValueType, CheckRefusal> {
-    resolve_form(scope, form).map_err(|error| error.into_refusal(location))
+    resolve_form(names, form).map_err(|error| error.into_refusal(location))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::check::check::Scope;
     use crate::check::family::fixtures::{empty_scope, root_location, scope_with};
     use ix_trace_rs::trace;
     use quire_exact::CollectionKind;
@@ -759,7 +760,7 @@ mod tests {
     }
 
     fn resolve_in(scope: &Scope, form: &TypeForm) -> Result<ValueType, CheckRefusal> {
-        resolve_type_form(scope, form, &root_location())
+        resolve_type_form(&scope.in_source(None), form, &root_location())
     }
 
     fn resolve(form: &TypeForm) -> Result<ValueType, CheckRefusal> {
@@ -1102,7 +1103,7 @@ mod tests {
         );
         assert_ne!(unbounded, bounded);
         let inverted = resolve_form(
-            &empty_scope(),
+            &empty_scope().in_source(None),
             &collection(CollectionKind::Set, &["3", "2"]),
         )
         .expect_err("an inverted bound refuses");

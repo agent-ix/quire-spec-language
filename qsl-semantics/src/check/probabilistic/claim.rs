@@ -859,15 +859,17 @@ impl Pass<'_, '_> {
         let Some(parameter) = &form.over else {
             return Ok(None);
         };
-        let value_type =
-            super::super::type_form::resolve_form(self.input.scope, &parameter.value_type)
-                .map_err(|error| {
-                    temporal_refusal(TemporalCause::ParameterType {
-                        parameter: parameter.name.name.clone(),
-                        fault: error.fault,
-                        span: error.span,
-                    })
-                })?;
+        let value_type = super::super::type_form::resolve_form(
+            &self.input.scope.for_declaration(&form.name.name),
+            &parameter.value_type,
+        )
+        .map_err(|error| {
+            temporal_refusal(TemporalCause::ParameterType {
+                parameter: parameter.name.name.clone(),
+                fault: error.fault,
+                span: error.span,
+            })
+        })?;
         if !matches!(value_type, ValueType::Reference(_)) {
             return Err(refusal(ProbabilisticCause::OverNotObjectType {
                 claim: form.name.name.clone(),

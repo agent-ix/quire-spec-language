@@ -270,7 +270,10 @@ fn check_claim(
         // once.
         let position = capture_kinds.len();
         capture_kinds.push((written.name.name.clone(), Kind::Real));
-        let resolved = crate::check::type_form::resolve_form(inputs.scope, &written.value_type);
+        let resolved = crate::check::type_form::resolve_form(
+            &inputs.scope.for_declaration(&form.name.name),
+            &written.value_type,
+        );
         let ty = match resolved {
             Ok(ty) => ty,
             Err(error) => {

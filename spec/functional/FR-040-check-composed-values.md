@@ -96,6 +96,14 @@ If the admitted domain package or selected proof interface cannot represent a re
 
 The compiler SHALL derive declaration-owned typed runtime requirements from checked values and authoritative contracts without supplying concrete assessment data.
 
+For spine compilation, `qsl_replay::spine::check` SHALL retain a typed
+protocol-proof result for each protocol declaration. The result SHALL preserve
+the actual proof disposition, proof goals, typed causes and the formal
+correspondence that binds each value root to its authored source, clause and
+execution point. A discharged protocol value proof establishes only its
+supported definedness obligations; it does not admit the protocol family,
+provide observations or establish an execution result.
+
 If an upstream or checking dependency refuses, then the compiler SHALL prevent every dependent value from being exposed as checked while preserving unrelated completed results.
 
 The following obligations apply together; an implementation subset does not
@@ -148,6 +156,7 @@ configuration provenance, separate from selected semantic identities.
 | FR-040-AC-8 | Exact authored formal correspondence permits actual supported IR discharge. Omitted, duplicate, changed-source, foreign-declaration or wrong-execution-point correspondence prevents dependent proof without synthetic ownership. Unproved definedness, unsupported prerequisite and resource exhaustion retain distinct typed causes; typing remains inspectable. | Test (TC-119) |
 | FR-040-AC-9 | Independently calculated small chain/diamond, nested-query and proof-expansion vectors distinguish zero, exact and one-step-insufficient limits in every public dimension, including output retention and overflow. Shared work/retries obey the published charges; an exhausted or refused dependent remains unadmitted beside unrelated completed work. | Test (TC-119) |
 | FR-040-AC-10 | Historical checker/profile/package fixtures retain their original identities, successes and atomic refusals. Composed typed/partial reports cannot enter historical checked/execution interfaces by retagging or introduce an implicit wire contract. | Test (TC-119) |
+| FR-040-AC-11 | Through `qsl_replay::spine::check`, a protocol declaration with a typed Boolean `check` expression whose definedness is supported and whose exact authored source, clause and handler execution point are supplied has a per-declaration typed protocol-proof result with disposition `Discharged`, no causes, retained proof goals and exact formal correspondence; omitting, duplicating or substituting the formal source, declaration mapping or execution point yields a typed correspondence refusal or unfinished result and never `Discharged`. This proof result alone does not admit or execute the protocol. | Test (TC-119) |
 
 ## Dependencies
 

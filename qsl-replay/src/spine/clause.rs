@@ -900,6 +900,11 @@ pub struct ClauseRunReport {
     /// a violation, built from what the entry ran; `None` for every other
     /// report.
     pub counterexample: Option<crate::ObservedTemporalCounterexample>,
+    /// FR-330 Outputs, FR-283: the decisive information of a temporal
+    /// violation (`Completed(false)`) whose deciding `holds` atom FR-107's
+    /// evaluator decides, beside `counterexample` and never inside it;
+    /// `None` for every other report. FR-267 does not write it.
+    pub decisive: Option<crate::TemporalDecisive>,
     /// The exact temporal profile and clock selected by the checked package
     /// when a clock-bearing trace was authenticated.
     pub authenticated_temporal_selection: Option<AuthenticatedTemporalSelection>,
@@ -1050,6 +1055,7 @@ pub fn run_clause_with_temporal_selections(
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        decisive: None,
         ledger: None,
         authenticated_temporal_selection: None,
     };
@@ -1244,6 +1250,7 @@ impl CompiledRun<'_> {
             consequent_source_events: ConsequentSourceEvents::Unavailable,
             finite_window: None,
             counterexample: None,
+            decisive: None,
             ledger: None,
             authenticated_temporal_selection: None,
         }
@@ -1663,6 +1670,7 @@ fn run_function(
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        decisive: None,
         ledger: None,
         authenticated_temporal_selection: None,
     };
