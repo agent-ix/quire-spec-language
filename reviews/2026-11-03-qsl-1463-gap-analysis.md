@@ -38,3 +38,12 @@ Source-owned rows: IR's quire-contract-model (locked 64de9ec) has SelectedEnumDe
 ## Verdict
 
 Not blocking on its own: FND-001 and FND-002 are out of the PR's slice, but each needs an owning Linear ticket before QSL-1463 is treated as closed for IR-721/IR-722; the code lead should file them (tickets live in Linear, project QSL V1 Architecture Spine, Layer 4 - Semantic facets).
+
+## Dispositions
+
+Round 1, at 81aa7e1c7.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-1630 (Backlog, QSL V1 Architecture Spine) owns FR-251-AC-37, the PlanId half of AC-38 and AC-39; the root-key test is retagged FR-487-AC-13 and its doc says the PlanId half is not asserted, so the over-claim is gone. QSL-1630 shows a project but no milestone or relations: the code lead should add them. |
+| FND-002 | deferred | QSL-1631 (Backlog, QSL V1 Architecture Spine) owns the source-owned enum, collection and union row producers; the Emission field doc now states those row kinds have no producer yet and the FR-251 paragraph names the model enum rows. QSL-1631 shows a project but no milestone or relations: the code lead should add them. |

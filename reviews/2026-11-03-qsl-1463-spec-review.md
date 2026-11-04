@@ -27,3 +27,12 @@ Ticket: QSL-1463. quire 0.38.3: `quire validate` exits 0 on FR-251 and TC-1081 (
 ## Verdict
 
 Mergeable after FND-001 is restated; FND-002 is wording. No contradiction with QSpec FR-487 (call closure order and keying agree with FR-251-AC-38) or FR-322-AC-309 found.
+
+## Dispositions
+
+Round 1, at 81aa7e1c7. `quire validate` exits 0 on FR-251 and TC-1081 at the fix head.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-251-AC-42 now lists every retained row kind, requires non-empty where the acquisition had rows, states that every node id in each row equals the plan-root package's id (renamed nodes by their renamed id, others unchanged, nothing written anew); TC-1081 step 26 and its expected result match. |
+| FND-002 | fixed | The paragraph now uses SHALL and SHALL NOT, and its row list (selected model declaration and field, source-unit, model enum declaration and member, tuple declaration, operation-member, equality producer and fact, temporal binding, omitted nodes) equals the rows carry_rows carries. |

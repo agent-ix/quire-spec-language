@@ -49,3 +49,43 @@ Root `it` (cargo test --locked --test it): 877 passed, 0 failed, 6 ignored, exit
 ## Verdict
 
 Not mergeable as is: the production change is correct and every gate is green, but two of the three tests the PR relies on do not fail under the mutations the review was asked to run (FND-001, FND-002), and FND-003 leaves part of the re-keying contract unexercised and unguarded. All three fixes are small and local to the tests and one helper.
+
+## New findings (disposition pass 1)
+
+Re-review at 81aa7e1c7 (merged on origin/main d421482f in a trial merge; all gates green, see Dispositions).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The writer's hand-off of its renames to carry_rows is not tested. carry_rows is tested only with synthetic rows and a synthetic rename; no real row names a renamed node (the Instance/Activation/LimitReached record_value nodes and the four entries), so the monitor_root end-to-end test cannot see the wiring. Mutants that call `finish(base, retained, &[], ...)`, or drop either `all_changes.extend(changes)` (step 1 or step 2), pass the whole package lib retained_rows tests and the whole qsl-analyze monitor_root/monitor_entries run (45 passed). An end-to-end assertion is needed: pass emit_monitor_plan_over a retained Emission with a row whose id is the pre-rename id of one entry function (and one renamed record_value node) taken from the base package, and assert the returned row names the new id. | qsl-package/src/emit/monitor_plan.rs:396-410, 454, 686 |
+
+## Dispositions
+
+Round 1, at 81aa7e1c7. Mutation set re-run on a scratch copy of the fix head (tests: qsl-package lib retained_rows, and qsl-analyze the_root_key_covers_the_bodies_of_called_helpers; baseline both pass):
+
+| Mutant | Result |
+| --- | --- |
+| skip all re-keying (Rekey::id no-op) | killed (2 of 2 retained_rows tests) |
+| skip re-key: operation-member anchor | killed |
+| skip re-key: tuple structural node | killed |
+| skip re-key: source-unit structural node | killed |
+| skip re-key: model enum declaration node | killed |
+| skip re-key: enum member structural node / declaration node (two mutants) | killed, killed |
+| skip re-key: exact declaration node | killed |
+| skip re-key: exact field record node | killed |
+| skip re-key: equality producer checked node / source-map entry (two mutants) | killed, killed |
+| skip re-key: equality fact application / structural node / fact node ids / source-map entry (four mutants) | killed x4 |
+| skip re-key: source-map entry node (Rekey::entry) | killed |
+| skip re-key: omitted node / omission cause node (two mutants) | killed, killed |
+| skip re-key: temporal binding declaration | killed |
+| drop carried omissions / drop carried temporal binding rows | killed, killed |
+| closure order reversed | killed (the_root_key_covers_the_bodies_of_called_helpers) |
+| entry roots dropped from the closure / clause dropped from the closure | killed, killed |
+| finish called with no renames / step-1 renames not carried / step-2 renames not carried | ALL SURVIVE (FND-004) |
+
+Gates in the trial merge on origin/main d421482f (exit codes): fmt 0; check --locked --workspace --all-targets 0; clippy default 0; clippy --no-default-features 0; arch-lint qualified-core 0; api-surface --qsl-only 0; qsl-analyze it monitor_root + monitor_entries 45 passed; qsl-package lib 608 passed, 6 failed, the same 6 failing names as clean origin/main (606 passed, 6 failed), no delta (current main has 6 pre-existing failures, not 7); root it 877 passed, 0 failed, 6 ignored.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | carry_rows is exercised by every_retained_row_kind_is_carried_with_its_node_ids_rekeyed and a_row_naming_a_node_no_rename_touches_is_carried_unchanged (TC-1081 / FR-251-AC-42); each re-key mutant and both retention mutants fail them. The remaining untested piece is the writer's wiring, tracked as FND-004. |
+| FND-002 | fixed | The test now asserts assert_eq!(tail, expected_closure(wire)) against a closure computed independently from the wire, with atom-called, helper-through-helper and guard-called helpers; the reversed-order, entry-roots-dropped and clause-dropped mutants all fail. Entries reach authored helpers only through generated declared helpers, which the closure includes (tail longer than the three authored helpers); the duplicate-check in the test compares test-local vectors only (harmless: assert_eq on the tail already fails a duplicate). |
+| FND-003 | fixed | carry_rows destructures every row type (and CheckedSourceMapEntry, EqualityFactWitness, OmissionCause) with no rest pattern, re-keys every node id field, and each field's re-key is pinned by a killed mutant. |

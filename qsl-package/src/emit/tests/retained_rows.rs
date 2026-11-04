@@ -400,3 +400,135 @@ fn a_row_naming_a_node_no_rename_touches_is_carried_unchanged() {
         "a cause naming the renamed node follows it"
     );
 }
+
+/// FR-251-AC-42 end to end: `emit_monitor_plan_over` hands the renames it
+/// performs (a renamed record's value node and the four entry functions, whose
+/// ids become declaration-less content keys) to the row carry, so a retained
+/// row that names either by its id in the base package names it by its new id
+/// in the returned package.
+#[trace("TC-1081", "FR-251-AC-42")]
+#[test]
+fn the_writers_renames_reach_the_rows_it_carries() {
+    use super::admission_corpus::config_version_unit;
+    use crate::emit::{emit_monitor_plan_over, MonitorPlanWire};
+
+    let body = "temporal C using tt over (c: Config::ConfigVersion) clock \"model-time\" on origin { always holds(c.versionNumber = 2) }\n\
+        record State { now: Integer; }\n\
+        record Inputs { x: Integer; }\n\
+        record Scope { y: Integer; }\n\
+        record Result { lab: String; }\n\
+        record Pair { fst: Integer; }\n\
+        function mkPair using v(): Pair pure { Pair { fst: 1 } }\n\
+        function results using v(): Sequence<Result> pure { sequence[Result { lab: \"a\" }] }\n\
+        function e0 using v(s: State): State pure { s }\n\
+        function e1 using v(s: State, i: Inputs): State pure { s }\n\
+        function e2 using v(s: State, p: Scope): State pure { s }\n\
+        function e3 using v(s: State, g: Integer): State pure { s }\n";
+    let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = super::clock_places::clocked_unit(body).replace(
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        "profile t = \"quire.temporal.complete/v1\";\nprofile tt = \"quire.temporal.timed/v1\";\n",
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let package = CheckedPackage::link(graph);
+    let mut emission = emit_checked(&package).expect("the package emits");
+
+    let wire_before = wire(&emission);
+    let nodes_before = nodes(&wire_before);
+    let id_of = |found: &Value| -> CheckedNodeId {
+        serde_json::from_value(found["node_id"].clone()).expect("a node id")
+    };
+    let entry_names = ["e0", "e1", "e2", "e3"];
+    let entries_before: Vec<CheckedNodeId> = entry_names
+        .iter()
+        .map(|name| {
+            id_of(
+                nodes_before
+                    .iter()
+                    .find(|n| n["declaration"]["qualified_name"] == json!([name]))
+                    .expect("an entry"),
+            )
+        })
+        .collect();
+    let pair = nodes_before
+        .iter()
+        .find(|n| n["declaration"]["qualified_name"] == json!(["Pair"]))
+        .expect("the renamed record");
+    let value_before = id_of(
+        nodes_before
+            .iter()
+            .find(|n| n["semantic_form"] == "record_value" && n["semantic_type"] == pair["node_id"])
+            .expect("the renamed record's value node"),
+    );
+    emission.omitted = entries_before
+        .iter()
+        .chain([&value_before])
+        .map(|node| OmittedNode {
+            node: node.clone(),
+            cause: OmissionCause::DeclarationOccurrenceMismatch,
+        })
+        .collect();
+
+    let mut evidence = emission.evidence().clone();
+    evidence
+        .insert_domain_package_document(package_identity(document), document)
+        .expect("a fresh evidence key");
+    let clause_key = package.graph().temporal_clauses()[0].identity();
+    let formula = package.graph().temporal_clauses()[0]
+        .clause()
+        .formula()
+        .clone();
+    let rate = quire_exact::Rational::new(1_i64.into(), 500_i64.into()).unwrap();
+    let zero = quire_exact::Rational::new(0_i64.into(), 1_i64.into()).unwrap();
+    let wire_plan = MonitorPlanWire {
+        clause: &clause_key,
+        formula: &formula,
+        counter: "counter",
+        counter_width_bits: 12,
+        max_reading_gap: 3600,
+        max_event_rate: &rate,
+        uncertainty: &zero,
+        buffers: &[],
+        tick_unit: "ms",
+        activation_capacity: 8,
+        state: "State",
+        inputs: "Inputs",
+        scope: "Scope",
+        result: "Result",
+        entries: ["e0", "e1", "e2", "e3"],
+        renamed_records: &["Pair"],
+        renames: &[("fst", "one")],
+    };
+    let rooted = emit_monitor_plan_over(
+        &emission,
+        qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap(),
+        &evidence,
+        &wire_plan,
+    )
+    .expect("the plan root is written");
+
+    let after: Vec<&CheckedNodeId> = rooted.wire_nodes.iter().map(|n| &n.node_id).collect();
+    let carried: Vec<&CheckedNodeId> = rooted.omitted().iter().map(|row| &row.node).collect();
+    assert_eq!(carried.len(), 5);
+    for (carried, before) in carried
+        .iter()
+        .zip(entries_before.iter().chain([&value_before]))
+    {
+        assert_ne!(
+            *carried, before,
+            "the row names the new id, not the base id"
+        );
+        assert!(
+            after.contains(carried),
+            "the new id is a node of the package"
+        );
+        assert!(
+            !after.contains(&before),
+            "the base id is gone from the package"
+        );
+    }
+}
