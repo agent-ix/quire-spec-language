@@ -6831,7 +6831,7 @@ fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
 #[cfg(test)]
 pub(crate) mod tests;
 
-mod equality_reader;
+pub(crate) mod equality_reader;
 /// ADR-014 §4 (TC-440): QSL's extent classification agrees with
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]

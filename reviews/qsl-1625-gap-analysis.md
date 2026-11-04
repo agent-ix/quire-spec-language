@@ -57,7 +57,25 @@ CONDITIONAL. AC-25 is backed by two passing tests. AC-15, AC-24, AC-26 and AC-27
 
 ## Dispositions
 
-- FND-001: fixed. AC-15, AC-24, AC-26, AC-27, TC-1073 and the shared-meter test pass. All 46 `protocol_slots::acceptance` tests pass.
-- FND-002: fixed. Every reader root goes through `ReaderNode` (AC-16), and no location comes from the source package (AC-50).
-- FND-003: fixed. Pairing is implemented in `reader_protocol_projection.rs`, and tagged tests cover AC-31, 33, 35, 37, 38, 52, 53, 54 and 57.
-- FND-004: fixed. `an_unprojected_slot_root_is_a_typed_refusal_at_its_node` covers this. The refusal is per slot rather than package-wide; see code-review FND-006.
+Disposition pass 1, head 391cb15ed (trial merge with origin/main 0642337ef).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-15, AC-24, AC-25 (both tests), AC-26, AC-27, TC-1073 and the shared-meter test pass: 46/46 `protocol_slots::acceptance`, 0 ignored. The un-ignore only removed `#[ignore]`. The AC-24 test gained a same-shape `NativeTwin` capture, which makes it stronger. TC-1073 now asserts that all 20 listed roots go through the reader. |
+| FND-002 | fixed | AC-16: one `Machine` path over `ReaderNode`, and `ReaderRoot` is deleted. AC-50: the slot root and origin come only from the selector, and no location is read from a `CheckedBody`. |
+| FND-003 | fixed | Pairing is implemented. Tests tagged AC-31/52/53, AC-33/54, AC-35, AC-37, AC-38 and AC-57 are in qsl-package/src/emit/tests/protocol_locations.rs:700-883, and all pass (123 qsl-package focused tests). |
+| FND-004 | fixed | `an_unprojected_slot_root_is_a_typed_refusal_at_its_node` covers a typed refusal with catalog pair, reason and locus. Its trace is wrong (FND-005), and the per-slot scope is code-review FND-011. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | Wrong trace. `an_unprojected_slot_root_is_a_typed_refusal_at_its_node` is tagged FR-390-AC-17. AC-17 is `MissingTypeRepresentation` before any view exists. The test asserts `MissingOperationProjection` for `quire.op.control.if` while the view *is* created, so it shows the opposite of AC-17, and it shows AC-41's claim (no package reaches `MissingOperationProjection`) failing. Fix: drop the AC-17 tag and trace the test to the follow-up ticket's interim behaviour, or leave it untagged until the remaining kinds are projected. | qsl-package/src/emit/tests/protocol_locations.rs:889-918 |
+| FND-006 | low | AC-15 requires location parity, but every AC-15/TC-1073 comparison strips locations (`without_location`). Only leaf halts justify `None` (AC-64). Application-located results now carry row locations and could be compared, but none is. Fix: compare `location` whenever the reader result's location is `Some`. | qsl-eval/tests/it/protocol_slots/acceptance.rs:2873-2883,3243-3343 |
+
+## Dispositions (pass 2)
+
+| ID | Disposition |
+| --- | --- |
+| FND-005 | Fixed. The AC-17 tag is removed from `an_unprojected_slot_root_is_a_typed_refusal_at_its_node`; the test is untagged and its doc names QSL-1666 as the owner of the interim behavior. The assertions are unchanged. |
+| FND-006 | Done as far as the code allows. `assert_location_parity` compares a halt's location whenever the reader's is `Some`, at both unavailable-halt comparison sites. The reader result carries a location only on `Unavailable`, which per AC-64 is `None` for a leaf read, so the comparison is a guard that holds today and bites once a located halt exists; `Evaluated` and `CallFailure` results are already compared in full. |

@@ -93,6 +93,10 @@ fn refunds(slot: &str) -> String {
     format!("protocol Refunds compensate Refund {slot}")
 }
 
+fn partial(slot: &str) -> String {
+    format!("protocol Refunds compensate Partial {slot}")
+}
+
 fn site(name: &str, at: &[usize]) -> Location {
     Location::at(
         Origin::TypeDeclaration {
@@ -857,6 +861,56 @@ fn reader_refuses_a_row_its_slot_never_visits() {
     );
 }
 
+/// FR-390 "Typed projection admission": with several defective applications
+/// the reported refusal is the first by ascending node key, whichever the walk
+/// or slot order meets first.
+#[trace("TC-1070", "FR-390-AC-35")]
+#[test]
+fn reader_reports_the_smallest_node_key_of_several_refusals() {
+    // Each defect drops one row: an application's second retry visit, the
+    // guard's `target >= 0`, and the retry relation's `target >= 0`.
+    let defects = [
+        (refunds("retry 0"), vec![0u64, 0, 1, 1, 0]),
+        (refunds("trigger-guard 0"), vec![1]),
+        (refunds("retry 0"), vec![0, 1]),
+        (partial("retry 0"), vec![0, 0, 1, 1, 0]),
+        (partial("trigger-guard 0"), vec![1]),
+        ("protocol Refunds run Main Applied body".to_owned(), vec![]),
+    ];
+    let drop_rows = |dropped: &[usize]| {
+        let found = std::cell::RefCell::new(None);
+        reader_view_over(
+            tc1070::SOURCE,
+            |wire| {
+                let mut at: Vec<usize> = dropped
+                    .iter()
+                    .map(|&defect| row_index(wire, &defects[defect].0, &defects[defect].1))
+                    .collect();
+                at.sort_unstable_by(|left, right| right.cmp(left));
+                for index in at {
+                    wire["checked_term_data"]["protocol_locations"]
+                        .as_array_mut()
+                        .unwrap()
+                        .remove(index);
+                }
+            },
+            |view| {
+                let missing = missing_location(view.err().expect("view creation refuses"));
+                *found.borrow_mut() = Some(missing.application.clone());
+            },
+        );
+        found.into_inner().expect("a refusal was reported")
+    };
+    let single: Vec<_> = (0..defects.len())
+        .map(|defect| drop_rows(&[defect]))
+        .collect();
+    let smallest = single.iter().min().expect("defects").clone();
+    let all: Vec<usize> = (0..defects.len()).collect();
+    assert_eq!(drop_rows(&all), smallest);
+    let reversed: Vec<usize> = all.iter().rev().copied().collect();
+    assert_eq!(drop_rows(&reversed), smallest);
+}
+
 /// FR-390-AC-57: in E-C with the `Tried`-origin row of `order >= 0` removed,
 /// `Tried`'s one visit has no row and view creation refuses with the bare
 /// rows pointer.
@@ -882,11 +936,12 @@ fn reader_refuses_a_slot_whose_origin_has_no_row() {
     );
 }
 
-/// FR-390 "Typed projection admission": a slot whose admitted root has no
-/// projection yet (E-C's conditional) keeps a typed
-/// `MissingOperationProjection` at its node, not a runtime fault, and the
-/// package's other slots stay projected.
-#[trace("TC-1070", "FR-390-AC-17")]
+/// Interim behavior (QSL-1666): a slot whose admitted root has no projection
+/// yet (E-C's conditional) keeps a typed `MissingOperationProjection` at its
+/// node, not a runtime fault, and the package's other slots stay projected.
+/// FR-390 makes this refusal package-wide (AC-41, AC-51) and AC-17 is the
+/// distinct `MissingTypeRepresentation` refusal, so no criterion is claimed
+/// until QSL-1666 projects the remaining kinds.
 #[test]
 fn an_unprojected_slot_root_is_a_typed_refusal_at_its_node() {
     reader_view_over(

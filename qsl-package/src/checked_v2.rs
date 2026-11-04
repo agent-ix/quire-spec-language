@@ -1000,7 +1000,10 @@ impl AdmittedPackageRead<'_> {
     /// protocol slot of the package is projected here, once (FR-390): a slot
     /// walk whose applications and `protocol_locations` rows do not pair
     /// refuses the whole view, and a slot with an unsupported form keeps its
-    /// typed refusal for its own evaluation.
+    /// typed refusal for its own evaluation. Holding that refusal per slot
+    /// deviates from FR-390's package-wide refusal and is interim: QSL-1666
+    /// projects the remaining FR-400 kinds and then makes the refusal
+    /// package-wide.
     pub fn evaluation_view(
         &self,
     ) -> Result<

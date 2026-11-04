@@ -2597,8 +2597,6 @@ struct ParitySlot<'p> {
     values: SlotValues<'p>,
     observed: bool,
     expected: Option<Value>,
-    /// Whether the slot's root is explicitly supported by the reader projection.
-    reader_backed: bool,
 }
 
 fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
@@ -2608,8 +2606,7 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
               member,
               index,
               values: Vec<(&'static str, Value)>,
-              expected: Value,
-              backed| {
+              expected: Value| {
         ParitySlot {
             name,
             protocol,
@@ -2619,10 +2616,9 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             values: Box::new(move |_| values.clone()),
             observed: false,
             expected: Some(expected),
-            reader_backed: backed,
         }
     };
-    let observed = |name, owner, member, protocol, expected: Option<Value>, backed| ParitySlot {
+    let observed = |name, owner, member, protocol, expected: Option<Value>| ParitySlot {
         name,
         protocol,
         owner,
@@ -2634,7 +2630,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         }),
         observed: true,
         expected,
-        reader_backed: backed,
     };
     let tick = record(
         package,
@@ -2652,7 +2647,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             None,
             vec![("opened", tick)],
             t.clone(),
-            true,
         ),
         observed(
             "protocol capture",
@@ -2660,7 +2654,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             "captures",
             "Refunds",
             Some(int(5)),
-            true,
         ),
     ];
     for (owner, forward, trigger, target, activated, earlier, later, recovered) in [
@@ -2693,7 +2686,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             Some(0),
             vec![(forward, receipt(package, 5))],
             int(5),
-            true,
         ));
         slots.push(on(
             "activation capture",
@@ -2703,7 +2695,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             Some(0),
             vec![(trigger, flag(package, true))],
             t.clone(),
-            true,
         ));
         slots.push(on(
             "trigger guard",
@@ -2713,7 +2704,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
             None,
             vec![(trigger, flag(package, false)), (target, int(5))],
             t.clone(),
-            true,
         ));
         slots.push(on(
             "retry relation",
@@ -2728,7 +2718,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
                 (activated, f.clone()),
             ],
             t.clone(),
-            true,
         ));
         slots.push(on(
             "recovery predicate",
@@ -2742,7 +2731,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
                 (activated, f.clone()),
             ],
             t.clone(),
-            true,
         ));
     }
     slots.push(on(
@@ -2753,7 +2741,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         None,
         vec![("order", int(5))],
         t.clone(),
-        true,
     ));
     slots.push(on(
         "commit constraint",
@@ -2763,7 +2750,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         None,
         vec![("committed", flag(package, true))],
         t.clone(),
-        true,
     ));
     slots.push(on(
         "finish constraint",
@@ -2773,7 +2759,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         None,
         vec![],
         t.clone(),
-        true,
     ));
     slots.push(observed(
         "related from",
@@ -2781,7 +2766,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         "related.from",
         "Pipeline",
         None,
-        true,
     ));
     slots.push(observed(
         "related to",
@@ -2789,7 +2773,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         "related.to",
         "Pipeline",
         None,
-        true,
     ));
     slots.push(on(
         "choice visible",
@@ -2799,7 +2782,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         Some(0),
         vec![("got", flag(package, true))],
         t.clone(),
-        true,
     ));
     slots.push(on(
         "choice guard no",
@@ -2809,7 +2791,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         Some(0),
         vec![("got", flag(package, true))],
         f,
-        true,
     ));
     slots.push(on(
         "choice guard yes",
@@ -2819,7 +2800,6 @@ fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
         Some(1),
         vec![("got", flag(package, true))],
         t,
-        true,
     ));
     slots
 }
@@ -2882,6 +2862,26 @@ fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> Str
     }
 }
 
+/// FR-390-AC-15 location parity: when the reader's halt carries a location
+/// (an application-located read), it is the checked view's. A leaf halt
+/// carries none on the reader view (AC-64), so only a `Some` is compared.
+fn assert_location_parity(
+    label: &str,
+    checked: &Result<ProtocolSlotEvaluation, CallFailure>,
+    reader: &Result<ProtocolSlotEvaluation, CallFailure>,
+) {
+    if let Ok(ProtocolSlotEvaluation::Unavailable {
+        location: Some(reader),
+        ..
+    }) = reader
+    {
+        let Ok(ProtocolSlotEvaluation::Unavailable { location, .. }) = checked else {
+            panic!("{label}: the checked view did not halt unavailable");
+        };
+        assert_eq!(location.as_ref(), Some(reader), "{label}: halt location");
+    }
+}
+
 /// TC-1073: compares the explicit supported TC-1070 root list between the
 /// in-process view and the strict-reader view.
 #[test]
@@ -2897,10 +2897,6 @@ fn reader_backed_tc1070_slots_match_the_checked_view_for_supported_roots() {
     assert_eq!(checked_reference, reader_reference);
 
     let specs = parity_slots(&package);
-    assert!(
-        specs.iter().all(|spec| spec.reader_backed),
-        "the explicit TC-1070 root list is supported"
-    );
     let mut compared = Vec::new();
     for spec in specs {
         let selected = slot(&package, spec.protocol, spec.owner, spec.member, spec.index);
@@ -3042,6 +3038,7 @@ fn reader_backed_tc1070_slots_match_the_checked_view_for_supported_roots() {
                 without_location(&on_reader),
                 "{label}: unavailable halt binder and cause"
             );
+            assert_location_parity(&label, &on_checked, &on_reader);
             assert!(
                 matches!(
                     on_checked,
@@ -3303,6 +3300,7 @@ fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
                 "{}: unavailable supply parity",
                 spec.name
             );
+            assert_location_parity(spec.name, &checked_unavailable, &reader_unavailable);
             assert!(matches!(
                 checked_unavailable,
                 Ok(ProtocolSlotEvaluation::Unavailable { .. })
@@ -4067,10 +4065,7 @@ fn reader_backed_shared_meter_sums_and_bounds_in_both_orders() {
     let (checked_observation, reference) = observation(&package, &model_view);
     let (reader_observation, _) =
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
-    let specs: Vec<_> = parity_slots(&package)
-        .into_iter()
-        .filter(|spec| spec.reader_backed)
-        .collect();
+    let specs = parity_slots(&package);
     assert!(specs.len() >= 8);
     let selections: Vec<_> = specs
         .iter()

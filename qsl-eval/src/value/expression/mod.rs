@@ -140,9 +140,7 @@ fn unsupported_projection(unsupported: &qsl_package::UnsupportedView) -> CallFai
     record
         .fields
         .insert("package", unsupported.package().to_owned());
-    record
-        .fields
-        .insert("reason", format!("{:?}", unsupported.reason()));
+    record.fields.insert("reason", unsupported.reason().name());
     let locus = CallAdmissionLocus::Node(unsupported.locus().key.clone());
     CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
         quire_eval::CallAdmissionRecord { record, locus },

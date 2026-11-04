@@ -8,6 +8,13 @@ use quire_semantic_value::declaration::AdmittedEqualityDecision;
 
 use super::{Emission, EqualityFactWitness, EqualityOperandTypeRole, EqualityUnitRole};
 
+/// The producer's equality rows of one emission rejoined to IR's row types,
+/// built once and shared by every equality application read from it.
+pub(crate) struct EqualityRows {
+    application_rows: Vec<SelectedEqualityApplicationRow>,
+    fact_rows: Vec<SelectedEqualityFactRow>,
+}
+
 impl Emission {
     /// Read the admitted equality decision for one exact emitted application.
     /// The producer rows supply only identity correspondence; IR validates
@@ -19,6 +26,37 @@ impl Emission {
         occurrence: &quire_contract_model::CheckedOccurrence,
         work_limit: u64,
     ) -> Result<AdmittedEqualityDecision, quire_contract_model::AdmittedEqualityReadError> {
+        self.admitted_equality_from(
+            &self.equality_rows(),
+            package,
+            application,
+            occurrence,
+            work_limit,
+        )
+    }
+
+    /// [`Self::admitted_equality`] over rows already built by
+    /// [`Self::equality_rows`].
+    pub(crate) fn admitted_equality_from(
+        &self,
+        rows: &EqualityRows,
+        package: &CheckedPackageV2,
+        application: &quire_contract_model::CheckedNodeId,
+        occurrence: &quire_contract_model::CheckedOccurrence,
+        work_limit: u64,
+    ) -> Result<AdmittedEqualityDecision, quire_contract_model::AdmittedEqualityReadError> {
+        package.admitted_equality(
+            application,
+            occurrence,
+            &rows.application_rows,
+            &rows.fact_rows,
+            self.selected_source_unit_rows(),
+            work_limit,
+        )
+    }
+
+    /// Every producer equality row of this emission, in IR's row types.
+    pub(crate) fn equality_rows(&self) -> EqualityRows {
         let application_rows = self
             .equality_producer_identity_rows()
             .iter()
@@ -174,13 +212,9 @@ impl Emission {
                 }
             })
             .collect::<Vec<_>>();
-        package.admitted_equality(
-            application,
-            occurrence,
-            &application_rows,
-            &fact_rows,
-            self.selected_source_unit_rows(),
-            work_limit,
-        )
+        EqualityRows {
+            application_rows,
+            fact_rows,
+        }
     }
 }
