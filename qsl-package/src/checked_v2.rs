@@ -1014,6 +1014,10 @@ impl AdmittedPackageRead<'_> {
                         | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
                 ) =>
             {
+                // A package-local record's checked type declaration is its
+                // exact structural identity. This wire node is scoped by the
+                // `record_value_type` form, so equal-shaped declarations keep
+                // distinct identities; no member-shape inference is used.
                 let record = self
                     .read
                     .admitted
