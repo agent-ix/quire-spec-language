@@ -65,7 +65,7 @@ use qsl_foundation::source::{LocatedSpan, Position};
 use qsl_foundation::IntakeLimits;
 use quire_canonical::Node;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Presence, TextProfile, TextType};
+use quire_exact::{Integer, IntegerInterval, Presence, RationalDomain, TextProfile, TextType};
 
 /// Join the selected-model stage's producer rows to the declaration forms
 /// admitted in `package`. Rows for declarations not present in this package
@@ -1357,6 +1357,12 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // root-process min-items rule to that wire shape; preserve this one
         // subtype case for QSL's typed process binder and normalizer.
         .filter(|located| !process_subtype_identity_schema_diagnostic(document, located))
+        // FR-505 extends value-type/v1 with the exact Rational scalar,
+        // constraints and unit member. The pinned shared validator predates
+        // those three contract members; QSL's reader below owns their full
+        // validation and this filter suppresses only its corresponding
+        // closed-vocabulary diagnostics.
+        .filter(|located| !rational_value_type_schema_diagnostic(document, located))
         // The upstream validator also emits generic supertype diagnostics for
         // process cross-meaning edges and cycles, and for record, event and
         // state machine cycles. The binder retains those edges so
@@ -1670,6 +1676,78 @@ fn process_subtype_identity_schema_diagnostic(
         && has_process_member_shape
         && has_root_shape;
     empty_identity || missing_identity
+}
+
+/// Whether a shared semantic-IR schema diagnostic is exactly one of the
+/// value-type/v1 Rational fields and constraint keywords defined by FR-505.
+/// All operand, identity, unit-reference and cross-node diagnostics remain
+/// owned by the shared validator or QSL's ordinary typed reader.
+#[ix_trace_rs::string_edge]
+fn rational_value_type_schema_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    if located.code != agent_ix_semantic_ir::schema::SCHEMA_VIOLATION {
+        return false;
+    }
+    let Some(rest) = located.pointer.strip_prefix("/ir/types/") else {
+        return false;
+    };
+    let mut segments = rest.split('/');
+    let Some(position) = segments.next().and_then(|text| text.parse::<usize>().ok()) else {
+        return false;
+    };
+    let Some(member) = segments.next() else {
+        return false;
+    };
+    let Some(type_value) = document
+        .tree
+        .get("types")
+        .and_then(Value::as_array)
+        .and_then(|types| types.get(position))
+    else {
+        return false;
+    };
+    if type_value.get("scalar").and_then(Value::as_str) != Some("rational") {
+        return false;
+    }
+    let Ok(kind) = NodeCtx::new(type_value, "$").kind_key() else {
+        return false;
+    };
+    let Ok(meanings) = meaning_index(&document.tree) else {
+        return false;
+    };
+    if meanings
+        .get(&(kind.0.to_owned(), kind.1.to_owned()))
+        .map(String::as_str)
+        != Some(meaning::VALUE_TYPE)
+    {
+        return false;
+    }
+    match member {
+        "scalar" | "unit" => true,
+        "constraints" => segments
+            .next()
+            .and_then(|index| index.parse::<usize>().ok())
+            .and_then(|index| {
+                type_value
+                    .get("constraints")
+                    .and_then(Value::as_array)
+                    .and_then(|constraints| constraints.get(index))
+            })
+            .and_then(|constraint| constraint.get("keyword"))
+            .and_then(Value::as_str)
+            .is_some_and(|keyword| {
+                [
+                    "minNumerator",
+                    "maxNumerator",
+                    "minDenominator",
+                    "maxDenominator",
+                ]
+                .contains(&keyword)
+            }),
+        _ => false,
+    }
 }
 
 #[ix_trace_rs::string_edge]
@@ -3646,8 +3724,14 @@ fn read_value_type(
         });
     }
     let scalar = ctx.str_field("scalar")?;
+    if scalar != "rational" && type_value.get("unit").is_some() {
+        return Err(ctx.malformed_in("unit", "unit is supported only by a rational value type"));
+    }
     if scalar == "string" {
         return read_text_value_type(package, node, &ctx, at);
+    }
+    if scalar == "rational" {
+        return read_rational_value_type(package, node, &ctx, at);
     }
     if scalar != "integer" {
         return Err(unsupported_at(
@@ -3844,6 +3928,144 @@ fn read_text_value_type(
     Ok(ScalarTypeRecord {
         key: declaration_key(package, node),
         domain: ScalarValueDomain::Text(text),
+    })
+}
+
+/// FR-505's bounded exact Rational value type. The validation passes are
+/// deliberately separate: malformed constraint shape and applicability are
+/// reported before missing keys, missing keys before operand shape, and all
+/// constraints before the optional unit member.
+#[ix_trace_rs::string_edge]
+fn read_rational_value_type(
+    package: &str,
+    node: &str,
+    ctx: &NodeCtx<'_>,
+    at: &str,
+) -> Result<ScalarTypeRecord, ModelRefusal> {
+    const KEYWORDS: [&str; 4] = [
+        "minNumerator",
+        "maxNumerator",
+        "minDenominator",
+        "maxDenominator",
+    ];
+
+    let read_unit = || match ctx.value.get("unit") {
+        None => Ok(None),
+        Some(Value::String(reference)) => {
+            let Some(name) = reference.strip_prefix("ix://quire/unit/") else {
+                return Err(ctx.malformed_in("unit", "expected ix://quire/unit/<name>"));
+            };
+            if name.is_empty() || name.contains('/') {
+                return Err(ctx.malformed_in("unit", "expected ix://quire/unit/<name>"));
+            }
+            Ok(Some(name.to_owned()))
+        }
+        Some(_) => Err(ctx.malformed_in("unit", "expected ix://quire/unit/<name>")),
+    };
+
+    let constraints = ctx.array_field("constraints")?;
+    if constraints.is_empty() {
+        return Ok(ScalarTypeRecord {
+            key: declaration_key(package, node),
+            domain: ScalarValueDomain::Rational {
+                domain: None,
+                unit: read_unit()?,
+            },
+        });
+    }
+    let mut seen = BTreeMap::<&str, (&Value, String)>::new();
+    for (position, constraint) in constraints.iter().enumerate() {
+        let constraint_at = format!("{at}.constraints[{position}]");
+        let constraint_ctx = NodeCtx::new(constraint, constraint_at.clone());
+        let keyword = constraint_ctx.str_field("keyword")?;
+        if !KEYWORDS.contains(&keyword) {
+            return Err(unsupported_member(
+                constraint,
+                &constraint_at,
+                MemberPath::from_document_location(&constraint_at).child("keyword"),
+                format!("{}:constraints:{keyword}", meaning::VALUE_TYPE),
+            ));
+        }
+        let applies_to = constraint_ctx.str_field("appliesTo")?;
+        if applies_to != node {
+            return Err(constraint_ctx.malformed_in(
+                "appliesTo",
+                format!("{keyword} applies to {applies_to:?}, not this value type"),
+            ));
+        }
+        if seen
+            .insert(keyword, (constraint, constraint_at.clone()))
+            .is_some()
+        {
+            return Err(
+                constraint_ctx.malformed_in("keyword", format!("{keyword:?} is declared twice"))
+            );
+        }
+    }
+
+    for keyword in KEYWORDS {
+        if !seen.contains_key(keyword) {
+            return Err(ctx.malformed_in("constraints", format!("{keyword}: missing")));
+        }
+    }
+
+    let mut bounds = [0_i64; 4];
+    for (index, keyword) in KEYWORDS.into_iter().enumerate() {
+        let (constraint, constraint_at) = seen
+            .get(keyword)
+            .expect("all required Rational constraints were checked above");
+        let operands = constraint.get("operands");
+        let value = operands
+            .filter(|operands| {
+                operands.is_object() && operands.as_object().is_some_and(|m| m.len() == 1)
+            })
+            .and_then(|operands| operands.get("value"))
+            .and_then(Value::as_i64);
+        let Some(value) = value else {
+            return Err(malformed_member(
+                constraint,
+                constraint_at,
+                MemberPath::from_document_location(constraint_at).child("operands"),
+                format!("{keyword}: operands must contain only an i64 JSON integer value"),
+            ));
+        };
+        bounds[index] = value;
+    }
+
+    let [numerator_min, numerator_max, denominator_min, denominator_max] = bounds;
+    if numerator_min > numerator_max || denominator_min < 1 || denominator_min > denominator_max {
+        return Err(unsupported_member(
+            ctx.value,
+            at,
+            MemberPath::from_document_location(at).child("constraints"),
+            format!(
+                "{}:constraints:minNumerator={numerator_min},maxNumerator={numerator_max},minDenominator={denominator_min},maxDenominator={denominator_max}",
+                meaning::VALUE_TYPE
+            ),
+        ));
+    }
+
+    let unit = read_unit()?;
+
+    let numerator =
+        IntegerInterval::new(Integer::from(numerator_min), Integer::from(numerator_max))
+            .map_err(|_| ctx.malformed_in("constraints", "invalid numerator bounds"))?;
+    let domain = RationalDomain::new(
+        numerator,
+        IntegerInterval::new(
+            Integer::from(denominator_min),
+            Integer::from(denominator_max),
+        )
+        .map_err(|_| ctx.malformed_in("constraints", "invalid denominator bounds"))?,
+    )
+    .map_err(|_| ctx.malformed_in("constraints", "denominator lower bound must be positive"))?;
+
+    Ok(ScalarTypeRecord {
+        key: declaration_key(package, node),
+        domain: ScalarValueDomain::Rational {
+            domain: Some(domain),
+            unit,
+        },
     })
 }
 
@@ -4598,6 +4820,119 @@ fn refused_after(mut earlier: Vec<ModelRefusal>, last: ModelRefusal) -> Refusals
     Refusals::new(first, earlier)
 }
 
+/// FR-505's cross-node rules that need the complete package type graph:
+/// member-level constraints cannot restate a Rational type, and a constraint
+/// on another value type cannot bind to it from the outside.
+fn check_rational_member_constraints(
+    types: &[Value],
+    rational_types: &std::collections::BTreeSet<String>,
+    document: &Value,
+    refusals: &mut Vec<ModelRefusal>,
+) {
+    let units: std::collections::BTreeSet<&str> = document
+        .get("units")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|unit| unit.get("name")?.as_str())
+        .collect();
+
+    for (type_position, type_value) in types.iter().enumerate() {
+        let Some(identity) = type_value.get("identity").and_then(Value::as_str) else {
+            continue;
+        };
+        if type_value.get("scalar").and_then(Value::as_str) == Some("rational") {
+            if let Some(unit) = type_value.get("unit").and_then(Value::as_str) {
+                if let Some(name) = unit.strip_prefix("ix://quire/unit/") {
+                    if !units.contains(name) {
+                        let at = format!("$.types[{type_position}]");
+                        if let Ok(path) =
+                            format!("/types/{type_position}/unit").parse::<JsonPointer>()
+                        {
+                            refusals.push(ModelRefusal {
+                                code: Code::MissingDeclaration,
+                                cause: ModelRefusalCause::IntakeMissingDeclaration {
+                                    node: identity.to_owned(),
+                                    reference: unit.to_owned(),
+                                    origin: type_value
+                                        .get("origin")
+                                        .cloned()
+                                        .unwrap_or(Value::Null),
+                                    path,
+                                    member: MemberPath::type_definition().name("unit"),
+                                },
+                                detail: format!(
+                                    "{at}: TypeDefinition.unit: {unit:?} names no unit"
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        for (field_position, field) in type_value
+            .get("fields")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            if field
+                .get("typeRef")
+                .and_then(Value::as_str)
+                .is_some_and(|ty| rational_types.contains(ty))
+                && field
+                    .get("constraints")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| !items.is_empty())
+            {
+                let at = format!("$.types[{type_position}].fields[{field_position}]");
+                refusals.push(malformed_member(
+                    field,
+                    &at,
+                    MemberPath::from_document_location(&at).child("constraints"),
+                    "a Rational-typed field carries its complete type",
+                ));
+            }
+        }
+
+        for (operation_position, operation) in type_value
+            .get("operations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            for (parameter_position, parameter) in operation
+                .get("params")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                if parameter
+                    .get("typeRef")
+                    .and_then(Value::as_str)
+                    .is_some_and(|ty| rational_types.contains(ty))
+                    && parameter
+                        .get("constraints")
+                        .and_then(Value::as_array)
+                        .is_some_and(|items| !items.is_empty())
+                {
+                    let at = format!("$.types[{type_position}].operations[{operation_position}].params[{parameter_position}]");
+                    refusals.push(malformed_member(
+                        parameter,
+                        &at,
+                        MemberPath::from_document_location(&at).child("constraints"),
+                        "a Rational-typed parameter carries its complete type",
+                    ));
+                }
+            }
+        }
+    }
+}
+
 /// The `shape` each `constructs[]` entry declares, by its `kind` key.
 fn shape_index(document: &Value) -> HashMap<(String, String), String> {
     let entries = document
@@ -4631,6 +4966,7 @@ struct TypeNodeReader<'a> {
     meanings: &'a HashMap<(String, String), String>,
     shapes: &'a HashMap<(String, String), String>,
     type_meanings: &'a HashMap<&'a str, &'a str>,
+    rational_types: &'a std::collections::BTreeSet<String>,
     semantic: Option<&'a agent_ix_semantic_ir::rules::Document<'a>>,
     semantic_members: &'a HashMap<&'a str, &'a agent_ix_semantic_ir::json::Json>,
 }
@@ -4647,12 +4983,30 @@ fn read_type_node(
         meanings,
         shapes,
         type_meanings,
+        rational_types,
         semantic,
         semantic_members,
     } = reader;
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
+    for (position, constraint) in ctx.array_field("constraints")?.iter().enumerate() {
+        if constraint
+            .get("appliesTo")
+            .and_then(Value::as_str)
+            .is_some_and(|applies_to| rational_types.contains(applies_to) && applies_to != node)
+        {
+            let constraint_at = format!("{at}.constraints[{position}]");
+            return Err(malformed_on(
+                node,
+                constraint,
+                &constraint_at,
+                MemberPath::from_document_location(&constraint_at).child("appliesTo"),
+                "a Rational value type's constraint cannot be carried by another node",
+            )
+            .into());
+        }
+    }
     if let Some(semantic) = semantic {
         validate_semantic_option_members(semantic, Some(semantic_members), type_value, at)?;
     }
@@ -4685,6 +5039,14 @@ fn read_type_node(
         let Some(target) = type_value.get("target").and_then(Value::as_str) else {
             return Err(ctx.malformed_in("target", "missing or not a string").into());
         };
+        if rational_types.contains(target) && !ctx.array_field("constraints")?.is_empty() {
+            return Err(ctx
+                .malformed_in(
+                    "constraints",
+                    "an alias of a Rational value type carries its complete type",
+                )
+                .into());
+        }
         let target = if target == "ix://quire/native/Clock" {
             ValueTypeRef::Clock
         } else if target.starts_with("ix://quire/unit/") {
@@ -5788,6 +6150,29 @@ fn read_nodes_partial(
             Some((identity, meanings.get(&key)?.as_str()))
         })
         .collect();
+    let mut rational_types: std::collections::BTreeSet<String> = types
+        .iter()
+        .filter(|type_value| type_value.get("scalar").and_then(Value::as_str) == Some("rational"))
+        .filter_map(|type_value| type_value.get("identity")?.as_str().map(str::to_owned))
+        .collect();
+    loop {
+        let newly_resolved: Vec<String> = types
+            .iter()
+            .filter_map(|type_value| {
+                let target = type_value.get("target")?.as_str()?;
+                if rational_types.contains(target) {
+                    type_value.get("identity")?.as_str().map(str::to_owned)
+                } else {
+                    None
+                }
+            })
+            .filter(|identity| !rational_types.contains(identity))
+            .collect();
+        if newly_resolved.is_empty() {
+            break;
+        }
+        rational_types.extend(newly_resolved);
+    }
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
     for (position, type_value) in types.iter().enumerate() {
         let at = format!("$.types[{position}]");
@@ -5822,6 +6207,7 @@ fn read_nodes_partial(
                         meanings: &meanings,
                         shapes: &shapes,
                         type_meanings: &type_meanings,
+                        rational_types: &rational_types,
                         semantic,
                         semantic_members: &semantic_members,
                     },
@@ -5878,6 +6264,7 @@ fn read_nodes_partial(
         }
     }
     inherit_process_identity_fields(&mut records);
+    check_rational_member_constraints(types, &rational_types, document, &mut refusals);
     if refusals.is_empty() {
         check_alias_chains(types, &mut records, &mut refusals);
     }
@@ -5933,7 +6320,9 @@ fn check_alias_chains(
             };
             match records.iter().find(|record| record.key() == key) {
                 Some(DomainPackageRecord::AliasType(alias)) => target = alias.target.clone(),
-                Some(DomainPackageRecord::OptionType(_)) => return true,
+                Some(DomainPackageRecord::OptionType(_) | DomainPackageRecord::ScalarType(_)) => {
+                    return true;
+                }
                 _ => return false,
             }
         }
@@ -6081,12 +6470,14 @@ mod tests {
         let meanings = HashMap::new();
         let shapes = HashMap::new();
         let type_meanings = HashMap::new();
+        let rational_types = std::collections::BTreeSet::new();
         let semantic_members = HashMap::new();
         let reader = TypeNodeReader {
             package: "acme/orders",
             meanings: &meanings,
             shapes: &shapes,
             type_meanings: &type_meanings,
+            rational_types: &rational_types,
             semantic: None,
             semantic_members: &semantic_members,
         };
@@ -8240,6 +8631,179 @@ mod tests {
             "ix://acme/orders/VersionNumber",
             "$.types[0]",
         )
+    }
+
+    fn rational_value_type(constraints: Vec<Value>, unit: Option<Value>) -> Value {
+        let mut value = serde_json::json!({
+            "identity": "ix://acme/orders/Ratio",
+            "scalar": "rational",
+            "constraints": constraints,
+        });
+        if let Some(unit) = unit {
+            value["unit"] = unit;
+        }
+        value
+    }
+
+    fn rational_constraint(keyword: &str, value: Value) -> Value {
+        serde_json::json!({
+            "identity": format!("ix://acme/orders/constraint/Ratio/{keyword}"),
+            "keyword": keyword,
+            "operands": {"value": value},
+            "appliesTo": "ix://acme/orders/Ratio",
+        })
+    }
+
+    fn read_ratio(
+        constraints: Vec<Value>,
+        unit: Option<Value>,
+    ) -> Result<ScalarTypeRecord, ModelRefusal> {
+        let value = rational_value_type(constraints, unit);
+        read_value_type(
+            "acme/orders",
+            &value,
+            "ix://acme/orders/Ratio",
+            "$.types[0]",
+        )
+    }
+
+    /// FR-505-AC-1/2: bounded exact Rational constraints are order independent;
+    /// the empty form remains unbounded and carries no inferred domain.
+    #[trace("FR-505-AC-1", "FR-505-AC-2", "TC-1300")]
+    #[test]
+    fn reads_bounded_and_unbounded_rational_value_types() {
+        let record = read_ratio(
+            vec![
+                rational_constraint("maxDenominator", serde_json::json!(12)),
+                rational_constraint("minNumerator", serde_json::json!(-3)),
+                rational_constraint("minDenominator", serde_json::json!(1)),
+                rational_constraint("maxNumerator", serde_json::json!(7)),
+            ],
+            None,
+        )
+        .expect("bounded Ratio reads");
+        let ScalarValueDomain::Rational {
+            domain: Some(domain),
+            unit: None,
+        } = record.domain
+        else {
+            panic!(
+                "expected bounded dimensionless Rational, got {:?}",
+                record.domain
+            );
+        };
+        assert_eq!(domain.numerator().lower(), &Integer::from(-3_i64));
+        assert_eq!(domain.numerator().upper(), &Integer::from(7_i64));
+        assert_eq!(domain.denominator().lower(), &Integer::one());
+        assert_eq!(domain.denominator().upper(), &Integer::from(12_i64));
+
+        let unbounded =
+            read_ratio(Vec::new(), None).expect("empty constraints mean unbounded Rational");
+        assert!(matches!(
+            unbounded.domain,
+            ScalarValueDomain::Rational {
+                domain: None,
+                unit: None
+            }
+        ));
+    }
+
+    /// FR-505-AC-2/3: applicability, duplicate keywords, missing keywords and
+    /// strict operand shapes refuse at their prescribed member path.
+    #[trace("FR-505-AC-2", "FR-505-AC-3", "TC-1300")]
+    #[test]
+    fn rational_constraint_refusal_keeps_first_defect_and_exact_locus() {
+        let complete = || {
+            vec![
+                rational_constraint("minNumerator", serde_json::json!(-3)),
+                rational_constraint("maxNumerator", serde_json::json!(7)),
+                rational_constraint("minDenominator", serde_json::json!(1)),
+                rational_constraint("maxDenominator", serde_json::json!(12)),
+            ]
+        };
+        let mut duplicate = complete();
+        duplicate.push(rational_constraint("maxNumerator", serde_json::json!(6)));
+        let refusal = read_ratio(duplicate, None).expect_err("duplicate keyword refuses");
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(
+            refusal.detail.starts_with("$.types[0].constraints[4]:"),
+            "{refusal:?}"
+        );
+        assert!(matches!(
+            &refusal.cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+                if member.to_string() == "TypeDefinition.constraints[4].keyword"
+        ));
+
+        let mut missing = complete();
+        missing.retain(|constraint| constraint["keyword"] != "minDenominator");
+        let refusal = read_ratio(missing, None).expect_err("missing keyword refuses");
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(
+            refusal.detail.contains("minDenominator: missing"),
+            "{refusal:?}"
+        );
+
+        let mut malformed = complete();
+        malformed[1]["operands"] = serde_json::json!({"value": 1.5, "extra": 0});
+        let refusal = read_ratio(malformed, None).expect_err("malformed operand refuses");
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(
+            refusal.detail.starts_with("$.types[0].constraints[1]:"),
+            "{refusal:?}"
+        );
+        assert!(matches!(
+            &refusal.cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+                if member.to_string() == "TypeDefinition.constraints[1].operands"
+        ));
+    }
+
+    /// FR-505-AC-4/7: package-wide binding checks refuse member-level
+    /// Rational constraint restatements and a unit name absent from the unit
+    /// namespace.
+    #[trace("FR-505-AC-4", "FR-505-AC-7", "TC-1300")]
+    #[test]
+    fn rational_site_constraints_and_missing_units_are_refused() {
+        let ratio = "ix://acme/orders/Ratio";
+        let types = vec![serde_json::json!({
+            "identity": ratio,
+            "scalar": "rational",
+            "unit": "ix://quire/unit/m",
+            "fields": [{
+                "identity": "ix://acme/orders/Holder/ratio",
+                "typeRef": ratio,
+                "constraints": [{"keyword": "maxDenominator"}],
+            }],
+            "operations": [{"params": [{
+                "identity": "ix://acme/orders/Holder/read/value",
+                "typeRef": ratio,
+                "constraints": [{"keyword": "minNumerator"}],
+            }]}],
+        })];
+        let rational_types = std::collections::BTreeSet::from([ratio.to_owned()]);
+        let mut refusals = Vec::new();
+        check_rational_member_constraints(
+            &types,
+            &rational_types,
+            &serde_json::json!({"units": []}),
+            &mut refusals,
+        );
+        assert_eq!(
+            refusals.len(),
+            3,
+            "one refusal per defective locus: {refusals:?}"
+        );
+        assert!(refusals.iter().any(|refusal| {
+            refusal.code == Code::MissingDeclaration
+                && refusal.detail.contains("TypeDefinition.unit")
+        }));
+        assert!(refusals.iter().any(|refusal| {
+            refusal.code == Code::InvalidModelBinding && refusal.detail.contains("fields[0]")
+        }));
+        assert!(refusals.iter().any(|refusal| {
+            refusal.code == Code::InvalidModelBinding && refusal.detail.contains("params[0]")
+        }));
     }
 
     fn integer_bounds(record: &ScalarTypeRecord) -> (i128, i128) {

@@ -360,6 +360,14 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                         out.write_str(&domain.upper().to_string());
                         out.write_str(rounding_mode_tag(*rounding));
                     }
+                    QuantityCarrier::Rational(domain) => {
+                        out.write_str("rational");
+                        out.write_str(&domain.numerator().lower().to_string());
+                        out.write_str(&domain.numerator().upper().to_string());
+                        out.write_str(&domain.denominator().lower().to_string());
+                        out.write_str(&domain.denominator().upper().to_string());
+                        out.write_str(rounding_mode_tag(RoundingMode::Exact));
+                    }
                 }
             }
             ValueType::Text(text_type) => {

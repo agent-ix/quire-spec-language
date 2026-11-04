@@ -10,8 +10,8 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
-    Presence, RoundingMode, ValueType,
+    CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
+    IntegerInterval, Presence, RoundingMode, ValueType,
 };
 
 use super::{
@@ -1737,6 +1737,97 @@ fn option_field_multiplicity_wraps_the_option_element() {
         ))
     );
     assert_eq!(declaration.presence(), Presence::Required);
+}
+
+/// FR-505-AC-1/7: model Rational bounds become a bounded exact value type, and
+/// an authored unit becomes the same carrier identity FR-497 consumes.
+#[trace("FR-505-AC-1", "FR-505-AC-7", "TC-1300")]
+#[test]
+fn rational_value_types_project_with_bounds_and_nominal_unit() {
+    let key = DeclarationKey::fixture("model.Ratio");
+    let bounds = quire_exact::RationalDomain::new(
+        IntegerInterval::spanning(Integer::from(-3_i64), Integer::from(7_i64)),
+        IntegerInterval::spanning(Integer::one(), Integer::from(12_i64)),
+    )
+    .expect("valid rational bounds");
+    let bounded = DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: key.clone(),
+        domain: ScalarValueDomain::Rational {
+            domain: Some(bounds.clone()),
+            unit: None,
+        },
+    });
+    let unbounded_key = DeclarationKey::fixture("model.UnboundedRatio");
+    let unbounded = DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: unbounded_key.clone(),
+        domain: ScalarValueDomain::Rational {
+            domain: None,
+            unit: None,
+        },
+    });
+    let unit_key = DeclarationKey::fixture("model.RatioInMeters");
+    let unit_bearing = DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: unit_key.clone(),
+        domain: ScalarValueDomain::Rational {
+            domain: Some(bounds.clone()),
+            unit: Some("m".to_owned()),
+        },
+    });
+    let records = [&bounded, &unbounded, &unit_bearing]
+        .into_iter()
+        .map(|record| (record.key(), record))
+        .collect();
+    let identities = BTreeMap::new();
+    let handles = BTreeMap::new();
+    let variants = BTreeMap::new();
+    let metre = quire_exact::UnitId::declared(
+        quire_exact::NodeKey::new("test", vec![quire_exact::PathSegment::Text("m".into())], 0)
+            .expect("unit key"),
+    );
+    let units = BTreeMap::from([("m".to_owned(), metre.clone())]);
+    let single = mult(1, Some(1), false, true);
+
+    assert_eq!(
+        model_value_type(
+            &ValueTypeRef::Package(key),
+            single,
+            &records,
+            &identities,
+            &handles,
+            &variants,
+            &units,
+        )
+        .unwrap(),
+        ValueType::Rational(bounds.clone())
+    );
+    assert!(matches!(
+        model_value_type(
+            &ValueTypeRef::Package(unbounded_key),
+            single,
+            &records,
+            &identities,
+            &handles,
+            &variants,
+            &units,
+        ),
+        Err(Unmapped::Unsupported)
+    ));
+    assert_eq!(
+        model_value_type(
+            &ValueTypeRef::Package(unit_key),
+            single,
+            &records,
+            &identities,
+            &handles,
+            &variants,
+            &units,
+        )
+        .unwrap(),
+        ValueType::carried_quantity(quire_exact::CarriedQuantityType::new(
+            metre,
+            quire_exact::QuantityCarrier::Rational(bounds),
+        ))
+    );
 }
 
 /// QSpec FR-154 admits Option<T> at the same declared value-type positions

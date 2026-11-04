@@ -29,3 +29,26 @@ fn root_number_module_reexports_the_spine_codec() {
     );
     let _: Option<NumberWire> = None;
 }
+
+/// FR-511-AC-1 / TC-1306 step 4: `src/number.rs` re-exports exactly the seven
+/// codec items from `qsl_package::number` and nothing else; a planted eighth
+/// item fails.
+#[trace("FR-511-AC-1", "TC-1306")]
+#[test]
+fn number_module_reexports_exactly_the_seven_items() {
+    use crate::layer_crate_reexports::{number_module_source_violations, NUMBER_MODULE};
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join(NUMBER_MODULE);
+    let source = std::fs::read_to_string(path).expect("src/number.rs reads");
+    assert_eq!(
+        number_module_source_violations(&source),
+        Vec::<String>::new()
+    );
+    let planted = format!("{source}\npub use qsl_package::CheckedPackage;\n");
+    assert_eq!(
+        number_module_source_violations(&planted),
+        ["unexpected pub use qsl_package::CheckedPackage"]
+    );
+}

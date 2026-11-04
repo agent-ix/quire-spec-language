@@ -1362,7 +1362,7 @@ mod quantities {
 
     /// FR-497-AC-1 (TC-1287): the carried type's node identity retains its
     /// unit, carrier and rounding; structurally equal forms share a node.
-    #[trace("FR-497-AC-1", "TC-1287")]
+    #[trace("FR-497-AC-1", "FR-505-AC-7", "TC-1287", "TC-1300")]
     #[test]
     fn carried_quantity_types_lower_with_their_complete_carrier_identity() {
         use quire_exact::{CarriedQuantityType, DecimalType, QuantityCarrier, RoundingMode};
@@ -1399,8 +1399,21 @@ mod quantities {
                 .expect("ordered bounds"),
             ),
         ));
+        let rational_domain = quire_exact::RationalDomain::new(
+            IntegerInterval::spanning(Integer::from(-3_i64), Integer::from(7_i64)),
+            IntegerInterval::spanning(Integer::one(), Integer::from(12_i64)),
+        )
+        .expect("valid rational bounds");
+        let rational = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Rational(rational_domain.clone()),
+        ));
+        let same_rational = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Rational(rational_domain),
+        ));
         let (keys, graph) = lower(&[], units(), |lowering| {
-            [&exact, &same, &rounded, &decimal].map(|value_type| {
+            [&exact, &same, &rounded, &decimal, &rational, &same_rational].map(|value_type| {
                 lowering
                     .type_node(value_type, &generated_location())
                     .expect("the carried quantity type lowers")
@@ -1409,7 +1422,11 @@ mod quantities {
         assert_eq!(keys[0], keys[1]);
         assert_ne!(keys[0], keys[2]);
         assert_ne!(keys[0], keys[3]);
-        for key in [&keys[0], &keys[2], &keys[3]] {
+        assert_eq!(keys[4], keys[5], "equal Rational carriers share one node");
+        assert!(graph
+            .nodes()
+            .any(|node| node.semantic_form() == "rational_range"));
+        for key in [&keys[0], &keys[2], &keys[3], &keys[4]] {
             let node = graph.node((*key).clone()).expect("the carried type node");
             assert_eq!(node.node_tag(), NodeTag::ScalarType);
             assert_eq!(node.semantic_form(), "carried_quantity");

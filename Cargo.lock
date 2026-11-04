@@ -1698,7 +1698,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#d8e64115f8e8eb78200affbc786ad0807873830f"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#87fefede2a81d74abbd6a5a79e01d9ca7394d1ea"
 dependencies = [
  "allocator-api2",
  "arrayvec",
@@ -1735,7 +1735,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#ab81a09c2b13b03f5be329fc50787a219ddf4cd2"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0d4bc2e128eab07bb33d6856b57a58b232fed420"
 dependencies = [
  "quire-canonical",
  "quire-exact",
