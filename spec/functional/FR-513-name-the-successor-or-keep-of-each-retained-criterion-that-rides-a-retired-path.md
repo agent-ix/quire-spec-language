@@ -43,6 +43,7 @@ successor is green, as FR-499's rows state; there is no permanent keep). No crit
 | FR-015-AC-2 | Successor | Rational and Text site refusals: FR-505, FR-056-AC-38; sequence maximum: FR-506; unsigned, saturating and rational declarations refusing: unrepresentable on the spine (a model scalar is an `Int[lower, upper]` or a constrained value type; the document has no unsigned or saturating vocabulary), recorded here as satisfied by construction. |
 | FR-015-AC-3 | Successor | FR-513-AC-1 (below). |
 | FR-015-AC-4 | Successor | False source loci: positions come from the document the reader read, with no separately supplied coordinate input (FR-056 retained position, FR-154), so a false coordinate cannot be offered, by construction; two documents of one package identity, and conflicting native bindings for one formal source identity (two `model` declarations that bind one identity to different packages or versions): FR-513-AC-2. |
+| FR-015-AC-5 | Keep until green (PORT) | `link_native` dereference-field and operation-role resolution (TC-044) has no spine successor yet; it ports, it is not retired. The legacy code and test stay until the port's successor criterion is green. |
 | FR-015-AC-6 | Successor | FR-506. |
 | MAX_SEQUENCE_ITEMS 10,000 | Successor | FR-506-AC-2, AC-3 (as the raisable `model.sequence_maximum` setting, bounded by `u32::MAX`; see FR-506 Dependencies). |
 | FR-046-AC-1 | Successor | FR-513-AC-3. |
@@ -83,7 +84,7 @@ successor is green, as FR-499's rows state; there is no permanent keep). No crit
 ## Dependencies
 
 - **Upstream:** FR-493-AC-5, the deletion table (QSL-858), planner rulings 5,
-  8 and 9 on QSL-858.
+  8 and 9 on QSL-858. The PORT row for FR-015-AC-5 has its successor work under QSL-1682.
 - **QSpec contract questions:** FR-513-AC-11 and AC-13 assume the QSpec FR-322
   reader refuses the mutations they list; FR-513-AC-9's `invalid-value` is the
   FR-480-AC-4 cause reused. Where QSpec names another cause the criterion is
