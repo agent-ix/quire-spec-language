@@ -64,7 +64,11 @@ fn apply(id: &str, base: &Value, edit: &[Value]) -> Value {
 
 /// The evidence the base is read against: the manifest's own domain document
 /// (`acme/orders`) and the base's required features.
-fn base_evidence(manifest: &Value, directory: &std::path::Path, base: &Value) -> CheckedPackageEvidence {
+fn base_evidence(
+    manifest: &Value,
+    directory: &std::path::Path,
+    base: &Value,
+) -> CheckedPackageEvidence {
     let mut evidence = fixture_evidence(None, base, base, &[]);
     let document = manifest["base"]["domain_document"]
         .as_str()
@@ -168,8 +172,9 @@ fn edge_holds(relation: &str, from: &Value, to: &Value) -> bool {
         }
         "join" => {
             operator_of(to) == "parallel"
-                && argument(to, "branches")
-                    .is_some_and(|branches| branches.to_string().contains(&from["node_id"].to_string()))
+                && argument(to, "branches").is_some_and(|branches| {
+                    branches.to_string().contains(&from["node_id"].to_string())
+                })
         }
         _ => true,
     }
@@ -220,7 +225,9 @@ fn check_assertion(assertion: &Value, nodes: &[Value], base_nodes: &[Value]) -> 
                 let to = node_named(nodes, to_name)?;
                 let relation = edge["relation"].as_str().expect("a relation");
                 if !edge_holds(relation, from, to) {
-                    return Err(format!("{relation} edge {from_name} to {to_name} is absent"));
+                    return Err(format!(
+                        "{relation} edge {from_name} to {to_name} is absent"
+                    ));
                 }
                 graph.push((from_name.to_owned(), to_name.to_owned()));
             }
@@ -245,10 +252,13 @@ fn check_assertion(assertion: &Value, nodes: &[Value], base_nodes: &[Value]) -> 
                 if activation_kind != Some(row["activation"].clone()) {
                     return Err("activation kind differs".to_owned());
                 }
-                let temporal =
-                    node_named(nodes, row["temporal_clause"].as_str().expect("a temporal clause"))?;
-                let required = argument(clause, "requirements")
-                    .is_some_and(|value| value.to_string().contains(&temporal["node_id"].to_string()));
+                let temporal = node_named(
+                    nodes,
+                    row["temporal_clause"].as_str().expect("a temporal clause"),
+                )?;
+                let required = argument(clause, "requirements").is_some_and(|value| {
+                    value.to_string().contains(&temporal["node_id"].to_string())
+                });
                 let trigger_matches = match row.get("trigger").and_then(Value::as_str) {
                     Some(trigger) => {
                         let node = node_named(nodes, trigger)?;
@@ -273,7 +283,7 @@ fn pointer_of(location: &quire_contract_model::CheckedPackageRefusalLocation) ->
 /// What the row expects of a refusal, against the reader's: exact code,
 /// cause, locus (and `document_pointer` where the row gives one), with the
 /// row's stage telling a wire refusal from a reader one.
-fn check_refusal(expect: &Value, outcome: &Read) -> Result<(), String> {
+fn check_refusal(expect: &Value, outcome: &Read, edited: &Value) -> Result<(), String> {
     let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = outcome else {
         return Err(format!("expected a refusal, read {outcome:?}"));
     };
@@ -297,14 +307,54 @@ fn check_refusal(expect: &Value, outcome: &Read) -> Result<(), String> {
     if primary != expect["locus"].as_str() {
         return Err(format!(
             "locus {primary:?} (document_pointer {:?}), expected {}",
-            refusal.document_pointer.as_ref().map(|pointer| pointer.as_str()),
+            refusal
+                .document_pointer
+                .as_ref()
+                .map(|pointer| pointer.as_str()),
             expect["locus"]
         ));
     }
     if let Some(pointer) = expect.get("document_pointer") {
-        let found = refusal.document_pointer.as_ref().map(|pointer| pointer.as_str());
+        let found = refusal
+            .document_pointer
+            .as_ref()
+            .map(|pointer| pointer.as_str());
         if found != pointer.as_str() {
             return Err(format!("document_pointer {found:?}, expected {pointer}"));
+        }
+    }
+    if let Some(retains) = expect.get("retains") {
+        check_retained(retains, refusal, edited)?;
+    }
+    Ok(())
+}
+
+/// The refusal retains the node it refused (its `locus`): the row's actual
+/// form and key are that node's.
+fn check_retained(
+    retains: &Value,
+    refusal: &quire_contract_model::CheckedPackageRefusal,
+    edited: &Value,
+) -> Result<(), String> {
+    let retained = serde_json::to_value(&refusal.locus).expect("a retained node id");
+    let node = edited["semantic_graph"]["nodes"]
+        .as_array()
+        .and_then(|nodes| nodes.iter().find(|node| node["node_id"] == retained))
+        .ok_or_else(|| format!("the refusal retains no node of the package ({retained})"))?;
+    if let Some(kind) = retains.get("actual_kind") {
+        if node["semantic_form"] != *kind {
+            return Err(format!(
+                "retained form {}, expected {kind}",
+                node["semantic_form"]
+            ));
+        }
+    }
+    if let Some(key) = retains.get("actual_key").and_then(Value::as_str) {
+        if declaration_name(node) != key {
+            return Err(format!(
+                "retained key {}, expected {key}",
+                declaration_name(node)
+            ));
         }
     }
     Ok(())
@@ -330,7 +380,10 @@ fn replay_row(
         row["base"], manifest["base"]["fixture"],
         "{id}: the row edits the manifest's base"
     );
-    let edit = row["edit"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let edit = row["edit"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     let edited = apply(id, base, edit);
     let evidence = base_evidence(manifest, directory, &edited);
     let name = edited["name"].as_str().expect("a package name");
@@ -351,7 +404,7 @@ fn replay_row(
         }
         "refuse" => {
             executed.refuse += 1;
-            check_refusal(expect, &outcome)
+            check_refusal(expect, &outcome, &edited)
         }
         "property" => {
             executed.property += 1;
@@ -381,7 +434,8 @@ fn replay_row(
 /// A `pending` entry runs through its same-id layout row, `CH14a` through
 /// `CH14a-1` to `CH14a-8`; a `later` entry has no row here.
 fn pending_is_executed(id: &str, layout_ids: &BTreeSet<&str>) -> bool {
-    layout_ids.contains(id) || (1..=8).all(|index| layout_ids.contains(format!("{id}-{index}").as_str()))
+    layout_ids.contains(id)
+        || (1..=8).all(|index| layout_ids.contains(format!("{id}-{index}").as_str()))
 }
 
 /// QSpec's protocol-node mutation manifest and layout rows, read in place and
@@ -418,7 +472,9 @@ fn conformance_protocol_mutation_manifest_replays_through_i2() {
     let pending = manifest["pending"].as_array().expect("pending entries");
     let pending_without_row = pending
         .iter()
-        .filter(|entry| !pending_is_executed(entry["id"].as_str().expect("a pending id"), &layout_ids))
+        .filter(|entry| {
+            !pending_is_executed(entry["id"].as_str().expect("a pending id"), &layout_ids)
+        })
         .count();
     let later = manifest["later"].as_array().expect("later entries").len();
     println!(
@@ -441,5 +497,10 @@ fn conformance_protocol_mutation_manifest_replays_through_i2() {
         manifest_rows.len() + layout_rows.len(),
         "every executable row is executed"
     );
-    assert!(defects.is_empty(), "{} rows differ:\n{}", defects.len(), defects.join("\n"));
+    assert!(
+        defects.is_empty(),
+        "{} rows differ:\n{}",
+        defects.len(),
+        defects.join("\n")
+    );
 }
