@@ -141,6 +141,20 @@ pub struct HyperDeclarations<'a> {
     /// How many `behaviours` clauses have been checked: the index of the one
     /// checked next among the unit's hyper clauses over `behaviours`.
     pub(crate) behaviours_checked: std::cell::Cell<usize>,
+    /// The source unit of the clause checked now, whose model aliases its
+    /// type names are written under (FR-480 "Selections and imports"); set
+    /// for the duration of one clause's check and `None` outside it.
+    pub(crate) clause_source:
+        std::cell::RefCell<Option<qsl_foundation::source::provenance::RawSourceRef>>,
+}
+
+impl HyperDeclarations<'_> {
+    /// The object type `name`, written in the clause checked now, names.
+    fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
+        self.temporal
+            .scope
+            .object_type_named(self.clause_source.borrow().as_ref(), name)
+    }
 }
 
 /// The `TemporalTrace` family's `hyper` and `relation` productions (ADR-023
@@ -1251,13 +1265,22 @@ fn check_declaration<'a>(
     cx: &mut CheckContext<'a, HyperDeclarations<'a>>,
 ) -> Result<CheckedHyper, StageFailure<CheckRefusal>> {
     let declarations = cx.declarations();
-    match declaration {
+    *declarations.clause_source.borrow_mut() = declarations
+        .temporal
+        .scope
+        .source_of(declaration.name())
+        .cloned();
+    let checked = match declaration {
         HyperDeclaration::Behaviours(form) => check_behaviours(form, declarations, cx)
             .map(|clause| CheckedHyper::Behaviours(Box::new(clause))),
         HyperDeclaration::Finite(form) => Err(check_finite(form)),
         HyperDeclaration::Relation(form) => check_relation(form, declarations, cx)
             .map(|relation| CheckedHyper::Relation(Box::new(relation))),
-    }
+    };
+    // The source is this clause's alone: a lookup outside a clause check
+    // reads no clause's unit.
+    *declarations.clause_source.borrow_mut() = None;
+    checked
 }
 
 /// A clause over a finite trace domain: a quantifier with `of` refuses at the
@@ -1700,7 +1723,7 @@ fn resolve_operation<'s>(
     if written_alias != alias {
         return Err(unresolved());
     }
-    let object = scope
+    let object = declarations
         .object_type_named(&format!("{written_alias}::{object}"))
         .ok_or_else(unresolved)?;
     match scope.operations().resolve(scope.types(), object, operation) {
@@ -1787,7 +1810,7 @@ fn checked_parameters(
             }));
             continue;
         }
-        let Some(object) = scope.object_type_named(&written.name) else {
+        let Some(object) = declarations.object_type_named(&written.name) else {
             found.push(Found::Hyper(HyperCause::ParameterNotAnObject {
                 parameter: name,
                 span,
@@ -2130,7 +2153,7 @@ fn qualify(declarations: &HyperDeclarations<'_>, name: &NameForm) -> Qualified {
             None => Qualified::Nothing,
         };
     }
-    let is_member = scope
+    let is_member = declarations
         .object_type_named(&format!("{alias}::{object}"))
         .is_some_and(|object| scope.types().attribute(object, member).is_some());
     if is_member {
@@ -3526,6 +3549,7 @@ pub fn check_hyper_clauses(
         cancel: None,
         nodes_used: std::cell::Cell::new(0),
         behaviours_checked: std::cell::Cell::new(0),
+        clause_source: std::cell::RefCell::new(None),
     };
     package
         .hyper_clauses

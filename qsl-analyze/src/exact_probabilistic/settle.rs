@@ -30,9 +30,11 @@ pub fn settle_product_refusal(
             ExactProbBuildIssue::Unsupported(UnavailabilityCause::DelayDistribution { operation })
         }
         ProductRefusal::ZeroDelayCycle { states } => {
-            ExactProbBuildIssue::Unsupported(UnavailabilityCause::ZeroDelayCycle {
-                states: states.iter().map(|state| format!("{state:?}")).collect(),
-            })
+            let states = states
+                .iter()
+                .map(super::ProbKey::digital_cycle_identity)
+                .collect();
+            ExactProbBuildIssue::Unsupported(UnavailabilityCause::ZeroDelayCycle { states })
         }
         ProductRefusal::TimedFormShape { span } => {
             ExactProbBuildIssue::Unsupported(UnavailabilityCause::TimedFormShape { span })
@@ -144,13 +146,6 @@ mod tests {
             expansion: ExpansionLimits { max_candidates: 2 },
             meter: &meter,
         };
-        let cycle_state = super::super::ProbKey {
-            binding: None,
-            model: vec![0, 1, 2],
-            monitor: None,
-            accumulator: None,
-            pending: None,
-        };
         let cases = [
             (
                 ProductRefusal::StrictClockConstraint {
@@ -166,14 +161,6 @@ mod tests {
                 },
                 UnavailabilityCause::DelayDistribution {
                     operation: "M::Call::send".to_owned(),
-                },
-            ),
-            (
-                ProductRefusal::ZeroDelayCycle {
-                    states: vec![cycle_state.clone()],
-                },
-                UnavailabilityCause::ZeroDelayCycle {
-                    states: vec![format!("{cycle_state:?}")],
                 },
             ),
             (

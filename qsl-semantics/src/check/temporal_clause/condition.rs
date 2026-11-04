@@ -275,9 +275,12 @@ pub(crate) fn guard_refusal(
         return None;
     };
     let resolve = |type_form| {
-        crate::check::type_form::resolve_form(input.scope, type_form)
-            .ok()
-            .filter(|resolved| !matches!(resolved, ValueType::Population(_)))
+        crate::check::type_form::resolve_form(
+            &input.scope.for_declaration(&form.name.name),
+            type_form,
+        )
+        .ok()
+        .filter(|resolved| !matches!(resolved, ValueType::Population(_)))
     };
     let over = resolve(&form.over.value_type)?;
     let trigger = resolve(&parameter.value_type)?;

@@ -1285,13 +1285,21 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     }
 }
 
-/// TC-1308 row 1: selected ConfigVersion semantics change emitted identity
-/// bytes, while source declaration order does not affect those bytes.
+/// TC-1308 rows 1-2: selected ConfigVersion semantics change emitted bytes,
+/// while source package version metadata and set-like declaration order do not.
 #[trace("TC-1308", "FR-513-AC-1")]
 #[test]
 fn checked_package_identity_changes_with_model_content_and_ignores_order() {
     let original: Value = serde_json::from_str(spine::DOMAIN_PACKAGE).unwrap();
     let baseline = emitted_model_bytes(&original);
+
+    let mut source_version = original.clone();
+    source_version["package"]["version"] = serde_json::json!("2.0.0");
+    assert_eq!(
+        baseline,
+        emitted_model_bytes(&source_version),
+        "source package version metadata is not a model-selection pin"
+    );
 
     let mut field_bound = original.clone();
     let version = field_bound["types"]

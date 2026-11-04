@@ -854,6 +854,29 @@ impl RecordWire<ElementSlot> {
     }
 }
 
+/// FR-283's `decisive` member of a temporal violation's monitor record and
+/// item: `quantifier` and `index` absent when no quantifier decides.
+#[derive(Serialize)]
+pub(crate) struct DecisiveWire {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quantifier: Option<OccurrenceWire>,
+    element: Box<RawValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<u64>,
+    value_path: PathWire,
+}
+
+impl DecisiveWire {
+    pub(crate) fn of(decisive: &super::TemporalDecisive) -> Result<Self, CauseCodecError> {
+        Ok(Self {
+            quantifier: decisive.quantifier.as_ref().map(OccurrenceWire::of),
+            element: encode_element(&decisive.element)?,
+            index: decisive.index,
+            value_path: PathWire::of(&decisive.value_path),
+        })
+    }
+}
+
 /// An occurrence key: `node_id`, `role`, `ordinal` (QSpec FR-322).
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

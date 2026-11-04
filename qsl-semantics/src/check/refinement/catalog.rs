@@ -446,13 +446,16 @@ pub(super) fn build(
                 "checked-protocol-has-over-parameter",
             ));
         };
-        let over = crate::check::type_form::resolve_form(declarations.scope, &over.value_type)
-            .map_err(|_| {
-                quire_semantic_value::catalog::InternalFault::new(
-                    "check.refinement-class-catalog",
-                    "checked-protocol-over-type-resolves",
-                )
-            })?;
+        let over = crate::check::type_form::resolve_form(
+            &declarations.scope.for_declaration(&view.form.name.name),
+            &over.value_type,
+        )
+        .map_err(|_| {
+            quire_semantic_value::catalog::InternalFault::new(
+                "check.refinement-class-catalog",
+                "checked-protocol-over-type-resolves",
+            )
+        })?;
         let ValueType::Reference(context) = &over else {
             continue;
         };

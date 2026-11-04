@@ -721,3 +721,180 @@ fn production_and_admission_refuse_a_clause_with_no_complete_program() {
         }
     }
 }
+
+/// FR-251-AC-37 and AC-39 (TC-1081): two plans of one clause, built through
+/// `TimedMonitorPlan`'s public constructor with the subject unchanged, that
+/// differ only in the checked body of one atom, or only in the checked body
+/// of the activation guard, have different `PlanId`s; rebuilt with equal
+/// bodies throughout, the `PlanId` is equal.
+#[trace("TC-1081", "FR-251-AC-37", "FR-251-AC-39")]
+#[test]
+fn a_swapped_atom_or_guard_body_changes_the_plan_id() {
+    use qsl_replay::{MonitorAtom, MonitorProgram, TimedMonitorPlan};
+    let guarded =
+        |gate: i64| format!("on each (q: M::ConfigVersion) when (q.versionNumber = {gate})");
+    let formula = |value: i64| {
+        format!(
+            "always (holds(c.versionNumber = {value}) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))"
+        )
+    };
+    let plan = premise_plan_on(&formula(2), &guarded(1), &base_target());
+    let other_atom = premise_plan_on(&formula(5), &guarded(1), &base_target());
+    let other_guard = premise_plan_on(&formula(2), &guarded(7), &base_target());
+    let program = plan.program();
+    let (guard, guard_slots) = program.guard().expect("a guarded clause");
+    let rebuild = |atoms: Vec<MonitorAtom>, guard: &qsl_semantics::check::CheckedBody| {
+        TimedMonitorPlan::new(
+            plan.subject().clone(),
+            plan.binding().clone(),
+            plan.uncertainty().clone(),
+            plan.max_reading_gap(),
+            MonitorProgram::new(
+                program.root(),
+                program.formula().clone(),
+                program.activation(),
+                atoms,
+                Some((guard.clone(), guard_slots)),
+            ),
+            plan.intervals().to_vec(),
+            plan.buffers().to_vec(),
+            plan.rate_limit().clone(),
+            plan.activation_capacity(),
+        )
+    };
+
+    let equal = rebuild(program.atoms().to_vec(), guard);
+    assert_eq!(equal.id(), plan.id(), "equal bodies give an equal PlanId");
+
+    let first = &program.atoms()[0];
+    let swapped_body = other_atom.program().atoms()[0].body();
+    assert_ne!(
+        swapped_body,
+        first.body(),
+        "the fixture's atom bodies differ"
+    );
+    let mut atoms = program.atoms().to_vec();
+    atoms[0] = MonitorAtom::new(first.id(), swapped_body.clone(), first.slots());
+    let atom_swapped = rebuild(atoms, guard);
+    assert_eq!(atom_swapped.subject(), plan.subject());
+    assert_ne!(
+        atom_swapped.id(),
+        plan.id(),
+        "a swapped atom body changes the PlanId"
+    );
+
+    let (swapped_guard, slots) = other_guard.program().guard().expect("a guarded clause");
+    assert_eq!(slots, guard_slots);
+    assert_ne!(swapped_guard, guard, "the fixture's guard bodies differ");
+    let guard_swapped = rebuild(program.atoms().to_vec(), swapped_guard);
+    assert_ne!(
+        guard_swapped.id(),
+        plan.id(),
+        "a swapped guard body changes the PlanId"
+    );
+    assert_ne!(guard_swapped.id(), atom_swapped.id());
+}
+
+/// The plan of clause `C` in `unit`, compiled through the spine against the
+/// domain `document` and the supplied `dependencies`.
+fn spine_plan(
+    document: &[u8],
+    unit: &str,
+    dependencies: &qsl_replay::DependencyInput,
+) -> Result<qsl_replay::TimedMonitorPlan, MonitorPlanRefusal> {
+    use qsl_replay::spine::{self, ParseRequest, SpineLimits};
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let source = SourceIdentity::new("agent-ix", "monitor-plan");
+    let cancel = quire_exact::Cancel::new();
+    let limits = SpineLimits::default();
+    fn fail<T>(failure: spine::FrontEndFailure) -> T {
+        panic!("the unit compiles: {:?}", spine::refusal_or_fault(failure))
+    }
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: unit.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .unwrap_or_else(fail)
+    .into_value();
+    let models = spine::select(&parsed, &packages, limits.model, &cancel)
+        .unwrap_or_else(fail)
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .unwrap_or_else(fail)
+    .into_value();
+    let package = checked.package();
+    let clause = package.graph().temporal_clauses()[0].clause();
+    produce(
+        package,
+        qsl_semantics::library::LibraryName::new("fixture").unwrap(),
+        clause,
+        &base_target(),
+        &TimingObligationSettings::default(),
+    )
+    .map(|(plan, _)| plan)
+}
+
+/// [`unit_source`] with `prelude` (profiles, imports) declared after the
+/// unit's own profiles and before its model selection, where the grammar
+/// takes them.
+fn unit_with_prelude(prelude: &str, formula: &str, extra: &str) -> String {
+    let unit = unit_source(formula, extra, true, "on origin");
+    let (head, rest) = unit.split_once("model M").expect("a model selection");
+    format!("{head}{prelude}model M{rest}")
+}
+
+/// FR-251 "Build inputs and identity" and FR-251-AC-38 (TC-1081): an atom
+/// that calls a function of an admitted dependency reaches that function's
+/// body in the dependency, so two plans that differ only in the imported
+/// body have different `PlanId`s while the atom body is equal; an equal
+/// imported body gives an equal `PlanId`.
+#[trace("TC-1081", "FR-251-AC-38")]
+#[test]
+fn a_swapped_imported_callee_body_changes_the_plan_id() {
+    let domain = Domain::config_version();
+    let unit = unit_with_prelude(
+        "import \"test/geometry\" as g;\n",
+        "always holds(g::bump(c.versionNumber) = 3)",
+        "",
+    );
+    let library = |step: i64| {
+        qsl_replay::DependencyInput::new([qsl_replay::SuppliedLibrary {
+            identity: "test/geometry".to_owned(),
+            source: SourceIdentity::new("agent-ix", "geometry"),
+            path: "geometry.native".to_owned(),
+            bytes: format!(
+                "language \"ix:native\" edition \"1-draft\";\n\
+                 profile v = \"quire.value.complete/v1\";\n\
+                 function bump using v(x: Int[0, 1000]): Integer pure {{ x + {step} }}\n"
+            )
+            .into_bytes(),
+        }])
+        .expect("an admissible dependency input")
+    };
+    let plan = spine_plan(&domain.document, &unit, &library(1)).expect("the base plan");
+    let again = spine_plan(&domain.document, &unit, &library(1)).expect("the base plan again");
+    assert_eq!(plan.id(), again.id(), "equal imported bodies, equal PlanId");
+    let other = spine_plan(&domain.document, &unit, &library(2)).expect("a swapped body plan");
+    assert_eq!(
+        other.program().atoms(),
+        plan.program().atoms(),
+        "the swapped case keeps the atom body"
+    );
+    assert_ne!(
+        other.id(),
+        plan.id(),
+        "a swapped imported body changes the PlanId"
+    );
+}

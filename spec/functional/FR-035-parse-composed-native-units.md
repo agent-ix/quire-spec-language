@@ -73,6 +73,7 @@ opaque strings or inferring kinds from diagnostic messages.
 | FR-035-AC-4 | CRLF, comments and escaped multibyte text retain exact original bytes and correct byte spans; an escaped string's decoded offset cannot replace its source location. | Test (TC-113) |
 | FR-035-AC-5 | Exact syntax limits admit the otherwise valid unit; the next required token/node/source-byte step above a lowered limit returns `stage_limit_exceeded`/`<kind>-exceeded` (a token is `token-count-exceeded`), with no recovery path bypass. | Test (TC-113) |
 | FR-035-AC-6 | Historical source, formatted output, refusal codes and package identities retain their unchanged historical expectations; a composed selector is never silently replaced with the historical profile. | Test (TC-113) |
+| FR-035-AC-7 | Under `1-draft`, each exact spelling `helper`, `rec`, `cast` and `Tuple` used as a function declaration name returns a located syntax refusal naming that spelling and produces no admissible parsed unit. The near spellings `helperz`, `recount`, `caster` and `TupleX` remain identifiers and parse as function declaration names. Under `0-draft`, the four exact spellings retain their historical identifier treatment and parse as function declaration names. | Test (TC-113) |
 
 ## Dependencies
 

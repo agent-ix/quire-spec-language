@@ -53,7 +53,7 @@ use super::check::{
 use super::layer::LayerAdmission;
 use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel};
 use super::model_gate::{self, ModelGateRefusal};
-use super::model_spelling::ModelSpellings;
+use super::model_spelling::{package_names, ModelName, ModelSpellings, PackageNames};
 use super::node_key::{NodeKeyRefusal, NodeTag, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
@@ -1036,28 +1036,50 @@ impl Unit {
 
 /// The names the assembler resolves type forms against while it builds the
 /// package: each declared record's and tuple's `ValueType::Composite`, each
-/// alias once resolved, each admitted domain package's object type `M::T` as
-/// `ValueType::Reference`, and each record/event value type `M::T` as
-/// `ValueType::Composite` (the order `check`'s scope binds them in).
+/// enum and each alias once resolved (the order `check`'s scope binds them
+/// in). A package-owned type `M::T` resolves through the writing unit's
+/// model alias instead ([`ModelSpellings`]).
 #[derive(Default)]
 struct Names {
     types: BTreeMap<String, Vec<ValueType>>,
-    object_types: BTreeMap<String, EffectiveId>,
     /// The unit's declared units by name, for `Quantity<u>`.
     units: BTreeMap<String, quire_exact::UnitId>,
 }
 
-impl TypeNames for Names {
+impl Names {
+    /// These names as the unit `unit` reads them (the primary unit when
+    /// `None`), its model aliases spelled through `spellings`.
+    fn in_unit<'a>(
+        &'a self,
+        spellings: &'a ModelSpellings,
+        unit: Option<&'a RawSourceRef>,
+    ) -> UnitNames<'a> {
+        UnitNames {
+            names: self,
+            spellings,
+            unit,
+        }
+    }
+}
+
+/// The package's names as one source unit reads them.
+struct UnitNames<'a> {
+    names: &'a Names,
+    spellings: &'a ModelSpellings,
+    unit: Option<&'a RawSourceRef>,
+}
+
+impl TypeNames for UnitNames<'_> {
     fn named_types(&self, name: &str) -> &[ValueType] {
-        self.types.get(name).map_or(&[], Vec::as_slice)
+        self.spellings.types(self.unit, name, &self.names.types)
     }
 
     fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
-        self.object_types.get(name).cloned()
+        self.spellings.object_type(self.unit, name)
     }
 
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
-        self.units.get(name).cloned()
+        self.names.units.get(name).cloned()
     }
 }
 
@@ -1157,24 +1179,55 @@ struct ModelTypes {
 }
 
 impl ModelTypes {
-    /// Every type name these declarations bind, each `alias::T`: object
-    /// types, composites, variant types and scalar types.
-    fn names(&self) -> Vec<String> {
-        self.objects
-            .iter()
-            .map(|declaration| declaration.name().to_owned())
-            .chain(
-                self.composites
-                    .iter()
-                    .map(|declaration| declaration.name().to_owned()),
+    /// Every type name these declarations bind, each `first::T`, by member
+    /// `T`: composites, object types, variant types and scalar types, in the
+    /// order the package's names bind them.
+    fn package_names(&self, first: &str) -> PackageNames {
+        let composites = self.composites.iter().map(|declaration| {
+            (
+                declaration.name(),
+                ModelName {
+                    types: vec![ValueType::Composite(declaration.key())],
+                    ..ModelName::default()
+                },
             )
-            .chain(
-                self.variant_types
-                    .iter()
-                    .map(|declared| declared.name().to_owned()),
+        });
+        let objects = self.objects.iter().map(|declaration| {
+            (
+                declaration.name(),
+                ModelName {
+                    types: vec![ValueType::Reference(declaration.key())],
+                    object: Some(declaration.key()),
+                    variant: None,
+                },
             )
-            .chain(self.scalars.iter().map(|(name, _)| name.clone()))
-            .collect()
+        });
+        let variant_types = self.variant_types.iter().map(|declared| {
+            (
+                declared.name(),
+                ModelName {
+                    types: vec![ValueType::Enum(declared.shape())],
+                    object: None,
+                    variant: Some(declared.key()),
+                },
+            )
+        });
+        let scalars = self.scalars.iter().map(|(name, value_type)| {
+            (
+                name.as_str(),
+                ModelName {
+                    types: vec![value_type.clone()],
+                    ..ModelName::default()
+                },
+            )
+        });
+        package_names(
+            first,
+            composites
+                .chain(objects)
+                .chain(variant_types)
+                .chain(scalars),
+        )
     }
 }
 
@@ -2563,8 +2616,8 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
 /// rounding mode must be spellable (FR-091-OQ-4: floating types are admitted).
 fn check_names(
     unit: &Unit,
-    object_types: &BTreeMap<String, EffectiveId>,
-    model_composites: &BTreeSet<String>,
+    spellings: &ModelSpellings,
+    source: Option<&RawSourceRef>,
     imports: &BTreeMap<String, AdmittedImport>,
     form: &TypeForm,
     errors: &mut Vec<AssemblyError>,
@@ -2614,7 +2667,7 @@ fn check_names(
                         | TypeFormHead::Collection(_)
                         | TypeFormHead::Population => continue,
                     };
-                    if !object_types.contains_key(&name.name) {
+                    if spellings.object_type(source, &name.name).is_none() {
                         errors.push(AssemblyError {
                             cause: AssemblyCause::UnresolvedTypeName {
                                 name: name.name.clone(),
@@ -2628,9 +2681,7 @@ fn check_names(
                 // FR-091: a native spelling is a candidate beside the unit's
                 // own forms, so it resolves only when the unit declares none.
                 None | Some(0) if native_scalar_named(&name.name).is_some() => {}
-                None | Some(0)
-                    if object_types.contains_key(&name.name)
-                        || model_composites.contains(&name.name) => {}
+                None | Some(0) if spellings.declares(source, &name.name) => {}
                 None | Some(0)
                     if name
                         .segments
@@ -3392,6 +3443,7 @@ impl PackageDeclarations {
             execution_points,
         } = run;
         let model_selection_units = unit.model_selection_units().to_vec();
+        let repeated_model_selection_units = unit.repeated_model_selection_units().to_vec();
         let import_selection_units = unit.import_selection_units().to_vec();
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
@@ -3488,17 +3540,19 @@ impl PackageDeclarations {
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
         let mut type_invariants = Vec::new();
-        // The first alias each package identity is selected under, the
-        // package-owned type names projected under it, and the further
-        // aliases of the same identity (FR-480 "Selections and imports").
-        let mut first_aliases: BTreeMap<&str, &str> = BTreeMap::new();
-        let mut projected_names: BTreeMap<&str, Vec<String>> = BTreeMap::new();
-        let mut further_aliases: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for selection in &selections.models {
+        // Each package identity's position in `model_spellings`, projected
+        // under the first alias that selects it; every unit's alias of the
+        // same identity names the same declarations (FR-480 "Selections and
+        // imports").
+        let mut model_spellings = ModelSpellings::new(source.clone());
+        let mut packages: BTreeMap<&str, usize> = BTreeMap::new();
+        for (selection, source_unit) in selections.models.iter().zip(&model_selection_units) {
+            let unit_source = sources.get(*source_unit).unwrap_or(&source);
             let Some(model) = models.iter().find(|model| {
                 model.alias == selection.alias
                     && model.view.domain_package().model_selection.identity == selection.identity
             }) else {
+                model_spellings.bind_model(unit_source, &selection.alias, None);
                 errors.push(AssemblyError {
                     cause: AssemblyCause::UnadmittedModel {
                         alias: selection.alias.clone(),
@@ -3513,16 +3567,13 @@ impl PackageDeclarations {
             // population declarations contribute to the environment once,
             // under its first alias; a further alias spells the same
             // declarations.
-            if let Some(first) = first_aliases.get(selection.identity.as_str()) {
-                if *first != selection.alias {
-                    further_aliases
-                        .entry(&selection.identity)
-                        .or_default()
-                        .push(&selection.alias);
-                }
+            if let Some(package) = packages.get(selection.identity.as_str()) {
+                model_spellings.bind_model(unit_source, &selection.alias, Some(*package));
                 continue;
             }
-            first_aliases.insert(&selection.identity, &selection.alias);
+            let package = model_spellings.add_package();
+            packages.insert(&selection.identity, package);
+            model_spellings.bind_model(unit_source, &selection.alias, Some(package));
             match model_object_types(
                 &selection.alias,
                 model,
@@ -3531,7 +3582,7 @@ impl PackageDeclarations {
                 &model_units,
             ) {
                 Ok(types) => {
-                    projected_names.insert(&selection.identity, types.names());
+                    model_spellings.set_names(package, types.package_names(&selection.alias));
                     for declaration in &types.objects {
                         object_spans.insert(declaration.name().to_owned(), selection.span);
                     }
@@ -3560,37 +3611,22 @@ impl PackageDeclarations {
                 Err(refused) => errors.extend(refused),
             }
         }
-        let mut model_spellings = ModelSpellings::default();
-        for (identity, aliases) in &further_aliases {
-            if let (Some(first), Some(names)) =
-                (first_aliases.get(identity), projected_names.get(identity))
-            {
-                model_spellings.add(first, aliases, names.iter().map(String::as_str));
+        // A later unit that repeats a kept selection (same alias, same
+        // package) binds the alias in its own unit too.
+        for (kept, source_unit) in &repeated_model_selection_units {
+            let (Some(selection), Some(unit_source)) =
+                (selections.models.get(*kept), sources.get(*source_unit))
+            else {
+                continue;
+            };
+            let package = packages.get(selection.identity.as_str()).copied();
+            model_spellings.bind_model(unit_source, &selection.alias, package);
+        }
+        for (import, source_unit) in selections.imports.iter().zip(&import_selection_units) {
+            if let (Some(alias), Some(unit_source)) = (&import.alias, sources.get(*source_unit)) {
+                model_spellings.bind_other(unit_source, alias);
             }
         }
-        let mut object_names: BTreeMap<String, EffectiveId> = object_types
-            .iter()
-            .map(|declaration| (declaration.name().to_owned(), declaration.key()))
-            .collect();
-        model_spellings.bind_unique(&mut object_names);
-        // A model composite or a variant type is a declared type name; `M::T`
-        // is no source declaration of the unit.
-        let model_composite_names: BTreeSet<String> = model_composites
-            .iter()
-            .map(|declaration| declaration.name().to_owned())
-            .chain(
-                model_variant_types
-                    .iter()
-                    .map(|declared| declared.name().to_owned()),
-            )
-            .chain(model_scalars.iter().map(|(name, _)| name.clone()))
-            .chain(
-                model_spellings
-                    .iter()
-                    .filter(|(_, declared)| !object_names.contains_key(*declared))
-                    .map(|(spelled, _)| spelled.to_owned()),
-            )
-            .collect();
 
         // Selection aliases are unique within a unit, and a `using` alias
         // names one of its profile selections.
@@ -3883,8 +3919,8 @@ impl PackageDeclarations {
         for alias in &unit.aliases {
             check_names(
                 &unit,
-                &object_names,
-                &model_composite_names,
+                &model_spellings,
+                source_owners.get(&alias.name.name),
                 &qualified,
                 &alias.target,
                 &mut errors,
@@ -3896,8 +3932,8 @@ impl PackageDeclarations {
                     for field in fields {
                         check_names(
                             &unit,
-                            &object_names,
-                            &model_composite_names,
+                            &model_spellings,
+                            source_owners.get(&composite.name.name),
                             &qualified,
                             &field.type_form,
                             &mut errors,
@@ -3908,8 +3944,8 @@ impl PackageDeclarations {
                     for element in elements {
                         check_names(
                             &unit,
-                            &object_names,
-                            &model_composite_names,
+                            &model_spellings,
+                            source_owners.get(&composite.name.name),
                             &qualified,
                             element,
                             &mut errors,
@@ -3920,8 +3956,8 @@ impl PackageDeclarations {
                     for payload in members.iter().flat_map(|member| &member.payload) {
                         check_names(
                             &unit,
-                            &object_names,
-                            &model_composite_names,
+                            &model_spellings,
+                            source_owners.get(&composite.name.name),
                             &qualified,
                             payload,
                             &mut errors,
@@ -3934,8 +3970,8 @@ impl PackageDeclarations {
             for form in signature_type_forms(function) {
                 check_names(
                     &unit,
-                    &object_names,
-                    &model_composite_names,
+                    &model_spellings,
+                    source_owners.get(&function.name),
                     &qualified,
                     form,
                     &mut errors,
@@ -3944,8 +3980,8 @@ impl PackageDeclarations {
             for form in body_type_forms(function) {
                 check_names(
                     &unit,
-                    &object_names,
-                    &model_composite_names,
+                    &model_spellings,
+                    source_owners.get(&function.name),
                     &qualified,
                     &form,
                     &mut errors,
@@ -3956,8 +3992,8 @@ impl PackageDeclarations {
             for form in expression_type_forms([&body.body]) {
                 check_names(
                     &unit,
-                    &object_names,
-                    &model_composite_names,
+                    &model_spellings,
+                    source_owners.get(&body.label.name),
                     &qualified,
                     &form,
                     &mut errors,
@@ -3972,8 +4008,8 @@ impl PackageDeclarations {
             for form in expression_type_forms(operands) {
                 check_names(
                     &unit,
-                    &object_names,
-                    &model_composite_names,
+                    &model_spellings,
+                    source_owners.get(&claim.name.name),
                     &qualified,
                     &form,
                     &mut errors,
@@ -3984,8 +4020,8 @@ impl PackageDeclarations {
             for form in expression_type_forms([&clause.body]) {
                 check_names(
                     &unit,
-                    &object_names,
-                    &model_composite_names,
+                    &model_spellings,
+                    source_owners.get(&clause.name.name),
                     &qualified,
                     &form,
                     &mut errors,
@@ -3998,44 +4034,12 @@ impl PackageDeclarations {
 
         // Each declared record and tuple's handle, over the unit's owner.
         let mut names = Names {
-            object_types: object_names.clone(),
             units: quantities
                 .as_ref()
                 .map(|assembled| super::check::declared_unit_ids(&assembled.graph))
                 .unwrap_or_default(),
             ..Names::default()
         };
-        for composite in &model_composites {
-            names
-                .types
-                .entry(composite.name().to_owned())
-                .or_default()
-                .push(ValueType::Composite(composite.key()));
-        }
-        for declaration in &object_types {
-            names
-                .types
-                .entry(declaration.name().to_owned())
-                .or_default()
-                .push(ValueType::Reference(declaration.key()));
-        }
-        // FR-360 item 4: `M::T` names the variant type `T` as its enum type.
-        for declared in &model_variant_types {
-            names
-                .types
-                .entry(declared.name().to_owned())
-                .or_default()
-                .push(ValueType::Enum(declared.shape()));
-        }
-        for (name, value_type) in &model_scalars {
-            names
-                .types
-                .entry(name.clone())
-                .or_default()
-                .push(value_type.clone());
-        }
-        // A further alias of a package spells each of its type names.
-        model_spellings.bind_all(&mut names.types);
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).
         let mut enums = Vec::with_capacity(unit.enums.len());
@@ -4123,7 +4127,9 @@ impl PackageDeclarations {
                     continue;
                 }
                 let alias = &unit.aliases[member];
-                match resolve_form(&names, &alias.target) {
+                let alias_names =
+                    names.in_unit(&model_spellings, source_owners.get(&alias.name.name));
+                match resolve_form(&alias_names, &alias.target) {
                     Ok(value_type) => {
                         names
                             .types
@@ -4192,6 +4198,7 @@ impl PackageDeclarations {
                 .map(|selection| (selection.alias.clone(), selection.span)),
         );
         for (composite, handle) in unit.composites.iter().zip(&handles) {
+            let names = names.in_unit(&model_spellings, source_owners.get(&composite.name.name));
             let shape = match &composite.members {
                 Members::Record(fields) => {
                     let mut declared = Vec::with_capacity(fields.len());
@@ -4270,6 +4277,7 @@ impl PackageDeclarations {
         // Each function's check-owned resolved signature.
         let mut signatures: Vec<ResolvedSignature> = Vec::with_capacity(unit.functions.len());
         for function in &unit.functions {
+            let names = names.in_unit(&model_spellings, source_owners.get(&function.name));
             let mut parameters = Vec::with_capacity(function.parameters.len());
             for (name, form) in &function.parameters {
                 match resolve_form(&names, form) {
@@ -4310,7 +4318,7 @@ impl PackageDeclarations {
             source: &source,
             source_owners: &source_owners,
             profiles: &selections.profiles,
-            object_names: &object_names,
+            spellings: &model_spellings,
             types: &types,
             operations: &operations,
             selected: &models,
@@ -4357,7 +4365,8 @@ impl PackageDeclarations {
         let operation_bodies = operation_bodies(unit.operation_bodies, &resolve, &predicates);
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
-            &object_names,
+            &source_owners,
+            &model_spellings,
             &types,
             &operations,
             &admitted,
@@ -4800,7 +4809,8 @@ struct Resolve<'a> {
     source: &'a RawSourceRef,
     source_owners: &'a BTreeMap<String, RawSourceRef>,
     profiles: &'a [qsl_foundation::selection::ProfileSelection],
-    object_names: &'a BTreeMap<String, EffectiveId>,
+    /// The package-owned type names each unit's model aliases spell.
+    spellings: &'a ModelSpellings,
     types: &'a TypeEnvironment,
     operations: &'a OperationTable,
     selected: &'a [SelectedModel],
@@ -4825,7 +4835,7 @@ fn state_clauses(
         source,
         source_owners,
         profiles,
-        object_names,
+        spellings,
         types,
         operations,
         selected,
@@ -4855,7 +4865,7 @@ fn state_clauses(
                 }
             }
         }
-        let context = object_names.get(&form.context.name).cloned();
+        let context = spellings.object_type(source_owners.get(&form.name.name), &form.context.name);
         let Some(context) = context else {
             errors.push(error(
                 AssemblyCause::UnresolvedTypeName {
@@ -5114,8 +5124,9 @@ fn state_graph_claims(
     predicates: &BTreeSet<&str>,
 ) -> Result<Vec<StateGraphDeclaration>, AssemblyRefusal> {
     let Resolve {
+        source_owners,
         profiles,
-        object_names,
+        spellings,
         types,
         ..
     } = *resolve;
@@ -5169,7 +5180,9 @@ fn state_graph_claims(
                     ));
                     continue;
                 };
-                let Some(context) = object_names.get(&name.name).cloned() else {
+                let Some(context) =
+                    spellings.object_type(source_owners.get(&form.name.name), &name.name)
+                else {
                     errors.push(error(
                         AssemblyCause::UnresolvedTypeName {
                             name: name.name.clone(),
@@ -5524,8 +5537,9 @@ fn operation_bodies(
     predicates: &BTreeSet<&str>,
 ) -> Result<Vec<OperationBodyDeclaration>, AssemblyRefusal> {
     let Resolve {
+        source_owners,
         profiles,
-        object_names,
+        spellings,
         types,
         operations,
         selected,
@@ -5572,7 +5586,9 @@ fn operation_bodies(
             continue;
         };
         let context_name = format!("{}::{}", model.name, object.name);
-        let Some(context) = object_names.get(&context_name).cloned() else {
+        let Some(context) =
+            spellings.object_type(source_owners.get(&form.label.name), &context_name)
+        else {
             errors.push(error(
                 AssemblyCause::UnresolvedTypeName { name: context_name },
                 form.target_span,
@@ -5671,7 +5687,8 @@ fn operation_bodies(
 /// the same way FR-113's own anchor and binder refusals do.
 fn protocol_attempts(
     protocols: &[qsl_forms::ProtocolDeclarationForm],
-    object_names: &BTreeMap<String, EffectiveId>,
+    source_owners: &BTreeMap<String, RawSourceRef>,
+    spellings: &ModelSpellings,
     types: &TypeEnvironment,
     operations: &OperationTable,
     models: &[AdmittedModel],
@@ -5682,7 +5699,10 @@ fn protocol_attempts(
         let mut attempts = Vec::with_capacity(protocol.attempts.len());
         for attempt in &protocol.attempts {
             let error = |cause, span| AssemblyError { cause, span };
-            let context = object_names.get(&attempt.context.name).cloned();
+            let context = spellings.object_type(
+                source_owners.get(&protocol.name.name),
+                &attempt.context.name,
+            );
             let Some(context) = context else {
                 errors.push(error(
                     AssemblyCause::UnresolvedTypeName {

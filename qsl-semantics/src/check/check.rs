@@ -60,6 +60,7 @@ mod typing;
 use typing::TypedOperand;
 
 use super::ir::{BodyBuilder, DispatchTable, EqualityProducerData, Node, NodeId, Slot};
+use super::model_spelling::{ModelSpellings, Spelled};
 use super::navigation::Relationships;
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
@@ -72,6 +73,7 @@ use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
     FieldInitializer, FunctionDeclaration,
 };
+use qsl_foundation::source::provenance::RawSourceRef;
 use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
 use quire_exact::EffectiveId;
@@ -953,6 +955,12 @@ pub struct Scope {
     /// The selected package behind each source model alias, used by static
     /// protocol roles that act on a whole model.
     model_selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
+    /// The package-owned type names each unit's model aliases spell (FR-480
+    /// "Selections and imports").
+    model_spellings: ModelSpellings,
+    /// The source unit of each top-level declaration, by declared name; a
+    /// name with no entry is the primary unit's.
+    source_owners: BTreeMap<String, RawSourceRef>,
     /// Admitted systems-model ports by their `M::artifact` source name,
     /// with the exact declaration and owning object type used by a role.
     model_ports: BTreeMap<(String, String), (DeclarationKey, EffectiveId)>,
@@ -975,6 +983,28 @@ qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records:
 /// (ADR-030): each import holds its library's graph, whose scope holds that
 /// library's own imports, so a derived drop would recurse once per library
 /// of an import chain.
+/// A [`Scope`] as one source unit reads its type names: a package-owned
+/// type `M::T` resolves through that unit's model alias `M` (FR-480
+/// "Selections and imports").
+#[derive(Clone, Copy)]
+pub(crate) struct SourceScope<'a> {
+    pub(crate) scope: &'a Scope,
+    pub(crate) source: Option<&'a RawSourceRef>,
+}
+
+impl<'a> SourceScope<'a> {
+    /// Every type `name` binds in this unit; see [`Scope::named_types`].
+    pub(crate) fn named_types(&self, name: &str) -> &'a [ValueType] {
+        self.scope.named_types(self.source, name)
+    }
+
+    /// The object type `name` names in this unit; see
+    /// [`Scope::object_type_named`].
+    pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
+        self.scope.object_type_named(self.source, name)
+    }
+}
+
 impl Drop for Scope {
     fn drop(&mut self) {
         let mut pending: Vec<Arc<super::CheckedGraph>> = std::mem::take(&mut self.imports)
@@ -1165,6 +1195,8 @@ impl Scope {
             history_names: Vec::new(),
             complete_model: false,
             model_selections: BTreeMap::new(),
+            model_spellings: ModelSpellings::default(),
+            source_owners: BTreeMap::new(),
             model_ports: BTreeMap::new(),
             dispatch_operations,
             symmetric_objects: BTreeMap::new(),
@@ -1305,19 +1337,34 @@ impl Scope {
         self
     }
 
-    /// This scope with each package-owned type, object type and variant
-    /// type also named by its spelling under a further `model` alias of the
-    /// same package (FR-480 "Selections and imports"). Call it after
-    /// [`Self::with_variant_types`], so variant types and their cases gain
-    /// their spellings too.
-    pub(crate) fn with_model_spellings(
-        mut self,
-        spellings: &super::model_spelling::ModelSpellings,
-    ) -> Self {
-        spellings.bind_all(&mut self.index.types);
-        spellings.bind_unique(&mut self.index.object_types);
-        spellings.bind_unique(&mut self.index.variant_cases);
+    /// This scope with each unit's model aliases, through which a
+    /// package-owned type name `M::T` written in that unit resolves (FR-480
+    /// "Selections and imports").
+    pub(crate) fn with_model_spellings(mut self, spellings: ModelSpellings) -> Self {
+        self.model_spellings = spellings;
         self
+    }
+
+    /// This scope with the source unit of each top-level declaration, by
+    /// declared name.
+    pub(crate) fn with_source_owners(
+        mut self,
+        source_owners: BTreeMap<String, RawSourceRef>,
+    ) -> Self {
+        self.source_owners = source_owners;
+        self
+    }
+
+    /// The source unit declaring the top-level declaration `name`, `None`
+    /// for the primary unit.
+    pub(crate) fn source_of(&self, name: &str) -> Option<&RawSourceRef> {
+        self.source_owners.get(name)
+    }
+
+    /// This scope as the unit declaring the top-level declaration `name`
+    /// reads its type names.
+    pub(crate) fn for_declaration(&self, name: &str) -> SourceScope<'_> {
+        self.in_source(self.source_of(name))
     }
 
     pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
@@ -1447,10 +1494,20 @@ impl Scope {
             .filter(move |import| seen.insert(import.identity.as_str()))
     }
 
-    /// Every type `name` binds -- an alias, composite, enum or object type --
-    /// in resolution order. Empty when `name` binds no type.
-    pub(crate) fn named_types(&self, name: &str) -> &[ValueType] {
-        self.index.types.get(name).map_or(&[], Vec::as_slice)
+    /// This scope as the source unit `source` (the primary unit when `None`)
+    /// reads its type names.
+    pub(crate) fn in_source<'a>(&'a self, source: Option<&'a RawSourceRef>) -> SourceScope<'a> {
+        SourceScope {
+            scope: self,
+            source,
+        }
+    }
+
+    /// Every type `name`, written in the source unit `source`, binds -- an
+    /// alias, composite, enum or object type -- in resolution order. Empty
+    /// when `name` binds no type.
+    pub(crate) fn named_types(&self, source: Option<&RawSourceRef>, name: &str) -> &[ValueType] {
+        self.model_spellings.types(source, name, &self.index.types)
     }
 
     /// Every enum member the qualified name `name` (`E::m`) names, with its
@@ -1503,19 +1560,36 @@ impl Scope {
             .get(*self.index.variant_shapes.get(shape)?)
     }
 
-    /// The variant type `name` names, when it is a variant type name.
-    pub(crate) fn variant_type_named(&self, name: &str) -> Option<&VariantTypeDeclaration> {
-        let (position, _) = *self.index.variant_cases.get(name)?.values().next()?;
-        self.variant_types.get(position)
+    /// The variant type `name`, written in the source unit `source`, names,
+    /// when it is a variant type name.
+    pub(crate) fn variant_type_named(
+        &self,
+        source: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Option<&VariantTypeDeclaration> {
+        match self.model_spellings.spelled(source, name) {
+            Spelled::Model(found) => self.variant_type(found?.variant.clone()?),
+            Spelled::Other => {
+                let (position, _) = *self.index.variant_cases.get(name)?.values().next()?;
+                self.variant_types.get(position)
+            }
+        }
     }
 
-    /// The runtime member of the case `name` (`T::Case`) names, with its
-    /// variant type's enum shape.
-    pub(crate) fn variant_case_named(&self, name: &str) -> Option<(EnumShape, &EnumValue)> {
+    /// The runtime member of the case `name` (`T::Case`), written in the
+    /// source unit `source`, names, with its variant type's enum shape.
+    pub(crate) fn variant_case_named(
+        &self,
+        source: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Option<(EnumShape, &EnumValue)> {
         let (type_name, case) = name.rsplit_once("::")?;
-        let &(position, member) = self.index.variant_cases.get(type_name)?.get(case)?;
-        let declared = self.variant_types.get(position)?;
-        Some((declared.shape(), declared.members().get(member)?))
+        let declared = self.variant_type_named(source, type_name)?;
+        let member = declared
+            .members()
+            .iter()
+            .find(|value| value.case() == case)?;
+        Some((declared.shape(), member))
     }
 
     /// Whether `name` is the case name of some variant type.
@@ -1540,9 +1614,17 @@ impl Scope {
         }
     }
 
-    /// The first object type named `name`, by its effective identity.
-    pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
-        self.index.object_types.get(name).cloned()
+    /// The object type `name`, written in the source unit `source`, names,
+    /// by its effective identity.
+    pub(crate) fn object_type_named(
+        &self,
+        source: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Option<EffectiveId> {
+        match self.model_spellings.spelled(source, name) {
+            Spelled::Model(found) => found?.object.clone(),
+            Spelled::Other => self.index.object_types.get(name).cloned(),
+        }
     }
 
     /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
@@ -2346,8 +2428,23 @@ impl<'a> Typer<'a> {
         mut self,
         source: Option<qsl_foundation::source::provenance::RawSourceRef>,
     ) -> Self {
+        // A nested model check reads type names through the same unit.
+        self.context = self
+            .context
+            .take()
+            .map(|cx| cx.with_source_owner(source.clone()));
         self.source_owner = source;
         self
+    }
+
+    /// The source unit this pass checks, `None` for the primary unit.
+    pub(crate) fn source_owner(&self) -> Option<&RawSourceRef> {
+        self.source_owner.as_ref()
+    }
+
+    /// The package scope as this pass's source unit reads its type names.
+    pub(crate) fn source_scope(&self) -> SourceScope<'_> {
+        self.scope.in_source(self.source_owner.as_ref())
     }
 
     pub(crate) fn imported(&self, qualifier: &str) -> Option<&'a super::AdmittedImport> {
@@ -2441,10 +2538,18 @@ impl<'a> Typer<'a> {
     }
 
     /// Borrow the enclosing family's stage state for nested model checks.
+    /// The context's source unit, when it names one, is the unit this pass
+    /// checks; otherwise the context takes this pass's unit, so a nested
+    /// model check (`allInstances<T>`, `lookup<T>`) reads `T` through the
+    /// unit that writes it (FR-480).
     pub(crate) fn with_context(mut self, cx: crate::family::CheckContext<'a, Scope>) -> Self {
-        if let Some(owner) = cx.source_owner() {
-            self.source_owner = Some(owner.clone());
-        }
+        let cx = match cx.source_owner() {
+            Some(owner) => {
+                self.source_owner = Some(owner.clone());
+                cx
+            }
+            None => cx.with_source_owner(self.source_owner.clone()),
+        };
         self.context = Some(cx);
         self
     }
@@ -2885,7 +2990,7 @@ impl<'a> Typer<'a> {
         name: &str,
         location: &Location,
     ) -> Result<ValueType, CheckRefusal> {
-        super::type_form::resolve_named_type(self.scope, name, location)
+        super::type_form::resolve_named_type(&self.source_scope(), name, location)
     }
 
     /// Resolve a declared `TypeForm` (S2) to the kernel `ValueType` (E3,
@@ -2898,7 +3003,7 @@ impl<'a> Typer<'a> {
         form: &qsl_forms::TypeForm,
         location: &Location,
     ) -> Result<ValueType, CheckRefusal> {
-        super::type_form::resolve_type_form(self.scope, form, location)
+        super::type_form::resolve_type_form(&self.source_scope(), form, location)
     }
 
     fn element_type(&self, collection: &Node) -> Result<ValueType, CheckRefusal> {
@@ -3073,7 +3178,10 @@ impl<'a> Typer<'a> {
         expected: Option<&ValueType>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        if let Some((shape, member)) = self.scope.variant_case_named(name) {
+        if let Some((shape, member)) = self
+            .scope
+            .variant_case_named(self.source_owner.as_ref(), name)
+        {
             let rank = u32::try_from(member.position())
                 .expect("an admitted variant type has far fewer than u32::MAX members");
             return Ok(node(
@@ -3085,9 +3193,11 @@ impl<'a> Typer<'a> {
                 location,
             ));
         }
-        let undeclared_case = name
-            .rsplit_once("::")
-            .is_some_and(|(type_name, _)| self.scope.variant_type_named(type_name).is_some());
+        let undeclared_case = name.rsplit_once("::").is_some_and(|(type_name, _)| {
+            self.scope
+                .variant_type_named(self.source_owner.as_ref(), type_name)
+                .is_some()
+        });
         if undeclared_case
             || self.signatures.declares(name)
             || (self.scope.is_variant_case_name(name)

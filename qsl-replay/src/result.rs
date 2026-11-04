@@ -30,7 +30,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::source::provenance::SourceRegion;
 use quire_semantic_value::catalog::Category;
 pub use wire::CauseCodecError;
-pub(crate) use wire::{validate_state_element, RecordWire};
+pub(crate) use wire::{validate_state_element, DecisiveWire, RecordWire};
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
@@ -389,6 +389,59 @@ pub(crate) fn same_element(left: &Value, right: &Value) -> bool {
     match compare_keys(left, right) {
         Some(order) => order == std::cmp::Ordering::Equal,
         None => wire::same_encoding(left, right),
+    }
+}
+
+/// FR-283 `decisive`, FR-330 Outputs' `ClauseRunReport::decisive`: the
+/// decisive information of a temporal violation, which FR-107's clause
+/// evaluator retains for the deciding `holds` atom. It sits beside the
+/// counterexample, never inside it.
+#[derive(Clone, Debug)]
+pub struct TemporalDecisive {
+    /// The deciding collection quantifier's occurrence key; absent when no
+    /// quantifier decides the atom.
+    pub quantifier: Option<OccurrenceKey>,
+    /// The deciding element, or the atom's value `false` when no
+    /// quantifier decides it.
+    pub element: Value,
+    /// The deciding element's index; absent when no quantifier decides.
+    pub index: Option<u64>,
+    /// The QSpec FR-207 value path: the deciding element's location, or the
+    /// empty path at the observation's root.
+    pub value_path: RuntimeValuePath,
+}
+
+impl PartialEq for TemporalDecisive {
+    fn eq(&self, other: &Self) -> bool {
+        self.quantifier == other.quantifier
+            && same_element(&self.element, &other.element)
+            && self.index == other.index
+            && self.value_path == other.value_path
+    }
+}
+
+impl Eq for TemporalDecisive {}
+
+impl TemporalDecisive {
+    /// The decisive information of a quantifier's stop.
+    pub(crate) fn from_stop(report: &StopReport) -> Self {
+        Self {
+            quantifier: Some(report.quantifier.clone()),
+            element: report.element.clone(),
+            index: Some(report.index),
+            value_path: report.value_path.clone(),
+        }
+    }
+
+    /// The decisive information of an atom no quantifier decides: its
+    /// value `false` at `root`, the empty path at the observation's root.
+    pub(crate) fn undecided(root: RuntimeValuePath) -> Self {
+        Self {
+            quantifier: None,
+            element: Value::Boolean(false),
+            index: None,
+            value_path: root,
+        }
     }
 }
 

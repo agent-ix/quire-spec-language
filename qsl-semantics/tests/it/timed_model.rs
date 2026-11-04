@@ -998,3 +998,76 @@ fn a_place_selected_by_a_clock_or_a_recursive_expansion_refuses() {
         "{refusals:?}"
     );
 }
+
+/// FR-480-AC-17 (QSL-1613): a timed predicate names a type through its own
+/// unit's model alias. Unit `b` alone selects `Config`, and its time
+/// invariant and `urgent when` read `convert<Config::Call>(self)`; the
+/// canonically first unit `a`, which binds no `Config`, is not the unit
+/// they resolve through.
+#[trace("FR-480-AC-17")]
+#[test]
+fn a_later_units_timed_predicate_names_types_through_its_own_alias() {
+    use qsl_semantics::check::{AssemblyLimits, PackageDeclarations};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::{admit_units_with_cancel, package_input};
+    use quire_exact::Cancel;
+
+    let unit = |identity: &str, declarations: &str| {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{TEMPORAL}{declarations}\n"
+        );
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new("test", identity),
+            "unit.native",
+            source.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the source unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the source unit");
+        (parsed.source().reference().clone(), unit)
+    };
+    let all_live = "convert<Config::Call>(self) = self";
+    let declarations = format!(
+        "model Config = {PACKAGE:?};\n{}\
+         time invariant Live when {{ self.inflight and {all_live} }} {{ self.x <= 3 ms }}\n\
+         urgent Hurry when {{ self.waiting and {all_live} }};\n",
+        rpc("time Config dense unit ms;")
+    );
+    let units = vec![unit("a", "type Pad = Integer;"), unit("b", &declarations)];
+    let packages = package_input([rpc_document(&["x"]).as_slice()]).expect("the package admits");
+    let selections: Vec<_> = units
+        .iter()
+        .map(|(_, unit)| unit.selections().models.as_slice())
+        .collect();
+    let selected = admit_units_with_cancel(
+        &selections,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("b's model selection admits");
+    let graph = PackageDeclarations::assemble_units(
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        units,
+        selected,
+        Vec::new(),
+        AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("both units assemble: {refusal:?}"))
+    .with_unwritten_timed_members()
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("b's Config::Call resolves through b: {refusals:?}"));
+    let model = timed(&graph);
+    assert!(
+        model
+            .invariants()
+            .iter()
+            .any(|invariant| invariant.name() == "Live"),
+        "{:?}",
+        model.invariants()
+    );
+    assert_eq!(model.urgency().len(), 1, "{:?}", model.urgency());
+}

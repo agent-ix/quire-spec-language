@@ -1550,13 +1550,14 @@ fn resolve_signature(
 ) -> Result<check::ResolvedSignature, Vec<CheckRefusal>> {
     let mut refusals = Vec::new();
     let mut parameters = Vec::with_capacity(function.parameters.len());
+    let types = scope.for_declaration(&function.name);
     for (name, type_form) in &function.parameters {
-        match type_form::resolve_type_form(scope, type_form, location) {
+        match type_form::resolve_type_form(&types, type_form, location) {
             Ok(value_type) => parameters.push((name.clone(), value_type)),
             Err(refusal) => refusals.push(refusal),
         }
     }
-    match type_form::resolve_type_form(scope, &function.result, location) {
+    match type_form::resolve_type_form(&types, &function.result, location) {
         Ok(result) if refusals.is_empty() => Ok((parameters, result)),
         Ok(_) => Err(refusals),
         Err(refusal) => {
@@ -1991,6 +1992,7 @@ impl PackageDeclarations {
                     types: &self.types,
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
+                    source_owners: &self.source_owners,
                     clock_reading: &self.clock_reading,
                     operation_bodies: &self.operation_bodies,
                     units: &units,
@@ -2161,7 +2163,8 @@ impl PackageDeclarations {
             self.dispatch_operations,
         )
         .with_variant_types(self.variant_types)
-        .with_model_spellings(&self.model_spellings)
+        .with_model_spellings(self.model_spellings)
+        .with_source_owners(self.source_owners.clone())
         .with_model_records(self.model_records)
         .with_relationships(self.relationships)
         .with_imports(self.imports)
@@ -2605,7 +2608,11 @@ impl PackageDeclarations {
             let location = body_location(index, &function.name);
             let mut targets = Vec::with_capacity(function.parameters.len());
             for (_, form) in &function.parameters {
-                match type_form::population_target(&scope, form, &location) {
+                match type_form::population_target(
+                    &scope.for_declaration(&function.name),
+                    form,
+                    &location,
+                ) {
                     Ok(target) => targets.push(target),
                     Err(refusal) => refusals.push(refusal),
                 }
@@ -4426,6 +4433,7 @@ impl PackageDeclarations {
             cancel: Some(cancel),
             nodes_used: std::cell::Cell::new(nodes_used),
             behaviours_checked: std::cell::Cell::new(0),
+            clause_source: std::cell::RefCell::new(None),
         };
         let mut checked_hyper: Vec<hyper_clause::CheckedHyperClause> = Vec::new();
         let mut checked_relations: Vec<hyper_clause::CheckedModelRelation> = Vec::new();
