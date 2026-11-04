@@ -56,27 +56,36 @@ macro_rules! tagged {
 }
 
 macro_rules! labels {
-    ($(#[$meta:meta])* $name:ident { $($(#[$variant_meta:meta])* $variant:ident => $wire:literal),* $(,)? }) => {
+    ($(#[$meta:meta])* $name:ident { $($(#[$variant_meta:meta])* $variant:ident => $wire:expr),* $(,)? }) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
-        pub enum $name { $($(#[$variant_meta])* #[serde(rename = $wire)] $variant),* }
+        #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+        pub enum $name { $($(#[$variant_meta])* $variant),* }
         impl $name {
+            const VARIANTS: &'static [&'static str] = &[$($wire),*];
+
             /// Exact closed spelling, also used for lexical wire ordering.
             pub const fn as_str(self) -> &'static str {
                 match self { $(Self::$variant => $wire),* }
             }
         }
+        impl Serialize for $name {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(self.as_str())
+            }
+        }
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
                 let value = String::deserialize(decoder)?;
-                match value.as_str() {
-                    $($wire => Ok(Self::$variant),)*
-                    other => Err(de::Error::unknown_variant(other, &[$($wire),*])),
-                }
+                $(if value == $wire { return Ok(Self::$variant); })*
+                Err(de::Error::unknown_variant(&value, Self::VARIANTS))
             }
         }
     };
 }
+
+// Closed ArtifactRef/3 and binding labels retain compatibility variants, but
+// the assessment-relevant strings are owned by qsl-package's versioned API.
+// `labels!` accepts expressions so these legacy variants share that source.
 
 /// A required member whose value may be explicitly null; omission still refuses.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -174,7 +183,7 @@ labels! {
         /// An oracle artifact.
         Oracle => "oracle",
         /// A population artifact.
-        Population => "population",
+        Population => qsl_package::protocol_artifact_v1::ArtifactKind::Population.as_str(),
         /// A property artifact.
         Property => "property",
         /// A review-disposition artifact.
@@ -190,7 +199,7 @@ labels! {
         /// A trace artifact.
         Trace => "trace",
         /// A temporal-window artifact.
-        Window => "window"
+        Window => qsl_package::protocol_artifact_v1::ArtifactKind::Window.as_str()
     }
 }
 labels! {
@@ -1548,9 +1557,9 @@ labels! {
         /// A later-bound relationship instance identity.
         Relationship => "relationship",
         /// A later-bound clock identity.
-        Clock => "clock",
+        Clock => qsl_package::protocol_artifact_v1::BindingKind::Clock.as_str(),
         /// A later-bound temporal window identity.
-        Window => "window",
+        Window => qsl_package::protocol_artifact_v1::BindingKind::Window.as_str(),
         /// A later-bound observation identity.
         Observation => "observation",
         /// A later-bound repeat-progress identity.

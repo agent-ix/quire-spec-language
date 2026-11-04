@@ -69,11 +69,11 @@ original Serde cause; it does not become an admitted native number.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-038-AC-1 | Zero, both JSON safe-integer endpoints, adjacent wider integers and signed-64 extrema encode as exact canonical decimal strings and recover their original integer values. | Test (TC-117) |
-| FR-038-AC-2 | 1/3, -1/2, integer 1 versus rational 1/1, zero 0/1 and admitted component extrema retain their exact kind/components and independent fixed expected object forms. | Test (TC-117) |
-| FR-038-AC-3 | Floats, bare numeric component tokens, negative zero, leading plus/zero, non-ASCII digits, exponent/fraction spellings, overflow, nonpositive denominators and unreduced rationals refuse without repaired values. | Test (TC-117) |
-| FR-038-AC-4 | Unknown/duplicate/missing members or tags refuse; a safe integer supplied as a bare number is also refused because this profile selects the uniform string representation. | Test (TC-117) |
-| FR-038-AC-5 | Source normalization and selected model/field-domain validation remain separate from wire validation; numeric codec success alone grants neither model admission nor source-to-artifact correspondence. | Test (TC-117) |
+| FR-038-AC-1 | Zero, both JSON safe-integer endpoints, adjacent wider integers and signed-64 extrema encode as exact canonical decimal strings and recover their original integer values. | Test (TC-117, TC-1306) |
+| FR-038-AC-2 | 1/3, -1/2, integer 1 versus rational 1/1, zero 0/1 and admitted component extrema retain their exact kind/components and independent fixed expected object forms. | Test (TC-117, TC-1306) |
+| FR-038-AC-3 | Floats, bare numeric component tokens, negative zero, leading plus/zero, non-ASCII digits, exponent/fraction spellings, overflow, nonpositive denominators and unreduced rationals refuse without repaired values. | Test (TC-117, TC-1306) |
+| FR-038-AC-4 | Unknown/duplicate/missing members or tags refuse; a safe integer supplied as a bare number is also refused because this profile selects the uniform string representation. | Test (TC-117, TC-1306) |
+| FR-038-AC-5 | Source normalization and selected model/field-domain validation remain separate from wire validation; numeric codec success alone grants neither model admission nor source-to-artifact correspondence. | Test (TC-117, TC-1306) |
 
 ## Dependencies
 
