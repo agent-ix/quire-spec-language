@@ -113,6 +113,11 @@ Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`, and the test of AC-8's later
   `fraction` threshold `1` written as the rational `1`; omitted and explicit
   `min_count 1` yield the same key, reformatting changes neither key nor
   package identity, and each semantic payload mutation changes both;
-  `past[0 ms, 300 s]` lowers to `lower` `0` and `upper` `300000` of `ms`; and
+  `past[0 ms, 300 s]` lowers to `lower` `0` and `upper` `300000` of `ms`;
+  with the clock selected (directly, through the spine, and by clause name
+  through `emit_checked_v2 --clock-selections`), `past[0 M::s, 300000 M::ms]`
+  lowers to `0` and `300000` of the clock's `M::ms` and the clock unit's
+  model-owned closure is written; `past[0 ms, 255 s]` refuses
+  `LimitExceeded(S3RationalBits)` at `255 s` under a ceiling of 16; and
   a `duration` window whose unit node is not the clock's
   `["scalar_type", "unit", timestamp_unit]` node refuses the emission.

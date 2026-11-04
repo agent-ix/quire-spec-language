@@ -21,6 +21,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-116
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-015
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-322
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-323
     type: depends_on
 ---
@@ -61,7 +65,8 @@ to build the harnesses and requests `replay` and `replay_frame` later
 execute. For the same reason `qsl_replay` re-exports, at its root, the
 types a caller constructs a `call_site` input from or matches a refusal
 on: `DependencyInput`, `SuppliedLibrary`, `DependencyInputRefusal`,
-`SourceHolder`, `OperationName`, `FieldName`, `FieldStep` and `PopulationName`, and the kernel `Origin`
+`SourceHolder`, `OperationName`, `FieldName`, `FieldStep`, `PopulationName`,
+`ImportedFunctionName` and the `LibraryName` it names a library by, and the kernel `Origin`
 and `Role` that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
 re-exports the types a caller builds a `DeclaredDomain` from: `ProofBound`,
 `DomainKey`, `FiniteBound`, `FiniteBoundKind`, `EmptyFiniteBound`, and the
@@ -80,6 +85,21 @@ itself, or a position inside its type reached by `FieldStep`s, and returns
 that position's ADR-012 §15.4 key `[ordinal, ...child path]`, so a caller
 can bound a domain nested inside a state field's type as it bounds the field.
 
+An imported-function selection names a function a library declares, not
+the unit: the library by its `LibraryName` (ADR-015 D-3) and the function
+by its `Identifier`. It locates the function in the library's checked
+package that the unit's own compile produced from the same `dependencies`
+(ADR-015 D-1), so the declaring package identity and the function's node,
+`declaration` occurrence and parameters all come from one compile of one
+dependency input -- the input CG builds from its dependency lock. The
+selected `library` and the function's node equal the `package` (the
+dependency's name) and `node` of the QSpec FR-322 `dependency_reference`
+term a call of that function in the unit lowers to. CG needs
+this to replay a dependency-owned function: a one-segment `QualifiedName`
+resolves only among the unit's own declarations, and CG may neither
+substitute a same-named unit function nor rebuild the declaring package's
+site from text.
+
 ## Inputs
 
 - `source`: the unit's FR-001 source identity.
@@ -96,8 +116,10 @@ can bound a domain nested inside a state field's type as it bounds the field.
   `Identifier`, or a `FieldName` naming a state field `M::T.f` as model
   alias, object type and field identifiers, with a list of `FieldStep`s into
   the field's type (empty for the field's own value), or a `PopulationName` naming a
-  population `M::P` as model alias and population artifact id. The
-  selection types are exactly the five implementors of the sealed trait
+  population `M::P` as model alias and population artifact id, or an
+  `ImportedFunctionName` naming a function of a library as `library`, the
+  library's `LibraryName`, and `function`, the function's `Identifier`. The
+  selection types are exactly the six implementors of the sealed trait
   `CallSiteSelection`.
 
 ## Outputs
@@ -126,6 +148,14 @@ can bound a domain nested inside a state field's type as it bounds the field.
   - for a `ClauseName`, a `ClauseSite`: `name`, `node` and `occurrence`;
   - for a `FieldName`, a `FieldSite`: `domain` (`DomainKey`);
   - for a `PopulationName`, a `PopulationSite`: `domain` (`DomainKey`);
+  - for an `ImportedFunctionName`, an `ImportedFunctionSite`: `library`
+    (`LibraryName`, the selected library), `package_id` (the library's
+    checked-package `package_id`, the declaring package identity),
+    `package` (`Vec<u8>`, the library's `quire.checked-package/v2` bytes
+    exactly as the S4 emitter wrote them in the unit's compile), and
+    `function` (`FunctionSite`, the members above, located in the
+    library's checked package); the `CallSite`'s own `package_id` and
+    `package` stay the unit's;
 - or a typed `CallSiteRefusal` with no partial result.
 
 ## Behavior
@@ -295,6 +325,54 @@ can bound a domain nested inside a state field's type as it bounds the field.
   use. A selection whose alias or population does not resolve SHALL refuse
   `CallSiteRefusal::UnknownPopulation`, pairing the `PopulationName` with
   the compiled package's own `package_id` (FR-088-AC-6).
+- For an imported-function selection, `call_site` SHALL resolve `library`
+  among the unit's own direct imports, the libraries its compiled
+  package's `dependency_selections` hold (QSpec FR-322), by `LibraryName`
+  equality, and SHALL never fall back to a function of the unit with the
+  same name.
+- If `library` names no library that an `import` of the unit names -- one
+  supplied in `dependencies` but reached by no import, one reached only
+  through another library's import (transitive-only), or one not supplied
+  at all -- then `call_site` SHALL refuse `CallSiteRefusal::UnknownImport`,
+  pairing the `ImportedFunctionName` with the unit's compiled package's own
+  `package_id`; its code is `missing_import`, cause `missing-selection`,
+  the pair ADR-015 D-1 step 3 gives an import no supplied library
+  selects. A library outside the unit's direct imports is, for the
+  selection, an import the unit does not have, so the source-side pair
+  applies rather than the `missing_declaration`/`missing-selection` pair
+  the QSpec FR-322 reader gives a `dependency_reference` outside the
+  direct selections; QSL's diagnostic catalog admits cause
+  `missing-selection` only under code `missing_import`.
+- For an imported-function selection, `call_site` SHALL resolve `function`
+  by name among the declarations of the library's checked package that the
+  unit's compile produced from `dependencies` (ADR-015 D-1 step 4), and
+  `call_site` SHALL compile the library only in that compile, never a
+  second time or from any other input.
+  A name that declares no function of that package SHALL refuse
+  `CallSiteRefusal::UnknownImportedFunction`, pairing the
+  `ImportedFunctionName` with the library's `package_id`; its code is
+  `missing_declaration`, cause `missing-name`.
+- For an imported-function selection, a function whose parameter or result
+  type is not package-independent, so that ADR-015 D-5 refuses a use of
+  it as an imported name, SHALL refuse
+  `CallSiteRefusal::NotImportable`, pairing the `ImportedFunctionName`
+  with the library's `package_id`; its code is `ill_typed`, cause
+  `operator-ineligible`, as D-5 refuses such a use.
+- For an imported-function selection, `call_site` SHALL return the
+  library's `package_id` and v2 `package` bytes from the unit's own
+  compile, and the function's `FunctionSite` located in that package by
+  the same derivation a function selection uses: equal, member for member,
+  to the `FunctionSite` `call_site` returns for a one-segment
+  `QualifiedName` of the same function over the library's own source,
+  compiled with the library's identity as its package name against the
+  same supplied libraries less the selected one (which would otherwise
+  share the compiled source's owner, ADR-015 D-1); its `package_id` and
+  `package` SHALL equal that call's `CallSite` `package_id` and `package`.
+  The site's `library` and `function.function` SHALL equal the `package`
+  (the dependency's name) and `node` of the QSpec FR-322
+  `dependency_reference` term every call of that function in the unit
+  lowers to. That term carries no `package_id`; the declaring package's
+  `package_id` is bound by the equality with the library's own compile.
 - An operation selection whose model alias or owner does not
   resolve to a declaration of the package, whose operation resolves to no operation, or that no
   clause or attempt of the unit names (FR-105 emits no frame for it) SHALL
@@ -310,9 +388,10 @@ can bound a domain nested inside a state field's type as it bounds the field.
   `Dependency` the code of the compile, intake, import-resolution or
   library refusal they carry, as `ReplayRefusal::Recompile` does;
   `DependencyInput` its `DependencyInputRefusal::code`; `UnknownFunction`,
-  `UnknownOperation` and `UnknownClause` `missing_declaration`;
+  `UnknownOperation`, `UnknownClause` and `UnknownImportedFunction`
+  `missing_declaration`; `UnknownImport` `missing_import`;
   `NotAnOperationOwner` `invalid_model_binding`; `AmbiguousOperation`
-  `ambiguous_declaration`; and `Fault`
+  `ambiguous_declaration`; `NotImportable` `ill_typed`; and `Fault`
   `runtime_invariant`. Each variant other than `Fault` carries the code of
   the refusal it was built from rather than only its rendered message.
 - The settlement of a refusal is keyed on timing, by the terminal mapping
@@ -321,7 +400,8 @@ can bound a domain nested inside a state field's type as it bounds the field.
   `TerminalValue::Declined` with cause `ProofRefusalCause::InvalidInput` for
   every such variant (`Compile`, `ModelIntake`, `DependencyInput`, `Import`,
   `Dependency`, `UnknownFunction`, `UnknownOperation`, `UnknownClause`,
-  `NotAnOperationOwner`, `AmbiguousOperation`) and
+  `NotAnOperationOwner`, `AmbiguousOperation`, `UnknownImport`,
+  `UnknownImportedFunction`, `NotImportable`) and
   its own code (`CallSiteRefusal::code`) as `DeclineCode::Qsl(code)`, which
   `TerminalValue::from_call_site_refusal` builds. `DeclineCode` carries a QSL catalog code (`DeclineCode::Qsl`) or a STD-001 registry code (`DeclineCode::Std001`, IR's `kani_*` codes among them); a code is never remapped from one registry onto the other, the `Std001` arm records no issuer, and it refuses no unregistered code (`Std001Code`'s own form check is all). A `ReplayRefusal` after a
   backend run (the replay of a refutation) is no refusal of the obligation's
@@ -369,6 +449,11 @@ can bound a domain nested inside a state field's type as it bounds the field.
 | FR-121-AC-27 | An operation selection whose owner names a record value type, an event type, an enum, a persistence interface or a population of the package refuses `CallSiteRefusal::NotAnOperationOwner` (code `invalid_model_binding`, message leading with `invalid_model_binding/malformed-declaration`); over a package where `C` specializes `A` and `B`, each declaring `touch` with a clause of the unit on each, the `M::C::touch` selection refuses `CallSiteRefusal::AmbiguousOperation` (code `ambiguous_declaration`, message leading with `ambiguous_declaration/ambiguous-name`), although `C` has no frame for `touch`; each pairs the `OperationName` with the compiled package's own `package_id` and maps by `TerminalValue::from_call_site_refusal` to `Declined` with `InvalidInput` and its code. | Test (TC-1162) |
 | FR-121-AC-30 | For AC-15's `p` and `q`, each `FunctionSite::obligation_identity()` returns a borrowed QSL-issued `ObligationIdentity` whose node is its own checked function node, model is `None`, and ordinal is its `declaration` occurrence ordinal 0. The two identities differ even though the parameter node is shared; inserting a comment and blank lines before `p` leaves `p`'s identity equal. | Test (TC-516) |
 | FR-121-AC-31 | For AC-3's selected operation, `OperationSite::obligation_identity()` returns a borrowed QSL-issued `ObligationIdentity` whose node is the selected frame node, whose model is the selected model's domain package identity, and whose ordinal is the frame's `generated` occurrence ordinal. An inherited selection of the same frame yields the same identity; two distinct frames yield different identities. | Test (TC-516) |
+| FR-121-AC-32 | For TC-444 step 7's library and unit -- `test/units` declaring `function big using v(x: Int[0, 9]): Boolean pure { x > 5 }`, here also `function small using v(x: Int[0, 9]): Boolean pure { x < 2 }`, and the unit importing it `as u` and declaring `function q using v(x: Int[0, 9]): Boolean pure { u::big(x) }` -- with the `DependencyInput` supplying `test/units`, the `ImportedFunctionName` `{test/units, big}` returns an `ImportedFunctionSite` whose `library` and `function.function` equal the `package` (the name `test/units`) and `node` of the `dependency_reference` callee term of `q`'s call in the `CallSite`'s own `package` bytes, and whose `function.parameters` hold exactly one pair, its `Identifier` `x`. The `function` equals, member for member, the `FunctionSite` a `QualifiedName` `big` selection returns from `call_site` over `test/units`'s own source with package name `test/units` and an empty `DependencyInput`, and the site's `package_id` and `package` equal that call's `CallSite` `package_id` and `package`. The `CallSite`'s own `package_id` is the unit's and differs from the site's `package_id`. `{test/units, small}`, which the unit never calls, returns `small`'s site by the same equality with the standalone compile. | Test (TC-516) |
+| FR-121-AC-33 | From the AC-32 answer alone, a `ReplayRequestWire` with package name `test/units`, whose package reference is the site's `package_id` with `test/units`'s one source and no `dependencies` entry, keyed by the site's one parameter pair with `x = 3`, replays `big` (`x > 5`) and agrees with the value `false`; it does not refuse `UnknownParameter`, `UnboundParameter` or for its `package_id`. | Test (TC-516) |
+| FR-121-AC-34 | For the AC-32 unit with its own `function big using v(x: Int[0, 9]): Boolean pure { x < 2 }` added, `{test/units, big}` returns the library's `function` node (the `dependency_reference` `node` of `q`'s call), which differs from the `function` the `QualifiedName` `big` selection returns for the unit's own `big`; neither selection answers with the other's node. | Test (TC-516) |
+| FR-121-AC-35 | For the AC-32 unit, `{test/other, big}` with `test/other` also supplied but imported by no `import`, `{test/absent, big}` naming no supplied library, and, for a unit importing only `test/wrap` whose source imports `test/units`, `{test/units, big}` (a transitive-only library) each refuse `CallSiteRefusal::UnknownImport`, pairing the `ImportedFunctionName` with the unit's compiled package's own `package_id`, with code `missing_import` and a message leading with `missing_import/missing-selection`; each maps by `TerminalValue::from_call_site_refusal` to `Declined` with `InvalidInput` and its code. | Test (TC-516) |
+| FR-121-AC-36 | For the AC-32 unit, `{test/units, nope}` refuses `CallSiteRefusal::UnknownImportedFunction` (code `missing_declaration`, message leading with `missing_declaration/missing-name`), pairing the `ImportedFunctionName` with `test/units`'s `package_id`. With `test/units` also declaring a record `R` and `function first using v(r: R): Boolean pure { true }`, `{test/units, first}` refuses `CallSiteRefusal::NotImportable` (code `ill_typed`, message leading with `ill_typed/operator-ineligible`), paired with `test/units`'s `package_id`. | Test (TC-516) |
 
 ## Dependencies
 
@@ -399,4 +484,13 @@ can bound a domain nested inside a state field's type as it bounds the field.
   `function` node a `FunctionSite` names.
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §15.4, §15.7: the state field and population domain keys.
-- ADR-015 D-1: the dependency input.
+- [ADR-015](../decisions/ADR-015-compile-and-replay-against-dependencies.md)
+  D-1 (the dependency input and the closure compile an imported-function
+  selection reads, and step 3's `missing_import`/`missing-selection` pair
+  `UnknownImport` uses), D-3 (the `LibraryName` it names a library by)
+  and D-5 (the package-independent signature an imported function has, and
+  the call lowering to a `dependency_reference` term).
+- QSpec FR-322: `dependency_selections`, the direct imports an
+  imported-function selection resolves among, and the members of the
+  `dependency_reference` term (`package`, the dependency's name, and
+  `node`) the site's `library` and `function` equal.

@@ -3977,3 +3977,120 @@ fn the_decisive_search_stops_at_the_first_false_or_failed_atom() {
         (None, vec![0, 1])
     );
 }
+
+/// FR-337 "Aggregate formula emission" item 7 through the spine: the clock
+/// selection the check stage receives reaches S3, so a `duration` window
+/// written in seconds and milliseconds of the selected package's `Time` is
+/// emitted in the selected clock unit, both bounds converted exactly
+/// (QSpec FR-370, `past[0 s, 300000 ms]` under a clock in `ms` is `0` and
+/// `300000` of `ms`).
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
+    use crate::spine::{
+        check_with_temporal_selections_and_execution_points, package_with_temporal_selections,
+        parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
+    };
+
+    let package = super::receiver_frames::fixture::PACKAGE;
+    let mut document = super::receiver_frames::fixture::document(&[], &[]);
+    let origin = document["types"][0]["origin"].clone();
+    let time = format!("ix://{package}/dimension/Time");
+    let second = format!("ix://{package}/unit/s");
+    let millisecond = format!("ix://{package}/unit/ms");
+    document["dimensions"] = json!([{
+        "identity": time, "name": "Time", "base": true, "terms": [], "origin": origin,
+    }]);
+    document["units"] = json!([
+        {"identity": second, "name": "s", "dimension": time, "scale": "1", "offset": "0",
+         "origin": origin},
+        {"identity": millisecond, "name": "ms", "dimension": time, "target": second,
+         "scale": "1/1000", "offset": "0", "origin": origin},
+    ]);
+    let document = serde_json::to_vec(&document).expect("the fixture stays JSON");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n\
+         model Counters = {package:?};\n\
+         record Sample {{ v: Int[0, 9]; }}\n\
+         temporal Window using t over (e: Sample) clock \"ms\" on origin \
+         {{ always[0,3] (count over past[0 Counters::s, 300000 Counters::ms] >= 1) }}\n"
+    );
+    let identity = qsl_foundation::SourceIdentity::new("test", "window");
+    let cancel = quire_exact::Cancel::new();
+    let limits = SpineLimits::default();
+    let parsed = parse(
+        &ParseRequest {
+            source: &identity,
+            path: "window.native",
+            bytes: text.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("S1 and S2 read the unit")
+    .into_value();
+    let span = parsed
+        .unit()
+        .forms()
+        .iter()
+        .find(|form| matches!(form.form(), qsl_forms::DeclarationForm::Temporal(_)))
+        .map(qsl_forms::ParsedForm::span)
+        .expect("the clause form");
+    let selections = [qsl_package::TemporalClockSelection {
+        source: parsed.source().reference().clone(),
+        declaration_span: span,
+        clock: qsl_package::ClockConfiguration::TimestampedEvent {
+            timestamp_unit: millisecond.as_str().into(),
+        },
+    }];
+    let models = select(&parsed, &packages, limits.model, &cancel)
+        .expect("I1 admits the package")
+        .into_value();
+    let checked = check_with_temporal_selections_and_execution_points(
+        &parsed,
+        "fixture".to_owned(),
+        &BTreeMap::new(),
+        &selections,
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .unwrap_or_else(|failure| panic!("the unit checks: {failure:?}"))
+    .into_value();
+    let emitted =
+        package_with_temporal_selections(&checked, &selections, PackageLimits::default(), &cancel)
+            .unwrap_or_else(|failure| panic!("the unit emits: {failure:?}"))
+            .into_value();
+    let wire: serde_json::Value =
+        serde_json::from_slice(emitted.package().bytes()).expect("the package is JSON");
+    let nodes = wire["semantic_graph"]["nodes"].as_array().expect("nodes");
+    let [aggregate] = nodes
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.temporal.aggregate")
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one aggregate node");
+    };
+    let bound = |name: &str| {
+        aggregate["body"]["arguments"][0]["members"]
+            .as_array()
+            .expect("members")
+            .iter()
+            .find(|member| member["name"] == name)
+            .map(|member| member["value"].clone())
+            .unwrap_or_else(|| panic!("a binding {name}"))
+    };
+    for (name, value) in [("lower", "0"), ("upper", "300000")] {
+        let bound = bound(name);
+        assert_eq!(bound["value"], value, "{name}");
+        assert_eq!(
+            bound["type"]["path"],
+            json!(["scalar_type", "unit", millisecond]),
+            "{name}"
+        );
+    }
+}

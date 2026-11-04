@@ -3525,6 +3525,7 @@ pub fn check_hyper_clauses(
                 units: &super::time_units::TimeUnits::default(),
                 time_sources: &[],
                 rational_bits: 0,
+                clock_units: &[],
             },
         },
         models: &package.models,

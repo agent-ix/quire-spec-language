@@ -31,7 +31,14 @@ It returns the compiled package's bytes its `package_id` names, builds a
 field under its declaring type's node by its name ordinal, apart from any
 population key, and keys a named population as the requirement records do.
 
-Scope: FR-121-AC-1 to FR-121-AC-24, FR-121-AC-28 and FR-121-AC-29.
+It locates a function a library declares through an `ImportedFunctionName`,
+from the library's checked package in the unit's own compile, equal to the
+`dependency_reference` term the unit's call lowers to and to the site a
+standalone compile of the library gives, and refuses a library the unit
+does not import directly or a function it cannot import.
+
+Scope: FR-121-AC-1 to FR-121-AC-24, FR-121-AC-28, FR-121-AC-29 and
+FR-121-AC-32 to FR-121-AC-36.
 
 ## Test Procedure
 
@@ -136,6 +143,30 @@ Scope: FR-121-AC-1 to FR-121-AC-24, FR-121-AC-28 and FR-121-AC-29.
     compare the re-entry key with the `Recursive` key of the extent walk over
     `head`'s type. Select `Config::Figure.shape` with `[Member(Rect, 1)]` and
     `[Member(Circle, 1)]`.
+27. Add `function small using v(x: Int[0, 9]): Boolean pure { x < 2 }` to
+    step 4's `test/units` (TC-444 step 7's library, whose `big` is
+    `{ x > 5 }`). Over step 4's unit with the `DependencyInput` supplying `test/units`, select
+    `ImportedFunctionName { test/units, big }` and `{ test/units, small }`.
+    Read the `dependency_reference` callee term of `q`'s call from the
+    `CallSite`'s own `package` bytes (its `package` member is the
+    dependency's name, its `node` the callee's node id); this test checks the
+    term itself. Separately, run `call_site` over
+    `test/units`'s own source with package name `test/units`, an empty
+    `DependencyInput` and the `QualifiedName`s `big` and `small`.
+28. From step 27's `big` answer alone, key a `ReplayRequestWire` with
+    package name `test/units`, the site's `package_id`, `test/units`'s one
+    source, no `dependencies` entry and the site's parameter pair, and call
+    `replay` with `x = 3`.
+29. Add the unit's own `function big using v(x: Int[0, 9]): Boolean pure
+    { x < 2 }` to step 4's unit; select `{ test/units, big }` and the `QualifiedName` `big`.
+30. Over step 27's unit, select `{ test/other, big }` with `test/other`
+    supplied but not imported and `{ test/absent, big }`; build a unit
+    importing only `test/wrap`, whose source imports `test/units`, and select
+    `{ test/units, big }`. Map each refusal through
+    `TerminalValue::from_call_site_refusal`.
+31. Over step 27's unit, select `{ test/units, nope }`; add a record `R` and
+    `function first using v(r: R): Boolean pure { true }` to `test/units` and select
+    `{ test/units, first }`.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -220,3 +251,21 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   key for `Node`; `[Field(value)]` gives `[0, 0]`; the path past the re-entry
   refuses `CallSiteRefusal::UnknownField`; `Member(Rect, 1)` gives `[0, 2]`,
   and `Member(Circle, 1)` refuses `CallSiteRefusal::UnknownField`.
+- Step 27: `big`'s site has `library` and `function.function` equal to the
+  term's `package` (`test/units`) and `node`, and one parameter pair `x`.
+  Each site's `function` equals the standalone `FunctionSite` of the same
+  name member for member, and its `package_id` and `package` equal the
+  standalone `CallSite`'s; the `CallSite`'s own `package_id` is the unit's
+  and differs (FR-121-AC-32).
+- Step 28: `replay` agrees with the value `false` and refuses neither
+  parameter nor `package_id` (FR-121-AC-33).
+- Step 29: the imported selection's `function` is the `dependency_reference`
+  node and differs from the unit's own `big`'s `function` (FR-121-AC-34).
+- Step 30: each refuses `CallSiteRefusal::UnknownImport` paired with the
+  unit's `package_id`, code `missing_import`, message leading with
+  `missing_import/missing-selection`, and maps to `Declined` with
+  `InvalidInput` (FR-121-AC-35).
+- Step 31: `nope` refuses `CallSiteRefusal::UnknownImportedFunction`
+  (`missing_declaration/missing-name`) and `first` refuses
+  `CallSiteRefusal::NotImportable` (`ill_typed/operator-ineligible`), each
+  paired with `test/units`'s `package_id` (FR-121-AC-36).

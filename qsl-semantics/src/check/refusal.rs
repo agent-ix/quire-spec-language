@@ -1673,9 +1673,11 @@ pub enum TemporalCause {
         /// The complete `past[a, b]` span.
         span: Span,
     },
-    /// FR-194: a window bound has the wrong kind for the selected profile.
+    /// FR-194: a window bound has the wrong kind for the selected profile,
+    /// or a `duration` bound is in a unit that is no time unit or does not
+    /// convert to the window's time unit.
     AggregateWindowKindMismatch {
-        /// The first bound with the wrong kind.
+        /// The first bound with the wrong kind, or the bound's unit.
         span: Span,
     },
     /// FR-194: aggregate windows are admitted only by event-position and

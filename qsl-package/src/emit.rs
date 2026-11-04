@@ -5347,7 +5347,18 @@ fn emit_package_inner(
         });
     }
     let candidates = candidates_of(ids, graph, abstraction.as_ref())?;
-    let model_roots: HashSet<NodeKey> = graph.model_roots().map(|(_, key)| key).collect();
+    // Nodes the emitter writes beside the graph's own: each model root, and
+    // each model-owned time unit node a `duration` window is typed by.
+    let external: HashSet<NodeKey> = graph
+        .model_roots()
+        .map(|(_, key)| key)
+        .chain(graph.temporal_clauses().iter().flat_map(|temporal| {
+            temporal
+                .clause()
+                .duration_window_model_nodes()
+                .map(|nominal| nominal.key.clone())
+        }))
+        .collect();
     let selected_models: BTreeSet<&str> = graph
         .model_roots()
         .map(|(selection, _)| selection.identity.as_str())
@@ -5357,7 +5368,7 @@ fn emit_package_inner(
         &candidates,
         graph.source(),
         decodes,
-        &model_roots,
+        &external,
         &selected_models,
     );
     let omitted_keys = omitted
@@ -5707,112 +5718,14 @@ fn emit_package_inner(
                 model.literal_types.integer = Some(integer_type);
             }
             for nominal in &source.nominal_nodes {
-                let id = node_id(ids, &nominal.key);
-                if nodes.iter().any(|node| node.node_id == id) {
-                    continue;
-                }
-                let declaration = nominal.declaration().map(|segments| CheckedDeclaration {
-                    qualified_name: segments
-                        .iter()
-                        .map(|segment| segment.as_str().into())
-                        .collect(),
-                });
-                let (owner, source_owned) = match &nominal.origin {
-                    TimeNominalOrigin::Source { owner, .. } => (
-                        CheckedNodeOwner::Source {
-                            authority: owner.authority.as_str().into(),
-                            identity: owner.identity.as_str().into(),
-                        },
-                        true,
-                    ),
-                    TimeNominalOrigin::Model(subject) => (
-                        CheckedNodeOwner::Model {
-                            identity: subject.identity.as_str().into(),
-                            node: subject.node.as_str().into(),
-                        },
-                        false,
-                    ),
-                };
-                let body = if source_owned {
-                    match (nominal.form.as_str(), nominal.nominal_payload()) {
-                        ("dimension", Some(payload @ NominalPayload::Dimension(_)))
-                        | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
-                            nominal_term(ids, &nominal.key, payload)?
-                        }
-                        _ => {
-                            return Err(EmitRefusal::TimedModelWriterInvariant(
-                                "a source-owned timed nominal must carry its typed body",
-                            ));
-                        }
-                    }
-                } else {
-                    CheckedTerm::Aggregate {
-                        members: Vec::new(),
-                    }
-                };
-                let semantic_type = if nominal.form == "unit" {
-                    nominal
-                        .dependencies
-                        .first()
-                        .map(|key| node_id(ids, key))
-                        .ok_or(EmitRefusal::TimedModelWriterInvariant(
-                            "a unit node must name its dimension",
-                        ))?
-                } else {
-                    id.clone()
-                };
-                // A model-owned node carries no declaration, so it is
-                // `generated` (like a `model_root`); every node has at
-                // least one occurrence.
-                let occurrence = CheckedOccurrence {
-                    role: if source_owned {
-                        CheckedOccurrenceRole::Declaration
-                    } else {
-                        CheckedOccurrenceRole::Generated
-                    },
-                    ordinal: 0,
-                };
-                // FR-322: a source nominal's occurrence is located at its
-                // own declaration; a model-owned node has no source form,
-                // so its `generated` occurrence takes the timed source's
-                // region.
-                let region = match nominal.name_span() {
-                    Some(span) => SourceRegion::new(
-                        graph.source().clone(),
-                        span.start as u64,
-                        span.end as u64,
-                    )
-                    .map_err(encoding)?,
-                    None => source_region.clone(),
-                };
-                source_map.push(CheckedSourceMapEntry {
-                    node_id: id.clone(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                    regions: vec![CheckedSourceRegion {
-                        source: source_artifact(graph.source()),
-                        start: region.start(),
-                        end: region.end(),
-                    }],
-                });
-                nodes.push(CheckedSemanticNodeV2 {
-                    owner_model: None,
-                    node_id: id.clone(),
-                    schema_version: GRAPH_V2.into(),
-                    node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
-                    semantic_form: nominal.form.as_str().into(),
-                    semantic_type,
-                    dependencies: nominal
-                        .dependencies
-                        .iter()
-                        .map(|key| node_id(ids, key))
-                        .collect(),
-                    occurrences: vec![occurrence],
-                    recursion_group: None,
-                    declaration,
-                    owner: Some(owner),
-                    body,
-                });
+                write_time_nominal(
+                    ids,
+                    graph,
+                    nominal,
+                    &source_region,
+                    &mut nodes,
+                    &mut source_map,
+                )?;
             }
             for node in model
                 .write_nodes()
@@ -5858,6 +5771,24 @@ fn emit_package_inner(
         }
         #[cfg(test)]
         TIMED_GRAPH.with(|held| *held.borrow_mut() = Some((nodes.clone(), source_map.clone())));
+    }
+    // QSpec FR-370: a `duration` window typed by a model-owned time unit
+    // names that unit's nodes, which S3 does not lower; each is written once,
+    // located at the clause that names it.
+    for temporal in graph.temporal_clauses() {
+        let mut model_nodes = temporal.clause().duration_window_model_nodes().peekable();
+        if model_nodes.peek().is_none() {
+            continue;
+        }
+        let location = graph
+            .occurrence(temporal.identity(), temporal.claim())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let region = graph
+            .region(location)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        for nominal in model_nodes {
+            write_time_nominal(ids, graph, nominal, &region, &mut nodes, &mut source_map)?;
+        }
     }
     append_model_roots(
         ids,
@@ -6252,20 +6183,121 @@ fn temporal_clock_invalid_field(
     }
 }
 
-/// Whether `unit` is the `scalar_type`/`unit` node whose path is
-/// `["scalar_type", "unit", name]` (QSpec FR-370's clock unit).
-fn is_unit_named(unit: &NodeKey, name: &str) -> bool {
-    use quire_exact::PathSegmentView as Segment;
-    let mut path = unit.view().path();
-    matches!(
-        (path.next(), path.next(), path.next(), path.next()),
-        (
-            Some(Segment::Text("scalar_type")),
-            Some(Segment::Text("unit")),
-            Some(Segment::Text(last)),
-            None,
-        ) if last == name
-    )
+/// Write the nominal dimension or unit node `nominal` a timed construct
+/// names, unless the graph already holds it: a source node located at its
+/// declaration, a model-owned node with an empty body, no declaration and a
+/// `generated` occurrence at `generated` (FR-322 "Model-owned members").
+fn write_time_nominal(
+    ids: &StructuralIds,
+    graph: &CheckedGraph,
+    nominal: &qsl_semantics::check::TimeNominalNode,
+    generated: &SourceRegion,
+    nodes: &mut Vec<CheckedSemanticNodeV2>,
+    source_map: &mut Vec<CheckedSourceMapEntry>,
+) -> Result<(), EmitRefusal> {
+    let id = node_id(ids, &nominal.key);
+    if nodes.iter().any(|node| node.node_id == id) {
+        return Ok(());
+    }
+    let declaration = nominal.declaration().map(|segments| CheckedDeclaration {
+        qualified_name: segments
+            .iter()
+            .map(|segment| segment.as_str().into())
+            .collect(),
+    });
+    let (owner, source_owned) = match &nominal.origin {
+        TimeNominalOrigin::Source { owner, .. } => (
+            CheckedNodeOwner::Source {
+                authority: owner.authority.as_str().into(),
+                identity: owner.identity.as_str().into(),
+            },
+            true,
+        ),
+        TimeNominalOrigin::Model(subject) => (
+            CheckedNodeOwner::Model {
+                identity: subject.identity.as_str().into(),
+                node: subject.node.as_str().into(),
+            },
+            false,
+        ),
+    };
+    let body = if source_owned {
+        match (nominal.form.as_str(), nominal.nominal_payload()) {
+            ("dimension", Some(payload @ NominalPayload::Dimension(_)))
+            | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
+                nominal_term(ids, &nominal.key, payload)?
+            }
+            _ => {
+                return Err(EmitRefusal::TimedModelWriterInvariant(
+                    "a source-owned timed nominal must carry its typed body",
+                ));
+            }
+        }
+    } else {
+        CheckedTerm::Aggregate {
+            members: Vec::new(),
+        }
+    };
+    let semantic_type = if nominal.form == "unit" {
+        nominal
+            .dependencies
+            .first()
+            .map(|key| node_id(ids, key))
+            .ok_or(EmitRefusal::TimedModelWriterInvariant(
+                "a unit node must name its dimension",
+            ))?
+    } else {
+        id.clone()
+    };
+    // A model-owned node carries no declaration, so it is
+    // `generated` (like a `model_root`); every node has at
+    // least one occurrence.
+    let occurrence = CheckedOccurrence {
+        role: if source_owned {
+            CheckedOccurrenceRole::Declaration
+        } else {
+            CheckedOccurrenceRole::Generated
+        },
+        ordinal: 0,
+    };
+    // FR-322: a source nominal's occurrence is located at its
+    // own declaration; a model-owned node has no source form,
+    // so its `generated` occurrence takes `generated`, the
+    // region of the construct that names it.
+    let region = match nominal.name_span() {
+        Some(span) => SourceRegion::new(graph.source().clone(), span.start as u64, span.end as u64)
+            .map_err(encoding)?,
+        None => generated.clone(),
+    };
+    source_map.push(CheckedSourceMapEntry {
+        node_id: id.clone(),
+        role: occurrence.role.clone(),
+        ordinal: occurrence.ordinal,
+        regions: vec![CheckedSourceRegion {
+            source: source_artifact(region.source()),
+            start: region.start(),
+            end: region.end(),
+        }],
+    });
+    nodes.push(CheckedSemanticNodeV2 {
+        owner_model: None,
+        node_id: id.clone(),
+        schema_version: GRAPH_V2.into(),
+        node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
+        semantic_form: nominal.form.as_str().into(),
+        semantic_type,
+        dependencies: nominal
+            .dependencies
+            .iter()
+            .map(|key| node_id(ids, key))
+            .collect(),
+        occurrences: vec![occurrence],
+        recursion_group: None,
+        declaration,
+        owner: Some(owner),
+        body,
+    });
+    Ok(())
 }
 
 fn validate_temporal_clock(
@@ -6389,7 +6421,7 @@ fn temporal_binding_rows(
         {
             if clause
                 .duration_window_units()
-                .any(|unit| !is_unit_named(unit, timestamp_unit))
+                .any(|unit| !qsl_semantics::check::is_clock_unit_node(unit, timestamp_unit))
             {
                 return Err(EmitRefusal::InvalidTemporalClockValue {
                     source_ref: source.clone(),

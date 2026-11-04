@@ -302,3 +302,153 @@ fn the_aggregate_spans_resolve_through_the_source_map() {
     assert!(located(target(bound(node, "filter"))).contains(&span("e.w = 0")));
     assert!(located(target(bound(node, "value"))).contains(&span("e.v")));
 }
+
+/// The `example/config-version` package's time unit `unit` as the clock's
+/// `timestamp_unit`: its FCD identity, the last segment of its node path.
+fn package_unit(unit: &str) -> String {
+    format!("ix://example/config-version/unit/{unit}")
+}
+
+/// A unit selecting `example/config-version` (base dimension `Time`, units
+/// `s` and `ms`) as `Config`, whose timestamped-event clause `Window` over
+/// `e: Sample` has `count over {window} >= 1` under `always[0,3]`, after
+/// `declarations`.
+fn package_window(declarations: &str, window: &str) -> String {
+    unit(
+        TIMESTAMPED,
+        &format!(
+            "{declarations}record Sample {{ v: Int[0, 9]; }}\n\
+             temporal Window using t over (e: Sample) clock \"model-steps\" on origin \
+             {{ always[0,3] (count over {window} >= 1) }}"
+        ),
+    )
+}
+
+/// `text` checked with its one clause's clock in `timestamp_unit`, given to
+/// S3 as the spine gives it, then emitted with that clock selected.
+fn emit_with_clock(
+    text: &str,
+    timestamp_unit: &str,
+) -> Result<Result<Value, EmitRefusal>, Vec<qsl_semantics::check::CheckRefusal>> {
+    let document = super::timed_source::package_units_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let assembled =
+        || assemble_with_models(text.as_bytes(), &packages).expect("the unit assembles");
+    let probe = assembled()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the clause checks without a clock: {refusals:?}"));
+    let [temporal] = probe.temporal_clauses() else {
+        panic!("one clause");
+    };
+    let span = temporal.clause().span();
+    let graph = assembled()
+        .with_clock_units(vec![qsl_semantics::check::ClockUnitSelection {
+            declaration_span: span,
+            timestamp_unit: timestamp_unit.to_owned(),
+        }])
+        .check(CheckingLimits::default())?;
+    let selections = [crate::emit::TemporalClockSelection {
+        source: graph.source().clone(),
+        declaration_span: span,
+        clock: clock_in(timestamp_unit),
+    }];
+    Ok(crate::emit::emit_checked_with_temporal_selections(
+        &CheckedPackage::link(graph),
+        &selections,
+    )
+    .map(|emission| wire(&emission)))
+}
+
+/// FR-337 "Aggregate formula emission" item 7, QSpec FR-370: a `duration`
+/// window's `lower` and `upper` are quantity literals of the clause's clock
+/// unit node, `["scalar_type", "unit", T]` with `T` the selected
+/// `timestamp_unit`, both bounds converted exactly to it whatever units they
+/// are written in; the model-owned clock unit node is written with an empty
+/// body, its model owner and a `generated` occurrence.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn a_duration_window_converts_both_bounds_to_the_selected_clock_unit() {
+    let cases = [
+        ("past[0 Config::s, 300000 Config::ms]", "ms", "0", "300000"),
+        ("past[0 Config::s, 300000 Config::ms]", "s", "0", "300"),
+        ("past[0 Config::ms, 300 Config::s]", "ms", "0", "300000"),
+        ("past[1 Config::ms, 1 Config::s]", "s", "1/1000", "1"),
+    ];
+    for (window, clock, lower, upper) in cases {
+        let clock_unit = package_unit(clock);
+        let wire = emit_with_clock(&package_window("", window), &clock_unit)
+            .unwrap_or_else(|refusals| panic!("{window}: {refusals:?}"))
+            .unwrap_or_else(|refusal| panic!("{window} under {clock}: {refusal:?}"));
+        let node = aggregate(&wire);
+        let path = json!(["scalar_type", "unit", clock_unit]);
+        for (name, expected) in [("lower", lower), ("upper", upper)] {
+            let bound = bound(node, name);
+            assert_eq!(bound["value_kind"], "quantity", "{window} {name}");
+            assert_eq!(bound["value"], expected, "{window} under {clock}: {name}");
+            assert_eq!(
+                bound["type"]["path"], path,
+                "{window} under {clock}: {name}"
+            );
+        }
+        // The clock unit's model-owned closure: the unit itself, its `Time`
+        // dimension and, for `ms`, the `s` it is defined over.
+        let time = "ix://example/config-version/dimension/Time";
+        let mut closure = vec![("unit", clock_unit.clone()), ("dimension", time.to_owned())];
+        if clock == "ms" {
+            closure.push(("unit", package_unit("s")));
+        }
+        for (form, identity) in closure {
+            let path = json!(["scalar_type", form, identity]);
+            let [written] = nodes(&wire)
+                .iter()
+                .filter(|candidate| candidate["node_id"]["path"] == path)
+                .collect::<Vec<_>>()[..]
+            else {
+                panic!("{window} under {clock}: one {form} node {identity}");
+            };
+            assert_eq!(written["semantic_form"], form, "{identity}");
+            assert_eq!(written["owner"]["kind"], "model", "{identity}");
+            assert_eq!(written["owner"]["node"], identity.as_str());
+            assert_eq!(
+                written["body"],
+                json!({"term": "aggregate", "members": []}),
+                "{identity}"
+            );
+            assert_eq!(written["occurrences"][0]["role"], "generated", "{identity}");
+        }
+    }
+}
+
+/// FR-194, QSpec FR-370: a `duration` bound that does not convert to the
+/// selected clock unit is no duration of the clause's clock: a source
+/// `Time` unit under a clock in the model package's `Time` (another
+/// dimension, no equivalence) refuses `ill_typed`/`unit-mismatch` at S3.
+#[trace("TC-629", "FR-194-AC-7")]
+#[test]
+fn a_duration_bound_of_another_time_dimension_than_the_clock_refuses() {
+    let text = package_window(
+        "dimension Time;\nunit s : Time = rational(1, 1);\n",
+        "past[0 s, 1 s]",
+    );
+    let refusals = emit_with_clock(&text, &package_unit("ms"))
+        .expect_err("a source second is no duration of the package clock");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert_eq!(refusal.cause.code(), qsl_foundation::Code::IllTyped);
+    assert_eq!(refusal.cause.cause(), Some("unit-mismatch"));
+    // At the lower bound's unit `s`.
+    let start = text.find("past[0 s").expect("the window") + "past[0 ".len();
+    let qsl_semantics::check::CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a temporal refusal: {refusal:?}");
+    };
+    assert_eq!(
+        **cause,
+        qsl_semantics::check::TemporalCause::AggregateWindowKindMismatch {
+            span: qsl_foundation::Span {
+                start,
+                end: start + 1
+            }
+        }
+    );
+}
