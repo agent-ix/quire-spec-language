@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-515 "The in-process package" and FR-516: the temporal evidence call
-//! over a checked package.
+//! FR-515 "The in-process package", FR-516 and FR-532: the temporal evidence
+//! call over a checked package.
 //!
-//! An [`EvidencePackage`] is the evaluation package of one emission. It is
-//! built from the [`Emission`] the emitter returned ([`EvidencePackage::from_emission`])
-//! or from the emitted bytes read back through the reader
-//! ([`EvidencePackage::from_read`]). Each holds from construction the
-//! `profile_selections` rows, the `temporal_bindings` rows (one per clause
-//! occurrence) and the `CheckedNodeId` of every clause occurrence, takes the
-//! clause from the checked graph by position, and answers the subject views
-//! and the call by the one construction both routes share: the clause's
-//! occurrences, formula, instance-bound atoms and activation map are read
-//! from the package's `temporal_subject` view.
+//! An [`EvidencePackage`] is the evaluation package of one checked package.
+//! It is built from the [`Emission`] the emitter returned
+//! ([`EvidencePackage::from_emission`]), from the emitted bytes read back
+//! through the reader ([`EvidencePackage::from_read`]) or from a package read
+//! from its bytes alone ([`EvidencePackage::from_package`], FR-531). On every
+//! route the evaluator's [`ClauseFacts`] are built from the package's own
+//! nodes and rows (FR-532): the two routes that hold a source keep it for
+//! the cross-check of FR-515 that the package's `formula_graph()` equals the
+//! source clause, and read nothing else from it.
 
 use std::collections::BTreeSet;
 
 use qsl_package::checked_views::{
-    activation_relation, instance_bound_atoms, temporal_subject, ClauseOccurrence, FormulaNodeUse,
-    TemporalSubjectView, ViewRefusal,
+    activation_relation, instance_bound_atoms as view_bound_atoms, temporal_subject,
+    Activation as WireActivation, ClauseOccurrence, FormulaNodeUse, TemporalSubjectView,
+    ViewRefusal,
 };
 use qsl_package::{
-    AdmittedPackageRead, CheckedNodeId, CheckedOccurrence, CheckedSelection, Emission,
-    TemporalBinding, TemporalClauseRef,
+    AdmittedPackageRead, BarePackage, CheckedNodeId, CheckedOccurrence, CheckedPackageV2,
+    CheckedSelection, Emission, TemporalBinding, TemporalClauseRef,
 };
-use qsl_semantics::check::{CheckedFormula, FormulaNode};
+use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProfile};
 use quire_eval::CallFailure;
 use quire_exact::Meter;
 
@@ -31,75 +31,63 @@ use super::call::{evaluate_temporal_evidence, refusal, select_occurrence};
 use super::request::{
     ActivationRow, EvidenceRequest, EvidenceResult, EvidenceSubject, SubjectOccurrence,
 };
-use super::work::ClauseFormula;
+use crate::temporal::facts::{atom_numbers, ClauseFacts, ClauseFormula};
 use crate::temporal::ledger::LedgerBinding;
 use crate::temporal::DEFAULT_COVERED_POSITIONS;
 
+/// The declared name of one clause occurrence: a `temporal_clause_names` row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseName {
+    /// The clause's declaration node.
+    pub declaration: CheckedNodeId,
+    /// The occurrence's ordinal.
+    pub occurrence: u64,
+    /// The declared name.
+    pub name: Box<str>,
+}
+
 /// The rows an evaluation package holds from construction (FR-515): the
-/// clause occurrences with their ids, the lock's `profile_selections` and the
-/// package's `temporal_bindings`, exactly as the emitter wrote them or the
-/// reader returned them. A package recomputes none of them.
+/// `temporal_clause_names` rows, the lock's `profile_selections` and the
+/// package's `temporal_bindings`, exactly as the package carries them. A
+/// package recomputes none of them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PackageRows {
-    clauses: Vec<TemporalClauseRef>,
+    names: Vec<ClauseName>,
     profile_selections: Vec<CheckedSelection>,
     bindings: Vec<TemporalBinding>,
 }
 
 impl PackageRows {
-    /// The rows the emitter wrote (FR-337).
-    pub fn of_emission(emission: &Emission) -> Self {
-        let rows = emission.temporal_rows();
-        Self {
-            clauses: rows.clauses().to_vec(),
-            profile_selections: rows.profile_selections().to_vec(),
-            bindings: rows.bindings().to_vec(),
-        }
-    }
-
-    /// The rows of the package read back: each `temporal_clause_names` row
-    /// names its clause by `{ declaration, occurrence }`, and the checked
-    /// graph's clause of that name is the in-process clause. A name row of a
-    /// declaration that is no temporal clause of the graph (a hyper or
-    /// hybrid clause) has no clause here.
+    /// The rows of `package`.
     ///
     /// # Errors
     ///
-    /// [`PackageMismatch::AmbiguousName`] when two clauses of the checked
-    /// graph carry one name or two name rows pair to one clause: the pairing
-    /// by name would name a clause the bytes do not.
-    pub fn of_read(read: &AdmittedPackageRead<'_>) -> Result<Self, PackageMismatch> {
-        let package = read.admitted();
-        let graph = read.source().graph();
-        let mut clauses: Vec<TemporalClauseRef> = Vec::new();
+    /// [`PackageMismatch::AmbiguousName`] when two `temporal_clause_names`
+    /// rows pair to one `{ declaration, occurrence }`.
+    pub fn of_package(package: &CheckedPackageV2) -> Result<Self, PackageMismatch> {
+        let mut names: Vec<ClauseName> = Vec::new();
         for row in package.temporal_clause_names().unwrap_or_default() {
-            let mut named = graph
-                .temporal_clauses()
-                .iter()
-                .enumerate()
-                .filter(|(_, node)| node.clause().name() == row.name.as_ref());
-            let Some((clause, _)) = named.next() else {
-                continue;
-            };
-            if named.next().is_some() || clauses.iter().any(|found| found.clause == clause) {
+            if names.iter().any(|held| {
+                held.declaration == row.declaration && held.occurrence == row.occurrence
+            }) {
                 return Err(PackageMismatch::AmbiguousName);
             }
-            clauses.push(TemporalClauseRef {
+            names.push(ClauseName {
                 declaration: row.declaration.clone(),
                 occurrence: row.occurrence,
-                clause,
+                name: row.name.clone(),
             });
         }
         Ok(Self {
-            clauses,
+            names,
             profile_selections: package.lock().profile_selections.clone(),
             bindings: package.temporal_bindings().unwrap_or_default().to_vec(),
         })
     }
 
-    /// One reference per clause occurrence.
-    pub fn clauses(&self) -> &[TemporalClauseRef] {
-        &self.clauses
+    /// One row per named clause occurrence.
+    pub fn names(&self) -> &[ClauseName] {
+        &self.names
     }
 
     /// The lock's `profile_selections` rows.
@@ -129,12 +117,20 @@ pub enum PackageMismatch {
     #[error("the emission's temporal bindings differ from the package's")]
     Bindings,
     /// Two clauses of the checked graph carry one name, or two name rows pair
-    /// to one clause.
+    /// to one clause occurrence.
     #[error("a clause name does not pair one name row to one clause")]
     AmbiguousName,
 }
 
-/// The evaluation package of one emission, whichever route built it.
+/// The source a route that holds one keeps for the cross-check of FR-515:
+/// the admitted read and, for each clause occurrence, the position of its
+/// clause in the source graph.
+struct SourceCheck<'p> {
+    read: &'p AdmittedPackageRead<'p>,
+    clauses: Vec<TemporalClauseRef>,
+}
+
+/// The evaluation package of one checked package, whichever route built it.
 ///
 /// ```compile_fail,E0599
 /// // The instance-bound atoms are derived from the package; no caller
@@ -144,7 +140,8 @@ pub enum PackageMismatch {
 /// }
 /// ```
 pub struct EvidencePackage<'p> {
-    read: &'p AdmittedPackageRead<'p>,
+    package: &'p CheckedPackageV2,
+    source: Option<SourceCheck<'p>>,
     rows: PackageRows,
     activation_map: Vec<ActivationRow>,
     progress_capacity: u64,
@@ -163,49 +160,100 @@ impl<'p> EvidencePackage<'p> {
         emission: &Emission,
         read: &'p AdmittedPackageRead<'p>,
     ) -> Result<Self, PackageMismatch> {
-        let rows = PackageRows::of_emission(emission);
-        let package = read.admitted();
-        let names = package.temporal_clause_names().unwrap_or_default();
+        let rows = PackageRows::of_package(read.admitted())?;
+        let held = emission.temporal_rows();
         let graph = read.source().graph();
-        if !rows.clauses.iter().all(|found| {
-            let held = graph
+        if !held.clauses().iter().all(|found| {
+            let source_name = graph
                 .temporal_clauses()
                 .get(found.clause)
                 .map(|node| node.clause().name());
-            names.iter().any(|row| {
+            rows.names.iter().any(|row| {
                 row.declaration == found.declaration
                     && row.occurrence == found.occurrence
-                    && held == Some(row.name.as_ref())
+                    && source_name == Some(row.name.as_ref())
             })
         }) {
             return Err(PackageMismatch::ClauseRow);
         }
-        if rows.profile_selections != package.lock().profile_selections {
+        if held.profile_selections() != rows.profile_selections {
             return Err(PackageMismatch::ProfileSelections);
         }
-        if rows.bindings != package.temporal_bindings().unwrap_or_default() {
+        if held.bindings() != rows.bindings {
             return Err(PackageMismatch::Bindings);
         }
-        Ok(Self::with_rows(read, rows))
+        let clauses = held.clauses().to_vec();
+        Ok(Self::with_rows(
+            read.admitted(),
+            Some(SourceCheck { read, clauses }),
+            rows,
+        ))
     }
 
     /// The package constructed from the emitted bytes read back, paired with
-    /// the in-process package the read admitted them for.
+    /// the in-process package the read admitted them for. Each
+    /// `temporal_clause_names` row names its clause by `{ declaration,
+    /// occurrence }`, and the checked graph's clause of that name is the
+    /// clause the cross-check compares.
     ///
     /// # Errors
     ///
-    /// [`PackageMismatch::AmbiguousName`] as [`PackageRows::of_read`] states.
+    /// [`PackageMismatch::AmbiguousName`] when two clauses of the checked
+    /// graph carry one name or two name rows pair to one occurrence.
     pub fn from_read(read: &'p AdmittedPackageRead<'p>) -> Result<Self, PackageMismatch> {
-        Ok(Self::with_rows(read, PackageRows::of_read(read)?))
+        let rows = PackageRows::of_package(read.admitted())?;
+        let graph = read.source().graph();
+        let mut clauses: Vec<TemporalClauseRef> = Vec::new();
+        for row in &rows.names {
+            let mut named = graph
+                .temporal_clauses()
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| node.clause().name() == row.name.as_ref());
+            let Some((clause, _)) = named.next() else {
+                continue;
+            };
+            if named.next().is_some() || clauses.iter().any(|found| found.clause == clause) {
+                return Err(PackageMismatch::AmbiguousName);
+            }
+            clauses.push(TemporalClauseRef {
+                declaration: row.declaration.clone(),
+                occurrence: row.occurrence,
+                clause,
+            });
+        }
+        Ok(Self::with_rows(
+            read.admitted(),
+            Some(SourceCheck { read, clauses }),
+            rows,
+        ))
     }
 
-    fn with_rows(read: &'p AdmittedPackageRead<'p>, rows: PackageRows) -> Self {
-        let activation_map = activation_relation(read.admitted())
+    /// The package constructed from a package read from its bytes alone
+    /// (FR-531, FR-532). It takes no supply and holds no source, so no
+    /// clause is cross-checked: the package is evaluated as admitted.
+    ///
+    /// # Errors
+    ///
+    /// [`PackageMismatch::AmbiguousName`] when two `temporal_clause_names`
+    /// rows pair to one `{ declaration, occurrence }`.
+    pub fn from_package(bare: &'p BarePackage<'p>) -> Result<Self, PackageMismatch> {
+        let rows = PackageRows::of_package(bare.package())?;
+        Ok(Self::with_rows(bare.package(), None, rows))
+    }
+
+    fn with_rows(
+        package: &'p CheckedPackageV2,
+        source: Option<SourceCheck<'p>>,
+        rows: PackageRows,
+    ) -> Self {
+        let activation_map = activation_relation(package)
             .into_iter()
             .map(|(control, clause)| ActivationRow { control, clause })
             .collect();
         Self {
-            read,
+            package,
+            source,
             rows,
             activation_map,
             progress_capacity: DEFAULT_COVERED_POSITIONS,
@@ -234,7 +282,7 @@ impl<'p> EvidencePackage<'p> {
         &self,
         clause: &CheckedNodeId,
     ) -> Result<TemporalSubjectView<'p>, ViewRefusal> {
-        temporal_subject(self.read.admitted(), clause)
+        temporal_subject(self.package, clause)
     }
 
     /// The held `profile_selections` row `view`'s clause selects.
@@ -264,17 +312,16 @@ impl<'p> EvidencePackage<'p> {
     }
 
     /// The facts the call reads about `clause`'s occurrence `occurrence`
-    /// (FR-515): the held rows, the clause by its position in the checked
-    /// graph, the formula built from the view's `formula_graph()` and the
-    /// instance-bound atoms derived from its `binders()`.
+    /// (FR-515, FR-532): the held rows, the [`ClauseFacts`] built from the
+    /// package's nodes and rows and the instance-bound atoms derived from the
+    /// view's `binders()`.
     ///
     /// # Errors
     ///
     /// `Err(CallFailure::Admission)` with cause `clause-root-unresolved` for
-    /// a clause the package does not hold or that no clause of the checked
-    /// graph answers, `occurrence-required` or `occurrence-unknown` as FR-516
-    /// states, and `clause-unreadable` for a clause whose atoms cannot be
-    /// mapped to the evaluator's.
+    /// a clause the package does not hold, `occurrence-required` or
+    /// `occurrence-unknown` as FR-516 states, and `clause-unreadable` for a
+    /// clause whose name, profile, captures or atoms cannot be read.
     pub fn subject(
         &self,
         clause: &CheckedNodeId,
@@ -306,50 +353,79 @@ impl<'p> EvidencePackage<'p> {
             .into_iter()
             .map(|(occurrence, clock)| SubjectOccurrence { occurrence, clock })
             .collect();
-        let chosen = select_occurrence(&occurrences, occurrence)?
-            .occurrence
-            .ordinal;
-        let found = self
+        let chosen = select_occurrence(&occurrences, occurrence)?;
+        let ordinal = chosen.occurrence.ordinal;
+        let clock_name: Box<str> = chosen
+            .clock
+            .map(|row| row.clock_name.clone())
+            .unwrap_or_default();
+        let named = self
             .rows
-            .clauses
+            .names
             .iter()
-            .find(|found| found.declaration == *clause && found.occurrence == chosen)
-            .ok_or_else(unresolved)?;
-        let node = self
-            .read
-            .source()
-            .graph()
-            .temporal_clauses()
-            .get(found.clause)
-            .ok_or_else(unresolved)?;
-        let checked = node.clause();
-        let profile = self
+            .find(|row| row.declaration == *clause && row.occurrence == ordinal)
+            .ok_or_else(|| unreadable("clause-name"))?;
+        let profile_row = self
             .profile(&view)
             .ok_or_else(|| unreadable("profile-selection"))?;
-
+        let profile = finite_window_profile(profile_row.definition.identity.as_ref())
+            .ok_or_else(|| unreadable("profile-unknown"))?;
         let graph = view.formula_graph();
-        if !same_formula(graph, checked.formula()) {
-            return Err(unreadable("formula-differs"));
+        let formula = ClauseFormula::of_graph(graph);
+        let reads = view_bound_atoms(&view).map_err(|_| unreadable("atom-count"))?;
+        let instance_bound = bound_atom_indices(graph, &reads);
+        let captures: Vec<(Box<str>, quire_exact::ValueType)> = view
+            .capture_value_types()
+            .ok_or_else(|| unreadable("capture-type"))?
+            .into_iter()
+            .zip(view.capture_names())
+            .map(|(declared, name)| (name.as_str().into(), declared))
+            .collect();
+        if let Some(source) = &self.source {
+            let found = source
+                .clauses
+                .iter()
+                .find(|found| found.declaration == *clause && found.occurrence == ordinal)
+                .ok_or_else(unresolved)?;
+            let node = source
+                .read
+                .source()
+                .graph()
+                .temporal_clauses()
+                .get(found.clause)
+                .ok_or_else(unresolved)?;
+            if !same_formula(graph, node.clause().formula()) {
+                return Err(unreadable("formula-differs"));
+            }
         }
-        let reads = instance_bound_atoms(&view).map_err(|_| unreadable("atom-count"))?;
-        let instance_bound = instance_bound_indices(checked.formula(), &reads, graph.len())
-            .ok_or_else(|| unreadable("atom-count"))?;
-
-        let source = self.read.source().graph().source();
-        Ok(EvidenceSubject {
-            declaration: &found.declaration,
+        let activation = match view.activation() {
+            WireActivation::Origin => Activation::Origin,
+            WireActivation::Each { guard, .. } => Activation::Each {
+                guarded: guard.is_some(),
+            },
+        };
+        let facts = ClauseFacts::new(
+            named.name.clone(),
+            activation,
             profile,
+            clock_name.clone(),
+            captures,
+            formula,
+        );
+        let key = view.declaration_key().ok_or_else(unresolved)?;
+        Ok(EvidenceSubject {
+            declaration: &named.declaration,
+            profile: profile_row,
             occurrences,
-            clause: checked,
-            formula: ClauseFormula::of_graph(graph),
+            facts,
             instance_bound,
             activation_map: &self.activation_map,
             progress: LedgerBinding {
-                package: qsl_foundation::SourceIdentity::new(source.authority(), source.identity()),
-                clause: node.identity(),
-                occurrence: chosen,
-                clock: checked.clock().to_owned(),
-                profile: checked.profile().identity().to_owned(),
+                package: self.package.name().to_owned(),
+                clause: key,
+                occurrence: ordinal,
+                clock: clock_name.to_string(),
+                profile: profile.identity().to_owned(),
             },
             progress_capacity: self.progress_capacity,
         })
@@ -374,44 +450,26 @@ impl<'p> EvidencePackage<'p> {
     }
 }
 
-/// The evaluator's atom indices of the instance-bound `holds` atoms of
-/// `formula`, given for each `holds` atom of the package's `formula_graph()`
-/// in formula pre-order whether its operand reads an instance binder
-/// (`reads`, FR-515 `instance_bound_atoms`).
-///
-/// The `k`-th entry of `reads` belongs to the `k`-th `holds` node of
-/// `formula` in pre-order (one entry per use), whose arena index is the atom
-/// index the evaluator reads valuations by. `None` when the count of `holds`
-/// nodes differs from `reads.len()` or the walk would visit more than
-/// `nodes` nodes (the package's formula has that many entries), so that the
-/// clause is unreadable (FR-516 `clause-unreadable`).
-pub fn instance_bound_indices(
-    formula: &CheckedFormula,
-    reads: &[bool],
-    nodes: usize,
-) -> Option<BTreeSet<u64>> {
-    let mut atoms = Vec::new();
-    let mut visited = 0_usize;
-    let mut pending = vec![formula.root()];
-    while let Some(id) = pending.pop() {
-        visited += 1;
-        if visited > nodes {
-            return None;
-        }
-        let node = formula.nodes().get(id.index())?;
-        if matches!(node, FormulaNode::Holds { .. }) {
-            atoms.push(u64::try_from(id.index()).ok()?);
-        }
-        let operands: Vec<_> = node.operands().collect();
-        pending.extend(operands.into_iter().rev());
-    }
-    (atoms.len() == reads.len()).then(|| {
-        atoms
-            .into_iter()
-            .zip(reads)
-            .filter_map(|(atom, bound)| bound.then_some(atom))
-            .collect()
-    })
+/// The evaluator profile a lock row's definition identity names, in the
+/// closed table of the finite-window profiles, or the infinite-trace profile
+/// by its own identity (FR-532 `profile`).
+fn finite_window_profile(identity: &str) -> Option<TemporalProfile> {
+    TemporalProfile::from_identity(identity).filter(|profile| *profile != TemporalProfile::Timed)
+}
+
+/// The atom indices of the instance-bound atoms (FR-532 "Atom index"), given
+/// for each `holds` use of `graph` in pre-order whether its operand reads an
+/// instance binder (`reads`, FR-515 `instance_bound_atoms`). A shared atom
+/// node has one index.
+pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> BTreeSet<u64> {
+    let numbers = atom_numbers(graph);
+    graph
+        .iter()
+        .zip(numbers)
+        .filter(|(entry, _)| entry.operation == "quire.op.temporal.holds")
+        .zip(reads)
+        .filter_map(|((_, number), bound)| bound.then_some(number).flatten())
+        .collect()
 }
 
 /// The part of an interval the two formulas compare.

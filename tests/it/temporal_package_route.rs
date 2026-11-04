@@ -25,7 +25,7 @@ use qsl_package::{
     CheckedOccurrenceRole, ClockConfiguration, Emission, TemporalClockSelection, V2ReadLimits,
 };
 use qsl_replay::spine::{DependencyInput, SuppliedLibrary};
-use qsl_semantics::check::{FormulaNode, SCALAR_LIMITS_UNLIMITED};
+use qsl_semantics::check::SCALAR_LIMITS_UNLIMITED;
 use qsl_semantics::library::LibraryName;
 use quire_eval::{CallAdmissionFailure, CallFailure};
 use quire_exact::Meter;
@@ -173,16 +173,9 @@ pub(super) fn request(
     let subject = package
         .subject(clause, occurrence.map(claim).as_ref())
         .expect("the clause reads");
-    let atom = u64::try_from(
-        subject
-            .clause
-            .formula()
-            .nodes()
-            .iter()
-            .position(|node| matches!(node, FormulaNode::Holds { .. }))
-            .expect("a holds atom"),
-    )
-    .expect("an index");
+    // Atom 0 is the first `holds` atom of the clause in formula order.
+    assert!(subject.facts.formula().atom_count() >= 1);
+    let atom = 0_u64;
     let chosen = occurrence.unwrap_or_else(|| subject.occurrences[0].occurrence.ordinal);
     let row = subject
         .occurrences
@@ -228,7 +221,7 @@ pub(super) fn request(
         relation: Relation::Original,
         control: None,
         binding: TraceBinding {
-            profile: subject.clause.profile().identity().into(),
+            profile: subject.facts.profile().identity().into(),
             clock_name: row.clock_name.clone(),
             parameters: row.clock.clone(),
         },
@@ -281,7 +274,7 @@ fn evaluated(result: Result<EvidenceResult, CallFailure>) -> EvidenceResult {
 pub(super) fn clause_ids(package: &EvidencePackage<'_>) -> Vec<CheckedNodeId> {
     let mut ids: Vec<CheckedNodeId> = package
         .rows()
-        .clauses()
+        .names()
         .iter()
         .map(|found| found.declaration.clone())
         .collect();
@@ -306,7 +299,10 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
         let back = EvidencePackage::from_read(&read).expect("the read-back package");
 
         let rows = built.emission.temporal_rows();
-        assert_eq!(emitted.rows(), &PackageRows::of_emission(&built.emission));
+        assert_eq!(
+            emitted.rows(),
+            &PackageRows::of_package(read.admitted()).expect("the package's rows")
+        );
         assert_eq!(
             serde_json::to_vec(emitted.rows().bindings()).unwrap(),
             serde_json::to_vec(rows.bindings()).unwrap()
@@ -322,18 +318,23 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
         );
         // AC-21: the emitter's ids are the read-back name rows' ids.
         let names = read.admitted().temporal_clause_names().expect("name rows");
-        for found in emitted.rows().clauses() {
+        for found in emitted.rows().names() {
             assert!(
                 names.iter().any(|row| row.declaration == found.declaration
                     && row.occurrence == found.occurrence
-                    && read.source().graph().temporal_clauses()[found.clause]
-                        .clause()
-                        .name()
-                        == row.name.as_ref()),
+                    && row.name == found.name),
+                "{found:?}"
+            );
+            assert!(
+                read.source()
+                    .graph()
+                    .temporal_clauses()
+                    .iter()
+                    .any(|node| node.clause().name() == found.name.as_ref()),
                 "{found:?}"
             );
         }
-        assert_eq!(emitted.rows().clauses(), back.rows().clauses());
+        assert_eq!(emitted.rows().names(), back.rows().names());
 
         for clause in clause_ids(&emitted) {
             let left = emitted.temporal_subject(&clause).expect("the clause reads");
@@ -344,16 +345,14 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
             assert!(emitted.clock(&left).is_some(), "R's clauses are clocked");
             assert_eq!(left.occurrences(), right.occurrences());
             seen.push(
-                read.source().graph().temporal_clauses()[emitted
+                emitted
                     .rows()
-                    .clauses()
+                    .names()
                     .iter()
                     .find(|found| found.declaration == clause)
-                    .expect("a ref")
-                    .clause]
-                    .clause()
-                    .name()
-                    .to_owned(),
+                    .expect("a name row")
+                    .name
+                    .to_string(),
             );
         }
     }
@@ -376,14 +375,22 @@ fn both_routes_give_the_evaluator_the_same_formula() {
         for clause in clause_ids(&emitted) {
             let left = emitted.subject(&clause, None).expect("the clause reads");
             let right = back.subject(&clause, None).expect("the clause reads");
-            assert_eq!(left.formula, right.formula);
+            assert_eq!(left.facts, right.facts);
             assert_eq!(left.instance_bound, right.instance_bound);
+            let name = left.facts.name();
+            let source = read
+                .source()
+                .graph()
+                .temporal_clauses()
+                .iter()
+                .find(|node| node.clause().name() == name)
+                .expect("the source clause of that name");
             assert_eq!(
-                left.formula.work(),
-                ClauseWork::of(left.clause.formula()),
+                left.facts.formula().work(),
+                ClauseWork::of(source.clause().formula()),
                 "the package's formula measures what the checked formula does"
             );
-            assert!(left.formula.shapes().is_ok());
+            assert!(left.facts.formula().shapes().is_ok());
         }
     }
     // The evaluator formula of a package whose view lists the always entry
@@ -395,7 +402,7 @@ fn both_routes_give_the_evaluator_the_same_formula() {
         .into_iter()
         .find(|clause| {
             back.subject(clause, None)
-                .is_ok_and(|subject| subject.clause.name() == "Due")
+                .is_ok_and(|subject| subject.facts.name() == "Due")
         })
         .expect("Due");
     let view = back.temporal_subject(&due).expect("Due reads");
@@ -441,7 +448,7 @@ fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs(
         let back = EvidencePackage::from_read(&read).expect("the read-back package");
         for clause in clause_ids(&emitted) {
             let subject = emitted.subject(&clause, None).expect("the clause reads");
-            if !matches!(subject.clause.name(), "Due" | "DueSample" | "DueTimestamp") {
+            if !matches!(subject.facts.name(), "Due" | "DueSample" | "DueTimestamp") {
                 continue;
             }
             let asked = request(&emitted, &clause, None, 3);
@@ -452,7 +459,7 @@ fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs(
                 left.activation,
                 ActivationState::Active,
                 "{}",
-                subject.clause.name()
+                subject.facts.name()
             );
             assert_eq!(format!("{left:?}"), format!("{right:?}"));
             assert_eq!(left.result_identity, right.result_identity);
@@ -475,16 +482,7 @@ fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs(
             let moved = evaluated(call(&changed).0);
             assert_ne!(moved.result_identity, right.result_identity);
             // One instance-bound atom.
-            let atom = u64::try_from(
-                subject
-                    .clause
-                    .formula()
-                    .nodes()
-                    .iter()
-                    .position(|node| matches!(node, FormulaNode::Holds { .. }))
-                    .expect("an atom"),
-            )
-            .unwrap();
+            let atom = 0_u64;
             let mut changed = back.subject(&clause, None).expect("reads");
             changed.instance_bound.insert(atom);
             let bound = evaluated(call(&changed).0);
@@ -681,7 +679,7 @@ fn twins_pair_their_rows_by_key_over_the_read_back_route() {
         let chosen = back
             .subject(&node, Some(&claim(ordinal)))
             .expect("the occurrence reads");
-        assert_eq!(chosen.clause.name(), name);
+        assert_eq!(chosen.facts.name(), name);
         assert_eq!(chosen.progress.occurrence, ordinal);
         let mut asked = request(&back, &node, Some(ordinal), 3);
         let result = evaluated(run(&back, &node, &asked).0);
@@ -755,48 +753,19 @@ fn instance_bound_atoms_are_derived_and_equal_over_both_routes() {
         let left = emitted.subject(&clause, None).expect("reads");
         let right = back.subject(&clause, None).expect("reads");
         assert_eq!(left.instance_bound, right.instance_bound);
-        // The holds atoms' arena indices in source order, which is the
-        // formula order of the clause.
-        let mut spans: Vec<(usize, u64)> = left
-            .clause
-            .formula()
-            .nodes()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, node)| match node {
-                FormulaNode::Holds { span } => Some((span.start, u64::try_from(index).unwrap())),
-                _ => None,
-            })
-            .collect();
-        spans.sort_unstable();
-        let holds: Vec<u64> = spans.into_iter().map(|(_, index)| index).collect();
-        (left.instance_bound.clone(), holds)
+        left.instance_bound.clone()
     };
-    let (bound, holds) = atom_indices(&build(
+    let bound = atom_indices(&build(
         "holds(n >= 1) and holds(c.versionNumber <= 5) and holds(true) and holds(c.versionNumber >= n)",
     ));
-    let order = |atoms: &[u64]| {
-        atoms
-            .iter()
-            .map(|atom| holds.iter().position(|h| h == atom).unwrap())
-            .collect::<Vec<_>>()
-    };
-    // The arena lists operands in an order of its own; the set is by formula
-    // order, so it names the first and the fourth atom of the formula.
-    assert_eq!(bound.len(), 2);
-    let ranks = order(&bound.iter().copied().collect::<Vec<_>>());
-    let mut ranks = ranks;
-    ranks.sort_unstable();
-    assert_eq!(ranks, [0, 3]);
+    // Atoms are numbered by first use over the `holds` nodes only, so the
+    // set is the first and the fourth atom of the formula (FR-532-AC-4).
+    assert_eq!(bound.iter().copied().collect::<Vec<_>>(), [0, 3]);
 
-    let (swapped, holds) = atom_indices(&build(
+    let swapped = atom_indices(&build(
         "holds(c.versionNumber <= 5) and holds(n >= 1) and holds(true) and holds(c.versionNumber >= n)",
     ));
-    let mut ranks: Vec<_> = swapped
-        .iter()
-        .map(|atom| holds.iter().position(|h| h == atom).unwrap())
-        .collect();
-    ranks.sort_unstable();
+    let ranks: Vec<_> = swapped.iter().copied().collect();
     assert_eq!(ranks, [1, 3], "the indices move with the atoms");
 }
 

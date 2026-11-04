@@ -36,6 +36,7 @@
 
 mod engine;
 pub mod evidence;
+mod facts;
 mod finite_window;
 mod input;
 mod ledger;

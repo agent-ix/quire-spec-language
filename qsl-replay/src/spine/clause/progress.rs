@@ -65,8 +65,8 @@ pub struct ProgressAssertion {
 /// The whole binding one progress assertion is made under (FR-502 Inputs).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LedgerBinding {
-    /// The checked package identity.
-    pub package: qsl_foundation::SourceIdentity,
+    /// The checked package's name.
+    pub package: String,
     /// The checked clause identity: the declaration node, which is keyed by
     /// the clause's content and so is shared by two clauses of one body.
     pub clause: quire_exact::NodeKey,

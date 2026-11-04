@@ -12,7 +12,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_semantics::check::{Activation as ClauseActivation, CheckedTemporalClause};
+use qsl_semantics::check::Activation as ClauseActivation;
+
+use crate::temporal::facts::ClauseFacts;
 use quire_exact::ValueType;
 
 use super::counters::{CallMeter, EvidenceStop, Visit};
@@ -38,7 +40,7 @@ pub struct ClauseShape {
 
 impl ClauseShape {
     /// The shape of `clause`.
-    pub fn of(clause: &CheckedTemporalClause) -> Self {
+    pub fn of(clause: &ClauseFacts) -> Self {
         Self {
             name: clause.name().into(),
             activation: clause.activation(),

@@ -19,6 +19,8 @@
 // `quire-contract-model` and are behind `std`.
 extern crate alloc;
 
+#[cfg(feature = "std")]
+mod bare;
 mod checked;
 #[cfg(feature = "std")]
 mod checked_v2;
@@ -41,6 +43,8 @@ mod protocol_selection;
 #[cfg(feature = "std")]
 pub mod protocol_view;
 
+#[cfg(feature = "std")]
+pub use bare::{BarePackage, BareSupply, IdentityFileRefusal, ReadIdentityRows, IDENTITIES_FORMAT};
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};
