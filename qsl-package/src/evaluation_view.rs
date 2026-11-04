@@ -149,7 +149,7 @@ impl<'package> AdmittedEvaluationView<'package> {
             // reports no location. It never takes one from the source
             // package's CheckedBody (FR-390).
             let projection = reader
-                .protocol_reference_slot(&root_node, &binders, body.root().value_type())
+                .protocol_reference_slot(&root_node, &binders)
                 .map_err(SlotSelectionFailure::Fault)?
                 .ok_or_else(|| {
                     SlotSelectionFailure::Fault(InternalFault::new(

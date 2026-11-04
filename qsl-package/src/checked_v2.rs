@@ -976,14 +976,12 @@ impl AdmittedPackageRead<'_> {
     }
 
     /// Resolve a reader-retained expression reference to its supplied frame
-    /// slot. The field operation and selected identity come from the admitted
-    /// graph; the already-checked source root supplies its exact recursive
-    /// value type where the wire projector has no recursive member support.
+    /// slot. The field operation, selected identity and value type come from
+    /// the admitted graph.
     pub(crate) fn protocol_reference_slot(
         &self,
         node: &NodeKey,
         binders: &[Option<NodeKey>],
-        checked_root_type: &quire_exact::ValueType,
     ) -> Result<Option<crate::evaluation_view::ReaderProtocolProjection>, InternalFault> {
         let graph = wire_graph(&self.read.admitted).map_err(|_| {
             InternalFault::new("FR-390", "reader-protocol-graph-has-structural-keys")
@@ -998,6 +996,48 @@ impl AdmittedPackageRead<'_> {
                 "reader-selected-protocol-node-is-retained",
             ));
         };
+        let identities = self
+            .source
+            .graph()
+            .selected_exact_identities(&self.read.admitted)
+            .map_err(|_| InternalFault::new("FR-390", "reader-selected-identities-are-admitted"))?;
+        let value_type = match self.read.admitted.project_exact_type(
+            &selected.node_id,
+            &identities,
+            self.read.effective_limits.work,
+        ) {
+            Ok(projected) => projected.value_type().clone(),
+            Err(error)
+                if matches!(
+                    error.code,
+                    quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
+                        | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
+                ) =>
+            {
+                let record = self
+                    .read
+                    .admitted
+                    .graph()
+                    .nodes
+                    .iter()
+                    .find(|candidate| candidate.node_id == selected.semantic_type)
+                    .filter(|type_node| {
+                        type_node.node_tag.as_ref() == "model"
+                            && type_node.semantic_form.as_ref() == "record_value_type"
+                    })
+                    .and_then(|_| graph.key(&selected.semantic_type).ok());
+                record.map_or_else(
+                    || Err(InternalFault::new("FR-390", "reader-selected-node-has-exact-type")),
+                    |key| Ok(quire_exact::ValueType::Composite(key)),
+                )?
+            }
+            Err(_) => {
+                return Err(InternalFault::new(
+                    "FR-390",
+                    "reader-selected-node-has-exact-type",
+                ));
+            }
+        };
         if let quire_contract_model::CheckedTerm::Reference { target } = &selected.body {
             let target_key = graph.key(target).map_err(|_| {
                 InternalFault::new("FR-390", "reader-protocol-reference-has-structural-key")
@@ -1011,7 +1051,7 @@ impl AdmittedPackageRead<'_> {
                     field: crate::evaluation_view::ReaderProtocolField::Local,
                     optional: false,
                     derefed: false,
-                    value_type: checked_root_type.clone(),
+                    value_type: value_type.clone(),
                 }));
             }
             return Ok(None);
@@ -1052,13 +1092,6 @@ impl AdmittedPackageRead<'_> {
                 .iter()
                 .position(|binder| binder.as_ref() == Some(&key))
             {
-                let identities = self
-                    .source
-                    .graph()
-                    .selected_exact_identities(&self.read.admitted)
-                    .map_err(|_| {
-                        InternalFault::new("FR-390", "reader-selected-identities-are-admitted")
-                    })?;
                 let exact_identity = identities
                     .declaration_rows()
                     .find(|row| row.structural_node == *declaration)
@@ -1150,7 +1183,7 @@ impl AdmittedPackageRead<'_> {
                         read_form,
                         Some(quire_contract_model::CheckedFieldReadForm::ExplicitDeref)
                     ),
-                    value_type: checked_root_type.clone(),
+                    value_type: value_type.clone(),
                 }));
             }
             if !visited.insert(target.clone()) {
