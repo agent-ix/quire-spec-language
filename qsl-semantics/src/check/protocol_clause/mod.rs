@@ -214,11 +214,12 @@ pub fn check(
         return Err(refusals.into_iter().map(|(_, refusal)| refusal).collect());
     };
 
+    let unit = scope.for_declaration(&protocol.name.name);
     let roles = protocol
         .roles
         .iter()
         .map(|role| {
-            let port = scope.model_port(&role.context.name);
+            let port = unit.model_port(&role.context.name);
             let alias = role
                 .context
                 .name
@@ -226,16 +227,14 @@ pub fn check(
                 .map_or(role.context.name.as_str(), |(alias, _)| alias);
             CheckedRole {
                 name: role.name.name.clone(),
-                context: port.map(|(_, owner)| owner.clone()).or_else(|| {
-                    scope
-                        .for_declaration(&protocol.name.name)
-                        .object_type_named(&role.context.name)
-                }),
+                context: port
+                    .map(|(_, owner)| owner.clone())
+                    .or_else(|| unit.object_type_named(&role.context.name)),
                 model_member: port.map(|(key, _)| key.clone()),
                 // Only a Port role is written `on M::X` and binds the
                 // model's selection; every other role keeps the whole-name
                 // lookup, so a qualified non-Port role gets no selection.
-                model_selection: scope
+                model_selection: unit
                     .model_selection(if port.is_some() {
                         alias
                     } else {

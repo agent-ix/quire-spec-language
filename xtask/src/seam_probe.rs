@@ -135,7 +135,7 @@ pub struct SeamLocation {
 /// **S2 and S3: the check seam over the parsed form enum, and the
 /// checked node enum's evaluator and identity-lowering pass.** `ExprNode`
 /// (`qsl-forms::syntax::ExprNode`) and `NodeKind`
-/// (`qsl-semantics::check::ir::NodeKind`) each carry a `#[cfg(seam_probe)]`
+/// (`quire_checked::node::NodeKind`) each carry a `#[cfg(seam_probe)]`
 /// probe variant now too:
 ///
 /// - S2: `Typer::infer_form` (`qsl-semantics/src/check/check/typing.rs`),
@@ -242,7 +242,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         },
         SeamLocation {
             file: "qsl-replay/src/execute.rs".to_owned(),
-            item: "replay_with_cancel".to_owned(),
+            item: "replay_with_cancel_and_temporal_selections".to_owned(),
         },
         // FR-100: `qsl_replay::spine::run`'s own seam over
         // `FamilyOutcome`, mirroring `execute::replay`'s above.
@@ -1603,10 +1603,11 @@ mod tests {
     }
 
     /// FR-063-AC-7 (second test): none of `FamilyKind`, the parsed form
-    /// enum (`ExprNode`), the checked node enum (`NodeKind`), `Value`'s
-    /// function family's own `Cause` (`CheckCause`) or
-    /// `WrongSnapshotCause` (`ProtocolClauseSnapshot`'s own S4-shaped, not
-    /// family-`Cause`, cause; defined in `quire-semantic-value`) carries `#[non_exhaustive]`.
+    /// enum (`ExprNode`), the checked node enum (`NodeKind`; defined in
+    /// `quire-checked` since QSL-1376), `Value`'s function family's own
+    /// `Cause` (`CheckCause`) or `WrongSnapshotCause`
+    /// (`ProtocolClauseSnapshot`'s own S4-shaped, not family-`Cause`, cause;
+    /// defined in `quire-semantic-value`) carries `#[non_exhaustive]`.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-7")]
     #[test]
     fn closed_enums_carry_no_non_exhaustive_attribute() {
@@ -1616,30 +1617,34 @@ mod tests {
         for (file, name) in [
             ("qsl-semantics/src/family/mod.rs", "FamilyKind"),
             ("qsl-forms/src/syntax.rs", "ExprNode"),
-            ("qsl-semantics/src/check/ir.rs", "NodeKind"),
             ("qsl-semantics/src/check/refusal.rs", "CheckCause"),
         ] {
             assert_enum_is_not_non_exhaustive(workspace_root, file, name);
         }
-        // `WrongSnapshotCause` is defined in `quire-semantic-value` (FR-401
-        // S1): read its source from the dependency `cargo metadata` resolves,
-        // as `canonical_types` reads the shared leaves.
+        // `NodeKind` (FR-400) and `WrongSnapshotCause` (FR-401 S1) are
+        // defined in shared leaves: read each source from the dependency
+        // `cargo metadata` resolves, as `canonical_types` reads the leaves.
         let metadata =
             crate::canonical_types::cargo_metadata(workspace_root).expect("cargo metadata runs");
-        let leaf = crate::canonical_types::packages(&metadata)
-            .expect("metadata reads")
-            .into_iter()
-            .find(|package| package.name == "quire-semantic-value")
-            .expect("quire-semantic-value is a resolved dependency");
-        let root = leaf
-            .roots
-            .first()
-            .expect("quire-semantic-value has a source root");
-        assert_enum_file_is_not_non_exhaustive(
-            &root.join("call.rs"),
-            "quire-semantic-value/src/call.rs",
-            "WrongSnapshotCause",
-        );
+        let packages = crate::canonical_types::packages(&metadata).expect("metadata reads");
+        for (package, file, name) in [
+            ("quire-checked", "node.rs", "NodeKind"),
+            ("quire-semantic-value", "call.rs", "WrongSnapshotCause"),
+        ] {
+            let leaf = packages
+                .iter()
+                .find(|candidate| candidate.name == package)
+                .unwrap_or_else(|| panic!("{package} is a resolved dependency"));
+            let root = leaf
+                .roots
+                .first()
+                .unwrap_or_else(|| panic!("{package} has a source root"));
+            assert_enum_file_is_not_non_exhaustive(
+                &root.join(file),
+                &format!("{package}/src/{file}"),
+                name,
+            );
+        }
     }
 
     /// Whether `attrs` deny `clippy::wildcard_enum_match_arm` or

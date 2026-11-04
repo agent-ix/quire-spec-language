@@ -27,6 +27,7 @@ use qsl_forms::{
     BinaryOperator, BinderQuery, ExprId, ExprNode, Expression, ExpressionForm, ExpressionSpans,
     NameForm, TypeFormHead,
 };
+use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Rational};
 
@@ -36,6 +37,7 @@ use super::{
 use crate::check::assemble::{ClockReadingDeclaration, ClockSlot};
 use crate::check::lowering::AdmittedModel;
 use crate::check::lowering::PlaceStep;
+use crate::check::model_spelling::ModelSpellings;
 use crate::check::refusal::{CheckCause, TemporalCause, TimedConstruct};
 use quire_checked::key::DeclarationKey;
 
@@ -62,12 +64,19 @@ pub(crate) struct Declarations<'r> {
     /// The admitted models, whose object types hold the clock fields a body
     /// reads as `self.x` or `o.x`.
     models: &'r [AdmittedModel],
+    /// Each unit's model aliases, through which a declaration's parameter
+    /// type `M::T` names a model (FR-480 "Selections and imports").
+    spellings: &'r ModelSpellings,
+    /// The source unit of each declaration, by declared name.
+    source_owners: &'r BTreeMap<String, RawSourceRef>,
 }
 
 impl<'r> Declarations<'r> {
     pub(crate) fn new(
         declarations: &'r [ClockReadingDeclaration],
         models: &'r [AdmittedModel],
+        spellings: &'r ModelSpellings,
+        source_owners: &'r BTreeMap<String, RawSourceRef>,
     ) -> Self {
         Self {
             by_name: declarations
@@ -75,6 +84,8 @@ impl<'r> Declarations<'r> {
                 .map(|declaration| (declaration.function.name.as_str(), declaration))
                 .collect(),
             models,
+            spellings,
+            source_owners,
         }
     }
 
@@ -151,30 +162,63 @@ impl<'r> Declarations<'r> {
         }
     }
 
-    /// The package record type a parameter's written type names, with the
-    /// index of its model, when it names one that holds a clock.
-    fn record_type(&self, written: &qsl_forms::TypeForm) -> Option<(usize, DeclarationKey)> {
-        let TypeFormHead::Name(name) = &written.head else {
-            return None;
+    /// The models, with their indices, a type name `name` written in
+    /// `declaration` can name: for `M::T`, the model of the package the
+    /// declaration's unit binds `M` to; for a bare name, every model.
+    fn written_models<'n>(
+        &self,
+        declaration: &ClockReadingDeclaration,
+        name: &'n NameForm,
+    ) -> impl Iterator<Item = (usize, &'r AdmittedModel)> + 'n
+    where
+        'r: 'n,
+    {
+        let package = match &name.segments[..] {
+            [qualifier, _] => Some(
+                self.spellings
+                    .selection(
+                        self.source_owners.get(&declaration.function.name),
+                        qualifier,
+                    )
+                    .map(|selection| selection.identity.as_str()),
+            ),
+            _ => None,
         };
-        self.models.iter().enumerate().find_map(|(index, model)| {
-            let key = model.record_named(name)?;
-            (!model.record_clock_paths(key).is_empty()).then(|| (index, key.clone()))
+        self.models.iter().enumerate().filter(move |(_, model)| {
+            package.is_none_or(|package| package == Some(model.selection().identity.as_str()))
         })
     }
 
-    /// The object type a parameter's written type names, with its model,
-    /// when it names one.
+    /// The package record type a parameter's written type of `declaration`
+    /// names, with the index of its model, when it names one that holds a
+    /// clock.
+    fn record_type(
+        &self,
+        declaration: &ClockReadingDeclaration,
+        written: &qsl_forms::TypeForm,
+    ) -> Option<(usize, DeclarationKey)> {
+        let TypeFormHead::Name(name) = &written.head else {
+            return None;
+        };
+        self.written_models(declaration, name)
+            .find_map(|(index, model)| {
+                let key = model.record_named(name)?;
+                (!model.record_clock_paths(key).is_empty()).then(|| (index, key.clone()))
+            })
+    }
+
+    /// The object type a parameter's written type of `declaration` names,
+    /// with its model, when it names one.
     fn object_type(
         &self,
+        declaration: &ClockReadingDeclaration,
         written: &qsl_forms::TypeForm,
     ) -> Option<(&'r AdmittedModel, EffectiveId)> {
         let TypeFormHead::Name(name) = &written.head else {
             return None;
         };
-        self.models
-            .iter()
-            .find_map(|model| Some((model, model.object_type_named(name)?)))
+        self.written_models(declaration, name)
+            .find_map(|(_, model)| Some((model, model.object_type_named(name)?)))
     }
 }
 
@@ -229,9 +273,9 @@ fn parameter<'d>(
         name: written.as_str(),
         slot: declaration.parameters.get(index).copied()?,
         object: declarations
-            .object_type(type_form)
+            .object_type(declaration, type_form)
             .map(|(_, object)| object),
-        record: declarations.record_type(type_form),
+        record: declarations.record_type(declaration, type_form),
     })
 }
 
@@ -804,12 +848,14 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 ClockSlot::Bearing if matches!(type_form.head, TypeFormHead::Collection(_)) => {
                     Argument::Path(self.site_collection(argument)?)
                 }
-                ClockSlot::Bearing => Argument::Path(self.site_record(type_form, argument)?),
+                ClockSlot::Bearing => {
+                    Argument::Path(self.site_record(declaration, type_form, argument)?)
+                }
                 ClockSlot::Data => {
                     if self.located.reads_clock(argument) {
                         return Err(timed(self.located.outside(argument)));
                     }
-                    if let Some(path) = self.site_object(type_form, argument) {
+                    if let Some(path) = self.site_object(declaration, type_form, argument) {
                         // `self`, or an object `self` refers to.
                         Argument::Path(path)
                     } else {
@@ -831,10 +877,11 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
     /// parameter's type. `None` for any other argument, which is data.
     fn site_object(
         &self,
+        declaration: &ClockReadingDeclaration,
         type_form: &qsl_forms::TypeForm,
         argument: ExprId,
     ) -> Option<Vec<PlaceStep>> {
-        let (model, expected) = self.declarations.object_type(type_form)?;
+        let (model, expected) = self.declarations.object_type(declaration, type_form)?;
         let path = match self.located.node(argument)? {
             ExprNode::SelfRef => Vec::new(),
             _ => super::self_path(self.located.form, argument)?,
@@ -848,12 +895,13 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
     /// record type.
     fn site_record(
         &self,
+        declaration: &ClockReadingDeclaration,
         type_form: &qsl_forms::TypeForm,
         argument: ExprId,
     ) -> Result<Vec<PlaceStep>, CheckCause> {
         let span = self.located.span(argument);
         let not_a_place = || timed(TemporalCause::NotAPlaceExpression { span });
-        let Some((_, expected)) = self.declarations.record_type(type_form) else {
+        let Some((_, expected)) = self.declarations.record_type(declaration, type_form) else {
             // A clock-bearing type of the unit's own source: no place of the
             // model holds one.
             return Err(not_a_place());
@@ -948,7 +996,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                         })?;
                         let mut path = self.prefix(frame, root)?;
                         path.extend(steps);
-                        let expected = self.declarations.record_type(type_form);
+                        let expected = self.declarations.record_type(called, type_form);
                         if expected.as_ref().map(|(_, key)| key)
                             != self.clocks.model.record_at(self.context.clone(), &path)
                         {
@@ -966,7 +1014,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     {
                         passed.clone()
                     } else if matches!(body.node(argument), Some(ExprNode::SelfRef))
-                        && self.declarations.object_type(type_form).is_some()
+                        && self.declarations.object_type(called, type_form).is_some()
                     {
                         Argument::Path(Vec::new())
                     } else {

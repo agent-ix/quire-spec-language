@@ -926,9 +926,9 @@ fn table() -> Vec<Row> {
         reader(
             "definition-index",
             EP,
-            "invalid_package",
-            TIMED,
-            "/temporal_bindings/0/clock/kind",
+            "missing_declaration",
+            Some("missing-selection"),
+            "/semantic_graph/nodes/7",
         ),
         reader(
             "declaration-name",
