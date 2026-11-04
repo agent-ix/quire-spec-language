@@ -63,6 +63,21 @@ actual target. `check` SHALL preserve the exact owner and source-map region
 of each declaration even when moving it between units does not change its
 package and declaration path.
 
+### Source enum identity rows
+
+For each source enum declaration node it emits, the `Emission` SHALL carry
+one IR `SelectedEnumDeclarationRow`, and for each of that enum's member
+nodes one IR `SelectedEnumMemberRow`. A declaration row holds the node's
+emitted structural id, its source owner's authority and identity, its
+qualified declaration segments and its node key. A member row holds the
+member node's emitted id, the same source owner, the declaration's emitted id
+and qualified declaration segments, the exact case and the member's node key.
+`check` produces these rows from the admitted enum it lowered, never from
+package bytes, decoded nodes or display names. A model-owned variant type
+carries the model enum rows instead, and no source enum row. An enum node
+that is not emitted has no row. A collection type is structural and has no
+declaration row.
+
 ### Type nodes
 
 `check` SHALL build the type node of each checked `ValueType` as follows.
@@ -162,6 +177,7 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-16 | A unit that declares `protocol Fill` and holds `protocol Fill` as an expression emits one `protocol`/`protocol_reference` node whose body is exactly `{term: "reference", target: Fill's node_id}`, whose `semantic_type` equals `Fill`'s, and whose `dependencies` are exactly that id. It has one `expression` occurrence at the reference's region (ordinal 0), its own source-map row, and no `declaration`, `owner` or recursion group. The graph has one node collection and no protocol-reference collection. The IR V2 reader admits it as `ProtocolForm::ProtocolReference`. | Test (TC-1021) |
 | FR-092-AC-17 | Repeating a reference to one protocol adds an occurrence and source-map row without changing the carrier id, body or dependencies. Changing its bound target changes the target operand in its FR-322 structural path and gives a distinct id. Removing the second occurrence leaves the carrier id unchanged. | Test (TC-1021) |
 | FR-092-AC-18 | A unit that declares `protocol Fill` made only of FR-383's emitted constructs (static and replicated roles, channels and queues, `sequence`/`branch`/`case` controls, binders, captures, an `each` guard with no declaration read, a finish with no declaration read, and scheduling) emits one `protocol`/`protocol_clause` node. Its body is a `quire.op.protocol.control` application with the selected `protocol_profile` law, the `protocol` `profile_operator` member and FR-383's thirteen clause arguments; it has Boolean semantic type and one `declaration` occurrence at the declaration's region. The IR V2 reader admits it, and a reference to `Fill` resolves to its structural id. If no profile is selected, QSpec FR-322-AC-22 admits no `protocol_control` application: QSL emits no protocol node and no refusal for the declaration, while a reference to it refuses `missing_declaration`/`missing-selection` (FR-218-AC-8). An FR-383 construct not yet emitted refuses `unsupported_construct`/`not-yet-implemented` at that construct, names it and the ticket that writes it, and writes no clause node. | Test (TC-1021) |
+| FR-092-AC-19 | Emitting a unit that declares `enum Status { READY, DONE }` and reads `Status::READY` gives one `SelectedEnumDeclarationRow` and two `SelectedEnumMemberRow`s. Each row's structural id names an emitted `scalar_type`/`enum` or `value`/`enum_value` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Status"]`; its key is the node's key; each member row names the declaration's emitted id and its own case. A unit with a model variant type and no source enum has no source enum row. | Test |
 
 ## Dependencies
 
