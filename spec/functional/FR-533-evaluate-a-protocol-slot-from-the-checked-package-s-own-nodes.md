@@ -44,7 +44,8 @@ its inputs, and which source-side reads go away with it.
 
 ## Inputs
 
-A `BarePackage` with its `BareSupply` (FR-531); a `ProtocolSlot`, a
+A `BarePackage` with its `BareSupply` (FR-531), whose identity rows and, for a package
+with an equality application, equality rows come from the handoff directory; a `ProtocolSlot`, a
 `ProtocolSupply` and a `Meter` (FR-390), unchanged. The observation of a supply
 is admitted by the bare view's `admit_protocol_observation`, which takes the
 caller's domain package documents, snapshots and limits as it does on the source
@@ -81,8 +82,9 @@ route.
 | callee and dispatch candidates | the admitted callable and dispatch projection nodes, within the admitted closure | the source package's dispatch tables |
 | the presence and shape of record members, and the value type of a slot's root | the wire projection; a Collection member (plain or nested) or a nested Option member has none yet ("Types the bytes cannot project") | the checked source record type (`scope().types().composite`) |
 
-The view takes the slot root and origin only from the slot descriptor and the
-admitted nodes (FR-390-AC-50) and consults no `CheckedPackage`.
+The view takes the slot root from the slot descriptor and the admitted nodes, and
+the origin from the resolution of "Slot naming on the bytes route" (FR-390-AC-50),
+and consults no `CheckedPackage`.
 
 ### The call
 
@@ -107,6 +109,124 @@ unmet parity with FR-390-AC-15's location equality; it closes when the package's
 option was chosen over amending FR-390 to drop source locations because FR-390
 requires equal locations on both routes and a bare-route-only `None` is the smallest
 change that stays truthful about what the wire carries.
+
+### Slot naming on the bytes route
+
+A slot is identified on the bytes route by the triple (control node, slot kind,
+ordinal), derived from the package's nodes alone. This is FR-390's
+`ProtocolSlot { node, member, index }` read as follows: `node` is the key of the
+`protocol` node that holds the slot; `member` is the slot kind (`activation.guard`,
+`captures`, `registration_captures`, `activation_captures`, `trigger.guard`,
+`retry.relation`, `recovery.predicate`, `constraint`, `condition`, `guard`,
+`replication.until`, `ordering.key`, `visible`, `cases.guard`, `related.from`,
+`related.to`); and `index` is the ordinal of the slot in that member's list, counted
+from zero in the order the node's own body holds the list, which is ascending
+node-id order for the `visible` set, ascending label order for `cases`, and the
+emitted record order for `related` (FR-383). Neither a source span nor a site name
+is part of the identity, and the descriptor of a bytes-route call carries neither.
+
+The source route selects by the same triple. The source span of FR-383's
+site-name registry (`related <start> <end>`, `decision <start>..<end>`) is an
+alias of the slot under which the source route finds its `protocol_locations`
+rows; the two routes name one slot by one triple, and the origin they pair rows
+under is a consequence of the slot, not a second identity.
+
+A site name with no span (every other slot kind) is built from the node as FR-383's
+registry states, and the bytes route builds it that way. A span-named slot (a
+`related` end, a `visible` entry or a case guard) has its origin resolved from
+the package as follows, and the resolution is a function of the package bytes
+alone:
+
+1. If the slot's root is a leaf (a literal, a `Local` or another reference), the
+   walk has no application, the slot has no `protocol_locations` row, and it needs
+   no origin.
+2. Otherwise the *candidates* are the origins of the control's span family that
+   the control's path prefix and form name (`protocol <P> run <path> related
+   <start> <end>` for an end, `protocol <P> run <path> decision <start>..<end>` for
+   a visible entry or a case guard) and whose rows name exactly the applications of
+   the slot's walk, each as often as the walk visits it (FR-383: the rows of an
+   origin never name an application its walk does not visit, and number as many as
+   the visits). An origin whose rows name an application the slot's walk does not
+   visit is not a candidate.
+3. When the slot has one candidate, that is its origin.
+4. When the candidates are shared by several slots of the control with the same
+   walk (slots that share a root), the *tied slots* are ordered by kind, `visible`
+   before `cases.guard` (source places the visible entries before the cases of a
+   choice), and within a kind by ascending `index`; the candidates are ordered by
+   ascending numeric `(start, end)`, parsing both as decimal integers and not
+   comparing the name's bytes. The tied slot of rank `k` takes the candidate of rank
+   `k`. A candidate shared by `n` tied slots is therefore given to each of them
+   once, and no slot has more than one origin. A tied slot whose rank is not below
+   the number of candidates has none.
+5. When the slot has no candidate although its root holds an application, view
+   creation refuses `MissingLocationProjection` at the `Node` locus of the root
+   (FR-390-AC-35), as when a row is missing.
+
+No bytes-route selection returns several origins and none refuses as ambiguous.
+The pairing of rule 4 equals the source route's whenever the node order of the
+tied slots equals their source order. Cases are held in label order, not source
+order, so two cases whose guards are one equal expression and whose labels sort
+against their source order are paired with each other's origin: the value, outcome
+and charge log are unaffected (a location is not an input to evaluation), and the
+`Location` values of the two guards are exchanged. That exchange is unmet parity
+with FR-390-AC-15's location equality, recorded by FR-533-AC-13, and is closed
+when the package carries the pairing in a member the QSpec site-name registry does
+not forbid (see Dependencies).
+
+In TC-1070 fixture L, `Decide` is a `choice` with one visible entry and two cases:
+`case yes when { got.ready }` (written first) and `case no when { not got.ready }`
+(written second). Its node-ordered slots are `visible[0]` (root `got.ready`),
+`cases.guard[0]` (case `no`, root `not got.ready`) and `cases.guard[1]` (case `yes`,
+root `got.ready`). The package holds three origins of the family,
+`protocol Pipeline run Main Decide decision 2641..2650`, `... 2676..2685` and
+`... 2735..2748`, and the rows of `got.ready`'s application under each, with the
+row of the `not` application under `... 2735..2748` only. The origins are:
+
+| Slot | Walk | Candidates | Origin |
+| --- | --- | --- | --- |
+| `Decide.cases.guard[0]` | `not`, `got.ready` | `... 2735..2748` (the only origin that names `not`) | `... 2735..2748` |
+| `Decide.visible[0]` | `got.ready` | `... 2641..2650`, `... 2676..2685` | rank 0 of the tied slots: `... 2641..2650` |
+| `Decide.cases.guard[1]` | `got.ready` | `... 2641..2650`, `... 2676..2685` | rank 1: `... 2676..2685` |
+
+`Got.related.from[0]` and `Got.related.to[0]` have the reference `view` as root,
+no row, and no origin.
+
+### Refusals and loci of the bare slot call
+
+Every refusal of view creation and slot selection on the bytes route is returned as
+`CallFailure::Admission` with the catalog pair `unknown_required_feature`/
+`unsupported-feature`, before any charge, and its `CallAdmissionLocus` is:
+
+| Refusal | Locus |
+| --- | --- |
+| `MissingIdentityWitness`, `ForeignIdentityWitness`, `UnknownIdentityWitness` (FR-531) | `CallAdmissionLocus::Package` |
+| `MissingEqualityWitness`, `ForeignEqualityWitness`, `UnknownEqualityWitness` (FR-531 "The equality file") | `CallAdmissionLocus::Package` |
+| `MissingTypeRepresentation`, `MissingLiteralProjection`, `MissingOperationProjection`, `MissingLocationProjection`, `MissingBindingProjection`, `MissingChargeSemantics` | `CallAdmissionLocus::Node` with the key FR-390 names |
+| a slot node, member or index the package does not hold (FR-390 selection rules 1 and 2) | `CallAdmissionLocus::Node` for a node, `CallAdmissionLocus::Member { name, index }` for a member or index, as the source route reports them |
+
+`CallAdmissionLocus::Package` carries no node key and no location, as FR-390's
+`Package` locus of `UnsupportedView` carries none. The bytes route never reports
+`Node` or `Binder` for a witness refusal.
+
+### Equality slots
+
+A slot whose walk holds an `==` or `!=` application (String, UUID, Timestamp, enum
+and quantity equality, FR-390) reads that application's admitted equality decision
+through IR's `CheckedPackageV2::admitted_equality`, which takes three row sets the
+producer issued at checking time: the equality application rows (the original
+application key and authored location of the emitted application and occurrence),
+the equality fact rows (the typed operand, resolved unit, dimension declaration,
+dimension term, conversion edge, Text or Plan type and enum member facts the
+decision rests on) and the selected source-unit rows. IR's read states it never
+reconstructs an Exact key or selects a fact from an unrelated declaration, and the
+rows carry the original keys of declarations, units and enum members that no node of
+the package holds. They are therefore not derivable from the package's nodes: the
+handoff carries them, in `equality.json` (FR-517, FR-531 "The equality file"), and
+the bare route reads equality decisions only through them. The bare route derives
+nothing from the package in their place and does not guess a decision. A package
+whose walk holds no equality application needs no equality file, and the slots that
+hold none do not read it. Should Contract IR later derive the rows from the package,
+the member is removed with that change, not kept beside it.
 
 ### Types the bytes cannot project
 
@@ -155,6 +275,13 @@ FR-520-AC-11 states.
 | FR-533-AC-8 | A binder unavailable and read returns `Unavailable` naming the binder and the read, with the location the package's rows give (FR-390-AC-32), equal to the in-process route's; where the wire carries no leaf location the bare result is `None` while the in-process result keeps its source location, and the test records that difference as the unmet parity of "Names and locations". | Test (TC-1333) |
 | FR-533-AC-9 | Three slot calls over one `Meter` on the bare route leave a charge log that, per FR-520-AC-7, equals the sum on fresh meters for `work_units` and `result_units` and the maximum for the other eight counters, and equals the log of the same three calls on the source route. | Test (TC-1333) |
 | FR-533-AC-10 | `BarePackage::new`, `with_supply`, view creation, slot selection and supply admission charge no counter and take no `Meter`; a refusal at any of them leaves a caller's meter byte-identical. | Test (TC-1333) |
+| FR-533-AC-11 | Over the package of TC-1070 fixture L, the bare route selects `Decide.visible[0]`, `Decide.cases.guard[0]` and `Decide.cases.guard[1]` by the triple (control node, member, index) alone, with a descriptor that carries no span and no site name; the origins resolve to `protocol Pipeline run Main Decide decision 2641..2650`, `... 2735..2748` and `... 2676..2685` respectively, as the table of "Slot naming on the bytes route" gives, each slot has exactly one origin, and no selection returns two origins or refuses as ambiguous. | Test (TC-1333) |
+| FR-533-AC-12 | For every slot of TC-1070 fixtures E, E-C and L, the source route and the bytes route select the same triple, the same root node, the same binders (name, level, key, `ValueType`) and the same origin; `Got.related.from[0]` and `Got.related.to[0]` of fixture L have no origin on either route. In a copy of fixture L's package whose origins `... decision 2641..2650`, `... 2676..2685` and `... 2735..2748` are renamed, rows with them, to `... decision 999..1005`, `... decision 1000..1004` and `... decision 1001..1002`, `Decide.visible[0]` takes `999..1005`, `Decide.cases.guard[1]` takes `1000..1004` and `Decide.cases.guard[0]` takes `1001..1002`, because the candidates are ordered numerically by `(start, end)`; ordered by the UTF-8 bytes of the names they would take `1000..1004` and `1001..1002`, so the test fails if the bytes order is used. | Test (TC-1333) |
+| FR-533-AC-13 | In a copy of fixture L's unit whose two cases have the equal guard `got.ready` and whose labels sort against their source order, the bytes route returns the value, outcome and charge log of the source route for `cases.guard[0]` and `cases.guard[1]`, and the two slots' `Location` values are exchanged relative to the source route; the test records that exchange as the unmet parity named in "Slot naming on the bytes route". Where the labels sort in source order the two routes return equal `Location` values. | Test (TC-1333) |
+| FR-533-AC-14 | In a copy of fixture L's package whose rows of the `decision 2641..2650` origin are removed, `Decide.visible[0]` (rank 0 of two tied slots, one candidate) takes `... 2676..2685` and view creation refuses `MissingLocationProjection` at the `Node` locus of the `got.ready` application for `Decide.cases.guard[1]` (rank 1, no candidate), carrying no partial view and no charge. | Test (TC-1333) |
+| FR-533-AC-15 | Over a `BarePackage` with no supply, with identity rows of another package and with identity rows that name no admitted identity, the slot call refuses `MissingIdentityWitness`, `ForeignIdentityWitness` and `UnknownIdentityWitness`, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature` and `locus == CallAdmissionLocus::Package`; the same three refusals for the equality rows (FR-531) report `Package`; a slot over a missing node reports `Node`, over a missing member `Member { name, index }`, and `MissingTypeRepresentation` reports `Node` with the binder's key; no witness refusal reports `Node` or `Binder`; the meter is byte-identical after each. | Test (TC-1333) |
+| FR-533-AC-16 | A slot of fixture E or E-C whose walk holds an `==` or `!=` application (an integer equality in `Refund`'s retry relation and recovery predicate; a String, UUID, Timestamp, enum and quantity equality in the added slots of TC-1333) evaluates on the bare route, given the identity rows and the equality rows read from the handoff directory, to the value and charge log of the in-process route, with no `Emission` and no `CheckedPackage` in the test crate. Over a bare package whose equality rows are omitted the same slot refuses `MissingEqualityWitness` and, for a slot with no equality application in its walk, the call is unaffected. | Test (TC-1333) |
+| FR-533-AC-17 | An inspection of the bare route finds no function that derives an equality application row, equality fact row or source-unit row from a node, a name or a source, that reads `Emission::equality_producer_identity_rows`, `equality_fact_witness_rows` or `selected_source_unit_rows`, or that selects a span-named origin by its name text other than by the rule of "Slot naming on the bytes route". | Inspection (TC-1333) |
 
 ## Dependencies
 
@@ -174,3 +301,22 @@ FR-520-AC-11 states.
   owner luna:IR:codex2) is a further Contract IR dependency of the bare route over a
   package that has dependencies (FR-531).
 - **Downstream:** quire-protocol FR-045.
+- **Contract IR and quire-eval (bytes-route admission and equality):** the `Package`
+  locus is a variant of `quire_eval::CallAdmissionLocus`, which has `Node`,
+  `Population`, `Member` and `Binder` today; FR-390 requires the package-level locus
+  for the identity-witness refusals, so the QSL code adds the variant through the
+  first-party dependency, or asks the Contract IR lane to, and the bytes route
+  reports `Package` once it exists. Until it exists FR-533-AC-15 is unmet. The
+  equality rows of "Equality slots" are read with IR's `admitted_equality`; the
+  writer (FR-517) and the reader (FR-531) are QSL's, and no IR change is needed
+  for the file. If IR derives the rows from the package alone, the file is removed.
+- **Pairing of equal case guards:** the exchange of FR-533-AC-13 closes only when
+  the package carries the case-guard pairing itself, which needs a member or origin
+  form that the QSpec FR-322 site-name registry admits; QSpec owns that registry.
+- **Observation admission:** the type environment of FR-533's observation admission
+  (the composites and object types an observation and a supply are admitted against)
+  is built from the package's `model_root` nodes, the selected record views and the
+  caller's domain package documents. Whether that suffices to give the keys on which
+  `admits` and `conforms` agree with the source route is being measured; FR-533-AC-5
+  and the supply admission of FR-390-AC-21 on the bare route are gated on that
+  measurement, and no rule is given here before it.

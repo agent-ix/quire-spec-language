@@ -85,11 +85,17 @@ impl<'p> BarePackage<'p> {
 
 pub struct BareSupply<'p> {
     pub identities: &'p ReadIdentityRows,
+    pub equality: Option<&'p ReadEqualityRows>,
 }
 
 impl ReadIdentityRows {
     pub fn read(identities_json: &[u8], package: &CheckedPackageV2)
         -> Result<Self, IdentityFileRefusal>;
+}
+
+impl ReadEqualityRows {
+    pub fn read(equality_json: &[u8], package: &CheckedPackageV2)
+        -> Result<Self, EqualityFileRefusal>;
 }
 ```
 
@@ -103,6 +109,14 @@ impl ReadIdentityRows {
   `identities.json` of the handoff directory and the package (below), and by no
   other route. Only the protocol-slot call reads it (FR-533); the temporal
   evidence call reads nothing but the package (FR-532).
+- `ReadEqualityRows` is the equality counterpart: the producer's equality application
+  rows, equality fact rows and selected source-unit rows (IR's
+  `SelectedEqualityApplicationRow`, `SelectedEqualityFactRow` and
+  `SelectedSourceUnitRow`) paired with the package they were produced for. A consumer
+  obtains it with `ReadEqualityRows::read(bytes, package)` from the `equality.json` of
+  the handoff directory and by no other route. Only a protocol-slot call whose walk
+  holds an `==` or `!=` application reads it (FR-533 "Equality slots"); `equality` is
+  `None` for a supply without it.
 - The dependency closure is not a supply. `BarePackage` derives the admitted
   closure from the direct dependencies the reader retained in the package, which
   the consumer passed to `read_checked_package` as read evidence; a consumer
@@ -255,6 +269,35 @@ identity), naming the first row. A refusal returns no rows and charges nothing.
 quire-protocol's admission input list (its FR-043) names this file beside
 `checked-package.json`.
 
+### The equality file
+
+The directory FR-517 writes carries `equality.json`, written once beside
+`identities.json`, with its encoding rules: one JSON object, pretty-printed with
+two-space indent, members in the order below, closed (an unknown or repeated member
+is a refusal), UTF-8, ending in one newline, byte-identical for equal inputs. The
+rows are the producer's, issued at checking time and not derivable from the package
+(FR-533 "Equality slots"); the writer takes them from the in-process unit, never from
+the emitted bytes.
+
+| Member | Content |
+| --- | --- |
+| `format` | the string `quire.checked-handoff.equality/1` |
+| `applications` | the unit's equality application rows in emitter order; each is `{ "application", "occurrence", "source_map_entry", "node_key", "location" }`: `application` the wire node id string of the emitted equality application; `occurrence` `{ "role", "ordinal" }`; `source_map_entry` in the package's own wire form of a source-map entry; `node_key` a node reference; `location` in the wire form of an Exact `Location` that `protocol_locations` rows use |
+| `facts` | the unit's equality fact rows in emitter order; each is `{ "application", "checked_application", "occurrence", "source_map_entry", "structural_key", "structural_node", "owner", "value_type", "fact" }`: `application` and `structural_key` node references, `checked_application` and `structural_node` wire node id strings, `owner` the package's wire form of a node owner or `null`, `value_type` the canonical wire form of the kernel `ValueType` or `null`, and `fact` a tagged object `{ "kind": <tag>, ... }` whose tag is one of `operand_type`, `unit`, `dimension_declaration`, `dimension_term`, `conversion_edge`, `text_plan_type`, `enum_member` and whose members are the fields of the same-named IR fact in order, a `UnitId` as the declared encoding of "The identity file", a rational in the package's wire form of a checked rational, and a position or ordinal a JSON integer |
+| `source_units` | the unit's selected source-unit rows in emitter order; each is `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "unit_id" }`: `structural_node` a wire node id string, `qualified_declaration` a list of text, `unit_id` a declared `UnitId` encoding |
+
+Value encodings are those of "The identity file", and a number is never a digest.
+`ReadEqualityRows::read(bytes, package)` parses the file and joins every wire node id
+string to a node of the package; it derives no row from the package bytes, a display
+name or source text, and grants no authority beyond what IR's `admitted_equality`
+validates when a decision is read. `EqualityFileRefusal` is closed: `Malformed` (not
+JSON or not this shape, an unknown or repeated member or row member, an unknown fact
+tag, a non-integer number), `Format` (another `format` string, naming it) and
+`Unjoined` (a row whose node id string the package does not hold, or whose
+application is not an equality application of the package), naming the first row. A
+refusal returns no rows and charges nothing. quire-protocol's admission input list
+names this file beside `identities.json`.
+
 ### Refusals
 
 - A call SHALL refuse with FR-516's cause table (temporal) or FR-390's catalog
@@ -273,6 +316,15 @@ quire-protocol's admission input list (its FR-043) names this file beside
   above is evaluation-input admission before S6a, category
   unsupported, exit 21, `CallFailure::Admission` carrying the catalog pair
   `unknown_required_feature`/`unsupported-feature`, with nothing charged.
+- A slot call whose walk holds an `==` or `!=` application, over a supply with no
+  equality rows, refuses `ViewFailure::Unsupported` with `MissingEqualityWitness`;
+  with rows of another package, `ForeignEqualityWitness`; with rows that join to no
+  equality application of the package, `UnknownEqualityWitness`. Each is
+  evaluation-input admission like the identity-witness refusals above, at the
+  `Package` locus, which the bytes route reports as `CallAdmissionLocus::Package`
+  (FR-533 "Refusals and loci of the bare slot call"). A slot call whose walk holds no
+  equality application does not read the equality rows and is not refused for their
+  absence.
 - A package that carries no `temporal_bindings` rows, or none for a clause
   occurrence, is not refused: the clause's clock row is absent and the call returns
   the result FR-516 gives a withdrawn clock row (`activation = Unavailable`).
@@ -317,6 +369,9 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
 | FR-531-AC-10 | The charge log of each call over the bare package equals the charge log of the same call over the in-process route (FR-532-AC-1, FR-533-AC-1); `BarePackage::new`, `with_supply` and view creation take no `Meter` and a call that refuses at supply admission leaves a caller's meter byte-identical. | Test (TC-1331) |
 | FR-531-AC-11 | A search of FR-515 for the phrases `bytes-only` and `separate future capability` and of FR-515, FR-516 and FR-520 for the heading `Consumer entry` finds that FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |
+| FR-531-AC-14 | The handoff directory of **R** holds `equality.json` with `format` `quire.checked-handoff.equality/1`; `ReadEqualityRows::read` over it and the package gives a slot call whose walk holds an equality application that evaluates to the in-process route's value and charge log; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files. | Test (TC-1331) |
+| FR-531-AC-15 | `ReadEqualityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with an unknown fact tag, one with another `format`, one with a row whose node id string the package does not hold and one whose application is not an equality application returns `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the tag, the format string or the first row, and returns no rows. | Test (TC-1331) |
+| FR-531-AC-16 | A slot call whose walk holds an equality application refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows that join to no equality application of the package, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; a slot call whose walk holds no equality application over the same supply evaluates. | Test (TC-1331) |
 
 ## Dependencies
 
@@ -324,4 +379,5 @@ outcome map. Each carries a "Consumer entry" section that points here.
   its identity rows; the reader-view criteria it states are the ones the bare slot
   call rests on), FR-515, FR-516, FR-517, FR-520; Contract IR `read_checked_package`
   and `SelectedExactIdentities`; QSL-1377 (selected-model identity-row production).
-- **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533.
+- **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533. quire-protocol
+  FR-043's admission input list follows the two files.
