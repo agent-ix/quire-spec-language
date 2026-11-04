@@ -4,7 +4,7 @@ title: QSL-1533 PR #2250 scoped gap analysis
 type: SpecReview
 analysis: gap-analysis
 date: '2026-11-04'
-scope: 'agent-ix/quire-spec-language; QSL-1533 PR #2250 at 4676b710d60b0469654fb14aeab3a24bca63bab8; FR-514-AC-1..5, FR-480-AC-6 and FR-091-AC-46'
+scope: 'agent-ix/quire-spec-language; QSL-1533 PR #2250 at a04a46830ecbf3fa78187ce9b796693996ec5eb8; FR-514-AC-1..5, FR-480-AC-6 and FR-091-AC-46'
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-514
@@ -38,3 +38,10 @@ CONDITIONAL: manual scoped review found the required acceptance behaviors repres
 Plan completion: not assessed.
 
 The documented `quoin gap-analysis` command is unavailable (`quoin` reports that the command was not found). The static matrix did not complete: Quoin's evidence matrix timed out after 20 seconds and Quire's trace matrix timed out after 90 seconds. Manual check covered FR-514-AC-5, FR-480-AC-6 and FR-091-AC-46 against `qsl-replay/src/spine/lifecycle/tests.rs` and `qsl-semantics/src/check/assemble/tests.rs`. Context-only scope included FR-514-AC-1..4 and their existing tagged type-report/inventory tests. No applicable AssuranceProfile was found. Optional semantic review was skipped; it is not automatic in planless gap analysis.
+
+
+## Final-head disposition pass
+
+Reviewed the final implementation commit `a04a46830ecbf3fa78187ce9b796693996ec5eb8` and its source-order changes. The assembler now ranks topology turns by the caller's `SourceOwner` order, while canonical assembly remains the only successful-output path. The direct pair-order test asserts both `[1, 2]` and `[2, 1]`; lifecycle tests assert the selected failure's owner and exact local name span for zero scale, self-cycle, cross-unit cycle and dimension cycle. No new findings were identified, and the prior findings table contains only its no-findings placeholder.
+
+This pass was static only. No build, Clippy, tests or matrix command was run. Current PR checks observed were CLA success, CLA internal success, and the external CLA check skipped; those do not establish Rust gate results.

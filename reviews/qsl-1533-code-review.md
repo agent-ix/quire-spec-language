@@ -4,7 +4,7 @@ title: QSL-1533 PR #2250 code review
 type: SpecReview
 analysis: code-review
 date: '2026-11-04'
-scope: 'agent-ix/quire-spec-language; QSL-1533 PR #2250 at 4676b710d60b0469654fb14aeab3a24bca63bab8; aggregate quantity refusal ordering, cause and source attribution'
+scope: 'agent-ix/quire-spec-language; QSL-1533 PR #2250 at a04a46830ecbf3fa78187ce9b796693996ec5eb8; aggregate quantity refusal ordering, cause and source attribution'
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-514
@@ -17,7 +17,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1533. PR: agent-ix/quire-spec-language#2250. Reviewed the frozen head `4676b710d60b0469654fb14aeab3a24bca63bab8` against `810535be0cc74507133de4b2fb7bc13277b69bd4` and inspected the complete changed-path diff.
+Ticket: QSL-1533. PR: agent-ix/quire-spec-language#2250. Reviewed the frozen head `a04a46830ecbf3fa78187ce9b796693996ec5eb8` against `810535be0cc74507133de4b2fb7bc13277b69bd4` and inspected the complete changed-path diff.
 
 The assembler retains canonical unit order for successful package assembly. For a noncanonical request whose canonical pass first finds a quantity topology defect, it rechecks in caller order and returns that refusal. The spine keeps input order as indices, preserves a canonical primary source for unrelated failure regions, maps named quantity errors to the owning input source, and exposes the assembler's catalog cause through `CompileRefusal`. Tests assert both FR-480-AC-6 list orders, exact declaration source spans, topology causes and cycle edges. Existing aggregate assembly tests exercise successful results in reversed input order and assert canonical source ownership and stable identities.
 
@@ -82,3 +82,10 @@ CONDITIONAL: static source review found no defects on the frozen head. Merge ver
 ## Coverage
 
 Code-review ran with the Rust review lane and rust-style baseline folded into this artifact. Checked behavior, source ownership, error code/cause mapping, canonical successful output, test assertions and trace tags; inspected duplication, integrity, safety and caller-controlled failure paths. The changed paths are Rust only, so React/Python lanes do not apply. Spec-review is inapplicable because no spec or plan path changed. Quoin gap-analysis is recorded separately. Formatter and diff checks passed; no Clippy, test or aggregate gate ran because the base does not compile. No AssuranceProfile applies.
+
+
+## Final-head disposition pass
+
+Reviewed the final implementation commit `a04a46830ecbf3fa78187ce9b796693996ec5eb8` and its source-order changes. The assembler now ranks topology turns by the caller's `SourceOwner` order, while canonical assembly remains the only successful-output path. The direct pair-order test asserts both `[1, 2]` and `[2, 1]`; lifecycle tests assert the selected failure's owner and exact local name span for zero scale, self-cycle, cross-unit cycle and dimension cycle. No new findings were identified, and the prior findings table contains only its no-findings placeholder.
+
+This pass was static only. No build, Clippy, tests or matrix command was run. Current PR checks observed were CLA success, CLA internal success, and the external CLA check skipped; those do not establish Rust gate results.
