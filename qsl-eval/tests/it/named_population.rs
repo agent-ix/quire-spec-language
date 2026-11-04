@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{undefined_contract_code, CheckedPackageEvaluation, QualifiedName};
 use qsl_package::emit_checked;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::footprint::{derive_footprint, SymbolicLocation};
@@ -52,12 +52,13 @@ struct Unit {
 }
 
 /// What a snapshot of the fixture lists: the counters (key and `v`), and
-/// whether `counters` and `others` are listed `complete`; `link` makes the
-/// first counter reference the `Other` `x`.
+/// whether `counters` and `others` are listed `complete` (`None`: the
+/// snapshot has no row for it); `link` makes the first counter reference the
+/// `Other` `x`.
 struct Listing<'c> {
     counters: &'c [(&'c str, i64)],
-    complete: bool,
-    others_complete: bool,
+    complete: Option<bool>,
+    others_complete: Option<bool>,
     link: bool,
 }
 
@@ -145,8 +146,8 @@ impl Unit {
             observation,
             &Listing {
                 counters,
-                complete,
-                others_complete: true,
+                complete: Some(complete),
+                others_complete: Some(true),
                 link: false,
             },
         )
@@ -169,21 +170,31 @@ impl Unit {
                 json!({"key": key, "type": ident("Counter"), "fields": fields})
             })
             .collect();
+        let mut populations = Vec::new();
+        if let Some(complete) = listing.complete {
+            populations.push(
+                json!({"population": ident("counters"), "complete": complete,
+                "objects": counters}),
+            );
+        }
+        populations.push(
+            json!({"population": ident("widgets"), "complete": true, "objects": [
+            {"key": "w1", "type": ident("Widget"), "fields": {}}]}),
+        );
+        populations.push(
+            json!({"population": ident("watchers"), "complete": true, "objects": [
+            {"key": "w", "type": ident("Watch"), "fields": {}}]}),
+        );
+        if let Some(complete) = listing.others_complete {
+            populations.push(json!({"population": ident("others"), "complete": complete,
+                "objects": []}));
+        }
         let mut document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": label},
             "observation": observation,
             "model": self.model(),
-            "populations": [
-                {"population": ident("counters"), "complete": listing.complete,
-                    "objects": counters},
-                {"population": ident("widgets"), "complete": true, "objects": [
-                    {"key": "w1", "type": ident("Widget"), "fields": {}}]},
-                {"population": ident("watchers"), "complete": true, "objects": [
-                    {"key": "w", "type": ident("Watch"), "fields": {}}]},
-                {"population": ident("others"), "complete": listing.others_complete,
-                    "objects": []},
-            ],
+            "populations": populations,
         });
         if observation == "current" {
             document["anchor"] = json!({"kind": "handler", "name": "validate"});
@@ -652,8 +663,8 @@ fn a_named_population_requires_the_populations_its_objects_reference() {
             "pre",
             &Listing {
                 counters: &[("a", 0)],
-                complete: true,
-                others_complete,
+                complete: Some(true),
+                others_complete: Some(others_complete),
                 link: true,
             },
         )
@@ -666,6 +677,134 @@ fn a_named_population_requires_the_populations_its_objects_reference() {
         panic!("a link to an absent object of a complete population dangles");
     };
     assert_eq!(record.catalog.code(), "dangling_reference");
+}
+
+/// FR-106's `Incomplete` `incomplete_population`/`cause` naming `population`.
+fn assert_incomplete_cause(
+    admitted: Result<AdmittedObservations, AdmissionFailure>,
+    cause: &str,
+    population: &str,
+) {
+    let Err(AdmissionFailure::Incomplete(record)) = admitted else {
+        panic!("an incomplete admission: {admitted:?}");
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("incomplete_population", cause)
+    );
+    assert_eq!(record.fields["population"], ident(population));
+}
+
+/// TC-1076 row 7b (FR-106-AC-67, FR-391-AC-5; QSpec FR-153-AC-14): a
+/// snapshot with no row for a required population is `incomplete_population`/
+/// `missing-required-artifact` naming it, a row not marked `complete` is
+/// `incomplete-scope`, and with an unlisted required population and a listed
+/// incomplete one the first in walk order is named with its own cause, each
+/// with no collection; an environment admitted without that requirement
+/// stops the atom's read with the same two causes; and an uncovered queried
+/// type is FR-084's `incomplete-closure` result, reported at the contract
+/// boundary as `incomplete_population`/`unclosed-subtypes`.
+#[trace(
+    "TC-1076",
+    "FR-106-AC-67",
+    "FR-391-AC-5",
+    "FR-090-AC-21",
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-14"
+)]
+#[test]
+fn a_missing_row_an_open_extent_and_an_uncovered_subtype_each_have_their_own_cause() {
+    let mut unit = Unit::new(
+        false,
+        &format!(
+            "{GROW}\n{OTHER}\n\
+             invariant Seen using v on M::Widget at current {{ true }}\n\
+             temporal C using t over (w: M::Watch) clock \"model-steps\" on origin {{ \
+             eventually holds(forall(x in M::counters : x.v < 2)) }}"
+        ),
+    );
+    let mut listed = |label, observation, complete, others_complete, link| {
+        unit.listed(
+            label,
+            observation,
+            &Listing {
+                counters: &[("a", 0)],
+                complete,
+                others_complete,
+                link,
+            },
+        )
+    };
+    let missing = listed("missing", "pre", None, Some(true), false);
+    let open = listed("open", "pre", Some(false), Some(true), false);
+    let linked_missing = listed("linked-missing", "pre", Some(true), None, true);
+    let both = listed("both", "pre", Some(false), None, true);
+    let now_missing = listed("now-missing", "current", None, Some(true), false);
+    let now_open = listed("now-open", "current", Some(false), Some(true), false);
+    let grow = |snapshot: &DocumentRef| unit.pre_call("Grow", snapshot, ("widgets", "w1"));
+
+    assert_incomplete_cause(grow(&missing), "missing-required-artifact", "counters");
+    assert_incomplete_cause(grow(&open), "incomplete-scope", "counters");
+    // `others` is required through `a`'s link and has no row.
+    assert_incomplete_cause(grow(&linked_missing), "missing-required-artifact", "others");
+    // `counters` (listed, incomplete) precedes the unlisted `others`.
+    assert_incomplete_cause(grow(&both), "incomplete-scope", "counters");
+
+    // The atom's own read over an environment that does not require
+    // `counters`.
+    for (snapshot, cause) in [
+        (now_missing, "missing-required-artifact"),
+        (now_open, "incomplete-scope"),
+    ] {
+        let seen = unit
+            .admit(
+                "Seen",
+                ClauseSelectionInput::Current {
+                    snapshot,
+                    anchor: SelectedAnchor {
+                        kind: qsl_semantics::model::observation::AnchorKind::Handler,
+                        name: "validate".to_owned(),
+                    },
+                    self_object: Some(SelectedObject {
+                        population: ident("widgets"),
+                        key: "w1".to_owned(),
+                    }),
+                },
+            )
+            .expect("Seen requires only widgets");
+        let objects = &seen.current.as_ref().expect("current").environment;
+        let FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(refused)) =
+            holds_atom(&unit, objects)
+        else {
+            panic!("the read stops with no collection ({cause})");
+        };
+        let code = refused.catalog_code();
+        assert_eq!(
+            (code.code(), code.cause()),
+            ("incomplete_population", cause)
+        );
+        assert_eq!(
+            refused.catalog_fields().expect("fields")["population"],
+            ident("counters")
+        );
+    }
+
+    let complete = unit.snapshot("complete", "pre", &[("a", 0)], true);
+    let others = unit
+        .pre_call("Others", &complete, ("widgets", "w1"))
+        .expect("admits");
+    let FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) =
+        unit.evaluate("Others", &others)
+    else {
+        panic!("an undefined result with no collection");
+    };
+    let reason = cause.undefined_record().reason;
+    assert_eq!(reason.as_str(), "incomplete-closure");
+    let code = undefined_contract_code(reason).expect("a contract-boundary code");
+    assert_eq!(
+        (code.code(), code.cause()),
+        ("incomplete_population", "unclosed-subtypes")
+    );
 }
 
 /// FR-391 "Typing" and "Evaluation" over `lookup<T>(M::P, r)`: a present

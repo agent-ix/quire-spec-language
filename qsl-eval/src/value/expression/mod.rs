@@ -507,6 +507,29 @@ pub fn supplied_stop_cause(stop: &SuppliedStop) -> Option<&'static str> {
     }
 }
 
+/// FR-090 "contract boundary": the QSpec catalog code and cause a family
+/// `Undefined` reason is reported under, derived from the reason and never
+/// stored. `incomplete-closure` is QSpec FR-153-AC-14's
+/// `incomplete_population`/`unclosed-subtypes` (FR-084-AC-2: one result
+/// under two names); every other family reason is a genuine undefined result
+/// with no catalog code. The reason lives in the `no_std` leaf
+/// `quire-semantic-value`, so the mapping is made here, as
+/// [`input_refusal_code`]'s is.
+pub fn undefined_contract_code(
+    reason: quire_semantic_value::catalog::UndefinedReason,
+) -> Option<CatalogCode> {
+    use quire_semantic_value::catalog::UndefinedReason;
+    match reason {
+        UndefinedReason::IncompleteClosure => Some(CatalogCode::new(
+            "incomplete_population",
+            "unclosed-subtypes",
+        )),
+        UndefinedReason::PreconditionFalse
+        | UndefinedReason::AbsentKey
+        | UndefinedReason::OnlyNotOne => None,
+    }
+}
+
 /// FR-115: [`CheckedPackageEvaluation::evaluate_frame`]'s result: the S6a
 /// evaluation, unchanged, and the evaluated frame witness when the frame
 /// check found a change outside the frame.

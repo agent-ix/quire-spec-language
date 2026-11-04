@@ -2524,6 +2524,7 @@ fn admit_invocation_documents(
     let mut post_required = post_values.read_context_populations();
     post_required.extend(named.post.iter().cloned());
     document::check_population_completeness(
+        views,
         &pre_snapshot.populations,
         &pre_values.completeness,
         pre_self_population,
@@ -2531,6 +2532,7 @@ fn admit_invocation_documents(
         &pre_values.extents,
     )?;
     document::check_population_completeness(
+        views,
         &post_snapshot.populations,
         &post_values.completeness,
         post_self_population,
@@ -2901,6 +2903,7 @@ fn admit_pre_call(
     required.extend(values.read_context_populations());
     required.extend(context.named.iter().cloned());
     document::check_population_completeness(
+        context.views,
         &snapshot.populations,
         &values.completeness,
         input
