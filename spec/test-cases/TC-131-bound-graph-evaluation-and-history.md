@@ -45,6 +45,6 @@ or closure remains incomplete, and the independently known foreign target
 refuses in either case. Historical fixtures retain their original selections
 and outcomes; the new graph profile neither widens nor silently upgrades them.
 The unchanged-parent update evaluates true. The rewritten-parent update is
-refused at stage `Admit` with `FrameViolation`, and the dangling-parent update at
-stage `Admit` with `DanglingReference`; neither returns a Boolean, and the
+refused at stage `Admit` with `frame_violation`, and the dangling-parent update at
+stage `Admit` with `dangling_reference`; neither returns a Boolean, and the
 composed reader gives `parent` no graph semantics.
