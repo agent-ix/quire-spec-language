@@ -2865,7 +2865,7 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
         let reader_supply = supply(
             &package,
             spec.protocol,
-            values,
+            values.clone(),
             spec.observed.then_some(&reader_observation),
         );
         let label = format!("{} ({}.{})", spec.name, spec.owner, spec.member);
@@ -3165,7 +3165,8 @@ fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
     assert_eq!(checked_reference, reader_reference);
 
-    for spec in parity_slots(&package) {
+    let specs = parity_slots(&package);
+    for spec in &specs {
         let selected = slot(&package, spec.protocol, spec.owner, spec.member, spec.index);
         let values = (spec.values)(Some(&checked_reference));
         let checked_supply = supply(
@@ -3177,7 +3178,7 @@ fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
         let reader_supply = supply(
             &package,
             spec.protocol,
-            values,
+            values.clone(),
             spec.observed.then_some(&reader_observation),
         );
         let mut checked_meter = Meter::new(UNLIMITED);
@@ -3195,6 +3196,325 @@ fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
             spec.name
         );
         charges_and_usage_match(spec.name, &checked_meter, &reader_meter);
+
+        // AC-9: every independently charged counter has an exact boundary and
+        // a one-short refusal with the same completed/incomplete outcome.
+        let exact = limits_at(&checked_meter);
+        let mut exact_checked = Meter::new(exact);
+        let mut exact_reader = Meter::new(exact);
+        let exact_checked_result =
+            package.evaluate_protocol_slot(&selected, &checked_supply, &mut exact_checked);
+        let exact_reader_result =
+            reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut exact_reader);
+        assert_eq!(
+            without_location(&exact_checked_result),
+            without_location(&exact_reader_result),
+            "{}: exact AC-9 budget",
+            spec.name
+        );
+        for counter in LimitKind::ALL {
+            let used = checked_meter.consumed(counter);
+            if used == 0 {
+                continue;
+            }
+            let mut limits = exact;
+            set_limit(&mut limits, counter, used - 1);
+            let mut short_checked = Meter::new(limits);
+            let mut short_reader = Meter::new(limits);
+            let checked_short =
+                package.evaluate_protocol_slot(&selected, &checked_supply, &mut short_checked);
+            let reader_short =
+                reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut short_reader);
+            assert_eq!(
+                without_location(&checked_short),
+                without_location(&reader_short),
+                "{}: one short at {counter:?}",
+                spec.name
+            );
+            assert_incomplete(reader_short.unwrap(), counter);
+            assert_incomplete(checked_short.unwrap(), counter);
+            charges_and_usage_match(spec.name, &short_checked, &short_reader);
+        }
+
+        // Unavailable sources stop at the same binder with the same cause and
+        // the same ordered charges already made before the halt.
+        if !values.is_empty() {
+            let unavailable = ProtocolSupply {
+                binders: values
+                    .iter()
+                    .map(|(name, _)| {
+                        (
+                            binder(&package, spec.protocol, name),
+                            SuppliedValue::Unavailable(CatalogCode::new(
+                                "unavailable_observation",
+                                "missing-required-artifact",
+                            ))
+                            .into(),
+                        )
+                    })
+                    .collect(),
+                observation: None,
+            };
+            let mut unavailable_checked = Meter::new(UNLIMITED);
+            let mut unavailable_reader = Meter::new(UNLIMITED);
+            let checked_unavailable =
+                package.evaluate_protocol_slot(&selected, &unavailable, &mut unavailable_checked);
+            let reader_unavailable = reader_view.evaluate_protocol_slot(
+                &selected,
+                &unavailable,
+                &mut unavailable_reader,
+            );
+            assert_eq!(
+                without_location(&checked_unavailable),
+                without_location(&reader_unavailable),
+                "{}: unavailable supply parity",
+                spec.name
+            );
+            assert!(matches!(
+                checked_unavailable,
+                Ok(ProtocolSlotEvaluation::Unavailable { .. })
+            ));
+            charges_and_usage_match(spec.name, &unavailable_checked, &unavailable_reader);
+        }
+
+        // TC-1070's retry relation short-circuits after the first false
+        // comparison. Both views retain that result and its shorter log.
+        if spec.name == "retry relation" {
+            let mut short_values = values.clone();
+            let earlier = if spec.owner == "Refund" {
+                "earlier"
+            } else {
+                "partialEarlier"
+            };
+            let (_, value) = short_values
+                .iter_mut()
+                .find(|(name, _)| *name == earlier)
+                .expect("retry supplies the earlier Attempt");
+            *value = attempt(&package, 3);
+            let short_checked_supply = supply(&package, spec.protocol, short_values.clone(), None);
+            let short_reader_supply = supply(&package, spec.protocol, short_values, None);
+            let mut short_checked_meter = Meter::new(UNLIMITED);
+            let mut short_reader_meter = Meter::new(UNLIMITED);
+            let checked_short = package.evaluate_protocol_slot(
+                &selected,
+                &short_checked_supply,
+                &mut short_checked_meter,
+            );
+            let reader_short = reader_view.evaluate_protocol_slot(
+                &selected,
+                &short_reader_supply,
+                &mut short_reader_meter,
+            );
+            assert_eq!(
+                without_location(&checked_short),
+                without_location(&reader_short),
+                "{}: short-circuit result parity",
+                spec.name
+            );
+            assert!(
+                short_checked_meter.consumed(LimitKind::WorkUnits)
+                    < checked_meter.consumed(LimitKind::WorkUnits),
+                "the false first comparison skips the remaining relation"
+            );
+            charges_and_usage_match(spec.name, &short_checked_meter, &short_reader_meter);
+        }
+    }
+
+    // A refused observation cannot mask supplied-record defects; each
+    // checked/reader pair retains the exact refusal locus and leaves its meter
+    // unchanged. The reader assertions remain part of the QSL-1625 gate.
+    let refused_record = quire_semantic_value::admission::AdmissionRecord {
+        catalog: CatalogCode::new("invalid_model_binding", "wrong-model-selection"),
+        fields: Default::default(),
+        path: Vec::new(),
+        kernel: None,
+    };
+    let refused = ObservationAdmission::Refused(refused_record);
+    let retry = slot(&package, "Refunds", "Refund", "retry.relation", None);
+    let locus = |name: &str| CallAdmissionLocus::Binder(binder(&package, "Refunds", name));
+    let mut duplicate = retry_supply(&package, 0);
+    duplicate.binders.push((
+        binder(&package, "Refunds", "earlier"),
+        SuppliedValue::Value(attempt(&package, 0)).into(),
+    ));
+    duplicate.observation = Some(&refused);
+    let mut unknown = retry_supply(&package, 0);
+    unknown.binders.push((
+        binder(&package, "Refunds", "forward"),
+        SuppliedValue::Value(receipt(&package, 5)).into(),
+    ));
+    unknown.observation = Some(&refused);
+    let mut missing = retry_supply(&package, 0);
+    missing
+        .binders
+        .retain(|(key, _)| *key != binder(&package, "Refunds", "target"));
+    missing.observation = Some(&refused);
+    let mut wrong_shape = retry_supply(&package, 0);
+    let target = binder(&package, "Refunds", "target");
+    wrong_shape
+        .binders
+        .iter_mut()
+        .find(|(key, _)| *key == target)
+        .expect("the target source is supplied")
+        .1 = SuppliedValue::Value(Value::Boolean(true)).into();
+    wrong_shape.observation = Some(&refused);
+    for (supplied, expected, expected_locus) in [
+        (
+            duplicate,
+            CatalogCode::new("invalid_runtime_input", "duplicate-member"),
+            locus("earlier"),
+        ),
+        (
+            unknown,
+            CatalogCode::new("invalid_runtime_input", "unknown-member"),
+            locus("forward"),
+        ),
+        (
+            missing,
+            CatalogCode::new("invalid_runtime_input", "missing-member"),
+            locus("target"),
+        ),
+        (
+            wrong_shape,
+            CatalogCode::new("invalid_runtime_input", "wrong-value-kind"),
+            locus("target"),
+        ),
+    ] {
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let checked = package.evaluate_protocol_slot(&retry, &supplied, &mut checked_meter);
+        let reader = reader_view.evaluate_protocol_slot(&retry, &supplied, &mut reader_meter);
+        let (
+            Err(CallFailure::Admission(checked_failure)),
+            Err(CallFailure::Admission(reader_failure)),
+        ) = (&checked, &reader)
+        else {
+            panic!("supply defects refuse before observation inspection: {checked:?} / {reader:?}");
+        };
+        assert_eq!(checked_failure, reader_failure);
+        let CallAdmissionFailure::Refused(record) = reader_failure.as_ref() else {
+            panic!("supply defect is a refusal: {reader_failure:?}");
+        };
+        assert_eq!(record.record.catalog, expected);
+        assert_eq!(record.locus, expected_locus);
+        assert_eq!(checked_meter, Meter::new(UNLIMITED));
+        assert_eq!(reader_meter, Meter::new(UNLIMITED));
+    }
+
+    // AC-10: each compensation's five calls share one meter in both orders;
+    // the exact total completes, and one below it is incomplete at the last
+    // call that charges work.
+    for owner in ["Refund", "Partial"] {
+        let owner_specs: Vec<_> = specs
+            .iter()
+            .filter(|spec| {
+                spec.owner == owner
+                    && matches!(
+                        spec.name,
+                        "registration capture"
+                            | "activation capture"
+                            | "trigger guard"
+                            | "retry relation"
+                            | "recovery predicate"
+                    )
+            })
+            .collect();
+        assert_eq!(owner_specs.len(), 5, "{owner}: all AC-10 slots are covered");
+        let selections: Vec<_> = owner_specs
+            .iter()
+            .map(|spec| slot(&package, spec.protocol, spec.owner, spec.member, spec.index))
+            .collect();
+        let supplies = |observation| {
+            owner_specs
+                .iter()
+                .map(|spec| {
+                    supply(
+                        &package,
+                        spec.protocol,
+                        (spec.values)(Some(&checked_reference)),
+                        spec.observed.then_some(observation),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let checked_supplies = supplies(&checked_observation);
+        let reader_supplies = supplies(&reader_observation);
+        let run = |reader: bool, order: &[usize], limits: ScalarLimits| {
+            let mut meter = Meter::new(limits);
+            let results = order
+                .iter()
+                .map(|index| {
+                    if reader {
+                        reader_view.evaluate_protocol_slot(
+                            &selections[*index],
+                            &reader_supplies[*index],
+                            &mut meter,
+                        )
+                    } else {
+                        package.evaluate_protocol_slot(
+                            &selections[*index],
+                            &checked_supplies[*index],
+                            &mut meter,
+                        )
+                    }
+                })
+                .collect::<Vec<_>>();
+            (meter, results)
+        };
+        let forward: Vec<_> = (0..selections.len()).collect();
+        let reverse: Vec<_> = forward.iter().rev().copied().collect();
+        let (checked_meter, checked_results) = run(false, &forward, UNLIMITED);
+        let (reader_meter, reader_results) = run(true, &forward, UNLIMITED);
+        for (checked, reader) in checked_results.iter().zip(&reader_results) {
+            assert_eq!(without_location(checked), without_location(reader));
+        }
+        charges_and_usage_match(
+            &format!("{owner} shared AC-10 meter"),
+            &checked_meter,
+            &reader_meter,
+        );
+        let (reverse_meter, reverse_results) = run(true, &reverse, UNLIMITED);
+        for result in reverse_results {
+            completed(result.unwrap());
+        }
+        for counter in LimitKind::ALL {
+            assert_eq!(
+                reverse_meter.consumed(counter),
+                reader_meter.consumed(counter),
+                "{owner}: reverse AC-10 order preserves {counter:?} total"
+            );
+        }
+        let sum = reader_meter.consumed(LimitKind::WorkUnits);
+        let mut exact_limits = UNLIMITED;
+        set_limit(&mut exact_limits, LimitKind::WorkUnits, sum);
+        let (_, exact_results) = run(true, &forward, exact_limits);
+        for result in exact_results {
+            completed(result.unwrap());
+        }
+        let last_charging = forward
+            .iter()
+            .rposition(|index| {
+                let mut meter = Meter::new(UNLIMITED);
+                let _ = reader_view.evaluate_protocol_slot(
+                    &selections[*index],
+                    &reader_supplies[*index],
+                    &mut meter,
+                );
+                meter.consumed(LimitKind::WorkUnits) > 0
+            })
+            .expect("an AC-10 call charges work_units");
+        let mut one_short = UNLIMITED;
+        set_limit(&mut one_short, LimitKind::WorkUnits, sum - 1);
+        for reader in [false, true] {
+            let (_, results) = run(reader, &forward, one_short);
+            for (position, result) in results.into_iter().enumerate() {
+                if position < last_charging {
+                    completed(result.unwrap());
+                } else if position == last_charging {
+                    assert_incomplete(result.unwrap(), LimitKind::WorkUnits);
+                }
+            }
+        }
     }
 }
 
@@ -3374,14 +3694,17 @@ fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charge
              record Native { label: String; id: UUID; stamp: Timestamp; }\n\
              function sameString using v(a: String, b: String): Boolean pure { a = b }\n\
              function sameUuid using v(a: UUID, b: UUID): Boolean pure { a = b }\n\
-             function sameTimestamp using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }",
+             function sameTimestamp using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n\
+             function sameNative using v(a: Native, b: Native): Boolean pure { a.label = b.label and a.id = b.id and a.stamp = b.stamp }",
         )
         .replace(
             "capture order: M::Total = view.total;",
             "capture order: M::Total = view.total;\n\
              capture stringEquality: Boolean = sameString(\"é\", \"é\");\n\
              capture uuidEquality: Boolean = sameUuid(UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), UUID(\"00112233-4455-6677-8899-aabbccddeeff\"));\n\
-             capture timestampEquality: Boolean = sameTimestamp(Timestamp(5), Timestamp(5));",
+             capture timestampEquality: Boolean = sameTimestamp(Timestamp(5), Timestamp(5));\n\
+             capture nestedNativeEquality: Boolean = sameNative(Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });\n\
+             capture nestedNativeDifference: Boolean = sameNative(Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, Native{ label: \"second\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });",
         );
     let (package, model_view) = fixture_from_source(&source);
     let read = read_checked_package(&package);
@@ -3389,7 +3712,7 @@ fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charge
     let (observation, _) = observation(&package, &model_view);
     let (reader_observation, _) =
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
-    let expected = [false, true, true];
+    let expected = [false, true, true, true, false];
     for (index, expected) in expected.into_iter().enumerate() {
         let selected = slot(&package, "Refunds", "Refunds", "captures", Some(index + 1));
         let checked_supplies = supply(&package, "Refunds", Vec::new(), Some(&observation));
@@ -3481,10 +3804,39 @@ fn reader_backed_projection_preserves_compound_quantity_identity() {
         .replace(
             "capture order: M::Total = view.total;",
             "capture order: M::Total = view.total;\n\
-             capture compoundUnit: Boolean = (1 m * 1 m) = (1 m * 1 m);",
+             capture compoundUnit: Boolean = (1 m * 1 m) = (1 m * (1 m));",
         );
     let (package, model_view) = fixture_from_source(&source);
     let selected = slot(&package, "Refunds", "Refunds", "captures", Some(1));
+    let view = package.evaluation_view();
+    let selected_term = view
+        .select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            selected.node.clone(),
+            selected.member.clone(),
+            selected.index,
+        ))
+        .expect("the checked view selects the compound equality");
+    let mut pending = vec![selected_term.checked_body().root()];
+    let mut compound_units = Vec::new();
+    while let Some(node) = pending.pop() {
+        if let ValueType::Quantity(unit) = node.value_type() {
+            if unit.domain() == quire_exact::UnitDomain::Compound {
+                compound_units.push(unit.clone());
+            }
+        }
+        pending.extend(node.children());
+    }
+    assert!(
+        compound_units.len() >= 2,
+        "both equality operands have compound quantity types"
+    );
+    assert!(compound_units.iter().all(|unit| unit == &compound_units[0]));
+    assert!(
+        compound_units[0]
+            .compound_terms()
+            .is_some_and(|terms| !terms.is_empty()),
+        "the held type identity has canonical compound terms"
+    );
     let mut checked_meter = Meter::new(UNLIMITED);
     let checked = package
         .evaluate_protocol_slot(
@@ -3492,7 +3844,7 @@ fn reader_backed_projection_preserves_compound_quantity_identity() {
             &supply(&package, "Refunds", Vec::new(), None),
             &mut checked_meter,
         )
-        .expect("checked view evaluates equality of identical compound units");
+        .expect("checked view evaluates equality of separately constructed compound units");
     assert_value_eq!(completed(checked), Value::Boolean(true));
 
     let read = read_checked_package(&package);
@@ -3505,7 +3857,7 @@ fn reader_backed_projection_preserves_compound_quantity_identity() {
             &supply(&package, "Refunds", Vec::new(), Some(&reader_observation)),
             &mut Meter::new(UNLIMITED),
         )
-        .expect("reader view evaluates equality of identical compound units");
+        .expect("reader view evaluates equality of separately constructed compound units");
     assert_value_eq!(completed(reader), Value::Boolean(true));
 }
 
@@ -3583,14 +3935,15 @@ fn reader_backed_projection_preserves_union_identity_and_case_payload_order() {
         .replace(
             "model M = \"test/orders\";",
             "model M = \"test/orders\";\n\
-             union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
-             function area using v(shape: Shape): Integer pure { case shape { Empty: 0; Circle(r): r * r * 3; Rect(w, h): w * h; } }",
+             union Shape { Empty, Circle(Integer), Square(Integer), Rect(Integer, Integer) }\n\
+             function area using v(shape: Shape): Integer pure { case shape { Empty: 0; Circle(r): 100 + r; Square(s): 200 + s; Rect(w, h): w * h; } }",
         )
         .replace(
             "capture order: M::Total = view.total;",
             "capture order: M::Total = view.total;\n\
              capture empty: Integer = area(Shape::Empty);\n\
              capture circle: Integer = area(Shape::Circle(2));\n\
+             capture square: Integer = area(Shape::Square(2));\n\
              capture rectangle: Integer = area(Shape::Rect(2, 3));",
         );
     let (package, model_view) = fixture_from_source(&source);
@@ -3599,7 +3952,7 @@ fn reader_backed_projection_preserves_union_identity_and_case_payload_order() {
     let (observation, _) = observation(&package, &model_view);
     let (reader_observation, _) =
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
-    for (index, expected) in [0, 12, 6].into_iter().enumerate() {
+    for (index, expected) in [0, 102, 202, 6].into_iter().enumerate() {
         let selected = slot(&package, "Refunds", "Refunds", "captures", Some(index + 1));
         let checked_supplies = supply(&package, "Refunds", Vec::new(), Some(&observation));
         let reader_supplies = supply(&package, "Refunds", Vec::new(), Some(&reader_observation));

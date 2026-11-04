@@ -640,29 +640,134 @@ fn constructs_without_a_node_yet_refuse_naming_the_construct() {
     assert_eq!(ProtocolConstruct::WholeModelRole.tracking(), "IR-874");
 }
 
-/// FR-383-AC-23: once the whole-model role node is implemented, a protocol
-/// selecting `role W on M` is admitted and its protocol node is present.
+/// FR-383-AC-23: selected whole-model identities are emitted as literal text,
+/// without a model dependency or replication group, and survive the I2 read.
 /// The criterion remains gated on QSL-1623, which owns the missing IR node.
 #[trace("FR-383-AC-23", "TC-1021")]
 #[test]
 #[ignore = "gated on QSL-1623: whole-model role IR node is not implemented"]
 fn a_whole_model_role_is_emitted_and_admitted() {
+    fn replace_strings(value: &mut Value, from: &str, to: &str) {
+        match value {
+            Value::String(text) => *text = text.replace(from, to),
+            Value::Array(values) => {
+                for value in values {
+                    replace_strings(value, from, to);
+                }
+            }
+            Value::Object(fields) => {
+                for value in fields.values_mut() {
+                    replace_strings(value, from, to);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut model_m: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
+    let cell = model_m["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|ty| ty["displayName"] == "Rock")
+        .expect("the fixture has an unused entity type to name Cell");
+    cell["identity"] = json!("ix://acme/orders/Cell");
+    cell["displayName"] = json!("Cell");
+    cell["origin"]["generated"]["inputIdentities"] = json!(["ix://acme/orders/Cell"]);
+    let model_m = serde_json::to_vec(&model_m).unwrap();
+    let mut model_n_value: Value = serde_json::from_slice(&model_m).unwrap();
+    replace_strings(&mut model_n_value, "acme/orders", "acme/other-orders");
+    let model_n = serde_json::to_vec(&model_n_value).unwrap();
+    let model_m_identity = package_identity(&model_m);
+    let model_n_identity = package_identity(&model_n);
+    assert_ne!(model_m_identity, model_n_identity);
+
     let text = selecting(
         "protocol Flow using p over (input: M::Gadget) on origin {\n\
-         role W on M;\n\
+         role w on M;\n\
+         role u on N;\n\
+         role v on M::Cell;\n\
          run sequence Main { }\n\
          finish End as (outcome: Boolean) { true };\n\
          }\n",
+    )
+    .replace(
+        "model M = \"acme/orders\";",
+        "model M = \"acme/orders\";\nmodel N = \"acme/other-orders\";",
     );
-    let models = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
+    let models =
+        qsl_semantics::model::intake::package_input([model_m.as_slice(), model_n.as_slice()])
+            .unwrap();
     let graph = assemble_with_models(text.as_bytes(), &models)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("whole-model role should be admitted: {refusals:?}"));
-    assert!(graph
-        .semantic_graph()
-        .nodes()
-        .any(|node| node.node_tag() == qsl_semantics::check::NodeTag::Protocol));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let clause = node_of(&wire, "protocol", "protocol_clause");
+    let role_nodes: Vec<&Value> = clause_argument(clause, "roles")["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|reference| node_by_id(&wire, &reference["target"]))
+        .collect();
+    let role = |name: &str| {
+        role_nodes
+            .iter()
+            .copied()
+            .find(|node| node["declaration"]["qualified_name"] == json!(["Flow", "role", name]))
+            .unwrap_or_else(|| panic!("role {name} is emitted: {role_nodes:?}"))
+    };
+    let whole_m = role("w");
+    let whole_n = role("u");
+    let cell_role = role("v");
+    for (role, selected_identity) in [(whole_m, model_m_identity), (whole_n, model_n_identity)] {
+        assert_eq!(
+            role["body"]["arguments"][0]["value"]["value"], selected_identity,
+            "the whole-model argument is the selected package identity"
+        );
+        assert_eq!(
+            role["body"]["arguments"][1]["value"],
+            json!({"term": "aggregate", "members": []}),
+            "whole-model roles have an empty replication group"
+        );
+        let dependencies = role["dependencies"]
+            .as_array()
+            .expect("role dependencies are an array");
+        assert!(
+            dependencies.iter().all(|dependency| {
+                !wire["semantic_graph"]["nodes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|node| node["node_id"] == *dependency && node["node_tag"] == "model")
+            }),
+            "whole-model roles do not depend on an emitted model node"
+        );
+    }
+    assert_ne!(whole_m["node_id"], whole_n["node_id"]);
+    assert_ne!(whole_m["node_id"], cell_role["node_id"]);
+
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    for document in [&model_m, &model_n] {
+        evidence
+            .insert_domain_package_document(package_identity(document), document.as_slice())
+            .expect("each selected model document is I2 evidence");
+    }
+    let read = read_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+    );
+    assert!(
+        matches!(read, Read::Verified { .. }),
+        "the reader admits roles: {read:?}"
+    );
 }
 
 /// FR-464 "Term shapes": a `sequence`'s `children` are an ordered list whose
@@ -754,7 +859,7 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
 /// FR-383-AC-15: unrelated protocols cannot alter Fill's protocol node bytes,
 /// and changing a reachable finish node changes the clause key.
 #[trace("FR-383-AC-15", "TC-1062")]
-#[ignore = "gated on QSL-1620: protocol node bytes must remain stable when unrelated declarations change package-wide node indices"]
+#[ignore = "gated on STD-653: QSpec must settle canonical protocol identity across package-wide node-index changes; QSL-1620 implemented stable node keys"]
 #[test]
 fn protocol_nodes_are_stable_around_unrelated_declarations() {
     let emitted_nodes = |declarations: &str| {
