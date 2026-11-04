@@ -15,6 +15,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-110
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-488
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-180
+    type: references
 ---
 # FR-362: Produce the checked graph and the type report from one source
 
@@ -140,7 +144,7 @@ comparing copied source references.
 | FR-362-AC-4 | A producer-created checked unit yields the inventory rows derived from its own graph and type report. | Test |
 | FR-362-AC-5 | No type, function or flag copies the checked unit's source reference to compare it against graph or type-report fields. | Inspection |
 | FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. Retiring those symbols and the composed linker and checker is open work tracked as QSL-868. | Inspection |
-| FR-362-AC-7 | A unit that holds a `predicate`, a `relation` clause over model operations whose body checks and a `hyper` clause over `behaviours` whose body checks yields both a graph and a type report, the graph holding the relation's `claim`/`step_relation` node (FR-180) and the hyper clause's `claim`/`hyperproperty` node (FR-488). The same unit with the `hyper` clause carrying a fairness constraint under a bounded temporal profile is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span) and produces no graph and no type report. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test (TC-1026) |
+| FR-362-AC-7 | A unit that holds a `predicate`, a `relation` clause over model operations whose body checks and a `hyper` clause over `behaviours` whose body checks yields both a graph and a type report, the graph holding the relation's `claim`/`step_relation` node (FR-180) and the hyper clause's `claim`/`hyperproperty` node (FR-488). The same unit with the `hyper` clause carrying a fairness constraint under a bounded temporal profile is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and the span of its constraint) and produces no graph and no type report. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test (TC-1026) |
 | FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose check stops on a stage limit yields an `Incomplete` inventory that retains the partial rows and carries the typed cause, as FR-514-AC-3 states. | Test |
 
 ## Dependencies
