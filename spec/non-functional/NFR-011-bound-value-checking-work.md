@@ -52,7 +52,7 @@ domain bound (NFR-001).
 | Checking node ceiling | At most the selected ceiling (default 100000 units) per checked package | 100000 units by default | negative-abuse-testing |
 | Declaration preimage bytes | At most the selected ceiling (default 16777216 bytes) per declaration | 16777216 bytes by default | negative-abuse-testing |
 | Checking work | At most the selected ceiling (default 16777216 work units) per checked package | 16777216 units by default | negative-abuse-testing |
-| Decimal literal scale | At most the selected ceiling (default 65535 digits) in the written scale of one `decimal(c, s)` literal, and at most the selected total (default 1048576 digits) over the literals of one checked package (FR-093 "Decimal constructors") | 65535 digits per literal and 1048576 per unit by default | negative-abuse-testing |
+| Decimal literal scale | At most the selected ceiling (default 65535 digits) in the written scale of one `decimal(c, s)` literal, and at most the selected total (default 1048576 digits) over the literals of one checked package (FR-093 "Decimal constructors") | 65535 digits per literal and 1048576 per package by default | negative-abuse-testing |
 | Rational bits | At most the selected ceiling (default 65536 bits) in any exact value as written, and in a distribution's running weight sum | 65536 bits by default | negative-abuse-testing |
 
 ## Counter definitions
