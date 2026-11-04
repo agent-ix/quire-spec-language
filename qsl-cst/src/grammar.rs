@@ -621,6 +621,7 @@ fn source_and_types(g: &mut Grammar) {
             parameters(),
             x(":"),
             x("Boolean"),
+            opt(s(vec![x("decreases"), x("("), r(P::Expression), x(")")])),
             r(P::Block),
         ]),
     );

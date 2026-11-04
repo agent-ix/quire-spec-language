@@ -81,21 +81,22 @@ traced only once that file exists.
 | L4b | fixtures E, L and E-C emitted | no two slots have the same site name (AC-40) |
 | L4c | fixtures E, L and E-C emitted | no row has a `protocol_attempt` origin (AC-41) |
 | L4a | Inspection of the emitter | no row derived from a source region, node order or operand position, and none defaulted (AC-42) |
-| L5 | row L1's package with the highest-`term_ordinal` retry-origin `earlier.tally` row of `Refund` removed | admitted by the reader (AC-43) |
-| L6 | row L1's package with the ordinal-zero retry-origin `earlier.tally` row removed | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-44) |
-| L6a | row L1's package with the second retry-origin `earlier.tally` row's `term_ordinal` changed from 1 to 2 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-45) |
+| L5 | row L1's package with the retry-origin `earlier.tally` row of `Refund` keyed to occurrence 1 removed | admitted by the reader (AC-43) |
+| L6 | row L1's package with the occurrence-1 retry-origin `earlier.tally` row's `term_ordinal` changed from 0 to 1 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-44) |
+| L6a | row L1's package with the occurrence-1 retry-origin `earlier.tally` row rekeyed to occurrence 0 at `term_ordinal` 2 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-45) |
 | L6b | row L1's package with a retry-origin `earlier.tally` row duplicated next to the original | refused `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (AC-46) |
 | L7 | fixture E-C emitted and read back | per-slot row counts equal the walk's visits, with `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll`, once in `Composed.let` (AC-47) |
 | L7a | fixture E-C emitted and read back | each row's `Location` equals the checked clause's (AC-48) |
 | L7b | fixture E-C emitted and read back | the unselected arms of `Composed.if` and `Composed.case` have rows with the checked clause's `Location` values (AC-49) |
-| L8 | fixture E's package | the `earlier.tally` rows share one occurrence key with `term_ordinal` 0 and 1 (AC-50) |
+| L8 | fixture E's package | the `earlier.tally` rows are keyed to occurrences 0 and 1 in visit order, each with `term_ordinal` 0 (AC-50) |
+| L8h | fixture E checked; fixture E-C's `Tried` and `Picked` controls checked | `earlier.tally` has exactly two `expression` occurrences, 0 in `earlier.tally < 3` and 1 in `earlier.tally + 1`; `target >= 0` exactly two, 0 in the trigger guard and 1 in the retry relation; E-C's `order >= 0` exactly two, 0 at `Tried` and 1 at `Picked` (AC-61) |
 | L8a | fixture E emitted | `target >= 0` is one node held by `Refund`'s retry relation and trigger guard (AC-51) |
-| L8b | fixture E emitted | its group holds one retry-origin row and one trigger-guard-origin row (AC-52) |
-| L8c | fixture E emitted | the retry-origin row has `term_ordinal` 0 and the trigger-guard row 1 (AC-53) |
+| L8b | fixture E emitted | its trigger-guard row is keyed to occurrence 0 and its retry row to occurrence 1, one row per group (AC-52) |
+| L8c | fixture E emitted | both rows have `term_ordinal` 0 and distinct occurrences (AC-53) |
 | L8d | fixture E emitted | each of the two rows carries the location of the term in its own slot (AC-54) |
 | L8e | fixture E-C emitted | `order >= 0` is one node held by the constraints of `Tried` and `Picked` (AC-55) |
-| L8f | fixture E-C emitted | its group holds one row of `protocol Composed run Main Picked body` and one of `protocol Composed run Main Tried body` (AC-56) |
-| L8g | fixture E-C emitted | the `Picked` row has `term_ordinal` 0 and the `Tried` row 1 (AC-57) |
+| L8f | fixture E-C emitted | its `protocol Composed run Main Tried body` row is keyed to occurrence 0 and its `protocol Composed run Main Picked body` row to occurrence 1, one row per group (AC-56) |
+| L8g | fixture E-C emitted | both rows have `term_ordinal` 0 (AC-57) |
 | L7c | fixture E-C emitted | no row names a `Local` read, a literal, a `let`, a conditional or a case node (AC-59) |
 | L7d | fixture E-C emitted | each arm of `Composed.case` holds exactly one row (AC-60) |
 | L9 | **W**, fixtures E, L and E-C emitted | for every application and slot, the (occurrence ordinal, `term_ordinal`) pairs along the slot walk's visits strictly increase (AC-58) |

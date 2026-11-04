@@ -2258,8 +2258,8 @@ pub struct FunctionDeclaration {
 pub enum DeclarationKind {
     /// A `function` declaration, or a synthesized function or clause.
     Function,
-    /// A `predicate` declaration: a function with a `Boolean` result and no
-    /// measure.
+    /// A `predicate` declaration: a function with a `Boolean` result and an
+    /// optional `decreases` measure.
     Predicate,
 }
 
