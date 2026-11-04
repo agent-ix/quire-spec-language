@@ -232,9 +232,10 @@ text. These points follow from it and are decided.
   whose type phase has not moved with `unsupported_construct`, at the
   construct. A unit is therefore never read by two parsers. S2
   builds a form for a `relation` clause and a `hyper` clause over
-  `behaviours`, S3 checks them, and a checked clause is refused only as
-  `NotEmitted`, as a checked `temporal` clause that S4 does not write is
-  (FR-337 "Clauses S4 does not emit"), until an S4 emission writes it. A
+  `behaviours`, S3 checks them, and S4 emits them (FR-180, FR-488). A checked
+  clause that no S4 emission writes is refused `NotEmitted`, as a checked
+  `temporal` clause is in the cases of FR-337 "Clauses S4 does not emit" and a
+  `hyper` clause in those of FR-488. A
   `hyper` clause over a finite trace domain and a `relation` over names
   that are not model operations keep the finite reading of QSpec FR-191.
 - **Profile selection.** A source selects a profile by identity alone

@@ -2675,10 +2675,17 @@ fn protocol_check_outcome(
         }
     }
     if first_failure.is_none() && !graph.unit_refusals().is_empty() {
-        first_failure = Some(CompileRefusal::Check {
-            refusals: graph.unit_refusals().to_vec(),
-            region: None,
+        // FR-096: a unit-level refusal is located like any other check
+        // refusal, by the span its cause carries or by its `location`.
+        let regions = graph.memoized_regions();
+        let refusals = graph.unit_refusals().to_vec();
+        let region = refusals.first().and_then(|refusal| match &refusal.cause {
+            CheckCause::LayerEquality {
+                span: Some(span), ..
+            } => region(parsed.source().reference(), *span),
+            _ => regions(&refusal.location),
         });
+        first_failure = Some(CompileRefusal::Check { refusals, region });
     }
     if first_failure.is_none() {
         first_failure = protocol_failure_from_parsed(parsed);
