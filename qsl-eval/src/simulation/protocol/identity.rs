@@ -467,7 +467,15 @@ pub struct SendRecord {
     payload: Enc,
     outcome: SendOutcome,
     displaced: Option<Enc>,
-    interval: Option<(u64, Vec<SendOutcome>, Vec<Option<Enc>>, u64)>,
+    interval: Option<IntervalSend>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IntervalSend {
+    count: u64,
+    outcomes: Vec<SendOutcome>,
+    displacements: Vec<Option<Enc>>,
+    pending: u64,
 }
 
 impl SendRecord {
@@ -505,7 +513,12 @@ impl SendRecord {
             payload,
             outcome,
             displaced,
-            interval: Some((count, entries, entry_displacements, pending)),
+            interval: Some(IntervalSend {
+                count,
+                outcomes: entries,
+                displacements: entry_displacements,
+                pending,
+            }),
         }
     }
 
@@ -521,19 +534,19 @@ impl SendRecord {
 
     /// The count requested by this interval send step, when this is one.
     pub fn count(&self) -> Option<u64> {
-        self.interval.as_ref().map(|(count, _, _, _)| *count)
+        self.interval.as_ref().map(|interval| interval.count)
     }
 
     /// The outcome of each attempted interval entry, in send order.
     pub fn entries(&self) -> Option<&[SendOutcome]> {
         self.interval
             .as_ref()
-            .map(|(_, entries, _, _)| entries.as_slice())
+            .map(|interval| interval.outcomes.as_slice())
     }
 
     /// The entries still pending behind a blocking full queue.
     pub fn pending(&self) -> Option<u64> {
-        self.interval.as_ref().map(|(_, _, _, pending)| *pending)
+        self.interval.as_ref().map(|interval| interval.pending)
     }
 
     /// This record with `outcome` in place of its own, as a changed
@@ -549,15 +562,16 @@ impl SendRecord {
             ("channel", Enc::text(self.channel.clone())),
             ("payload", self.payload.clone()),
         ];
-        if let Some((count, entries, entry_displacements, pending)) = &self.interval {
+        if let Some(interval) = &self.interval {
             fields.extend([
-                ("count", Enc::text(count.to_string())),
+                ("count", Enc::text(interval.count.to_string())),
                 (
                     "entries",
                     Enc::Array(
-                        entries
+                        interval
+                            .outcomes
                             .iter()
-                            .zip(entry_displacements)
+                            .zip(&interval.displacements)
                             .map(|(outcome, displaced)| {
                                 Enc::Object(vec![
                                     ("outcome", Enc::text(outcome.text())),
@@ -567,7 +581,7 @@ impl SendRecord {
                             .collect(),
                     ),
                 ),
-                ("pending", Enc::text(pending.to_string())),
+                ("pending", Enc::text(interval.pending.to_string())),
             ]);
         } else {
             fields.extend([
