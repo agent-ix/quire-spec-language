@@ -220,6 +220,12 @@ fn pending_payload(key: &serde_json::Value) -> bool {
         .unwrap_or_else(|| panic!("pending Boolean payload in {key}"))
 }
 
+fn send_record_value(record: &qsl_eval::simulation::protocol::SendRecord) -> serde_json::Value {
+    let bytes = quire_canonical::to_vec(record, quire_canonical::Limits::new(1 << 20))
+        .expect("send record encodes");
+    serde_json::from_slice(&bytes).expect("send record is JSON")
+}
+
 /// FR-509-AC-5/AC-9 (TC-1304): interval counts are choices, overflow outcomes
 /// are recorded entry by entry, and a zero count settles without queueing.
 #[trace("FR-509-AC-5", "FR-509-AC-9", "TC-1304")]
@@ -247,6 +253,14 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         assert_eq!(record.count(), Some(2));
         assert_eq!(record.entries(), Some(&[SendOutcome::Accepted; 2][..]));
         assert_eq!(record.pending(), Some(0));
+        let encoded = send_record_value(record);
+        assert!(encoded.get("outcome").is_none());
+        assert!(encoded.get("displaced").is_none());
+        assert_eq!(encoded["entries"].as_array().unwrap().len(), 2);
+        for entry in encoded["entries"].as_array().unwrap() {
+            assert_eq!(entry["outcome"], "accepted");
+            assert_eq!(entry["displaced"], serde_json::Value::Null);
+        }
     }
     let sent_state = expansion
         .successors
@@ -461,6 +475,38 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         checked_payloads.push(payload);
     }
     assert!(!checked_payloads.is_empty());
+}
+
+/// FR-509-AC-9 (TC-1304): interval send records retain displacement at the
+/// entry that displaced an existing queue member, with no scalar summary.
+#[trace("FR-509-AC-9", "TC-1304")]
+#[test]
+fn interval_send_record_places_displacement_on_the_attempted_entry() {
+    let source = fixture(
+        "[2,2]",
+        1,
+        "loss head",
+        "sequence Main { send Sent via Pay as (sent: Boolean) { true }; }",
+    );
+    let system = system(&source);
+    let initial = system.initial();
+    let expansion = system.successors(&initial[0]).expect("loss send expands");
+    let sends = send_transitions(&expansion);
+    assert_eq!(sends.len(), 2, "one send for each Boolean payload");
+    for send in sends {
+        let record = send.send_record().expect("send has its record");
+        assert_eq!(record.entries(), Some(&[SendOutcome::Accepted; 2][..]));
+        let encoded = send_record_value(record);
+        assert!(encoded.get("outcome").is_none());
+        assert!(encoded.get("displaced").is_none());
+        let entries = encoded["entries"].as_array().expect("entry records");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["outcome"], "accepted");
+        assert_eq!(entries[0]["displaced"], serde_json::Value::Null);
+        assert_eq!(entries[1]["outcome"], "accepted");
+        assert!(entries[1]["displaced"].is_object());
+        assert_eq!(entries[1]["displaced"]["type"], "queue-entry");
+    }
 }
 
 /// FR-509-AC-9 (TC-1304): pending-only states preserve count and payload in

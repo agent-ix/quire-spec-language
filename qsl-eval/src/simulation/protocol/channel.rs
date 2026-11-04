@@ -371,6 +371,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let fifo_key = key.fifo.as_ref().map(|fifo| fifo.bytes.clone());
         let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
         let mut entries = Vec::new();
+        let mut entry_displacements = Vec::new();
         let mut appended = Vec::new();
         let mut displaced: Option<(Entry, usize)> = None;
         let mut removals = Vec::new();
@@ -392,6 +393,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 enc,
                 carried: self.memory.send(&state.memory, path),
             };
+            let mut entry_displaced = None;
             let outcome = if queue.len() < channel.capacity {
                 appended.push(entry.bytes.clone());
                 if fifo {
@@ -415,6 +417,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         };
                         if let Some(at) = dropped {
                             let removed = queue.remove(at);
+                            entry_displaced = Some(removed.enc.clone());
                             let before = queue[..at.min(queue.len())]
                                 .iter()
                                 .filter(|queued| queued.bytes == removed.bytes)
@@ -439,6 +442,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }
             };
             entries.push(outcome);
+            entry_displacements.push(entry_displaced);
         }
 
         if pending > 0 && entries.is_empty() && appended.is_empty() {
@@ -475,6 +479,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             payload_enc.clone(),
             count,
             entries,
+            entry_displacements,
             pending,
             displaced.as_ref().map(|(entry, _)| entry.enc.clone()),
         );

@@ -11,7 +11,7 @@ use qsl_forms::{
     Outstanding, ParsedUnit, ProtocolConstructKind, ProtocolDeclarationForm, ProtocolMemberForm,
     ProtocolNodeKind, SchedulingForm, TerminalForm,
 };
-use qsl_foundation::{Code, MemoryModelName, SourceIdentity, Span};
+use qsl_foundation::{Code, MemoryModelName, Phase, SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
@@ -186,22 +186,37 @@ fn a_channel_delivery_interval_builds_its_bounds() {
         assert_eq!(slice(&text, channel.delivery.span), spelling);
     }
 
-    let too_large = "18446744073709551616";
-    let text = source(
-        &format!(
-            "channel Pay from R to S carries {OBJECT} ordering unordered delivery [0,{too_large}] \
-             capacity 1 overflow reject;"
-        ),
-        RUN,
-    );
-    let parsed = parse(&text);
-    assert!(!parsed.is_admissible());
-    let diagnostic = &parsed.diagnostics()[0];
-    assert_eq!(diagnostic.code, Code::InvalidSyntax);
-    assert_eq!(
-        diagnostic.byte_span().expect("located u64 overflow").start,
-        text.find(too_large).expect("upper bound appears")
-    );
+    for (spelling, offending) in [
+        ("[0,18446744073709551616]", "18446744073709551616"),
+        ("[-1,3]", "-"),
+        ("[0.5,3]", "0.5"),
+    ] {
+        let text = source(
+            &format!(
+                "channel Pay from R to S carries {OBJECT} ordering unordered delivery {spelling} \
+                 capacity 1 overflow reject;"
+            ),
+            RUN,
+        );
+        let parsed = parse(&text);
+        assert!(!parsed.is_admissible(), "{spelling}");
+        let diagnostic = &parsed.diagnostics()[0];
+        assert_eq!(diagnostic.code, Code::InvalidSyntax, "{spelling}");
+        assert_eq!(diagnostic.phase, Phase::Parse, "{spelling}");
+        let spelling_start = text.find(spelling).expect("interval appears");
+        let expected_start =
+            spelling_start + spelling.find(offending).expect("offending token appears");
+        assert_eq!(
+            diagnostic
+                .byte_span()
+                .expect("located invalid interval bound"),
+            Span {
+                start: expected_start,
+                end: expected_start + offending.len(),
+            },
+            "{spelling}: {diagnostic:?}"
+        );
+    }
 }
 
 /// FR-308-AC-13 (TC-1065 rows 1 and 2): the five overflow spellings build
