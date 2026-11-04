@@ -446,6 +446,7 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::IeeeFloat32Fma(..)
         | NodeKind::IeeeFloat64Fma(..)
         | NodeKind::Quantity(..)
+        | NodeKind::QuantityPower(..)
         | NodeKind::ConvertDecimal(..)
         | NodeKind::Order(..)
         | NodeKind::IeeeToRational(..) => true,
@@ -484,6 +485,8 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Fold { .. }
         | NodeKind::Size(_)
         | NodeKind::Contains(..)
+        | NodeKind::DropFirst(_)
+        | NodeKind::RemoveOne(..)
         | NodeKind::AllInstances { .. }
         | NodeKind::Lookup { .. }
         | NodeKind::Dispatch { .. }
