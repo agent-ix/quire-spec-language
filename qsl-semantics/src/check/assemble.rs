@@ -3127,11 +3127,14 @@ qsl_foundation::debug_with_struct!(AdmittedImport, "AdmittedImport" { identity: 
 
 impl PackageDeclarations {
     /// Assemble an admitted set of source units as one declaration namespace.
-    /// Units are sorted by their `(authority, identity)` source reference
-    /// before forms are combined; declaration names retain the source that
-    /// contributed them so S3 can key nodes and source regions under that
-    /// owner. Admission of empty, duplicate, and colliding owners belongs to
-    /// the spine's FR-480 preflight stage.
+    /// Successful assembly sorts units by their `(authority, identity)`
+    /// source reference before forms are combined; declaration names retain
+    /// the source that contributed them so S3 can key nodes and source
+    /// regions under that owner. If canonical assembly finds a quantity
+    /// topology refusal, a noncanonical input is checked again in caller
+    /// order so the first listed defect is reported. Admission of empty,
+    /// duplicate, and colliding owners belongs to the spine's FR-480
+    /// preflight stage.
     pub fn assemble_units(
         package_name: String,
         units: Vec<(RawSourceRef, ParsedUnit)>,
