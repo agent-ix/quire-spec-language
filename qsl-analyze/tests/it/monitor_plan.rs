@@ -794,3 +794,107 @@ fn a_swapped_atom_or_guard_body_changes_the_plan_id() {
     );
     assert_ne!(guard_swapped.id(), atom_swapped.id());
 }
+
+/// The plan of clause `C` in `unit`, compiled through the spine against the
+/// domain `document` and the supplied `dependencies`.
+fn spine_plan(
+    document: &[u8],
+    unit: &str,
+    dependencies: &qsl_replay::DependencyInput,
+) -> Result<qsl_replay::TimedMonitorPlan, MonitorPlanRefusal> {
+    use qsl_replay::spine::{self, ParseRequest, SpineLimits};
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let source = SourceIdentity::new("agent-ix", "monitor-plan");
+    let cancel = quire_exact::Cancel::new();
+    let limits = SpineLimits::default();
+    fn fail<T>(failure: spine::FrontEndFailure) -> T {
+        panic!("the unit compiles: {:?}", spine::refusal_or_fault(failure))
+    }
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: unit.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .unwrap_or_else(fail)
+    .into_value();
+    let models = spine::select(&parsed, &packages, limits.model, &cancel)
+        .unwrap_or_else(fail)
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .unwrap_or_else(fail)
+    .into_value();
+    let package = checked.package();
+    let clause = package.graph().temporal_clauses()[0].clause();
+    produce(
+        package,
+        qsl_semantics::library::LibraryName::new("fixture").unwrap(),
+        clause,
+        &base_target(),
+        &TimingObligationSettings::default(),
+    )
+    .map(|(plan, _)| plan)
+}
+
+/// [`unit_source`] with `prelude` (profiles, imports) declared after the
+/// unit's own profiles and before its model selection, where the grammar
+/// takes them.
+fn unit_with_prelude(prelude: &str, formula: &str, extra: &str) -> String {
+    let unit = unit_source(formula, extra, true, "on origin");
+    let (head, rest) = unit.split_once("model M").expect("a model selection");
+    format!("{head}{prelude}model M{rest}")
+}
+
+/// FR-251 "Build inputs and identity" and FR-251-AC-38 (TC-1081): an atom
+/// that calls a function of an admitted dependency reaches that function's
+/// body in the dependency, so two plans that differ only in the imported
+/// body have different `PlanId`s while the atom body is equal; an equal
+/// imported body gives an equal `PlanId`.
+#[trace("TC-1081", "FR-251-AC-38")]
+#[test]
+fn a_swapped_imported_callee_body_changes_the_plan_id() {
+    let domain = Domain::config_version();
+    let unit = unit_with_prelude(
+        "import \"test/geometry\" as g;\n",
+        "always holds(g::bump(c.versionNumber) = 3)",
+        "",
+    );
+    let library = |step: i64| {
+        qsl_replay::DependencyInput::new([qsl_replay::SuppliedLibrary {
+            identity: "test/geometry".to_owned(),
+            source: SourceIdentity::new("agent-ix", "geometry"),
+            path: "geometry.native".to_owned(),
+            bytes: format!(
+                "language \"ix:native\" edition \"1-draft\";\n\
+                 profile v = \"quire.value.complete/v1\";\n\
+                 function bump using v(x: Int[0, 1000]): Integer pure {{ x + {step} }}\n"
+            )
+            .into_bytes(),
+        }])
+        .expect("an admissible dependency input")
+    };
+    let plan = spine_plan(&domain.document, &unit, &library(1)).expect("the base plan");
+    let again = spine_plan(&domain.document, &unit, &library(1)).expect("the base plan again");
+    assert_eq!(plan.id(), again.id(), "equal imported bodies, equal PlanId");
+    let other = spine_plan(&domain.document, &unit, &library(2)).expect("a swapped body plan");
+    assert_eq!(
+        other.program().atoms(),
+        plan.program().atoms(),
+        "the swapped case keeps the atom body"
+    );
+    assert_ne!(
+        other.id(),
+        plan.id(),
+        "a swapped imported body changes the PlanId"
+    );
+}

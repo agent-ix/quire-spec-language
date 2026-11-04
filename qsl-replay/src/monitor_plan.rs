@@ -198,7 +198,7 @@ pub struct MonitorProgram {
     activation: Activation,
     atoms: Vec<MonitorAtom>,
     guard: Option<(CheckedBody, usize)>,
-    helpers: BTreeMap<usize, CheckedBody>,
+    helpers: BTreeMap<NodeKey, CheckedBody>,
 }
 
 impl MonitorProgram {
@@ -220,16 +220,19 @@ impl MonitorProgram {
         }
     }
     /// This program with `helpers`, the checked body of every declared
-    /// function an atom or the guard calls, directly or through another
-    /// helper (the call closure of QSpec FR-487-AC-13), keyed by the
-    /// function index a checked call names.
+    /// function an atom or the guard calls, directly, through another
+    /// helper, through every candidate body and precondition of a dispatched
+    /// call, or in an admitted dependency (the call closure of QSpec
+    /// FR-487-AC-13), keyed by the function's structural identity, which
+    /// names its package, so a dependency's function index never aliases
+    /// one of the unit's.
     #[must_use]
-    pub fn with_helpers(mut self, helpers: BTreeMap<usize, CheckedBody>) -> Self {
+    pub fn with_helpers(mut self, helpers: BTreeMap<NodeKey, CheckedBody>) -> Self {
         self.helpers = helpers;
         self
     }
-    /// The checked helper bodies of the call closure, by function index.
-    pub fn helpers(&self) -> &BTreeMap<usize, CheckedBody> {
+    /// The checked helper bodies of the call closure, by function identity.
+    pub fn helpers(&self) -> &BTreeMap<NodeKey, CheckedBody> {
         &self.helpers
     }
     /// Formula root.
@@ -343,14 +346,21 @@ pub struct PlanId {
     activation: ActivationToken,
     atoms: Vec<MonitorAtom>,
     guard: Option<(CheckedBody, usize)>,
-    helpers: BTreeMap<usize, CheckedBody>,
+    helpers: BTreeMap<NodeKey, CheckedBody>,
     intervals: Vec<(SubformulaId, TickInterval)>,
     buffers: Vec<(SubformulaId, u64)>,
     activation_capacity: u64,
 }
 
-/// `CheckedBody` equality is total: a literal compares by key, a float by
-/// its IEEE bits, so every `PlanId` equals itself.
+/// `Eq` rests on reflexivity of `CheckedBody` equality, which is not total
+/// for every literal: `CheckedLiteral::eq` compares a union value through
+/// `quire_exact::compare_keys`, which yields no order for a float or
+/// population payload, so a union literal carrying one is not equal to
+/// itself. Every other literal compares by key, a float by its IEEE bits.
+/// A `PlanId` whose bodies hold such a union literal is therefore not equal
+/// to itself, and admission refuses that plan rather than admitting it
+/// under a mismatched identity: the failure is a refusal, never a false
+/// match.
 impl Eq for PlanId {}
 
 /// The clause activation as part of a plan identity.
@@ -559,6 +569,20 @@ pub enum MonitorPlanRefusal {
     MissingHelperBody {
         /// The function index the call names.
         index: usize,
+    },
+    /// A dispatched call names a dispatch table the package does not hold,
+    /// so its candidate bodies cannot enter the plan identity.
+    #[error("dispatched call names dispatch table {table}, which the package does not hold")]
+    MissingDispatchTable {
+        /// The dispatch table index the call names.
+        table: usize,
+    },
+    /// An imported call names a callee no admitted dependency exports, so
+    /// its body cannot enter the plan identity.
+    #[error("imported call to function {function} resolves to no admitted dependency")]
+    UnresolvedImportedCall {
+        /// The callee's function index in its library.
+        function: usize,
     },
     /// The interval could not be converted exactly.
     #[error("timed interval conversion failed")]
