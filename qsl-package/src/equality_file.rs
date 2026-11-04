@@ -1293,3 +1293,368 @@ impl ReadEqualityRows {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use serde_json::json;
+
+    fn id(name: &str) -> CheckedNodeId {
+        serde_json::from_value(json!({ "package": "p", "path": [name], "ordinal": 0 })).unwrap()
+    }
+
+    /// Joins over the nodes `E` (an equality application), `U` and `V`.
+    fn joins() -> (Joins, BTreeMap<&'static str, NodeKey>) {
+        let ids = ["E", "U", "V"].map(id);
+        let graph = qsl_semantics::check::wire_id::WireGraph::new(ids.iter()).unwrap();
+        let mut joins = Joins {
+            ids: BTreeMap::new(),
+            keys: BTreeMap::new(),
+            equality: BTreeSet::from([id("E")]),
+        };
+        let mut named = BTreeMap::new();
+        for (name, node) in [("E", id("E")), ("U", id("U")), ("V", id("V"))] {
+            let key = graph.key(&node).unwrap();
+            joins.ids.insert(key.clone(), node.clone());
+            joins.keys.insert(node, key.clone());
+            named.insert(name, key);
+        }
+        (joins, named)
+    }
+
+    fn entry() -> CheckedSourceMapEntry {
+        serde_json::from_value(json!({
+            "node_id": { "package": "p", "path": ["E"], "ordinal": 0 },
+            "role": "expression", "ordinal": 0,
+            "regions": [{ "source": { "authority": "a", "identity": "s" }, "start": 4, "end": 9 }]
+        }))
+        .unwrap()
+    }
+
+    fn occurrence() -> CheckedOccurrence {
+        serde_json::from_value(json!({ "role": "expression", "ordinal": 0 })).unwrap()
+    }
+
+    fn fact_row(
+        keys: &BTreeMap<&str, NodeKey>,
+        value_type: Option<ValueType>,
+        fact: EqualityFactWitness,
+    ) -> SelectedEqualityFactRow {
+        SelectedEqualityFactRow {
+            application: keys["E"].clone(),
+            checked_application: id("E"),
+            occurrence: occurrence(),
+            source_map_entry: entry(),
+            structural_key: keys["E"].clone(),
+            structural_node: id("E"),
+            owner: Some(CheckedNodeOwner::Source {
+                authority: "a".into(),
+                identity: "s".into(),
+            }),
+            value_type,
+            fact,
+        }
+    }
+
+    fn vector_rows(keys: &BTreeMap<&str, NodeKey>) -> ReadEqualityRows {
+        ReadEqualityRows {
+            package: "p".to_owned(),
+            applications: vec![SelectedEqualityApplicationRow::new(
+                id("E"),
+                occurrence(),
+                entry(),
+                keys["E"].clone(),
+                Location::new(keys["E"].clone(), Origin::new("expression".into(), 0)),
+            )],
+            facts: vec![fact_row(
+                keys,
+                Some(ValueType::String),
+                EqualityFactWitness::OperandType {
+                    position: 0,
+                    role: EqualityOperandTypeRole::Source,
+                },
+            )],
+            source_units: vec![SelectedSourceUnitRow::new(
+                id("U"),
+                "a",
+                "s",
+                vec!["U".into()],
+                UnitId::declared(keys["U"].clone()),
+            )],
+        }
+    }
+
+    /// The vector FR-531 "The equality file" states, read from the spec.
+    fn vector() -> Vec<u8> {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/functional");
+        let path = std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("FR-531-"))
+            })
+            .unwrap();
+        let text = std::fs::read_to_string(path).unwrap();
+        let start = text
+            .find("```\n{\n  \"format\": \"quire.checked-handoff.equality/1\"")
+            .unwrap()
+            + 4;
+        let end = start + text[start..].find("\n```").unwrap() + 1;
+        text[start..end].as_bytes().to_vec()
+    }
+
+    /// FR-531-AC-17: the encoding of the vector's rows equals its bytes and
+    /// reading them returns the rows.
+    #[trace("FR-531-AC-17", "TC-1331")]
+    #[test]
+    fn the_vector_rows_encode_to_the_vector_bytes_and_read_back() {
+        let (joins, keys) = joins();
+        let rows = vector_rows(&keys);
+        let bytes = rows.encode(&joins).unwrap();
+        assert_eq!(
+            String::from_utf8(bytes.clone()).unwrap(),
+            String::from_utf8(vector()).unwrap()
+        );
+        assert_eq!(ReadEqualityRows::decode(&bytes, "p", &joins).unwrap(), rows);
+    }
+
+    fn every_value_type(keys: &BTreeMap<&str, NodeKey>) -> Vec<ValueType> {
+        let int = |lo: i64, hi: i64| IntegerInterval::new(lo.into(), hi.into()).unwrap();
+        let unit = UnitId::compound(vec![(keys["U"].clone(), (-2).into())]);
+        let element = ValueType::Option(ValueType::String.into());
+        vec![
+            ValueType::Boolean,
+            ValueType::Integer,
+            ValueType::String,
+            ValueType::Uuid,
+            ValueType::Timestamp,
+            ValueType::Int(int(-5, 7)),
+            ValueType::Rational(RationalDomain::new(int(-3, 3), int(1, 9)).unwrap()),
+            ValueType::Decimal(
+                DecimalType::new(0.into(), 99.into(), 1, 4, RoundingMode::NearestEven).unwrap(),
+            ),
+            ValueType::Float(FloatType::new(
+                IeeeWidth::Binary32,
+                RoundingMode::TowardZero,
+            )),
+            ValueType::Quantity(unit),
+            ValueType::Quantity(UnitId::declared(keys["U"].clone())),
+            ValueType::Text(TextType::new(1, 8, TextProfile::Nfkc).unwrap()),
+            ValueType::Enum(EnumShape::new(
+                true,
+                [
+                    VariantId::new(keys["V"].clone(), "on").unwrap(),
+                    VariantId::new(keys["V"].clone(), "off").unwrap(),
+                ],
+            )),
+            element.clone(),
+            ValueType::Composite(keys["V"].clone()),
+            ValueType::collection(CollectionType::new(
+                CollectionKind::Bag,
+                element,
+                CardinalityBound::new(1, 4).ok(),
+            )),
+            ValueType::collection(CollectionType::new(
+                CollectionKind::Set,
+                ValueType::Integer,
+                None,
+            )),
+            ValueType::Reference(EffectiveId::new(
+                Some(EffectiveId::new(
+                    None,
+                    OriginalDeclarationKey::new("m", "root"),
+                )),
+                OriginalDeclarationKey::new("m", "member"),
+            )),
+            ValueType::Population(Some(3)),
+            ValueType::Population(None),
+        ]
+    }
+
+    /// FR-531-AC-17: a row of every fact tag, every value-type tag, every
+    /// owner kind and a compound unit id writes then reads back equal, and a
+    /// second write is byte-identical.
+    #[trace("FR-531-AC-17", "TC-1331")]
+    #[test]
+    fn every_fact_tag_value_type_owner_and_compound_unit_round_trips() {
+        use EqualityFactWitness as F;
+        let (joins, keys) = joins();
+        let unit = UnitId::compound(vec![
+            (keys["U"].clone(), 2.into()),
+            (keys["V"].clone(), (-1).into()),
+        ]);
+        let rational = |n: &str| CheckedRational {
+            numerator: n.into(),
+            denominator: "3".into(),
+        };
+        let facts = vec![
+            F::OperandType {
+                position: 1,
+                role: EqualityOperandTypeRole::ConversionTarget,
+            },
+            F::Unit {
+                unit_id: unit.clone(),
+                quantity_type: id("V"),
+                operand_position: 0,
+                role: EqualityUnitRole::Source,
+            },
+            F::DimensionDeclaration {
+                unit_id: unit.clone(),
+                operand_position: 0,
+                role: EqualityDimensionRole::CompoundBase,
+                ordinal: 2,
+            },
+            F::DimensionTerm {
+                unit_id: unit.clone(),
+                operand_position: 0,
+                ordinal: 0,
+                base: keys["U"].clone(),
+                base_node: id("U"),
+                exponent: "-2".into(),
+            },
+            F::ConversionEdge {
+                unit_id: unit,
+                operand_position: 1,
+                ordinal: 0,
+                target: keys["V"].clone(),
+                target_node: id("V"),
+                scale: rational("-5"),
+                offset: rational("0"),
+            },
+            F::TextPlanType {
+                position: 0,
+                role: EqualityOperandTypeRole::Source,
+            },
+            F::EnumMember {
+                source_declaration: keys["U"].clone(),
+                source_declaration_node: id("U"),
+                declaration: keys["V"].clone(),
+                declaration_node: id("V"),
+                member: keys["V"].clone(),
+                member_node: id("V"),
+                case: "on".into(),
+                ordinal: 1,
+                ordered: true,
+            },
+        ];
+        let mut rows = vector_rows(&keys);
+        rows.facts = every_value_type(&keys)
+            .into_iter()
+            .map(Some)
+            .chain([None])
+            .zip(facts.iter().cycle().cloned())
+            .map(|(ty, fact)| fact_row(&keys, ty, fact))
+            .chain(facts.into_iter().map(|fact| fact_row(&keys, None, fact)))
+            .collect();
+        for (index, owner) in [
+            None,
+            Some(CheckedNodeOwner::ModelRoot {
+                identity: "m".into(),
+            }),
+            Some(CheckedNodeOwner::Model {
+                identity: "m".into(),
+                node: "n".into(),
+            }),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            rows.facts[index].owner = owner;
+        }
+        let bytes = rows.encode(&joins).unwrap();
+        assert_eq!(ReadEqualityRows::decode(&bytes, "p", &joins).unwrap(), rows);
+        assert_eq!(rows.encode(&joins).unwrap(), bytes);
+    }
+
+    /// FR-531-AC-17: non-canonical rationals and a compound source unit are
+    /// `Malformed`.
+    #[trace("FR-531-AC-17", "TC-1331")]
+    #[test]
+    fn non_canonical_rationals_and_a_compound_source_unit_are_malformed() {
+        use EqualityFactWitness as F;
+        let (joins, keys) = joins();
+        let edge = |scale: CheckedRational| {
+            let mut rows = vector_rows(&keys);
+            rows.facts = vec![fact_row(
+                &keys,
+                None,
+                F::ConversionEdge {
+                    unit_id: UnitId::declared(keys["U"].clone()),
+                    operand_position: 0,
+                    ordinal: 0,
+                    target: keys["V"].clone(),
+                    target_node: id("V"),
+                    scale,
+                    offset: CheckedRational {
+                        numerator: "0".into(),
+                        denominator: "1".into(),
+                    },
+                },
+            )];
+            rows.encode(&joins).unwrap()
+        };
+        let good = CheckedRational {
+            numerator: "1".into(),
+            denominator: "2".into(),
+        };
+        assert!(ReadEqualityRows::decode(&edge(good), "p", &joins).is_ok());
+        for (numerator, denominator) in [
+            ("+1", "2"),
+            ("01", "2"),
+            ("-0", "2"),
+            ("1", "0"),
+            ("1", "-2"),
+        ] {
+            let bytes = edge(CheckedRational {
+                numerator: numerator.into(),
+                denominator: denominator.into(),
+            });
+            assert!(
+                matches!(
+                    ReadEqualityRows::decode(&bytes, "p", &joins),
+                    Err(EqualityFileRefusal::Malformed { .. })
+                ),
+                "{numerator}/{denominator}"
+            );
+        }
+        let mut compound = vector_rows(&keys);
+        compound.source_units[0].unit_id = UnitId::compound(vec![(keys["U"].clone(), 1.into())]);
+        assert!(matches!(
+            compound.encode(&joins),
+            Err(EqualityFileRefusal::Malformed { .. })
+        ));
+        let mut text: Value = serde_json::from_slice(&vector()).unwrap();
+        text["source_units"][0]["unit_id"] = json!({ "kind": "compound", "terms": [] });
+        let bytes = serde_json::to_vec(&text).unwrap();
+        assert!(matches!(
+            ReadEqualityRows::decode(&bytes, "p", &joins),
+            Err(EqualityFileRefusal::Malformed { .. })
+        ));
+    }
+
+    /// FR-517-AC-22: a row that names a node the package does not hold is
+    /// refused by the writer's encoding, writing nothing.
+    #[trace("FR-517-AC-22", "TC-1312")]
+    #[test]
+    fn a_row_naming_a_node_the_package_does_not_hold_is_not_encoded() {
+        let (joins, keys) = joins();
+        let mut rows = vector_rows(&keys);
+        let (partial, _) = {
+            let mut partial = Joins {
+                ids: joins.ids.clone(),
+                keys: joins.keys.clone(),
+                equality: joins.equality.clone(),
+            };
+            partial.ids.remove(&keys["U"]);
+            (partial, ())
+        };
+        rows.source_units[0].unit_id = UnitId::declared(keys["U"].clone());
+        assert!(matches!(
+            rows.encode(&partial),
+            Err(EqualityFileRefusal::Malformed { .. })
+        ));
+    }
+}

@@ -28,7 +28,11 @@ fn fixture_request(directory: &Path, source: &str) -> CheckedHandoffRequest {
     let unit = directory.join("unit.native");
     let model = directory.join("model.json");
     std::fs::write(&unit, source).expect("source");
-    std::fs::write(&model, serde_json::to_vec(&tc1070::document()).expect("model")).expect("model");
+    std::fs::write(
+        &model,
+        serde_json::to_vec(&tc1070::document()).expect("model"),
+    )
+    .expect("model");
     CheckedHandoffRequest {
         emit: Request {
             source: unit,
@@ -44,7 +48,13 @@ fn fixture_request(directory: &Path, source: &str) -> CheckedHandoffRequest {
 }
 
 /// The handoff directory of `source`: its request, files and admitted package.
-fn handoff(source: &str) -> (tempfile::TempDir, CheckedHandoffRequest, BTreeMap<String, Vec<u8>>) {
+fn handoff(
+    source: &str,
+) -> (
+    tempfile::TempDir,
+    CheckedHandoffRequest,
+    BTreeMap<String, Vec<u8>>,
+) {
     let holder = tempfile::tempdir().expect("directory");
     let request = fixture_request(holder.path(), source);
     let out = holder.path().join("handoff");
@@ -101,7 +111,7 @@ fn select(
 #[trace("FR-531-AC-14", "FR-517-AC-21", "TC-1331", "TC-1312")]
 #[test]
 fn the_directory_for_fixture_e_holds_the_equality_file_a_slot_call_reads() {
-    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let (holder, request, files) = handoff(tc1070::SOURCE);
     let file = &files["equality.json"];
     let package = read(&request, &files["checked-package.json"]);
     let text: Value = serde_json::from_slice(file).expect("JSON");
@@ -115,12 +125,24 @@ fn the_directory_for_fixture_e_holds_the_equality_file_a_slot_call_reads() {
     }
     let rows = ReadEqualityRows::read(file, &package).expect("the file reads");
     assert_eq!(rows.to_bytes(&package).expect("encodes"), *file);
-    let (_second, _, again) = handoff(tc1070::SOURCE);
-    assert_eq!(again["equality.json"], *file, "two writes are byte-identical");
+    let again = holder.path().join("again");
+    write(&request, &again).expect("a second write");
+    assert_eq!(
+        tree(&again)["equality.json"],
+        *file,
+        "two writes of equal requests are byte-identical"
+    );
     let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
     let refund = node_key(&package, "Refunds", "Refund");
-    let relation = select(&package, &identities, Some(&rows), refund.clone(), "retry.relation", None)
-        .expect("the retry relation selects over the equality rows");
+    let relation = select(
+        &package,
+        &identities,
+        Some(&rows),
+        refund.clone(),
+        "retry.relation",
+        None,
+    )
+    .expect("the retry relation selects over the equality rows");
     assert!(relation.origin().is_some());
     // FR-531-AC-16: no equality application in the walk, no equality read.
     select(&package, &identities, None, refund, "trigger.guard", None)
@@ -136,11 +158,16 @@ fn the_equality_witness_refusals_are_missing_foreign_and_unknown() {
     let package = read(&request, &files["checked-package.json"]);
     let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
     let refund = node_key(&package, "Refunds", "Refund");
-    let refusal = |equality: Option<&ReadEqualityRows>| {
-        match select(&package, &identities, equality, refund.clone(), "retry.relation", None) {
-            Err(BareSelectionFailure::Equality(refusal)) => refusal,
-            other => panic!("not an equality refusal: {:?}", other.map(|_| ())),
-        }
+    let refusal = |equality: Option<&ReadEqualityRows>| match select(
+        &package,
+        &identities,
+        equality,
+        refund.clone(),
+        "retry.relation",
+        None,
+    ) {
+        Err(BareSelectionFailure::Equality(refusal)) => refusal,
+        other => panic!("not an equality refusal: {:?}", other.map(|_| ())),
     };
     assert_eq!(refusal(None), EqualityWitnessRefusal::Missing);
     // Rows of another package.
@@ -166,13 +193,18 @@ fn request_other_package() -> ReadEqualityRows {
     ReadEqualityRows::read(&files["equality.json"], &package).expect("reads")
 }
 
-/// FR-517-AC-21 (second half): a unit with no equality application writes
-/// the file with the three lists empty.
+/// FR-517-AC-21 (second half): a unit with no `==` or `!=` application
+/// writes the file with the three lists empty.
 #[trace("FR-517-AC-21", "TC-1312")]
 #[test]
 fn a_unit_without_an_equality_application_writes_the_file_empty() {
-    let request = request("event_position", Corpus::None);
     let holder = tempfile::tempdir().expect("directory");
+    let mut request = fixture_request(
+        holder.path(),
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n\
+         function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }\n",
+    );
+    request.emit.models.clear();
     let out = holder.path().join("handoff");
     write(&request, &out).expect("written");
     assert_eq!(tree(&out)["equality.json"], empty_file());
@@ -187,42 +219,62 @@ fn the_equality_file_reader_refuses_as_the_spec_closes_it() {
     let good: Value = serde_json::from_slice(&files["equality.json"]).expect("JSON");
     let read = |bytes: &[u8]| ReadEqualityRows::read(bytes, &package);
     let json = |value: &Value| serde_json::to_vec(value).expect("bytes");
-    assert!(matches!(read(b"not json"), Err(EqualityFileRefusal::Malformed { .. })));
+    assert!(matches!(
+        read(b"not json"),
+        Err(EqualityFileRefusal::Malformed { .. })
+    ));
     let mut unknown = good.clone();
     unknown["extra"] = Value::Null;
-    assert!(matches!(read(&json(&unknown)), Err(EqualityFileRefusal::Malformed { .. })));
+    assert!(matches!(
+        read(&json(&unknown)),
+        Err(EqualityFileRefusal::Malformed { .. })
+    ));
     let repeated = String::from_utf8(empty_file())
         .expect("text")
         .replace("\"facts\": []", "\"facts\": [],\n  \"facts\": []");
-    assert!(matches!(read(repeated.as_bytes()), Err(EqualityFileRefusal::Malformed { .. })));
+    assert!(matches!(
+        read(repeated.as_bytes()),
+        Err(EqualityFileRefusal::Malformed { .. })
+    ));
     let mut tag = good.clone();
     tag["facts"][0]["fact"]["kind"] = "nonsense".into();
-    assert!(matches!(read(&json(&tag)), Err(EqualityFileRefusal::Malformed { .. })));
+    assert!(matches!(
+        read(&json(&tag)),
+        Err(EqualityFileRefusal::Malformed { .. })
+    ));
     let mut format = good.clone();
     format["format"] = "quire.checked-handoff.equality/2".into();
     assert_eq!(
         read(&json(&format)).err(),
-        Some(EqualityFileRefusal::Format("quire.checked-handoff.equality/2".into()))
+        Some(EqualityFileRefusal::Format(
+            "quire.checked-handoff.equality/2".into()
+        ))
     );
     let mut foreign = good.clone();
     foreign["applications"][0]["application"]["package"] = "elsewhere".into();
     assert_eq!(
         read(&json(&foreign)).err(),
-        Some(EqualityFileRefusal::Unjoined { member: "applications", index: 0 })
+        Some(EqualityFileRefusal::Unjoined {
+            member: "applications",
+            index: 0
+        })
     );
     // An application of the package that is no equality application.
     let mut plain = good.clone();
     let other = good["applications"][0]["application"].clone();
-    let identity = &files["checked-package.json"];
-    let wire: Value = serde_json::from_slice(identity).expect("package");
-    let not_equality = wire["graph"]["nodes"]
-        .as_array()
-        .and_then(|nodes| nodes.iter().find(|n| n["node_id"] != other && n["node_tag"] == "value"))
-        .map(|node| node["node_id"].clone())
-        .expect("a value node");
+    let not_equality = package
+        .graph()
+        .nodes
+        .iter()
+        .map(|node| serde_json::to_value(&node.node_id).expect("id"))
+        .find(|id| *id != other)
+        .expect("another node");
     plain["applications"][0]["application"] = not_equality;
     assert_eq!(
         read(&json(&plain)).err(),
-        Some(EqualityFileRefusal::Unjoined { member: "applications", index: 0 })
+        Some(EqualityFileRefusal::Unjoined {
+            member: "applications",
+            index: 0
+        })
     );
 }

@@ -4711,7 +4711,13 @@ fn bare_rows(
 /// FR-533-AC-1 (selection half), AC-4, AC-10: over every slot kind of TC-1070
 /// the selection read from the package's nodes alone names the root and the
 /// binders (name, level, type, key) the source selector names.
-#[trace("FR-533-AC-1", "FR-533-AC-4", "FR-533-AC-10", "FR-533-AC-12", "TC-1333")]
+#[trace(
+    "FR-533-AC-1",
+    "FR-533-AC-4",
+    "FR-533-AC-10",
+    "FR-533-AC-12",
+    "TC-1333"
+)]
 #[test]
 fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let package = fixture();
@@ -4721,11 +4727,10 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = qsl_package::BarePackage::new(v2)
-        .with_supply(qsl_package::BareSupply {
-            identities: &rows,
-            equality: Some(&equality),
-        });
+    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
     let view = package.evaluation_view();
     let row_origins: std::collections::BTreeSet<String> = v2
         .checked_term_data()
@@ -4862,11 +4867,10 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let bare = qsl_package::BarePackage::new(v2)
-        .with_supply(qsl_package::BareSupply {
-            identities: &rows,
-            equality: None,
-        });
+    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: None,
+    });
     let view = package.evaluation_view();
     let clause = slot(&package, "Refunds", "Refunds", "activation.guard", None).node;
     let descriptor = |member: &str, index| {
