@@ -176,7 +176,7 @@ fn money(package: &CheckedPackage, amount: i64) -> Value {
 
 #[test]
 #[trace("TC-1071", "FR-390-AC-3", "FR-390-AC-4", "FR-390-AC-5", "FR-049-AC-6")]
-#[trace("TC-1072", "FR-390-AC-7")]
+#[trace("TC-1072", "FR-390-AC-7", "FR-049-AC-6")]
 fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     let package = package();
     let keys = package
