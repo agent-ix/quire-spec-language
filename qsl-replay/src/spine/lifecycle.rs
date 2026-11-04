@@ -1485,7 +1485,9 @@ fn resolve_protocol_profile_uses(
                         Ok(closure)
                             if closure.role()
                                 == qsl_semantics::library::bundle::DefinitionRole::Protocol
-                                && identity == "quire.protocol.finite-global/v1" =>
+                                && qsl_semantics::library::profile_closure::profile_identity_kind(
+                                    identity,
+                                ) == qsl_semantics::library::profile_closure::ProfileIdentityKind::FiniteGlobalProtocol =>
                         {
                             super::ProfileUseAdmission::Admitted
                         }

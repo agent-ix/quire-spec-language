@@ -4,8 +4,8 @@
 
 use qsl_foundation::{SourceIdentity, Span};
 use quire_contract_model::{
-    ClauseRef, DeclarationEnvironment, Diagnostic, ExecutionPoint, Expression, TypedExpression,
-    ValueType,
+    ClauseRef, DeclarationEnvironment, Diagnostic, ExecutionPoint, ExecutionPointName, Expression,
+    TypedExpression, ValueType,
 };
 
 use super::CheckedUnit;
@@ -89,7 +89,9 @@ pub struct ProtocolProofCorrespondence {
     pub formal_source: quire_contract_model::SourceIdentity,
     /// Exact formal clause identity selected for the check.
     pub formal_clause: ClauseRef,
-    /// Exact handler execution point at which the formal clause applies.
+    /// Independently selected formal Handler identity for this QSL clause.
+    pub expected_handler: ExecutionPointName,
+    /// Exact formal execution point at which the clause is checked.
     pub execution_point: ExecutionPoint,
     /// Formal declaration environment against which the expression is typed.
     pub environment: DeclarationEnvironment,
@@ -196,7 +198,10 @@ fn prove_protocols(
                 });
                 continue;
             }
-            if !matches!(&mapping.execution_point, ExecutionPoint::Handler { .. }) {
+            if !matches!(
+                &mapping.execution_point,
+                ExecutionPoint::Handler { name } if name == &mapping.expected_handler
+            ) {
                 causes.push(ProtocolProofCause::ExecutionPoint {
                     clause: site.clause.clone(),
                 });

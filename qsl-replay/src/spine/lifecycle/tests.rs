@@ -832,6 +832,42 @@ fn spine_refuses_every_invisible_guard_atom_even_in_a_skipped_operand() {
     )));
 }
 
+/// FR-048-AC-4 / FR-513-AC-12 / TC-1308 successor: the spine retains the
+/// typed refusal for a repeat guard that reads a body-produced binder.
+#[trace("FR-048-AC-4", "FR-513-AC-12", "TC-1308")]
+#[test]
+fn spine_refuses_post_test_repeat_guard_with_typed_construct_evidence() {
+    use qsl_semantics::check::{CheckCause, ProtocolConstruct};
+
+    let source = format!(
+        "{HEADER}model M = \"acme/orders\";\n\
+         record Plain {{ ready: Boolean; }}\n\
+         protocol Flow using Complete over (input: M::Widget) on origin {{\n\
+           role R on M::Widget;\n\
+           run sequence Main {{\n\
+             repeat Again by R visible (seen.ready) max 1 while {{ not seen.ready }}\n\
+               sequence Body {{ event E by R as (seen: Plain) {{ true }}; }}\n\
+             exhausted sequence Done {{ }}\n\
+           }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
+    let failure = protocol_check_stage(source.as_bytes(), CheckingLimits::default())
+        .expect_err("post-test repeat is refused by the spine");
+    let refusal = refusal_or_fault(failure).expect("typed S3 refusal");
+    let CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("the spine reaches protocol checking: {refusal:?}");
+    };
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+                if cause.construct() == Some(ProtocolConstruct::PostTestRepeat)
+        )),
+        "the repeat refusal retains its typed construct identity: {refusals:?}"
+    );
+}
+
 fn checked_protocol_source(bytes: &[u8]) -> CheckedUnit {
     protocol_check_stage(bytes, CheckingLimits::default())
         .unwrap_or_else(|failure| panic!("protocol source checks: {failure:?}"))
@@ -1144,6 +1180,7 @@ fn protocol_check_proof_retains_goals_and_refuses_adverse_correspondence() {
         qsl_region: site.region,
         formal_source: formal_source.clone(),
         formal_clause: ir::ClauseRef::new(owner.clone(), ir::ClauseId::new("ensure").unwrap()),
+        expected_handler: ir::ExecutionPointName::new("validate").unwrap(),
         execution_point: ir::ExecutionPoint::Handler {
             name: ir::AnchorName::new("validate").unwrap().into(),
         },
@@ -1211,9 +1248,13 @@ fn protocol_check_proof_retains_goals_and_refuses_adverse_correspondence() {
         ir::SourceDocumentId::new("DifferentFormalSource").unwrap(),
         ir::SourceRevision::new(1).unwrap(),
     );
-    let mut wrong_point = correspondence;
+    let mut wrong_point = correspondence.clone();
     wrong_point.execution_point = ir::ExecutionPoint::Pre {
         operation: ir::AnchorName::new("validate").unwrap().into(),
+    };
+    let mut substituted_handler = correspondence;
+    substituted_handler.execution_point = ir::ExecutionPoint::Handler {
+        name: ir::AnchorName::new("different_handler").unwrap().into(),
     };
     let foreign_source_result = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
         correspondences: vec![foreign_source],
@@ -1273,6 +1314,18 @@ fn protocol_check_proof_retains_goals_and_refuses_adverse_correspondence() {
     );
     assert!(matches!(
         wrong_point_result[0].causes.as_slice(),
+        [crate::spine::ProtocolProofCause::ExecutionPoint { clause }] if clause == "Ensure"
+    ));
+
+    let substituted_handler_result = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+        correspondences: vec![substituted_handler],
+    });
+    assert_eq!(
+        substituted_handler_result[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(matches!(
+        substituted_handler_result[0].causes.as_slice(),
         [crate::spine::ProtocolProofCause::ExecutionPoint { clause }] if clause == "Ensure"
     ));
 }

@@ -17,6 +17,28 @@ const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 const OBSERVATION_BINDING: &str = "quire.observation.binding/v1";
 const AUTHORITY: &str = "agent-ix";
 
+/// The profile identities whose cross-layer semantics are closed in QSL.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProfileIdentityKind {
+    /// ObservationBinding, which must depend on the finite-global protocol.
+    ObservationBinding,
+    /// The finite-global protocol profile used by native protocol clauses.
+    FiniteGlobalProtocol,
+    /// Any other registered profile identity.
+    Other,
+}
+
+/// Convert a profile identity spelling to the closed profile kind used by
+/// QSL semantic dispatch. This is the canonical string-to-kind boundary.
+#[ix_trace_rs::string_edge]
+pub fn profile_identity_kind(identity: &str) -> ProfileIdentityKind {
+    match identity {
+        OBSERVATION_BINDING => ProfileIdentityKind::ObservationBinding,
+        PROTOCOL_PROFILE => ProfileIdentityKind::FiniteGlobalProtocol,
+        _ => ProfileIdentityKind::Other,
+    }
+}
+
 /// Exact closure of one selected profile definition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfileClosure {
@@ -74,7 +96,7 @@ pub fn resolve_profile_closure(
         .map_err(|refusal| ProfileClosureRefusal::Dependency(Box::new(refusal)))?;
     let definitions: BTreeSet<_> = graph.definitions().keys().cloned().collect();
 
-    if selected.identity() == OBSERVATION_BINDING {
+    if profile_identity_kind(selected.identity()) == ProfileIdentityKind::ObservationBinding {
         let protocol = DefinitionRef::new(AUTHORITY, PROTOCOL_PROFILE)
             .expect("the registered protocol profile identity is valid");
         let selected_definition = catalog
