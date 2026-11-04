@@ -26,6 +26,9 @@ use crate::temporal_activation::{
 };
 use crate::temporal_trace::fixture;
 
+/// An edit of one request member.
+type RequestEdit = Box<dyn Fn(&mut EvidenceRequest)>;
+
 const BODY: &str = "eventually[0, 2] holds(p)";
 const FIXED_PROFILE: &str = "quire.temporal.fixed-sample.false-extension/v1";
 const EVENT_PROFILE: &str = "quire.temporal.event-position.false-extension/v1";
@@ -123,7 +126,7 @@ fn mismatched_dimension(failure: CallFailure) -> String {
 #[test]
 fn a_differing_binding_is_an_admission_error_that_charges_nothing() {
     let fixed = fixed_env("on origin", BODY);
-    let fixed_edits: Vec<(&str, Box<dyn Fn(&mut EvidenceRequest)>)> = vec![
+    let fixed_edits: Vec<(&str, RequestEdit)> = vec![
         (
             "Profile",
             Box::new(|r| r.binding.profile = EVENT_PROFILE.into()),
@@ -238,7 +241,7 @@ fn each_member_of_a_request_changes_its_result_identity_and_leaves_the_first_res
         variants.push((name.to_owned(), identity_of(&env, &origin_request(&env))));
     }
     // The request's own members.
-    let edits: Vec<(&str, Box<dyn Fn(&mut EvidenceRequest)>)> = vec![
+    let edits: Vec<(&str, RequestEdit)> = vec![
         (
             "cover",
             Box::new(|r| r.cover = ClockCover::Counter { uncertainty: 1 }),
