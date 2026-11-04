@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-58. Every unit of steps 1 to 7 and 10 to 38 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
+Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-57. Every unit of steps 1 to 7 and 10 to 38 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
 
 ## Test Procedure
 

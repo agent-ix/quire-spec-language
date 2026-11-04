@@ -4648,9 +4648,10 @@ fn typed_alternative_in(
     })
 }
 
-/// A declared population read in an S3 timed-model predicate, which has no
-/// ambient population scope. The returned span is the population reference,
-/// so the unsupported result points at the construct that needs that scope.
+/// The first declared population read, in source order, in an S3
+/// timed-model predicate, which has no ambient population scope (FR-230,
+/// FR-391). The returned span is the population reference, so the
+/// unsupported result points at the construct that needs that scope.
 fn named_population_read(
     form: &ExpressionForm,
     declarations: &ClauseDeclarations<'_>,
@@ -4672,6 +4673,10 @@ fn named_population_read(
                 population_span,
                 ..
             } if known.iter().any(|name| name == population) => return Some(*population_span),
+            // No other form names a population operand. `ExprNode` is not
+            // matched exhaustively outside `qsl-forms` (the seam probe), so a
+            // future population-reading form missed here still refuses in
+            // typing, which grants a timed predicate no population scope.
             _ => None,
         };
         if let Some(operand) = population_operand {
@@ -4682,7 +4687,9 @@ fn named_population_read(
                 }
             }
         }
-        pending.extend(expression.children());
+        // Reversed, so the stack pops children in source order and the
+        // first population reference is the one reported.
+        pending.extend(expression.children().into_iter().rev());
     }
     None
 }

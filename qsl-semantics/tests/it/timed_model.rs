@@ -289,13 +289,21 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
 
 /// FR-230-AC-58 / TC-1334: S3 has no ambient named-population scope for a
 /// time invariant or `urgent when`, while ordinary state-clause population
-/// scope and self-only timed predicates remain available.
+/// scope and self-only timed predicates remain available. Each population
+/// form FR-230 names is refused: a quantifier domain, `allInstances`,
+/// `lookup` and `count`/`sum`.
 #[trace("TC-1334", "FR-230-AC-58")]
 #[test]
 fn timed_predicates_refuse_named_populations_without_restricting_state_clauses() {
     for predicate in [
         "time invariant HasCalls when { forall(c in Config::calls : true) } { self.x <= 1 ms }\n",
         "urgent CallsExist when { exists(c in Config::calls : true) };\n",
+        "time invariant AllCalls when { \
+         exists(c in allInstances<Config::Call>(Config::calls) : true) } { self.x <= 1 ms }\n",
+        "urgent Known when { present(lookup<Config::Call>(Config::calls, self) absent empty) };\n",
+        "time invariant Counted when { \
+         count<Config::VersionNumber>(c in Config::calls : true) > 0 } { self.x <= 1 ms }\n",
+        "urgent Summed when { sum<Config::VersionNumber>(c in Config::calls : c.n) > 0 };\n",
     ] {
         let body = format!("{}{}", rpc("time Config dense unit ms;"), predicate);
         let (cause, text) = refused(&rpc_document(&["x"]), &body);
@@ -321,6 +329,32 @@ fn timed_predicates_refuse_named_populations_without_restricting_state_clauses()
             "the refusal identifies the missing timed-predicate scope: {cause:?}"
         );
     }
+
+    // Two population references: the first, in source order, is reported.
+    let first = "exists(c in Config::calls : true)";
+    let body = format!(
+        "{}time invariant Two when {{ {first} and \
+         present(lookup<Config::Call>(Config::calls, self) absent empty) }} {{ self.x <= 1 ms }}\n",
+        rpc("time Config dense unit ms;"),
+    );
+    let document = rpc_document(&["x"]);
+    let refusals = check(&document, &body).expect_err("the named population is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal expected: {refusals:?}");
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a timed refusal expected: {refusal:?}");
+    };
+    let (text, _) = config_unit_with_profiles(&document, TEMPORAL, &body);
+    let expected = text.find(first).expect("the first quantifier") + "exists(c in ".len();
+    assert_eq!(
+        (
+            cause.span().start,
+            &text[cause.span().start..cause.span().end]
+        ),
+        (expected, "Config::calls"),
+        "the first population reference is reported, not the last"
+    );
 
     let body = format!(
         "{}{}{}",
