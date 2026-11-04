@@ -122,7 +122,7 @@ fn emitted_unit_retains_the_same_static_subject() {
         .is_empty());
 }
 
-#[trace("FR-510-AC-6", "TC-1305")]
+#[trace("FR-036-AC-5", "FR-510-AC-6", "TC-1305")]
 #[test]
 fn static_subject_comparison_reports_component_differences() {
     let baseline = checked(SOURCE, MODEL, SpineLimits::default(), vec![]);
@@ -141,7 +141,7 @@ fn static_subject_comparison_reports_component_differences() {
     );
 }
 
-#[trace("FR-510-AC-3", "TC-1305")]
+#[trace("FR-036-AC-5", "FR-510-AC-3", "TC-1305")]
 #[test]
 fn static_changes_are_reported_by_their_exact_component() {
     let baseline = checked(SOURCE, MODEL, SpineLimits::default(), vec![]);
