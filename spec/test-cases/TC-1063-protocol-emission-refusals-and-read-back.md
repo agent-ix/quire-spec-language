@@ -60,11 +60,35 @@ Compile or read one unit or graph per row and assert the stated result.
 | 8h | `Outcome`'s case list in descending label order | `invalid_semantic_graph` |
 | 8i | the package without a `temporal_profile` while `Refund` stays | `missing_declaration`/`missing-selection` |
 
-QSL's conformance run reads the QSpec protocol vectors file
-`protocol-node-vectors.json` (under `proposals/checked-package-v2/fixtures`),
-admits each positive package through QSL's I2 reader and refuses each
-mutation with the recorded code and locus. It copies no vector. The test is
-traced only once that file exists.
+QSL's conformance run reads the QSpec protocol-node mutation manifest
+`protocol-node-mutation-manifest.json` (version
+`quire.protocol-node-mutation-manifest/v1`, under
+`proposals/checked-package-v2/fixtures`) and the `protocol-node-layout-rows.json`
+rows it defers to, in place, and copies no vector, base fixture or edit into
+QSL. For every row of the manifest's `rows` array and then of the layout file's
+`rows` array, in file order, the run applies the row's RFC 6902 `edit` (a list
+of operations; every executable row uses this form) to the row's `base` fixture
+and reads the result through QSL's I2 reader:
+
+- an `admit` row is admitted;
+- a `refuse` row is refused with the row's `code`, `cause`, `stage` and `locus`
+  exactly, the locus read by the row's `locus_basis`: `node`, `target`,
+  `field`, `dependencies_list` and `schema_error_path` as the row states, with
+  `document_pointer` where the row gives one, and `not_applicable` for the rows
+  that have no locus; a `step_alone` row is read at its step alone and a
+  `retains` row also asserts what the refusal retains;
+- a `property` row's `assertions` hold.
+
+The reader's deliberate order is preserved (QSpec FR-464 "Reader order"): a row
+expecting a later semantic refusal is not satisfied by an earlier wire or
+schema refusal, and a row asserts only the first defect in reader order. The
+executed set is the manifest rows plus the layout rows (25 `admit`, 90 `refuse`
+and 4 `property` rows at QSpec main); a `pending` entry is executed through its
+same-id layout row, and `CH14a` through `CH14a-1` to `CH14a-8`. The run records
+the executed count for each of `admit`, `refuse` and `property`, fails when
+any is zero or when an executable row was not executed, and reports a `pending`
+or `later` entry with no executable row as not executed with its count, never
+as passing. The test is traced `TC-1063` and `FR-383-AC-20`.
 
 ### Protocol term locations
 
