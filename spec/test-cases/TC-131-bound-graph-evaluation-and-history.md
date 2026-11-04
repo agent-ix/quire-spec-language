@@ -29,9 +29,11 @@ declared-complete domain with the same absence under unavailable membership or
 closure authority. Keep a known foreign target in both cases as the structural-
 invalidity precedence control.
 
-Run the ConfigVersion source/model/runtime fixtures before and after the
-new graph profile without adding a finite integer maximum or replacement parent
-relation.
+Run the ConfigVersion source/model/runtime fixtures on the checked route
+before and after the new graph profile without adding a finite integer maximum
+or replacement parent relation: one update that keeps the child's `parent`, one
+that rewrites it, and one whose `parent` names no row. Read the stage, category,
+truth value and catalog code of each result.
 
 ## Expected Results
 
@@ -42,3 +44,7 @@ witness. The complete-domain absence refuses as dangling, unavailable membership
 or closure remains incomplete, and the independently known foreign target
 refuses in either case. Historical fixtures retain their original selections
 and outcomes; the new graph profile neither widens nor silently upgrades them.
+The unchanged-parent update evaluates true. The rewritten-parent update is
+refused at stage `Admit` with `frame_violation`, and the dangling-parent update at
+stage `Admit` with `dangling_reference`; neither returns a Boolean, and the
+composed reader gives `parent` no graph semantics.
