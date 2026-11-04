@@ -202,7 +202,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     };
 
     let mut meter = Meter::new(UNLIMITED);
-    package
+    let evaluated = package
         .evaluate_protocol_slot(
             &slot,
             &ProtocolSupply {
