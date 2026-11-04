@@ -77,8 +77,8 @@ pub(crate) struct ModelSpellings {
     primary: Option<RawSourceRef>,
     /// Each unit's model aliases, to their package's position in `packages`.
     units: BTreeMap<RawSourceRef, BTreeMap<String, usize>>,
-    /// Each unit's other selection aliases (profile and import), which a
-    /// model alias of another unit leaves to the unit.
+    /// Each unit's import aliases, which a model alias of another unit
+    /// leaves to the unit.
     others: BTreeMap<RawSourceRef, BTreeSet<String>>,
     /// Every unit's model aliases.
     model_aliases: BTreeSet<String>,
@@ -122,7 +122,7 @@ impl ModelSpellings {
         }
     }
 
-    /// `unit` declares the profile or import alias `alias`.
+    /// `unit` declares the import alias `alias`.
     pub(crate) fn bind_other(&mut self, unit: &RawSourceRef, alias: &str) {
         self.others
             .entry(unit.clone())
@@ -226,7 +226,7 @@ mod tests {
         spellings
     }
 
-    /// FR-480-AC-12: one spelling names each unit's own package.
+    /// FR-480-AC-14, AC-15, AC-16: one spelling names each unit's own package.
     #[test]
     fn each_unit_reads_a_spelling_through_its_own_alias() {
         let spellings = spellings();

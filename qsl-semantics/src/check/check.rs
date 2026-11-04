@@ -2418,6 +2418,11 @@ impl<'a> Typer<'a> {
         mut self,
         source: Option<qsl_foundation::source::provenance::RawSourceRef>,
     ) -> Self {
+        // A nested model check reads type names through the same unit.
+        self.context = self
+            .context
+            .take()
+            .map(|cx| cx.with_source_owner(source.clone()));
         self.source_owner = source;
         self
     }
@@ -2523,10 +2528,18 @@ impl<'a> Typer<'a> {
     }
 
     /// Borrow the enclosing family's stage state for nested model checks.
+    /// The context's source unit, when it names one, is the unit this pass
+    /// checks; otherwise the context takes this pass's unit, so a nested
+    /// model check (`allInstances<T>`, `lookup<T>`) reads `T` through the
+    /// unit that writes it (FR-480).
     pub(crate) fn with_context(mut self, cx: crate::family::CheckContext<'a, Scope>) -> Self {
-        if let Some(owner) = cx.source_owner() {
-            self.source_owner = Some(owner.clone());
-        }
+        let cx = match cx.source_owner() {
+            Some(owner) => {
+                self.source_owner = Some(owner.clone());
+                cx
+            }
+            None => cx.with_source_owner(self.source_owner.clone()),
+        };
         self.context = Some(cx);
         self
     }

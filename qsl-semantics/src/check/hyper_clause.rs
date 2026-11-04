@@ -142,7 +142,8 @@ pub struct HyperDeclarations<'a> {
     /// checked next among the unit's hyper clauses over `behaviours`.
     pub(crate) behaviours_checked: std::cell::Cell<usize>,
     /// The source unit of the clause checked now, whose model aliases its
-    /// type names are written under (FR-480 "Selections and imports").
+    /// type names are written under (FR-480 "Selections and imports"); set
+    /// for the duration of one clause's check and `None` outside it.
     pub(crate) clause_source:
         std::cell::RefCell<Option<qsl_foundation::source::provenance::RawSourceRef>>,
 }
@@ -1269,13 +1270,17 @@ fn check_declaration<'a>(
         .scope
         .source_of(declaration.name())
         .cloned();
-    match declaration {
+    let checked = match declaration {
         HyperDeclaration::Behaviours(form) => check_behaviours(form, declarations, cx)
             .map(|clause| CheckedHyper::Behaviours(Box::new(clause))),
         HyperDeclaration::Finite(form) => Err(check_finite(form)),
         HyperDeclaration::Relation(form) => check_relation(form, declarations, cx)
             .map(|relation| CheckedHyper::Relation(Box::new(relation))),
-    }
+    };
+    // The source is this clause's alone: a lookup outside a clause check
+    // reads no clause's unit.
+    *declarations.clause_source.borrow_mut() = None;
+    checked
 }
 
 /// A clause over a finite trace domain: a quantifier with `of` refuses at the

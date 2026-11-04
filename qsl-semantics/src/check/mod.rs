@@ -1992,6 +1992,7 @@ impl PackageDeclarations {
                     types: &self.types,
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
+                    source_owners: &self.source_owners,
                     clock_reading: &self.clock_reading,
                     operation_bodies: &self.operation_bodies,
                     units: &units,

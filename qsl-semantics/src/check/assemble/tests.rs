@@ -4516,12 +4516,10 @@ fn a_second_alias_projects_no_package_fact_twice() {
 }
 
 /// FR-480-AC-12 (QSL-1578): a second alias is still a unit alias. Spelled like
-/// a profile alias it refuses as a duplicate alias, and a unit declaration
-/// that shares a package type's artifact name keeps its own bare name, apart
-/// from both alias spellings of the package type.
+/// a profile alias it refuses as a duplicate alias.
 #[trace("FR-480-AC-12")]
 #[test]
-fn a_second_alias_neither_shadows_nor_is_shadowed_by_a_unit_declaration() {
+fn a_second_alias_spelled_like_a_profile_alias_refuses_as_a_duplicate() {
     let source_text = text(
         "profile s = \"quire.model.complete/v1\";\nprofile History = \"quire.value.complete/v1\";\n",
         "model Config = \"example/config-version\";\n\
@@ -4552,7 +4550,14 @@ fn a_second_alias_neither_shadows_nor_is_shadowed_by_a_unit_declaration() {
         duplicate.cause.catalog_code().to_string(),
         "ambiguous_declaration/ambiguous-name"
     );
+}
 
+/// FR-480-AC-13 (QSL-1578): a unit declaration that shares a package type's
+/// artifact name keeps its own bare name, apart from both alias spellings of
+/// the package type.
+#[trace("FR-480-AC-13")]
+#[test]
+fn a_unit_record_keeps_its_bare_name_apart_from_both_alias_spellings() {
     let checked = check_two_aliases(
         "record ConfigVersion { versionNumber: Integer; }\n\
          function local using s(r: ConfigVersion, c: History::ConfigVersion, \
@@ -4696,13 +4701,45 @@ fn clause_context(checked: &crate::check::CheckedGraph, clause: &str) -> ValueTy
     )
 }
 
-/// FR-480-AC-12 (QSL-1613): model aliases are local to their unit. Unit `a`
+/// FR-480-AC-18 (QSL-1613): two units that each select one package under
+/// the same alias `M` both name its types through `M`. Whichever unit is
+/// canonically later, and in either request order, its `M::ConfigVersion`
+/// resolves to the type the other unit's `M::ConfigVersion` names.
+#[trace("FR-480-AC-18")]
+#[test]
+fn two_units_selecting_one_package_under_one_alias_both_name_its_types() {
+    let unit = |function: &str| {
+        format!(
+            "model M = \"example/config-version\";\n\
+             function {function} using s(c: M::ConfigVersion): Boolean pure {{ true }}\n\
+             invariant {function}_inv using s on M::ConfigVersion at current \
+             {{ self.versionNumber >= 0 }}"
+        )
+    };
+    let (a, b) = (unit("fa"), unit("fb"));
+    for units in [
+        [("a", a.as_str()), ("b", b.as_str())],
+        [("b", b.as_str()), ("a", a.as_str())],
+    ] {
+        let checked = assemble_model_units(&units)
+            .unwrap_or_else(|refusal| panic!("both units' M::ConfigVersion resolve: {refusal:?}"))
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("both units check: {refusals:?}"));
+        let fa = first_parameter(&checked, "fa");
+        assert!(matches!(&fa, ValueType::Reference(_)), "{fa:?}");
+        assert_eq!(fa, first_parameter(&checked, "fb"));
+        assert_eq!(clause_context(&checked, "fa_inv"), fa);
+        assert_eq!(clause_context(&checked, "fb_inv"), fa);
+    }
+}
+
+/// FR-480-AC-14 (QSL-1613): model aliases are local to their unit. Unit `a`
 /// selects one package as `M` and `N`, and unit `b` binds `N` to another
 /// package that declares the same type names. Each unit's
 /// `N::ConfigVersion`, as a state clause's context or a parameter type,
 /// names its own alias's package: `a`'s the type `M::ConfigVersion` names,
 /// `b`'s the other package's.
-#[trace("FR-480-AC-12")]
+#[trace("FR-480-AC-14")]
 #[test]
 fn one_alias_two_units_bind_to_two_packages_names_each_units_own_package() {
     let checked = assemble_model_units(&[
@@ -4739,12 +4776,12 @@ fn one_alias_two_units_bind_to_two_packages_names_each_units_own_package() {
     assert_eq!(clause_context(&checked, "B"), b);
 }
 
-/// FR-480-AC-12 (QSL-1613): two units each select a different package under
+/// FR-480-AC-15 (QSL-1613): two units each select a different package under
 /// the first alias `N`, both packages declaring `ConfigVersion`, so both
 /// project `N::ConfigVersion`. Each unit's state clause context and
 /// parameter type resolve to its own package's type, never to the other
 /// unit's.
-#[trace("FR-480-AC-12")]
+#[trace("FR-480-AC-15")]
 #[test]
 fn one_first_alias_of_two_packages_names_each_units_own_package() {
     let checked = assemble_model_units(&[
@@ -4772,17 +4809,24 @@ fn one_first_alias_of_two_packages_names_each_units_own_package() {
     assert_eq!(clause_context(&checked, "B"), b);
 }
 
-/// FR-480-AC-12 (QSL-1613): a unit never reaches a package through another
+/// FR-480-AC-16 (QSL-1613): a unit never reaches a package through another
 /// unit's model alias: unit `b`, which binds no `M`, refuses
-/// `M::ConfigVersion` as a state clause's context or a parameter type.
-#[trace("FR-480-AC-12")]
+/// `M::ConfigVersion` with `missing_declaration`/`missing-name` in every
+/// position a type name is written -- a state clause's context, a parameter
+/// type, an `allInstances` and a `lookup` type argument.
+#[trace("FR-480-AC-16")]
 #[test]
 fn a_unit_reaches_no_package_through_another_units_alias() {
     for declaration in [
         "invariant B using s on M::ConfigVersion at current { self.versionNumber >= 0 }",
         "function fb using s(c: M::ConfigVersion): Boolean pure { true }",
+        "invariant B using s on N::ConfigVersion at current { \
+         forall(o in allInstances<M::ConfigVersion>(N::config_history) : \
+         o.versionNumber >= 0) }",
+        "function q using s(p: Population<N::ConfigVersion>[1], r: N::ConfigVersion): \
+         N::ConfigVersion pure { lookup<M::ConfigVersion>(p, r) absent refused }",
     ] {
-        let refusal = assemble_model_units(&[
+        let assembled = assemble_model_units(&[
             (
                 "a",
                 "model M = \"example/config-version\";\ntype Pad = Integer;",
@@ -4791,22 +4835,27 @@ fn a_unit_reaches_no_package_through_another_units_alias() {
                 "b",
                 &format!("model N = \"example/alternate-config-version\";\n{declaration}"),
             ),
-        ])
-        .err()
-        .unwrap_or_else(|| panic!("b binds no M: {declaration}"));
-        let error = refusal
-            .errors
-            .iter()
-            .find(|error| {
-                error.cause
-                    == AssemblyCause::UnresolvedTypeName {
-                        name: "M::ConfigVersion".to_owned(),
-                    }
-            })
-            .unwrap_or_else(|| panic!("{declaration}: {refusal:?}"));
-        assert_eq!(
-            error.cause.catalog_code().to_string(),
-            "missing_declaration/missing-name"
+        ]);
+        let codes: Vec<String> = match assembled {
+            Err(refusal) => refusal
+                .errors
+                .iter()
+                .map(|error| error.cause.catalog_code().to_string())
+                .collect(),
+            Ok(declarations) => declarations
+                .check(CheckingLimits::default())
+                .err()
+                .unwrap_or_else(|| panic!("b binds no M: {declaration}"))
+                .iter()
+                .filter_map(|refusal| refusal.cause.catalog_code())
+                .map(|code| code.to_string())
+                .collect(),
+        };
+        assert!(
+            codes
+                .iter()
+                .any(|code| code.ends_with("missing_declaration/missing-name")),
+            "{declaration}: {codes:?}"
         );
     }
 }

@@ -1538,6 +1538,7 @@ pub(crate) fn check_declaration_body(
                 &mut nodes,
                 ClauseKind::Body,
             )
+            .with_source_owner(input.source_owner.clone())
             .with_cancel(input.cancel)
             .with_complete_value(input.complete_value)
             .with_context(cx.reborrow(input.scope));

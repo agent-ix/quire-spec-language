@@ -506,18 +506,15 @@ fn a_second_alias_names_the_same_variant_record_and_object_types() {
     assert_eq!(same[0], same[1]);
 }
 
-/// FR-480-AC-11 (QSL-1578): unit `a` selects the FR-360 package as `Config`
-/// and unit `b` selects it as `Cfg`. Unit `b` names its variant type and
-/// case, its record value type and field, and its object type and operation
-/// through `Cfg`, each resolving to the declaration `Config` names: unit
-/// `b`'s `Cfg::Tier` value is an argument of unit `a`'s `Config::Tier`
-/// parameter, and each variant type is declared once.
-#[trace("FR-480-AC-11")]
-#[test]
-fn two_units_name_the_same_variant_record_and_object_types_through_their_own_aliases() {
+/// The FR-360 package's units `(identity, declarations)`, each under the
+/// model profile `v`, with their model selections admitted together and
+/// assembled as one package.
+fn assemble_fixture_units(
+    declarations: &[(&str, String)],
+) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
     let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]).unwrap();
-    let unit = |identity: &str, declarations: String| {
+    let unit = |identity: &str, declarations: &str| {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n{declarations}\n"
@@ -533,27 +530,10 @@ fn two_units_name_the_same_variant_record_and_object_types_through_their_own_ali
         let unit = build_unit(&parsed).expect("S2 builds the source unit");
         (parsed.source().reference().clone(), unit)
     };
-    let package = fixture::PACKAGE;
-    let units = vec![
-        unit(
-            "a",
-            format!(
-                "model Config = {package:?};\n\
-                 function gold using v(t: Config::Tier): Boolean pure {{ t = Config::Tier::Gold }}"
-            ),
-        ),
-        unit(
-            "b",
-            format!(
-                "model Cfg = {package:?};\n\
-                 function read using v(s: Cfg::Settings): Cfg::Tier pure {{ s.tier }}\n\
-                 function golden using v(s: Cfg::Settings): Boolean pure {{ \
-                     gold(s.tier) or s.tier = Cfg::Tier::Standard }}\n\
-                 function same using v(a: Cfg::Account, b: Cfg::Account): Boolean pure {{ a = b }}\n\
-                 pre Promotes using v on Cfg::Account::promote {{ t = Cfg::Tier::Gold }}"
-            ),
-        ),
-    ];
+    let units: Vec<_> = declarations
+        .iter()
+        .map(|(identity, declarations)| unit(identity, declarations))
+        .collect();
     let selections: Vec<_> = units
         .iter()
         .map(|(_, unit)| unit.selections().models.as_slice())
@@ -564,8 +544,8 @@ fn two_units_name_the_same_variant_record_and_object_types_through_their_own_ali
         ModelNormalizationLimits::default(),
         &Cancel::new(),
     )
-    .expect("the one package admits under both units' aliases");
-    let declarations = PackageDeclarations::assemble_units(
+    .expect("the one package admits under every unit's alias");
+    PackageDeclarations::assemble_units(
         crate::TEST_PACKAGE_NAME.to_owned(),
         units,
         selected,
@@ -573,6 +553,38 @@ fn two_units_name_the_same_variant_record_and_object_types_through_their_own_ali
         AssemblyLimits::default(),
         &Cancel::new(),
     )
+}
+
+/// FR-480-AC-11 (QSL-1578): unit `a` selects the FR-360 package as `Config`
+/// and unit `b` selects it as `Cfg`. Unit `b` names its variant type and
+/// case, its record value type and field, and its object type and operation
+/// through `Cfg`, each resolving to the declaration `Config` names: unit
+/// `b`'s `Cfg::Tier` value is an argument of unit `a`'s `Config::Tier`
+/// parameter, and each variant type is declared once.
+#[trace("FR-480-AC-11")]
+#[test]
+fn two_units_name_the_same_variant_record_and_object_types_through_their_own_aliases() {
+    let package = fixture::PACKAGE;
+    let declarations = assemble_fixture_units(&[
+        (
+            "a",
+            format!(
+                "model Config = {package:?};\n\
+                 function gold using v(t: Config::Tier): Boolean pure {{ t = Config::Tier::Gold }}"
+            ),
+        ),
+        (
+            "b",
+            format!(
+                "model Cfg = {package:?};\n\
+                 function read using v(s: Cfg::Settings): Cfg::Tier pure {{ s.tier }}\n\
+                 function golden using v(s: Cfg::Settings): Boolean pure {{ \
+                     gold(s.tier) or s.tier = Cfg::Tier::Standard }}\n\
+                 function same using v(a: Cfg::Account, b: Cfg::Account): Boolean pure {{ a = b }}\n\
+                 pre Promotes using v on Cfg::Account::promote {{ t = Cfg::Tier::Gold }}"
+            ),
+        ),
+    ])
     .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"));
     let mut variant_types: Vec<_> = declarations
         .variant_types
@@ -602,6 +614,56 @@ fn two_units_name_the_same_variant_record_and_object_types_through_their_own_ali
     assert_eq!(*callable("read").result, tier);
     let same = &callable("same").parameters;
     assert!(matches!(&same[0].1, ValueType::Reference(_)), "{same:?}");
+}
+
+/// FR-480-AC-16 (QSL-1613): a unit never reaches a package through another
+/// unit's model alias in an expression position. Unit `b` selects the
+/// FR-360 package as `Cfg` only, so its variant case `Config::Tier::Gold`
+/// refuses `missing_declaration`/`missing-name` though unit `a` binds
+/// `Config`; spelled `Cfg::Tier::Gold` it checks.
+#[trace("FR-480-AC-16")]
+#[test]
+fn a_variant_case_through_another_units_alias_refuses_missing_name() {
+    let package = fixture::PACKAGE;
+    let units = |case: &str| {
+        assemble_fixture_units(&[
+            (
+                "a",
+                format!("model Config = {package:?};\ntype Pad = Integer;"),
+            ),
+            (
+                "b",
+                format!(
+                    "model Cfg = {package:?};\n\
+                     function gold using v(t: Cfg::Tier): Boolean pure {{ t = {case} }}"
+                ),
+            ),
+        ])
+    };
+    units("Cfg::Tier::Gold")
+        .unwrap_or_else(|refusal| panic!("b's own alias assembles: {refusal:?}"))
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("b's own alias checks: {refusals:?}"));
+    let codes: Vec<String> = match units("Config::Tier::Gold") {
+        Err(refusal) => refusal
+            .errors
+            .iter()
+            .map(|error| error.cause.catalog_code().to_string())
+            .collect(),
+        Ok(declarations) => declarations
+            .check(CheckingLimits::default())
+            .expect_err("b binds no Config")
+            .iter()
+            .filter_map(|refusal| refusal.cause.catalog_code())
+            .map(|code| code.to_string())
+            .collect(),
+    };
+    assert!(
+        codes
+            .iter()
+            .any(|code| code.ends_with("missing_declaration/missing-name")),
+        "{codes:?}"
+    );
 }
 
 /// The checked graph of `declarations` over the FR-360 package, and the

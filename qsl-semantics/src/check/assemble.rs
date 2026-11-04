@@ -3442,6 +3442,7 @@ impl PackageDeclarations {
             execution_points,
         } = run;
         let model_selection_units = unit.model_selection_units().to_vec();
+        let repeated_model_selection_units = unit.repeated_model_selection_units().to_vec();
         let import_selection_units = unit.import_selection_units().to_vec();
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
@@ -3608,6 +3609,17 @@ impl PackageDeclarations {
                 }
                 Err(refused) => errors.extend(refused),
             }
+        }
+        // A later unit that repeats a kept selection (same alias, same
+        // package) binds the alias in its own unit too.
+        for (kept, source_unit) in &repeated_model_selection_units {
+            let (Some(selection), Some(unit_source)) =
+                (selections.models.get(*kept), sources.get(*source_unit))
+            else {
+                continue;
+            };
+            let package = packages.get(selection.identity.as_str()).copied();
+            model_spellings.bind_model(unit_source, &selection.alias, package);
         }
         for (import, source_unit) in selections.imports.iter().zip(&import_selection_units) {
             if let (Some(alias), Some(unit_source)) = (&import.alias, sources.get(*source_unit)) {
