@@ -104,7 +104,7 @@ them at its pinned revision.
 | Behavior | Successor requirement and test | Disposition |
 | --- | --- | --- |
 | Operators, intervals, bounded truth (FR-043-AC-1, AC-4, AC-6) | FR-325 to FR-328; `qsl-eval/tests/it/temporal_trace.rs` | COVERED (FR-327-AC-4 and FR-329-AC-5 visit-meter tests at `temporal_trace.rs:659,938`) |
-| Lasso and fair lasso incl. `Lasso::Model` (FR-329) | FR-329 | PARTIAL: green `Lasso::Model` test required before deletion (QSL-858 criterion); QSL-1516 |
+| Lasso and fair lasso incl. `Lasso::Model` (FR-329) | FR-329; `qsl-eval/tests/it/temporal_trace.rs` and `qsl-analyze/tests/it/lasso_replay.rs` | PARTIAL: `lasso_replay.rs::a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses` now covers FR-329-AC-3's FR-120 `ModelSystem` loop-closure refusal; other FR-329 coverage remains scoped to its tagged cases. QSL-1516's required green `Lasso::Model` test is present. |
 | `on origin` / `on each` activation (FR-044-AC-8) | FR-327 | COVERED |
 | Profile and clock selected by identity (FR-043-AC-2) | FR-110, FR-326 | PARTIAL: header selection only; wrong-clock assertion is PORT QSL-1502 (FR-522) |
 | Trace clock/profile mismatch refusal (FR-043-AC-3), result identity (AC-13), authenticated clock report, whole-declaration vs per-instance stop | none (`TraceInput` carries documents only); successors FR-522, FR-523 | PORT QSL-1502 |

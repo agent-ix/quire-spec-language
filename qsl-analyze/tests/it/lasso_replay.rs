@@ -297,12 +297,13 @@ fn a_lasso_on_which_the_claim_holds_disagrees() {
     );
 }
 
-/// Verifies part of FR-128-AC-3: the lasso with its last step removed does
-/// not close (the loop is empty), a `terminal-stutter` loop on a state that
-/// enables `inc` refuses, and a post-state key altered refuses
-/// `stale_dependency`/`content-mismatch` naming the step and the state key;
-/// each refuses with no result.
-#[trace("TC-523")]
+/// FR-329-AC-3: the empty lasso loop and a model-step lasso whose last loop
+/// post-state differs from its entry both refuse `invalid_runtime_input`/
+/// `invalid-value`. This runs the `Lasso::Model` case through FR-120's
+/// `ModelSystem` and production replay; a terminal stutter at a nonterminal
+/// state is also refused.
+///
+#[trace("TC-523", "TC-839", "FR-329-AC-3")]
 #[test]
 fn a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses() {
     let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
@@ -322,8 +323,9 @@ fn a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses()
         entry: 0,
         terminal_stutter: false,
     });
-    let (cause, ..) = refusal(replay_with(&stutter_fixture, ends, is_zero));
+    let (cause, code, tag) = refusal(replay_with(&stutter_fixture, ends, is_zero));
     assert_eq!(cause, ModelTraceRefusal::LoopOpen { entry: 0, steps: 3 });
+    assert_eq!((code, tag), (Code::InvalidRuntimeInput, "invalid-value"));
 
     let mut stutter = payload.clone();
     stutter.prefix.clear();
