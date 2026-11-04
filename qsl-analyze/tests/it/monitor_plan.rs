@@ -721,3 +721,76 @@ fn production_and_admission_refuse_a_clause_with_no_complete_program() {
         }
     }
 }
+
+/// FR-251-AC-37 and AC-39 (TC-1081): two plans of one clause, built through
+/// `TimedMonitorPlan`'s public constructor with the subject unchanged, that
+/// differ only in the checked body of one atom, or only in the checked body
+/// of the activation guard, have different `PlanId`s; rebuilt with equal
+/// bodies throughout, the `PlanId` is equal.
+#[trace("TC-1081", "FR-251-AC-37", "FR-251-AC-39")]
+#[test]
+fn a_swapped_atom_or_guard_body_changes_the_plan_id() {
+    use qsl_replay::{MonitorAtom, MonitorProgram, TimedMonitorPlan};
+    let guarded =
+        |gate: i64| format!("on each (q: M::ConfigVersion) when (q.versionNumber = {gate})");
+    let formula = |value: i64| {
+        format!(
+            "always (holds(c.versionNumber = {value}) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))"
+        )
+    };
+    let plan = premise_plan_on(&formula(2), &guarded(1), &base_target());
+    let other_atom = premise_plan_on(&formula(5), &guarded(1), &base_target());
+    let other_guard = premise_plan_on(&formula(2), &guarded(7), &base_target());
+    let program = plan.program();
+    let (guard, guard_slots) = program.guard().expect("a guarded clause");
+    let rebuild = |atoms: Vec<MonitorAtom>, guard: &qsl_semantics::check::CheckedBody| {
+        TimedMonitorPlan::new(
+            plan.subject().clone(),
+            plan.binding().clone(),
+            plan.uncertainty().clone(),
+            plan.max_reading_gap(),
+            MonitorProgram::new(
+                program.root(),
+                program.formula().clone(),
+                program.activation(),
+                atoms,
+                Some((guard.clone(), guard_slots)),
+            ),
+            plan.intervals().to_vec(),
+            plan.buffers().to_vec(),
+            plan.rate_limit().clone(),
+            plan.activation_capacity(),
+        )
+    };
+
+    let equal = rebuild(program.atoms().to_vec(), guard);
+    assert_eq!(equal.id(), plan.id(), "equal bodies give an equal PlanId");
+
+    let first = &program.atoms()[0];
+    let swapped_body = other_atom.program().atoms()[0].body();
+    assert_ne!(
+        swapped_body,
+        first.body(),
+        "the fixture's atom bodies differ"
+    );
+    let mut atoms = program.atoms().to_vec();
+    atoms[0] = MonitorAtom::new(first.id(), swapped_body.clone(), first.slots());
+    let atom_swapped = rebuild(atoms, guard);
+    assert_eq!(atom_swapped.subject(), plan.subject());
+    assert_ne!(
+        atom_swapped.id(),
+        plan.id(),
+        "a swapped atom body changes the PlanId"
+    );
+
+    let (swapped_guard, slots) = other_guard.program().guard().expect("a guarded clause");
+    assert_eq!(slots, guard_slots);
+    assert_ne!(swapped_guard, guard, "the fixture's guard bodies differ");
+    let guard_swapped = rebuild(program.atoms().to_vec(), swapped_guard);
+    assert_ne!(
+        guard_swapped.id(),
+        plan.id(),
+        "a swapped guard body changes the PlanId"
+    );
+    assert_ne!(guard_swapped.id(), atom_swapped.id());
+}

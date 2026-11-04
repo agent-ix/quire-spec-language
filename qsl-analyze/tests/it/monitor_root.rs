@@ -474,21 +474,44 @@ fn closure_tail(wire: &serde_json::Value) -> Vec<u64> {
         .collect()
 }
 
-/// QSpec FR-487-AC-13 (the plan-root key half of FR-251-AC-38; the `PlanId`
-/// half is not asserted here): two plans that differ only in the body of a
-/// declared helper have different root keys, whether the helper is called by
-/// an atom (directly or through another helper) or by the activation guard;
-/// the entries' keys and the helpers' own declaration-path ids are unchanged,
-/// the helpers stay declared, an equal helper body gives an equal root key,
-/// and the key's tail is exactly the body roots of the called helpers, once
-/// each, ascending by helper node id.
-#[trace("TC-1081", "FR-487-AC-13")]
+/// QSpec FR-487-AC-13 and FR-251-AC-38: two plans that differ only in the
+/// body of a declared helper have different `PlanId`s and different root
+/// keys, whether the helper is called by an atom (directly or through
+/// another helper) or by the activation guard, while the atoms' and the
+/// guard's own checked bodies are equal; the entries' keys and the helpers'
+/// own declaration-path ids are unchanged, the helpers stay declared, an
+/// equal helper body gives an equal `PlanId` and root key, and the key's
+/// tail is exactly the body roots of the called helpers, once each,
+/// ascending by helper node id.
+#[trace("TC-1081", "FR-487-AC-13", "FR-251-AC-38")]
 #[test]
 fn the_root_key_covers_the_bodies_of_called_helpers() {
     let one = root_of(&helper_unit(1, 2), "C", &target()).expect("base");
     let again = root_of(&helper_unit(1, 2), "C", &target()).expect("base again");
     let atom = root_of(&helper_unit(2, 2), "C", &target()).expect("atom helper body");
     let guard = root_of(&helper_unit(1, 3), "C", &target()).expect("guard helper body");
+    assert_eq!(
+        one.plan.id(),
+        again.plan.id(),
+        "an equal helper body gives an equal PlanId"
+    );
+    for (what, other) in [("atom", &atom), ("guard", &guard)] {
+        assert_eq!(
+            other.plan.program().atoms(),
+            one.plan.program().atoms(),
+            "the {what} case keeps every atom body"
+        );
+        assert_eq!(
+            other.plan.program().guard(),
+            one.plan.program().guard(),
+            "the {what} case keeps the guard body"
+        );
+        assert_ne!(
+            other.plan.id(),
+            one.plan.id(),
+            "a swapped {what} helper body changes the PlanId"
+        );
+    }
     let [a, a2, b, c] = [&one, &again, &atom, &guard].map(admitted);
     let (ka, ka2, kb, kc) = (keys(&a), keys(&a2), keys(&b), keys(&c));
     assert_eq!(ka, ka2, "an equal helper body gives an equal root key");

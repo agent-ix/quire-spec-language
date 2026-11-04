@@ -198,6 +198,7 @@ pub struct MonitorProgram {
     activation: Activation,
     atoms: Vec<MonitorAtom>,
     guard: Option<(CheckedBody, usize)>,
+    helpers: BTreeMap<usize, CheckedBody>,
 }
 
 impl MonitorProgram {
@@ -215,7 +216,21 @@ impl MonitorProgram {
             activation,
             atoms,
             guard,
+            helpers: BTreeMap::new(),
         }
+    }
+    /// This program with `helpers`, the checked body of every declared
+    /// function an atom or the guard calls, directly or through another
+    /// helper (the call closure of QSpec FR-487-AC-13), keyed by the
+    /// function index a checked call names.
+    #[must_use]
+    pub fn with_helpers(mut self, helpers: BTreeMap<usize, CheckedBody>) -> Self {
+        self.helpers = helpers;
+        self
+    }
+    /// The checked helper bodies of the call closure, by function index.
+    pub fn helpers(&self) -> &BTreeMap<usize, CheckedBody> {
+        &self.helpers
     }
     /// Formula root.
     pub fn root(&self) -> SubformulaId {
@@ -308,12 +323,15 @@ impl FormulaToken {
 /// The unique key for one immutable plan in its driver's ownership scope.
 ///
 /// It covers everything the plan fixes (FR-251 "Build inputs and identity"):
-/// the subject (whose checked clause key is content-keyed, so it selects the
-/// atom bodies, the activation guard and the captures), the formula
-/// topology and root, the activation, each atom's admitted input slots, the
-/// tick intervals, the buffer capacities and every target premise. Changing
-/// any one yields a different `PlanId`; no new digest is minted.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+/// the subject, the formula topology and root, the activation, the checked
+/// body and admitted input slots of every atom and of the activation guard,
+/// the tick intervals, the buffer capacities and every target premise.
+/// Changing any one yields a different `PlanId`, including through
+/// [`TimedMonitorPlan::new`] with the subject unchanged (FR-251-AC-37,
+/// AC-39), and the checked body of every helper function in the call
+/// closure of the atoms and the guard (FR-251-AC-38): the clause key names a
+/// callee by its declaration, not its body. No new digest is minted.
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanId {
     subject: MonitorSubject,
     binding: ClockBindingKey,
@@ -323,12 +341,17 @@ pub struct PlanId {
     root: SubformulaId,
     topology: Vec<FormulaToken>,
     activation: ActivationToken,
-    atoms: Vec<(AtomId, usize)>,
-    guard_slots: Option<usize>,
+    atoms: Vec<MonitorAtom>,
+    guard: Option<(CheckedBody, usize)>,
+    helpers: BTreeMap<usize, CheckedBody>,
     intervals: Vec<(SubformulaId, TickInterval)>,
     buffers: Vec<(SubformulaId, u64)>,
     activation_capacity: u64,
 }
+
+/// `CheckedBody` equality is total: a literal compares by key, a float by
+/// its IEEE bits, so every `PlanId` equals itself.
+impl Eq for PlanId {}
 
 /// The clause activation as part of a plan identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -440,12 +463,9 @@ impl TimedMonitorPlan {
                 Activation::Origin => ActivationToken::Origin,
                 Activation::Each { guarded } => ActivationToken::Each { guarded },
             },
-            atoms: program
-                .atoms()
-                .iter()
-                .map(|atom| (atom.id(), atom.slots()))
-                .collect(),
-            guard_slots: program.guard().map(|(_, slots)| slots),
+            atoms: program.atoms().to_vec(),
+            guard: program.guard.clone(),
+            helpers: program.helpers.clone(),
             intervals: self.intervals.clone(),
             buffers: self.buffers.clone(),
             activation_capacity: self.activation_capacity,
@@ -532,6 +552,12 @@ pub enum MonitorPlanRefusal {
     #[error("checked temporal atom {index} has no condition body")]
     MissingAtomBody {
         /// The formula arena index.
+        index: usize,
+    },
+    /// A checked call names a function the package does not hold.
+    #[error("called function {index} has no checked body")]
+    MissingHelperBody {
+        /// The function index the call names.
         index: usize,
     },
     /// The interval could not be converted exactly.

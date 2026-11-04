@@ -16,7 +16,11 @@ use qsl_replay::{
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
 };
-use qsl_semantics::check::{CheckedInterval, CheckedTemporalClause, FormulaNode};
+use std::collections::BTreeMap;
+
+use quire_checked::node::NodeKind;
+
+use qsl_semantics::check::{CheckedBody, CheckedInterval, CheckedTemporalClause, FormulaNode};
 use qsl_semantics::library::LibraryName;
 
 /// The FR-251 default event rate, `one event / microsecond`, expressed per
@@ -174,13 +178,21 @@ pub fn produce(
     let guard = node
         .guard()
         .map(|(body, slots)| (body.body().clone(), slots));
+    let helpers = call_closure(
+        package,
+        atoms
+            .iter()
+            .map(MonitorAtom::body)
+            .chain(guard.as_ref().map(|(body, _)| body)),
+    )?;
     let program = MonitorProgram::new(
         SubformulaId::new(formula.root().index()),
         formula.clone(),
         clause.activation(),
         atoms,
         guard,
-    );
+    )
+    .with_helpers(helpers);
     let plan = TimedMonitorPlan::new(
         subject,
         clock_binding,
@@ -200,6 +212,36 @@ pub fn produce(
     spec_from_plan(&plan)?;
     let obligations = plan_obligations(&plan, settings);
     Ok((plan, obligations))
+}
+
+/// The checked body of every declared function `roots` call, directly or
+/// through another called function (QSpec FR-487-AC-13's call closure), by
+/// the function index a checked call names.
+fn call_closure<'b>(
+    package: &CheckedPackage,
+    roots: impl Iterator<Item = &'b CheckedBody>,
+) -> Result<BTreeMap<usize, CheckedBody>, MonitorPlanRefusal> {
+    let mut helpers = BTreeMap::new();
+    let mut pending: Vec<CheckedBody> = roots.cloned().collect();
+    while let Some(body) = pending.pop() {
+        for position in 0..body.len() {
+            let NodeKind::Call { function, .. } = body.node(CheckedBody::id_at(position)).kind()
+            else {
+                continue;
+            };
+            if helpers.contains_key(function) {
+                continue;
+            }
+            let state = package
+                .graph()
+                .function_state(*function)
+                .ok_or(MonitorPlanRefusal::MissingHelperBody { index: *function })?;
+            let callee = state.body.body().clone();
+            helpers.insert(*function, callee.clone());
+            pending.push(callee);
+        }
+    }
+    Ok(helpers)
 }
 
 /// Why admission refused a candidate plan.
