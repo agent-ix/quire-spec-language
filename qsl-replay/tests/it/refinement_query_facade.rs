@@ -364,6 +364,9 @@ fn public_handoff_refuses_invalid_framing_and_selected_record_shapes() {
             parts[slot] = parts[1].clone();
             assert_error(handoff(&parts), Error::Shape);
         }
+        let mut duplicate_base = original.clone();
+        duplicate_base[4] = original[0].clone();
+        assert_error(handoff(&duplicate_base), Error::Shape);
         let mut parts = original.clone();
         parts[4].0 = Some(7);
         assert_error(handoff(&parts), Error::Shape);

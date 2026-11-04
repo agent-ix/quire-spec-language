@@ -110,18 +110,39 @@ struct Part<'a> {
     proof: Option<&'a [u8]>,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static FAIL_RESERVATION_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+fn reserve_payload(bytes: &mut Vec<u8>, additional: usize) -> Result<(), RefinementHandoffRefusal> {
+    #[cfg(test)]
+    if FAIL_RESERVATION_AFTER.with(|pending| match pending.get() {
+        Some(0) => {
+            pending.set(None);
+            true
+        }
+        Some(remaining) => {
+            pending.set(Some(remaining - 1));
+            false
+        }
+        None => false,
+    }) {
+        // Vec<u8> cannot have a capacity above isize::MAX. This exercises
+        // the real reservation failure before any allocator can be called.
+        bytes.try_reserve(usize::MAX).map_err(|_| exhausted())?;
+    }
+    bytes.try_reserve_exact(additional).map_err(|_| exhausted())
+}
+
 fn owned(part: Part<'_>) -> Result<RefutedQuery, RefinementHandoffRefusal> {
     let query = part.query.ok_or(RefinementHandoffRefusal::Shape)?;
     let proof = part.proof.ok_or(RefinementHandoffRefusal::Shape)?;
     let mut query_bytes = Vec::new();
-    query_bytes
-        .try_reserve_exact(query.len())
-        .map_err(|_| exhausted())?;
+    reserve_payload(&mut query_bytes, query.len())?;
     query_bytes.extend_from_slice(query);
     let mut proof_bytes = Vec::new();
-    proof_bytes
-        .try_reserve_exact(proof.len())
-        .map_err(|_| exhausted())?;
+    reserve_payload(&mut proof_bytes, proof.len())?;
     proof_bytes.extend_from_slice(proof);
     Ok(RefutedQuery {
         query: query_bytes,
@@ -250,6 +271,48 @@ mod tests {
             assert_eq!(
                 assemble_parts(&[part], &budget),
                 Err(RefinementHandoffRefusal::Shape)
+            );
+        }
+    }
+    #[trace("TC-1275", "FR-492-AC-11")]
+    #[test]
+    fn payload_reservation_failure_never_exposes_a_certificate() {
+        let limits = CertificateCheckLimits::default();
+        let cancel = Cancel::new();
+        let budget = Budget {
+            limits: &limits,
+            cancel: &cancel,
+        };
+        let parts = [
+            Some(Part {
+                query: Some(b"base query"),
+                proof: Some(b"base proof"),
+            }),
+            Some(Part {
+                query: Some(b"step query"),
+                proof: Some(b"step proof"),
+            }),
+        ];
+        let expected = assemble_parts(&parts, &budget).expect("healthy native reservations");
+        // Also fail after earlier payloads have been copied, including after
+        // the complete base has been assembled, without exposing any prefix.
+        for successful_reservations in [0, 1, 3] {
+            FAIL_RESERVATION_AFTER.with(|pending| pending.set(Some(successful_reservations)));
+            assert_eq!(
+                assemble_parts(&parts, &budget),
+                Err(RefinementHandoffRefusal::Stopped(
+                    IncompleteCause::ResourceExhausted
+                ))
+            );
+            assert_eq!(
+                FAIL_RESERVATION_AFTER.with(std::cell::Cell::get),
+                None,
+                "the real reservation path consumed its one-shot fault"
+            );
+            assert_eq!(
+                assemble_parts(&parts, &budget),
+                Ok(expected.clone()),
+                "the next assembly must preserve every original byte"
             );
         }
     }
