@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
     evaluate_observed, HoldsStop, PositionRefusal, ProgressedRefusal, TemporalOutcome,
-    TemporalRefusal, TemporalTrace, TimestampedTrace, UndefinedCause, UndefinedEvaluation,
-    WindowRefusal,
+    TemporalPosition, TemporalRefusal, TemporalTrace, TimestampedTrace, UndefinedCause,
+    UndefinedEvaluation, WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{FormulaNode, TemporalProfile};
+use qsl_semantics::check::{FormulaNode, FormulaNodeId, TemporalProfile};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     admit_trace_snapshot, population_universe_for, AdmissionFailure, AdmissionRecord,
@@ -448,7 +448,11 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     // A trace is evidence for that trace only: it settles no item and
     // derives no witness (FR-332).
     let report = |disposition: ClauseDisposition, usage: ClauseRunUsage| ClauseRunReport {
-        basis: SettlementBasis::Unavailable,
+        // FR-266's Temporal row.
+        basis: match &disposition {
+            ClauseDisposition::Temporal(verdict) => verdict.basis(),
+            _ => SettlementBasis::Unavailable,
+        },
         witness: None,
         // A completed temporal verdict names no consequent events: it
         // refuses typed rather than reporting an empty list.
@@ -462,6 +466,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         // A refused request leaves the caller's ledger as it was.
         ledger: ledger.cloned(),
         finite_window: None,
+        counterexample: None,
     };
     let early = |disposition| report(disposition, ClauseRunUsage::default());
 
@@ -717,7 +722,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
 
     if let Some(window_trace) = progressed {
         let silent_from = u64::try_from(window_trace.observed()).ok();
-        let (disposition, visits, window_report) = run_window(
+        let (disposition, visits, window_report, undefined) = run_window(
             run,
             node,
             &window_trace,
@@ -726,6 +731,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             reference,
             &mut meter,
         );
+        let counterexample = counterexample(node, trace, &disposition, undefined);
         let accepted = !matches!(
             disposition.category(),
             quire_semantic_value::catalog::Category::Refusal
@@ -735,6 +741,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         usage.temporal_visits = visits;
         let mut finished = report(disposition, usage);
         finished.finite_window = window_report;
+        finished.counterexample = counterexample;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -751,8 +758,9 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             progress: *progress,
             window,
         };
-        let (disposition, visits, window_report) =
+        let (disposition, visits, window_report, undefined) =
             run_finite_window(run, node, &view, &environments, reference, &mut meter);
+        let counterexample = counterexample(node, trace, &disposition, undefined);
         let accepted = !matches!(
             disposition.category(),
             quire_semantic_value::catalog::Category::Refusal
@@ -762,6 +770,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         usage.temporal_visits = visits;
         let mut finished = report(disposition, usage);
         finished.finite_window = window_report;
+        finished.counterexample = counterexample;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -800,7 +809,9 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         quire_semantic_value::catalog::Category::Refusal
             | quire_semantic_value::catalog::Category::InternalFailure
     );
+    let counterexample = counterexample(node, trace, &disposition, observed.undefined);
     let mut report = report(disposition, ClauseRunUsage::from_meter(&meter, admitted));
+    report.counterexample = counterexample;
     if accepted {
         report.ledger = accepted_ledger.or_else(|| ledger.cloned());
     }
@@ -818,7 +829,7 @@ fn run_finite_window(
     environments: &[ObjectEnvironment],
     over: &quire_exact::ObjectReference,
     meter: &mut Meter,
-) -> (ClauseDisposition, u64, Option<FiniteWindowReport>) {
+) -> WindowRun {
     use qsl_eval::temporal::{
         LowerBoundary, TimestampedObservation as WindowObservation, Watermark, WindowClock,
         WindowProgress,
@@ -829,6 +840,7 @@ fn run_finite_window(
                 "temporal", invariant,
             )),
             0,
+            None,
             None,
         )
     };
@@ -933,7 +945,7 @@ fn run_window(
     environments: &[ObjectEnvironment],
     over: &quire_exact::ObjectReference,
     meter: &mut Meter,
-) -> (ClauseDisposition, u64, Option<FiniteWindowReport>) {
+) -> WindowRun {
     let classes = atom_classes(run, node);
     let observed = qsl_eval::temporal::evaluate_observed_finite_window(
         run.package,
@@ -948,6 +960,7 @@ fn run_window(
         },
         meter,
     );
+    let undefined = observed.undefined;
     match (observed.stopped, observed.result) {
         (Some(HoldsStop::Refused(evaluation)), _) => {
             let disposition = match convert_outcome(evaluation, run.package.graph(), run.sources) {
@@ -957,14 +970,14 @@ fn run_window(
                     other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
                 },
             };
-            (disposition, 0, None)
+            (disposition, 0, None, None)
         }
         (Some(HoldsStop::Failed(failure)), _) => {
             let disposition = match *convert_call_failure(failure) {
                 RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
                 other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
             };
-            (disposition, 0, None)
+            (disposition, 0, None, None)
         }
         (None, Ok(evaluation)) => {
             let names = |atom: qsl_semantics::check::FormulaNodeId| atom_name(run, node, atom);
@@ -986,6 +999,7 @@ fn run_window(
                     ),
                     0,
                     None,
+                    None,
                 );
             };
             (
@@ -996,16 +1010,106 @@ fn run_window(
                     node,
                     (basis, support, premises, identity),
                 )),
+                undefined,
             )
         }
         (None, Err(TemporalRefusal::Fault(internal))) => {
-            (ClauseDisposition::EvaluateFault(internal), 0, None)
+            (ClauseDisposition::EvaluateFault(internal), 0, None, None)
         }
         (None, Err(refusal)) => (
             ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
             0,
             None,
+            None,
         ),
+    }
+}
+
+/// What a finite-window or progressed run returns: the disposition, the
+/// `temporal.visit` charges made, the result report and the first undefined
+/// atom read.
+type WindowRun = (
+    ClauseDisposition,
+    u64,
+    Option<FiniteWindowReport>,
+    Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+);
+
+/// FR-330 Outputs: the observed-arm counterexample (QSpec FR-364) of a
+/// `Completed(false)` or of an `Undefined` that is a violation, built from what
+/// the entry ran: one `{document}` step per represented position (for an
+/// `Undefined` result, the positions 0 to the failing position and no loop),
+/// the clause's fairness set, the interval of its first interval-carrying
+/// operator (none for an `Undefined` result) and the trace position. `None`
+/// for every other disposition, and for an `Undefined` result whose atom the
+/// evaluator did not name.
+fn counterexample(
+    node: &qsl_semantics::check::TemporalClauseNode,
+    trace: &TraceInput,
+    disposition: &ClauseDisposition,
+    undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+) -> Option<crate::ObservedTemporalCounterexample> {
+    use crate::{ObservedTemporalCounterexample, ObservedTemporalKind, ObservedTemporalStep};
+    let clause = node.clause();
+    let documents: Vec<&DocumentRef> = trace.documents().collect();
+    let step = |document: &DocumentRef| ObservedTemporalStep {
+        document: document.clone(),
+    };
+    match disposition {
+        ClauseDisposition::Temporal(TemporalVerdict::Violated { at }) => {
+            Some(ObservedTemporalCounterexample {
+                prefix: documents.iter().map(|document| step(document)).collect(),
+                loop_start: match trace {
+                    TraceInput::Lasso { prefix, .. } => Some(u64::try_from(prefix.len()).ok()?),
+                    _ => None,
+                },
+                fairness: clause.fairness().to_vec(),
+                interval: clause
+                    .operators()
+                    .iter()
+                    .find_map(|operator| operator.interval.as_ref())
+                    .and_then(|interval| match interval {
+                        qsl_semantics::check::CheckedInterval::Steps(interval) => Some(*interval),
+                        _ => None,
+                    }),
+                kind: ObservedTemporalKind::Formula,
+                trace_position: TemporalPosition::new(*at),
+            })
+        }
+        ClauseDisposition::Temporal(TemporalVerdict::Undefined { at, cause })
+            if !matches!(cause, TemporalUndefinedCause::InsufficientData { .. }) =>
+        {
+            let (locus, position, cause) = undefined?;
+            if position.index() != *at {
+                return None;
+            }
+            // A lasso position past its represented positions re-enters the
+            // loop.
+            let (prefix_len, loop_len) = match trace {
+                TraceInput::Lasso { prefix, repeat } => (prefix.len(), repeat.len()),
+                _ => (documents.len(), 0),
+            };
+            let slot = |index: usize| {
+                if index < prefix_len || loop_len == 0 {
+                    Some(index)
+                } else {
+                    Some(prefix_len + (index - prefix_len) % loop_len)
+                }
+            };
+            let last = usize::try_from(*at).ok()?;
+            let prefix = (0..=last)
+                .map(|index| documents.get(slot(index)?).map(|document| step(document)))
+                .collect::<Option<Vec<_>>>()?;
+            Some(ObservedTemporalCounterexample {
+                prefix,
+                loop_start: None,
+                fairness: clause.fairness().to_vec(),
+                interval: None,
+                kind: ObservedTemporalKind::UndefinedEvaluation { locus, cause },
+                trace_position: TemporalPosition::new(*at),
+            })
+        }
+        _ => None,
     }
 }
 

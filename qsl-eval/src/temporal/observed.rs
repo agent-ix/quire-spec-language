@@ -159,6 +159,8 @@ pub struct ObservedWindowRun {
     pub result: Result<WindowEvaluation, TemporalRefusal>,
     /// The condition stop that ended the run, if one did.
     pub stopped: Option<HoldsStop>,
+    /// The first undefined atom read, with its trace position and cause.
+    pub undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
 }
 
 /// Evaluate `clause` under the finite-window profile (FR-501) over the object
@@ -195,6 +197,7 @@ pub fn evaluate_observed_finite_window(
     ObservedWindowRun {
         result,
         stopped: letters.stopped,
+        undefined: letters.undefined,
     }
 }
 

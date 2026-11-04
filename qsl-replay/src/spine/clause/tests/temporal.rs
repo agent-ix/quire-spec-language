@@ -1293,10 +1293,9 @@ fn a_zero_work_budget_is_incomplete_and_a_repeated_run_reports_equal() {
 /// `Fair` (`always eventually holds(c.value = 2)` under `fair weak noop`)
 /// over a lasso is unsupported: an observed trace carries no enabledness.
 ///
-/// The report carries the outcome, not a catalog code: the wire cause
-/// `unsupported_projection`/`missing-fairness-premise` is implied by
-/// `MissingFairnessPremise` and its only writer refuses temporal dispositions
-/// until the wire form is specified.
+/// The report carries the outcome, not a catalog code: the FR-267 writer
+/// derives the wire cause `unsupported_projection`/`missing-fairness-premise`
+/// from `MissingFairnessPremise`.
 #[trace("TC-848", "FR-330-AC-6")]
 #[test]
 fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
@@ -1344,13 +1343,15 @@ fn a_temporal_run_refuses_consequent_events_typed() {
 /// record half does not exist in QSL yet, so the test is not tagged.
 #[test]
 fn a_clause_run_over_a_trace_settles_no_item() {
+    // FR-266's Temporal row: the verdict is decided over the whole trace
+    // (`closed-scope`), and no separating witness is derived.
     let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
     assert_eq!(outcome(&held), &TemporalVerdict::Holds);
-    assert_eq!(held.basis, SettlementBasis::Unavailable);
+    assert_eq!(held.basis, SettlementBasis::ClosedScope);
     assert!(held.witness.is_none());
 
     let violated = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
-    assert_eq!(violated.basis, SettlementBasis::Unavailable);
+    assert_eq!(violated.basis, SettlementBasis::ClosedScope);
     assert!(violated.witness.is_none());
 }
 
@@ -3099,3 +3100,4 @@ fn timestamped_progress_is_admitted_into_the_ledger() {
 
 mod checked_route_owner;
 mod progressed;
+mod wire;

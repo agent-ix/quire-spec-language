@@ -568,6 +568,22 @@ impl TemporalVerdict {
         }
     }
 
+    /// FR-266's Temporal row: `closed-scope` for `Completed(true)`,
+    /// `Completed(false)` and an `Undefined` that is a violation, `unsettled`
+    /// for a pending result and `unavailable` for every other verdict.
+    pub fn basis(&self) -> SettlementBasis {
+        match self.temporal_category() {
+            TemporalCategory::Shared(
+                quire_semantic_value::catalog::Category::Success
+                | quire_semantic_value::catalog::Category::Violation,
+            ) => SettlementBasis::ClosedScope,
+            TemporalCategory::Pending => SettlementBasis::Unsettled,
+            TemporalCategory::Shared(_) | TemporalCategory::Indeterminate => {
+                SettlementBasis::Unavailable
+            }
+        }
+    }
+
     /// FR-285's category spelling, including `pending` and `indeterminate`.
     pub fn category_label(&self) -> &'static str {
         self.label_and_exit().0
@@ -922,6 +938,11 @@ pub struct ClauseRunReport {
     /// FR-330, FR-501 "Result report": the basis, decision support, premises
     /// and result identity of a finite-window run; `None` for every other run.
     pub finite_window: Option<FiniteWindowReport>,
+    /// FR-330 Outputs: the observed-arm counterexample (QSpec FR-364) of a
+    /// temporal `violation`, a `Completed(false)` or an `Undefined` that is
+    /// a violation, built from what the entry ran; `None` for every other
+    /// report.
+    pub counterexample: Option<crate::ObservedTemporalCounterexample>,
 }
 
 impl ClauseRunReport {
@@ -1046,6 +1067,7 @@ pub fn run_clause_with_temporal_selections(
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
+        counterexample: None,
         ledger: None,
     };
 
@@ -1190,6 +1212,7 @@ impl CompiledRun<'_> {
             usage: ClauseRunUsage::default(),
             consequent_source_events: ConsequentSourceEvents::Unavailable,
             finite_window: None,
+            counterexample: None,
             ledger: None,
         }
     }
@@ -1607,6 +1630,7 @@ fn run_function(
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
         finite_window: None,
+        counterexample: None,
         ledger: None,
     };
 

@@ -21,6 +21,13 @@ use qsl_semantics::model::observation::{
 use qsl_semantics::value::environment_stage::membership_failure_cause;
 use quire_checked::key::DeclarationKey;
 
+mod temporal;
+pub use temporal::{
+    ClosureRead, CounterexampleRead, DimensionRead, EffectiveIdRead, FairnessGranularityRead,
+    FairnessKindRead, FairnessOperationRead, FairnessRead, IndeterminateReasonRead,
+    ProgressValueRead, TemporalRecord,
+};
+
 /// Why a clause-run report could not be written as a canonical document.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeRunResultError {
@@ -33,9 +40,13 @@ pub enum NativeRunResultError {
     /// A separating witness did not have the record its family assigns.
     #[error("invalid separating witness: {0}")]
     Witness(#[from] crate::result::CauseCodecError),
-    /// A temporal clause's disposition has no `native-run-result/2` member.
-    #[error("a temporal disposition has no native-run-result/2 form")]
-    TemporalDisposition,
+    /// A temporal violation's report holds no observed counterexample at its
+    /// position (FR-330 Outputs), or one of the other refutation kind.
+    #[error("a temporal violation needs its observed counterexample at its position")]
+    Counterexample,
+    /// A temporal report's basis is not its verdict's FR-266 Temporal row.
+    #[error("temporal basis disagrees with its verdict")]
+    TemporalBasis,
     /// The typed report could not be represented as JSON.
     #[error("cannot serialize clause-run result: {0}")]
     Json(#[from] serde_json::Error),
@@ -90,7 +101,12 @@ pub enum NativeRunResult {
 }
 
 /// The typed clause-run document returned by the strict reader.
-pub struct ClauseRunRecord(ClauseRead, Option<Vec<u8>>, Option<FrameWitness>);
+pub struct ClauseRunRecord(
+    ClauseRead,
+    Option<Vec<u8>>,
+    Option<FrameWitness>,
+    Option<TemporalRecord>,
+);
 
 impl ClauseRunRecord {
     /// The settlement basis label.
@@ -221,6 +237,12 @@ impl ClauseRunRecord {
             .refusal
             .as_ref()
             .and_then(|r| r.locus.as_ref())
+    }
+
+    /// The typed `disposition.temporal` member of a `Temporal` selection's
+    /// evaluate disposition (FR-267), when present.
+    pub fn temporal(&self) -> Option<&TemporalRecord> {
+        self.3.as_ref()
     }
 
     /// The stable identifiers of an internal failure, when present.
@@ -402,11 +424,15 @@ enum Category {
     Incomplete,
     Inconclusive,
     InternalFailure,
+    Pending,
+    Indeterminate,
 }
 
 impl Category {
     fn as_str(&self) -> &'static str {
         match self {
+            Self::Pending => "pending",
+            Self::Indeterminate => "indeterminate",
             Self::Success => "success",
             Self::Violation => "violation",
             Self::Undefined => "undefined",
@@ -517,7 +543,7 @@ pub struct PositionRead {
     pub column: usize,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(
     dead_code,
@@ -531,7 +557,7 @@ pub struct CallLocationRead {
     pub path: Vec<usize>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 #[allow(
     dead_code,
@@ -613,7 +639,7 @@ struct FrameWitnessRead {
     change: FrameChangeRead,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DocumentRefRead {
     authority: String,
@@ -630,7 +656,7 @@ impl DocumentRefRead {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DeclarationKeyRead {
     package: String,
@@ -856,6 +882,8 @@ struct DispositionRead {
     internal_fault: Option<InternalFaultRead>,
     #[serde(default, deserialize_with = "present")]
     refusal: Option<RefusalRead>,
+    #[serde(default, deserialize_with = "present")]
+    temporal: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -1047,7 +1075,14 @@ fn catalog_category(code: &str) -> Option<&'static str> {
 #[ix_trace_rs::string_edge]
 fn validate_disposition(value: &DispositionRead) -> Result<(), NativeRunReadError> {
     let invalid = |member, reason| NativeRunReadError::Invalid { member, reason };
+    temporal::refuse_temporal_only_outcome(value.outcome.as_ref())?;
     match (&value.stage, &value.category) {
+        (_, Category::Pending | Category::Indeterminate) => {
+            return Err(invalid(
+                "disposition.category",
+                "pending and indeterminate are temporal rows only",
+            ))
+        }
         (Stage::Compile | Stage::Select | Stage::Admit, Category::InternalFailure) => {
             if value.internal_fault.is_none()
                 || value.refusal.is_some()
@@ -1545,6 +1580,21 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
         if document.format != format {
             return Err(NativeRunReadError::UnsupportedFormat(document.format));
         }
+        if let Some(value) = &document.disposition.temporal {
+            let record = temporal::decode(value)?;
+            temporal::validate_temporal(
+                &document.disposition,
+                &record,
+                &document.basis,
+                document.witness.is_some(),
+            )?;
+            return Ok(NativeRunResult::Clause(Box::new(ClauseRunRecord(
+                document,
+                deciding_element,
+                None,
+                Some(record),
+            ))));
+        }
         if document.basis.is_decisive() != document.witness.is_some() {
             return Err(NativeRunReadError::Invalid {
                 member: "witness",
@@ -1600,6 +1650,7 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
             document,
             deciding_element,
             frame_witness,
+            None,
         ))))
     } else {
         let shallow = quire_canonical::to_vec(&DetailSplice(&tree), Limits::new(u64::MAX))
@@ -1979,6 +2030,8 @@ struct Disposition {
     internal_fault: Option<InternalFaultWire>,
     #[serde(skip_serializing_if = "Option::is_none")]
     refusal: Option<RefusalWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temporal: Option<temporal::TemporalWire>,
 }
 
 #[derive(Serialize)]
@@ -1992,7 +2045,10 @@ struct ClauseRunDocument {
 }
 
 impl Disposition {
-    fn of(value: &ClauseDisposition) -> Self {
+    fn of(
+        value: &ClauseDisposition,
+        counterexample: Option<&crate::ObservedTemporalCounterexample>,
+    ) -> Result<Self, NativeRunResultError> {
         let mut result = Self {
             stage: match value.stage() {
                 super::ClauseRunStage::Compile => "compile",
@@ -2000,11 +2056,12 @@ impl Disposition {
                 super::ClauseRunStage::Admit => "admit",
                 super::ClauseRunStage::Evaluate => "evaluate",
             },
-            category: value.category().as_str(),
+            category: value.category_label(),
             truth: value.truth(),
             outcome: None,
             internal_fault: None,
             refusal: None,
+            temporal: None,
         };
         match value {
             ClauseDisposition::Compile(refusal) => {
@@ -2061,7 +2118,7 @@ impl Disposition {
                         stage: fault.stage(),
                         invariant: fault.invariant(),
                     });
-                    return result;
+                    return Ok(result);
                 }
                 let cause = match refusal.as_ref() {
                     super::RunRefusal::Compile(compile) => compile.cause(),
@@ -2222,13 +2279,36 @@ impl Disposition {
                     invariant: fault.invariant(),
                 });
             }
-            // `write_clause_run_result` refuses a temporal disposition before
-            // it builds this record.
-            ClauseDisposition::Temporal(_)
-            | ClauseDisposition::TemporalRefusal(_)
-            | ClauseDisposition::ProgressContradiction(_) => {}
+            ClauseDisposition::Temporal(verdict) => {
+                let (wire, outcome) = temporal::verdict_wire(verdict, counterexample)?;
+                // FR-267: an `Undefined` that is a violation does not hold.
+                if matches!(wire, temporal::TemporalWire::Undefined { .. }) {
+                    result.truth = Some(false);
+                }
+                result.temporal = Some(wire);
+                result.outcome = outcome;
+            }
+            ClauseDisposition::TemporalRefusal(refusal) => match temporal::refusal_wire(refusal) {
+                Some((wire, outcome)) => {
+                    result.temporal = Some(wire);
+                    result.outcome = Some(outcome);
+                }
+                None => {
+                    if let super::TemporalTraceRefusal::Fault(fault) = refusal {
+                        result.internal_fault = Some(InternalFaultWire {
+                            stage: fault.stage(),
+                            invariant: fault.invariant(),
+                        });
+                    }
+                }
+            },
+            ClauseDisposition::ProgressContradiction(refusal) => {
+                let (wire, outcome) = temporal::contradiction_wire(refusal);
+                result.temporal = Some(wire);
+                result.outcome = Some(outcome);
+            }
         }
-        result
+        Ok(result)
     }
 }
 
@@ -2244,41 +2324,47 @@ fn format_model_selection(
 
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.
 pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, NativeRunResultError> {
-    if matches!(
-        report.disposition,
-        ClauseDisposition::Temporal(_)
-            | ClauseDisposition::TemporalRefusal(_)
-            | ClauseDisposition::ProgressContradiction(_)
-    ) {
-        return Err(NativeRunResultError::TemporalDisposition);
-    }
     if report.basis.is_decisive() != report.witness.is_some() {
         return Err(NativeRunResultError::BasisWitness);
     }
+    if let ClauseDisposition::Temporal(verdict) = &report.disposition {
+        if report.basis != verdict.basis() {
+            return Err(NativeRunResultError::TemporalBasis);
+        }
+    } else if !verdict_basis(report) {
+        return Err(NativeRunResultError::BasisDisposition);
+    }
+    write_document(report)
+}
+
+/// FR-266: a verdict has a decisive or closed settlement, a non-verdict
+/// `unavailable`.
+fn verdict_basis(report: &ClauseRunReport) -> bool {
     let verdict = matches!(
         report.disposition.category(),
         quire_semantic_value::catalog::Category::Success
             | quire_semantic_value::catalog::Category::Violation
     );
-    if (verdict
-        && !matches!(
+    if verdict {
+        matches!(
             report.basis,
             crate::proof_result::SettlementBasis::ClosedScope
                 | crate::proof_result::SettlementBasis::DecisiveWitness
                 | crate::proof_result::SettlementBasis::DecisiveCounterexample
-        ))
-        || (!verdict
-            && !matches!(
-                report.basis,
-                crate::proof_result::SettlementBasis::Unavailable
-            ))
-    {
-        return Err(NativeRunResultError::BasisDisposition);
+        )
+    } else {
+        matches!(
+            report.basis,
+            crate::proof_result::SettlementBasis::Unavailable
+        )
     }
+}
+
+fn write_document(report: &ClauseRunReport) -> Result<Vec<u8>, NativeRunResultError> {
     let witness = report.witness.as_ref().map(RecordWire::of).transpose()?;
     let document = ClauseRunDocument {
         format: WireFormat::RunResult,
-        disposition: Disposition::of(&report.disposition),
+        disposition: Disposition::of(&report.disposition, report.counterexample.as_ref())?,
         usage: Usage {
             admission: AdmissionUsage {
                 document_bytes: report.usage.admission_consumed.document_bytes,
