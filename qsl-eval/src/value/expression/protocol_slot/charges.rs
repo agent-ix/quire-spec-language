@@ -121,9 +121,10 @@ impl BinderCharges {
 }
 
 /// Which binder, if any, a value or a charge is derived from.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum Owner {
     /// Derived from no binder (a literal-only computation).
+    #[default]
     None,
     /// Derived from the binder supplied at this root-frame source slot only.
     Binder(usize),
@@ -150,20 +151,20 @@ impl Owner {
 pub(crate) struct Owners {
     values: Vec<Owner>,
     frames: Vec<Vec<Owner>>,
-    step: Option<Owner>,
+    step: Owner,
 }
 
 impl Owners {
     pub(crate) fn begin_step(&mut self) {
-        self.step = Some(Owner::None);
+        self.step = Owner::None;
     }
 
     pub(crate) fn step(&self) -> Owner {
-        self.step.unwrap_or(Owner::None)
+        self.step
     }
 
     pub(crate) fn absorb(&mut self, owner: Owner) {
-        self.step = Some(self.step().merge(owner));
+        self.step = self.step.merge(owner);
     }
 
     pub(crate) fn push_value(&mut self) {

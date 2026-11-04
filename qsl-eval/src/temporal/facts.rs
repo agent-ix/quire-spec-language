@@ -549,3 +549,102 @@ fn window_of(interval: Option<&CheckedOperationInterval>) -> Result<Window, Inte
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::temporal::plan::{Base, Node, Scan, Window};
+
+    fn id(ordinal: u64) -> &'static qsl_package::CheckedNodeId {
+        let id: qsl_package::CheckedNodeId = serde_json::from_value(serde_json::json!({
+            "package": "p", "path": ["n"], "ordinal": ordinal
+        }))
+        .expect("a node id");
+        Box::leak(Box::new(id))
+    }
+
+    fn entry(
+        node: u64,
+        operation: &'static str,
+        interval: bool,
+        operands: &[usize],
+    ) -> FormulaNodeUse<'static> {
+        FormulaNodeUse {
+            node: id(node),
+            operation,
+            interval: interval.then(|| {
+                serde_json::from_value(serde_json::json!({"lower": "1", "upper": "4"}))
+                    .expect("an interval")
+            }),
+            operands: operands.to_vec(),
+        }
+    }
+
+    /// FR-532 "Truth from the graph": each temporal operation of FR-337 maps
+    /// to its scan family and dual, with the interval as the window.
+    #[test]
+    fn each_operation_maps_to_its_scan_family_and_dual() {
+        let window = Window::Closed { lower: 1, upper: 4 };
+        for (operation, base, dual) in [
+            ("quire.op.temporal.eventually", Base::Eventually, false),
+            ("quire.op.temporal.always", Base::Eventually, true),
+            ("quire.op.temporal.once", Base::Once, false),
+            ("quire.op.temporal.historically", Base::Once, true),
+        ] {
+            let formula = ClauseFormula::of_graph(&[
+                entry(0, operation, true, &[1]),
+                entry(1, "quire.op.temporal.holds", false, &[]),
+            ]);
+            let plan = formula.plan().expect("a plan");
+            assert_eq!(
+                plan.nodes[plan.root],
+                Node::Scan(Scan {
+                    base,
+                    dual,
+                    window,
+                    guard: None,
+                    witness: 1
+                }),
+                "{operation}"
+            );
+        }
+        for (operation, base, dual) in [
+            ("quire.op.temporal.until", Base::Until, false),
+            ("quire.op.temporal.release", Base::Until, true),
+            ("quire.op.temporal.since", Base::Since, false),
+            ("quire.op.temporal.triggered", Base::Since, true),
+        ] {
+            let formula = ClauseFormula::of_graph(&[
+                entry(0, operation, true, &[1, 2]),
+                entry(1, "quire.op.temporal.holds", false, &[]),
+                entry(2, "quire.op.temporal.holds", false, &[]),
+            ]);
+            let plan = formula.plan().expect("a plan");
+            let Node::Scan(scan) = plan.nodes[plan.root] else {
+                panic!("{operation} is a scan");
+            };
+            assert_eq!((scan.base, scan.dual, scan.window), (base, dual, window));
+            assert!(scan.guard.is_some(), "{operation} has a guard operand");
+        }
+    }
+
+    /// Two uses of one node are one node; atoms number by first use.
+    #[test]
+    fn a_shared_node_is_one_node_and_one_atom_numbered_by_first_use() {
+        let formula = ClauseFormula::of_graph(&[
+            entry(0, "quire.op.temporal.and", false, &[1, 2]),
+            entry(1, "quire.op.temporal.holds", false, &[]),
+            entry(1, "quire.op.temporal.holds", false, &[]),
+        ]);
+        assert_eq!(formula.atom_count(), 1);
+        assert_eq!(formula.work().map(|work| work.formula_nodes), Ok(2));
+        let formula = ClauseFormula::of_graph(&[
+            entry(0, "quire.op.temporal.and", false, &[1, 2]),
+            entry(1, "quire.op.temporal.holds", false, &[]),
+            entry(2, "quire.op.temporal.holds", false, &[]),
+        ]);
+        assert_eq!(formula.atom_count(), 2);
+        let numbers: Vec<_> = (0..3).map(|node| formula.atom_index(node)).collect();
+        assert_eq!(numbers.iter().flatten().count(), 2);
+    }
+}
