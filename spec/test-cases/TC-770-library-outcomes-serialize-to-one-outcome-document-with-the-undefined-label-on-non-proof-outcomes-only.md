@@ -14,7 +14,7 @@ relationships:
 
 Verify the outcome document's members, its determinism, the `execute` result member, and where the label `undefined` may appear. The CLI half (`quire --format json` writes this document unchanged) is the driver repository's test (FR-286 Overlap).
 
-Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 and FR-286-AC-9, and the monitor half of FR-285-AC-9.
+Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 to FR-286-AC-13, and the monitor half of FR-285-AC-9.
 
 ## Test Procedure
 
@@ -24,8 +24,11 @@ Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 and FR-286-AC-9, and the monitor 
 4. Serialize TC-763 step 5's `analyze` outcome, the outcome of FR-283-AC-5's `monitor` request, and the `execute` outcome of FR-100-AC-10's empty `sum`.
 5. Serialize the `execute` outcomes of FR-100-AC-1's `seven`, FR-100-AC-10's empty `sum` and FR-100-AC-6's `seven` with `accounting` `{"work_units": 0}`, and the outcome of a `check` called with a `Cancel` already cancelled.
 6. Call `OutcomeDocument::from_run` over `qsl_replay::spine::run`'s result for: FR-100-AC-1's `seven`; FR-100-AC-5's `inv` source; FR-100-AC-5's `function` `nope`; `seven` with a `Cancel` cancelled with `CancelCause::Requested` before the run; and a constructed `RunRefusal::Fault`. Then build the driver's document for an engine it has not built: `OutcomeDocument::new(Execute, None, Unsupported)` with one diagnostic of code `unimplemented_capability`.
-7. Run FR-283-AC-1's `always p` over its finite trace that ends pending and call `OutcomeDocument::from_clause_runs` over that one run; serialize it, read its category, items and FR-285 exit, and run the same clause through `monitor`.
+7. Run FR-283-AC-1's `always p` over its finite trace that ends pending and call `OutcomeDocument::from_clause_runs` over that one run; serialize it, read its category, items and FR-285 exit.
 8. Call `from_clause_runs` over FR-501-AC-4's `Indeterminate` run alone, with a pending run, with a pending run and a `Completed(false)` run, and over a `Completed(true)` run alone.
+
+9. Call `from_clause_run` over the clause runs of FR-283-AC-1 (violated), FR-283-AC-5 (undefined evaluation) and FR-283-AC-11 (insufficient data) and read each item's members.
+10. Once the `monitor` operation exists, run steps 7 to 9's clauses through `monitor`, render each `MonitorRecord` through `from_clause_run`, and compare the document with `from_clause_runs` over the same runs.
 
 Tag the tests `#[trace("TC-770", "<AC id>")]`.
 
@@ -39,5 +42,7 @@ Until QSL-596 (FR-281) and QSL-597 (FR-283) land the `analyze` and `monitor` out
 - Step 4: the `analyze` item and the `monitor` clause record each have category violation and cause `undefined-evaluation`, and neither document holds the label `undefined`; the `execute` document has category undefined and the label `undefined`.
 - Step 5: `seven` has `category` success and `result` `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`; the empty `sum` has `category` undefined and `result` `{"kind": "undefined", "reason": "sum-out-of-domain"}`; `seven` with `accounting` `{"work_units": 0}` has `category` incomplete and `result` `{"kind": "incomplete", "limit": {"kind": "work_units", "bound": "0", "counter": "1", "field": "work_units", "setting": "accounting.work_units"}}`; the cancelled `check` has `category` incomplete, `last_stage` `null`, `items` `[]` and `result` `null`.
 - Step 6: `seven` gives the call's document with exactly one `package_id` artifact; `inv` gives `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; `nope` gives `category` refusal, `last_stage` S6a and one `missing_declaration` diagnostic; the cancelled run gives `category` incomplete, `last_stage` `null` and one `cancelled` diagnostic with cause `requested`; the fault gives `category` internal failure, `last_stage` `null` and its catalog code. The driver document serializes its diagnostic code as `unimplemented_capability` (not `unsupported_construct`), has `category` unsupported and `last_stage` `null`, and its FR-285 exit code is 21.
-- Step 7: one item with `result` `pending`, category pending and `clause` naming the clause, no `cause`, no record and no `undefined` label; document category pending and exit 0; the `monitor` operation's record gives the same item.
+- Step 7: one item with `result` `pending`, category pending and `clause` naming the clause, no `cause`, no record and no `undefined` label; document category pending and exit 0.
 - Step 8: `indeterminate` item with FR-501's reason and exit 11; indeterminate with a pending item still 11; violation, exit 10, once a `refuted` item is present; `tested`, success. Each item's category equals `ClauseRunReport::category()`.
+- Step 9: the violated item is `refuted` with `position` 2, a `counterexample` (three-identity `prefix`, empty `loop`, `trace_position` 2), a `witness` and no `cause`; the undefined-evaluation item is `refuted` with `position` 1, a `counterexample`, cause `undefined-evaluation` / `division-by-zero` and no `witness`; the insufficient-data item is `undefined` with cause `insufficient-data`, `position` 0, `count` 1, `min_count` 2 and no `counterexample` or `witness`.
+- Step 10: the two documents are byte-equal.
