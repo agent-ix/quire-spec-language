@@ -4,11 +4,14 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    build_product, decide_bounded_event, ExactProbLimits, FhResult, ProbBuild, ProbProduct,
-    ProductAction, ProductKind, ProductRefusal, ProductRequest,
+    build_product, decide_bounded_event, settle_product_refusal, ExactProbLimits, FhResult,
+    ProbBuild, ProbProduct, ProductAction, ProductKind, ProductRefusal, ProductRequest,
 };
 use qsl_analyze::exact_probabilistic::{DeadlinePhase, MonitorState};
 use qsl_eval::model_subject::ModelSubject;
+use qsl_foundation::{BackendId, RequestIndex};
+use qsl_replay::statistical::SubjectLimits;
+use qsl_replay::{OutcomeItem, TerminalValue, UnavailabilityCause};
 use qsl_semantics::check::Bound;
 use quire_exact::{Cancel, Integer, Rational};
 use serde_json::json;
@@ -173,7 +176,8 @@ fn deadline_extrema_over_every_scheduler() {
 #[test]
 fn zero_delay_cycle_and_form_shape_are_unsupported() {
     let cyclic = every("", false);
-    let ProductRefusal::ZeroDelayCycle { states } = refusal(&cyclic, "Deadline") else {
+    let cycle_refusal = refusal(&cyclic, "Deadline");
+    let ProductRefusal::ZeroDelayCycle { states } = &cycle_refusal else {
         panic!("a zero-delay cycle");
     };
     // Without a guard or a reset `send` loops at the initial state: x = 0,
@@ -187,11 +191,117 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
             ..
         })
     ));
+    let cycle_ids = states
+        .iter()
+        .map(|state| state.digital_cycle_identity())
+        .collect::<Vec<_>>();
+    let simulation = cyclic.request();
+    let settled = settle_product_refusal(
+        cycle_refusal,
+        SubjectLimits {
+            expansion: simulation.expansion,
+            meter: &simulation.meter,
+        },
+    )
+    .expect("the actual digital refusal settles");
+    assert_eq!(
+        settled.value(),
+        &TerminalValue::Unsupported(UnavailabilityCause::ZeroDelayCycle {
+            states: cycle_ids.clone(),
+        })
+    );
+    let terminal = settled.into_terminal(RequestIndex::new(0), BackendId::new("qsl-en-5"));
+    let wire = serde_json::to_value(OutcomeItem::from_terminal(&terminal))
+        .expect("the settled digital cycle writes to FR-331");
+    assert_eq!(wire["cause"]["kind"], "zero-delay-cycle");
+    assert_eq!(wire["cause"]["states"], serde_json::json!(cycle_ids));
+    let identity = wire["cause"]["states"][0]
+        .as_str()
+        .expect("a cycle state identity is a string");
+    assert!(identity.starts_with("quire.probability-digital-cycle-state/v1;"));
+
     let world = every(GUARD, true);
-    assert!(matches!(
-        refusal(&world, "Always"),
-        ProductRefusal::TimedFormShape { .. }
-    ));
+    let shape_refusal = refusal(&world, "Always");
+    let ProductRefusal::TimedFormShape { span } = shape_refusal else {
+        panic!("an always event has no digital timed reading");
+    };
+    let simulation = world.request();
+    let settled = settle_product_refusal(
+        ProductRefusal::TimedFormShape { span },
+        SubjectLimits {
+            expansion: simulation.expansion,
+            meter: &simulation.meter,
+        },
+    )
+    .expect("the unsupported form settles");
+    assert_eq!(
+        settled.value(),
+        &TerminalValue::Unsupported(UnavailabilityCause::TimedFormShape { span })
+    );
+    let terminal = settled.into_terminal(RequestIndex::new(1), BackendId::new("qsl-en-5"));
+    let wire = serde_json::to_value(OutcomeItem::from_terminal(&terminal))
+        .expect("the form-shape refusal writes to FR-331");
+    assert_eq!(wire["cause"]["kind"], "timed-form-shape");
+    assert_eq!(
+        wire["cause"]["where"],
+        format!("{}..{}", span.start, span.end)
+    );
+}
+
+/// FR-204-AC-4: digital unbounded products have no monitor, but their actual
+/// zero-delay cycles still settle with complete stable product-key identities.
+#[trace("TC-639", "FR-204-AC-4")]
+#[test]
+fn unbounded_digital_cycles_settle_with_monitorless_state_identity() {
+    let world = retx(
+        "",
+        false,
+        "reward sends on M::Call::send = 1;\n",
+        concat!(
+            "probabilistic Reach using inf on M over (c: M::Call) under every scheduler on origin ",
+            "{ probability >= 0.5 [ eventually holds(c.late) ] }\n",
+            "probabilistic Cost using inf on M over (c: M::Call) under every scheduler on origin ",
+            "{ expected accumulate sends until holds(c.late) <= 5 }\n",
+        ),
+    );
+
+    for (index, name) in ["Reach", "Cost"].into_iter().enumerate() {
+        let cycle_refusal = refusal(&world, name);
+        let ProductRefusal::ZeroDelayCycle { states } = &cycle_refusal else {
+            panic!("{name} has a digital zero-delay cycle: {cycle_refusal:?}");
+        };
+        assert!(!states.is_empty(), "{name}");
+        assert!(states.iter().all(|state| state.monitor.is_none()), "{name}");
+        let cycle_ids = states
+            .iter()
+            .map(|state| state.digital_cycle_identity())
+            .collect::<Vec<_>>();
+
+        let simulation = world.request();
+        let settled = settle_product_refusal(
+            cycle_refusal,
+            SubjectLimits {
+                expansion: simulation.expansion,
+                meter: &simulation.meter,
+            },
+        )
+        .expect("the actual unbounded digital refusal settles");
+        assert_eq!(
+            settled.value(),
+            &TerminalValue::Unsupported(UnavailabilityCause::ZeroDelayCycle {
+                states: cycle_ids.clone(),
+            })
+        );
+        let terminal = settled.into_terminal(RequestIndex::new(index), BackendId::new("qsl-en-5"));
+        let wire = serde_json::to_value(OutcomeItem::from_terminal(&terminal))
+            .expect("the settled digital cycle writes to FR-331");
+        assert_eq!(wire["cause"]["kind"], "zero-delay-cycle");
+        assert_eq!(wire["cause"]["states"], serde_json::json!(cycle_ids));
+        assert!(wire["cause"]["states"][0]
+            .as_str()
+            .expect("a cycle state identity is a string")
+            .starts_with("quire.probability-digital-cycle-state/v1;"));
+    }
 }
 
 /// FR-204-AC-2 (TC-639 step 2): a strict guard has no digital reading.
