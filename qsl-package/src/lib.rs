@@ -30,6 +30,7 @@ pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
 mod protocol_activation;
+pub mod protocol_artifact_v1;
 #[cfg(feature = "std")]
 mod protocol_occurrence;
 mod protocol_selection;
