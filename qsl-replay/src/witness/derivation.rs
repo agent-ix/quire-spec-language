@@ -12,7 +12,7 @@ use quire_eval::FamilyOutcome;
 use quire_exact::{Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
 
-use qsl_eval::value::ClauseEvaluation;
+use qsl_eval::value::{ClauseEvaluation, StopReport};
 
 use crate::proof_result::SettlementBasis;
 use crate::result::SeparatingWitnessRecord;
@@ -62,12 +62,34 @@ pub(crate) fn derive_separating_witness(
     else {
         return Ok(None);
     };
+    Ok(Some(match decisive_stop(clause.body(), evaluation)? {
+        Some(report) => Derived {
+            basis: SettlementBasis::decisive(*truth),
+            record: Some(SeparatingWitnessRecord::from_stop(report)),
+        },
+        None => closed_scope(),
+    }))
+}
+
+/// FR-265's decision-path walk from `root` over `evaluation`'s recorded
+/// decisions (ADR-031 SW-2), shared by a state clause's claim and a temporal
+/// `holds` atom's condition (FR-283 `decisive`): the stop report of the
+/// `forall` or `exists` the walk ends at, or `None` when it ends at any
+/// other node or at a quantifier that did not stop.
+///
+/// # Errors
+///
+/// An `InternalFault` when a node the walk reaches has no recorded decision.
+pub(crate) fn decisive_stop<'e>(
+    root: CheckedNode<'_>,
+    evaluation: &'e ClauseEvaluation,
+) -> Result<Option<&'e StopReport>, InternalFault> {
     let decision = |node: CheckedNode<'_>| {
         evaluation
             .decision(node.location())
             .ok_or_else(|| InternalFault::new("witness", "decision-path-node-recorded"))
     };
-    let mut node = clause.body();
+    let mut node = root;
     loop {
         let next = match node.kind() {
             NodeKind::Let { body, .. } => body,
@@ -83,9 +105,7 @@ pub(crate) fn derive_separating_witness(
             NodeKind::Not(operand) => operand,
             // A connective the checker synthesized (a float ordering's
             // composition) records no decision: the path ends there.
-            NodeKind::Connective(_, ConnectiveOrigin::Synthesized, _, _) => {
-                return Ok(Some(closed_scope()))
-            }
+            NodeKind::Connective(_, ConnectiveOrigin::Synthesized, _, _) => return Ok(None),
             NodeKind::Connective(connective, ConnectiveOrigin::Authored, left, right) => {
                 let left_value = decision(node)?;
                 let stopped_on_left = match connective {
@@ -101,19 +121,11 @@ pub(crate) fn derive_separating_witness(
             NodeKind::Query {
                 visit: Visit::Forall | Visit::Exists,
                 ..
-            } => {
-                return Ok(Some(match evaluation.stop(node.location()) {
-                    Some(report) => Derived {
-                        basis: SettlementBasis::decisive(*truth),
-                        record: Some(SeparatingWitnessRecord::from_stop(report)),
-                    },
-                    None => closed_scope(),
-                }))
-            }
+            } => return Ok(evaluation.stop(node.location())),
             // ADR-031 SW-2: "The path ends at the first node of any other
             // kind" -- the rule itself is the catch-all, so a node kind
             // added later ends the walk too.
-            _ => return Ok(Some(closed_scope())),
+            _ => return Ok(None),
         };
         node = node.at(*next);
     }

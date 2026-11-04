@@ -484,6 +484,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         ledger: ledger.cloned(),
         finite_window: None,
         counterexample: None,
+        decisive: None,
         authenticated_temporal_selection,
     };
     let early = |disposition| report(disposition, ClauseRunUsage::default(), None);
@@ -785,9 +786,12 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
+        let decisive =
+            decisive_information(run, node, trace, &environments, reference, &disposition);
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.counterexample = counterexample;
+        finished.decisive = decisive;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -814,9 +818,12 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
+        let decisive =
+            decisive_information(run, node, trace, &environments, reference, &disposition);
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.counterexample = counterexample;
+        finished.decisive = decisive;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
@@ -857,12 +864,14 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         quire_semantic_value::catalog::Category::Refusal
             | quire_semantic_value::catalog::Category::InternalFailure
     );
+    let decisive = decisive_information(run, node, trace, &environments, reference, &disposition);
     let mut report = report(
         disposition,
         ClauseRunUsage::from_meter(&meter, admitted),
         authenticated_temporal_selection,
     );
     report.counterexample = counterexample;
+    report.decisive = decisive;
     if accepted {
         report.ledger = accepted_ledger.or_else(|| ledger.cloned());
     }
@@ -1084,6 +1093,77 @@ impl WindowRun {
             undefined: None,
         }
     }
+}
+
+/// FR-330 Outputs, FR-283 `decisive`: the decisive information of a
+/// temporal violation. The deciding atom is the first `holds` atom, in
+/// clause-node order, that evaluates false at the failing position over the
+/// observation there; FR-107's evaluator, its witness channel kept, gives
+/// the quantifier that decided it, its element, index and value path, or,
+/// when no quantifier decides it, the atom's value `false` at the empty path
+/// at the observation's root. `None` for every other disposition, and when
+/// no atom evaluates false at a position with an observation (a silent
+/// sample has none). The evaluation charges its own meter, so the run's
+/// usage is the evaluator's alone.
+fn decisive_information(
+    run: &CompiledRun<'_>,
+    node: &qsl_semantics::check::TemporalClauseNode,
+    trace: &TraceInput,
+    environments: &[ObjectEnvironment],
+    over: &quire_exact::ObjectReference,
+    disposition: &ClauseDisposition,
+) -> Option<crate::TemporalDecisive> {
+    use qsl_eval::value::CheckedPackageEvaluation as _;
+    use quire_eval::FamilyOutcome;
+    use quire_exact::{Outcome, Value};
+    let ClauseDisposition::Temporal(TemporalVerdict::Violated { at }) = disposition else {
+        return None;
+    };
+    let documents: Vec<&DocumentRef> = trace.documents().collect();
+    let slot = match trace {
+        TraceInput::Lasso { prefix, repeat } => {
+            let at = usize::try_from(*at).ok()?;
+            if at < prefix.len() || repeat.is_empty() {
+                at
+            } else {
+                prefix.len() + (at - prefix.len()) % repeat.len()
+            }
+        }
+        TraceInput::Finite(_) | TraceInput::Progressed { .. } | TraceInput::Timestamped { .. } => {
+            usize::try_from(*at).ok()?
+        }
+    };
+    let (document, objects) = documents.get(slot).zip(environments.get(slot))?;
+    let observation = qsl_eval::value::ObservationIdentity {
+        authority: document.authority.clone(),
+        identity: document.identity.clone(),
+    };
+    let formula = node.clause().formula();
+    formula
+        .nodes()
+        .iter()
+        .enumerate()
+        .filter(|(_, formula)| matches!(formula, FormulaNode::Holds { .. }))
+        .filter_map(|(index, _)| formula.node_id(index))
+        .find_map(|atom| {
+            let mut meter = Meter::new(run.accounting);
+            let evaluation = run
+                .package
+                .evaluate_holds_traced(node, atom, over, objects, observation.clone(), &mut meter)
+                .ok()?;
+            if !matches!(
+                evaluation.evaluation.outcome,
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+            ) {
+                return None;
+            }
+            let (condition, _) = node.condition(atom)?;
+            let decided = crate::witness::decisive_stop(condition, &evaluation).ok()?;
+            Some(match decided {
+                Some(report) => crate::TemporalDecisive::from_stop(report),
+                None => crate::TemporalDecisive::undecided(evaluation.receiver_path()?.clone()),
+            })
+        })
 }
 
 /// `disposition` with its FR-330 counterexample. A violation or an

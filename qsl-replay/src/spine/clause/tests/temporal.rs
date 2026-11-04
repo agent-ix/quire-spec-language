@@ -86,6 +86,10 @@ enum Unit {
     /// `Safety`: FR-328-AC-1's `always holds(c.value <= 1)` under
     /// infinite-trace.
     Safety,
+    /// `Decisive`: FR-283-AC-10's `forall` over a collection, built inside
+    /// the atom from `c.value`, and `Plain`, an atom no quantifier decides,
+    /// each activated at every position under the bounded profile.
+    Decisive,
 }
 
 impl Unit {
@@ -95,7 +99,7 @@ impl Unit {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
             Self::Infinite | Self::Safety => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
-            Self::Undefined | Self::Guarded | Self::GuardUndefined => {
+            Self::Undefined | Self::Guarded | Self::GuardUndefined | Self::Decisive => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
             Self::Timestamped => {
@@ -233,6 +237,15 @@ impl Unit {
             Self::Safety => {
                 "temporal Safety using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { always holds(c.value <= 1) }\n"
+            }
+            Self::Decisive => {
+                "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
+                 pure { xs }\n\
+                 temporal Decisive using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on each (q: Counters::Counter) \
+                 { always[0,0] holds(forall(n in ints(sequence[3, c.value, 5]): n > 0)) }\n\
+                 temporal Plain using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on each (q: Counters::Counter) { always[0,0] holds(c.value > 0) }\n"
             }
         }
     }
@@ -3437,6 +3450,7 @@ fn the_undefined_label_is_written_only_for_the_undefined_category() {
         consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        decisive: None,
         authenticated_temporal_selection: None,
         ledger: None,
     };
@@ -3478,6 +3492,7 @@ fn synthetic_report(disposition: ClauseDisposition) -> ClauseRunReport {
         consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
         finite_window: None,
         counterexample: None,
+        decisive: None,
         authenticated_temporal_selection: None,
         ledger: None,
     }
@@ -3741,4 +3756,94 @@ fn verdicts_without_record_members_give_items_with_none() {
     ));
     refuted_state.witness = held.witness.clone();
     assert!(item_json("V", &refuted_state).get("witness").is_none());
+}
+
+/// FR-283-AC-10, FR-330-AC-12, FR-286-AC-10 (TC-765 step 8, TC-770 step 9):
+/// a temporal violation carries `decisive` beside its counterexample. Over a
+/// three-position trace whose position-2 collection is 3, 0, 5, the `forall`
+/// violation names the `forall`'s occurrence key, element 0, index 1 and
+/// the value path to that element; an atom no quantifier decides gives
+/// element `false`, no quantifier, no index and the empty path at the
+/// observation's root. Neither carries a witness, a held run carries no
+/// `decisive`, and FR-267's written record holds none.
+#[trace("TC-765", "FR-283-AC-10", "FR-330-AC-12", "FR-286-AC-10")]
+#[test]
+fn a_temporal_violation_carries_its_decisive_information() {
+    use crate::{ValuePathStep, ValuePathSubject};
+    let forall = report(finite(Unit::Decisive, "Decisive", &[1, 1, 0]));
+    assert_eq!(outcome(&forall), &TemporalVerdict::Violated { at: 2 });
+    assert!(forall.witness.is_none());
+    let decisive = forall.decisive.as_ref().expect("a decisive record");
+    let quantifier = decisive.quantifier.as_ref().expect("the forall decides");
+    assert_eq!(decisive.index, Some(1));
+    assert!(
+        matches!(&decisive.element, quire_exact::Value::Integer(n) if *n == quire_exact::Integer::from(0_i64))
+    );
+    assert_eq!(decisive.value_path.observation.identity, "counter-2");
+    assert!(matches!(
+        decisive.value_path.subject,
+        ValuePathSubject::Built(_)
+    ));
+    assert_eq!(decisive.value_path.steps, vec![ValuePathStep::Index(1)]);
+    assert_eq!(
+        forall
+            .counterexample
+            .as_ref()
+            .map(|counterexample| counterexample.trace_position.index()),
+        Some(2)
+    );
+
+    let item = item_json("Decisive", &forall);
+    assert_eq!(item["position"], 2);
+    assert_eq!(item["counterexample"]["trace_position"], 2);
+    assert!(item["counterexample"].get("decisive").is_none());
+    assert!(item.get("witness").is_none());
+    assert_eq!(item["decisive"]["index"], 1);
+    assert_eq!(
+        item["decisive"]["quantifier"]["ordinal"],
+        quantifier.origin().ordinal()
+    );
+    assert!(item["decisive"]["quantifier"]["node_id"].is_string());
+    assert_eq!(
+        item["decisive"]["value_path"]["steps"],
+        serde_json::json!([{"tag": "index", "index": 1}])
+    );
+    assert!(item["decisive"].get("element").is_some());
+
+    let plain = report(finite(Unit::Decisive, "Plain", &[1, 1, 0]));
+    assert_eq!(outcome(&plain), &TemporalVerdict::Violated { at: 2 });
+    let decisive = plain.decisive.as_ref().expect("a decisive record");
+    assert_eq!(decisive.quantifier, None);
+    assert_eq!(decisive.index, None);
+    assert!(matches!(
+        decisive.element,
+        quire_exact::Value::Boolean(false)
+    ));
+    assert_eq!(decisive.value_path.observation.identity, "counter-2");
+    assert!(matches!(
+        decisive.value_path.subject,
+        ValuePathSubject::Object(_)
+    ));
+    assert!(decisive.value_path.steps.is_empty());
+    let item = item_json("Plain", &plain);
+    assert!(item["decisive"].get("quantifier").is_none());
+    assert!(item["decisive"].get("index").is_none());
+    assert_eq!(
+        item["decisive"]["element"],
+        serde_json::json!({"kind": "boolean", "value": false})
+    );
+    assert_eq!(
+        item["decisive"]["value_path"]["steps"],
+        serde_json::json!([])
+    );
+
+    let held = report(finite(Unit::Decisive, "Decisive", &[1, 1, 1]));
+    assert_eq!(outcome(&held), &TemporalVerdict::Holds);
+    assert!(held.decisive.is_none());
+    assert!(item_json("Decisive", &held).get("decisive").is_none());
+
+    // FR-267-AC-19: the written record holds no `decisive` anywhere.
+    let written = crate::spine::write_clause_run_result(&forall).expect("the record writes");
+    let written = String::from_utf8(written).expect("UTF-8");
+    assert!(!written.contains("decisive\""), "{written}");
 }
