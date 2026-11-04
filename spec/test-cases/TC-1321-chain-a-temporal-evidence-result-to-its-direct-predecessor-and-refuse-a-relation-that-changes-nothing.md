@@ -27,7 +27,7 @@ Verify FR-526-AC-1 to FR-526-AC-19. Results `r1`, `r2`, `r3` are evaluated from 
 | 9 | 9 | another clause naming `r1`; another package naming `r1` | `predecessor-unknown` each |
 | 10 | 10 | trigger differing in one byte, naming `r1` | `predecessor-unknown` |
 | 11 | 11 | `correspondence` differing, naming `r1` | `correspondence-changed` |
-| 12 | 12 | a three-correction chain with the `lineage` ceiling 2, then 3 | the third correction `Incomplete` naming `lineage`, no truth; completes |
+| 12 | 12 | a three-correction chain with the `lineage` ceiling 2, then 3 | the third correction an `Ok` `Incomplete` result naming `lineage`, `Unavailable`, no truth, no ledger entry for it; completes |
 | 13 | 13 | inspect the lineage sum | checked `u64` arithmetic, no wrapping or saturating form |
 | 14 | 14 | three corrections `r1`, `r2`, `r3` | `lineage` 1, 2, 3 naming direct predecessors; `r1`, `r2` unchanged |
 | 15 | 15 | an `Original` request over a ledger holding its key | `lineage` 0; entry replaced |

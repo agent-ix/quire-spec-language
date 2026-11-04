@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-523-AC-1 to FR-523-AC-19. Each counter is driven to its exact usage and to one below. The vectors of FR-501-AC-12 and FR-516-AC-7 are referenced, not copied.
+Verify FR-523-AC-1 to FR-523-AC-23. Each counter is driven to its exact usage and to one below. The vectors of FR-501-AC-12 and FR-516-AC-7 are referenced, not copied.
 
 ## Test Procedure
 
@@ -29,18 +29,22 @@ Verify FR-523-AC-1 to FR-523-AC-19. Each counter is driven to its exact usage an
 | 11 | 7 | `positions` 0 | `Incomplete` naming `positions` at the first scan |
 | 12 | 8 | a ceiling raised above its default | used as given; not clamped |
 | 13 | 9 | a refused charge | usage at its last successful value |
-| 14 | 10 | a call one below the exact usage | charge log equals the successful prefix |
+| 14 | 10 | a call one below the exact usage; row 24's call with a meter ceiling of 9 | charge log equals the successful prefix; the log holds nine charges |
 | 15 | 11 | row 3's call retried with sufficient ceilings after a row 5 stop | byte-equal to a call that never stopped |
-| 16 | 12 | `history_span` above its ceiling | declaration stopped before any instance is assessed; no result for it |
-| 17 | 13 | `formula_nodes` above its ceiling | declaration stopped before any instance is assessed; no result for it |
+| 16 | 12 | `history_span` above its ceiling | `Incomplete` result naming `history_span`, `Unavailable`, no truth; no instance assessed |
+| 17 | 13 | `formula_nodes` above its ceiling | `Incomplete` result naming `formula_nodes`, `Unavailable`, no truth; no instance assessed |
 | 18 | 14 | two calls for `t1` and `t2` of **R**'s `on each` clause sharing one `Meter` whose ceiling is the first call's usage plus one | first call keeps truth, basis and support; second `Incomplete` at `temporal.visit` naming `t2` |
 | 19 | 15 | `evaluation_steps` 1000 with the meter one below usage; the meter unbounded with `evaluation_steps` one below | `Incomplete` at `temporal.visit`; `Incomplete` naming `evaluation_steps` |
 | 20 | 16 | `t0 + Hf + m` above `u64::MAX`; equal to `u64::MAX` | `Incomplete` naming `history_span`, empty charge log; evaluates |
 | 21 | 17 | a formula nested 100,000 deep, ceilings raised, on a 512 KiB stack | evaluates |
 | 22 | 18 | the `usage` of a call; two requests differing in one ceiling | all thirteen counters reported; distinct `result_identity` |
-| 23 | 19 | the first call replayed with a fresh `Meter` after row 18's second call stopped | a result equal to the first call's result |
+| 23 | 20 | ledger holding `t1`; redelivery of `t1`; new healthy delivery; new faulted delivery | `instances` usage 1 |
+| 24 | 21 | fixed-sample `on origin` `eventually[0,3] holds(p)`, `p` false at the one observed position 0, watermark 3, complete through 3, closed | `formula_nodes` 2, `positions` 1, `valuations` 4, `evaluation_steps` 4, `visited` 7, meter usage at `temporal.visit` 10; a meter ceiling of 9 stops at the tenth charge (a silent-sample charge) with the log of nine |
+| 25 | 22 | the stops of rows 7 to 9, 16, 17 and 20 | each `Ok`, `Unavailable`, `incomplete` naming the counter, no truth; no `Err` |
+| 26 | 19 | the first call replayed with a fresh `Meter` after row 18's second call stopped | a result equal to the first call's result |
+| 27 | 23 | each stop of rows 7 to 9, 16, 17 after an instance was created | `ledger` and `progress_ledger` equal the request's |
 
-Tag the test `#[trace("FR-523-AC-1", ..., "FR-523-AC-19", "TC-1318")]`; rows 4a to 4c carry FR-523-AC-4 and rows 5a to 5c carry FR-523-AC-5. Row 5a to 5c also carry FR-516-AC-7 where it is the same vector.
+Tag the test `#[trace("FR-523-AC-1", ..., "FR-523-AC-23", "TC-1318")]`; rows 4a to 4c carry FR-523-AC-4 and rows 5a to 5c carry FR-523-AC-5. Row 5a to 5c also carry FR-516-AC-7 where it is the same vector.
 
 ## Expected Results
 
