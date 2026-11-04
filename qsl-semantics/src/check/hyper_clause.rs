@@ -13,9 +13,6 @@
 //! binding to a model operation; when every bound operation has an
 //! abstraction-relation binding it also has a second requirement, the code
 //! claim.
-//!
-//! A clause that checks is refused as not emitted until S4 writes its node,
-//! as a `temporal` clause is (`temporal_clause::not_emitted`).
 
 use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};

@@ -4051,10 +4051,7 @@ impl PackageDeclarations {
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
-        // `over` parameter, now that every function signature is known. A
-        // clause S4 does not emit (a protocol fairness target, the timed
-        // profile) is refused rather than compiled and silently missing from
-        // the package (`temporal_clause::not_emitted`).
+        // `over` parameter, now that every function signature is known.
         let time_units = time_units::TimeUnits::new(
             &self.units,
             &self.nominal_spans,
@@ -4092,14 +4089,13 @@ impl PackageDeclarations {
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
             let body_refused = match &outcome {
-                Ok(staged) => !temporal_clause::is_emitted(staged.value()),
                 Err(StageFailure::Refused(refusal)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
                 Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
-                Err(_) => false,
+                Ok(_) | Err(_) => false,
             };
             if body_refused {
                 let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
@@ -4135,48 +4131,6 @@ impl PackageDeclarations {
                 }
             }
             match outcome {
-                Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
-                    let checked = staged.into_value();
-                    if checked.has_aggregate {
-                        let location =
-                            lowering::temporal_location(index, lowering::TemporalSite::Claim);
-                        let condition_declarations = state_clause::ClauseDeclarations {
-                            scope: &scope,
-                            signatures: &signatures,
-                            dispatch_tables: &dispatch_tables,
-                            models: &models,
-                            checking_limits: limits,
-                            location: &location,
-                            nodes_used,
-                            cancel: Some(cancel),
-                            staged: None,
-                        };
-                        let mut condition_cx = crate::family::CheckContext::new(
-                            &condition_declarations,
-                            contract_limits,
-                            &mut contract_meter,
-                            &mut contract_diagnostics,
-                            &mut contract_scopes,
-                        );
-                        match temporal_clause::condition::check_conditions(
-                            index,
-                            &clause.form,
-                            &checked,
-                            &condition_declarations,
-                            &mut condition_cx.reborrow(&scope),
-                        ) {
-                            Ok((_, used)) => nodes_used = used,
-                            Err(refusal) => {
-                                refusals.push(refusal);
-                                if cancel.tripped().is_some() {
-                                    return Err(refusals);
-                                }
-                                continue;
-                            }
-                        }
-                    }
-                    refusals.push(temporal_clause::not_emitted(&checked));
-                }
                 Ok(staged) => {
                     let checked = staged.into_value();
                     let location =

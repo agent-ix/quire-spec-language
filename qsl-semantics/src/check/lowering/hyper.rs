@@ -338,6 +338,7 @@ impl Lowering<'_> {
                 formula: clause.body(),
                 node_site: &|node| hyper_location(input.index, Site::Node(node)),
                 conditions: &conditions,
+                aggregates: &BTreeMap::new(),
                 root_site: &wrapper_at,
                 tick_intervals: false,
             },
