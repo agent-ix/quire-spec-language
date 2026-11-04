@@ -628,7 +628,7 @@ pub fn admit_parsed_unit_list(
         .zip(units.drain(..))
         .enumerate()
         .collect();
-    paired.sort_by(|(_, left, _), (_, right, _)| {
+    paired.sort_by(|(_, (left, _)), (_, (right, _))| {
         left.authority
             .as_bytes()
             .cmp(right.authority.as_bytes())
@@ -636,7 +636,7 @@ pub fn admit_parsed_unit_list(
     });
     let mut input_order = vec![0; paired.len()];
     let mut canonical_units = Vec::with_capacity(paired.len());
-    for (canonical_index, (input_index, _, unit)) in paired.into_iter().enumerate() {
+    for (canonical_index, (input_index, (_, unit))) in paired.into_iter().enumerate() {
         input_order[input_index] = canonical_index;
         canonical_units.push(unit);
     }

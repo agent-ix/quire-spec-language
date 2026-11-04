@@ -1112,7 +1112,10 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
         let region = refusal
             .region()
             .expect("the declaration has a source region");
-        assert_eq!(region.source().identity(), expected_source);
+        assert_eq!(
+            region.source().identity(),
+            expected_source.identity.as_str()
+        );
         let source = format!("{HEADER}{source_body}");
         let marker = format!("{declaration_kind} {declaration_name}");
         let start = source
@@ -1151,11 +1154,15 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
         "unit",
         "u_self",
     );
-    let CompileRefusal::Assembly { refusal, .. } = single_cycle.as_ref() else {
+    let CompileRefusal::Assembly {
+        refusal: assembly_refusal,
+        ..
+    } = single_cycle.as_ref()
+    else {
         panic!("quantity cycles are assembler refusals");
     };
     assert!(matches!(
-        &refusal.errors[0].cause,
+        &assembly_refusal.errors[0].cause,
         qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
             if edges == &[("u_self".to_owned(), "u_self".to_owned())]
     ));
@@ -1163,11 +1170,11 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     let (cross_unit_cycle, identities) = refusal(&[
         (
             "test:lifecycle:quantity-cross-a",
-            "dimension T; unit z : T = z2 * rational(2, 1);",
+            "dimension T; unit z : T = rational(2, 1) * z2;",
         ),
         (
             "test:lifecycle:quantity-cross-b",
-            "unit z2 : T = z * rational(2, 1);",
+            "unit z2 : T = rational(2, 1) * z;",
         ),
     ]);
     assert_eq!(cross_unit_cycle.code(), Code::InvalidPackage);
@@ -1175,15 +1182,19 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     assert_region_source(
         &cross_unit_cycle,
         &identities[0],
-        "dimension T; unit z : T = z2 * rational(2, 1);",
+        "dimension T; unit z : T = rational(2, 1) * z2;",
         "unit",
         "z",
     );
-    let CompileRefusal::Assembly { refusal, .. } = cross_unit_cycle.as_ref() else {
+    let CompileRefusal::Assembly {
+        refusal: assembly_refusal,
+        ..
+    } = cross_unit_cycle.as_ref()
+    else {
         panic!("quantity cycles are assembler refusals");
     };
     assert!(matches!(
-        &refusal.errors[0].cause,
+        &assembly_refusal.errors[0].cause,
         qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
             if edges == &[("z".to_owned(), "z2".to_owned()), ("z2".to_owned(), "z".to_owned())]
     ));
@@ -1201,11 +1212,15 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
         "dimension",
         "A",
     );
-    let CompileRefusal::Assembly { refusal, .. } = dimension_cycle.as_ref() else {
+    let CompileRefusal::Assembly {
+        refusal: assembly_refusal,
+        ..
+    } = dimension_cycle.as_ref()
+    else {
         panic!("dimension cycles are assembler refusals");
     };
     assert!(matches!(
-        &refusal.errors[0].cause,
+        &assembly_refusal.errors[0].cause,
         qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
             if edges == &[("A".to_owned(), "B".to_owned()), ("B".to_owned(), "A".to_owned())]
     ));

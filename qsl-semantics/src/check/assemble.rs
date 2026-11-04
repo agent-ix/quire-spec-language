@@ -3152,7 +3152,7 @@ impl PackageDeclarations {
             .eq(canonical_units.iter().map(|(source, _)| source));
 
         let canonical_result = Self::assemble_units_in_order(
-            package_name,
+            package_name.clone(),
             canonical_units,
             models.clone(),
             imports.clone(),
@@ -3193,7 +3193,7 @@ impl PackageDeclarations {
 
     fn assemble_units_in_order(
         package_name: String,
-        mut units: Vec<(RawSourceRef, ParsedUnit)>,
+        units: Vec<(RawSourceRef, ParsedUnit)>,
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
@@ -3385,6 +3385,7 @@ impl PackageDeclarations {
             sources,
             source_owners,
         } = source_units;
+        let source_order: Vec<SourceOwner> = sources.iter().map(SourceOwner::from).collect();
         let AssemblyRun {
             cancel,
             execution_points,
@@ -3460,7 +3461,10 @@ impl PackageDeclarations {
             &unit.units,
             &imported,
             &owner,
-            &source_node_owners,
+            &units::SourceDocuments {
+                owners: &source_node_owners,
+                order: &source_order,
+            },
             &package_name,
             limits,
         );
