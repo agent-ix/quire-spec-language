@@ -51,6 +51,48 @@ impl<'package> AdmittedEvaluationView<'package> {
         }
     }
 
+    /// Project one selected reader-backed protocol expression into the closed
+    /// evaluator vocabulary. Wire terms and producer evidence remain private
+    /// to qsl-package; callers receive only owned nodes, exact types, locations,
+    /// equality decisions, and the admitted function table.
+    #[cfg(feature = "std")]
+    pub fn project_reader_protocol_root(
+        &self,
+        source_graph: &qsl_semantics::check::CheckedGraph,
+        key: &NodeKey,
+        sources: &[ProtocolSource],
+        root_provenance: &quire_semantic_value::location::Location,
+    ) -> Result<Option<crate::ReaderProtocolProjection>, InternalFault> {
+        let Some(read) = self.reader else {
+            return Err(InternalFault::new(
+                "FR-390",
+                "reader-view-has-admitted-graph",
+            ));
+        };
+        let root = read.reader_node_id(key)?.ok_or_else(|| {
+            InternalFault::new("FR-390", "reader-selected-protocol-node-is-retained")
+        })?;
+        let locals = sources
+            .iter()
+            .map(|source| {
+                read.reader_node_id(source.binder())?
+                    .map(|node| (node, source.index()))
+                    .ok_or_else(|| {
+                        InternalFault::new("FR-390", "reader-protocol-binder-is-retained")
+                    })
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        crate::reader_protocol_projection::project_protocol_root(
+            source_graph,
+            read.admitted_graph(),
+            read.emission(),
+            &root,
+            &locals,
+            root_provenance.clone(),
+            read.effective_limits().work,
+        )
+    }
+
     /// Admit one current snapshot for a model selected by this package.
     #[allow(clippy::too_many_arguments)]
     pub fn admit_protocol_observation(
@@ -148,16 +190,9 @@ impl<'package> AdmittedEvaluationView<'package> {
             // `protocol_locations` rows with its visits (QSL-1625), so it
             // reports no location. It never takes one from the source
             // package's CheckedBody (FR-390).
-            let projection = reader
+            reader
                 .protocol_reference_slot(&root_node, &binders)
                 .map_err(SlotSelectionFailure::Fault)?
-                .ok_or_else(|| {
-                    SlotSelectionFailure::Fault(InternalFault::new(
-                        "FR-390",
-                        "reader-protocol-root-has-supported-plain-data-projection",
-                    ))
-                })?;
-            Some(projection)
         } else {
             None
         };

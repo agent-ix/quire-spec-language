@@ -495,6 +495,8 @@ pub struct Emission {
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
     pub(crate) equality_fact_witness_rows: Vec<EqualityFactWitnessRow>,
+    /// Typed rows emitted for every protocol-slot application location.
+    pub(crate) protocol_location_rows: Vec<quire_contract_model::CheckedProtocolSemanticLocation>,
     /// The typed graph nodes exactly as encoded into [`Self::package`], with
     /// package-level index segments. IR's typed bodies (an operation anchor's
     /// bare execution point) are not decodable through serde outside its
@@ -721,6 +723,7 @@ impl DebugWith for Emission {
             selected_exact_field_rows,
             equality_producer_identity_rows,
             equality_fact_witness_rows,
+            protocol_location_rows,
             wire_nodes,
             temporal_binding_rows,
             temporal_rows,
@@ -763,6 +766,7 @@ impl DebugWith for Emission {
                 equality_producer_identity_rows,
             )
             .field("equality_fact_witness_rows", equality_fact_witness_rows)
+            .field("protocol_location_rows", protocol_location_rows)
             .field("wire_node_count", &wire_nodes.len())
             .field("temporal_binding_row_count", &temporal_binding_rows.len())
             .field("temporal_rows", temporal_rows)
@@ -1065,6 +1069,14 @@ impl Emission {
     /// Exact producer facts joined to final structural IDs for equality.
     pub fn equality_fact_witness_rows(&self) -> &[EqualityFactWitnessRow] {
         &self.equality_fact_witness_rows
+    }
+
+    /// The producer's protocol location keys paired with their admitted wire
+    /// rows. A reader must still retrieve each row through the IR read API.
+    pub fn protocol_location_rows(
+        &self,
+    ) -> &[quire_contract_model::CheckedProtocolSemanticLocation] {
+        &self.protocol_location_rows
     }
 
     /// Validates the selected model enum rows against this admitted package.
@@ -2820,6 +2832,39 @@ fn equality_fact_witness_rows(
                             },
                             None,
                         )?;
+                        // A unit of a base dimension carries that dimension
+                        // as its canonical base-dimension term. The IR
+                        // equality reader joins this separately from the
+                        // authored UnitDimension declaration row.
+                        if dimension.role
+                            == qsl_semantics::check::EqualityDimensionRole::UnitDimension
+                            && matches!(
+                                &unit,
+                                quire_semantic_value::quantity::QuantityUnit::Declared(_)
+                            )
+                            && graph_nodes
+                                .get(&dimension.node)
+                                .and_then(|node| node.nominal_payload())
+                                .and_then(|payload| match payload {
+                                    NominalPayload::Dimension(dimension) => {
+                                        Some(dimension.terms().is_empty())
+                                    }
+                                    _ => None,
+                                })
+                                == Some(true)
+                        {
+                            add(
+                                &dimension.node,
+                                EqualityFactWitness::DimensionDeclaration {
+                                    unit_id: unit_fact.unit_id.clone(),
+                                    operand_position,
+                                    role:
+                                        qsl_semantics::check::EqualityDimensionRole::BaseDimension,
+                                    ordinal: 0,
+                                },
+                                None,
+                            )?;
+                        }
                     }
                     for term in &unit_fact.dimension_terms {
                         let exact_term = graph_nodes
@@ -4989,6 +5034,7 @@ pub fn emit_timed_models(
         selected_exact_field_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
+        protocol_location_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows: TemporalBindingRows::default(),
         temporal_rows: TemporalRows::default(),
@@ -5917,6 +5963,10 @@ fn emit_package_inner(
         &equality_producer_identity_rows,
         &source_map,
     )?;
+    let protocol_location_rows = checked_term_data
+        .as_ref()
+        .map(|data| data.protocol_locations.clone())
+        .unwrap_or_default();
     let selected_operation_member_rows = selected_operation_member_rows
         .into_iter()
         .map(|(key, mut row)| {
@@ -6040,6 +6090,7 @@ fn emit_package_inner(
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
         equality_producer_identity_rows,
         equality_fact_witness_rows,
+        protocol_location_rows,
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows,
         temporal_rows: TemporalRows {
@@ -6733,6 +6784,7 @@ fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
 #[cfg(test)]
 pub(crate) mod tests;
 
+mod equality_reader;
 /// ADR-014 §4 (TC-440): QSL's extent classification agrees with
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]

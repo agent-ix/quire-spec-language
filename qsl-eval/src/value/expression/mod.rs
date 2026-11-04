@@ -1941,34 +1941,71 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .unwrap_or(&empty);
         let body = selected.checked_body();
         frame.resize(body.frame_slots(frame.len()), None);
-        let reader_root = if view.is_reader_backed() {
-            let Some(projection) = selected.reader_projection() else {
+        let reader_projection = if view.is_reader_backed() && selected.reader_projection().is_none()
+        {
+            let projected = selected
+                .root()
+                .view()
+                .project_reader_protocol_root(
+                    self.graph(),
+                    selected.root().node(),
+                    selected.sources(),
+                    selected.checked_body().root().location(),
+                )
+                .map_err(CallFailure::Fault)?;
+            if projected.is_none() && selected.reader_projection().is_none() {
                 return Err(CallFailure::Fault(InternalFault::new(
                     "FR-390",
-                    "reader-protocol-root-has-supported-plain-data-projection",
+                    "reader-computed-root-is-projected-or-typed-refused",
                 )));
-            };
-            Some(evaluate::ReaderRoot {
-                slot: projection.slot(),
-                field: projection.field().clone(),
-                optional: projection.optional(),
-                derefed: projection.derefed(),
-                value_type: projection.value_type().clone(),
-            })
+            }
+            projected
         } else {
             None
         };
-        let result = Machine::with_pre(
-            self.graph().scope(),
-            self.graph(),
-            current,
-            None,
-            Some(&std::collections::BTreeMap::new()),
-            meter,
-            self.graph().dispatch_tables(),
-        )
-        .run_protocol_frame(body.root(), reader_root, frame, unavailable)
-        .map_err(CallFailure::Fault)?;
+        let result = if let Some(reader_projection) = reader_projection {
+            let root = evaluate::reader_source::ReaderNode::root(&reader_projection);
+            Machine::with_pre(
+                self.graph().scope(),
+                self.graph(),
+                current,
+                None,
+                Some(&std::collections::BTreeMap::new()),
+                meter,
+                self.graph().dispatch_tables(),
+            )
+            .run_protocol_frame(root, None, frame, unavailable)
+            .map_err(CallFailure::Fault)?
+        } else {
+            let reader_root = if view.is_reader_backed() {
+                let Some(projection) = selected.reader_projection() else {
+                    return Err(CallFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "reader-protocol-root-has-supported-plain-data-projection",
+                    )));
+                };
+                Some(evaluate::ReaderRoot {
+                    slot: projection.slot(),
+                    field: projection.field().clone(),
+                    optional: projection.optional(),
+                    derefed: projection.derefed(),
+                    value_type: projection.value_type().clone(),
+                })
+            } else {
+                None
+            };
+            Machine::with_pre(
+                self.graph().scope(),
+                self.graph(),
+                current,
+                None,
+                Some(&std::collections::BTreeMap::new()),
+                meter,
+                self.graph().dispatch_tables(),
+            )
+            .run_protocol_frame(body.root(), reader_root, frame, unavailable)
+            .map_err(CallFailure::Fault)?
+        };
         match result {
             Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation)),
             Err((binder, cause, location)) => Ok(ProtocolSlotEvaluation::Unavailable {

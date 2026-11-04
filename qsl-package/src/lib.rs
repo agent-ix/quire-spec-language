@@ -40,6 +40,8 @@ mod protocol_occurrence;
 mod protocol_selection;
 #[cfg(feature = "std")]
 pub mod protocol_view;
+#[cfg(feature = "std")]
+mod reader_protocol_projection;
 
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
@@ -83,6 +85,8 @@ pub use protocol_occurrence::{
     SubjectKind,
 };
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
+#[cfg(feature = "std")]
+pub use reader_protocol_projection::{ReaderProtocolFunction, ReaderProtocolProjection};
 
 #[cfg(feature = "std")]
 pub use quire_contract_model::{

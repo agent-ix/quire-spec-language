@@ -4444,6 +4444,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
 mod invariants;
 
 mod node_source;
+pub(super) mod reader_source;
 
 /// The machine over checked bodies, the one source every test drives.
 #[cfg(test)]

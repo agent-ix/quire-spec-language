@@ -381,6 +381,55 @@ pub(crate) fn wire_graph(package: &CheckedPackageV2) -> Result<WireGraph, WireId
     WireGraph::new(package.graph().nodes.iter().map(|node| &node.node_id))
 }
 
+/// Exact unit identity carried by one admitted compound-unit type node.
+pub(crate) fn compound_unit(
+    package: &CheckedPackageV2,
+    id: &quire_contract_model::CheckedNodeId,
+) -> Option<quire_exact::UnitId> {
+    use quire_contract_model::{CheckedBindingNameKind, CheckedLiteralValue, CheckedTerm};
+
+    let node = package.graph().nodes.iter().find(|node| {
+        node.node_id == *id
+            && node.node_tag.as_ref() == "scalar_type"
+            && node.semantic_form.as_ref() == "compound_unit"
+    })?;
+    let CheckedTerm::Aggregate { members } = &node.body else {
+        return None;
+    };
+    let graph = wire_graph(package).ok()?;
+    let mut terms = Vec::with_capacity(members.len());
+    for member in members {
+        let CheckedTerm::Aggregate { members } = member else {
+            return None;
+        };
+        let mut unit = None;
+        let mut exponent = None;
+        for member in members {
+            let CheckedTerm::Binding { name, value } = member else {
+                return None;
+            };
+            match name.kind() {
+                CheckedBindingNameKind::Other("unit") => {
+                    let CheckedTerm::Reference { target } = value.as_ref() else {
+                        return None;
+                    };
+                    unit = Some(graph.key(target).ok()?);
+                }
+                CheckedBindingNameKind::Other("exponent") => {
+                    let literal = value.literal_read()?;
+                    let CheckedLiteralValue::Integer(value) = literal.value else {
+                        return None;
+                    };
+                    exponent = Some(value.to_string().parse().ok()?);
+                }
+                _ => return None,
+            }
+        }
+        terms.push((unit?, exponent?));
+    }
+    Some(quire_exact::UnitId::compound(terms))
+}
+
 /// ADR-013 O-12, C-14: the package source map of an admitted wire's
 /// `source_map`, keyed by the O-07 occurrence key.
 fn package_source_map(
@@ -896,6 +945,7 @@ pub fn read_evaluation_emission<'package>(
     })?;
     Ok(AdmittedPackageRead {
         source: package,
+        emission,
         read,
         dependencies: AdmittedPackages(closure),
         reader_nodes,
@@ -908,12 +958,45 @@ pub fn read_evaluation_emission<'package>(
 /// callers cannot pair an admitted IR graph with an unrelated QSL package.
 pub struct AdmittedPackageRead<'package> {
     source: &'package CheckedPackage,
+    emission: Emission,
     read: V2Read,
     dependencies: AdmittedPackages,
     reader_nodes: BTreeSet<NodeKey>,
 }
 
 impl AdmittedPackageRead<'_> {
+    /// Resolve one structural key to its node in the admitted graph.
+    pub(crate) fn reader_node_id(
+        &self,
+        key: &NodeKey,
+    ) -> Result<Option<quire_contract_model::CheckedNodeId>, InternalFault> {
+        let graph = wire_graph(&self.read.admitted).map_err(|_| {
+            InternalFault::new("FR-390", "reader-protocol-graph-has-structural-keys")
+        })?;
+        Ok(self
+            .read
+            .admitted
+            .graph()
+            .nodes
+            .iter()
+            .find(|node| {
+                graph
+                    .key(&node.node_id)
+                    .is_ok_and(|candidate| candidate == *key)
+            })
+            .map(|node| node.node_id.clone()))
+    }
+
+    /// The exact admitted graph emitted for this reader-backed package.
+    pub(crate) fn admitted_graph(&self) -> &CheckedPackageV2 {
+        &self.read.admitted
+    }
+
+    /// The producer evidence paired with the bytes admitted by this read.
+    pub(crate) fn emission(&self) -> &Emission {
+        &self.emission
+    }
+
     /// The structural exports admitted for this package.
     pub fn import_view(&self) -> &ImportView {
         &self.read.package
@@ -1012,28 +1095,147 @@ impl AdmittedPackageRead<'_> {
                     error.code,
                     quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
                         | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
-                ) =>
+                ) && (error.form.as_ref() == "composite_type/record"
+                    || error.code
+                        == quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
+                        && self
+                            .read
+                            .admitted
+                            .graph()
+                            .nodes
+                            .iter()
+                            .any(|type_node| {
+                                type_node.node_id == selected.semantic_type
+                                    && type_node.node_tag.as_ref() == "model"
+                                    && type_node.semantic_form.as_ref() == "record_value_type"
+                            })) =>
             {
                 // A package-local record's checked type declaration is its
                 // exact structural identity. This wire node is scoped by the
                 // `record_value_type` form, so equal-shaped declarations keep
                 // distinct identities; no member-shape inference is used.
-                let record = self
-                    .read
-                    .admitted
-                    .graph()
-                    .nodes
-                    .iter()
-                    .find(|candidate| candidate.node_id == selected.semantic_type)
-                    .filter(|type_node| {
-                        type_node.node_tag.as_ref() == "model"
-                            && type_node.semantic_form.as_ref() == "record_value_type"
+                let record = identities
+                    .declaration_rows()
+                    .find(|row| row.structural_node == selected.semantic_type)
+                    .and_then(|row| match &row.exact_identity {
+                        quire_contract_model::SelectedExactIdentity::Record(key) => {
+                            Some(key.clone())
+                        }
+                        _ => None,
                     })
-                    .and_then(|_| graph.key(&selected.semantic_type).ok());
+                    .or_else(|| {
+                        self.read
+                            .admitted
+                            .graph()
+                            .nodes
+                            .iter()
+                            .find(|candidate| candidate.node_id == selected.semantic_type)
+                            .filter(|type_node| {
+                                type_node.node_tag.as_ref() == "model"
+                                    && type_node.semantic_form.as_ref() == "record_value_type"
+                            })
+                            .and_then(|_| graph.key(&selected.semantic_type).ok())
+                    });
                 record.map_or_else(
                     || Err(InternalFault::new("FR-390", "reader-selected-node-has-exact-type")),
                     |key| Ok(quire_exact::ValueType::Composite(key)),
                 )?
+            }
+            Err(error)
+                if error.code
+                    == quire_contract_model::ExactTypeProjectionErrorCode::UnavailableIdentityWitness
+                    && error.form.as_ref() == "composite_type/union" =>
+            {
+                let declaration = error.at.as_deref().ok_or_else(|| {
+                    InternalFault::new("FR-390", "reader-union-type-error-has-node")
+                })?;
+                let union = identities
+                    .declaration_rows()
+                    .find(|row| row.structural_node == *declaration)
+                    .and_then(|row| match &row.exact_identity {
+                        quire_contract_model::SelectedExactIdentity::Union(key) => {
+                            Some(key.clone())
+                        }
+                        _ => None,
+                    })
+                    .or_else(|| {
+                        let checked_type = self
+                            .read
+                            .admitted
+                            .graph()
+                            .nodes
+                            .iter()
+                            .find(|node| node.node_id == *declaration)?;
+                        (checked_type.node_tag.as_ref() == "composite_type"
+                            && checked_type.semantic_form.as_ref() == "union")
+                            .then(|| graph.key(declaration).ok())
+                            .flatten()
+                    })
+                    .ok_or_else(|| {
+                        InternalFault::new("FR-390", "reader-union-type-has-exact-identity")
+                    })?;
+                quire_exact::ValueType::Composite(union)
+            }
+            Err(error)
+                if matches!(
+                    error.code,
+                    quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
+                        | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
+                ) && matches!(error.form.as_ref(), "scalar_type/unit" | "scalar_type/dimension") =>
+            {
+                let unit = error
+                    .at
+                    .as_deref()
+                    .and_then(|_| {
+                        identities
+                            .declaration_rows()
+                            .find(|row| row.structural_node == selected.semantic_type)
+                    })
+                    .and_then(|row| match &row.exact_identity {
+                        quire_contract_model::SelectedExactIdentity::DeclaredUnit(unit) => {
+                            Some(unit.clone())
+                        }
+                        _ => None,
+                    })
+                    .or_else(|| {
+                        // A checked `scalar_type/unit` node is itself the exact
+                        // declaration identity when no selected identity row
+                        // exists. The full structural key distinguishes units
+                        // with the same spelling in different packages.
+                        let declaration = &selected.semantic_type;
+                        let unit_node = self
+                            .read
+                            .admitted
+                            .graph()
+                            .nodes
+                            .iter()
+                            .find(|candidate| candidate.node_id == *declaration)?;
+                        (unit_node.node_tag.as_ref() == "scalar_type"
+                            && unit_node.semantic_form.as_ref() == "unit")
+                            .then(|| graph.key(declaration).ok())
+                            .flatten()
+                            .map(quire_exact::UnitId::declared)
+                    })
+                    .ok_or_else(|| {
+                        InternalFault::new("FR-390", "reader-selected-unit-is-exact")
+                    })?;
+                quire_exact::ValueType::Quantity(unit)
+            }
+            Err(error)
+                if matches!(
+                    error.code,
+                    quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
+                        | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
+                ) && error.form.as_ref() == "scalar_type/compound_unit" =>
+            {
+                let unit_node = error.at.as_deref().ok_or_else(|| {
+                    InternalFault::new("FR-390", "reader-compound-unit-type-has-node")
+                })?;
+                quire_exact::ValueType::Quantity(
+                    compound_unit(&self.read.admitted, unit_node).ok_or_else(|| {
+                        InternalFault::new("FR-390", "reader-compound-unit-has-exact-identity")
+                    })?,
+                )
             }
             Err(_) => {
                 return Err(InternalFault::new(
