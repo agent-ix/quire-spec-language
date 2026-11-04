@@ -2746,3 +2746,41 @@ fn a_models_own_alias_is_recorded_in_the_packages_alias_names() {
         declarations.alias_names
     );
 }
+
+/// FR-480-AC-11 (QSL-1578): with the package selected as `History` first and
+/// as `Config` second, `Config::Sub` names the subtype the first alias
+/// declares. Its inherited fields and inherited operation resolve through the
+/// second alias, including the inherited `parent` reference to the
+/// supertype: one generalization over both spellings.
+#[trace("FR-480-AC-11")]
+#[test]
+fn inherited_members_resolve_through_a_second_alias() {
+    let body = "invariant SubVersion using v on Config::Sub at current { \
+                self.versionNumber >= 0 }\n\
+                post SubUpdate using v on Config::Sub::attemptUpdate { \
+                self.versionNumber >= 0 }\n\
+                invariant SubParent using v on Config::Sub at current { \
+                present(self.parent) implies \
+                deref(value(self.parent)).versionNumber >= 0 }\n";
+    let declarations = admit_and_assemble_with_profiles(
+        &tc465_document_with_sub_subtype(),
+        &format!("model History = {PACKAGE_IDENTITY:?};\n"),
+        body,
+    )
+    .unwrap_or_else(|refusal| panic!("the unit assembles: {refusal:?}"));
+    let mut object_types: Vec<_> = declarations
+        .types
+        .object_types()
+        .map(|declared| declared.name().to_owned())
+        .collect();
+    object_types.sort();
+    assert_eq!(
+        object_types,
+        ["History::ConfigVersion", "History::Sub"],
+        "each object type is declared once, under the first alias"
+    );
+    let checked = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    assert_eq!(checked.state_clauses().len(), 3);
+}
