@@ -281,6 +281,16 @@ impl Definition {
     pub fn exact_bytes(&self) -> &[u8] {
         &self.exact_bytes
     }
+
+    /// The typed semantic role this exact definition supplies.
+    pub fn role(&self) -> DefinitionRole {
+        self.role
+    }
+
+    /// Exact dependency edges declared by this definition.
+    pub fn dependencies(&self) -> &BTreeSet<DefinitionRef> {
+        &self.dependencies
+    }
 }
 
 /// Known definition catalog used for profile/package graph validation, keyed
@@ -343,10 +353,17 @@ impl DefinitionCatalog {
     /// The definition `selected` names: the catalog definition with the
     /// same authority and identity (STD-150). A selection of the identity
     /// under another authority names nothing.
-    fn resolve(&self, selected: &DefinitionRef) -> Option<&Arc<Definition>> {
+    pub(super) fn resolve(&self, selected: &DefinitionRef) -> Option<&Arc<Definition>> {
         self.definitions
             .get(selected.identity())
             .filter(|definition| definition.exact == *selected)
+    }
+
+    /// The exact registered definition for one identity, regardless of
+    /// authority. Consumers receive the catalog's typed authority and must
+    /// retain it in any resolved selection.
+    pub fn definition(&self, identity: &str) -> Option<&Definition> {
+        self.definitions.get(identity).map(Arc::as_ref)
     }
 }
 
@@ -495,6 +512,21 @@ pub struct LinkedBundle {
     limits: PackageLimits,
 }
 
+/// One dependency-closed selection before complete-V1 facet and capability
+/// admission. Both complete bundle linking and profile-use closure share this
+/// resolver; profile use does not acquire complete-package semantics.
+#[derive(Clone, Debug)]
+pub(super) struct ResolvedDefinitionClosure {
+    definitions: BTreeMap<DefinitionRef, Arc<Definition>>,
+}
+
+impl ResolvedDefinitionClosure {
+    /// Exact definitions reached by the roots, keyed by their registry IDs.
+    pub(super) fn definitions(&self) -> &BTreeMap<DefinitionRef, Arc<Definition>> {
+        &self.definitions
+    }
+}
+
 impl LinkedBundle {
     /// The dependency-closed complete bundle.
     pub fn bundle(&self) -> &CompleteBundle {
@@ -608,6 +640,50 @@ pub fn link_bundle(
     catalog: &DefinitionCatalog,
     limits: PackageLimits,
 ) -> Result<LinkedBundle, BundleRefusal> {
+    let closure = resolve_definition_closure(roots, catalog, limits)?;
+    let resolved = closure.definitions;
+
+    let facets: BTreeSet<_> = resolved
+        .values()
+        .filter_map(|definition| definition.role.facet())
+        .collect();
+    let capabilities: BTreeSet<_> = resolved
+        .values()
+        .flat_map(|definition| definition.capabilities.iter().cloned())
+        .collect();
+    let inventory: BTreeSet<_> = CapabilityId::complete_inventory().into_iter().collect();
+    if let Some(missing) = inventory.difference(&capabilities).next() {
+        return Err(refusal(
+            Code::UnknownRequiredFeature,
+            None,
+            PackageError::MissingCapability(missing.clone()),
+        ));
+    }
+    if let Some(missing) = Facet::all().iter().find(|facet| !facets.contains(facet)) {
+        return Err(refusal(
+            Code::InvalidPackage,
+            None,
+            PackageError::MissingFacet(*missing),
+        ));
+    }
+    Ok(LinkedBundle {
+        bundle: CompleteBundle {
+            facets,
+            capabilities,
+        },
+        definitions: resolved,
+        limits,
+    })
+}
+
+/// Resolve exact roots and their transitive dependencies once, without
+/// imposing complete-V1 facet or capability requirements. This lower shared
+/// walk is used by both [`link_bundle`] and the spine's profile-use resolver.
+pub(super) fn resolve_definition_closure(
+    roots: &[DefinitionRef],
+    catalog: &DefinitionCatalog,
+    limits: PackageLimits,
+) -> Result<ResolvedDefinitionClosure, BundleRefusal> {
     if roots.len() > limits.definitions {
         return Err(refusal(
             Code::ResourceExhausted,
@@ -741,36 +817,8 @@ pub fn link_bundle(
         ));
     }
 
-    let facets: BTreeSet<_> = resolved
-        .values()
-        .filter_map(|definition| definition.role.facet())
-        .collect();
-    let capabilities: BTreeSet<_> = resolved
-        .values()
-        .flat_map(|definition| definition.capabilities.iter().cloned())
-        .collect();
-    let inventory: BTreeSet<_> = CapabilityId::complete_inventory().into_iter().collect();
-    if let Some(missing) = inventory.difference(&capabilities).next() {
-        return Err(refusal(
-            Code::UnknownRequiredFeature,
-            None,
-            PackageError::MissingCapability(missing.clone()),
-        ));
-    }
-    if let Some(missing) = Facet::all().iter().find(|facet| !facets.contains(facet)) {
-        return Err(refusal(
-            Code::InvalidPackage,
-            None,
-            PackageError::MissingFacet(*missing),
-        ));
-    }
-    Ok(LinkedBundle {
-        bundle: CompleteBundle {
-            facets,
-            capabilities,
-        },
+    Ok(ResolvedDefinitionClosure {
         definitions: resolved,
-        limits,
     })
 }
 
