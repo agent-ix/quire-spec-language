@@ -614,15 +614,23 @@ fn protocol_check_stage(
     bytes: &[u8],
     checking: CheckingLimits,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    protocol_check_stage_with_packages(bytes, checking, &packages)
+}
+
+fn protocol_check_stage_with_packages(
+    bytes: &[u8],
+    checking: CheckingLimits,
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     let cancel = Cancel::new();
     let parsed = super::parse_for_continuation(&request(bytes), SourceLimits::default(), &cancel)
         .unwrap_or_else(|failure| panic!("protocol source parses: {failure:?}"))
         .into_value();
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
-        .expect("fixture model package input");
     let models = select(
         &parsed,
-        &packages,
+        packages,
         ModelNormalizationLimits::default(),
         &cancel,
     )
@@ -671,10 +679,602 @@ fn standalone_protocol_check_code(bytes: &[u8]) -> Code {
         .code()
 }
 
+/// FR-048-AC-4 successor coverage (FR-513-AC-12, TC-1308 row 22): the spine
+/// must retain S3's typed visible-entry refusal even when the unavailable
+/// read occurs only in a short-circuited guard operand.
+#[trace("FR-048-AC-4", "FR-218-AC-17", "FR-513-AC-12", "TC-1308")]
+#[test]
+fn spine_refuses_every_invisible_guard_atom_even_in_a_skipped_operand() {
+    use qsl_semantics::check::{CheckCause, ProtocolAnchorCause};
+
+    let check_skipped = |protocol: &str, with_touch: bool| {
+        let check = |protocol: &str, skipped: bool| {
+            let source = format!(
+                "{HEADER}model M = \"acme/orders\";\n\
+                 record Plain {{ ready: Boolean; }}\n\
+                 {protocol}"
+            );
+            let checked = if with_touch {
+                let (_, packages) = widget_with_touch(&[]);
+                protocol_check_stage_with_packages(
+                    source.as_bytes(),
+                    CheckingLimits::default(),
+                    &packages,
+                )
+            } else {
+                protocol_check_stage(source.as_bytes(), CheckingLimits::default())
+            };
+            let failure = checked.expect_err("an invisible guard read refuses through the spine");
+            let refusal = refusal_or_fault(failure).expect("a typed S3 refusal");
+            let CompileRefusal::Check { refusals, .. } = *refusal else {
+                panic!("the spine reaches protocol checking: {refusal:?}");
+            };
+            assert!(
+                refusals.iter().any(|refusal| matches!(
+                    &refusal.cause,
+                    CheckCause::ProtocolAnchor(cause)
+                        if matches!(cause.as_ref(),
+                            ProtocolAnchorCause::WrongObservation { .. }
+                            | ProtocolAnchorCause::Shadow { .. }
+                            | ProtocolAnchorCause::SlotClause { .. })
+                )),
+                "the refusal retains an FR-218 typed visible-entry cause (skipped={skipped}): {refusals:?}"
+            );
+            refusals
+        };
+        let direct = protocol.replace("true or ", "");
+        (check(&direct, false), check(protocol, true))
+    };
+
+    // A value produced in a sibling branch is outside this branch's entry.
+    let (sibling_direct, sibling) = check_skipped(
+        "protocol Flow using Complete over (input: M::Widget) on origin {\n\
+           role R on M::Widget; role S on M::Widget;\n\
+           run parallel Both {\n\
+             branch left sequence Left { event Early by R as (left: Plain) { true }; }\n\
+             branch right sequence Right { choice Pick by S visible () {\n\
+               case yes when { true or left.ready } sequence Yes { }\n\
+               case no when { false } sequence No { }\n\
+             } }\n\
+           } join all [left, right];\n\
+           finish End as (outcome: Boolean) { true };\n\
+         }",
+        false,
+    );
+    assert!(sibling.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::SlotClause { .. })
+    )));
+    assert!(sibling_direct.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::SlotClause { .. })
+    )));
+
+    // An effect result exists only on the successful path of its attempt.
+    let (effect_direct, effect) = check_skipped(
+        "protocol Flow using Complete over (input: M::Widget) on origin {\n\
+           role R on M::Widget; role S on M::Widget;\n\
+           run sequence Main {\n\
+             attempt Did by R on M::Widget::touch contracts [] as (did: Boolean) { true };\n\
+             effect Applied of Did as (applied: Plain) { true };\n\
+             choice Pick by R visible () { case yes when { true or applied.ready } sequence Yes { }\
+               case no when { false } sequence No { } }\n\
+           }\n\
+           finish End as (outcome: Boolean) { true };\n\
+         }",
+        true,
+    );
+    assert!(effect.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::WrongObservation { .. })
+    )));
+    assert!(effect_direct.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::WrongObservation { .. })
+    )));
+
+    // The receive binder belongs to S, so R cannot inspect it.
+    let (other_role_direct, other_role) = check_skipped(
+        "protocol Flow using Complete over (input: M::Widget) on origin {\n\
+           role R on M::Widget; role S on M::Widget;\n\
+           channel ch from R to S carries Plain ordering unordered delivery unknown capacity 2 overflow block;\n\
+           run sequence Main {\n\
+             send Tx via ch as (tx: Plain) { true };\n\
+             receive Rx via ch of Tx as (rx: Plain) { true };\n\
+             choice Pick by R visible () { case yes when { true or rx.ready } sequence Yes { }\
+               case no when { false } sequence No { } }\n\
+           }\n\
+           finish End as (outcome: Boolean) { true };\n\
+         }",
+        false,
+    );
+    assert!(other_role.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::WrongObservation { .. })
+    )));
+    assert!(other_role_direct.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::WrongObservation { .. })
+    )));
+
+    // The same spelling in another owner is rejected as a shadow before the
+    // guard can accidentally bind to that owner's value.
+    let (same_name_direct, same_name) = check_skipped(
+        "protocol Flow using Complete over (input: M::Widget) on origin {\n\
+           role R on M::Widget; role S on M::Widget;\n\
+           channel ch from R to S carries Plain ordering unordered delivery unknown capacity 2 overflow block;\n\
+           run parallel Both {\n\
+             branch left sequence Left { event Earlier by R as (rx: Plain) { true }; }\n\
+             branch right sequence Right { send Tx via ch as (tx: Plain) { true };\n\
+               receive Rx via ch of Tx as (rx: Plain) { true };\n\
+               choice Pick by R visible () { case yes when { true or rx.ready } sequence Yes { }\n\
+                 case no when { false } sequence No { } } }\n\
+           } join all [left, right];\n\
+           finish End as (outcome: Boolean) { true };\n\
+         }",
+        false,
+    );
+    assert!(same_name.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::Shadow { .. })
+    )));
+    assert!(same_name_direct.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::Shadow { .. })
+    )));
+}
+
 fn checked_protocol_source(bytes: &[u8]) -> CheckedUnit {
     protocol_check_stage(bytes, CheckingLimits::default())
         .unwrap_or_else(|failure| panic!("protocol source checks: {failure:?}"))
         .into_value()
+}
+
+/// FR-036-AC-8 / TC-114 row 7: registered definition closure is retained on
+/// the spine's profile-aware check result, separately from protocol
+/// use-site-kind admission.
+#[trace("FR-036-AC-8", "TC-114")]
+#[test]
+fn profile_aware_spine_check_retains_closure_and_distinct_wrong_kind() {
+    use qsl_semantics::library::bundle::{
+        Definition, DefinitionCatalog, DefinitionRole, PackageLimits, ReaderAuthority,
+    };
+
+    let root_identity = "quire.value.complete/v1";
+    let authority = "agent-ix";
+    let root_definition = Definition::from_exact_bytes(
+        &ReaderAuthority::fixture(),
+        authority,
+        root_identity,
+        DefinitionRole::ValueModelExpression,
+        std::collections::BTreeSet::new(),
+        Default::default(),
+        b"registered protocol definition",
+    )
+    .unwrap();
+    let root = root_definition.exact().clone();
+    let catalog = DefinitionCatalog::new(vec![root_definition]).unwrap();
+    let bytes = format!(
+        "{HEADER}
+         model M = \"acme/orders\";\n\
+         protocol Flow using v over (input: M::Widget) on origin {{\n\
+           role R on M::Widget; run sequence Main {{ }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
+    let parsed = parse_named(&identity(), bytes.as_bytes());
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("fixture model admits")
+    .into_value();
+    let result = super::check_with_profile_catalog(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        super::ProfileCatalogInput {
+            catalog: &catalog,
+            limits: PackageLimits::default(),
+        },
+        SpineLimits::default(),
+        &Cancel::new(),
+    );
+    let Err(super::ProfileCheckFailure::Check {
+        failure,
+        profile_uses,
+    }) = result
+    else {
+        panic!("closure completes but protocol use-site kind refuses: {result:?}");
+    };
+    let refusal = refusal_or_fault(failure).expect("typed use-site refusal");
+    assert!(
+        matches!(
+            refusal.as_ref(),
+            CompileRefusal::Check { refusals, .. }
+                if refusals.iter().any(|refusal| matches!(
+                    &refusal.cause,
+                    qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+                        if matches!(cause.as_ref(), qsl_semantics::check::ProtocolAnchorCause::WrongProfileKind { .. })
+                ))
+        ),
+        "the use-site kind is a separate typed refusal: {refusal:?}"
+    );
+    let [use_result] = profile_uses.as_slice() else {
+        panic!("one per-protocol profile use: {profile_uses:?}");
+    };
+    assert_eq!(use_result.source, parsed.source().reference().clone());
+    assert_eq!(use_result.protocol, "Flow");
+    assert_eq!(use_result.alias, "v");
+    assert_eq!(use_result.selected.as_deref(), Some(root_identity));
+    assert_eq!(
+        use_result.required_kind,
+        crate::spine::ProfileUseKind::Protocol
+    );
+    assert_eq!(
+        use_result.admission,
+        crate::spine::ProfileUseAdmission::WrongProfileKind
+    );
+    let crate::spine::ProfileClosureStatus::Complete(closure) = &use_result.closure else {
+        panic!("the selected value profile closure completes: {use_result:?}");
+    };
+    assert_eq!(closure.selected(), &root);
+}
+
+/// FR-036-AC-8 / TC-114 row 7: a finite-global protocol selection is retained
+/// as both a complete registered closure and an admitted use-site identity.
+#[trace("FR-036-AC-8", "TC-114")]
+#[test]
+fn profile_aware_spine_check_admits_registered_finite_global_protocol() {
+    use qsl_semantics::library::bundle::{
+        Definition, DefinitionCatalog, DefinitionRole, PackageLimits, ReaderAuthority,
+    };
+
+    let selected_identity = "quire.protocol.finite-global/v1";
+    let definition = Definition::from_exact_bytes(
+        &ReaderAuthority::fixture(),
+        "agent-ix",
+        selected_identity,
+        DefinitionRole::Protocol,
+        std::collections::BTreeSet::new(),
+        Default::default(),
+        b"registered finite-global protocol definition",
+    )
+    .unwrap();
+    let selected = definition.exact().clone();
+    let catalog = DefinitionCatalog::new(vec![definition]).unwrap();
+    let bytes = format!(
+        "{HEADER}model M = \"acme/orders\";\n\
+         protocol Flow using Complete over (input: M::Widget) on origin {{\n\
+           role R on M::Widget; run sequence Main {{ }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
+    let parsed = parse_named(&identity(), bytes.as_bytes());
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("fixture model admits")
+    .into_value();
+    let checked = super::check_with_profile_catalog(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        super::ProfileCatalogInput {
+            catalog: &catalog,
+            limits: PackageLimits::default(),
+        },
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("registered finite-global selection admits")
+    .into_value();
+    let [use_result] = checked.profile_uses() else {
+        panic!(
+            "one retained protocol-profile use: {:?}",
+            checked.profile_uses()
+        );
+    };
+    assert_eq!(use_result.selected.as_deref(), Some(selected_identity));
+    assert_eq!(
+        use_result.admission,
+        crate::spine::ProfileUseAdmission::Admitted
+    );
+    let crate::spine::ProfileClosureStatus::Complete(closure) = &use_result.closure else {
+        panic!("registered protocol closure completes: {use_result:?}");
+    };
+    assert_eq!(closure.selected(), &selected);
+}
+
+/// FR-036-AC-8 / TC-114 row 7: a missing registered dependency is retained as
+/// an exact typed closure cause, and the spine returns no complete package.
+#[trace("FR-036-AC-8", "TC-114")]
+#[test]
+fn profile_aware_spine_check_refuses_an_omitted_protocol_definition() {
+    use qsl_foundation::selection::DefinitionRef;
+    use qsl_semantics::library::bundle::{
+        Definition, DefinitionCatalog, DefinitionRole, PackageError, PackageLimits, ReaderAuthority,
+    };
+
+    let protocol = DefinitionRef::new("agent-ix", "quire.protocol.finite-global/v1").unwrap();
+    let observation = Definition::from_exact_bytes(
+        &ReaderAuthority::fixture(),
+        "agent-ix",
+        "quire.observation.binding/v1",
+        DefinitionRole::Observation,
+        [protocol.clone()].into_iter().collect(),
+        Default::default(),
+        b"registered observation definition",
+    )
+    .unwrap();
+    let catalog = DefinitionCatalog::new(vec![observation]).unwrap();
+    let bytes = format!(
+        "{HEADER}profile ob = \"quire.observation.binding/v1\";\n\
+         model M = \"acme/orders\";\n\
+         protocol Flow using ob over (input: M::Widget) on origin {{\n\
+           role R on M::Widget; run sequence Main {{ }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
+    let parsed = parse_named(&identity(), bytes.as_bytes());
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("fixture model admits")
+    .into_value();
+    let result = super::check_with_profile_catalog(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        super::ProfileCatalogInput {
+            catalog: &catalog,
+            limits: PackageLimits::default(),
+        },
+        SpineLimits::default(),
+        &Cancel::new(),
+    );
+    let Err(super::ProfileCheckFailure::Closure { profile_uses }) = result else {
+        panic!("a profile with an omitted dependency refuses before package admission: {result:?}");
+    };
+    let [use_result] = profile_uses.as_slice() else {
+        panic!("one profile closure failure: {profile_uses:?}");
+    };
+    assert_eq!(
+        use_result.admission,
+        crate::spine::ProfileUseAdmission::ClosureRefused
+    );
+    assert!(matches!(
+        &use_result.closure,
+        crate::spine::ProfileClosureStatus::Refused(
+            qsl_semantics::library::profile_closure::ProfileClosureRefusal::Dependency(ref refusal)
+        ) if matches!(
+            refusal.cause,
+            PackageError::MissingDefinition(ref missing) if missing == &protocol
+        )
+    ));
+}
+
+/// FR-040-AC-11 / TC-119 row 11: a typed protocol check value is discharged
+/// only through exact QSL source/clause and formal Handler correspondence.
+#[trace("FR-040-AC-11", "TC-119")]
+#[test]
+fn protocol_check_proof_retains_goals_and_refuses_adverse_correspondence() {
+    use quire_contract_model as ir;
+
+    let bytes = format!(
+        "{HEADER}
+         model M = \"acme/orders\";\n\
+         protocol Flow using Complete over (input: M::Widget) on origin {{\n\
+           role R on M::Widget;\n\
+           run sequence Main {{ check Ensure using v {{ true }}; }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    );
+    let parsed = parse_named(&identity(), bytes.as_bytes());
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT])
+        .expect("fixture model package input");
+    let models = select(
+        &parsed,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("fixture model admits")
+    .into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the typed protocol check passes S3")
+    .into_value();
+    let [site] = checked.protocol_check_sites() else {
+        panic!(
+            "one checked protocol check site: {:?}",
+            checked.protocol_check_sites()
+        );
+    };
+
+    let formal_source = ir::SourceIdentity::new(
+        ir::SourceDocumentId::new("ProtocolProofs").unwrap(),
+        ir::SourceRevision::new(1).unwrap(),
+    );
+    let formal_span = ir::SourceSpan::new(
+        ir::SourceLocation::new(formal_source.clone(), 1, 1, 0).unwrap(),
+        ir::SourceLocation::new(formal_source.clone(), 1, 5, 4).unwrap(),
+    )
+    .unwrap();
+    let owner = ir::RequirementRef::new(
+        ir::PackageId::new("test/protocol-proof").unwrap(),
+        ir::RequirementId::new("Flow").unwrap(),
+        ir::RequirementRevision::new(1).unwrap(),
+    );
+    let correspondence = crate::spine::ProtocolProofCorrespondence {
+        qsl_source: checked.source().identity().clone(),
+        protocol: site.protocol.clone(),
+        clause: site.clause.clone(),
+        qsl_region: site.region,
+        formal_source: formal_source.clone(),
+        formal_clause: ir::ClauseRef::new(owner.clone(), ir::ClauseId::new("ensure").unwrap()),
+        execution_point: ir::ExecutionPoint::Handler {
+            name: ir::AnchorName::new("validate").unwrap().into(),
+        },
+        environment: ir::DeclarationEnvironment::new(owner, Vec::new(), Vec::new(), Vec::new())
+            .unwrap(),
+        expression: ir::Expression::new(
+            ir::ExpressionKind::BooleanLiteral { value: true },
+            formal_span,
+        ),
+    };
+    let valid = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+        correspondences: vec![correspondence.clone()],
+    });
+    let [proof] = valid.as_slice() else {
+        panic!("one per-protocol proof result: {valid:?}");
+    };
+    assert_eq!(
+        proof.disposition,
+        crate::spine::ProtocolProofDisposition::Discharged
+    );
+    assert!(proof.causes.is_empty());
+    assert_eq!(proof.goals.len(), 1);
+    assert!(proof.goals[0].obligations().is_empty());
+    assert!(matches!(
+        checked.protocol_results(),
+        [crate::spine::ProtocolResult::Cleared { declaration, .. }] if declaration == "Flow"
+    ));
+
+    let missing = checked.prove_protocols(&crate::spine::ProtocolProofRequest::default());
+    assert_eq!(
+        missing[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(matches!(
+        missing[0].causes.as_slice(),
+        [crate::spine::ProtocolProofCause::MissingCorrespondence { clause }] if clause == "Ensure"
+    ));
+
+    let duplicate = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+        correspondences: vec![correspondence.clone(), correspondence.clone()],
+    });
+    assert_eq!(
+        duplicate[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(duplicate[0].causes.iter().any(|cause| matches!(
+        cause,
+        crate::spine::ProtocolProofCause::DuplicateCorrespondence { clause } if clause == "Ensure"
+    )));
+
+    let mut foreign_source = correspondence.clone();
+    foreign_source.qsl_source = SourceIdentity::new("foreign", "protocol");
+    let mut foreign_clause = correspondence.clone();
+    foreign_clause.clause = "Different".to_owned();
+    let mut foreign_owner = correspondence.clone();
+    let other_owner = ir::RequirementRef::new(
+        ir::PackageId::new("test/protocol-proof").unwrap(),
+        ir::RequirementId::new("OtherProtocol").unwrap(),
+        ir::RequirementRevision::new(1).unwrap(),
+    );
+    foreign_owner.formal_clause =
+        ir::ClauseRef::new(other_owner, ir::ClauseId::new("ensure").unwrap());
+    let mut foreign_formal_source = correspondence.clone();
+    foreign_formal_source.formal_source = ir::SourceIdentity::new(
+        ir::SourceDocumentId::new("DifferentFormalSource").unwrap(),
+        ir::SourceRevision::new(1).unwrap(),
+    );
+    let mut wrong_point = correspondence;
+    wrong_point.execution_point = ir::ExecutionPoint::Pre {
+        operation: ir::AnchorName::new("validate").unwrap().into(),
+    };
+    let foreign_source_result = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+        correspondences: vec![foreign_source],
+    });
+    assert_eq!(
+        foreign_source_result[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(matches!(
+        foreign_source_result[0].causes.as_slice(),
+        [crate::spine::ProtocolProofCause::ForeignSource { clause }] if clause == "Ensure"
+    ));
+
+    let foreign_clause_result = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+        correspondences: vec![foreign_clause],
+    });
+    assert_eq!(
+        foreign_clause_result[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(matches!(
+        foreign_clause_result[0].causes.as_slice(),
+        [crate::spine::ProtocolProofCause::ForeignClause { clause }] if clause == "Different"
+    ));
+
+    let foreign_owner_result = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+        correspondences: vec![foreign_owner],
+    });
+    assert_eq!(
+        foreign_owner_result[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(matches!(
+        foreign_owner_result[0].causes.as_slice(),
+        [crate::spine::ProtocolProofCause::ClauseOwner { clause }] if clause == "Ensure"
+    ));
+
+    let foreign_formal_source_result =
+        checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+            correspondences: vec![foreign_formal_source],
+        });
+    assert_eq!(
+        foreign_formal_source_result[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(matches!(
+        foreign_formal_source_result[0].causes.as_slice(),
+        [crate::spine::ProtocolProofCause::FormalSource { clause }] if clause == "Ensure"
+    ));
+
+    let wrong_point_result = checked.prove_protocols(&crate::spine::ProtocolProofRequest {
+        correspondences: vec![wrong_point],
+    });
+    assert_eq!(
+        wrong_point_result[0].disposition,
+        crate::spine::ProtocolProofDisposition::Refused
+    );
+    assert!(matches!(
+        wrong_point_result[0].causes.as_slice(),
+        [crate::spine::ProtocolProofCause::ExecutionPoint { clause }] if clause == "Ensure"
+    ));
 }
 
 /// FR-514-AC-8 (TC-1309 row 13): `T0` is a function, a post claim, a temporal
