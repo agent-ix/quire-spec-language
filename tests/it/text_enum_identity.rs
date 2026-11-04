@@ -485,6 +485,56 @@ fn t07_equal_spellings_under_distinct_declarations_are_ill_typed() {
     );
 }
 
+/// Two declarations with one owner, path and name share a node key
+/// (FR-322: the path is the qualified name); the admitted member list and
+/// ordering are what tell them apart, so a value of either refuses to compare
+/// with a value of the other, and a value of one declaration admitted twice
+/// compares equal.
+#[trace("QSpec-TC-186", "QSpec-FR-141-AC-2")]
+#[test]
+fn t07b_same_key_declarations_with_different_members_or_order_are_distinct() {
+    let base = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
+    let variants = [
+        (
+            "different case set",
+            fixture_declaration(["Example", "Status"], true, &["READY", "DONE", "FAILED"]),
+        ),
+        (
+            "different order",
+            fixture_declaration(["Example", "Status"], true, &["DONE", "READY"]),
+        ),
+        (
+            "different ordering flag",
+            fixture_declaration(["Example", "Status"], false, &["DONE", "READY"]),
+        ),
+    ];
+    for (label, other) in &variants {
+        assert_eq!(base.key(), other.key(), "{label}: the key is the name");
+        let (left, right) = (member(&base, "READY"), member(other, "READY"));
+        for operator in ComparisonOperator::ALL {
+            let mut meter = Meter::new(UNLIMITED);
+            assert_eq!(
+                compare_enum(operator, &left, &right, &mut meter),
+                Err(IllTyped {
+                    cause: IllTypedCause::DistinctEnumDeclarations
+                }),
+                "{label}: {operator:?}"
+            );
+            assert!(meter.admitted_charges().is_empty(), "{label}");
+        }
+    }
+    let again = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
+    assert_eq!(base.key(), again.key());
+    assert_eq!(
+        enum_compared(Equal, &member(&base, "READY"), &member(&again, "READY")),
+        Ok(true)
+    );
+    assert_eq!(
+        enum_compared(Less, &member(&base, "READY"), &member(&again, "DONE")),
+        Ok(true)
+    );
+}
+
 #[trace("QSpec-TC-186", "QSpec-FR-141-AC-3", "QSpec-FR-141-AC-5")]
 #[test]
 fn t08_ordering_follows_ordered_declarations_only() {
