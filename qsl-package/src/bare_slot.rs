@@ -543,15 +543,13 @@ impl<'p> BarePackage<'p> {
                     // Rule 2: the origins of the span family whose rows
                     // name exactly the applications of this walk.
                     let rows = walker.origin_rows();
-                    let mut candidates: Vec<(u64, u64, &str)> = rows
-                        .iter()
-                        .filter(|(_, held)| **held == own)
-                        .filter_map(|(name, _)| {
-                            let (start, end) = span.parse(name.strip_prefix(prefix.as_str())?)?;
-                            Some((start, end, *name))
-                        })
-                        .collect();
-                    candidates.sort();
+                    let candidates = ordered_candidates(
+                        rows.iter()
+                            .filter(|(_, held)| **held == own)
+                            .map(|(name, _)| *name),
+                        prefix,
+                        *span,
+                    );
                     // Rule 4: this slot's rank among the control's slots
                     // that share its walk.
                     let mut rank = 0;
@@ -574,7 +572,7 @@ impl<'p> BarePackage<'p> {
                         }
                     }
                     match candidates.get(rank) {
-                        Some((_, _, name)) => Some((*name).to_owned()),
+                        Some(name) => Some((*name).to_owned()),
                         None => {
                             // Rule 5.
                             let first = own
@@ -600,6 +598,22 @@ impl<'p> BarePackage<'p> {
             sources: slot.sources,
         })
     }
+}
+
+/// The origins among `names` that the control's span family spells with
+/// `prefix` and a span of `form`, in ascending numeric `(start, end)` order,
+/// parsing both as decimal integers and not comparing the names' bytes
+/// (FR-533 rule 4).
+fn ordered_candidates<'a>(
+    names: impl Iterator<Item = &'a str>,
+    prefix: &str,
+    form: Span,
+) -> Vec<&'a str> {
+    let mut spanned: Vec<((u64, u64), &str)> = names
+        .filter_map(|name| Some((form.parse(name.strip_prefix(prefix)?)?, name)))
+        .collect();
+    spanned.sort();
+    spanned.into_iter().map(|(_, name)| name).collect()
 }
 
 /// The projection work bound: the I2 reader's default.
@@ -636,4 +650,57 @@ fn check_equality(
             .map_err(BareSelectionFailure::Equality)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// FR-533-AC-12, FR-533-AC-14: candidates are ordered by numeric
+    /// `(start, end)`, not by the bytes of their names, for a `decision` and
+    /// a `related` span, and a name outside the family is no candidate.
+    #[trace("FR-533-AC-12", "FR-533-AC-14", "TC-1333")]
+    #[test]
+    fn candidates_are_ordered_numerically_by_start_then_end() {
+        let decision = [
+            "protocol P run M C decision 1000..1004",
+            "protocol P run M C decision 999..1005",
+            "protocol P run M C decision 1001..1002",
+            "protocol P run M C related 1 2",
+            "protocol P run M D decision 1..2",
+            "protocol P run M C decision x..9",
+        ];
+        let got = ordered_candidates(
+            decision.iter().copied(),
+            "protocol P run M C decision ",
+            Span::Decision,
+        );
+        assert_eq!(
+            got,
+            [
+                "protocol P run M C decision 999..1005",
+                "protocol P run M C decision 1000..1004",
+                "protocol P run M C decision 1001..1002",
+            ]
+        );
+        let related = [
+            "protocol P run M G related 100 105",
+            "protocol P run M G related 99 100",
+        ];
+        assert_eq!(
+            ordered_candidates(
+                related.iter().copied(),
+                "protocol P run M G related ",
+                Span::Related
+            ),
+            [
+                "protocol P run M G related 99 100",
+                "protocol P run M G related 100 105"
+            ],
+            "related.from[0] takes `99 100`, related.to[0] takes `100 105`"
+        );
+        assert_eq!(Span::Related.parse("1  2"), None);
+        assert_eq!(Span::Decision.parse("1..2..3"), None);
+    }
 }

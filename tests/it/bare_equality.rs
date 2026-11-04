@@ -278,3 +278,122 @@ fn the_equality_file_reader_refuses_as_the_spec_closes_it() {
         })
     );
 }
+
+const DECISION: &str = "protocol Pipeline run Main Decide decision ";
+
+/// The package of fixture L's handoff with `edit` applied to its
+/// `protocol_locations` rows, re-admitted by the reader.
+fn edited(
+    request: &CheckedHandoffRequest,
+    files: &BTreeMap<String, Vec<u8>>,
+    edit: impl FnOnce(&mut Vec<Value>),
+) -> Box<CheckedPackageV2> {
+    let mut wire: Value = serde_json::from_slice(&files["checked-package.json"]).expect("package");
+    let rows = wire["checked_term_data"]["protocol_locations"]
+        .as_array_mut()
+        .expect("rows");
+    edit(rows);
+    read(request, &serde_json::to_vec(&wire).expect("bytes"))
+}
+
+fn origin_name(row: &Value) -> &str {
+    row["location"]["origin"]["name"]
+        .as_str()
+        .unwrap_or_default()
+}
+
+/// The origins of `Decide`'s decision family, in the order of their names.
+fn decision_origins(package: &CheckedPackageV2) -> Vec<String> {
+    let mut names: Vec<String> = package
+        .checked_term_data()
+        .expect("term data")
+        .protocol_locations
+        .iter()
+        .filter_map(|row| match &row.location.origin {
+            quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name }
+                if name.starts_with(DECISION) =>
+            {
+                Some(name.to_string())
+            }
+            _ => None,
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn decide_origin(
+    package: &CheckedPackageV2,
+    files: &BTreeMap<String, Vec<u8>>,
+    member: &str,
+    index: usize,
+) -> Result<Option<String>, BareSelectionFailure> {
+    let identities = ReadIdentityRows::read(&files["identities.json"], package).expect("rows");
+    let decide = node_key(package, "Pipeline", "Decide");
+    select(package, &identities, None, decide, member, Some(index))
+        .map(|slot| slot.origin().map(str::to_owned))
+}
+
+/// FR-533-AC-12 (numeric half): origins renamed to `999..1005`,
+/// `1000..1004` and `1001..1002` are taken in numeric `(start, end)` order,
+/// so the visible entry takes `999..1005`; the bytes order would give it
+/// `1000..1004`.
+#[trace("FR-533-AC-12", "TC-1333")]
+#[test]
+fn renamed_origins_are_taken_in_numeric_order_not_byte_order() {
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let original = read(&request, &files["checked-package.json"]);
+    let [first, second, third] = decision_origins(&original)
+        .try_into()
+        .expect("three origins");
+    let renamed = [
+        (first, "999..1005"),
+        (second, "1000..1004"),
+        (third, "1001..1002"),
+    ];
+    let package = edited(&request, &files, |rows| {
+        for row in rows {
+            let name = origin_name(row).to_owned();
+            if let Some((_, span)) = renamed.iter().find(|(old, _)| *old == name) {
+                row["location"]["origin"]["name"] = format!("{DECISION}{span}").into();
+            }
+        }
+    });
+    let want = |span: &str| Some(format!("{DECISION}{span}"));
+    let origin = |member, index| decide_origin(&package, &files, member, index).expect("selects");
+    assert_eq!(origin("visible", 0), want("999..1005"));
+    assert_eq!(origin("cases.guard", 1), want("1000..1004"));
+    assert_eq!(origin("cases.guard", 0), want("1001..1002"));
+}
+
+/// FR-533-AC-14 (missing candidate half): with the first origin's rows
+/// removed, `visible[0]` (rank 0, one candidate) takes the second origin and
+/// `cases.guard[1]` (rank 1, none) refuses `MissingLocationProjection` at the
+/// `Node` locus of the `got.ready` application.
+#[trace("FR-533-AC-14", "TC-1333")]
+#[test]
+fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection() {
+    use qsl_package::UnsupportedReason;
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let original = read(&request, &files["checked-package.json"]);
+    let [first, second, _] = decision_origins(&original)
+        .try_into()
+        .expect("three origins");
+    let package = edited(&request, &files, |rows| {
+        rows.retain(|row| origin_name(row) != first);
+    });
+    assert_eq!(
+        decide_origin(&package, &files, "visible", 0).expect("selects"),
+        Some(second)
+    );
+    let Err(BareSelectionFailure::Unsupported(view)) =
+        decide_origin(&package, &files, "cases.guard", 1)
+    else {
+        panic!("the slot has no origin");
+    };
+    assert!(matches!(
+        view.reason(),
+        UnsupportedReason::MissingLocationProjection(_)
+    ));
+}
