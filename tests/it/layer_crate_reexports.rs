@@ -226,6 +226,85 @@ fn exposures(
     found
 }
 
+/// The one transitional exemption (FR-511, TC-256 step 3): the root module
+/// that re-exports the exact protocol-number codec, by its path relative to
+/// `src/`. A single named path, not a pattern.
+pub(crate) const NUMBER_MODULE: &str = "number.rs";
+
+/// The seven items `NUMBER_MODULE` re-exports, each as written: from
+/// `qsl_package::number`, un-renamed, no glob.
+const NUMBER_ITEMS: [&str; 7] = [
+    "ProtocolNumber",
+    "ExactInteger",
+    "ExactRational",
+    "NumberComponent",
+    "NumberError",
+    "NumberWire",
+    "NUMERIC_PROFILE",
+];
+
+/// Each leaf of a use tree as written, full path with any rename or glob.
+fn leaf_paths(tree: &syn::UseTree, prefix: &str, out: &mut Vec<String>) {
+    match tree {
+        syn::UseTree::Path(path) => {
+            leaf_paths(&path.tree, &format!("{prefix}{}::", path.ident), out)
+        }
+        syn::UseTree::Name(name) => out.push(format!("{prefix}{}", name.ident)),
+        syn::UseTree::Rename(rename) => {
+            out.push(format!("{prefix}{} as {}", rename.ident, rename.rename));
+        }
+        syn::UseTree::Glob(_) => out.push(format!("{prefix}*")),
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                leaf_paths(item, prefix, out);
+            }
+        }
+    }
+}
+
+/// How the `pub use` lines among `items` differ from exactly the seven
+/// `NUMBER_ITEMS` from `qsl_package::number`: every other leaf, and every
+/// missing item. Empty when they match.
+fn number_module_violations(items: &[syn::Item]) -> Vec<String> {
+    let mut leaves_found = Vec::new();
+    for item in items {
+        if let syn::Item::Use(item_use) = item {
+            if matches!(item_use.vis, syn::Visibility::Public(_)) {
+                let prefix = if item_use.leading_colon.is_some() {
+                    "::"
+                } else {
+                    ""
+                };
+                leaf_paths(&item_use.tree, prefix, &mut leaves_found);
+            }
+        }
+    }
+    let expected: Vec<String> = NUMBER_ITEMS
+        .iter()
+        .map(|item| format!("qsl_package::number::{item}"))
+        .collect();
+    let mut violations: Vec<String> = leaves_found
+        .iter()
+        .filter(|leaf| !expected.contains(leaf))
+        .map(|leaf| format!("unexpected pub use {leaf}"))
+        .collect();
+    violations.extend(
+        expected
+            .iter()
+            .filter(|path| leaves_found.iter().filter(|leaf| leaf == path).count() != 1)
+            .map(|path| format!("missing or repeated pub use {path}")),
+    );
+    violations
+}
+
+/// `number_module_violations` over one source text.
+pub(crate) fn number_module_source_violations(source: &str) -> Vec<String> {
+    let parsed = syn::parse_file(source).expect("the number module parses");
+    let mut items = Vec::new();
+    all_items(&parsed.items, &mut items);
+    number_module_violations(&items)
+}
+
 fn parse_items(sources: &[(String, String)]) -> Vec<(String, Vec<syn::Item>)> {
     sources
         .iter()
@@ -249,7 +328,16 @@ fn scan(
     files
         .iter()
         .flat_map(|(file, items)| {
-            exposures(items, layers, &names)
+            let mut found = exposures(items, layers, &names);
+            if file == NUMBER_MODULE {
+                found.retain(|(kind, _)| *kind != "pub use");
+                found.extend(
+                    number_module_violations(items)
+                        .into_iter()
+                        .map(|violation| ("pub use", violation)),
+                );
+            }
+            found
                 .into_iter()
                 .map(move |(kind, name)| (file.clone(), kind, name))
         })
@@ -313,6 +401,113 @@ fn the_root_crate_reexports_no_layer_crate_item() {
     assert!(
         found.is_empty(),
         "root-crate items exposing layer-crate items: {found:?}"
+    );
+}
+
+/// TC-256 step 3 exemption and step 6: `number.rs` alone may re-export, and
+/// only the seven FR-511 items from `qsl_package::number`; a re-export in any
+/// other root module, an eighth item, or another layer crate there fails.
+#[trace("FR-087-AC-9", "TC-256")]
+#[test]
+fn the_number_module_exemption_is_one_path_and_seven_items() {
+    let layers: BTreeSet<String> = ["qsl_package", "qsl_semantics"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let seven = "pub use qsl_package::number::{ExactInteger, ExactRational, NumberComponent, \
+                 NumberError, NumberWire, ProtocolNumber, NUMERIC_PROFILE};\n";
+    let scan_one = |file: &str, source: String| {
+        scan(&[(file.to_owned(), source)], &layers)
+            .into_iter()
+            .map(|(_, _, name)| name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(NUMBER_MODULE, "number.rs");
+    assert!(scan_one("number.rs", seven.to_owned()).is_empty());
+    // The same lines in another root module are not exempt.
+    assert_eq!(scan_one("other.rs", seven.to_owned()).len(), 7);
+    // An eighth item.
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{seven}pub use qsl_package::CheckedPackage;\n")
+        ),
+        ["unexpected pub use qsl_package::CheckedPackage"]
+    );
+    // Another layer crate.
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{seven}pub use qsl_semantics::check::CheckedExpression;\n")
+        ),
+        ["unexpected pub use qsl_semantics::check::CheckedExpression"]
+    );
+    // A glob, a rename, and a missing item are not the seven items either.
+    assert_eq!(
+        scan_one("number.rs", "pub use qsl_package::number::*;\n".to_owned()).len(),
+        8
+    );
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            seven.replace("NumberWire", "NumberWire as Wire")
+        )
+        .len(),
+        2
+    );
+    // The exemption is the one path `number.rs`, not a suffix or a directory.
+    assert_eq!(scan_one("sub/number.rs", seven.to_owned()).len(), 7);
+    assert_eq!(scan_one("other_number.rs", seven.to_owned()).len(), 7);
+    // It skips `pub use` only: a `pub type` or `pub extern crate` still fails.
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{seven}pub type X = qsl_package::CheckedPackage;\n")
+        ),
+        ["X"]
+    );
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{seven}pub extern crate qsl_package;\n")
+        ),
+        ["qsl_package"]
+    );
+    // An item under another `qsl_package` path is unexpected, and the
+    // `number` item it displaces is missing.
+    let displaced = seven.replace("NumberError, ", "");
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{displaced}pub use qsl_package::other::NumberError;\n")
+        ),
+        [
+            "unexpected pub use qsl_package::other::NumberError",
+            "missing or repeated pub use qsl_package::number::NumberError"
+        ]
+    );
+}
+
+/// TC-256 step 3: `number.rs` is exempt from exposures but still feeds the
+/// crate-wide layer-name set, so a name it binds privately from a layer crate
+/// is a layer name in every other module.
+#[trace("FR-087-AC-9", "TC-256")]
+#[test]
+fn the_number_module_still_feeds_the_layer_name_set() {
+    let layers: BTreeSet<String> = ["qsl_package"].into_iter().map(str::to_owned).collect();
+    let sources = [
+        (
+            "number.rs",
+            "use qsl_package as pkg;\n\
+             pub use qsl_package::number::{ExactInteger, ExactRational, NumberComponent, \
+             NumberError, NumberWire, ProtocolNumber, NUMERIC_PROFILE};\n",
+        ),
+        ("b.rs", "pub use pkg::CheckedPackage;\n"),
+    ]
+    .map(|(file, source)| (file.to_owned(), source.to_owned()));
+    assert_eq!(
+        scan(&sources, &layers),
+        [("b.rs".to_owned(), "pub use", "CheckedPackage".to_owned())]
     );
 }
 
