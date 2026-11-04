@@ -10,7 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
-use qsl_semantics::check::{CheckedProbabilisticClaim, ProbForm, ReachTarget, StatePredicate};
+use qsl_semantics::check::{
+    CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate,
+};
 
 use crate::identity::ObligationIdentity;
 
@@ -130,6 +132,8 @@ pub enum ExactProbabilityGraphError {
     LimitReached,
     /// The model API exposed a draw that was not a single-state probability.
     UnsupportedDraw,
+    /// The model has no single initial state; this slice checks exactly one.
+    UnsupportedInitial,
     /// No checked claim has the requested obligation's node as its checked
     /// package identity, or more than one does.
     ClaimNotBound,
@@ -153,7 +157,7 @@ fn enumerate_model_graph<P: StatePredicate>(
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     let initial = system.initial();
     if initial.len() != 1 {
-        return Err(ExactProbabilityGraphError::UnsupportedDraw);
+        return Err(ExactProbabilityGraphError::UnsupportedInitial);
     }
     let key_of = |state: &ModelSimState| {
         let (model_bytes, _) = system
@@ -164,7 +168,7 @@ fn enumerate_model_graph<P: StatePredicate>(
     let first = initial
         .into_iter()
         .next()
-        .ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
+        .ok_or(ExactProbabilityGraphError::UnsupportedInitial)?;
     let root = key_of(&first)?;
     let mut pending = VecDeque::from([(root.clone(), first)]);
     let mut states = BTreeMap::new();
@@ -268,7 +272,7 @@ fn product_key(model_bytes: &[u8]) -> Result<ProbabilityProductKey, ExactProbabi
 /// supplies the checked claim predicate. The certificate cannot supply graph
 /// states or transitions. This slice handles one initial state and exact
 /// draws with one successor each; unsupported shapes return an error.
-pub fn check_model_exact_reachability<P: StatePredicate>(
+pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
     certificate: &ExactProbabilityCertificate,
@@ -292,7 +296,6 @@ pub fn check_claim_exact_reachability(
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
     certificate: &ExactProbabilityCertificate,
-    objective: ProbabilityObjective,
     max_states: usize,
     max_edges: usize,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
@@ -314,6 +317,7 @@ pub fn check_claim_exact_reachability(
     else {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm);
     };
+    let objective = claim_objective(&claim.scheduler, bound);
     check_model_exact_reachability(
         system,
         predicate,
@@ -323,6 +327,17 @@ pub fn check_claim_exact_reachability(
         max_states,
         max_edges,
     )
+}
+
+/// The scheduler objective the claim itself fixes (FR-198): a claim `under
+/// every scheduler` must hold at the worst scheduler, the minimum for a `>=`
+/// bound and the maximum for a `<=` bound; a workload has one distribution.
+fn claim_objective(scheduler: &ProbScheduler, bound: &Bound) -> ProbabilityObjective {
+    match (scheduler, bound) {
+        (ProbScheduler::Workload(_), _) => ProbabilityObjective::Workload,
+        (ProbScheduler::Every, Bound::AtLeast(_)) => ProbabilityObjective::Minimum,
+        (ProbScheduler::Every, Bound::AtMost(_)) => ProbabilityObjective::Maximum,
+    }
 }
 
 /// One successor and its exact probability mass.
@@ -632,6 +647,28 @@ mod tests {
                     value: rational(0),
                 },
             ],
+        }
+    }
+
+    #[trace("TC-636")]
+    #[test]
+    fn the_claim_fixes_the_scheduler_objective() {
+        let half = || Rational::new(Integer::from(1_i64), Integer::from(2_i64)).unwrap();
+        let every = ProbScheduler::Every;
+        let workload = ProbScheduler::Workload("W".to_owned());
+        assert_eq!(
+            claim_objective(&every, &Bound::AtLeast(half())),
+            ProbabilityObjective::Minimum
+        );
+        assert_eq!(
+            claim_objective(&every, &Bound::AtMost(half())),
+            ProbabilityObjective::Maximum
+        );
+        for bound in [Bound::AtLeast(half()), Bound::AtMost(half())] {
+            assert_eq!(
+                claim_objective(&workload, &bound),
+                ProbabilityObjective::Workload
+            );
         }
     }
 
