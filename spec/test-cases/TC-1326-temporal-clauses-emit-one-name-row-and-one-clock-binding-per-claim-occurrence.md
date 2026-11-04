@@ -14,7 +14,7 @@ relationships:
 
 Verify that the emitter writes `temporal_clause_names` and `temporal_bindings` per `claim` occurrence of a shared clause node, sorted, and refuses an inconsistent clock selection.
 
-Scope: FR-337-AC-16 to FR-337-AC-22.
+Scope: FR-337-AC-16 to FR-337-AC-23.
 
 ## Test Procedure
 
@@ -22,8 +22,9 @@ Scope: FR-337-AC-16 to FR-337-AC-22.
 2. Rename `Alpha` and recompile; compile a unit with no clause.
 3. Compile the two clauses of step 1 with their declarations in reversed source order and compare both arrays with step 1's.
 4. Compile with a clock selection removed, with an unused clock selection, and with a selection of a kind the profile does not determine.
+5. Read `Emission`'s `TemporalClauseRef`, `profile_selections` and `temporal_bindings` values for step 1's compile and step 3's reversed compile, and compare them with the rows read back from the emitted bytes.
 
-Tag the tests `#[trace("TC-1326", "FR-337-AC-16", "FR-337-AC-17", "FR-337-AC-18", "FR-337-AC-19", "FR-337-AC-20", "FR-337-AC-21", "FR-337-AC-22", "FR-322-AC-343", "FR-322-AC-344", "FR-322-AC-361")]`.
+Tag the tests `#[trace("TC-1326", "FR-337-AC-16", "FR-337-AC-17", "FR-337-AC-18", "FR-337-AC-19", "FR-337-AC-20", "FR-337-AC-21", "FR-337-AC-22", "FR-337-AC-23", "FR-322-AC-343", "FR-322-AC-344", "FR-322-AC-361")]`.
 
 ## Expected Results
 
@@ -31,3 +32,4 @@ Tag the tests `#[trace("TC-1326", "FR-337-AC-16", "FR-337-AC-17", "FR-337-AC-18"
 - Step 2: only the renamed row changes, no NodeId or `package_id`; the clause-free unit omits `temporal_clause_names`.
 - Step 3: both arrays are equal to step 1's, sorted by (NodeId, occurrence).
 - Step 4: each refuses the compile and produces no package.
+- Step 5: two `TemporalClauseRef` values equal to the two name rows; `profile_selections` and `temporal_bindings` equal to the lock's and package's; reversal changes `clause` and no `declaration`.
