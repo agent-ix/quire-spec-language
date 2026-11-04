@@ -178,6 +178,13 @@ position (FR-327); `decisive.position` may be later or earlier than it.
 
 ### The decisive atom
 
+- At a visited position `i`, the **eligible positions** of an operator with
+  interval `[a,b]` are, for a future operator, the positions `j` with
+  `i + a <= j <= i + b`, and for a past operator the positions `j` with
+  `i - b <= j <= i - a`, restricted to the positions the profile reads
+  (FR-327); an unbounded operator reads every position from `i + a`. Positions
+  below `i + a` are not eligible, so a left operand of `until` is required only
+  from the lower bound (FR-327-AC-9).
 - The decisive atom of a `Completed(false)` SHALL be the `holds` atom reached by
   this descent, which starts at the failing activation's clause formula `φ`
   evaluated at the activation's position and always visits a subformula that
@@ -187,29 +194,32 @@ position (FR-327); `decisive.position` may be later or earlier than it.
   - `φ1 and φ2`: the descent continues into the first operand that is false.
   - `φ1 or φ2`: into `φ1`, both operands being false.
   - `φ1 implies φ2`: into `φ2`, the antecedent being true.
-  - `always[a,b] φ'` and `release` (its second operand): into `φ'` at the least
-    eligible position where it is false. An unbounded `always` over a
-    finite prefix or a lasso reads every position of the trace.
+  - `always[a,b] φ'`: into `φ'` at the least eligible position where it is
+    false. An unbounded `always` over a finite prefix or a lasso reads every
+    position of the trace.
   - `eventually[a,b] φ'`: into `φ'` at the least eligible position, every
     eligible position being false.
-  - `φ1 until[a,b] φ2`: let `j` be the least eligible position where `φ1` is
-    false; into `φ1` at `j` when it exists, and otherwise into `φ2` at the
-    least eligible position.
+  - `φ1 release φ2`: into `φ2` at the least eligible position where it is false.
+  - `φ1 until φ2`: into `φ1` at the least eligible position `m` where `φ1` and
+    `φ2` are both false when one exists, and otherwise into `φ2` at the least
+    eligible position.
   - a past operator (`once`, `historically`, `since`, `triggered`): the mirror
-    of its future counterpart over the eligible positions at or before the
-    visited position, taking the nearest eligible position first. The decisive
-    position may therefore be earlier than the activation's.
+    of its future counterpart over its eligible positions, taking the nearest
+    eligible position first. The decisive position may therefore be earlier than
+    the activation's.
   - a window aggregate atom (FR-194): the atom, at the position it is read.
-- If the descent reaches a position before the first position of the trace
-  (where a false-extension profile reads every atom false), the clause SHALL
-  have no decisive atom and the report SHALL carry no `decisive`.
-- Over a `Lasso` and a `Model` trace, `decisive.position` is the position in the
-  prefix-then-loop order the evaluator names (FR-329), and the least such
-  position is taken. Over `Progressed`, positions index the supplied
-  `trace`, and the observation is that of the supplied position; a descent that
-  reaches history before the supplied trace has no decisive atom. A
-  `Timestamped` run carries no `decisive`: FR-501's decision support is its
-  record.
+- If the descent reaches a position before the first position of the trace, or,
+  under a false-extension profile, a position after the last position (where
+  every atom reads false and no observation exists), the clause SHALL have no
+  decisive atom and the report SHALL carry no `decisive`.
+- Over a `Lasso`, `decisive.position` is the position in the prefix-then-loop
+  order of FR-329, the least such position being taken. Over a `Model` trace,
+  positions are the states FR-329 reconstructs from the initial state and the
+  steps, `decisive.position` is the position of the reconstructed state, and the
+  atom is evaluated over that state as it is for a `Lasso`. Over `Progressed`,
+  positions index the supplied `trace`, and a descent that reaches history before
+  the supplied trace has no decisive atom. A `Timestamped` run carries no
+  `decisive`: FR-501's decision support is its record.
 
 ## Acceptance Criteria
 
@@ -229,6 +239,8 @@ position (FR-327); `decisive.position` may be later or earlier than it.
 | FR-330-AC-12 | `Bounded`'s violation of AC-1 over `Finite` snapshots `c.value` 0, 1, 2 reports a `decisive` with `position` 0, no `quantifier` and no `index`, `element` `false` and the empty `value_path`; a clause `always holds(c.value <= 1)` `on origin` under the infinite-trace profile over the same snapshots reports the violation at position 0 and a `decisive` with `position` 2; a clause `always holds(forall i in self.items : i > 0)` `on origin` over snapshots whose positions 0 and 1 hold `items` 1, 2, 3 and whose position 2 holds `items` 3, 0, 5 reports the violation at position 0 and a `decisive` with `position` 2, the `forall` occurrence key as `quantifier`, `element` 0, `index` 1 and the FR-207 `value_path` to `items`; a pending, a successful and an `Undefined` report carry no `decisive`. | Test (TC-840) |
 | FR-330-AC-13 | Over the `Counter` prefix `c.value` 0, 1, 2 under the infinite-trace profile, FR-328-AC-2's `always (holds(c.value = 1) implies eventually[0,1] holds(c.value = 3))` is violated at position 0 with a `decisive` of `position` 1 (the antecedent is true at position 1 and the consequent atom `c.value = 3` is false at positions 1 and 2, the least being 1); `holds(c.value <= 1) until holds(c.value = 9)` is violated at position 0 with a `decisive` of `position` 2 (`φ1` first fails there); FR-328-AC-3's `always (holds(c.value = 0) implies once[1,1] holds(c.value = 9))` is violated at position 0 and carries no `decisive` (the descent reaches the position before the trace); `always not holds(c.value = 2)` is violated at position 0 and carries no `decisive`. | Test (TC-840) |
 | FR-330-AC-14 | Over `Lasso` with prefix `c.value` 0 and loop 1, 2, `always holds(c.value <= 1)` is violated at position 0 with a `decisive` of `position` 2. Over `Progressed` carrying `c.value` 0, 1, 2 under event-position false-extension, `always[0,2] holds(c.value <= 1)` `on origin` reports a violation at position 0 and a `decisive` of `position` 2; over `Timestamped` FR-501-AC-1's trace, `always[0,5] holds(p)` reports a violation at position 0 and no `decisive`. | Test (TC-840) |
+| FR-330-AC-15 | Over the closed `Counter` trace `c.value` 0, 1, 2 under event-position false-extension, `always[0,3] holds(c.value <= 2)` `on origin` is violated at position 0 and carries no `decisive`, because it is false only at position 3, past the last position; `holds(c.value = 1) until[1,2] holds(c.value = 3)` `on origin` is violated at position 0 with a `decisive` of `position` 2 (the left operand is not required at the anchor, and is false at position 2 where the right operand is also false). | Test (TC-840) |
+| FR-330-AC-16 | Over `Model` whose initial state and steps reconstruct `c.value` 0, then the loop states 1, 2, `always holds(c.value <= 1)` is violated at position 0 with a `decisive` of `position` 2, the atom evaluated over the reconstructed state of position 2. | Test (TC-840) |
 
 ## Dependencies
 

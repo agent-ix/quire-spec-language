@@ -134,7 +134,7 @@ A `monitor` item carries the members of FR-283's record for its verdict, besides
 
 | Verdict | Members besides `clause`, `result`, `category` and `cause` |
 | --- | --- |
-| `Violated` | `position`; `counterexample`, FR-283's `TemporalCounterexample` with its `prefix`, its `loop` (`[]` for a finite trace, as FR-330 and QSpec FR-364 spell it) and `trace_position`; for a temporal violation `decisive` (FR-283, with its `position` member), a sibling of `counterexample`; `witness`, the QSpec FR-351 record, only when `ClauseRunReport::witness` holds one, never for a temporal `Violated` or `Undefined` record |
+| `Violated` | `position`; `counterexample`, FR-283's `TemporalCounterexample` with its `prefix`, its `loop` (`[]` for a finite trace, as FR-330 and QSpec FR-364 spell it) and `trace_position`; for a temporal violation `decisive` (FR-283, with its `position` member) when the report holds one, a sibling of `counterexample`; `witness`, the QSpec FR-351 record, only when `ClauseRunReport::witness` holds one, never for a temporal `Violated` or `Undefined` record |
 | `Undefined` | `position`; `counterexample` as for `Violated`; no `witness` |
 | `InsufficientData` | `position`, `count` and `min_count`; no `counterexample` and no `witness` |
 | `Pending`, `Tested` | none |
@@ -206,7 +206,7 @@ The outcome document's bytes.
   "Monitor documents from clause runs" member table lists for its verdict and
   no other, reading `counterexample` from `ClauseRunReport::counterexample`
   (FR-330 Outputs; the same record FR-267 writes in its `temporal` member).
-- `OutcomeItem::from_clause_run` shall write `decisive`, a sibling of `counterexample`, from `ClauseRunReport::decisive` (FR-330 Outputs) on a temporal `Violated` item, and no `decisive` on any other item.
+- `OutcomeItem::from_clause_run` shall write `decisive`, a sibling of `counterexample`, from `ClauseRunReport::decisive` (FR-330 Outputs) on a temporal `Violated` item whose report holds one, and no `decisive` on any other item.
 - `OutcomeItem::from_clause_run` shall write `witness` exactly when
   `ClauseRunReport::witness` (`Option<SeparatingWitnessRecord>`, FR-266)
   holds a record, and shall write none otherwise.

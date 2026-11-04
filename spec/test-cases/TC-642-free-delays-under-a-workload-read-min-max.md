@@ -15,7 +15,7 @@ Verify that under a workload EN-5 leaves the delay of an operation with no
 `>= θ` bound on the minimum and a `<= θ` bound on the maximum over that
 choice.
 
-Scope: FR-204-AC-5 to FR-204-AC-8.
+Scope: FR-204-AC-5 to FR-204-AC-9.
 
 ## Test Procedure
 
@@ -32,7 +32,7 @@ workload `One` with weight 1 on `send`.
    `probability <= 0.5` under `Both`, and read each witness scheduler's choice.
 4. With `B` guarded by `x >= 2 ms`, decide `probability <= 0.5` and
    `probability <= 0.4` under `Both`, and the same claim under every scheduler.
-5. With `A` declaring `delay Race::A ~ discrete { 1 ms: 1, 3 ms: 1 }` and `B` guarded by `x >= 1 ms`, decide `probability <= 0.7` and `probability >= 0.3` under `Both`, and read the product's witness choices and the SD-3 `FreeDelays` rows.
+5. With `A` declaring `delay Race::A ~ discrete { 1 ms: 1, 3 ms: 1 }` and `B` guarded by `x >= 1 ms`, decide `probability <= 0.7` and `probability >= 0.3` under `Both`, and read the product's witness choices; read whether the post-draw `FreeDelays` choice is offered.
 
 Tag the tests `#[trace("TC-642", "<AC id>")]`.
 
@@ -46,4 +46,4 @@ Tag the tests `#[trace("TC-642", "<AC id>")]`.
 - Step 4: `proved`, `ExactValue{1/2}`, marked a maximum; `refuted` on that
   maximum with `WorkloadResolve{B, 2}`; `unsupported`, `DelayDistribution` naming
   `A` under every scheduler.
-- Step 5: `refuted` on the maximum `ExactValue{3/4}` with `WorkloadResolve{B, 1}`; `refuted` on the minimum `ExactValue{1/4}` with `WorkloadResolve{B, 3}`; the `FreeDelays` rows of FR-204-AC-8.
+- Step 5: `refuted` on the maximum `ExactValue{3/4}` with `WorkloadResolve{B, 1}`; `refuted` on the minimum `ExactValue{1/4}` with `WorkloadResolve{B, 3}`; FR-204-AC-9's post-draw `FreeDelays` rows are not produced (unmet parity).

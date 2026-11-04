@@ -160,7 +160,7 @@ in the place of `holds`, under ADR-014 A-4:
 
 | `MonitorVerdict` | Evaluator result (FR-330) | Members | O-16 category | Exit (FR-285) |
 | --- | --- | --- | --- | --- |
-| `Violated` | `Completed(false)`, finite or lasso | `position`, `counterexample`, `decisive` | violation | 10 |
+| `Violated` | `Completed(false)`, finite or lasso | `position`, `counterexample`, `decisive` when the report holds one (FR-330) | violation | 10 |
 | `Undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample`, `cause` (`UndefinedEvaluation{where, cause}`) | violation | 10 |
 | `InsufficientData` | FR-327's insufficient-data outcome, `InsufficientData{where, atom, count, min_count}` (a window aggregate short of data, QSpec FR-414), not an `Undefined` | `position`, `count`, `min_count` | undefined, with the label `undefined` and reason `insufficient-data` | 10 |
 | `Pending` | `Pending`, finite trace | none | pending | 0 |

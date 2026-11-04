@@ -124,15 +124,14 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
 - An every-scheduler run SHALL carry `Identity` where a workload run carries
   `WorkloadResolve`, because there the scheduler chooses the identity itself.
 
-ADR-026 SD-3 lets the scheduler choose each free delay after the given delays
-are drawn, so its choice may depend on the drawn vector; FR-202's `FreeDelays`
-form names that decision. `WorkloadResolve` is made before the given draw
-resolves and cannot depend on it. The two give equal minima and maxima whenever
-the payoff is monotone in the chosen delay, which includes every probability
-of one event after a single race (FR-204-AC-8). Parity with SD-3 for a payoff
-that is not monotone in the delay, under a given distribution of several
-support points, needs the post-draw choice, and the product does not offer it:
-that parity is unmet and is owned by the EN-5 provider ticket QSL-1498.
+- Under a workload with given and free delays racing, the product SHALL also
+  offer the scheduler's choice of each free delay after the given delays are
+  drawn, as ADR-026 SD-3 states and as FR-202's `FreeDelays` form names, so
+  that the scheduler's choice may depend on the drawn vector. `WorkloadResolve`
+  is made before the given draw resolves and cannot depend on it. The product
+  offers only `WorkloadResolve` today: the post-draw choice is unmet parity
+  with SD-3, followed up by the EN-5 provider lane (Dependencies). No vector
+  of a single race is known that separates the two choices.
 
 ### Evidence
 
@@ -169,10 +168,12 @@ that parity is unmet and is owned by the EN-5 provider ticket QSL-1498.
 | FR-204-AC-5 | §15.5 `Retx`, whose `send` has no `delay` declaration, under the workload `One` (weight 1 on `send`): the workload resolves the scheduled identity and `send`'s delay stays the scheduler's choice in `[1, 2]` ms after each reset, with no distribution assumed for it. `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` under `One` settles `proved`, `ExactValue{99/100}`, its entry marked a minimum. `probability <= 0.999` over the same event under `One` settles `refuted` on the maximum `9999/10000`, its entry marked a maximum and its witness scheduler choosing `UnitDelay` at `x = 0` and `WorkloadResolve{send, 0}` at `x = 1`. At the same quiescent D=1 idle-delayed key, IdleObserve reads success at D with elapsed0 while IdleDelay crosses D with elapsed1; replay/certificates preserve the distinct actions, post-keys and predicate positions. | Test (TC-642) |
 | FR-204-AC-6 | The model `Race` (`time dense unit ms`) has `phase` (`Idle` or `Done`) and `b`; the operation `A` is guarded by `phase = Idle`, sets `Done` and declares `delay Race::A ~ discrete { 2 ms: 1 }`; the operation `B` has no `delay` declaration, is guarded by `phase = Idle and x >= 1 ms` under the time invariant `x <= 3 ms` while `Idle`, sets `Done` and `b`; the workload `Both` weights `A` and `B` 1. Under `Both`, `probability >= 0.5 [eventually[0 ms, 5 ms] holds(r.b)]` settles `refuted` on the minimum `ExactValue{0}`, its witness scheduler choosing `WorkloadResolve{B, 3}` (`A` wins at 2 ms, mass 1); `probability <= 0.5` settles `refuted` on the maximum `ExactValue{1}`, its witness scheduler choosing `WorkloadResolve{B, 1}` (`B` wins at 1 ms, mass 1). The choice `WorkloadResolve{B, 2}` is the tie at `m = 2`: `B` and `A` each win with probability `1/2`. | Test (TC-642) |
 | FR-204-AC-7 | With `B`'s guard changed to `phase = Idle and x >= 2 ms`, the choices of `B` are the delays 2 and 3, so the maximum is `1/2` (the tie) and the minimum `0`: `probability <= 0.5 [eventually[0 ms, 5 ms] holds(r.b)]` under `Both` settles `proved`, `ExactValue{1/2}`, its entry marked a maximum, and `probability <= 0.4` settles `refuted` on that maximum with `WorkloadResolve{B, 2}` as its witness choice. The same claim `under every scheduler` settles `unsupported`, `DelayDistribution`, naming `A`, and not a mixed-delay refusal. | Test (TC-642) |
-| FR-204-AC-8 | In `Race` with `A` declaring `delay Race::A ~ discrete { 1 ms: 1, 3 ms: 1 }`, `B` guarded by `phase = Idle and x >= 1 ms` under the invariant `x <= 3 ms` while `Idle`, and `Both` as before: `probability <= 0.7 [eventually[0 ms, 5 ms] holds(r.b)]` settles `refuted` on the maximum `ExactValue{3/4}` (with the draw `1`, `B` at delay 1 ties for `1/2`; with the draw `3`, `B` at delay 1 wins), and `probability >= 0.3` settles `refuted` on the minimum `ExactValue{1/4}` (with the draw `1`, `B` at delay 2 loses; with the draw `3`, `B` at delay 3 ties for `1/2`). The product's witness choices are `WorkloadResolve{B, 1}` for the maximum and `WorkloadResolve{B, 3}` for the minimum; the SD-3 witness scheduler of the same values holds a `FreeDelays` entry with the rows given `[1]` to `B` delay 1 and given `[3]` to `B` delay 1 for the maximum, and given `[1]` to `B` delay 2 and given `[3]` to `B` delay 3 for the minimum. | Test (TC-642) |
+| FR-204-AC-8 | In `Race` with `A` declaring `delay Race::A ~ discrete { 1 ms: 1, 3 ms: 1 }`, `B` guarded by `phase = Idle and x >= 1 ms` under the invariant `x <= 3 ms` while `Idle`, and `Both` as before: `probability <= 0.7 [eventually[0 ms, 5 ms] holds(r.b)]` settles `refuted` on the maximum `ExactValue{3/4}` with the witness choice `WorkloadResolve{B, 1}` (with the draw `1`, `B` at delay 1 ties for `1/2`; with the draw `3`, `B` at delay 1 wins), and `probability >= 0.3` settles `refuted` on the minimum `ExactValue{1/4}` with the witness choice `WorkloadResolve{B, 3}` (with the draw `1`, `B` at delay 3 loses; with the draw `3`, it ties for `1/2`). | Test (TC-642) |
+| FR-204-AC-9 | Unmet parity, not met by the product today: over AC-8's `Race`, after each given draw `1` and `3` the product offers a choice of `B`'s delay, and the witness scheduler for the maximum `3/4` holds a `FreeDelays` entry with the rows given `[1]` to `B` delay 1 and given `[3]` to `B` delay 1, and for the minimum `1/4` the rows given `[1]` to `B` delay 2 and given `[3]` to `B` delay 3. | Test (TC-642) |
 
 ## Dependencies
 
+- The post-draw choice of FR-204-AC-9 is followed up by QSL-1667, in the lane of the EN-5 provider ticket QSL-1498; until it lands FR-204-AC-9 is unmet.
 - ADR-028 TA-1 to TA-7, TA-1a, RU-6, XV-4; ADR-026 TS-1, TS-2, TS-4, CK-4,
   CK-7, SD-1, SD-3, SD-4, CT-1, CT-3, EZ-10 (on its own draft branch).
 - [FR-196](FR-196-build-the-probabilistic-product.md),

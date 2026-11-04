@@ -119,8 +119,7 @@ for negotiation whether the claim is bounded.
   atom (FR-194), which is a duration the check converts to the clock unit
   (FR-337).
 - A checked clause of this profile SHALL hold only integral closed tick
-  intervals, so no later layer meets another shape except as a fault of its own
-  input (FR-337).
+  intervals.
 - The check SHALL compute the horizon of a bounded-profile formula as the
   greatest reach of its intervals with checked arithmetic. When the sum
   exceeds `u64`, it SHALL refuse with `LimitExceeded`, limit kind work
@@ -166,7 +165,7 @@ for negotiation whether the claim is bounded.
 
 ## Dependencies
 
-- The finite-window interval rule removes the current acceptance of a closed integral timed interval as a tick interval (`checked_interval` in `src/temporal.rs`, `temporal_interval` in `qsl-semantics`, the `qsl-eval` timed arm); the code ticket QSL-1611 deletes that path.
+- The finite-window interval rule removes the current acceptance of a closed integral timed interval as a tick interval (`checked_interval` in `src/temporal.rs`, `temporal_interval` in `qsl-semantics`, the `qsl-eval` timed arm); the code change that deletes that path is its own code ticket, to be filed after the spec ticket QSL-1611.
 - ADR-014 §2 (absent temporal interval), §3 TR-3 and TR-4, §4 (extent rule),
   §5 A-2 and A-3, as amended by ADR-018 IV-1.
 - [FR-110](FR-110-resolve-header-profile-selections-at-e3.md) (profile
