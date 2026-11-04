@@ -238,7 +238,24 @@ fn definition_index(v: &Value) -> Option<Made> {
     let mut w = clone(v);
     selection_mut(&mut w, "profile_selections")?
         .retain(|selection| selection.get("role") != Some(&json!("temporal_profile")));
-    ok(w, timed("/temporal_bindings/0/clock/kind".into()))
+    let node = nodes(v)?.iter().position(|node| {
+        node.get("semantic_form") == Some(&json!("compensation"))
+            || node
+                .pointer("/body/operation/laws")
+                .and_then(Value::as_array)
+                .is_some_and(|laws| {
+                    laws.iter()
+                        .any(|law| law.get("role") == Some(&json!("temporal_profile")))
+                })
+    })?;
+    ok(
+        w,
+        reader(
+            "missing_declaration",
+            Some("missing-selection"),
+            format!("/semantic_graph/nodes/{node}"),
+        ),
+    )
 }
 
 fn declaration_name(v: &Value) -> Option<Made> {
