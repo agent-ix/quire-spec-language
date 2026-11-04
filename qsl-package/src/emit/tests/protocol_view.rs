@@ -891,7 +891,10 @@ fn the_node_views_return_the_map_successors_and_refuse_a_removed_member() {
 
 /// FR-519-AC-5, channel delivery and queue capacity: the delivery policy word
 /// and a declared interval (FR-509), the literal and the symbolic capacity.
-#[trace("FR-519-AC-5", "FR-519-AC-8", "TC-1314")]
+/// FR-509-AC-8: the delivery view admits `[0,3]`, `[0,0]`, `[2,2]` and
+/// `[0,18446744073709551615]` and refuses every other spelling as
+/// `MalformedMember` naming `delivery`, never `MissingMember`.
+#[trace("FR-519-AC-5", "FR-519-AC-8", "FR-509-AC-8", "TC-1304", "TC-1314")]
 #[test]
 fn the_channel_and_queue_views_return_delivery_and_capacity() {
     let fixture = fixture();
@@ -956,6 +959,10 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
     assert_eq!(
         delivery(&with_text("[0,3]")).unwrap(),
         Delivery::Between { lower: 0, upper: 3 }
+    );
+    assert_eq!(
+        delivery(&with_text("[0,0]")).unwrap(),
+        Delivery::Between { lower: 0, upper: 0 }
     );
     assert_eq!(
         delivery(&with_text("[2,2]")).unwrap(),
@@ -1064,6 +1071,52 @@ fn an_interval_channel_emits_and_reads_back_its_delivery_premise() {
     assert_eq!(
         delivery(qsl_charge).unwrap(),
         Delivery::Between { lower: 0, upper: 3 }
+    );
+}
+
+/// FR-509-AC-6 (TC-1304): a `delivery [1,2]` channel in a unit whose header
+/// selects the protocol profile and no temporal profile checks and emits; the
+/// interval reads no clock, so the package has no temporal binding and no
+/// temporal clause or clock place node, and the reader returns the bounds.
+#[trace("FR-509-AC-6", "TC-1304")]
+#[test]
+fn an_interval_channel_needs_no_temporal_profile_and_reads_no_clock() {
+    let members = "role Buyer on M::Order;\nrole Seller on M::Person;\n\
+         channel Pay from Buyer to Seller carries Boolean ordering unordered \
+         delivery [1,2] capacity 2 overflow block;";
+    let lowered = super::reachability::lower_with(
+        super::protocol_graph::model(),
+        "profile p = \"quire.protocol.finite-global/v1\";\n",
+        &super::protocol_graph::flow_over("M::Order", "on origin", members),
+    );
+    assert!(
+        lowered.ir.is_ok(),
+        "{:?}\n{}",
+        lowered.ir.as_ref().err(),
+        lowered.text
+    );
+    assert!(lowered.verified, "{}", lowered.text);
+    assert!(
+        !lowered.text.contains("quire.temporal"),
+        "the header selects no temporal profile"
+    );
+    let package = lowered.ir.as_ref().expect("the package is admitted");
+    assert_eq!(
+        delivery(by_name(package, "Pay")).unwrap(),
+        Delivery::Between { lower: 1, upper: 2 }
+    );
+    assert_eq!(
+        package.temporal_bindings(),
+        None,
+        "the interval reads no clock"
+    );
+    assert!(
+        package
+            .graph()
+            .nodes
+            .iter()
+            .all(|node| !matches!(&*node.semantic_form, "temporal_clause" | "clock_place")),
+        "no temporal clause or clock place node is emitted"
     );
 }
 
