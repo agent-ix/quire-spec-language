@@ -1298,27 +1298,24 @@ fn checked_interval(
         }
         // Only the timestamped-window profile reaches this route with a timed
         // interval (the clock-unit profile is refused at its profile binding):
-        // its step bounds are clock ticks, written closed at both ends.
+        // its step bounds are clock ticks, written closed at both ends. An
+        // interval of any other shape is refused as an interval binding.
         Some(CheckedInterval::Timed(interval)) => {
-            if !(interval.lower_closed()
-                && interval.upper_closed()
-                && interval.lower().is_integer()
-                && interval.upper().is_integer())
-            {
+            let Some((lower, upper)) = interval.closed_integral_bounds() else {
                 return Err(Refusal::Binding {
                     dimension: Dimension::Interval,
                     subject,
                 }
                 .into());
-            }
-            let tick = |value: &quire_exact::Rational| {
+            };
+            let tick = |value: u64| {
                 w::Integer(crate::number::NumberWire::Integer {
-                    decimal: value.numerator().to_string(),
+                    decimal: value.to_string(),
                 })
             };
             Ok(w::Nullable(Some(w::Interval {
-                lower: tick(interval.lower()),
-                upper: tick(interval.upper()),
+                lower: tick(lower),
+                upper: tick(upper),
             })))
         }
     }
@@ -1448,6 +1445,84 @@ fn settle(value: Tri, trace: &Trace) -> (Truth, Basis) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn timed_tick(
+        lower: i64,
+        lower_closed: bool,
+        upper: i64,
+        upper_closed: bool,
+    ) -> CheckedInterval {
+        use quire_exact::{Integer, Rational};
+        let rational = |value: i64| Rational::from_integer(Integer::from(value));
+        CheckedInterval::Timed(
+            qsl_foundation::bound::TimedInterval::new(
+                rational(lower),
+                lower_closed,
+                rational(upper),
+                upper_closed,
+            )
+            .expect("a valid interval"),
+        )
+    }
+
+    fn wire_bounds(interval: &CheckedInterval) -> Result<(String, String), Error> {
+        let wire = checked_interval(Some(interval), declaration_subject(0))?;
+        let interval = wire.0.expect("a timed operator carries an interval");
+        let decimal = |value: &w::Integer| match &value.0 {
+            crate::number::NumberWire::Integer { decimal } => decimal.clone(),
+            other => panic!("a tick bound is an integer: {other:?}"),
+        };
+        Ok((decimal(&interval.lower), decimal(&interval.upper)))
+    }
+
+    /// FR-322-AC-294 / FR-501: a timestamped-window tick interval, closed at
+    /// both ends with integral bounds (the zero-width `[0,0]` included), is
+    /// written as the wire tick interval.
+    #[test]
+    fn a_closed_integral_tick_interval_is_written_as_wire_ticks() {
+        assert_eq!(
+            wire_bounds(&timed_tick(0, true, 5, true)).unwrap(),
+            ("0".to_string(), "5".to_string())
+        );
+        assert_eq!(
+            wire_bounds(&timed_tick(0, true, 0, true)).unwrap(),
+            ("0".to_string(), "0".to_string())
+        );
+    }
+
+    /// Any other timed interval (an open end, or a non-integer bound) is
+    /// refused as an interval binding rather than written.
+    #[test]
+    fn an_open_or_non_integer_timed_interval_is_an_interval_binding_refusal() {
+        use quire_exact::{Integer, Rational};
+        let half =
+            Rational::new(Integer::from(1_i64), Integer::from(2_i64)).expect("a denominator");
+        let fractional = CheckedInterval::Timed(
+            qsl_foundation::bound::TimedInterval::new(
+                half,
+                true,
+                Rational::from_integer(Integer::from(2_i64)),
+                true,
+            )
+            .expect("a valid interval"),
+        );
+        for interval in [
+            timed_tick(0, true, 5, false),
+            timed_tick(0, false, 5, true),
+            fractional,
+        ] {
+            assert!(
+                matches!(
+                    wire_bounds(&interval),
+                    Err(Error::Refused(Refusal::Binding {
+                        dimension: Dimension::Interval,
+                        ..
+                    }))
+                ),
+                "{interval:?}"
+            );
+        }
+    }
 
     /// A clock binding without the `clock:` spelling has no admitted clock
     /// name; the evaluator refuses it as a clock-binding mismatch, the same

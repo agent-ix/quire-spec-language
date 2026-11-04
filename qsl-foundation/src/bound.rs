@@ -530,6 +530,24 @@ impl TimedInterval {
         self.upper_closed
     }
 
+    /// The integral closed bounds of a tick interval (the finite-window
+    /// profile's `[a, b]`), or `None` when an end is open, a bound is not an
+    /// integer or a bound exceeds `u64`. The one predicate every consumer of a
+    /// tick interval shares, so the lowering and the wire route cannot differ.
+    pub fn closed_integral_bounds(&self) -> Option<(u64, u64)> {
+        if !self.lower_closed
+            || !self.upper_closed
+            || !self.lower.is_integer()
+            || !self.upper.is_integer()
+        {
+            return None;
+        }
+        Some((
+            self.lower.numerator().to_u64()?,
+            self.upper.numerator().to_u64()?,
+        ))
+    }
+
     /// Whether the interval is punctual: `lower = upper`, both ends closed
     /// (ADR-026 DF-2).
     pub fn is_punctual(&self) -> bool {

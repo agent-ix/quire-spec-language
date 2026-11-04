@@ -208,7 +208,7 @@ fn default_clock_selections(checked: &CheckedUnit) -> Vec<qsl_package::TemporalC
             let clock = match clause.profile() {
                 TemporalProfile::EventPositionFalseExtension => {
                     quire_contract_model::ClockConfiguration::EventPosition {
-                        sequence_authority: "fixture".into(),
+                        sequence_authority: "events-authority".into(),
                     }
                 }
                 TemporalProfile::TimestampedEventFiniteWindow => {
@@ -217,7 +217,17 @@ fn default_clock_selections(checked: &CheckedUnit) -> Vec<qsl_package::TemporalC
                     }
                 }
                 TemporalProfile::FixedSampleFalseExtension => {
-                    panic!("a fixed-sample fixture names its own clock selection")
+                    use quire_contract_model::ClockExactNumber::{Integer, Rational};
+                    quire_contract_model::ClockConfiguration::FixedSample {
+                        epoch: Integer {
+                            decimal: "0".into(),
+                        },
+                        period: Rational {
+                            numerator: "1".into(),
+                            denominator: "10".into(),
+                        },
+                        unit: "milliseconds".into(),
+                    }
                 }
                 // Every other profile is not clock-configured and takes no selection.
                 _ => return None,

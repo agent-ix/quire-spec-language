@@ -559,8 +559,9 @@ fn temporal_interval(
         // A tick interval of the finite-window profile is an integral closed
         // interval: it is written as the step interval FR-370 gives it.
         Some(CheckedInterval::Timed(interval)) if ticks => {
-            let (lower, upper) =
-                tick_bounds(interval).ok_or("finite-window-interval-is-integral-closed")?;
+            let (lower, upper) = interval
+                .closed_integral_bounds()
+                .ok_or("finite-window-interval-is-integral-closed")?;
             let step = qsl_foundation::bound::TemporalInterval::new(
                 lower,
                 qsl_foundation::bound::TemporalUpper::Finite(upper),
@@ -572,22 +573,6 @@ fn temporal_interval(
         }
         Some(CheckedInterval::Timed(interval)) => timed_member(interval),
     })
-}
-
-/// The integral closed bounds of a tick interval, or `None` when a bound is
-/// not an integer, an end is open or a bound exceeds `u64`.
-fn tick_bounds(interval: &qsl_foundation::bound::TimedInterval) -> Option<(u64, u64)> {
-    if !interval.lower_closed()
-        || !interval.upper_closed()
-        || !interval.lower().is_integer()
-        || !interval.upper().is_integer()
-    {
-        return None;
-    }
-    Some((
-        interval.lower().numerator().to_u64()?,
-        interval.upper().numerator().to_u64()?,
-    ))
 }
 
 /// A timed interval in its rational wire form.
