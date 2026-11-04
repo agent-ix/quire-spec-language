@@ -39,7 +39,7 @@ Verify FR-523-AC-1 to FR-523-AC-23. Each counter is driven to its exact usage an
 | 21 | 17 | a formula nested 100,000 deep, ceilings raised, on a 512 KiB stack | evaluates |
 | 22 | 18 | the `usage` of a call; two requests differing in one ceiling | all thirteen counters reported; distinct `result_identity` |
 | 23 | 20 | ledger holding `t1`; redelivery of `t1`; new healthy delivery; new faulted delivery | `instances` usage 1 |
-| 24 | 21 | fixed-sample clause reading silent samples | each silent lookup: `valuations`, `visited` and the meter at `temporal.visit` +1; `evaluation_steps`, `positions` unchanged; thirteen counters |
+| 24 | 21 | fixed-sample clause reading silent samples | each silent lookup: `valuations`, `visited` and the meter at `temporal.visit` +1; `evaluation_steps`, `positions` unchanged; meter usage minus `evaluation_steps` usage equals the silent lookups; a meter ceiling between the two denies a silent lookup; thirteen counters |
 | 25 | 22 | the stops of rows 7 to 9, 16, 17 and 20 | each `Ok`, `Unavailable`, `incomplete` naming the counter, no truth; no `Err` |
 | 26 | 19 | the first call replayed with a fresh `Meter` after row 18's second call stopped | a result equal to the first call's result |
 | 27 | 23 | each stop of rows 7 to 9, 16, 17 after an instance was created | `ledger` and `progress_ledger` equal the request's |

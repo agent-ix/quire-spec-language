@@ -101,7 +101,7 @@ evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of 
 | `clause()` (requirement, name, execution) | `requirements() -> &[&CheckedNodeId]`; `name() -> &str` once IR-1278 decides the package carries the clause's name, and none until then | `requirements()`: the node ids of the protocol clauses whose `requirements` entries name this clause (the FR-449 rows whose `required_temporal` is this clause), in row order. The package holds no declared name for a temporal clause: the clause node has no `declaration` member and the reader refuses one (IR-1278) |
 | `source()` (source, span) | `source_span() -> &CheckedSourceMapEntry` | the package source map entry of the clause node with role `claim`; its region covers the clause's name token only, not the formula |
 | `profile_identities()` | `profile() -> &CheckedSelection` | the lock `profile_selections` row whose definition equals the clause's `temporal_profile` law |
-| `clock()` | `clock() -> Option<&TemporalBinding>` | the `temporal_bindings()` row for this declaration; `None` when the lock selects no clock configuration |
+| `clock()` | `clock() -> Option<&TemporalBinding>` | the `temporal_bindings()` row for this declaration's occurrence when the node has one occurrence; `None` when the lock selects no clock configuration and `None` for a node with several occurrences, whose rows `clock_of(&ClauseOccurrence)` returns by the key `{ declaration, role, ordinal }` |
 | `activation()` | `activation() -> Activation` | `Origin`, or `Each { trigger: CheckedNodeId, guard: Option<CheckedNodeId> }` from the clause's activation argument |
 | `captures()` | `captures() -> &[CheckedNodeId]` | the clause's captures argument, in source order |
 | `operators()`, `required_history()` | `formula() -> Vec<OperatorUse>`, each `{ operation: &str, interval: Option<Interval> }` in formula pre-order | the `quire.op.temporal.*` applications and their `temporal_interval` members (FR-337); the history span is derived by FR-043, not carried |
@@ -152,7 +152,10 @@ only when one is written.
   row per clause occurrence, keyed by the declaration and the occurrence
   `{ role, ordinal }` with the producer-assigned ordinal (QSpec FR-322 "Temporal
   clock bindings"), and the reader admits one row per occurrence of a shared
-  node. `clock_of(&ClauseOccurrence) -> Option<&TemporalBinding>` returns the row
+  node. `occurrences()` lists a node's occurrences in declaration (source) order,
+  which may differ from ascending ordinal because the producer assigns ordinals,
+  while the lock lists the clock rows ascending by ordinal (QSpec FR-322).
+  `clock_of(&ClauseOccurrence) -> Option<&TemporalBinding>` returns the row
   whose key equals that occurrence's `{ role, ordinal }`; it never pairs by the
   position of the occurrence or of the row, because producer-assigned ordinals
   need not run consecutively from zero. `clock()` returns the row of the node's
@@ -194,7 +197,7 @@ bytes.
 | FR-515-AC-17 | `checked_predicate` of a `ClauseLeaf` returns a view whose `source_span` is the entry of the leaf node whose regions lie inside the source regions of the clause's formula root node. | Test (TC-1310) |
 | FR-515-AC-18 | Over the in-memory package of the I2 write before emit, `temporal_subject` returns the `profile()` and `clock()` equal to those of the package read back from the emitted bytes, for each of **R**'s clauses. | Test (TC-1310) |
 | FR-515-AC-19 | In a package with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row, in the in-memory and the read-back package alike. | Test (TC-1310) |
-| FR-515-AC-20 | Over twins of one node with occurrence ordinals 7 and 3 (listed in that order) and different clock configurations, `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3 and `clock_of` of ordinal 7 returns the row keyed ordinal 7, `clock()` is `None`, and the same holds for the in-memory and the read-back package; a pairing by position fails this criterion. | Test (TC-1310) |
+| FR-515-AC-20 | Over twins of one node whose declaration order gives `occurrences()` as ordinal 7 then ordinal 3, with the lock's clock rows ascending as ordinal 3 then ordinal 7 and different clock configurations, `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3 and `clock_of` of ordinal 7 returns the row keyed ordinal 7, `clock()` is `None`, and the same holds for the in-memory and the read-back package; a pairing by position fails this criterion. | Test (TC-1310) |
 
 ## Dependencies
 

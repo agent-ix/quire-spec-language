@@ -66,3 +66,30 @@ Not mergeable as written: five medium findings, no high. FND-001 to FND-005 are
 specification gaps a coder would have to guess at; each is a one- or two-sentence fix
 inside this PR. FND-003 needs a planner answer on IR-1279 against QSpec FR-322 before
 the gate is kept or replaced. FND-006 to FND-009 are low.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-010 | medium | The silent-sample rule charges the meter "at the `temporal.visit` charge point" but not `evaluation_steps`, while FR-523's counter table defines `evaluation_steps` as "one charge at the `temporal.visit` charge point (FR-327)" and FR-523-AC-15 distinguishes a meter denial from an `evaluation_steps` denial at that same point. Every `temporal.visit` charge is therefore an `evaluation_steps` charge by definition and the new rule contradicts it without amending the table row. Amend the `evaluation_steps` definition to exclude a silent-sample lookup, or name a separate meter charge point. | spec/functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-instance-apart-from-a-stopped-declaration.md:90,97-101 | wrong-requirement |
+| FND-011 | low | Residue of the occurrence fix: the FR-515 output table row for `clock()` still reads "the `temporal_bindings()` row for this declaration; `None` when the lock selects no clock configuration" (no `None` for several occurrences, no `clock_of` row), FR-522 still reads the clock from "the row of the declaration (FR-515 `clock()`)" with no occurrence, and FR-515 does not state the order of `occurrences()`. FR-515-AC-20 and FR-516-AC-32 defeat a position pairing only if `occurrences()` lists the twins in declaration order (7 then 3) while rows ascend by occurrence (3, 7) as QSpec FR-322 requires; with ascending-ordinal order both pairings coincide and the criteria cannot fail. State the order of `occurrences()` and what "listed in that order" lists. | spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md:104,197 | missing-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-516 and FR-523 now return the request's own ledger and progress_ledger unchanged for every stop kind; FR-516-AC-31 and FR-523-AC-23 pin it. |
+| FND-002 | fixed | clock_of keys the row by (declaration, role, ordinal), never position; occurrence selector with occurrence-required and occurrence-unknown refusals; FR-516-AC-32/33. Residue is FND-011. |
+| FND-003 | fixed | IR-1279 gate removed from FR-515-AC-13 and Dependencies, replaced by QSpec FR-322; FR-515-AC-20 and FR-516-AC-32 use ordinals 7 and 3. FR-322 keys rows by (declaration, occurrence) and forbids selection by array position, so the text agrees; the AC strength depends on FND-011. |
+| FND-004 | fixed | FR-516-AC-25 now covers formula_nodes, history_span, tick sums with incomplete naming the stop, and states the withdrawn-anchor case separately with incomplete None; the output row names clause stops. |
+| FND-005 | fixed | A faulted instance is recorded as an Unavailable ledger entry without captures and is not counted; FR-524-AC-35 and AC-37 pin retention and redelivery. |
+| FND-006 | fixed | Contradiction check over the whole list first, then surplus; surplus_capture_index is named; FR-524-AC-38. |
+| FND-007 | fixed | Valuations, visited and a meter unit at temporal.visit are named, evaluation_steps and positions excluded; the new rule conflicts with the evaluation_steps definition, recorded as FND-010. |
+| FND-008 | fixed | TC-1318 rows run 22 to 27 with unique numbers; rows map AC-20, 21, 22, 19 and 23. |
+| FND-009 | fixed | Execution and trigger-record bullets in FR-516 and FR-524, request table maps the record completeness, FR-516-AC-34/35 and FR-524-AC-39. |
+| FND-010 | still-open | medium: silent-sample charge point contradicts the evaluation_steps definition. |
+| FND-011 | still-open | low: clock() table row, FR-522 clock read and occurrences() order not updated. |
+
+## Verdict (disposition pass 1)
+
+FND-001 to FND-009 are fixed. FND-010 (medium) is a new contradiction introduced by the FND-007 fix and blocks merge until the evaluation_steps definition or the charge point is amended; FND-011 is low. Verified: quire validate exit 0 on all 12 changed files and on this file; TC rows and tag ranges end at FR-515-AC-20, FR-516-AC-35, FR-523-AC-23, FR-524-AC-39 and match the AC ids; the new ids are unused on open PRs 2222, 2224, 2225 and 2226.

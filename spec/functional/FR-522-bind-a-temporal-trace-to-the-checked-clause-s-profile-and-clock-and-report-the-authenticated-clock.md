@@ -66,8 +66,9 @@ depends on.
 QSpec FR-090 owns profile and clock selection and FR-043 states the legacy
 evaluation of it. The checked package is the authentication: the profile comes
 from the lock's `profile_selections` row of the clause (FR-515 `profile()`), and
-the clock from the `temporal_bindings` row of the declaration (FR-515 `clock()`;
-FR-050). The evaluator does not authenticate the observation owner's evidence
+the clock from the `temporal_bindings` row keyed by the declaration and the
+request's occurrence (FR-515 `clock()` for a node with one occurrence, `clock_of`
+for one of several; FR-516 `occurrence`; FR-050). The evaluator does not authenticate the observation owner's evidence
 (FR-053).
 
 This requirement owns the identity function. FR-523 defines the work ceilings

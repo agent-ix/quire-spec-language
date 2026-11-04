@@ -49,7 +49,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 29 | 29 | the in-memory package of the I2 write before emit vs the read-back package | equal profile selection and `TemporalBinding` row; the clause's own `binding` authenticates |
 | 30 | 30 | a package with two clauses of different formulas and clock rows; a `binding` asserting the other's row | refused with the dimension FR-522 names, in the in-memory and the read-back package |
 | 31 | 31 | each stop kind of row 25 with instances created or a receipt added before the stop | `ledger` and `progress_ledger` equal the request's; the retry equals the call that never stopped |
-| 32 | 32 | twins of one node, ordinals 7 and 3, different clock rows; `occurrence` 3 with each row's `binding`; `occurrence` 7 likewise | the matching row authenticates, the other is refused with the FR-522 dimension; position pairing fails |
+| 32 | 32 | twins of one node, `occurrences()` 7 then 3, lock rows ascending 3 then 7, different clock rows; `occurrence` 3 with each row's `binding`; `occurrence` 7 likewise | the matching row authenticates, the other is refused with the FR-522 dimension; position pairing fails |
 | 33 | 33 | the twins with no `occurrence`; with ordinal 5; a one-occurrence node with no `occurrence` | `occurrence-required`; `occurrence-unknown`, each empty charge log; evaluated |
 | 34 | 34 | `execution` `Failed` vs `Completed`, open scope; the same over an admitted delivery | `Unknown` carrying each; same activation and truth |
 | 35 | 35 | closed admitted scope, no delivery: record `Complete`; record `Incomplete` | `Inactive`; `Unknown(open)`; `execution` echoed |
