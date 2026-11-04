@@ -776,7 +776,52 @@ fn conversion_into_a_float_lowers_to_the_owned_ieee_operation() {
             "{text}"
         );
         assert_eq!(lowered["member"]["kind"], "type_argument", "{text}");
+        // The member names the target's own scalar type node.
+        let declaration = &lowered["member"]["declaration"];
+        let target_node = wire["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| &candidate["node_id"] == declaration)
+            .unwrap_or_else(|| panic!("no node {declaration} in {wire}"));
+        let (width, target_mode) = target.trim_end_matches(']').split_once('[').unwrap();
+        assert_eq!(target_node["semantic_form"], "float_rounding", "{text}");
+        assert_eq!(
+            target_node["body"]["members"][0]["value"]["value"], target_mode,
+            "{text}"
+        );
+        assert_eq!(
+            target_node["semantic_type"]["path"][1],
+            width.to_lowercase(),
+            "{text}"
+        );
+        assert_eq!(&node["semantic_type"], declaration, "{text}");
     }
+}
+
+/// FR-397-AC-18: a quantity converts to no float, and a same-width conversion
+/// to another mode types as the target, so `+` takes the target's mode.
+#[trace("TC-1091", "FR-397-AC-18")]
+#[test]
+fn quantity_to_float_refuses_and_a_retyped_operand_adds_in_the_target_mode() {
+    refusal(
+        &format!("{HEADER}dimension Length;\nunit m : Length = rational(1, 1);\nfunction c using v(q: Quantity<m>): Float64[nearest-even] pure {{ convert<Float64[nearest-even]>(q) }}"),
+        Code::IllTyped,
+        "type-mismatch",
+    );
+    let text = format!("{HEADER}function c using v(f: Float64[nearest-even], b: Float64[toward-zero]): Float64[toward-zero] pure {{ convert<Float64[toward-zero]>(f) + b }}");
+    let wire = wire(&text);
+    let adds: Vec<_> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.ieee.float64.add")
+        .collect();
+    assert_eq!(adds.len(), 1, "{wire}");
+    assert_eq!(
+        adds[0]["body"]["operation"]["mode"],
+        json!({"kind": "rounding", "value": "toward-zero"})
+    );
 }
 
 /// FR-397-AC-8 and FR-397-AC-18: a conversion to the operand's own type, or to

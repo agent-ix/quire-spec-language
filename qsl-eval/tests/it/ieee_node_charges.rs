@@ -216,6 +216,47 @@ fn same(actual: &Outcome<Value>, expected: Outcome<Value>) {
     assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
 }
 
+/// A refusal's code and cause, as the kernel names them.
+fn refusal_of(outcome: &Outcome<Value>) -> (&'static str, &'static str) {
+    match outcome {
+        Outcome::Refused(refusal) => (
+            refusal.code().expect("a coded refusal"),
+            refusal.cause().expect("a refusal cause"),
+        ),
+        other => panic!("a refusal, not {other:?}"),
+    }
+}
+
+/// The flags of a run, in vocabulary order, compared as a set.
+fn assert_flags(run: &Run, expected: &[IeeeFlag]) {
+    let mut seen = run.flags.clone();
+    seen.sort();
+    let mut expected = expected.to_vec();
+    expected.sort();
+    assert_eq!(seen, expected);
+}
+
+/// The decimal literal of `2^exponent`.
+fn power_of_two_literal(exponent: u32) -> String {
+    let mut digits = vec![1_u8];
+    for _ in 0..exponent {
+        let mut carry = 0;
+        for digit in &mut digits {
+            let doubled = *digit * 2 + carry;
+            *digit = doubled % 10;
+            carry = doubled / 10;
+        }
+        if carry > 0 {
+            digits.push(carry);
+        }
+    }
+    digits
+        .iter()
+        .rev()
+        .map(|digit| char::from(b'0' + digit))
+        .collect()
+}
+
 const DECIMAL: &str = "Decimal[0, 100; 0, 2; nearest-even]";
 const F32: &str = "Float32[nearest-even]";
 const F64: &str = "Float64[nearest-even]";
@@ -280,13 +321,13 @@ fn f24_f25_width_conversion_evaluates_and_charges_through_the_owned_operation() 
     // before `ieee.result-retain`; the signaling source raises no `invalid`.
     for bits in [0x7ff8_0000_0040_0000, 0x7ff0_0000_0040_0000] {
         let refused = narrow(bits, limits(64, 1, 1, 0));
-        assert!(
-            matches!(
-                refused.outcome,
-                Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable { .. })
+        assert_eq!(
+            refusal_of(&refused.outcome),
+            (
+                "ieee_nan_payload_not_representable",
+                "payload-exceeds-target"
             ),
-            "{bits:#x}: {:?}",
-            refused.outcome
+            "{bits:#x}"
         );
         assert!(refused.flags.is_empty(), "{bits:#x}");
         assert_eq!(refused.charges, [ChargePoint::IeeeOperands], "{bits:#x}");
@@ -310,6 +351,10 @@ fn f24_f25_width_conversion_evaluates_and_charges_through_the_owned_operation() 
         )
     };
     let refused = strict(limits(64, 1, 3, 1));
+    assert_eq!(
+        refusal_of(&refused.outcome),
+        ("ieee_not_exact", "rounding-required")
+    );
     let Outcome::Refused(Refusal::IeeeNotExact { would_be, .. }) = refused.outcome else {
         panic!("ieee_not_exact, not {:?}", refused.outcome);
     };
@@ -318,6 +363,41 @@ fn f24_f25_width_conversion_evaluates_and_charges_through_the_owned_operation() 
     same(
         &strict(limits(64, 1, 2, 1)).outcome,
         incomplete(LimitKind::WorkUnits, 2, 2, 1, ChargePoint::IeeeRound),
+    );
+    // F24: the binary64 one narrows under I(32,1,4,1) only after the operand
+    // charge, which already needs 64 bits.
+    same(
+        &narrow(0x3ff0_0000_0000_0000, limits(32, 1, 4, 1)).outcome,
+        incomplete(LimitKind::IntegerBits, 32, 0, 64, ChargePoint::IeeeOperands),
+    );
+    // F31: the binary32 maximum is exact; one rounding step above it with
+    // the odd-significand tie overflows to infinity.
+    let maximum = narrow(0x47ef_ffff_e000_0000, limits(64, 1, 4, 1));
+    same(&maximum.outcome, Outcome::Completed(f32v(0x7f7f_ffff)));
+    assert_flags(&maximum, &[]);
+    let overflow = narrow(0x47ef_ffff_f000_0000, limits(64, 1, 4, 1));
+    same(&overflow.outcome, Outcome::Completed(f32v(0x7f80_0000)));
+    assert_flags(&overflow, &[IeeeFlag::Overflow, IeeeFlag::Inexact]);
+    same(
+        &narrow(0x47ef_ffff_f000_0000, limits(64, 1, 3, 1)).outcome,
+        incomplete(LimitKind::WorkUnits, 3, 3, 1, ChargePoint::IeeeResultRetain),
+    );
+    let toward_zero = run(
+        &format!("a: {F64}"),
+        "Float32[toward-zero]",
+        "convert<Float32[toward-zero]>(a)",
+        vec![f64v(0x47ef_ffff_f000_0000)],
+        limits(64, 1, 4, 1),
+        (F64, "a"),
+    );
+    same(&toward_zero.outcome, Outcome::Completed(f32v(0x7f7f_ffff)));
+    assert_flags(&toward_zero, &[IeeeFlag::Inexact]);
+    let tiny = narrow(0x0000_0000_0000_0001, limits(64, 1, 4, 1));
+    same(&tiny.outcome, Outcome::Completed(f32v(0x0000_0000)));
+    assert_flags(&tiny, &[IeeeFlag::Underflow, IeeeFlag::Inexact]);
+    same(
+        &narrow(0x0000_0000_0000_0001, limits(64, 1, 3, 1)).outcome,
+        incomplete(LimitKind::WorkUnits, 3, 3, 1, ChargePoint::IeeeResultRetain),
     );
     let infinity = narrow(0xfff0_0000_0000_0000, limits(64, 1, 2, 1));
     same(&infinity.outcome, Outcome::Completed(f32v(0xff80_0000)));
@@ -351,9 +431,13 @@ fn f28_exact_to_ieee_conversion_sizes_a_decimal_by_its_retained_representation()
     same(&done.outcome, Outcome::Completed(f32v(0x3f80_0000)));
     assert!(done.flags.is_empty());
     assert_eq!(
-        done.charges.first(),
-        Some(&ChargePoint::IeeeOperands),
-        "the operand charges first"
+        done.charges,
+        [
+            ChargePoint::IeeeOperands,
+            ChargePoint::IeeeExactIntermediate,
+            ChargePoint::IeeeRound,
+            ChargePoint::IeeeResultRetain
+        ]
     );
     same(
         &convert(limits(6, 1, 4, 1)).outcome,
@@ -387,11 +471,10 @@ fn f28_exact_to_ieee_conversion_sizes_a_decimal_by_its_retained_representation()
     );
 }
 
-/// F27: the IEEE-to-exact conversion charges `ieee.operands`,
-/// `ieee.exact-intermediate`, then `ieee.result-retain`.
+/// F24: the IEEE-to-exact conversion of `1/2` and of a NaN.
 #[trace("TC-1091", "FR-397-AC-27")]
 #[test]
-fn f27_ieee_to_exact_conversion_charges_through_the_owned_operation() {
+fn f24_ieee_to_exact_conversion_of_a_half_and_of_a_nan() {
     let to_half = |bits, budget| {
         run(
             &format!("a: {F32}"),
@@ -403,12 +486,7 @@ fn f27_ieee_to_exact_conversion_charges_through_the_owned_operation() {
         )
     };
     let done = to_half(0x3f00_0000, limits(32, 1, 3, 1));
-    same(
-        &done.outcome,
-        Outcome::Completed(Value::Rational(
-            Rational::new(Integer::from(1_i64), Integer::from(2_i64)).unwrap(),
-        )),
-    );
+    same(&done.outcome, Outcome::Completed(rational(1, 1)));
     assert_eq!(
         done.charges,
         [
@@ -420,10 +498,300 @@ fn f27_ieee_to_exact_conversion_charges_through_the_owned_operation() {
     let nan = to_half(0x7fc0_0000, limits(32, 1, 2, 1));
     same(&nan.outcome, Outcome::Undefined(Undefined::IeeeNotFinite));
     assert_eq!(nan.charges, [ChargePoint::IeeeOperands]);
+}
+
+/// `numerator / 2^power` as a rational value.
+fn rational(numerator: i64, power: i64) -> Value {
+    Value::Rational(
+        Rational::new(
+            Integer::from(numerator),
+            Integer::from(2_i64).pow(&Integer::from(power)),
+        )
+        .unwrap(),
+    )
+}
+
+/// F27: the IEEE-to-exact conversion at its limits: the smallest binary64
+/// subnormal, a negative zero, an infinity, and a value outside the target
+/// domain.
+#[trace("TC-1091", "FR-397-AC-27")]
+#[test]
+fn f27_ieee_to_exact_conversion_charges_and_refuses_through_the_owned_operation() {
+    // 2^-1074 into `Rational[0,1;1,2^1074]`.
+    let domain = format!("Rational[0, 1; 1, {}]", power_of_two_literal(1074));
+    let tiny = |budget| {
+        run(
+            &format!("a: {F64}"),
+            &domain,
+            &format!("convert<{domain}>(a)"),
+            vec![f64v(1)],
+            budget,
+            (F64, "a"),
+        )
+    };
+    let exact = tiny(limits(1075, 1, 3, 1));
+    same(&exact.outcome, Outcome::Completed(rational(1, 1074)));
+    assert_eq!(
+        exact.charges,
+        [
+            ChargePoint::IeeeOperands,
+            ChargePoint::IeeeExactIntermediate,
+            ChargePoint::IeeeResultRetain
+        ]
+    );
     same(
-        &to_half(0x7f80_0000, limits(32, 1, 0, 0)).outcome,
+        &tiny(limits(1074, 1, 3, 1)).outcome,
+        incomplete(
+            LimitKind::IntegerBits,
+            1074,
+            64,
+            1075,
+            ChargePoint::IeeeExactIntermediate,
+        ),
+    );
+
+    // Negative zero into `Rational[0,0;1,1]` is the exact 0.
+    let zero = |budget| {
+        run(
+            &format!("a: {F32}"),
+            "Rational[0, 0; 1, 1]",
+            "convert<Rational[0, 0; 1, 1]>(a)",
+            vec![f32v(0x8000_0000)],
+            budget,
+            (F32, "a"),
+        )
+    };
+    same(
+        &zero(limits(32, 1, 3, 1)).outcome,
+        Outcome::Completed(rational(0, 0)),
+    );
+    same(
+        &zero(limits(32, 1, 2, 1)).outcome,
+        incomplete(LimitKind::WorkUnits, 2, 2, 1, ChargePoint::IeeeResultRetain),
+    );
+
+    // An infinity is undefined after `ieee.operands` only.
+    let infinity = |budget| {
+        run(
+            &format!("a: {F32}"),
+            "Rational[0, 1; 1, 2]",
+            "convert<Rational[0, 1; 1, 2]>(a)",
+            vec![f32v(0x7f80_0000)],
+            budget,
+            (F32, "a"),
+        )
+    };
+    let undefined = infinity(limits(32, 1, 1, 0));
+    same(
+        &undefined.outcome,
+        Outcome::Undefined(Undefined::IeeeNotFinite),
+    );
+    assert_eq!(undefined.charges, [ChargePoint::IeeeOperands]);
+    same(
+        &infinity(limits(32, 1, 0, 0)).outcome,
         incomplete(LimitKind::WorkUnits, 0, 0, 1, ChargePoint::IeeeOperands),
     );
+
+    // `1/2` is outside `Rational[0,1;1,1]`: refused after
+    // `ieee.exact-intermediate`, before `ieee.result-retain`.
+    let outside = |budget| {
+        run(
+            &format!("a: {F32}"),
+            "Rational[0, 1; 1, 1]",
+            "convert<Rational[0, 1; 1, 1]>(a)",
+            vec![f32v(0x3f00_0000)],
+            budget,
+            (F32, "a"),
+        )
+    };
+    let refused = outside(limits(32, 1, 2, 0));
+    assert_eq!(
+        refusal_of(&refused.outcome),
+        ("ieee_rational_out_of_domain", "outside-domain")
+    );
+    assert_eq!(
+        refused.charges,
+        [
+            ChargePoint::IeeeOperands,
+            ChargePoint::IeeeExactIntermediate
+        ]
+    );
+    same(
+        &outside(limits(32, 1, 1, 0)).outcome,
+        incomplete(
+            LimitKind::WorkUnits,
+            1,
+            1,
+            1,
+            ChargePoint::IeeeExactIntermediate,
+        ),
+    );
+}
+
+/// FR-397-AC-18: a conversion to the same width under another mode keeps the
+/// operand's exact bits (a signaling NaN stays signaling), raises no flag and
+/// charges nothing, under every target mode including `exact`.
+#[trace("TC-1091", "FR-397-AC-18")]
+#[test]
+fn same_width_conversion_keeps_the_exact_bits_and_charges_nothing() {
+    let big = limits(1 << 40, 1 << 40, 1 << 40, 1 << 40);
+    for target in ["Float64[toward-zero]", "Float64[exact]"] {
+        for bits in [
+            0x3ff0_0000_0000_0001_u64,
+            0x8000_0000_0000_0000,
+            0xfff0_0000_0000_0000,
+            0x7ff0_0000_0000_0001,
+            0xfff8_0000_0000_0005,
+        ] {
+            let converted = run(
+                &format!("a: {F64}"),
+                target,
+                &format!("convert<{target}>(a)"),
+                vec![f64v(bits)],
+                big,
+                (F64, "a"),
+            );
+            same(&converted.outcome, Outcome::Completed(f64v(bits)));
+            assert!(converted.flags.is_empty(), "{target} {bits:#x}");
+            assert!(converted.charges.is_empty(), "{target} {bits:#x}");
+            let Outcome::Completed(Value::Float(result)) = converted.outcome else {
+                unreachable!()
+            };
+            assert_eq!(result.is_signaling_nan(), bits == 0x7ff0_0000_0000_0001);
+        }
+    }
+    let narrow = run(
+        "a: Float32[toward-zero]",
+        "Float32[exact]",
+        "convert<Float32[exact]>(a)",
+        vec![f32v(0x7f80_0001)],
+        big,
+        ("Float32[toward-zero]", "a"),
+    );
+    same(&narrow.outcome, Outcome::Completed(f32v(0x7f80_0001)));
+    assert!(narrow.flags.is_empty() && narrow.charges.is_empty());
+}
+
+/// FR-397-AC-17: the values of a conversion into a float.
+#[trace("TC-1091", "FR-397-AC-17")]
+#[test]
+fn ac17_conversion_into_a_float_gives_the_published_bits() {
+    let big = limits(1 << 40, 1 << 40, 1 << 40, 1 << 40);
+    let bits = |name: &'static str, ty: &'static str, target: &str, argument: Value| {
+        run(
+            &format!("{name}: {ty}"),
+            target,
+            &format!("convert<{target}>({name})"),
+            vec![argument],
+            big,
+            (ty, name),
+        )
+        .outcome
+    };
+    let integer = |text: &str| Value::Integer(text.parse::<Integer>().expect("an integer"));
+    let tenth = Rational::new(Integer::from(1_i64), Integer::from(10_i64)).unwrap();
+    let third = Rational::new(Integer::from(1_i64), Integer::from(3_i64)).unwrap();
+    same(
+        &bits(
+            "n",
+            "Int[0, 20]",
+            "Float64[nearest-even]",
+            Value::Integer(Integer::from(3_i64)),
+        ),
+        Outcome::Completed(f64v(0x4008_0000_0000_0000)),
+    );
+    same(
+        &bits(
+            "r",
+            "Rational[-10, 10; 1, 10]",
+            "Float64[nearest-even]",
+            Value::Rational(tenth),
+        ),
+        Outcome::Completed(f64v(0x3fb9_9999_9999_999a)),
+    );
+    same(
+        &bits(
+            "d",
+            "Decimal[0, 100; 0, 3; nearest-even]",
+            "Float64[nearest-even]",
+            Value::Decimal(Decimal::new(Integer::from(1_i64), 1)),
+        ),
+        Outcome::Completed(f64v(0x3fb9_9999_9999_999a)),
+    );
+    for (target, expected) in [
+        ("Float64[nearest-even]", 0x4340_0000_0000_0000_u64),
+        ("Float64[toward-positive]", 0x4340_0000_0000_0001),
+    ] {
+        same(
+            &bits("n", "Integer", target, integer("9007199254740993")),
+            Outcome::Completed(f64v(expected)),
+        );
+    }
+    assert_eq!(
+        refusal_of(&bits(
+            "n",
+            "Integer",
+            "Float64[exact]",
+            integer("9007199254740993")
+        )),
+        ("ieee_not_exact", "rounding-required")
+    );
+    let one_third = Value::Rational(third);
+    for (target, expected) in [
+        ("Float32[nearest-even]", 0x3eaa_aaab_u32),
+        ("Float32[toward-zero]", 0x3eaa_aaaa),
+    ] {
+        same(
+            &bits("r", "Rational[-10, 10; 1, 10]", target, one_third.clone()),
+            Outcome::Completed(f32v(expected)),
+        );
+    }
+    for (source, target, expected) in [
+        (
+            0x3ff0_0000_0000_0001_u64,
+            "Float32[nearest-even]",
+            Outcome::Completed(f32v(0x3f80_0000)),
+        ),
+        (
+            0x7ff8_0000_0000_0001,
+            "Float32[nearest-even]",
+            Outcome::Completed(f32v(0x7fc0_0001)),
+        ),
+    ] {
+        same(&bits("a", F64, target, f64v(source)), expected);
+    }
+    assert_eq!(
+        refusal_of(&bits(
+            "a",
+            F64,
+            "Float32[nearest-even]",
+            f64v(0x7ff8_0000_4000_0000)
+        )),
+        (
+            "ieee_nan_payload_not_representable",
+            "payload-exceeds-target"
+        )
+    );
+    assert_eq!(
+        refusal_of(&bits(
+            "a",
+            F64,
+            "Float32[exact]",
+            f64v(0x3ff0_0000_0000_0001)
+        )),
+        ("ieee_not_exact", "rounding-required")
+    );
+    for (source, expected) in [
+        (0x3f80_0000_u32, 0x3ff0_0000_0000_0000_u64),
+        (0x8000_0000, 0x8000_0000_0000_0000),
+        (0x7f80_0000, 0x7ff0_0000_0000_0000),
+        (0x7fc0_0001, 0x7ff8_0000_0000_0001),
+    ] {
+        same(
+            &bits("a", F32, "Float64[exact]", f32v(source)),
+            Outcome::Completed(f64v(expected)),
+        );
+    }
 }
 
 /// FR-397-AC-28 (F17): a standalone numeric equality charges as
@@ -511,8 +879,12 @@ fn f17_standalone_numeric_equality_charges_as_compare_ieee() {
         );
         same(&unequal.outcome, Outcome::Completed(Value::Boolean(true)));
         assert_eq!(
-            unequal.charges[..2],
-            [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain]
+            unequal.charges,
+            [
+                ChargePoint::IeeeOperands,
+                ChargePoint::IeeeResultRetain,
+                ChargePoint::BooleanResultRetain
+            ]
         );
         same(
             &run(
