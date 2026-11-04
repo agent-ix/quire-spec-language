@@ -1071,3 +1071,77 @@ fn a_later_units_timed_predicate_names_types_through_its_own_alias() {
     );
     assert_eq!(model.urgency().len(), 1, "{:?}", model.urgency());
 }
+
+/// FR-480 "Selections and imports" (QSL-1638): a clock-reading
+/// declaration's object parameter type `Config::Call` names the package its
+/// own unit binds `Config` to. Unit `a` binds `Config` to a copy of the
+/// package whose `x` is no clock, and is admitted first; unit `b` binds
+/// `Config` to the timed package, so its `own(o: Config::Call)`'s body
+/// `o.x` is a clock place, never a data field of `a`'s `Call`.
+#[trace("FR-480")]
+#[test]
+fn a_clock_reading_parameter_names_its_own_units_package() {
+    use qsl_semantics::check::{AssemblyLimits, PackageDeclarations};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::{admit_units_with_cancel, package_input};
+    use quire_exact::Cancel;
+
+    const CLOCKLESS: &str = "example/clockless-config-version";
+    let unit = |identity: &str, declarations: &str| {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{TEMPORAL}{declarations}\n"
+        );
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new("test", identity),
+            "unit.native",
+            source.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the source unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the source unit");
+        (parsed.source().reference().clone(), unit)
+    };
+    let declarations = format!(
+        "model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n\
+         function own using v(o: Config::Call): Clock pure {{ o.x }}\n"
+    );
+    let units = vec![
+        unit(
+            "a",
+            &format!("model Config = {CLOCKLESS:?};\ntype Pad = Integer;"),
+        ),
+        unit("b", &declarations),
+    ];
+    // The package with its clock `x` a Boolean field.
+    let clockless = String::from_utf8(rpc_document(&["x"]))
+        .expect("the document is UTF-8")
+        .replace("ix://quire/native/Clock", "ix://quire/native/Boolean")
+        .replace(PACKAGE, CLOCKLESS);
+    let packages = package_input([rpc_document(&["x"]).as_slice(), clockless.as_bytes()])
+        .expect("both packages admit");
+    let selections: Vec<_> = units
+        .iter()
+        .map(|(_, unit)| unit.selections().models.as_slice())
+        .collect();
+    let selected = admit_units_with_cancel(
+        &selections,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("each unit's model selection admits");
+    PackageDeclarations::assemble_units(
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        units,
+        selected,
+        Vec::new(),
+        AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("both units assemble: {refusal:?}"))
+    .with_unwritten_timed_members()
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("b's o.x is a clock of b's package: {refusals:?}"));
+}
