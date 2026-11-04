@@ -1340,3 +1340,119 @@ fn an_empty_fairness_set_over_a_supplied_lasso_is_evaluated() {
     assert_eq!(settled, violated(0));
     assert_eq!(settled.category(), Category::Violation);
 }
+
+/// The outcome of `body` `on each` over the closed `Counter` trace `c.level`
+/// 0, 1, 2 under event-position.
+fn closed_each(body: &str) -> TemporalOutcome {
+    outcome(
+        &fixture(EVENT, "c: Counter", "on each (q: Counter)", body),
+        finite(3),
+        counters(&[0, 1, 2]),
+    )
+}
+
+/// FR-327-AC-8: a temporal constant stays its authored value past closure
+/// and through a grouping node, while the `holds` atom beside it is read at
+/// each position and is false past the end: the constant and the atom are
+/// not folded.
+#[trace("TC-837", "FR-327-AC-8")]
+#[test]
+fn a_temporal_constant_keeps_its_value_past_closure_and_through_grouping() {
+    assert_eq!(closed("always[0,3] true"), TemporalOutcome::Holds);
+    assert_eq!(closed("always[0,3] (true)"), TemporalOutcome::Holds);
+    assert_eq!(closed("always[0,3] holds(c.level <= 2)"), violated(0));
+}
+
+/// FR-327-AC-9: `until[1,2]` requires its left operand only from the lower
+/// bound to the witness, and `release[1,2]` is its dual: each of the four
+/// clauses of the AC settles on its own side.
+#[trace("TC-837", "FR-327-AC-9")]
+#[test]
+fn until_and_release_with_a_lower_bound_settle_on_the_witness() {
+    assert_eq!(
+        closed("holds(c.level = 1) until[1,2] holds(c.level = 2)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        closed("holds(c.level = 1) until[1,2] holds(c.level = 3)"),
+        violated(0)
+    );
+    assert_eq!(
+        closed("holds(c.level = 9) release[1,2] holds(c.level <= 2)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        closed("holds(c.level = 9) release[1,2] holds(c.level = 1)"),
+        violated(0)
+    );
+}
+
+/// FR-327-AC-10: strong previous (`once[1,1]`) holds where the antecedent
+/// holds and the previous position satisfies it, and names the activation
+/// whose previous position does not.
+#[trace("TC-837", "FR-327-AC-10")]
+#[test]
+fn a_strong_previous_is_read_at_the_activations_where_its_antecedent_holds() {
+    assert_eq!(
+        closed_each("holds(c.level = 1) implies once[1,1] holds(c.level = 0)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        closed_each("holds(c.level = 1) implies once[1,1] holds(c.level = 5)"),
+        violated(1)
+    );
+}
+
+/// FR-327-AC-11: `once[0,1]` over an always-true atom holds at every
+/// activation, and `historically[0,1] holds(c.level >= 1)` fails at position
+/// 0, where the only position in the window is false.
+#[trace("TC-837", "FR-327-AC-11")]
+#[test]
+fn once_and_historically_read_back_from_each_activation() {
+    assert_eq!(
+        closed_each("once[0,1] holds(c.level >= 0)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        closed_each("historically[0,1] holds(c.level >= 1)"),
+        violated(0)
+    );
+}
+
+/// FR-327-AC-12: `since` and `triggered`, `until` and `release` are Boolean
+/// duals: each form agrees with its dual written through `not`.
+#[trace("TC-837", "FR-327-AC-12")]
+#[test]
+fn since_triggered_until_and_release_agree_with_their_duals() {
+    let since = closed_each("holds(c.level >= 1) since[0,2] holds(c.level = 1)");
+    let dual = closed_each("not (not holds(c.level >= 1) triggered[0,2] not holds(c.level = 1))");
+    assert_eq!(since, dual);
+    assert_eq!(since, violated(0));
+
+    for (operands, expected) in [
+        (
+            ("holds(c.level = 9)", "holds(c.level <= 2)"),
+            TemporalOutcome::Holds,
+        ),
+        (("holds(c.level = 9)", "holds(c.level = 1)"), violated(0)),
+    ] {
+        let (left, right) = operands;
+        let release = closed(&format!("{left} release[1,2] {right}"));
+        let dual = closed(&format!("not (not {left} until[1,2] not {right})"));
+        assert_eq!(release, dual, "{left} release {right}");
+        assert_eq!(release, expected, "{left} release {right}");
+    }
+}
+
+/// FR-327-AC-13: negation is pointwise: `eventually[0,1] not holds(c.level =
+/// 9)` holds, and `eventually[0,1] holds(c.level = 9)` is false at position
+/// 0, not an untimed reading of the whole formula.
+#[trace("TC-837", "FR-327-AC-13")]
+#[test]
+fn negation_is_pointwise_inside_a_window() {
+    assert_eq!(
+        closed("eventually[0,1] not holds(c.level = 9)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(closed("eventually[0,1] holds(c.level = 9)"), violated(0));
+}

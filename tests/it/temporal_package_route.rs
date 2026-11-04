@@ -431,7 +431,7 @@ fn both_routes_give_the_evaluator_the_same_formula() {
 /// and the clause's own `binding` authenticates; replacing one clock row, one
 /// `CheckedNodeId` or one instance-bound atom of either side makes the two
 /// results differ.
-#[trace("FR-516-AC-18", "FR-516-AC-29", "TC-1311")]
+#[trace("FR-516-AC-18", "FR-516-AC-29", "FR-522-AC-20", "TC-1311", "TC-1317")]
 #[test]
 fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs() {
     for kind in KINDS {
