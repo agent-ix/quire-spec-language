@@ -167,7 +167,11 @@ impl<'c, 'a> Checker<'c, 'a> {
             }
             seen.push((object.id.clone(), name, row.field.span));
             let location = Location::root(Origin::Expression);
-            let declared = match resolve_type_form(self.declarations.scope, &row.ty, &location) {
+            let declared = match resolve_type_form(
+                &self.declarations.scope.for_declaration(&form.name.name),
+                &row.ty,
+                &location,
+            ) {
                 Ok(declared) => declared,
                 Err(refusal) => {
                     self.findings

@@ -1,99 +1,190 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-480 "Selections and imports": a unit may select one domain package
-//! under several `model` aliases. The package's declarations are projected
-//! once, under the first alias that selects it (its type environment names,
-//! operation table, relationships, effects and populations), and every
-//! further alias is a second spelling of the same declarations. Type and
-//! node identity stay those of the package declaration, independent of the
-//! alias (QSpec FR-322-AC-71, AC-132 and AC-142, FR-480-AC-3).
+//! FR-480 "Selections and imports": a `model` alias resolves only within the
+//! unit that declares it. A unit may select one domain package under several
+//! aliases, and two units may bind one alias to two packages. The package's
+//! declarations are projected once, under the first alias that selects it
+//! (its type environment names, operation table, relationships, effects and
+//! populations), and every alias of the same identity, in any unit, names
+//! the same declarations. Type and node identity stay those of the package
+//! declaration, independent of the alias (QSpec FR-322-AC-71, AC-132 and
+//! AC-142, FR-480-AC-3).
 //!
-//! [`ModelSpellings`] holds, for each package-owned type name `M::T` of the
-//! first alias `M`, its spelling `N::T` under each further alias `N` of the
-//! same package identity. A name table indexed by declared name gains each
-//! spelling as another key for the same entry.
-//!
-//! Model aliases are local to their unit, but the package's type names are
-//! one namespace. When two units bind one alias `N` to two identities, a
-//! spelling `N::T` can reach two declarations: the further-alias spelling of
-//! one package and another package's own `N::T`, or two packages' further
-//! aliases. Such a spelling is ambiguous in every unit and resolves to
-//! neither declaration.
+//! [`ModelSpellings`] holds each selected package's type names by member
+//! `T`, and each unit's model aliases bound to their packages. A
+//! model-qualified type name `N::T` resolves through the alias `N` the
+//! writing unit binds, so the same spelling in two units can name two
+//! packages' declarations, and a unit never reaches a declaration through
+//! another unit's alias.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Each further-alias spelling of a package-owned type name, to the names it
-/// spells (declared names under each package's first alias).
+use qsl_foundation::source::provenance::RawSourceRef;
+use quire_exact::{EffectiveId, ValueType};
+
+/// What one package-owned type name `M::T` names.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ModelSpellings(BTreeMap<String, BTreeSet<String>>);
+pub(crate) struct ModelName {
+    /// Every type the name binds, in resolution order.
+    pub(crate) types: Vec<ValueType>,
+    /// The object type the name declares, by its effective identity.
+    pub(crate) object: Option<EffectiveId>,
+    /// The variant type the name declares, by its effective identity.
+    pub(crate) variant: Option<EffectiveId>,
+}
+
+/// One selected package's type names, by member `T` of `M::T`.
+pub(crate) type PackageNames = BTreeMap<String, ModelName>;
+
+/// A package's projected type names, each under its first alias `first`, as
+/// that package's names by member. A name not of the form `first::T` is not
+/// the package's.
+pub(crate) fn package_names<'n>(
+    first: &str,
+    declared: impl IntoIterator<Item = (&'n str, ModelName)>,
+) -> PackageNames {
+    let mut names = PackageNames::new();
+    for (name, found) in declared {
+        let Some(member) = name
+            .strip_prefix(first)
+            .and_then(|rest| rest.strip_prefix("::"))
+        else {
+            continue;
+        };
+        let entry = names.entry(member.to_owned()).or_default();
+        entry.types.extend(found.types);
+        entry.object = entry.object.take().or(found.object);
+        entry.variant = entry.variant.take().or(found.variant);
+    }
+    names
+}
+
+/// How a unit's spelling of a qualified name reads.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum Spelled<'a> {
+    /// Its qualifier is a model alias of some unit: the name of the package
+    /// the writing unit binds that alias to, or `None` when the writing unit
+    /// binds no such alias or its package declares no such name.
+    Model(Option<&'a ModelName>),
+    /// Its qualifier is no model alias: a unit or library name.
+    Other,
+}
+
+/// Each selected package's type names and each source unit's model aliases.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ModelSpellings {
+    /// The unit a lookup with no source unit is written in (the single-source
+    /// assembly path).
+    primary: Option<RawSourceRef>,
+    /// Each unit's model aliases, to their package's position in `packages`.
+    units: BTreeMap<RawSourceRef, BTreeMap<String, usize>>,
+    /// Each unit's other selection aliases (profile and import), which a
+    /// model alias of another unit leaves to the unit.
+    others: BTreeMap<RawSourceRef, BTreeSet<String>>,
+    /// Every unit's model aliases.
+    model_aliases: BTreeSet<String>,
+    /// Each selected package's type names.
+    packages: Vec<PackageNames>,
+}
 
 impl ModelSpellings {
-    /// The spellings of `declared` names under each of `aliases`, where
-    /// `declared` are the package-owned type names projected under the
-    /// package's first alias `first`. A name not of the form `first::T`
-    /// gains no spelling.
-    pub(crate) fn add<'n>(
-        &mut self,
-        first: &str,
-        aliases: &[&str],
-        declared: impl IntoIterator<Item = &'n str>,
-    ) {
-        for name in declared {
-            let Some(member) = name
-                .strip_prefix(first)
-                .and_then(|rest| rest.strip_prefix("::"))
-            else {
-                continue;
-            };
-            for alias in aliases {
-                self.0
-                    .entry(format!("{alias}::{member}"))
-                    .or_default()
-                    .insert(name.to_owned());
-            }
+    /// No packages yet, with `primary` the unit a lookup with no source unit
+    /// is written in.
+    pub(crate) fn new(primary: RawSourceRef) -> Self {
+        Self {
+            primary: Some(primary),
+            ..Self::default()
         }
     }
 
-    /// Each spelling and a declared name it spells, in spelling order.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.0.iter().flat_map(|(spelled, declared)| {
-            declared
-                .iter()
-                .map(move |declared| (spelled.as_str(), declared.as_str()))
-        })
+    /// Add a selected package with no names yet, returning its position.
+    pub(crate) fn add_package(&mut self) -> usize {
+        self.packages.push(PackageNames::new());
+        self.packages.len() - 1
     }
 
-    /// `table` with each spelling bound to its declared name's entry. A
-    /// spelling that spells two declared names, or that the table already
-    /// binds, names two declarations: it binds neither, and its existing
-    /// entry is removed, so no unit resolves it to the other unit's
-    /// declaration.
-    pub(crate) fn bind_unique<V: Clone>(&self, table: &mut BTreeMap<String, V>) {
-        for (spelled, declared) in &self.0 {
-            let unique = match (declared.first(), declared.len()) {
-                (Some(declared), 1) if !table.contains_key(spelled) => declared,
-                _ => {
-                    table.remove(spelled);
-                    continue;
-                }
-            };
-            if let Some(value) = table.get(unique).cloned() {
-                table.insert(spelled.clone(), value);
-            }
+    /// Give the package at `package` its type names.
+    pub(crate) fn set_names(&mut self, package: usize, names: PackageNames) {
+        if let Some(slot) = self.packages.get_mut(package) {
+            *slot = names;
         }
     }
 
-    /// `table` with each spelling also binding every candidate its declared
-    /// names bind. A spelling that already binds candidates keeps them and
-    /// gains these, so a name two declarations reach stays ambiguous.
-    pub(crate) fn bind_all<V: Clone>(&self, table: &mut BTreeMap<String, Vec<V>>) {
-        for (spelled, declared) in self.iter() {
-            if let Some(candidates) = table.get(declared).cloned() {
-                table
-                    .entry(spelled.to_owned())
-                    .or_default()
-                    .extend(candidates);
-            }
+    /// `unit` selects a model under `alias`, bound to the package at
+    /// `package`, or to no package when its selection did not admit.
+    pub(crate) fn bind_model(&mut self, unit: &RawSourceRef, alias: &str, package: Option<usize>) {
+        self.model_aliases.insert(alias.to_owned());
+        if let Some(package) = package {
+            self.units
+                .entry(unit.clone())
+                .or_default()
+                .entry(alias.to_owned())
+                .or_insert(package);
         }
+    }
+
+    /// `unit` declares the profile or import alias `alias`.
+    pub(crate) fn bind_other(&mut self, unit: &RawSourceRef, alias: &str) {
+        self.others
+            .entry(unit.clone())
+            .or_default()
+            .insert(alias.to_owned());
+    }
+
+    /// How `name`, written in `unit` (the primary unit when `None`), reads.
+    pub(crate) fn spelled(&self, unit: Option<&RawSourceRef>, name: &str) -> Spelled<'_> {
+        let Some((alias, member)) = name.split_once("::") else {
+            return Spelled::Other;
+        };
+        if !self.model_aliases.contains(alias) {
+            return Spelled::Other;
+        }
+        let unit = unit.or(self.primary.as_ref());
+        if unit
+            .and_then(|unit| self.others.get(unit))
+            .is_some_and(|others| others.contains(alias))
+        {
+            return Spelled::Other;
+        }
+        Spelled::Model(
+            unit.and_then(|unit| self.units.get(unit))
+                .and_then(|aliases| aliases.get(alias))
+                .and_then(|package| self.packages.get(*package))
+                .and_then(|names| names.get(member)),
+        )
+    }
+
+    /// Every type `name`, written in `unit`, binds: through the unit's model
+    /// alias, or `table`'s entry when its qualifier is no model alias.
+    pub(crate) fn types<'a>(
+        &'a self,
+        unit: Option<&RawSourceRef>,
+        name: &str,
+        table: &'a BTreeMap<String, Vec<ValueType>>,
+    ) -> &'a [ValueType] {
+        match self.spelled(unit, name) {
+            Spelled::Model(found) => found.map_or(&[], |found| found.types.as_slice()),
+            Spelled::Other => table.get(name).map_or(&[], Vec::as_slice),
+        }
+    }
+
+    /// The object type `name`, written in `unit`, names through the unit's
+    /// model alias. Every object type is package-owned, so a name whose
+    /// qualifier is no model alias names none.
+    pub(crate) fn object_type(
+        &self,
+        unit: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Option<EffectiveId> {
+        match self.spelled(unit, name) {
+            Spelled::Model(found) => found.and_then(|found| found.object.clone()),
+            Spelled::Other => None,
+        }
+    }
+
+    /// Whether `name`, written in `unit`, names a package-owned type through
+    /// the unit's model alias.
+    pub(crate) fn declares(&self, unit: Option<&RawSourceRef>, name: &str) -> bool {
+        matches!(self.spelled(unit, name), Spelled::Model(Some(_)))
     }
 }
 
@@ -101,71 +192,78 @@ impl ModelSpellings {
 mod tests {
     use super::*;
 
+    fn source(identity: &str) -> RawSourceRef {
+        RawSourceRef::new("repo".to_owned(), identity.to_owned()).expect("a source reference")
+    }
+
+    fn scalar(value_type: ValueType) -> ModelName {
+        ModelName {
+            types: vec![value_type],
+            ..ModelName::default()
+        }
+    }
+
+    /// Unit `a` selects package 0 as `M` and `N`, unit `b` binds `N` to
+    /// package 1, and both declare `T`.
     fn spellings() -> ModelSpellings {
-        let mut spellings = ModelSpellings::default();
-        spellings.add(
-            "Config",
-            &["History", "Audit"],
-            ["Config::ConfigVersion", "Config::VersionNumber", "Other::X"],
+        let mut spellings = ModelSpellings::new(source("a"));
+        let (x, y) = (spellings.add_package(), spellings.add_package());
+        spellings.set_names(
+            x,
+            package_names(
+                "M",
+                [
+                    ("M::T", scalar(ValueType::String)),
+                    ("Q::U", scalar(ValueType::Timestamp)),
+                ],
+            ),
         );
+        spellings.set_names(y, package_names("N", [("N::T", scalar(ValueType::Uuid))]));
+        spellings.bind_model(&source("a"), "M", Some(x));
+        spellings.bind_model(&source("a"), "N", Some(x));
+        spellings.bind_model(&source("b"), "N", Some(y));
+        spellings.bind_other(&source("b"), "M");
         spellings
     }
 
+    /// FR-480-AC-12: one spelling names each unit's own package.
     #[test]
-    fn each_further_alias_spells_each_first_alias_name() {
-        let found: Vec<_> = spellings()
-            .iter()
-            .map(|(s, d)| (s.to_owned(), d.to_owned()))
-            .collect();
+    fn each_unit_reads_a_spelling_through_its_own_alias() {
+        let spellings = spellings();
+        let read = |unit: &str, name: &str| match spellings.spelled(Some(&source(unit)), name) {
+            Spelled::Model(found) => found.cloned(),
+            Spelled::Other => panic!("{name} is a model spelling"),
+        };
+        assert_eq!(read("a", "N::T"), Some(scalar(ValueType::String)));
+        assert_eq!(read("a", "M::T"), Some(scalar(ValueType::String)));
+        assert_eq!(read("b", "N::T"), Some(scalar(ValueType::Uuid)));
+        assert_eq!(read("a", "M::U"), None, "a name of no first alias is none");
+        // No unit reaches a package through another unit's alias.
+        assert_eq!(read("c", "N::T"), None);
+        // The primary unit reads a spelling with no source unit.
         assert_eq!(
-            found,
-            [
-                ("Audit::ConfigVersion", "Config::ConfigVersion"),
-                ("Audit::VersionNumber", "Config::VersionNumber"),
-                ("History::ConfigVersion", "Config::ConfigVersion"),
-                ("History::VersionNumber", "Config::VersionNumber"),
-            ]
-            .map(|(s, d)| (s.to_owned(), d.to_owned()))
+            spellings.spelled(None, "N::T"),
+            Spelled::Model(Some(&scalar(ValueType::String)))
         );
     }
 
-    /// A spelling another package already declares names two declarations:
-    /// a unique table drops it, and a candidate table holds both.
+    /// A unit's own non-model alias, and a qualifier no unit binds as a
+    /// model alias, read the unit's table.
     #[test]
-    fn a_spelling_a_table_already_binds_is_ambiguous() {
+    fn a_non_model_qualifier_reads_the_table() {
         let spellings = spellings();
-        let mut unique = BTreeMap::from([
-            ("Config::ConfigVersion".to_owned(), 1),
-            ("History::ConfigVersion".to_owned(), 2),
-        ]);
-        spellings.bind_unique(&mut unique);
-        assert!(!unique.contains_key("History::ConfigVersion"));
-        assert_eq!(unique["Audit::ConfigVersion"], 1);
-        assert!(!unique.contains_key("Audit::VersionNumber"));
-
-        let mut all = BTreeMap::from([
-            ("Config::ConfigVersion".to_owned(), vec![1]),
-            ("History::ConfigVersion".to_owned(), vec![2]),
-        ]);
-        spellings.bind_all(&mut all);
-        assert_eq!(all["History::ConfigVersion"], [2, 1]);
-        assert_eq!(all["Audit::ConfigVersion"], [1]);
-    }
-
-    /// Two packages whose further aliases share one spelling: the spelling
-    /// keeps both declared names, binds neither in a unique table and both
-    /// in a candidate table.
-    #[test]
-    fn one_spelling_of_two_packages_is_ambiguous() {
-        let mut spellings = ModelSpellings::default();
-        spellings.add("M", &["N"], ["M::T"]);
-        spellings.add("P", &["N"], ["P::T"]);
-        let mut unique = BTreeMap::from([("M::T".to_owned(), 1), ("P::T".to_owned(), 2)]);
-        spellings.bind_unique(&mut unique);
-        assert!(!unique.contains_key("N::T"));
-
-        let mut all = BTreeMap::from([("M::T".to_owned(), vec![1]), ("P::T".to_owned(), vec![2])]);
-        spellings.bind_all(&mut all);
-        assert_eq!(all["N::T"], [1, 2]);
+        let table = BTreeMap::from([("M::T".to_owned(), vec![ValueType::Boolean])]);
+        assert_eq!(
+            spellings.types(Some(&source("b")), "M::T", &table),
+            [ValueType::Boolean]
+        );
+        assert_eq!(
+            spellings.spelled(Some(&source("a")), "E::m"),
+            Spelled::Other
+        );
+        assert_eq!(spellings.spelled(Some(&source("a")), "T"), Spelled::Other);
+        assert!(spellings
+            .types(Some(&source("c")), "M::T", &table)
+            .is_empty());
     }
 }

@@ -4674,70 +4674,141 @@ fn two_units_name_one_package_through_their_own_aliases() {
     assert_eq!(checked.model_roots().count(), 1);
 }
 
-/// FR-480-AC-12 (QSL-1578): model aliases are local to their unit, but one
-/// package namespace holds every unit's type names. Unit `a` selects one
-/// package as `M` and `N`, and unit `b` binds `N` to another package that
-/// declares the same type names, so `N::ConfigVersion` reaches two
-/// declarations. It resolves to neither, in either unit: as a state clause's
-/// context or a type form it names no type.
+/// The object type `function`'s first parameter names, in `checked`.
+fn first_parameter(checked: &crate::check::CheckedGraph, function: &str) -> ValueType {
+    checked
+        .callable(function)
+        .unwrap_or_else(|| panic!("{function} is checked"))
+        .parameters[0]
+        .1
+        .clone()
+}
+
+/// The object type the invariant `clause` is over, in `checked`.
+fn clause_context(checked: &crate::check::CheckedGraph, clause: &str) -> ValueType {
+    ValueType::Reference(
+        checked
+            .state_clauses()
+            .iter()
+            .find(|checked| checked.name() == clause)
+            .unwrap_or_else(|| panic!("{clause} is checked"))
+            .context(),
+    )
+}
+
+/// FR-480-AC-12 (QSL-1613): model aliases are local to their unit. Unit `a`
+/// selects one package as `M` and `N`, and unit `b` binds `N` to another
+/// package that declares the same type names. Each unit's
+/// `N::ConfigVersion`, as a state clause's context or a parameter type,
+/// names its own alias's package: `a`'s the type `M::ConfigVersion` names,
+/// `b`'s the other package's.
 #[trace("FR-480-AC-12")]
 #[test]
-fn an_alias_two_units_bind_to_two_packages_resolves_to_neither_declaration() {
-    let selections_a = "model M = \"example/config-version\";\n\
-                        model N = \"example/config-version\";\n";
-    let selections_b = "model N = \"example/alternate-config-version\";\n";
-    // A unit declares something besides its selections.
-    let padded = |declarations: &str| {
-        match declarations {
-            "" => "type Pad = Integer;",
-            declarations => declarations,
-        }
-        .to_owned()
-    };
-    let refused = |a: &str, b: &str| {
-        assemble_model_units(&[
-            ("a", &format!("{selections_a}{}", padded(a))),
-            ("b", &format!("{selections_b}{}", padded(b))),
-        ])
-        .err()
-        .unwrap_or_else(|| panic!("N::ConfigVersion names two declarations: {a}{b}"))
-    };
-    for declaration in [
-        "invariant A using s on N::ConfigVersion at current { self.versionNumber >= 0 }",
-        "function f using s(c: N::ConfigVersion): Boolean pure { true }",
-    ] {
-        for (a, b) in [(declaration, ""), ("", declaration)] {
-            let refusal = refused(a, b);
-            let error = refusal
-                .errors
-                .iter()
-                .find(|error| {
-                    error.cause
-                        == AssemblyCause::UnresolvedTypeName {
-                            name: "N::ConfigVersion".to_owned(),
-                        }
-                })
-                .unwrap_or_else(|| panic!("{a}{b}: {refusal:?}"));
-            assert_eq!(
-                error.cause.catalog_code().to_string(),
-                "missing_declaration/missing-name"
-            );
-        }
-    }
-    // Neither package's own first-alias names are touched.
-    assemble_model_units(&[
+fn one_alias_two_units_bind_to_two_packages_names_each_units_own_package() {
+    let checked = assemble_model_units(&[
         (
             "a",
-            &format!(
-                "{selections_a}invariant A using s on M::ConfigVersion at current \
-                 {{ self.versionNumber >= 0 }}"
-            ),
+            "model M = \"example/config-version\";\n\
+             model N = \"example/config-version\";\n\
+             function fa using s(c: N::ConfigVersion, d: M::ConfigVersion): Boolean \
+             pure { c = d }\n\
+             invariant A using s on N::ConfigVersion at current { self.versionNumber >= 0 }",
         ),
-        ("b", &format!("{selections_b}{}", padded(""))),
+        (
+            "b",
+            "model N = \"example/alternate-config-version\";\n\
+             function fb using s(c: N::ConfigVersion): Boolean pure { true }\n\
+             invariant B using s on N::ConfigVersion at current { self.versionNumber >= 0 }",
+        ),
     ])
-    .expect("M::ConfigVersion names one declaration")
+    .unwrap_or_else(|refusal| panic!("each unit's N::ConfigVersion resolves: {refusal:?}"))
     .check(CheckingLimits::default())
-    .expect("the M invariant checks");
+    .unwrap_or_else(|refusals| panic!("both units check: {refusals:?}"));
+    let a = first_parameter(&checked, "fa");
+    let b = first_parameter(&checked, "fb");
+    let m = checked.callable("fa").expect("fa is checked").parameters[1]
+        .1
+        .clone();
+    assert!(matches!(&a, ValueType::Reference(_)), "{a:?}");
+    assert_eq!(
+        a, m,
+        "a's N::ConfigVersion is the type M::ConfigVersion names"
+    );
+    assert_ne!(a, b, "b's N::ConfigVersion is the other package's type");
+    assert_eq!(clause_context(&checked, "A"), a);
+    assert_eq!(clause_context(&checked, "B"), b);
+}
+
+/// FR-480-AC-12 (QSL-1613): two units each select a different package under
+/// the first alias `N`, both packages declaring `ConfigVersion`, so both
+/// project `N::ConfigVersion`. Each unit's state clause context and
+/// parameter type resolve to its own package's type, never to the other
+/// unit's.
+#[trace("FR-480-AC-12")]
+#[test]
+fn one_first_alias_of_two_packages_names_each_units_own_package() {
+    let checked = assemble_model_units(&[
+        (
+            "a",
+            "model N = \"example/config-version\";\n\
+             function fa using s(c: N::ConfigVersion): Boolean pure { true }\n\
+             invariant A using s on N::ConfigVersion at current { self.versionNumber >= 0 }",
+        ),
+        (
+            "b",
+            "model N = \"example/alternate-config-version\";\n\
+             function fb using s(c: N::ConfigVersion): Boolean pure { true }\n\
+             invariant B using s on N::ConfigVersion at current { self.versionNumber >= 0 }",
+        ),
+    ])
+    .unwrap_or_else(|refusal| panic!("each unit's N::ConfigVersion resolves: {refusal:?}"))
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("both units check: {refusals:?}"));
+    let a = first_parameter(&checked, "fa");
+    let b = first_parameter(&checked, "fb");
+    assert!(matches!(&a, ValueType::Reference(_)), "{a:?}");
+    assert_ne!(a, b, "each unit's N names its own package");
+    assert_eq!(clause_context(&checked, "A"), a);
+    assert_eq!(clause_context(&checked, "B"), b);
+}
+
+/// FR-480-AC-12 (QSL-1613): a unit never reaches a package through another
+/// unit's model alias: unit `b`, which binds no `M`, refuses
+/// `M::ConfigVersion` as a state clause's context or a parameter type.
+#[trace("FR-480-AC-12")]
+#[test]
+fn a_unit_reaches_no_package_through_another_units_alias() {
+    for declaration in [
+        "invariant B using s on M::ConfigVersion at current { self.versionNumber >= 0 }",
+        "function fb using s(c: M::ConfigVersion): Boolean pure { true }",
+    ] {
+        let refusal = assemble_model_units(&[
+            (
+                "a",
+                "model M = \"example/config-version\";\ntype Pad = Integer;",
+            ),
+            (
+                "b",
+                &format!("model N = \"example/alternate-config-version\";\n{declaration}"),
+            ),
+        ])
+        .err()
+        .unwrap_or_else(|| panic!("b binds no M: {declaration}"));
+        let error = refusal
+            .errors
+            .iter()
+            .find(|error| {
+                error.cause
+                    == AssemblyCause::UnresolvedTypeName {
+                        name: "M::ConfigVersion".to_owned(),
+                    }
+            })
+            .unwrap_or_else(|| panic!("{declaration}: {refusal:?}"));
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "missing_declaration/missing-name"
+        );
+    }
 }
 
 /// FR-480-AC-2, AC-5, AC-8: the aggregate assembler resolves a function

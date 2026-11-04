@@ -115,6 +115,7 @@ pub fn content(
 
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
     let mut roles: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
+    let types = scope.for_declaration(&protocol.name.name);
     for role in &protocol.roles {
         roles
             .entry(role.name.name.as_str())
@@ -123,8 +124,8 @@ pub fn content(
         let whole_model = alias_names.get(&role.context.name) == Some(&AliasKind::Model)
             && scope.model_selection(&role.context.name).is_some();
         if !whole_model
-            && scope.object_type_named(&role.context.name).is_none()
-            && scope.named_types(&role.context.name).is_empty()
+            && types.object_type_named(&role.context.name).is_none()
+            && types.named_types(&role.context.name).is_empty()
             && scope.model_port(&role.context.name).is_none()
         {
             refusals.push((
@@ -195,7 +196,7 @@ pub fn content(
         }
     }
     for binder in &protocol.binders {
-        if let Err(error) = crate::check::type_form::resolve_form(scope, &binder.value_type) {
+        if let Err(error) = crate::check::type_form::resolve_form(&types, &binder.value_type) {
             refusals.push((
                 error.span,
                 refusal(ProtocolAnchorCause::BinderType {
