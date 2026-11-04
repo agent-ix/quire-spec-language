@@ -115,7 +115,7 @@ fn a_shared_holds_node_is_one_atom_on_every_route() {
             let result = result.expect("a result, no missing valuation of atom 0");
             assert_eq!(result.truth, Some(Truth::True));
             assert!(result.non_value.is_none());
-            outcomes.push((result.usage.clone(), charges));
+            outcomes.push((result.usage, charges));
         }
         assert_eq!(outcomes[0], outcomes[1]);
         assert_eq!(outcomes[0], outcomes[2]);
@@ -291,4 +291,202 @@ fn the_dependency_closure_is_read_from_the_retained_direct_dependencies() {
     once.sort_unstable();
     once.dedup();
     assert_eq!(once.len(), closure.len(), "every dependency once");
+}
+
+fn read_source(relative: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// The names of the `fn` items declared between the line that holds `start`
+/// and the next line that closes the block at the same indentation.
+fn public_fns(text: &str, start: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut inside = false;
+    let mut indent = 0;
+    for line in text.lines() {
+        if !inside {
+            if line.contains(start) {
+                inside = true;
+                indent = line.len() - line.trim_start().len();
+            }
+            continue;
+        }
+        let here = line.len() - line.trim_start().len();
+        if line.trim() == "}" && here == indent {
+            break;
+        }
+        let trimmed = line.trim_start();
+        let trimmed = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
+        if let Some(rest) = trimmed.strip_prefix("fn ") {
+            if here == indent + 4 {
+                names.push(rest.split(['(', '<']).next().unwrap_or("").to_owned());
+            }
+        }
+    }
+    names
+}
+
+/// FR-531-AC-9 (TC-1331): every public method of `EvidencePackage` and every
+/// method of `CheckedPackageEvaluation` has a row in the capability
+/// inventory.
+#[trace("FR-531-AC-9", "TC-1331")]
+#[test]
+fn every_evaluation_method_has_an_inventory_row() {
+    let spec = read_source(
+        "spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md",
+    );
+    let table = spec
+        .split("### Capability inventory")
+        .nth(1)
+        .and_then(|rest| rest.split("### The identity file").next())
+        .expect("the inventory");
+    let firsts: Vec<&str> = table
+        .lines()
+        .filter(|line| line.starts_with("| `"))
+        .filter_map(|line| line.split('|').nth(1))
+        .collect();
+    let package = read_source("qsl-eval/src/temporal/evidence/package.rs");
+    let mut methods = public_fns(&package, "impl<'p> EvidencePackage<'p> {");
+    methods.retain(|name| {
+        !matches!(
+            name.as_str(),
+            "with_rows" | "from_emission" | "from_read" | "from_package"
+        )
+    });
+    let evaluation = read_source("qsl-eval/src/value/expression/mod.rs");
+    methods.extend(public_fns(
+        &evaluation,
+        "pub trait CheckedPackageEvaluation: family::sealed::Sealed {",
+    ));
+    assert!(methods.len() >= 10, "{methods:?}");
+    for name in &methods {
+        assert!(
+            firsts.iter().any(|row| row.contains(&format!("`{name}`"))),
+            "`{name}` has no row in the capability inventory"
+        );
+    }
+    for constructor in ["from_emission", "from_read"] {
+        assert!(firsts.iter().any(|row| row.contains(constructor)));
+    }
+}
+
+/// FR-531-AC-2 (TC-1331): no public signature of the bare entry names the
+/// source side.
+#[trace("FR-531-AC-2", "TC-1331")]
+#[test]
+fn no_bare_signature_names_the_source_side() {
+    let bare = read_source("qsl-package/src/bare.rs");
+    let package = read_source("qsl-eval/src/temporal/evidence/package.rs");
+    let signatures = bare
+        .lines()
+        .filter(|line| line.trim_start().starts_with("pub "))
+        .map(str::to_owned)
+        .chain(
+            package
+                .lines()
+                .filter(|line| line.contains("from_package"))
+                .map(str::to_owned),
+        );
+    for signature in signatures {
+        for source in [
+            "CheckedPackage ",
+            "CheckedPackage,",
+            "Emission",
+            "AdmittedPackageRead",
+        ] {
+            assert!(!signature.contains(source), "{signature}");
+        }
+    }
+    // `BarePackage` has the one constructor.
+    let constructors = public_fns(&bare, "impl<'p> BarePackage<'p> {");
+    assert_eq!(constructors.iter().filter(|name| *name == "new").count(), 1);
+    assert!(!constructors.iter().any(|name| name.starts_with("from_")));
+}
+
+/// FR-532-AC-6 (TC-1332): `from_package` returns `AmbiguousName` and no other
+/// variant.
+#[trace("FR-532-AC-6", "TC-1332")]
+#[test]
+fn from_package_returns_only_the_ambiguous_name_mismatch() {
+    let package = read_source("qsl-eval/src/temporal/evidence/package.rs");
+    let body = package
+        .split("pub fn from_package")
+        .nth(1)
+        .and_then(|rest| rest.split("fn with_rows").next())
+        .expect("from_package");
+    for variant in ["ClauseRow", "ProfileSelections", "Bindings"] {
+        assert!(!body.contains(variant), "{variant}");
+    }
+    let rows = package
+        .split("pub fn of_package")
+        .nth(1)
+        .and_then(|rest| rest.split("pub fn names").next())
+        .expect("of_package");
+    assert!(rows.contains("PackageMismatch::AmbiguousName"));
+    for variant in ["ClauseRow", "ProfileSelections", "Bindings"] {
+        assert!(
+            !rows.contains(&format!("PackageMismatch::{variant}")),
+            "{variant}"
+        );
+    }
+}
+
+/// FR-532-AC-9 (TC-1332): the evaluator reads the activation, profile and
+/// clock only through `ClauseFacts`, and a source identity is no member of a
+/// ledger binding.
+#[trace("FR-532-AC-9", "TC-1332")]
+#[test]
+fn the_evaluator_reads_the_clause_only_through_the_facts() {
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("qsl-eval/src/temporal/evidence");
+    for entry in std::fs::read_dir(&directory).expect("the evidence sources") {
+        let path = entry.expect("entry").path();
+        let text = std::fs::read_to_string(&path).expect("source");
+        for forbidden in ["SourceIdentity", "CheckedTemporalClause"] {
+            let code: String = text
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(!code.contains(forbidden), "{}: {forbidden}", path.display());
+        }
+    }
+    let ledger = read_source("qsl-eval/src/temporal/ledger.rs");
+    let binding = ledger
+        .split("pub struct LedgerBinding")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("LedgerBinding");
+    assert!(!binding.contains("SourceIdentity"));
+}
+
+/// FR-531-AC-11 (TC-1331): FR-515 no longer calls the bytes-only evaluator
+/// out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry"
+/// section naming FR-531.
+#[trace("FR-531-AC-11", "TC-1331")]
+#[test]
+fn the_consumer_entry_sections_name_the_bare_entry() {
+    for (prefix, name) in [("FR-515", "515"), ("FR-516", "516"), ("FR-520", "520")] {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/functional");
+        let path = std::fs::read_dir(&directory)
+            .expect("spec")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|file| file.starts_with(&format!("{prefix}-")))
+            })
+            .unwrap_or_else(|| panic!("FR-{name}"));
+        let text = std::fs::read_to_string(&path).expect("requirement");
+        let section = text
+            .split("Consumer entry")
+            .nth(1)
+            .unwrap_or_else(|| panic!("{prefix} has a Consumer entry section"));
+        assert!(section.contains("FR-531"), "{prefix}");
+        if prefix == "FR-515" {
+            assert!(!text.contains("separate future capability"));
+        }
+    }
 }

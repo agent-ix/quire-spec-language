@@ -985,7 +985,7 @@ fn admit_trace(
     meter: &mut Meter,
 ) -> Result<Result<TimestampedTrace, Box<Outcome>>, CallFailure> {
     let request = facts.request;
-    let clause = facts.subject.facts;
+    let clause_facts = facts.subject.facts;
     let completeness = request
         .completeness
         .as_ref()
@@ -998,7 +998,7 @@ fn admit_trace(
         LowerBoundary::HistoryCutoff
     };
     if matches!(
-        clause.profile(),
+        clause_facts.profile(),
         TemporalProfile::EventPositionFalseExtension | TemporalProfile::FixedSampleFalseExtension
     ) {
         // Position `i` of the listing has coordinate `i` (FR-504). A withdrawn
@@ -1017,7 +1017,8 @@ fn admit_trace(
             .iter()
             .map(|position| position.observation.identity.clone())
             .collect();
-        return match TimestampedTrace::admit_progressed(clause, observations, progress, meter) {
+        return match TimestampedTrace::admit_progressed(clause_facts, observations, progress, meter)
+        {
             Err(_) => Err(fault("trace-admits")),
             Ok(Ok(trace)) => Ok(Ok(trace)),
             Ok(Err(ProgressedRefusal::Incomplete(incomplete))) => {
@@ -1041,7 +1042,7 @@ fn admit_trace(
         | qsl_package::ClockConfiguration::FixedSample { .. } => String::new(),
     };
     TimestampedTrace::admit(
-        clause.name(),
+        clause_facts.name(),
         WindowClock {
             unit,
             cover: request.cover,
@@ -1360,7 +1361,7 @@ fn evaluate(
     call: &mut CallMeter<'_>,
 ) -> Result<Outcome, CallFailure> {
     let request = facts.request;
-    let clause = facts.subject.facts;
+    let clause_facts = facts.subject.facts;
     let mut letters = EvidenceLetters {
         request,
         trace,
@@ -1374,7 +1375,7 @@ fn evaluate(
     let mut scratch = Meter::new(*call.meter().limits());
     let mut charger = UnitCharger { call, stop: None };
     let evaluation = evaluate_finite_window_at(
-        clause,
+        clause_facts,
         trace,
         activation_position,
         &mut letters,

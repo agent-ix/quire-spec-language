@@ -108,10 +108,10 @@ impl ReadIdentityRows {
   the consumer passed to `read_checked_package` as read evidence; a consumer
   builds no `AdmittedPackages`, which has no public constructor. QSL reads the
   retained dependencies through the read access Contract IR gives to the packages
-  a `CheckedPackageV2` holds. That access is an IR dependency (IR-1325, a public
-  read-only accessor for the retained direct dependencies; owner luna:IR:codex2): until it is public
-  the slot call over a package that has dependencies is unmet parity, and a
-  package with none is unaffected.
+  a `CheckedPackageV2` holds. That access is `CheckedPackageV2::direct_dependencies()`,
+  a public read-only iterator over the retained direct dependencies in
+  lock-selection order; `BarePackage::dependencies()` reads the closure from it,
+  each dependency once, nearest first.
 - The domain package documents (FR-056's `PackageInput`) stay a caller input of
   observation admission, as for the in-process route; they are bytes the caller
   holds, not source.

@@ -39,12 +39,12 @@ pub struct ClauseShape {
 }
 
 impl ClauseShape {
-    /// The shape of `clause`.
-    pub fn of(clause: &ClauseFacts) -> Self {
+    /// The shape of `facts`.
+    pub fn of(facts: &ClauseFacts) -> Self {
         Self {
-            name: clause.name().into(),
-            activation: clause.activation(),
-            captures: clause
+            name: facts.name().into(),
+            activation: facts.activation(),
+            captures: facts
                 .captures()
                 .map(|(name, declared)| (name.into(), declared.clone()))
                 .collect(),
