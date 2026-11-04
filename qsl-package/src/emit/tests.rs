@@ -1686,7 +1686,10 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::MissingDispatchIdentityContext { .. }) => {
                 panic!("every dispatched call retains its exact producer decision")
             }
-            Err(EmitRefusal::MissingProtocolLocationContext { .. }) => {
+            Err(
+                EmitRefusal::MissingProtocolLocationContext { .. }
+                | EmitRefusal::UnrecordedProtocolTerm { .. },
+            ) => {
                 panic!("every protocol slot term has one recorded application occurrence")
             }
             Err(EmitRefusal::ForeignDimensionOperand { .. }) => {

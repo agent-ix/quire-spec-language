@@ -31,7 +31,7 @@ use super::{checked_occurrence, EmitRefusal};
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 
 /// One row before its `term_ordinal` is assigned.
-struct PendingRow {
+pub(super) struct PendingRow {
     application: CheckedNodeId,
     occurrence: CheckedOccurrence,
     /// The origin `name`, which orders the origins of one group.
@@ -71,63 +71,87 @@ pub(super) fn checked_protocol_locations(
     let applications = applications_at(graph, &origins);
     let mut pending = Vec::new();
     for body in slots {
-        let positions = walk(body);
-        // The application each position names, so a position below it at
-        // the same location (an implicit coercion's operand) names another.
-        let mut claimed: Vec<Option<&NodeKey>> = Vec::with_capacity(positions.len());
-        let mut visits: HashMap<(&Location, &NodeKey), usize> = HashMap::new();
-        for &(node, parent) in &positions {
-            let at = node.location();
-            let mut taken = Vec::new();
-            let mut above = parent;
-            while let Some(index) = above {
-                let Some(&(ancestor, next)) = positions.get(index) else {
-                    break;
-                };
-                if ancestor.location() != at {
-                    break;
-                }
-                taken.extend(claimed.get(index).copied().flatten());
-                above = next;
-            }
-            let application = match applications.get(at) {
-                Some(candidates) => term_application(graph, candidates, &taken)?,
-                None => None,
-            };
-            claimed.push(application);
-            let (Some(application), true) = (application, is_term_kind(node)) else {
-                continue;
-            };
-            // The `j`th visit of one position takes the `j`th occurrence
-            // recorded there; a position recorded once keeps that one.
-            let recorded: Vec<&quire_exact::Origin> = applications
-                .get(at)
-                .into_iter()
-                .flatten()
-                .filter(|(key, _)| key == application)
-                .map(|(_, origin)| origin)
-                .collect();
-            let seen = visits.entry((at, application)).or_default();
-            let origin = recorded
-                .get(*seen)
-                .or_else(|| recorded.last())
-                .copied()
-                .ok_or_else(|| refusal(application))?;
-            *seen += 1;
-            let (origin_name, location) = wire_location(at).ok_or_else(|| refusal(application))?;
-            pending.push(PendingRow {
-                application: emitted_node_ids
-                    .get(application)
-                    .cloned()
-                    .ok_or_else(|| refusal(application))?,
-                occurrence: checked_occurrence(origin).ok_or_else(|| refusal(application))?,
-                origin_name,
-                visit: pending.len(),
-                location,
-            });
-        }
+        slot_rows(graph, body, &applications, emitted_node_ids, &mut pending)?;
     }
     Ok(ordered(pending))
+}
+
+/// The rows of one slot's walk, appended to `pending` in visit order.
+pub(super) fn slot_rows(
+    graph: &CheckedGraph,
+    body: &CheckedBody,
+    applications: &HashMap<&Location, Vec<(NodeKey, quire_exact::Origin)>>,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    pending: &mut Vec<PendingRow>,
+) -> Result<(), EmitRefusal> {
+    let positions = walk(body);
+    // The application each position names, so a position below it at
+    // the same location (an implicit coercion's operand) names another.
+    let mut claimed: Vec<Option<&NodeKey>> = Vec::with_capacity(positions.len());
+    let mut visits: HashMap<(&Location, &NodeKey), usize> = HashMap::new();
+    for &(node, parent) in &positions {
+        let at = node.location();
+        let mut taken = Vec::new();
+        let mut above = parent;
+        while let Some(index) = above {
+            let Some(&(ancestor, next)) = positions.get(index) else {
+                break;
+            };
+            if ancestor.location() != at {
+                break;
+            }
+            taken.extend(claimed.get(index).copied().flatten());
+            above = next;
+        }
+        let application = match applications.get(at) {
+            Some(candidates) => term_application(graph, candidates, &taken)?,
+            None => None,
+        };
+        claimed.push(application);
+        if !is_term_kind(node) {
+            continue;
+        }
+        let Some(application) = application else {
+            // FR-383 writes one row per term. A kind that always lowers
+            // to an application yet has none recorded at its position
+            // leaves no application to key the row to: refuse rather
+            // than drop the row.
+            if always_application(node) {
+                return Err(EmitRefusal::UnrecordedProtocolTerm {
+                    location: at.clone(),
+                });
+            }
+            continue;
+        };
+        // The `j`th visit of one position takes the `j`th occurrence
+        // recorded there; a position recorded once keeps that one.
+        let recorded: Vec<&quire_exact::Origin> = applications
+            .get(at)
+            .into_iter()
+            .flatten()
+            .filter(|(key, _)| key == application)
+            .map(|(_, origin)| origin)
+            .collect();
+        let seen = visits.entry((at, application)).or_default();
+        let origin = recorded
+            .get(*seen)
+            .or_else(|| recorded.last())
+            .copied()
+            .ok_or_else(|| refusal(application))?;
+        *seen += 1;
+        let (origin_name, location) = wire_location(at).ok_or_else(|| refusal(application))?;
+        pending.push(PendingRow {
+            application: emitted_node_ids
+                .get(application)
+                .cloned()
+                .ok_or_else(|| refusal(application))?,
+            occurrence: checked_occurrence(origin).ok_or_else(|| refusal(application))?,
+            origin_name,
+            visit: pending.len(),
+            location,
+        });
+    }
+    Ok(())
 }
 
 fn refusal(application: &NodeKey) -> EmitRefusal {
@@ -169,7 +193,7 @@ fn ordered(pending: Vec<PendingRow>) -> Vec<CheckedProtocolSemanticLocation> {
 
 /// Every slot expression of `protocol` (FR-383's site-name registry). A
 /// `repeat`'s loop proof is not a slot (FR-390) and is not listed.
-fn slot_bodies(protocol: &CheckedProtocol) -> Vec<&CheckedBody> {
+pub(super) fn slot_bodies(protocol: &CheckedProtocol) -> Vec<&CheckedBody> {
     let mut bodies = Vec::new();
     if let CheckedActivation::OnEach {
         guard: Some(guard), ..
@@ -239,7 +263,7 @@ fn walk(body: &CheckedBody) -> Vec<(CheckedNode<'_>, Option<usize>)> {
 /// Whether a position can be a term: a literal, a `Local` read, a `let`, a
 /// conditional and a `case` never are (FR-383 assumption A1), even where
 /// lowering keys a node for them.
-fn is_term_kind(node: CheckedNode<'_>) -> bool {
+pub(super) fn is_term_kind(node: CheckedNode<'_>) -> bool {
     !matches!(
         node.kind(),
         NodeKind::Literal(_)
@@ -247,6 +271,24 @@ fn is_term_kind(node: CheckedNode<'_>) -> bool {
             | NodeKind::Let { .. }
             | NodeKind::If { .. }
             | NodeKind::Case { .. }
+    )
+}
+
+/// Whether a position's kind always lowers to an application node, so a
+/// position of it with no recorded application is a lowering gap rather than
+/// a term the checker folded away.
+fn always_application(node: CheckedNode<'_>) -> bool {
+    matches!(
+        node.kind(),
+        NodeKind::Coerce(..)
+            | NodeKind::Arithmetic(..)
+            | NodeKind::Order(..)
+            | NodeKind::Equality(..)
+            | NodeKind::Connective(..)
+            | NodeKind::Not(_)
+            | NodeKind::Field { .. }
+            | NodeKind::Attribute { .. }
+            | NodeKind::Call { .. }
     )
 }
 

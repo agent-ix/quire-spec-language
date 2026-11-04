@@ -128,6 +128,131 @@ fn assert_rows_follow_the_walk(wire: &Value) {
     }
 }
 
+/// A slot term's position as the wire names it: (site name, child path).
+type Position = (String, Vec<u64>);
+
+fn position_of(location: &Location) -> Position {
+    let Origin::TypeDeclaration { name } = &location.origin else {
+        panic!("a slot term is located under its site name: {location:?}");
+    };
+    (name.clone(), wire_path(location))
+}
+
+/// Every term position of every slot `package` emits, once per visit of the
+/// slot's pre-order walk (children in operand order), counted by position.
+fn walk_term_visits(package: &CheckedPackage) -> BTreeMap<Position, usize> {
+    use crate::emit::protocol_locations::{is_term_kind, slot_bodies};
+    let mut roots = Vec::new();
+    let mut visits = BTreeMap::new();
+    for protocol in package.graph().protocols() {
+        for body in slot_bodies(protocol) {
+            let root = body.root();
+            if roots.contains(&root.location()) {
+                continue;
+            }
+            roots.push(root.location());
+            let mut stack = vec![root];
+            while let Some(node) = stack.pop() {
+                if is_term_kind(node) {
+                    *visits.entry(position_of(node.location())).or_default() += 1;
+                }
+                stack.extend(node.children().into_iter().rev());
+            }
+        }
+    }
+    visits
+}
+
+/// FR-383-AC-32/33 over a whole package: the rows under each slot's site
+/// name are exactly the term visits of that slot's walk, one row per visit,
+/// none dropped, repeated or padded.
+fn assert_one_row_per_walk_visit(package: &CheckedPackage, wire: &Value) {
+    let mut written: BTreeMap<Position, usize> = BTreeMap::new();
+    for row in rows(wire) {
+        *written
+            .entry((origin_name(row).to_owned(), path(row)))
+            .or_default() += 1;
+    }
+    let walked = walk_term_visits(package);
+    assert!(!walked.is_empty());
+    assert_eq!(written, walked);
+}
+
+/// FR-383-AC-35: each row, read back through QSL's I2 reader by its exact
+/// (application, occurrence, `term_ordinal`) key, carries the `Location` of a
+/// term the checked clause in memory holds at that position.
+fn assert_rows_read_back_at_their_terms(package: &CheckedPackage, wire: &Value, document: &[u8]) {
+    let Read::Verified { admitted, .. } = read_protocol_over(wire, document) else {
+        panic!("the reader admits the package");
+    };
+    let walked = walk_term_visits(package);
+    for row in rows(wire) {
+        let application = serde_json::from_value(row["application"].clone()).unwrap();
+        let occurrence = serde_json::from_value(row["occurrence"].clone()).unwrap();
+        let term_ordinal = row["term_ordinal"].as_u64().unwrap();
+        let read = admitted
+            .protocol_location(&application, &occurrence, term_ordinal, u64::MAX)
+            .expect("the reader returns the row by its key");
+        let quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name } =
+            &read.location.origin
+        else {
+            panic!("a type-declaration origin: {read:?}");
+        };
+        let read_path = read
+            .location
+            .path
+            .iter()
+            .map(|step| match step {
+                quire_contract_model::CheckedKeyOrdinal::Safe(index) => *index,
+                quire_contract_model::CheckedKeyOrdinal::BeyondSafe(_) => {
+                    panic!("fixture paths are small")
+                }
+            })
+            .collect::<Vec<_>>();
+        let at = (name.to_string(), read_path);
+        assert_eq!(at, (origin_name(row).to_owned(), path(row)));
+        assert!(walked.contains_key(&at), "{at:?} is a term position");
+    }
+}
+
+/// FR-383-AC-32/33: the rows of W, fixture E and the E-C controls are one per
+/// term visit of each slot's walk.
+#[trace("TC-1063", "FR-383-AC-32", "FR-383-AC-33")]
+#[test]
+fn every_slot_has_one_row_per_walk_visit_over_w_e_and_e_c() {
+    use super::protocol_requirements::fixture_w::{document as w_document, PROFILES_W, W};
+    let w = super::reachability::lower_with(w_document(), PROFILES_W, W);
+    assert_one_row_per_walk_visit(&w.package, &w.wire);
+    for source in [
+        tc1070::SOURCE.to_owned(),
+        E_C_TRIED_PICKED.to_owned(),
+        e_c_with_let(true),
+    ] {
+        let (package, wire) = checked_and_emitted(&source);
+        assert_one_row_per_walk_visit(&package, &wire);
+    }
+}
+
+/// FR-383-AC-35: the rows of W, fixture E and the E-C controls read back at
+/// I2 with the `Location` of the term at the position each numbers.
+#[trace("TC-1063", "FR-383-AC-35")]
+#[test]
+fn every_row_reads_back_at_i2_with_its_terms_location() {
+    use super::protocol_requirements::fixture_w::{document as w_document, PROFILES_W, W};
+    let w = super::reachability::lower_with(w_document(), PROFILES_W, W);
+    assert_rows_read_back_at_their_terms(&w.package, &w.wire, &w_document());
+    // The reader refuses a `let` binder in a protocol slot, so E-C is read
+    // without `Composed.let`.
+    for source in [
+        tc1070::SOURCE.to_owned(),
+        E_C_TRIED_PICKED.to_owned(),
+        e_c_with_let(false),
+    ] {
+        let (package, wire) = checked_and_emitted(&source);
+        assert_rows_read_back_at_their_terms(&package, &wire, &domain());
+    }
+}
+
 /// TC-1063 L5..L8, FR-383-AC-34/50/52/53/54: fixture E writes one row per
 /// visit, each keyed to the `expression` occurrence the checker recorded at
 /// that visit's position and carrying that position's `Location`.
@@ -135,6 +260,7 @@ fn assert_rows_follow_the_walk(wire: &Value) {
     "TC-1063",
     "FR-383-AC-32",
     "FR-383-AC-34",
+    "FR-383-AC-36",
     "FR-383-AC-50",
     "FR-383-AC-51",
     "FR-383-AC-52",
@@ -163,6 +289,13 @@ fn fixture_e_keys_each_visit_to_the_occurrence_recorded_at_its_position() {
         2
     );
     assert_eq!((key(in_less), key(in_plus)), ((0, 0), (1, 0)));
+    // AC-36: the two retry-origin rows carry different `Location`s, the
+    // first the term in `earlier.tally < 3`, the second in `earlier.tally + 1`.
+    assert_ne!(in_less["location"], in_plus["location"]);
+    assert_eq!(
+        (path(in_less), path(in_plus)),
+        (vec![0, 0, 0, 0], vec![0, 0, 1, 1, 0])
+    );
     let recorded = expression_occurrences_of_node_at(graph, &site(&retry, &[0, 0, 0, 0]));
     assert_eq!(
         recorded
@@ -445,4 +578,30 @@ fn e_c_let_and_if_rows_cover_every_term_and_no_non_term() {
     let (_, without_let) = checked_and_emitted(&e_c_with_let(false));
     let admitted = read_protocol_over(&without_let, &domain());
     assert!(matches!(admitted, Read::Verified { .. }), "{admitted:?}");
+}
+
+/// FR-383 writes one row per term: a slot term whose kind always lowers to an
+/// application, with no application recorded at its position, is refused
+/// with a typed emit refusal at its `Location` rather than silently dropped.
+#[trace("TC-1063", "FR-383-AC-32")]
+#[test]
+fn a_term_with_no_recorded_application_is_refused_not_dropped() {
+    use crate::emit::protocol_locations::{slot_bodies, slot_rows};
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let graph = package.graph();
+    let retry = site(&refunds("retry 0"), &[]);
+    let body = graph
+        .protocols()
+        .iter()
+        .flat_map(slot_bodies)
+        .find(|body| body.root().location() == &retry)
+        .expect("Refund's retry relation is a slot");
+    let mut pending = Vec::new();
+    // No application recorded anywhere: the root `and` has none.
+    let refused = slot_rows(graph, body, &HashMap::new(), &HashMap::new(), &mut pending);
+    assert_eq!(
+        refused.err(),
+        Some(EmitRefusal::UnrecordedProtocolTerm { location: retry })
+    );
+    assert!(pending.is_empty());
 }

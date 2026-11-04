@@ -134,6 +134,8 @@ pub(super) struct Lowered {
     /// this test's admitted package.
     pub(super) selected_exact_identities:
         Result<quire_contract_model::SelectedExactIdentities, String>,
+    /// The checked package the wire was emitted from.
+    pub(super) package: CheckedPackage,
 }
 
 pub(super) fn lower(clauses: &str) -> Lowered {
@@ -250,6 +252,7 @@ pub(super) fn lower_package(
         selected_exact_declarations,
         selected_exact_fields,
         selected_exact_identities,
+        package,
     }
 }
 

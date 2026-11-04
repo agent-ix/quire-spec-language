@@ -488,7 +488,9 @@ fn emitted_100000_member_cycle() -> (Emission, String) {
     (emission, model_digest)
 }
 
-#[trace("FR-383-AC-25")]
+/// Emits the 100,000-member cycle within its measured S3 charge. It does not
+/// read the package back, so it does not carry FR-383-AC-25; the read-back
+/// below does.
 #[test]
 fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
     emitted_100000_member_cycle();
@@ -500,7 +502,7 @@ fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
 /// source-map entry, so it exhausts the I2 work bound at row 241.
 #[trace("FR-383-AC-25")]
 #[test]
-#[ignore = "gated on the IR reader: protocol_locations validation scans nodes, occurrences and source map once per row (I2 work O(rows x package))"]
+#[ignore = "IR-1321: the IR reader's protocol_locations validation scans nodes, occurrences and source map once per row (I2 work O(rows x package))"]
 fn a_100000_member_function_protocol_cycle_reads_back_at_i2() {
     let (emission, model_digest) = emitted_100000_member_cycle();
     let mut evidence = read_evidence(&emission);

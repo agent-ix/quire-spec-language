@@ -297,6 +297,14 @@ pub enum EmitRefusal {
         /// The checked application key lowered at the term.
         application: NodeKey,
     },
+    /// A term of an emitted protocol slot expression whose kind always
+    /// lowers to an application has no application recorded at its
+    /// `Location`, so FR-383's one row per term cannot be written.
+    #[error("protocol slot term at {location:?} has no recorded application")]
+    UnrecordedProtocolTerm {
+        /// The checker's `Location` of the term.
+        location: Location,
+    },
 }
 
 /// One explicit clock configuration selected for an exact checked temporal
@@ -354,7 +362,8 @@ impl EmitRefusal {
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
             Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
             Self::MissingDispatchIdentityContext { .. }
-            | Self::MissingProtocolLocationContext { .. } => Code::RuntimeInvariant,
+            | Self::MissingProtocolLocationContext { .. }
+            | Self::UnrecordedProtocolTerm { .. } => Code::RuntimeInvariant,
             Self::ProtocolResultInvariant => Code::RuntimeInvariant,
         }
     }
@@ -393,7 +402,8 @@ impl EmitRefusal {
             Self::InvalidTemporalClockValue { .. } => Some("invalid-value"),
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
             Self::MissingDispatchIdentityContext { .. }
-            | Self::MissingProtocolLocationContext { .. } => None,
+            | Self::MissingProtocolLocationContext { .. }
+            | Self::UnrecordedProtocolTerm { .. } => None,
             Self::ProtocolResultInvariant => None,
         }
     }
