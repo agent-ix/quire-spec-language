@@ -63,7 +63,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 43 | 43 | a support valuation absent at position 1 of atom 0; present; a read but non-support valuation absent (atom 1, position 2); with the decision closure withdrawn too | `Missing`/`fact-withdrawn`/`valuation:0@1`; no non-value; `valuation:1@2`; `decision_closure` |
 | 44 | 44 | fixed-sample clause with a support pair at a silent sample | support holds the observed pairs' entries only |
 | 45 | 45 | a `CheckedNodeId` absent from the package; the id of a `protocol_clause` node | `Err(CallFailure::Admission)`, cause `clause-root-unresolved`, empty charge log, ledgers unchanged |
-| 46 | 46 | the `from_emission` package of TC-1310 row 24 and the `from_read` package of TC-1310 row 29, each with its paired clause differing | each run's first call reaching the clause: `clause-unreadable`, empty charge log, ledgers unchanged |
+| 46 | 46 | the `from_emission` and `from_read` packages of TC-1310 rows 24 and 25, each with its written package differing from the source clause | each run's first call reaching the clause: `clause-unreadable`, empty charge log, ledgers unchanged |
 
 Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-46", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
 
