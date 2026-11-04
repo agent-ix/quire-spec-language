@@ -193,11 +193,7 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
     ));
     let cycle_ids = states
         .iter()
-        .map(|state| {
-            state
-                .digital_cycle_identity()
-                .expect("a digital cycle state has the complete timed identity")
-        })
+        .map(|state| state.digital_cycle_identity())
         .collect::<Vec<_>>();
     let simulation = cyclic.request();
     let settled = settle_product_refusal(
@@ -250,6 +246,62 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
         wire["cause"]["where"],
         format!("{}..{}", span.start, span.end)
     );
+}
+
+/// FR-204-AC-4: digital unbounded products have no monitor, but their actual
+/// zero-delay cycles still settle with complete stable product-key identities.
+#[trace("TC-639", "FR-204-AC-4")]
+#[test]
+fn unbounded_digital_cycles_settle_with_monitorless_state_identity() {
+    let world = retx(
+        "",
+        false,
+        "reward sends on M::Call::send = 1;\n",
+        concat!(
+            "probabilistic Reach using inf on M over (c: M::Call) under every scheduler on origin ",
+            "{ probability >= 0.5 [ eventually holds(c.late) ] }\n",
+            "probabilistic Cost using inf on M over (c: M::Call) under every scheduler on origin ",
+            "{ expected accumulate sends until holds(c.late) <= 5 }\n",
+        ),
+    );
+
+    for (index, name) in ["Reach", "Cost"].into_iter().enumerate() {
+        let cycle_refusal = refusal(&world, name);
+        let ProductRefusal::ZeroDelayCycle { states } = &cycle_refusal else {
+            panic!("{name} has a digital zero-delay cycle: {cycle_refusal:?}");
+        };
+        assert!(!states.is_empty(), "{name}");
+        assert!(states.iter().all(|state| state.monitor.is_none()), "{name}");
+        let cycle_ids = states
+            .iter()
+            .map(|state| state.digital_cycle_identity())
+            .collect::<Vec<_>>();
+
+        let simulation = world.request();
+        let settled = settle_product_refusal(
+            cycle_refusal,
+            SubjectLimits {
+                expansion: simulation.expansion,
+                meter: &simulation.meter,
+            },
+        )
+        .expect("the actual unbounded digital refusal settles");
+        assert_eq!(
+            settled.value(),
+            &TerminalValue::Unsupported(UnavailabilityCause::ZeroDelayCycle {
+                states: cycle_ids.clone(),
+            })
+        );
+        let terminal = settled.into_terminal(RequestIndex::new(index), BackendId::new("qsl-en-5"));
+        let wire = serde_json::to_value(OutcomeItem::from_terminal(&terminal))
+            .expect("the settled digital cycle writes to FR-331");
+        assert_eq!(wire["cause"]["kind"], "zero-delay-cycle");
+        assert_eq!(wire["cause"]["states"], serde_json::json!(cycle_ids));
+        assert!(wire["cause"]["states"][0]
+            .as_str()
+            .expect("a cycle state identity is a string")
+            .starts_with("quire.probability-digital-cycle-state/v1;"));
+    }
 }
 
 /// FR-204-AC-2 (TC-639 step 2): a strict guard has no digital reading.

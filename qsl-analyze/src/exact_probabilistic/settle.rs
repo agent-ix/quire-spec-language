@@ -29,16 +29,13 @@ pub fn settle_product_refusal(
         ProductRefusal::DelayDistribution { operation } => {
             ExactProbBuildIssue::Unsupported(UnavailabilityCause::DelayDistribution { operation })
         }
-        ProductRefusal::ZeroDelayCycle { states } => match states
-            .iter()
-            .map(super::ProbKey::digital_cycle_identity)
-            .collect::<Option<Vec<_>>>()
-        {
-            Some(states) => {
-                ExactProbBuildIssue::Unsupported(UnavailabilityCause::ZeroDelayCycle { states })
-            }
-            None => ExactProbBuildIssue::BrokenInvariant,
-        },
+        ProductRefusal::ZeroDelayCycle { states } => {
+            let states = states
+                .iter()
+                .map(super::ProbKey::digital_cycle_identity)
+                .collect();
+            ExactProbBuildIssue::Unsupported(UnavailabilityCause::ZeroDelayCycle { states })
+        }
         ProductRefusal::TimedFormShape { span } => {
             ExactProbBuildIssue::Unsupported(UnavailabilityCause::TimedFormShape { span })
         }

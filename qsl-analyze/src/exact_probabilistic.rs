@@ -295,20 +295,12 @@ pub struct ProbKey {
 }
 
 impl ProbKey {
-    /// A stable complete identifier for a zero-delay cycle state in FR-204.
+    /// A stable complete identifier for a digital zero-delay cycle state.
     ///
-    /// The digital model member is already the full encoded model/clock
-    /// state. This identifier frames it with every other product-key member
-    /// and never relies on Rust's `Debug` representation. Only the timed
-    /// deadline control used by the digital cycle detector is admitted here.
-    pub fn digital_cycle_identity(&self) -> Option<String> {
-        let Some(MonitorState::Deadline { kind, phase }) = self.monitor else {
-            return None;
-        };
-        if self.accumulator.is_some() || self.pending.is_some() {
-            return None;
-        }
-
+    /// Every product-key member is encoded, including absent controls for
+    /// unbounded digital forms. The model member is the full encoded model
+    /// and clock state; no Rust `Debug` representation participates.
+    pub fn digital_cycle_identity(&self) -> String {
         let mut identity = String::from("quire.probability-digital-cycle-state/v1;");
         match &self.binding {
             Some(binding) => {
@@ -320,19 +312,122 @@ impl ProbKey {
             None => identity.push_str("binding=none;"),
         }
         cycle_identity_field(&mut identity, &self.model);
-        identity.push_str("monitor=deadline;");
-        identity.push_str(match kind {
-            DeadlineKind::Eventually => "eventually;",
-            DeadlineKind::Until => "until;",
-        });
-        identity.push_str(match phase {
-            DeadlinePhase::Pending => "pending;",
-            DeadlinePhase::Accept => "accept;",
-            DeadlinePhase::Reject => "reject;",
-        });
-        identity.push_str("accumulator=none;pending=none;");
-        Some(identity)
+        encode_cycle_monitor(&mut identity, self.monitor);
+        encode_cycle_accumulator(&mut identity, self.accumulator.as_ref());
+        match &self.pending {
+            Some(pending) => {
+                identity.push_str("pending=some;");
+                // Pending's ordering and equality are defined by these
+                // canonical transition-key bytes.
+                cycle_identity_field(&mut identity, &pending.identity_bytes);
+            }
+            None => identity.push_str("pending=none;"),
+        }
+        identity
     }
+}
+
+fn encode_cycle_monitor(identity: &mut String, monitor: Option<MonitorState>) {
+    match monitor {
+        None => identity.push_str("monitor=none;"),
+        Some(MonitorState::Formula(FormulaState::Running(state))) => {
+            identity.push_str("monitor=formula-running;");
+            cycle_identity_number(identity, state.index());
+        }
+        Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
+            identity.push_str("monitor=formula-decided;");
+            identity.push_str(match verdict {
+                MonitorVerdict::Accept => "accept;",
+                MonitorVerdict::Reject => "reject;",
+            });
+        }
+        Some(MonitorState::Measure { remaining, phase }) => {
+            identity.push_str("monitor=measure;");
+            cycle_identity_number(identity, remaining);
+            identity.push_str(match phase {
+                MeasurePhase::Inactive => "inactive;",
+                MeasurePhase::Active => "active;",
+                MeasurePhase::Complete => "complete;",
+                MeasurePhase::Censored => "censored;",
+                MeasurePhase::Unactivated => "unactivated;",
+            });
+        }
+        Some(MonitorState::Fraction { remaining }) => {
+            identity.push_str("monitor=fraction;");
+            cycle_identity_number(identity, remaining);
+        }
+        Some(MonitorState::Deadline { kind, phase }) => {
+            identity.push_str("monitor=deadline;");
+            identity.push_str(match kind {
+                DeadlineKind::Eventually => "eventually;",
+                DeadlineKind::Until => "until;",
+            });
+            identity.push_str(match phase {
+                DeadlinePhase::Pending => "pending;",
+                DeadlinePhase::Accept => "accept;",
+                DeadlinePhase::Reject => "reject;",
+            });
+        }
+    }
+}
+
+fn encode_cycle_accumulator(identity: &mut String, accumulator: Option<&Accumulator>) {
+    match accumulator {
+        None => identity.push_str("accumulator=none;"),
+        Some(Accumulator::Steps { activated, amount }) => {
+            identity.push_str("accumulator=steps;");
+            cycle_identity_bool(identity, *activated);
+            encode_cycle_amount(identity, amount);
+        }
+        Some(Accumulator::Reward { activated, amount }) => {
+            identity.push_str("accumulator=reward;");
+            cycle_identity_bool(identity, *activated);
+            encode_cycle_amount(identity, amount);
+        }
+        Some(Accumulator::CountFraction {
+            true_count,
+            position_count,
+        }) => {
+            identity.push_str("accumulator=count-fraction;");
+            cycle_identity_number(identity, *true_count);
+            cycle_identity_number(identity, *position_count);
+        }
+        Some(Accumulator::WeightedFraction {
+            true_sum,
+            total_sum,
+        }) => {
+            identity.push_str("accumulator=weighted-fraction;");
+            cycle_identity_rational(identity, true_sum);
+            cycle_identity_rational(identity, total_sum);
+        }
+    }
+}
+
+fn encode_cycle_amount(identity: &mut String, amount: &Amount) {
+    match amount {
+        Amount::Exact(value) => {
+            identity.push_str("exact;");
+            cycle_identity_rational(identity, value);
+        }
+        Amount::AboveBound => identity.push_str("above-bound;"),
+        Amount::Censored => identity.push_str("censored;"),
+    }
+}
+
+fn cycle_identity_rational(identity: &mut String, value: &Rational) {
+    cycle_identity_field(identity, value.numerator().as_big().to_string().as_bytes());
+    cycle_identity_field(
+        identity,
+        value.denominator().as_big().to_string().as_bytes(),
+    );
+}
+
+fn cycle_identity_bool(identity: &mut String, value: bool) {
+    identity.push_str(if value { "true;" } else { "false;" });
+}
+
+fn cycle_identity_number(identity: &mut String, value: impl std::fmt::Display) {
+    cycle_identity_field(identity, value.to_string().as_bytes());
 }
 
 /// Append a byte member as an unambiguous decimal-length-prefixed lowercase
