@@ -70,6 +70,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | NodeKind::IeeeTotalOrder(..)
         | NodeKind::IeeeBitIdentical(..)
         | NodeKind::Quantity(..)
+        | NodeKind::QuantityPower(..)
         | NodeKind::ConvertDecimal(..)
         | NodeKind::Order(..)
         | NodeKind::IeeeToRational(..)
@@ -100,6 +101,8 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | NodeKind::Fold { .. }
         | NodeKind::Size(_)
         | NodeKind::Contains(..)
+        | NodeKind::DropFirst(_)
+        | NodeKind::RemoveOne(..)
         | NodeKind::AllInstances { .. }
         | NodeKind::Lookup { .. }
         | NodeKind::Dispatch { .. }
