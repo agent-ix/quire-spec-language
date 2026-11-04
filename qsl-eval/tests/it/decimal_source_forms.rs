@@ -20,11 +20,9 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
-use quire_exact::{
-    ChargePoint, Integer, LimitKind, Meter, Outcome, Rational, RoundingMode, ScalarLimits, Value,
-};
+use quire_exact::{ChargePoint, Integer, LimitKind, Meter, Outcome, Rational, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
+use quire_semantic_value::loss::ValueLoss;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -98,7 +96,8 @@ type Charged = (ChargePoint, Option<u64>, Option<u64>, Option<u64>);
 struct Run {
     outcome: Outcome<Value>,
     charges: Vec<Charged>,
-    losses: Vec<LocatedLoss>,
+    /// The losses the call recorded, in order.
+    losses: Vec<ValueLoss>,
 }
 
 fn call(package: &CheckedPackage, arguments: Vec<Value>, limits: ScalarLimits) -> Run {
@@ -111,13 +110,16 @@ fn call(package: &CheckedPackage, arguments: Vec<Value>, limits: ScalarLimits) -
             &mut meter,
         )
         .expect("the call returns a kernel outcome");
-    let losses = evaluation.losses;
     let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
         panic!("a kernel outcome, not {:?}", evaluation.outcome);
     };
     Run {
         outcome,
-        losses,
+        losses: evaluation
+            .losses
+            .into_iter()
+            .map(|located| located.loss)
+            .collect(),
         charges: meter
             .admitted_charges()
             .iter()
@@ -133,7 +135,37 @@ fn call(package: &CheckedPackage, arguments: Vec<Value>, limits: ScalarLimits) -
     }
 }
 
+/// `(exact_numerator, exact_denominator, rounded_coefficient, rounded_scale,
+/// mode)` of a decimal loss record.
+type LossFields = (Integer, Integer, Integer, u32, &'static str);
+
+/// The refusal of a decimal result outside its declared domain.
+const OUTSIDE_DOMAIN: (Option<&str>, Option<&str>) =
+    (Some("decimal_out_of_domain"), Some("outside-domain"));
+
 impl Run {
+    /// The fields of the one decimal loss the call recorded.
+    fn one_loss(&self) -> LossFields {
+        let [ValueLoss::Decimal(loss)] = self.losses.as_slice() else {
+            panic!("exactly one decimal loss, not {:?}", self.losses);
+        };
+        (
+            loss.exact_numerator().clone(),
+            loss.exact_denominator(),
+            loss.rounded_coefficient().clone(),
+            loss.rounded_scale(),
+            loss.mode().as_str(),
+        )
+    }
+
+    /// `(code, cause)` of the refusal the call ended with.
+    fn refusal(&self) -> (Option<&'static str>, Option<&'static str>) {
+        match &self.outcome {
+            Outcome::Refused(refusal) => (refusal.code(), refusal.cause()),
+            other => panic!("a refusal, not {other:?}"),
+        }
+    }
+
     fn points(&self) -> Vec<ChargePoint> {
         self.charges.iter().map(|charge| charge.0).collect()
     }
@@ -147,24 +179,6 @@ impl Run {
             ),
             other => panic!("a completed decimal, not {other:?}"),
         }
-    }
-
-    /// The one decimal loss record of the call: `(exact numerator, exact
-    /// denominator, rounded coefficient, rounded scale, mode)`.
-    fn decimal_loss(&self) -> (Integer, Integer, Integer, u32, RoundingMode) {
-        let [located] = self.losses.as_slice() else {
-            panic!("one loss record, not {:?}", self.losses);
-        };
-        let ValueLoss::Decimal(loss) = &located.loss else {
-            panic!("a decimal loss, not {:?}", located.loss);
-        };
-        (
-            loss.exact_numerator().clone(),
-            loss.exact_denominator(),
-            loss.rounded_coefficient().clone(),
-            loss.rounded_scale(),
-            loss.mode(),
-        )
     }
 
     /// `(limit_kind, limit, consumed, next_charge, charge_point)` of the stop.
@@ -228,6 +242,7 @@ fn d24_a_rational_converts_to_a_decimal_as_the_division_at_the_target_scale() {
     let package = conversion("nearest-even");
     let run = call(&package, vec![rational(2, 3)], limits(9, 3, 2, 6));
     assert_eq!(run.decimal(), (int(67), 2));
+    assert_eq!(run.one_loss(), (int(2), int(3), int(67), 2, "nearest-even"));
     assert_eq!(
         run.charges,
         vec![
@@ -266,10 +281,9 @@ fn d24_a_rational_converts_to_a_decimal_as_the_division_at_the_target_scale() {
         vec![rational(2, 3)],
         limits(9, 3, 2, 6),
     );
-    assert!(
-        matches!(exact.outcome, Outcome::Refused(_)),
-        "{:?}",
-        exact.outcome
+    assert_eq!(
+        exact.refusal(),
+        (Some("inexact_decimal"), Some("nonzero-discarded-digit"))
     );
     assert_eq!(
         exact.points(),
@@ -316,6 +330,7 @@ fn d26_a_member_literal_multiplies_at_its_retained_representation() {
         let package = product(mode);
         let run = call(&package, vec![], limits(9, 4, 0, 5));
         assert_eq!(run.decimal(), (int(3), 0), "{mode}");
+        assert!(run.losses.is_empty(), "{mode}: {:?}", run.losses);
         assert_eq!(
             run.charges,
             vec![
@@ -369,10 +384,7 @@ fn d27_a_member_literal_divides_with_the_divisor_side_expansion() {
     .expect("the quotient checks: a nonzero literal divisor discharges its obligation");
     let run = call(&package, vec![], limits(11, 4, 2, 6));
     assert_eq!(run.decimal(), (int(2), 1));
-    assert_eq!(
-        run.decimal_loss(),
-        (int(6), int(35), int(2), 1, RoundingMode::NearestEven)
-    );
+    assert_eq!(run.one_loss(), (int(6), int(35), int(2), 1, "nearest-even"));
     assert_eq!(
         run.points(),
         vec![
@@ -665,10 +677,7 @@ fn the_conversion_negation_and_mismatch_forms_of_the_criterion() {
     ))
     .expect("the narrow sum checks");
     let refused = call(&narrow, vec![decimal(99), decimal(1)], UNLIMITED);
-    let Outcome::Refused(stop) = &refused.outcome else {
-        panic!("a refusal, not {:?}", refused.outcome);
-    };
-    assert!(format!("{stop:?}").contains("Domain"), "{stop:?}");
+    assert_eq!(refused.refusal(), OUTSIDE_DOMAIN);
     let negated = compile(&format!(
         "{types}function f using v(a: P, b: P): Boolean pure {{ -a = b }}\n"
     ))
@@ -831,10 +840,7 @@ fn a_negated_literal_is_a_member_when_its_operand_is() {
     assert_eq!(refusal(&case("decimal(5, 0)")), mismatch());
     let outside = compile(&case("-decimal(-5, 0)")).expect("the operand -5 is a member");
     let run = call(&outside, vec![], UNLIMITED);
-    let Outcome::Refused(stop) = &run.outcome else {
-        panic!("a refusal, not {:?}", run.outcome);
-    };
-    assert!(format!("{stop:?}").contains("Domain"), "{stop:?}");
+    assert_eq!(run.refusal(), OUTSIDE_DOMAIN);
     let zero = compile(&case("-decimal(0, 0)")).expect("negative zero is a member");
     assert_eq!(call(&zero, vec![], UNLIMITED).decimal(), (int(0), 0));
     let wide = compile(
@@ -862,10 +868,7 @@ fn a_quotient_is_typed_by_its_operands_and_refuses_only_its_nonzero_obligation()
     let _ = e;
     let d2 = compile(&function("f", "a: P", "P", "a / decimal(2, 2)")).expect("d2 checks");
     let run = call(&d2, vec![value(5)], UNLIMITED);
-    let Outcome::Refused(stop) = &run.outcome else {
-        panic!("a refusal, not {:?}", run.outcome);
-    };
-    assert!(format!("{stop:?}").contains("Domain"), "{stop:?}");
+    assert_eq!(run.refusal(), OUTSIDE_DOMAIN);
     for (name, result, body) in [
         ("f", "P", "a / b"),
         ("g", "Boolean", "a / b = a"),
