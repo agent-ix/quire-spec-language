@@ -145,6 +145,9 @@ pub enum PackageMismatch {
 /// ```
 pub struct EvidencePackage<'p> {
     read: &'p AdmittedPackageRead<'p>,
+    /// Whether the in-process clause's formula is compared with the
+    /// package's `formula_graph()` (the emission route, FR-515-AC-24).
+    checks_formula: bool,
     rows: PackageRows,
     activation_map: Vec<ActivationRow>,
     progress_capacity: u64,
@@ -152,7 +155,10 @@ pub struct EvidencePackage<'p> {
 
 impl<'p> EvidencePackage<'p> {
     /// The package constructed from `emission`: its rows and clause ids are
-    /// the emitter's own. `read` is the package read back from the same
+    /// the emitter's own, and the call compares each in-process clause's
+    /// formula with the package's `formula_graph()` (FR-515-AC-24), refusing
+    /// `clause-unreadable` at the first call that reaches a clause they
+    /// differ for. `read` is the package read back from the same
     /// emission's bytes, the reader's answer for the clause nodes.
     ///
     /// # Errors
@@ -186,25 +192,32 @@ impl<'p> EvidencePackage<'p> {
         if rows.bindings != package.temporal_bindings().unwrap_or_default() {
             return Err(PackageMismatch::Bindings);
         }
-        Ok(Self::with_rows(read, rows))
+        Ok(Self::with_rows(read, rows, true))
     }
 
-    /// The package constructed from the emitted bytes read back.
+    /// The package constructed from the emitted bytes read back. It holds no
+    /// emission and compares no formula: the read-back route trusts the
+    /// bytes the reader admitted.
     ///
     /// # Errors
     ///
     /// [`PackageMismatch::AmbiguousName`] as [`PackageRows::of_read`] states.
     pub fn from_read(read: &'p AdmittedPackageRead<'p>) -> Result<Self, PackageMismatch> {
-        Ok(Self::with_rows(read, PackageRows::of_read(read)?))
+        Ok(Self::with_rows(read, PackageRows::of_read(read)?, false))
     }
 
-    fn with_rows(read: &'p AdmittedPackageRead<'p>, rows: PackageRows) -> Self {
+    fn with_rows(
+        read: &'p AdmittedPackageRead<'p>,
+        rows: PackageRows,
+        checks_formula: bool,
+    ) -> Self {
         let activation_map = activation_relation(read.admitted())
             .into_iter()
             .map(|(control, clause)| ActivationRow { control, clause })
             .collect();
         Self {
             read,
+            checks_formula,
             rows,
             activation_map,
             progress_capacity: DEFAULT_COVERED_POSITIONS,
@@ -327,7 +340,7 @@ impl<'p> EvidencePackage<'p> {
             .ok_or_else(|| unreadable("profile-selection"))?;
 
         let graph = view.formula_graph();
-        if !same_formula(graph, checked.formula()) {
+        if self.checks_formula && !same_formula(graph, checked.formula()) {
             return Err(unreadable("formula-differs"));
         }
         let reads = instance_bound_atoms(&view).map_err(|_| unreadable("atom-count"))?;

@@ -42,6 +42,14 @@ pub(super) struct Built {
 }
 
 impl Built {
+    /// This unit's in-process package with the emission of `other`.
+    pub(super) fn with_emission_of(self, other: Built) -> Built {
+        Built {
+            emission: other.emission,
+            ..self
+        }
+    }
+
     pub(super) fn read(&self, emission: &Emission) -> AdmittedPackageRead<'_> {
         read_evaluation_emission(
             self.unit.package(),
@@ -106,7 +114,7 @@ fn emit(
 }
 
 /// The package of recipe R of `kind`, compiled as the handoff writer does.
-fn recipe(kind: &str) -> Built {
+pub(super) fn recipe(kind: &str) -> Built {
     let emit_request = handoff_request(kind, Corpus::None).emit;
     let read = |path: &Path| std::fs::read(path).expect("a recipe file");
     let source = read(&emit_request.source);

@@ -8,8 +8,8 @@
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{
     evaluate_temporal_evidence, instance_bound_indices, ActivationState, ClauseFormula, ClauseWork,
-    CompletenessRecord, EvidenceCounter, EvidenceIncomplete, EvidenceRef, EvidenceRequest,
-    EvidenceResult, ReachFault, SubjectOccurrence,
+    CompletenessRecord, EvidenceCounter, EvidenceIncomplete, EvidenceLedger, EvidenceRef,
+    EvidenceRequest, EvidenceResult, ReachFault, SubjectOccurrence,
 };
 use qsl_eval::temporal::{ProgressCompleteness, ProgressLedger, Valuation};
 use qsl_package::checked_views::FormulaNodeUse;
