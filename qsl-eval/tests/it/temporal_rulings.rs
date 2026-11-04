@@ -1282,24 +1282,16 @@ fn the_evicted_valuation_names_its_instance_and_atom_and_other_records_change_no
 
 #[trace("FR-523-AC-6", "FR-523-AC-3", "TC-1318")]
 #[test]
-fn a_timed_interval_is_a_tick_reach_only_when_closed_and_integral() {
+fn a_timed_interval_has_no_tick_reach_and_a_finite_window_interval_is_one() {
     use qsl_eval::temporal::evidence::{ClauseWork, ReachFault};
     let reach = |body: &str| {
         let fixture = crate::timed_trace::timed(body);
         ClauseWork::of(fixture.clause.formula())
     };
-    // Closed integral bounds are tick counts.
-    let accepted = reach("eventually[1 ms, 5 ms] holds(c.level = 2)").expect("a tick reach");
-    assert_eq!(
-        (
-            accepted.history_span,
-            accepted.future_reach,
-            accepted.formula_nodes
-        ),
-        (5, 5, 2)
-    );
-    // An open end, either one, counts time and has no tick reach.
+    // A timed interval counts time, closed and integral or not, and has no
+    // tick reach (FR-326: only the finite-window profile counts ticks).
     for body in [
+        "eventually[1 ms, 5 ms] holds(c.level = 2)",
         "eventually[0 ms, 3 ms) holds(c.level = 2)",
         "eventually(0 ms, 3 ms] holds(c.level = 2)",
     ] {

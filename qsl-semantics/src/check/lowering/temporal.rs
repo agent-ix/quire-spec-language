@@ -789,9 +789,10 @@ pub(super) fn stage_fault(location: &Location, invariant: &'static str) -> Check
     )
 }
 
-/// A checked operator's interval in the FR-370 wire form. A tick interval of
-/// the finite-window profile that is not integral and closed breaks an
-/// invariant of its check and is a fault, never written as a rational.
+/// A checked operator's interval in the FR-370 wire form. A timed interval
+/// in a clause of the finite-window profile breaks an invariant of that
+/// profile's check (FR-326: only integral closed tick intervals) and is a
+/// fault, never written as a rational (FR-337).
 fn temporal_interval(
     interval: Option<&CheckedInterval>,
     ticks: bool,
@@ -801,20 +802,8 @@ fn temporal_interval(
         Some(CheckedInterval::Steps(interval)) => Member::TemporalInterval {
             interval: Some(*interval),
         },
-        // A tick interval of the finite-window profile is an integral closed
-        // interval: it is written as the step interval FR-370 gives it.
-        Some(CheckedInterval::Timed(interval)) if ticks => {
-            let (lower, upper) = interval
-                .closed_integral_bounds()
-                .ok_or("finite-window-interval-is-integral-closed")?;
-            let step = qsl_foundation::bound::TemporalInterval::new(
-                lower,
-                qsl_foundation::bound::TemporalUpper::Finite(upper),
-            )
-            .map_err(|_| "finite-window-interval-is-ordered")?;
-            Member::TemporalInterval {
-                interval: Some(step),
-            }
+        Some(CheckedInterval::Timed(_)) if ticks => {
+            return Err("finite-window-interval-is-a-tick-interval")
         }
         Some(CheckedInterval::Timed(interval)) => timed_member(interval),
     })
@@ -832,8 +821,6 @@ fn timed_member(interval: &qsl_foundation::bound::TimedInterval) -> Member {
 
 #[cfg(test)]
 mod tick_interval_tests {
-    use std::str::FromStr;
-
     use quire_exact::{Integer, Rational};
 
     use super::*;
@@ -849,37 +836,33 @@ mod tick_interval_tests {
         )
     }
 
-    /// FR-501: an integral closed tick interval is written as the FR-370 step
-    /// interval; any other is a fault, not a rational timed member.
+    /// FR-337-AC-24: a step interval is written as the FR-370 step interval;
+    /// a timed interval in a finite-window clause, integral and closed or
+    /// not, is a fault, not a rational timed member.
     #[test]
-    fn a_tick_interval_is_a_step_interval_or_a_fault() {
-        let integral = timed(rational(0, 1), rational(5, 1), true);
+    fn a_tick_interval_is_a_step_interval_and_a_timed_one_is_a_fault() {
+        let step = qsl_foundation::bound::TemporalInterval::new(
+            0,
+            qsl_foundation::bound::TemporalUpper::Finite(5),
+        )
+        .expect("an ordered interval");
         assert!(matches!(
-            temporal_interval(Some(&integral), true),
-            Ok(Member::TemporalInterval { interval: Some(_) })
+            temporal_interval(Some(&CheckedInterval::Steps(step)), true),
+            Ok(Member::TemporalInterval { interval: Some(written) }) if written == step
         ));
-        let fractional = timed(rational(1, 2), rational(3, 2), true);
-        assert_eq!(
-            temporal_interval(Some(&fractional), true).err(),
-            Some("finite-window-interval-is-integral-closed")
-        );
-        let open = timed(rational(0, 1), rational(5, 1), false);
-        assert_eq!(
-            temporal_interval(Some(&open), true).err(),
-            Some("finite-window-interval-is-integral-closed")
-        );
-        // A bound above `u64::MAX` is no tick: a fault, not a truncation.
-        let above = Rational::from_integer(
-            Integer::from_str("18446744073709551616").expect("u64::MAX + 1 parses"),
-        );
-        let huge = timed(rational(0, 1), above, true);
-        assert_eq!(
-            temporal_interval(Some(&huge), true).err(),
-            Some("finite-window-interval-is-integral-closed")
-        );
+        for interval in [
+            timed(rational(0, 1), rational(5, 1), true),
+            timed(rational(1, 2), rational(3, 2), true),
+            timed(rational(0, 1), rational(5, 1), false),
+        ] {
+            assert_eq!(
+                temporal_interval(Some(&interval), true).err(),
+                Some("finite-window-interval-is-a-tick-interval")
+            );
+        }
         // The timed profile keeps its rational wire form.
         assert!(matches!(
-            temporal_interval(Some(&fractional), false),
+            temporal_interval(Some(&timed(rational(1, 2), rational(3, 2), true)), false),
             Ok(Member::TimedInterval(_))
         ));
     }

@@ -88,29 +88,9 @@ impl Window {
                     lower: interval.lower(),
                 },
             },
-            // A finite-window clause measures ticks of its clock unit, both
-            // ends inclusive (FR-501): integral closed bounds are offsets.
-            Some(CheckedInterval::Timed(interval)) => {
-                if !interval.lower_closed()
-                    || !interval.upper_closed()
-                    || !interval.lower().is_integer()
-                    || !interval.upper().is_integer()
-                {
-                    return Err(fault("step-interval-has-offsets"));
-                }
-                Self::Closed {
-                    lower: interval
-                        .lower()
-                        .numerator()
-                        .to_u64()
-                        .ok_or_else(|| fault("interval-bound-in-u64"))?,
-                    upper: interval
-                        .upper()
-                        .numerator()
-                        .to_u64()
-                        .ok_or_else(|| fault("interval-bound-in-u64"))?,
-                }
-            }
+            // A finite-window clause holds only tick intervals, as step
+            // intervals (FR-326): a timed interval has no offsets.
+            Some(CheckedInterval::Timed(_)) => return Err(fault("step-interval-has-offsets")),
         })
     }
 }

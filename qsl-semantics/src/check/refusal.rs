@@ -1686,11 +1686,12 @@ pub enum TemporalCause {
         /// The aggregate term's span.
         span: Span,
     },
-    /// A timed interval (FR-393) under a profile other than the timed
-    /// profile, where FR-233's `model-steps` rule is not checked yet:
-    /// refused rather than checked as a step interval. Located at the
-    /// interval.
-    TimedIntervalNotChecked {
+    /// A timed interval (FR-393) where the clause counts steps or ticks, not
+    /// time: under `model-steps` (FR-233) and under the finite-window
+    /// profile (FR-326), whether the bound carries a unit, is rational, has
+    /// an open end or an unbounded upper end. `ill_typed`/`type-mismatch`
+    /// at the interval.
+    TimedIntervalUnderStepCount {
         /// The interval's span.
         span: Span,
     },
@@ -2056,7 +2057,7 @@ impl TemporalCause {
             | Self::InvalidAggregateWindow { span }
             | Self::AggregateWindowKindMismatch { span }
             | Self::AggregateProfileUnsupported { span }
-            | Self::TimedIntervalNotChecked { span }
+            | Self::TimedIntervalUnderStepCount { span }
             | Self::NotEmitted { span, .. }
             | Self::ProtocolFairnessNotEmitted { span, .. }
             | Self::InvalidTimedInterval { span, .. }
@@ -2131,7 +2132,6 @@ impl TemporalCause {
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
             | Self::AggregateModelSubject { .. }
-            | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
@@ -2150,7 +2150,9 @@ impl TemporalCause {
             | Self::UnknownReleaseTask { .. }
             | Self::UnresolvedReleaseOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
-            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => Code::IllTyped,
+            Self::UnitlessTimedBound { .. }
+            | Self::TimedIntervalUnderStepCount { .. }
+            | Self::NotAPlaceExpression { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::TimeQuantity { cause, .. } => cause.code(),
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
@@ -2225,8 +2227,7 @@ impl TemporalCause {
             | Self::UnknownReleaseTask { .. }
             | Self::UnresolvedReleaseOperation { .. } => "missing-name",
             Self::AmbiguousReleaseOperation { .. } => "ambiguous-name",
-            Self::TimedIntervalNotChecked { .. }
-            | Self::NotEmitted { .. }
+            Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
             | Self::TimedTraceSubject { .. }
@@ -2234,7 +2235,9 @@ impl TemporalCause {
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
-            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => "type-mismatch",
+            Self::UnitlessTimedBound { .. }
+            | Self::TimedIntervalUnderStepCount { .. }
+            | Self::NotAPlaceExpression { .. } => "type-mismatch",
             Self::ZeroDenominator { .. } => "unproved-nonzero",
             Self::TimeQuantity { cause, .. } => cause.tag(),
         }
