@@ -206,7 +206,7 @@ pub(super) fn fixture_clock(
     }
 }
 
-fn check_graph(unit: &str) -> qsl_semantics::check::CheckedGraph {
+pub(super) fn check_graph(unit: &str) -> qsl_semantics::check::CheckedGraph {
     let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -809,7 +809,7 @@ pub(super) fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model:
 }
 
 /// The wire node with structural id `key`.
-fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
+pub(super) fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
     nodes(wire)
         .iter()
         .find(|node| &node["node_id"] == key)
@@ -817,12 +817,12 @@ fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
 }
 
 /// The target of the `reference` term `term`.
-fn target(term: &Value) -> &Value {
+pub(super) fn target(term: &Value) -> &Value {
     assert_eq!(term["term"], "reference", "{term}");
     &term["target"]
 }
 
-fn node_key(wire: &Value, value: &Value) -> NodeKey {
+pub(super) fn node_key(wire: &Value, value: &Value) -> NodeKey {
     qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
         .unwrap()
         .key_of_value(value)
@@ -830,12 +830,12 @@ fn node_key(wire: &Value, value: &Value) -> NodeKey {
 }
 
 /// The one `temporal`/`temporal_clause` node of `wire`.
-fn clause_node(wire: &Value) -> &Value {
+pub(super) fn clause_node(wire: &Value) -> &Value {
     only_node(wire, "temporal_clause")
 }
 
 /// The formula node the clause node's formula argument references.
-fn formula_root<'w>(wire: &'w Value, clause: &Value) -> &'w Value {
+pub(super) fn formula_root<'w>(wire: &'w Value, clause: &Value) -> &'w Value {
     node_with(wire, target(&clause["body"]["arguments"][5]))
 }
 
@@ -1420,7 +1420,7 @@ fn each(binder: &str, suffix: &str) -> String {
 }
 
 /// Whether `term` reaches `key` through graph references.
-fn reaches(wire: &Value, term: &Value, key: &Value) -> bool {
+pub(super) fn reaches(wire: &Value, term: &Value, key: &Value) -> bool {
     match term {
         Value::Object(fields) => {
             if fields.get("term").and_then(Value::as_str) == Some("reference") {
@@ -1974,7 +1974,7 @@ fn a_repeated_capture_name_refuses_naming_both_declarations() {
 }
 
 /// The node of `wire` that is a `value`/`parameter` named `name`.
-fn parameter_named<'w>(wire: &'w Value, name: &str) -> &'w Value {
+pub(super) fn parameter_named<'w>(wire: &'w Value, name: &str) -> &'w Value {
     nodes(wire)
         .iter()
         .find(|node| {

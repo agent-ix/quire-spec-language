@@ -4593,14 +4593,18 @@ fn config_version_and_alternate() -> crate::model::intake::PackageInput {
 /// with their model selections admitted together and assembled as one
 /// package.
 fn assemble_model_units(units: &[(&str, &str)]) -> Result<PackageDeclarations, AssemblyRefusal> {
+    assemble_model_units_with("profile s = \"quire.model.complete/v1\";\n", units)
+}
+
+/// [`assemble_model_units`] with the header `profiles`.
+fn assemble_model_units_with(
+    profiles: &str,
+    units: &[(&str, &str)],
+) -> Result<PackageDeclarations, AssemblyRefusal> {
     let parsed: Vec<_> = units
         .iter()
         .map(|(identity, declarations)| {
-            parsed_unit_as(
-                "repo",
-                identity,
-                &text("profile s = \"quire.model.complete/v1\";\n", declarations),
-            )
+            parsed_unit_as("repo", identity, &text(profiles, declarations))
         })
         .collect();
     let selections: Vec<_> = parsed
@@ -4803,6 +4807,156 @@ fn one_first_alias_of_two_packages_names_each_units_own_package() {
     assert_ne!(a, b, "each unit's N names its own package");
     assert_eq!(clause_context(&checked, "A"), a);
     assert_eq!(clause_context(&checked, "B"), b);
+}
+
+/// Unit `a` selecting `example/config-version` as `N` with `a`, and unit
+/// `b` selecting the alternate package as `N` with `b`.
+fn one_alias_two_packages(a: &str, b: &str) -> [(&'static str, String); 2] {
+    [
+        ("a", format!("model N = \"example/config-version\";\n{a}")),
+        (
+            "b",
+            format!("model N = \"example/alternate-config-version\";\n{b}"),
+        ),
+    ]
+}
+
+/// The admitted model of `declarations` selecting `identity`.
+fn admitted_model<'d>(
+    declarations: &'d PackageDeclarations,
+    identity: &str,
+) -> &'d crate::check::lowering::AdmittedModel {
+    declarations
+        .models
+        .iter()
+        .find(|model| model.selection().identity == identity)
+        .unwrap_or_else(|| panic!("{identity} is admitted"))
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): a `terminal` declaration's
+/// model alias names the package its own unit binds it to. Unit `b`, the
+/// later unit, binds `N` to the alternate package: its `terminal ... on N`
+/// is on that package, its `self` that package's state object, though unit
+/// `a`'s `N` is admitted first.
+#[trace("FR-480")]
+#[test]
+fn a_terminal_on_a_shared_alias_is_on_its_own_units_package() {
+    let units = one_alias_two_packages(
+        "type Pad = Integer;",
+        "terminal Done using s on N when { self.versionNumber = 1000 };",
+    );
+    let units: Vec<_> = units
+        .iter()
+        .map(|(id, text)| (*id, text.as_str()))
+        .collect();
+    let declarations = assemble_model_units(&units)
+        .unwrap_or_else(|refusal| panic!("b's terminal resolves: {refusal:?}"));
+    let [terminal] = declarations.terminals.as_slice() else {
+        panic!("one terminal: {:?}", declarations.terminals);
+    };
+    assert_eq!(terminal.package, "example/alternate-config-version");
+    let crate::check::TerminalClauseKind::When { context, .. } = &terminal.kind else {
+        panic!("a `when` terminal: {:?}", terminal.kind);
+    };
+    let alternate = admitted_model(&declarations, "example/alternate-config-version");
+    let original = admitted_model(&declarations, "example/config-version");
+    assert!(
+        alternate.population_objects().contains(context),
+        "{context:?}"
+    );
+    assert!(
+        !original.population_objects().contains(context),
+        "{context:?}"
+    );
+    declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("b's terminal checks: {refusals:?}"));
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): a `bound` declaration's model
+/// alias names the package its own unit binds it to. Unit `b`'s bound on
+/// `N::config_history` bounds the alternate package's population, and unit
+/// `a`'s package keeps none.
+#[trace("FR-480")]
+#[test]
+fn a_population_bound_on_a_shared_alias_bounds_its_own_units_package() {
+    let units = one_alias_two_packages(
+        "type Pad = Integer;",
+        "bound Cap on N::config_history [3]\n\
+         invariant B using s on N::ConfigVersion at current { self.versionNumber >= 0 }",
+    );
+    let units: Vec<_> = units
+        .iter()
+        .map(|(id, text)| (*id, text.as_str()))
+        .collect();
+    let declarations = assemble_model_units(&units)
+        .unwrap_or_else(|refusal| panic!("b's bound resolves: {refusal:?}"));
+    let bounds = |identity: &str| -> Vec<(String, String)> {
+        admitted_model(&declarations, identity)
+            .population_bounds()
+            .map(|bound| (bound.label.clone(), bound.population.package.clone()))
+            .collect()
+    };
+    assert_eq!(
+        bounds("example/alternate-config-version"),
+        [(
+            "Cap".to_owned(),
+            "example/alternate-config-version".to_owned()
+        )]
+    );
+    assert_eq!(bounds("example/config-version"), []);
+    declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("b's bound checks: {refusals:?}"));
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): a static protocol role on a
+/// whole model alias binds the package its own unit binds the alias to.
+/// Each unit's `role w on N` selects its own package, whichever unit is
+/// later.
+#[trace("FR-480")]
+#[test]
+fn a_whole_model_role_on_a_shared_alias_selects_its_own_units_package() {
+    let protocol = |name: &str| {
+        format!(
+            "protocol {name} using p over (c: N::ConfigVersion) on origin {{\n\
+             role w on N;\n\
+             run sequence Main {{ }}\n\
+             finish Done as (d: Boolean) {{ true }};\n\
+             }}"
+        )
+    };
+    let (a, b) = (protocol("Pa"), protocol("Pb"));
+    let units = one_alias_two_packages(&a, &b);
+    let units: Vec<_> = units
+        .iter()
+        .map(|(id, text)| (*id, text.as_str()))
+        .collect();
+    let checked = assemble_model_units_with(
+        "profile s = \"quire.model.complete/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n",
+        &units,
+    )
+    .unwrap_or_else(|refusal| panic!("both protocols assemble: {refusal:?}"))
+    .with_unwritten_protocols()
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("both protocols check: {refusals:?}"));
+    let selection = |name: &str| {
+        let protocol = checked
+            .protocols()
+            .iter()
+            .find(|protocol| protocol.name == name)
+            .unwrap_or_else(|| panic!("{name} is checked"));
+        let [role] = protocol.roles.as_slice() else {
+            panic!("{name} has one role: {:?}", protocol.roles);
+        };
+        role.model_selection.clone()
+    };
+    assert_eq!(selection("Pa").as_deref(), Some("example/config-version"));
+    assert_eq!(
+        selection("Pb").as_deref(),
+        Some("example/alternate-config-version")
+    );
 }
 
 /// FR-480-AC-16 (QSL-1613): a unit never reaches a package through another

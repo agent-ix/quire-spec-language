@@ -1753,6 +1753,8 @@ pub(crate) struct Inputs<'a> {
     pub(crate) timed_forms: &'a [TimedDeclaration],
     /// Each declaration's source unit, by declared name (FR-480).
     pub(crate) source_owners: &'a BTreeMap<String, RawSourceRef>,
+    /// Each unit's model aliases bound to their packages (FR-480).
+    pub(crate) spellings: &'a super::model_spelling::ModelSpellings,
     /// The unit's clock-reading declarations (FR-230 "Clock-reading
     /// declarations").
     pub(crate) clock_reading: &'a [super::assemble::ClockReadingDeclaration],
@@ -2081,10 +2083,16 @@ pub(crate) fn first_clock_read(
     model: &AdmittedModel,
     models: &[AdmittedModel],
     clock_reading: &[super::assemble::ClockReadingDeclaration],
+    scope: &super::check::Scope,
     context: &EffectiveId,
 ) -> Option<Span> {
     let units = TimeUnits::default();
-    let declarations = reading::Declarations::new(clock_reading, models);
+    let declarations = reading::Declarations::new(
+        clock_reading,
+        models,
+        scope.model_spellings(),
+        scope.source_owners(),
+    );
     let clocks = Clocks {
         model,
         fields: clock_fields(model),
@@ -4220,7 +4228,12 @@ fn prepare_models(
     // FR-230 "Clock-reading declarations": each body is checked once. A call
     // this check does not expand reaches the value checker, which refuses it
     // (`CheckCause::ClockReadingCall`).
-    let declarations = reading::Declarations::new(inputs.clock_reading, inputs.models);
+    let declarations = reading::Declarations::new(
+        inputs.clock_reading,
+        inputs.models,
+        inputs.spellings,
+        inputs.source_owners,
+    );
     for declaration in inputs.clock_reading {
         reading::check_declaration(declaration, &declarations).map_err(timed)?;
     }
