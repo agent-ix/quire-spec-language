@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-522-AC-1 to FR-522-AC-23 and FR-330-AC-11. **R** is the recipe package of FR-517 with its three clock kinds. Each refusal row varies one member of the asserted binding from the clause's own row. The numeric clock values are the rows of **R**'s lock, read by the test and not copied here. Every request states the clause's own `binding` unless the row varies it.
+Verify FR-522-AC-1 to FR-522-AC-26 and FR-330-AC-11. **R** is the recipe package of FR-517 with its three clock kinds. Each refusal row varies one member of the asserted binding from the clause's own row. The numeric clock values are the rows of **R**'s lock, read by the test and not copied here. Every request states the clause's own `binding` unless the row varies it.
 
 ## Test Procedure
 
@@ -46,8 +46,11 @@ Verify FR-522-AC-1 to FR-522-AC-23 and FR-330-AC-11. **R** is the recipe package
 | 26 | 21 | two requests differing only in the relation, the `EvidenceLedger` or the progress ledger | equal `input_identity` |
 | 27 | 22 | two requests differing only in a retained-instance entry | distinct `result_identity` |
 | 28 | 23 | two requests differing only in the progress-ledger entry | distinct `result_identity` |
+| 29 | 24 | evidence requests differing alone in a delivery's identity byte, receipt, anchor, payload, guard, one capture fact; the same deliveries reordered | each distinct |
+| 30 | 25 | evidence requests differing alone in an origin's identity byte, payload, one capture fact | each distinct |
+| 31 | 26 | evidence requests differing alone in the `anchor`; in one `evicted` record; in each of the nine members of the `correspondence` | each distinct |
 
-Tag the test `#[trace("FR-522-AC-1", ..., "FR-522-AC-23", "FR-330-AC-11", "TC-1317")]`; the identity rows 17a to 17e carry FR-522-AC-17.
+Tag the test `#[trace("FR-522-AC-1", ..., "FR-522-AC-26", "FR-330-AC-11", "TC-1317")]`; the identity rows 17a to 17e carry FR-522-AC-17.
 
 ## Expected Results
 

@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use ix_trace_rs::trace;
 use quire_contract_model::{
     read_checked_package, CheckedNodeKind, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    ClockConfiguration, ClockExactNumber, ProtocolForm, TemporalForm,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCause,
+    CheckedPackageRefusalCode, CheckedPackageV2, ClockConfiguration, ClockExactNumber, JsonPointer,
+    ProtocolForm, TemporalForm,
 };
 use quire_spec_language::checked_handoff::{
     evidence, write, write_with, CheckedHandoffRequest, Corpus, Environment, Error, ErrorCode,
@@ -29,18 +30,6 @@ fn recipe(kind: &str) -> (&'static str, Vec<(&'static str, ClockConfiguration)>)
             "unit-event-position.native",
             vec![
                 (
-                    "Due",
-                    ClockConfiguration::EventPosition {
-                        sequence_authority: "events-authority".into(),
-                    },
-                ),
-                (
-                    "DueLate",
-                    ClockConfiguration::EventPosition {
-                        sequence_authority: "events-authority".into(),
-                    },
-                ),
-                (
                     "Full",
                     ClockConfiguration::EventPosition {
                         sequence_authority: "events-authority".into(),
@@ -48,6 +37,18 @@ fn recipe(kind: &str) -> (&'static str, Vec<(&'static str, ClockConfiguration)>)
                 ),
                 (
                     "Partial",
+                    ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    },
+                ),
+                (
+                    "Due",
+                    ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    },
+                ),
+                (
+                    "DueLate",
                     ClockConfiguration::EventPosition {
                         sequence_authority: "events-authority".into(),
                     },
@@ -556,18 +557,20 @@ fn the_clock_selections_flag_emits_the_requests_bytes_and_bad_files_refuse() {
     let directory = tempfile::tempdir().unwrap();
     for kind in KINDS {
         let expected = request(kind, Corpus::None).emit;
-        let object: serde_json::Map<String, Value> = expected
+        // Written by hand, in selection order: a `serde_json::Map` would sort.
+        let entries: Vec<String> = expected
             .temporal_selections
             .iter()
             .map(|selection| {
-                (
-                    selection.clause.clone(),
-                    serde_json::to_value(&selection.clock).unwrap(),
+                format!(
+                    "{}:{}",
+                    serde_json::to_string(&selection.clause).unwrap(),
+                    serde_json::to_string(&selection.clock).unwrap()
                 )
             })
             .collect();
         let clocks = directory.path().join(format!("{kind}.json"));
-        std::fs::write(&clocks, serde_json::to_vec(&object).unwrap()).unwrap();
+        std::fs::write(&clocks, format!("{{{}}}", entries.join(","))).unwrap();
         let line = command_line(&expected, &clocks);
         assert_eq!(Request::parse(&line).unwrap(), expected, "{kind}");
         let mut stdout = Vec::new();
@@ -1152,6 +1155,115 @@ fn every_case_gets_the_refusal_of_its_row() {
     assert_eq!((reader_cases, selection_cases), (20, 10));
 }
 
+/// TC-1308 row 23: Contract IR admits the emitted protocol package directly,
+/// then refuses substitutions to its source, selected model, result node
+/// identity, and canonical wire bytes.
+#[trace("TC-1308", "FR-513-AC-13")]
+#[test]
+fn protocol_package_is_independently_admitted_and_identity_mutations_refuse() {
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let files = tree(&out);
+    let bytes = &files["checked-package.json"];
+    let held = evidence(&request("event_position", Corpus::None)).unwrap();
+    admitted(bytes, &held);
+
+    let refusal = |package: Value| {
+        let bytes = serde_json::to_vec(&package).expect("mutated package is JSON");
+        match read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &held) {
+            CheckedPackageDispatchResult::Refused(refusal) => refusal,
+            other => panic!("mutated package was admitted: {other:?}"),
+        }
+    };
+
+    let round_trip = serde_json::to_vec(&serde_json::from_slice::<Value>(bytes).unwrap())
+        .expect("unmutated package round-trips as canonical JSON");
+    admitted(&round_trip, &held);
+
+    let mut source = serde_json::from_slice::<Value>(bytes).unwrap();
+    source["lock"]["sources"][0]["identity"] = serde_json::json!("source:foreign");
+    let source_refusal = refusal(source);
+    assert_eq!(
+        source_refusal.code,
+        CheckedPackageRefusalCode::InvalidSourceMap
+    );
+    assert_eq!(source_refusal.cause, None, "{source_refusal:?}");
+    assert_eq!(
+        source_refusal.loci[0]
+            .path
+            .as_ref()
+            .map(|path| path.as_str()),
+        Some("/source_map/0/regions/0/source")
+    );
+
+    let mut model = serde_json::from_slice::<Value>(bytes).unwrap();
+    let nodes = model["semantic_graph"]["nodes"].as_array_mut().unwrap();
+    let root_index = nodes
+        .iter()
+        .position(|node| node["semantic_form"] == "model_root")
+        .expect("the protocol package carries its selected model root");
+    let root = nodes
+        .get_mut(root_index)
+        .expect("the selected model root index is in range");
+    root["owner"]["identity"] = serde_json::json!("foreign/model");
+    let model_refusal = refusal(model);
+    assert_eq!(model_refusal.code, CheckedPackageRefusalCode::MissingImport);
+    assert_eq!(
+        model_refusal.cause,
+        Some(CheckedPackageRefusalCause::MissingSelection),
+        "{model_refusal:?}"
+    );
+    assert_eq!(
+        model_refusal.loci[0]
+            .path
+            .as_ref()
+            .map(|path| path.as_str()),
+        Some(format!("/semantic_graph/nodes/{root_index}/owner/identity").as_str())
+    );
+
+    let mut result = serde_json::from_slice::<Value>(bytes).unwrap();
+    let node = result["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .first_mut()
+        .expect("the protocol package has a result node");
+    let ordinal = node["node_id"]["ordinal"]
+        .as_u64()
+        .expect("the result identity ordinal is an unsigned integer");
+    node["node_id"]["ordinal"] = serde_json::json!(if ordinal == 0 { 1 } else { 0 });
+    let result_refusal = refusal(result);
+    assert_eq!(
+        result_refusal.code,
+        CheckedPackageRefusalCode::InvalidPackage,
+        "{result_refusal:?}"
+    );
+    assert_eq!(
+        result_refusal.cause,
+        Some(CheckedPackageRefusalCause::InvalidDerivedShape),
+        "{result_refusal:?}"
+    );
+    assert_eq!(
+        result_refusal.loci[0]
+            .path
+            .as_ref()
+            .map(|path| path.as_str()),
+        Some("/semantic_graph/nodes/0/node_id")
+    );
+
+    let noncanonical = serde_json::to_vec_pretty(&serde_json::from_slice::<Value>(bytes).unwrap())
+        .expect("the same package can be reserialized with whitespace");
+    let noncanonical_refusal =
+        match read_checked_package(&noncanonical, CheckedPackageReadLimits::bounded(), &held) {
+            CheckedPackageDispatchResult::Refused(refusal) => refusal,
+            other => panic!("noncanonical package bytes were admitted: {other:?}"),
+        };
+    assert_eq!(
+        noncanonical_refusal.code,
+        CheckedPackageRefusalCode::NoncanonicalWire
+    );
+    assert_eq!(noncanonical_refusal.cause, None, "{noncanonical_refusal:?}");
+    assert!(noncanonical_refusal.loci[0].path.is_none());
+}
+
 /// FR-518-AC-4: the case of row 12 (the clauses, the lock and the binding rows
 /// move to another registered profile) and the case of row 29 are admitted by
 /// the reader and refused with `definition.identity` and `definition.authority`.
@@ -1562,30 +1674,151 @@ fn a_differing_declared_clause_name_is_refused_on_clause_name() {
 }
 
 /// FR-517-AC-13: with the model admitting a unit on a bounded scalar, the
-/// `Amount` and `Total` scalars of R carry the unit `U`.
+/// `Amount` and `Total` scalars of R carry the unit `U`: each is an alias of
+/// `ix://quire/unit/U` whose `min` and `max` name the alias (QSpec FR-154
+/// "Unit bounds"), the form [`unit_model`] writes.
 #[trace("FR-517-AC-13", "TC-1312")]
 #[test]
-#[ignore = "gated on QSL-1558 (FR-497): the recipe model carries no unit on Amount and Total"]
+#[ignore = "gated on QSL-1558: R refuses a unit on Amount and Total (FR-517-AC-16)"]
 fn amount_and_total_carry_the_unit_u() {
     let model: Value =
         serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
             .unwrap();
     for scalar in ["Amount", "Total"] {
-        let declared = model["types"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|t| {
-                t["displayName"]
-                    .as_str()
-                    .unwrap()
-                    .ends_with(&format!("/{scalar}"))
-            })
+        let declared = declared_type(&model, scalar);
+        assert_eq!(declared["kind"], "alias", "{scalar}");
+        assert_eq!(declared["target"], "ix://quire/unit/U", "{scalar}");
+    }
+}
+
+/// The type of R's model whose identity ends in `/name`.
+fn declared_type<'m>(model: &'m Value, name: &str) -> &'m Value {
+    model["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|declared| {
+            declared["identity"]
+                .as_str()
+                .unwrap()
+                .ends_with(&format!("/{name}"))
+        })
+        .unwrap()
+}
+
+/// R's model with `Amount` and `Total` as aliases of the unit `U`, their
+/// bounds kept and naming the alias, written into `dir`.
+fn unit_model(dir: &Path) -> PathBuf {
+    let mut model: Value =
+        serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
             .unwrap();
-        for constraint in declared["constraints"].as_array().unwrap() {
-            assert_eq!(constraint["appliesTo"], "ix://quire/unit/U", "{scalar}");
+    for name in ["Amount", "Total"] {
+        let identity = declared_type(&model, name)["identity"].clone();
+        let declared = model["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|declared| declared["identity"] == identity)
+            .unwrap();
+        let object = declared.as_object_mut().unwrap();
+        object.remove("scalar");
+        object.insert("kind".into(), "alias".into());
+        object.insert("target".into(), "ix://quire/unit/U".into());
+        for constraint in object["constraints"].as_array_mut().unwrap() {
+            constraint["appliesTo"] = identity.clone();
         }
     }
+    let path = dir.join("model.semantic-ir.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&model).unwrap()).unwrap();
+    path
+}
+
+/// A handoff request for one unit over [`unit_model`] that declares the
+/// unit `U` and then `body`; no library, no temporal clause.
+fn unit_request(dir: &Path, body: &str) -> CheckedHandoffRequest {
+    let source = dir.join("unit.native");
+    std::fs::write(
+        &source,
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
+             model M = \"agent-ix/checked-handoff\";\n\
+             dimension Money;\nunit U : Money = rational(1, 1);\n{body}\n"
+        ),
+    )
+    .unwrap();
+    CheckedHandoffRequest {
+        emit: Request {
+            source,
+            package_name: "r".into(),
+            models: vec![unit_model(dir)],
+            libraries: Vec::new(),
+            execution_points: None,
+            temporal_selections: Vec::new(),
+            out: None,
+        },
+        corpus: Corpus::None,
+    }
+}
+
+/// [`unit_request`] written into a new directory beside its inputs.
+fn write_unit(body: &str) -> Result<(), Error> {
+    let dir = tempfile::tempdir().unwrap();
+    write(&unit_request(dir.path(), body), &dir.path().join("handoff"))
+}
+
+/// FR-517-AC-16 (QSL-1558): the refusals that keep the unit `U` off R's
+/// `Amount` and `Total`. A unit-typed operation parameter compared with a
+/// unit literal is written and admitted; a unit that no expression of the
+/// unit reaches is not emitted, though the selected model's types name it,
+/// so Contract IR's reader refuses the model `typeRef` that reaches it (R's
+/// library and its fixed-sample and timestamped-event units read no
+/// unit-typed member); the model alias is not a source type name; and `sum`
+/// refuses a quantity summand.
+#[trace("FR-517-AC-16", "TC-1312")]
+#[test]
+fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
+    write_unit("pre BeforeApply using v on M::Workflow::apply { amount >= 1 U }")
+        .expect("a unit-typed parameter against a unit literal is written");
+
+    let error =
+        write_unit("invariant Ready using v on M::Workflow at current { self.ready }").unwrap_err();
+    let Error::ReaderRefused(refusal) = &error else {
+        panic!("the reader refuses a unit no expression reaches: {error:?}");
+    };
+    assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
+    assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
+    // `Recovery.receipts`, typed `Amount`, the first `typeRef` to reach `U`.
+    assert_eq!(
+        refusal.document_pointer,
+        JsonPointer::parse("/types/7/fields/0/typeRef")
+    );
+
+    let error = write_unit(
+        "invariant Bounded using v on M::Workflow at current {\n    \
+         sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n}",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Compile);
+    let detail = format!("{error:?}");
+    assert!(
+        detail.contains("UnresolvedTypeName { name: \"M::Total\" }"),
+        "{detail}"
+    );
+
+    let error = write_unit(
+        "type Cash = Quantity<U>;\n\
+         invariant Bounded using v on M::Workflow at current {\n    \
+         sum<Cash>(receipt in self.receipts: receipt) <= self.total\n}",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Compile);
+    let detail = format!("{error:?}");
+    assert!(
+        detail.contains("StateClause { clause: \"Bounded\"")
+            && detail.contains("IllTyped(TypeMismatch)"),
+        "{detail}"
+    );
 }
 
 /// FR-517-AC-14: the `recover` condition of `Full` compares the receipt sum

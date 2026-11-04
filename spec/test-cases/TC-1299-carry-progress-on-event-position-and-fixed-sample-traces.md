@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-504-AC-1 to AC-8 and FR-330-AC-10: a fixed-sample watermark settles a
+Verify FR-504-AC-1 to AC-9 and FR-330-AC-10: a fixed-sample watermark settles a
 silent deadline, an event-position watermark is a premise that advances nothing,
 an incomplete input applies no false extension, an open scope settles only on a
 decisive witness or counterexample, and the ledger covers these shapes.
@@ -45,6 +45,7 @@ Each row compiles a unit with the stated profile and runs `run_clause` over
 | 15 | `Progressed` over a `Lasso`, a `Model`, an infinite-trace clause over `Finite` | any | stage `admit`, `invalid_runtime_input`/`invalid-value` each |
 | 16 | with a ledger: Fx at W 3 then W 1; Ev at W 3 then W 9 | row 1 trace | `Watermark` contradiction; accepted with `Pending` unchanged |
 | 17 | `run_clause` for rows 2 and 3 | as rows | the updated ledger returned; outcomes as rows |
+| 18 | Fx `eventually[0,0] holds(p)` `on each` | 1 position at index 0, p T; Closed; W 3; C(3) | `Completed(true)`; the silent samples at 1 to 3 anchor nothing (an anchor there reads p F and would give `Completed(false)`); with a second real position at index 1, p F: `Completed(false)` at position 1 |
 
 ## Expected Results
 

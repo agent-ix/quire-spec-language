@@ -73,8 +73,8 @@ result field:
 | `correspondence: EvidenceRef` | `correspondence: EvidenceRef` | `EvidenceRef` keeps `identity`, `authority_identity`, `authority_revision`, `scope`, `population`, and carries `contract` (text), `schema_digest`, `digest` and `authority_digest` (byte strings) as opaque caller-supplied members: QSL does not compute, verify or interpret them (it does not authenticate observation evidence), echoes each byte for byte in the result's support references, and no truth, settlement or support value depends on them. Package content digests stay removed (QSL-1270); these are the observation owner's identifiers, not QSL's |
 | `positions: Vec<ObservedPosition>` | `positions` | each `{ observation: EvidenceRef, position, instance_valuations }`; `instance_valuations` is FR-524's map from a trigger identity to that instance's valuations at the position |
 | `anchor` | `anchor` | the authored activation anchor: the `EvidenceRef` identity of one of the request's positions, which fixes the activation position ("Assessed instance") |
-| `triggers: Vec<TriggerInput>` | `deliveries: Vec<TriggerDelivery>` (clause `on each`) or `origins: Vec<ExecutionOrigin>` (clause `on origin`) | the ordered deliveries, each `{ identity, receipt, anchor, payload, guard: Option<bool>, captures }`, so that a repeated delivery of one identity and several instances are expressible (FR-524). The retired native request admitted exactly one trigger; the legacy evaluator (`temporal::Trace.triggers`) admitted many, and this field is the successor of that list |
-| `trigger_evidence`, `trigger_scope` | same | `Evidence` and `Closure` of the retained `temporal` vocabulary, independent of the decision scope |
+| `triggers: Vec<TriggerInput>` | `deliveries: Vec<TriggerDelivery>` (clause `on each`) or `origins: Vec<ExecutionOrigin>` (clause `on origin`, each `{ identity, payload, captures }`) | the ordered deliveries, each `{ identity, receipt, anchor, payload, guard: Option<bool>, captures }`, so that a repeated delivery of one identity and several instances are expressible (FR-524). The retired native request admitted exactly one trigger; the legacy evaluator (`temporal::Trace.triggers`) admitted many, and this field is the successor of that list |
+| `trigger_evidence`, `trigger_scope` | same | `Evidence` and `Closure` of the retained `temporal` vocabulary, independent of the decision scope, with the completeness of the trigger record (`Complete` or `Incomplete`) as a third member of the scope (FR-524) |
 | `decision_progress`, `decision_closure`, `surrounding_progress`, `surrounding_closure` | same | four independent axes (FR-052-AC-10) |
 | `execution` | `execution` | `Completed`/`Failed` disposition |
 | `completeness` | `completeness` | `{ reference, state, facts }` |
@@ -82,6 +82,7 @@ result field:
 | none | `progress_ledger: Option<ProgressLedger>` | FR-502's ledger of watermark, completeness and closure per binding; the call applies FR-502 to the request's progress assertion and returns the updated ledger |
 | none | `ledger: Option<EvidenceLedger>` | the caller-held ledger of retained instances (FR-524) and latest results (FR-526); the result returns the updated ledger |
 | `relation` | `relation` | `Original`, `Superseding(prev)` or `Invalidating(prev)`, `prev` the predecessor's `result_identity` (FR-526) |
+| none | `occurrence: Option<{ role, ordinal }>` | selects the clause occurrence of a node that several structurally equal clauses share, with the producer-assigned `{ role, ordinal }` of QSpec FR-322; the occurrence's clock row is the one keyed `(declaration, occurrence)`, never the k-th row by position. May be omitted for a node with one occurrence |
 | none | `control: Option<CheckedNodeId>` | the protocol clause the caller selected; when present, the package's FR-449 activation-map row of that clause must name the call's clause (below) |
 | none (the retired document asserted the profile and clock) | `binding: TraceBinding` | the profile, clock binding name and clock parameters the request asserts; the evaluator compares them with the clause's rows before any position (FR-522) |
 
@@ -106,7 +107,8 @@ instance is identified by the trigger identity (FR-053).
 | `limits()` | `usage`: the meter charges of the call, over the thirteen counters of the Work limits item |
 | `predecessor()`, `lineage()`, `relation_kind()` | `relation` echoed with `prev`; `lineage: u64`; `input_identity` (FR-526); the updated `ledger` and `progress_ledger` |
 | none | `authenticated: AuthenticatedBinding` (FR-522), present on every result because a refused binding returns no result |
-| none | `instances`: every instance the lists resolved, each with its identity and activation state, so that the siblings of the assessed instance stay inspectable (FR-524) |
+| none | `instances`: every instance the lists resolved, each with its identity and activation state (`Active`, or `Unavailable` with its fault, a guard fault included), so that the siblings of the assessed instance stay inspectable (FR-524); a delivery with a false guard is not listed |
+| none | `incomplete: Option<EvidenceIncomplete>`: the counter, meter, lineage or evicted-valuation stop, or the clause stop (`formula_nodes`, `history_span`, a tick sum that does not fit), that ended the call, naming what stopped it (a tick sum that does not fit names `history_span`); `None` when the call ran to its result, and `None` for a withdrawn anchor, which is a `Missing` non-value (Independent facts) |
 | `request_identity()`, `subject_identity()`, `document().*` | `result_identity` as FR-043-AC-13 states it (an evaluator identity, not a digest); the rest end with the documents |
 
 Entry: `CheckedPackageEvaluation::evaluate_temporal_evidence(&self, clause:
@@ -115,12 +117,25 @@ Result<EvidenceResult, CallFailure>`; **Refusal has one outcome.** Every refusal
 `Err(CallFailure::Admission)`, nothing is charged and no result exists: a clause
 not held by the package or not a temporal clause, a request that fails
 construction (an empty trigger identity), a selection or supply refused before S6a
-(FR-390), a refused binding (FR-522), a delivery contradiction (FR-524), a
+(FR-390), a refused binding (FR-522), a delivery contradiction or a surplus
+capture fact (FR-524), an occurrence selector that is absent for a node with several occurrences (`occurrence-required`) or names no occurrence of the node (`occurrence-unknown`), a
 progress contradiction (FR-502), a `trigger-required` or `trigger-unknown`
 refusal, a control that does not map to the clause (below) and each relation
 refusal (FR-526). `activation = Unavailable` is a result,
 not a refusal: the call ran and a fact the clause needs was withdrawn, or the
-obligation was never activated.
+obligation was never activated. An `Incomplete` is likewise a result, never an
+error: errors are for malformed input only, and a call that a counter, the meter,
+the lineage ceiling or an evicted valuation stops returns `Ok` with
+`activation = Unavailable`, `truth = None`, `settlement = None` and `incomplete`
+naming the stop. The same holds for a stop at the clause (`formula_nodes`,
+`history_span`, a tick sum that does not fit), which assesses no instance.
+`activation` is never unset: every `Ok` result holds exactly one of the four
+states. An `Incomplete` result returns the request's own `ledger` and
+`progress_ledger` unchanged for every stop kind (counter, meter, evicted
+valuation, clause stop, lineage): no instance, receipt, latest-result entry or
+progress entry the call made before the stop is kept, so a retry under sufficient
+ceilings from the same inputs is byte-equal to a call that never stopped
+(FR-523).
 
 ## Behavior
 
@@ -130,11 +145,21 @@ obligation was never activated.
   whole-execution origin activated the obligation; `Unavailable` when a fact
   that decides activation (the anchor or the clock row) was withdrawn from the
   request, when the assessed instance has a capture or guard fault (FR-524), or
-  when the obligation was never activated. A fact withdrawn after
+  when the obligation was never activated, or when the call stopped as
+  `Incomplete` (Outputs). A fact withdrawn after
   activation (decision closure, completeness record, a support fact) leaves
   `activation` as derived and yields a `Missing` non-value for that fact
   (Independent facts below). No other path
   assigns an activation state (FR-044).
+- **Execution and trigger record.** The request's `execution` (`Completed` or
+  `Failed`) is carried into an `Unknown` disposition (FR-524) and echoed in the
+  result's `execution` field; it changes no `Inactive`, `Active` or `Unavailable`
+  state and no truth. The trigger record's completeness decides whether a
+  `Closed`, admitted scope with no instance is `Inactive` (`Complete`) or
+  `Unknown(open)` (`Incomplete`).
+- **Pending.** A finite-window verdict of `Pending` and one of `PendingNextEvent`
+  (FR-504) both map to `Truth::Pending`; `PendingNextEvent` has no truth value of
+  its own, and the result keeps no difference between them in `truth`.
 - **No supplied truth.** The request has no truth, settlement or support field;
   the result's three are derived from the package and the evidence
   (FR-052-AC-9).
@@ -201,8 +226,20 @@ obligation was never activated.
   `deliveries` is a list. The thirteen are named temporal work counters whose units,
   settings and stop scope FR-523 defines. Each of the thirteen
   counters completes at exactly
-  its measured usage, and one below it returns `Incomplete` naming the counter
-  with no partial truth.
+  its measured usage, and one below it returns an `Incomplete` result naming the
+  counter with no partial truth. A charge at a silent sample (FR-504: a fixed-sample watermark sample with no observation, at which every atom reads false) is charged to the call's meter at the `temporal.visit` charge point, one unit each, and counts in neither `evaluation_steps` nor `positions` (FR-523 "Evaluated position visit"); its `holds` lookup also charges `valuations` and `visited`. It adds no counter: the thirteen stay thirteen.
+- **The in-process package.** The call reads the same facts from the in-memory
+  checked package that the I2 write holds before any lock is emitted as from the
+  package read back from the emitted bytes: the in-memory package carries, at
+  construction, the `profile_selections` row of each clause and one
+  `TemporalBinding` (clock) row per clause occurrence, the rows FR-515 reads.
+  A `CheckedNodeId` plus the request's `occurrence` selects the clock row by its
+  key `(declaration, occurrence)` (QSpec FR-322), not by position among the node's
+  rows, so producer-assigned ordinals that differ from position pair correctly. For
+  a node with one occurrence the selector may be omitted; for a node with several
+  occurrences an absent selector is refused with `occurrence-required` and a
+  selector naming no occurrence with `occurrence-unknown`. Two clauses with
+  different nodes never read each other's rows.
 - **Contract ids.** The four contract strings have no producer after this
   requirement; quire-protocol's producer-contract registry rows for them end with
   QSL-1549, not before (FR-521 row 4).
@@ -235,6 +272,17 @@ obligation was never activated.
 | FR-516-AC-22 | For a clause `on each` whose `anchor` names the observation at index 2, the activation outcome reports position 2, and for a clause `on origin` it reports position 0 whatever the `anchor` names among the positions. | Test (TC-1311) |
 | FR-516-AC-23 | A request whose `anchor` names no observed position returns `Unavailable` with a `Missing` non-value naming the anchor. | Test (TC-1311) |
 | FR-516-AC-24 | A request with a closed complete trigger scope, no delivery, `trigger` `None` and an `anchor` naming no observed position returns `Unavailable`, not `Inactive`. | Test (TC-1311) |
+| FR-516-AC-25 | A call stopped by a counter ceiling, by the meter, by the `lineage` ceiling, by an evicted required valuation, by `formula_nodes` and by `history_span` (including a tick sum that does not fit) each returns `Ok` with `activation = Unavailable`, `truth = None` and `incomplete` naming the stop (`history_span` for the last), and none returns `Err` or an unset activation. A request whose anchor names no observed position returns `Ok` with `activation = Unavailable`, a `Missing` non-value naming the anchor and `incomplete = None`. | Test (TC-1311) |
+| FR-516-AC-26 | A finite-window verdict `PendingNextEvent` and a verdict `Pending` each return `truth = Pending`. | Test (TC-1311) |
+| FR-516-AC-27 | Over the clause of FR-523-AC-21 through `evaluate_temporal_evidence`, `usage` reports `evaluation_steps` 4, `positions` 1, `valuations` 4, the meter's `temporal.visit` usage is 10, and `usage` reports exactly thirteen counters. | Test (TC-1311) |
+| FR-516-AC-28 | A request with a guard-`None` delivery and a healthy delivery lists both in `instances` (the first `Unavailable` with a guard fault), assessing the healthy one by `trigger`, and a request with a surplus capture fact returns `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
+| FR-516-AC-29 | Over the in-memory package of the I2 write, before any emit, the clause's profile selection and `TemporalBinding` row equal the rows of the package read back from its bytes, and `evaluate_temporal_evidence` over it authenticates the clause's own `binding`. | Test (TC-1311) |
+| FR-516-AC-30 | In a package with two temporal clauses of different formulas and different clock rows, each clause's `CheckedNodeId` pairs with its own row: a `binding` asserting the other clause's row is refused with the dimension FR-522 names, in the in-memory and in the read-back package alike. | Test (TC-1311) |
+| FR-516-AC-31 | For each stop kind of AC-25 other than the withdrawn anchor, the result's `ledger` and `progress_ledger` equal the request's byte for byte, even when instances were created or a receipt was added before the stop, and the retry of FR-523-AC-11 equals the call that never stopped. | Test (TC-1311) |
+| FR-516-AC-32 | Over a constructed package (in memory and read back) of twins of one node whose `occurrences` array lists ordinal 7 then ordinal 3 while the lock's clock rows ascend 3 then 7, with different clock rows (QSL's emitter cannot produce this order), a request with `occurrence` ordinal 3 authenticates a `binding` equal to the row keyed ordinal 3 and refuses one equal to the row keyed ordinal 7 with the dimension FR-522 names, and the reverse for ordinal 7; a pairing by position fails this criterion. | Test (TC-1311) |
+| FR-516-AC-33 | Over the twins of AC-32, a request with no `occurrence` returns `Err(CallFailure::Admission)` with cause `occurrence-required` and a request with ordinal 5 returns cause `occurrence-unknown`, each with an empty charge log; over a node with one occurrence a request with no `occurrence` is evaluated. | Test (TC-1311) |
+| FR-516-AC-34 | `execution` `Failed` and `execution` `Completed` over an otherwise equal request with open trigger scope return `Unknown` carrying `Failed` and `Completed` respectively, and over an admitted delivery the two requests return the same activation and truth. | Test (TC-1311) |
+| FR-516-AC-35 | Over a closed, admitted scope with no delivery, trigger record `Complete` returns `Inactive` and trigger record `Incomplete` returns `Unknown(open)`, each with the request's `execution` echoed. | Test (TC-1311) |
 
 ## Dependencies
 

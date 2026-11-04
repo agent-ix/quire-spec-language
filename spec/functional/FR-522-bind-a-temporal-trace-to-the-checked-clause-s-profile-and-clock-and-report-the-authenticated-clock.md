@@ -66,8 +66,9 @@ depends on.
 QSpec FR-090 owns profile and clock selection and FR-043 states the legacy
 evaluation of it. The checked package is the authentication: the profile comes
 from the lock's `profile_selections` row of the clause (FR-515 `profile()`), and
-the clock from the `temporal_bindings` row of the declaration (FR-515 `clock()`;
-FR-050). The evaluator does not authenticate the observation owner's evidence
+the clock from the `temporal_bindings` row keyed by the declaration and the
+request's occurrence (FR-515 `clock()` for a node with one occurrence, `clock_of`
+for one of several; FR-516 `occurrence`; FR-050). The evaluator does not authenticate the observation owner's evidence
 (FR-053).
 
 This requirement owns the identity function. FR-523 defines the work ceilings
@@ -151,7 +152,12 @@ The `result_identity` of every outcome follows the identity rule below.
   lower boundary), the retained-instance entries of the request's
   `EvidenceLedger` for the obligation (FR-524), the progress-ledger entry for the
   binding (FR-502), the work ceilings of FR-523, the meter's work-unit ceiling
-  and, for an evidence result, the trigger identity and the relation of FR-526.
+  and, for an evidence result, each of these members of the evidence request
+  as its own member and not as part of the trace: the trigger identity, the
+  relation of FR-526, the `deliveries` in order (each identity, receipt, anchor,
+  payload, guard and capture facts), the `origins` in order (each identity, payload
+  and capture facts), the `anchor`, the `evicted` records and the `correspondence`
+  (every member of its `EvidenceRef`, the opaque byte members included).
   The `EvidenceLedger`'s latest-results table is not a member: it records
   identities, not evidence.
 - When two requests carry equal members, the evaluator SHALL give them one
@@ -188,13 +194,16 @@ The `result_identity` of every outcome follows the identity rule below.
 | FR-522-AC-14 | The `Finite`, `Lasso` and `Model` traces carry no `TraceBinding`, and their reports hold no `authenticated`. | Test (TC-1317) |
 | FR-522-AC-15 | Evaluating one request of each of **R**'s three clauses twice gives one `result_identity` per request. | Test (TC-1317) |
 | FR-522-AC-16 | The `result_identity` values of **R**'s three clauses' requests are pairwise distinct. | Test (TC-1317) |
-| FR-522-AC-17 | For **R**'s fixed-sample clause, changing exactly one member of the identity list gives a `result_identity` distinct from AC-15's; TC-1317 varies each member of the list alone: the `epoch`, `period` and `unit` of the clock row, the profile, the clock name, the cover, one stamp, one valuation, one order key, the watermark, `through`, the scope closure, the surrounding-execution closure, the lower boundary, one retained-instance entry, one progress-ledger entry, each of the thirteen ceilings of FR-523 and the meter's work-unit ceiling. | Test (TC-1317) |
+| FR-522-AC-17 | For **R**'s fixed-sample clause, changing exactly one member of the identity list gives a `result_identity` distinct from AC-15's; TC-1317 varies each member of the list alone: the `epoch`, `period` and `unit` of the clock row, the profile, the clock name, the cover, one stamp, one valuation, one order key, the watermark, `through`, the scope closure, the surrounding-execution closure, the lower boundary, one retained-instance entry, one progress-ledger entry, each of the thirteen ceilings of FR-523 and the meter's work-unit ceiling; and, for an evidence request, the trigger identity, the relation, one delivery (its identity, receipt, anchor, payload, guard or one capture fact), the order of two deliveries, one origin (its identity, payload or one capture fact), the `anchor`, one `evicted` record and each member of the `correspondence`. | Test (TC-1317) |
 | FR-522-AC-18 | After AC-17's changed request is evaluated, the first request's result is neither reused nor rewritten: its bytes equal those it returned before. | Test (TC-1317) |
 | FR-522-AC-19 | For an event-position `Progressed` request, changing alone the `sequence_authority` of the row, the watermark or the scope closure gives a distinct `result_identity`. | Test (TC-1317) |
 | FR-522-AC-20 | The `result_identity` of the in-process package equals the `result_identity` of the package read back with the reader. | Test (TC-1317) |
 | FR-522-AC-21 | Two requests that differ only in the relation, the `EvidenceLedger` or the progress ledger have equal `input_identity` values. | Test (TC-1317) |
 | FR-522-AC-22 | Two requests that differ only in a retained-instance entry of the ledger have distinct `result_identity` values. | Test (TC-1317) |
 | FR-522-AC-23 | Two requests that differ only in the progress-ledger entry have distinct `result_identity` values. | Test (TC-1317) |
+| FR-522-AC-24 | Two evidence requests that differ only in one member of `deliveries` (an identity byte, the receipt, the anchor, the payload, the guard, or one capture fact) have distinct `result_identity` values, and so do two that list the same deliveries in a different order. | Test (TC-1317) |
+| FR-522-AC-25 | Two evidence requests that differ only in one member of `origins` (an identity byte, the payload, or one capture fact) have distinct `result_identity` values. | Test (TC-1317) |
+| FR-522-AC-26 | Two evidence requests that differ only in the `anchor`, only in one `evicted` record, or only in one member of the `correspondence` (each of `identity`, `authority_identity`, `authority_revision`, `scope`, `population`, `contract`, `schema_digest`, `digest`, `authority_digest`) have distinct `result_identity` values. | Test (TC-1317) |
 
 ## Dependencies
 

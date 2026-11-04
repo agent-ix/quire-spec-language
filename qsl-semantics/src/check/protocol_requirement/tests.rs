@@ -48,7 +48,7 @@ fn temporal(name: &str, condition: &str) -> String {
 /// A protocol `name` with the `members` written before `run`.
 fn protocol(name: &str, members: &str) -> String {
     format!(
-        "protocol {name} using v over (k: M::Node) on origin {{\n\
+        "protocol {name} using p over (k: M::Node) on origin {{\n\
          role w on M::Node;\n\
          {members}\n\
          run sequence Main {{\n\
@@ -60,13 +60,18 @@ fn protocol(name: &str, members: &str) -> String {
 }
 
 fn assemble(declarations: &str) -> (String, PackageDeclarations) {
+    assemble_under(HEADER, declarations)
+}
+
+/// [`assemble`] under `header` in place of [`HEADER`].
+fn assemble_under(header: &str, declarations: &str) -> (String, PackageDeclarations) {
     // A leading `profile` line is a header selection, written before the
     // model.
     let (profile, declarations) = match declarations.split_once('\n') {
         Some((first, rest)) if first.starts_with("profile ") => (format!("{first}\n"), rest),
         _ => (String::new(), declarations),
     };
-    let header = HEADER.replacen("model M", &format!("{profile}model M"), 1);
+    let header = header.replacen("model M", &format!("{profile}model M"), 1);
     let text = format!("{header}{declarations}");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u"),
@@ -223,7 +228,12 @@ fn a_requirement_binds_a_clause_with_an_activation_and_a_capture() {
         panic!("one requirement, got {checked:?}");
     };
     assert_eq!(due.temporal, 1);
-    let (_, assembled) = assemble(&unit);
+    // A temporal clause reads the unit's one selected temporal profile, so
+    // the unit selects `t` alone: the fixture header's timed profile `e` is
+    // left out.
+    let one_temporal = HEADER.replace("profile e = \"quire.temporal.timed/v1\";\n", "");
+    assert_ne!(one_temporal, HEADER, "the header selects the timed profile");
+    let (_, assembled) = assemble_under(&one_temporal, &unit);
     let refusals = assembled
         .check(CheckingLimits::default())
         .err()

@@ -42,24 +42,48 @@ fn check_with_limits(
     text: &str,
     limits: CheckingLimits,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u"),
-        "unit.native",
-        text.as_bytes(),
-        qsl_cst::Limits::default(),
-    )
-    .expect("S1 reads the unit");
-    assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
-    let unit = build_unit(&parsed).expect("S2 builds the unit");
-    PackageDeclarations::assemble(
-        parsed.source().reference().clone(),
-        "fixture".to_owned(),
-        unit,
-        vec![obligation_model()],
-        Vec::new(),
-    )
-    .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
-    .check(limits)
+    let assembled = || {
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u"),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
+        let unit = build_unit(&parsed).expect("S2 builds the unit");
+        PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            "fixture".to_owned(),
+            unit,
+            vec![obligation_model()],
+            Vec::new(),
+        )
+        .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
+    };
+    // These tests read the S3 check of a protocol under the selected
+    // protocol profile; an emission refusal (`NotEmitted`) belongs to the
+    // lowering stage, whose contract is its own. Any other refusal is the
+    // check's answer; when emission refusals are all there are, the graph
+    // is read through the per-protocol results.
+    let refusals = match assembled().check(limits) {
+        Ok(graph) => return Ok(graph),
+        Err(refusals) => refusals,
+    };
+    let checked: Vec<CheckRefusal> = refusals
+        .into_iter()
+        .filter(|refusal| {
+            !matches!(
+                            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+            if matches!(**cause, crate::check::refusal::ProtocolReferenceCause::NotEmitted { .. })
+                        )
+        })
+        .collect();
+    if !checked.is_empty() {
+        return Err(checked);
+    }
+    assembled().check_with_protocol_results(limits)
 }
 
 /// The one channel's checked ordering.

@@ -124,8 +124,8 @@ fn a_template_shares_the_operations_anchor_and_frame() {
     // The same template on another operation than the attempt's: its own
     // anchor and frame, each with its one frame record.
     let source = changed(
-        "by Service on M::Node::step using v",
-        "by Service on M::Node::undo using v",
+        "by Service on M::Node::step using e",
+        "by Service on M::Node::undo using e",
     );
     let graph = checked(&source);
     let protocol = &graph.protocols()[0];
@@ -287,16 +287,12 @@ fn the_attempt_count_is_recorded_exactly() {
     }
 }
 
-/// `BASE` with its `run` tree replaced by `run`, under a header that selects
-/// the protocol profile.
+/// `BASE` with its `run` tree replaced by `run`; the fixture header selects
+/// the protocol profile `p`.
 fn with_run(run: &str) -> String {
     let start = BASE.find("run sequence Main").expect("the run tree");
     let end = BASE.find("finish Closed").expect("the finish");
-    format!(
-        "profile p = \"{PROTOCOL_PROFILE}\";\n{}{run}\n{}",
-        &BASE[..start],
-        &BASE[end..]
-    )
+    format!("{}{run}\n{}", &BASE[..start], &BASE[end..])
 }
 
 const TRIED: &str =
@@ -471,7 +467,7 @@ fn a_commit_ordered_across_branches_is_admitted() {
          branch r sequence R { attempt T by Service on M::Node::step contracts [] \
          as (taken: M::Flag) { true }; \
          receive Rx via Ch of Main::P::s::S::Tx as (rx: M::Flag) { true }; \
-         effect E of Main::P::r::R::T as (e: M::Receipt) { true }; }\n\
+         effect E of Main::P::r::R::T as (done: M::Receipt) { true }; }\n\
          } join all [s, r];\n}";
     let source = edit(
         &with_run(run),
@@ -578,8 +574,8 @@ fn a_full_and_a_partial_recovery_are_two_compensations() {
 #[test]
 fn a_template_over_two_populations_refuses_its_operation() {
     let source = changed(
-        "by Service on M::Node::step using v",
-        "by Service on M::Pool::drain using v",
+        "by Service on M::Node::step using e",
+        "by Service on M::Pool::drain using e",
     );
     let (text, assembled) = assemble_against(ambiguous_population_model(), &source);
     let found = assembled
