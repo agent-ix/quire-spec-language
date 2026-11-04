@@ -345,3 +345,55 @@ fn an_emitted_requirement_keeps_its_temporal_clause_position() {
     let (_, refusals) = protocol_refusals(&unit);
     assert!(refusals.is_empty(), "{refusals:?}");
 }
+
+/// QSL-1679 (the spine successor of the composed binding report's three
+/// family path): one package holds a predicate, a temporal clause that calls
+/// it and captures a value, and a protocol that requires the clause and
+/// calls the predicate from its events and `check`. The package checks in one
+/// pass with no refusal but the protocol's pending emission, and the
+/// result holds the clause with its capture and the protocol bound to that
+/// clause's position, the clause and the protocol each binding a parameter
+/// named `view`.
+#[trace("TC-1056", "FR-218-AC-16")]
+#[test]
+fn one_package_checks_three_families_and_binds_the_requirement() {
+    let unit = "predicate Positive using v (amount: M::Total): Boolean { amount >= 0 }\n\
+        temporal Due using t over (view: M::Node) clock \"orders\" \
+        on each (started: M::Node) when (Positive(started.total)) \
+        { capture saved: M::Total = started.total; \
+        always holds(Positive(view.total) and saved >= 0) }\n\
+        protocol Flow using p over (view: M::Node) on origin {\n\
+        role Service on M::Node;\n\
+        requires temporal Due;\n\
+        run sequence Main {\n\
+        event Happened by Service as (happened: M::Receipt) { Positive(happened.total) };\n\
+        check HealthyNow using v { Positive(1) };\n\
+        }\n\
+        finish Closed as (closed: M::Receipt) { Positive(closed.total) };\n\
+        }\n";
+    let one_temporal = HEADER.replace("profile e = \"quire.temporal.timed/v1\";\n", "");
+    let (_, assembled) = assemble_under(&one_temporal, unit);
+    let refusals = assembled
+        .check(CheckingLimits::default())
+        .err()
+        .unwrap_or_default();
+    assert!(
+        refusals
+            .iter()
+            .all(|refusal| matches!(&refusal.cause, CheckCause::ProtocolReference(_))),
+        "{refusals:?}"
+    );
+    let (_, assembled) = assemble_under(&one_temporal, unit);
+    let graph = assembled
+        .check_with_protocol_results(CheckingLimits::default())
+        .expect("every declaration of the three families checks");
+    let [clause] = graph.temporal_clauses() else {
+        panic!("one temporal clause");
+    };
+    assert_eq!(clause.captures.len(), 1);
+    let flow = graph.protocol("Flow").expect("the protocol checks");
+    let [due] = flow.requirements.as_slice() else {
+        panic!("one requirement, got {:?}", flow.requirements);
+    };
+    assert_eq!(due.temporal, 0);
+}

@@ -686,6 +686,9 @@ fn refuse_repeated_members(
 mod model_state_tests;
 
 #[cfg(test)]
+mod control_region_tests;
+
+#[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{build_unit, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector};
