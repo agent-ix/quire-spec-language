@@ -1829,7 +1829,7 @@ fn predicate_joins_share_the_function_node_and_are_order_invariant() {
 
     let function_node = |wire: &Value, name: &str| {
         nodes(wire)
-            .into_iter()
+            .iter()
             .find(|node| {
                 node["node_tag"] == "function" && node["declaration"]["qualified_name"][0] == name
             })

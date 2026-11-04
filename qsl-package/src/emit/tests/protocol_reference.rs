@@ -866,13 +866,13 @@ fn protocol_nodes_are_stable_around_unrelated_declarations() {
         let (_, wire, read) = emit_model_unit(&selecting(declarations), None);
         assert!(matches!(read, Read::Verified { .. }), "{read:?}");
         let mut owned: Vec<Value> = nodes(&wire)
-            .into_iter()
+            .iter()
             .filter(|node| node["declaration"]["qualified_name"][0] == "Fill")
             .cloned()
             .collect();
         owned.sort_by_key(|node| node["node_id"].to_string());
         let clause = nodes(&wire)
-            .into_iter()
+            .iter()
             .find(|node| {
                 node["semantic_form"] == "protocol_clause"
                     && node["declaration"]["qualified_name"][0] == "Fill"

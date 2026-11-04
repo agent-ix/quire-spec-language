@@ -743,66 +743,62 @@ fn every_w_protocol_term_position_uses_the_stratified_body_grammar() {
         )
     }
 
-    fn assert_expression_roots(wire: &Value, value: &Value, all_children: bool) {
-        match value {
-            Value::Object(object) if object.contains_key("term") => {
-                match object["term"].as_str().expect("term kind") {
-                    "literal" => {}
-                    "reference" => {
-                        let target = nodes(wire)
-                            .iter()
-                            .find(|node| node["node_id"] == object["target"])
-                            .expect("the expression target is emitted");
-                        assert!(
-                            matches!(target["node_tag"].as_str(), Some("expression" | "value")),
-                            "a protocol term position must name an FR-093 expression/value leaf: {object:?}; target {target:?}"
-                        );
-                    }
-                    "binding" => {
-                        let name = object["name"].as_str().expect("member name");
-                        assert_expression_roots(
-                            wire,
-                            &object["value"],
-                            all_children || expression_member(name),
-                        );
-                    }
-                    "aggregate" => {
-                        for member in object["members"].as_array().expect("group members") {
-                            assert_expression_roots(wire, member, all_children);
+    fn assert_expression_roots(wire: &Value, root: &Value, include_descendants: bool) {
+        let mut pending = vec![(root, include_descendants)];
+        while let Some((value, all_children)) = pending.pop() {
+            match value {
+                Value::Object(object) if object.contains_key("term") => {
+                    match object["term"].as_str().expect("term kind") {
+                        "literal" => {}
+                        "reference" => {
+                            let target = nodes(wire)
+                                .iter()
+                                .find(|node| node["node_id"] == object["target"])
+                                .expect("the expression target is emitted");
+                            assert!(
+                                matches!(target["node_tag"].as_str(), Some("expression" | "value")),
+                                "a protocol term position must name an FR-093 expression/value leaf: {object:?}; target {target:?}"
+                            );
+                        }
+                        "binding" => {
+                            let name = object["name"].as_str().expect("member name");
+                            pending
+                                .push((&object["value"], all_children || expression_member(name)));
+                        }
+                        "aggregate" => pending.extend(
+                            object["members"]
+                                .as_array()
+                                .expect("group members")
+                                .iter()
+                                .map(|member| (member, all_children)),
+                        ),
+                        "tuple" => pending.extend(
+                            object["items"]
+                                .as_array()
+                                .expect("tuple items")
+                                .iter()
+                                .map(|item| (item, all_children)),
+                        ),
+                        other => {
+                            panic!("expression position is not a stratified term: {other}: {value}")
                         }
                     }
-                    "tuple" => {
-                        for item in object["items"].as_array().expect("tuple items") {
-                            assert_expression_roots(wire, item, all_children);
-                        }
-                    }
-                    other => {
-                        panic!("expression position is not a stratified term: {other}: {value}")
-                    }
                 }
-            }
-            Value::Object(object) => {
-                if let (Some(name), Some(member_value)) = (
-                    object.get("name").and_then(Value::as_str),
-                    object.get("value"),
-                ) {
-                    assert_expression_roots(
-                        wire,
-                        member_value,
-                        all_children || expression_member(name),
-                    );
-                } else {
-                    for child in object.values() {
-                        assert_expression_roots(wire, child, all_children);
+                Value::Object(object) => {
+                    if let (Some(name), Some(member_value)) = (
+                        object.get("name").and_then(Value::as_str),
+                        object.get("value"),
+                    ) {
+                        pending.push((member_value, all_children || expression_member(name)));
+                    } else {
+                        pending.extend(object.values().map(|child| (child, all_children)));
                     }
                 }
-            }
-            Value::Array(items) => {
-                for item in items {
-                    assert_expression_roots(wire, item, all_children);
+                Value::Array(items) => {
+                    pending.extend(items.iter().map(|item| (item, all_children)));
                 }
+                _ => {}
             }
-            _ => {}
         }
     }
 
