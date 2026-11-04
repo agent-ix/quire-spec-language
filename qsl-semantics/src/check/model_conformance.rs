@@ -151,6 +151,11 @@ fn append(
     Ok(())
 }
 
+/// The package identity bytes a selection is ordered by.
+fn identity_bytes(model: &SelectedModel) -> &[u8] {
+    model.view.model_selection().identity.as_bytes()
+}
+
 /// `selected` arrives in source order and carries intake's meter; the stage
 /// walks it in canonical selection order (package identity bytes, then alias),
 /// so the failures and the charges do not depend on alias or source order
@@ -168,9 +173,8 @@ pub(crate) fn check(
     let mut failures = Vec::new();
     let mut canonical: Vec<&SelectedModel> = selected.iter().collect();
     canonical.sort_by(|left, right| {
-        let identity = |model: &SelectedModel| model.view.model_selection().identity.as_bytes();
-        identity(left)
-            .cmp(identity(right))
+        identity_bytes(left)
+            .cmp(identity_bytes(right))
             .then_with(|| left.alias.as_bytes().cmp(right.alias.as_bytes()))
     });
     for selection in canonical {
