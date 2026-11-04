@@ -297,12 +297,15 @@ fn a_lasso_on_which_the_claim_holds_disagrees() {
     );
 }
 
-/// Verifies part of FR-128-AC-3: the lasso with its last step removed does
-/// not close (the loop is empty), a `terminal-stutter` loop on a state that
-/// enables `inc` refuses, and a post-state key altered refuses
-/// `stale_dependency`/`content-mismatch` naming the step and the state key;
-/// each refuses with no result.
-#[trace("TC-523")]
+/// FR-329-AC-3: the empty lasso loop and a model-step lasso whose last loop
+/// post-state differs from its entry both refuse `invalid_runtime_input`/
+/// `invalid-value`. This runs the `Lasso::Model` case through FR-120's
+/// `ModelSystem` and production replay; a terminal stutter at a nonterminal
+/// state is also refused.
+///
+/// Also verifies FR-128-AC-3: a post-state key altered in the lasso refuses
+/// `stale_dependency`/`content-mismatch` naming the step and state key.
+#[trace("TC-523", "TC-839", "FR-329-AC-3")]
 #[test]
 fn a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses() {
     let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
