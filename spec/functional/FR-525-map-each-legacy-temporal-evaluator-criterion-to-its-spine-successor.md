@@ -102,7 +102,7 @@ QSL-858's train.
 | FR-045-AC-1 every table row reachable | FR-527-AC-1, AC-5, AC-6 | PORT QSL-1504 |
 | FR-045-AC-2 finite window, mixed direction, past operators | FR-527-AC-2, AC-3 | PORT QSL-1504 |
 | FR-045-AC-3 unsupported retains subject, profile, activation | FR-527-AC-8 | PORT QSL-1504 |
-| FR-045-AC-3 the retained native subject names the clause | FR-527-AC-24, gated on IR-1278 | PORT QSL-1504 |
+| FR-045-AC-3 the retained native subject names the clause | FR-527-AC-24 | PORT QSL-1504 |
 | FR-045-AC-4 every unmatched dimension | FR-527-AC-4 | PORT QSL-1504 |
 | FR-045-AC-5 supported names target and premises | FR-527-AC-9, AC-10 | PORT QSL-1504 |
 | FR-045-AC-6 authenticated selection | FR-527-AC-13 to AC-17, AC-21 | PORT QSL-1504 |

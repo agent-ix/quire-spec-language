@@ -136,10 +136,16 @@ The adapter is needed independently of any one request member: FR-350-AC-10
 requires every in-scope `replay` vector to run, and `xtask` decodes no
 `replay-request` file without it.
 
-**Open question, not decided (relates to FR-350-AC-12).** QSpec FR-336's
-top-level mapping lists a `package` member of `ReplayRequestWire`, but the
-published `$defs.ReplayRequest` has 13 properties and no `package`. Which of
-the two the adapter follows for the proved package's `sources` is unresolved.
+The published `$defs.ReplayRequest` has 14 properties, and `package` (the
+proved FR-322 checked package, required) is one of them (QSpec FR-336-AC-7).
+The adapter follows the schema: it decodes `package` into the request's package
+reference (FR-071) and reads the proved package's `sources` from it, so the
+request has no separate package-name member; a `replay-request` file without
+`package`, or whose `package` is not a checked package, is a `corpus-decode`
+`tool-failure`. The decoder refuses, as the consumer of QSpec FR-336-AC-8, a
+`bytes_path` that is absent, not listed as `kind: bytes` in the vector, absolute
+or parent-traversing, and a `stage_limits` key that names no FR-255 setting,
+each before the request is constructed.
 
 ### Settlement
 
@@ -233,6 +239,9 @@ consumer type. A class with no such vector contributes none.
 | FR-350-AC-13 | The adapter maps `object_environment` to the closed `{authority, identity}` identity and refuses a file whose `object_environment` identity carries any other member. | Test (TC-1325) |
 | FR-350-AC-14 | A `replay-request` file that does not match `$defs.ReplayRequest` (an unknown member, a missing required member such as a `sources` entry's `identity`, a wrong JSON kind) is that vector's `tool-failure` with cause `corpus-decode` naming the JSON pointer of the defect, and not a QSL refusal. | Test (TC-1325) |
 | FR-350-AC-15 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement. | Test (TC-1325), retired |
+| FR-350-AC-16 | A `replay-request` file with `package` decodes to the request's package reference (its `checked_package`, `contract_version`, `sources` and `dependencies`), and `ReplayRequestWire` carries no package-name member; the same file with `package` removed, and with `package` set to the string `"orders"`, is each a `tool-failure` with cause `corpus-decode` and pointer `/package`. | Test (TC-1325) |
+| FR-350-AC-17 | A `byte_provision` row whose `bytes_path` is `missing.bin` (absent from the vector directory), `unlisted.bin` (present but not listed as `kind: bytes`), `/etc/hostname` (absolute) or `../x.bin` (parent-traversing) is a `tool-failure` with cause `corpus-decode` and pointer `/byte_provision/0/bytes_path`, and no request is constructed; a listed `kind: bytes` path is read as raw bytes. | Test (TC-1325) |
+| FR-350-AC-18 | A `stage_limits` map holding the key `depth` (no FR-255 setting of that name) is a `tool-failure` with cause `corpus-decode` and pointer `/stage_limits/depth`; the key `s1.input_bytes` with the value `"1024"` decodes to the entry `("s1.input_bytes", 1024)`. | Test (TC-1325) |
 
 ## Dependencies
 

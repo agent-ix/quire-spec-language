@@ -65,8 +65,9 @@ consumer's.
 - `workflow`: one slot, the `workflow-instance` requirement of the clause.
 - `roles`: one slot for each `role` node, ordered by the segments of the role's
   declaration path, each as UTF-8 bytes, each holding the role node's
-  key, its declaration path, the selected model type node the role is `on`
-  (a Port role points at the Port's owning type until IR-1310) and its
+  key, its declaration path, the selected model type node the role is `on`,
+  for a role on a Port the selected Port's `model_member` identity (its
+  `package` and `node`, FR-383) as well, and its
   replication (static, or replicated with its population, `max` and a
   lifetime of `workflow`, `scope` or `until`).
 - `controls`: one entry for each `control` node, ordered by
@@ -158,7 +159,8 @@ package lock's `binding_contract` selection supplies both (QSpec FR-465
 | FR-384-AC-6 | Each requirement names its subject node's key and the `protocol_clause` key as its scope, and holds no authority and no contract member. | Test (TC-1064) |
 | FR-384-AC-7 | No protocol node holds a requirement, a schema entry, an instance or an ordinal: the nodes of **W** contain none, and an `internal` or `external` member bound into the body arguments of a role node is refused by QSL's I2 reader with `malformed_wire`, and the same member added as a member of the node itself, outside its body, is refused with `unknown_member`, because the node shape is closed. | Test (TC-1064) |
 | FR-384-AC-8 | A `Full` and a `Partial` template for one effect give two compensation entries and two sets of `compensation`, `compensation-attempt` and `compensation-effect` requirements, each naming its own template's key. | Test (TC-1064) |
-| FR-384-AC-9 | In **W**, each role slot holds the selected model type node it is `on`, equally in process and after the I2 read: `Fulfillment` holds `Shipment`, `Orders` holds `OrderView` and `Payments` holds `Payment`, and each is an emitted `object_type` node of the selected package. | Test (TC-1064) |
+| FR-384-AC-9 | In **W**, each role slot holds the selected model type node it is `on`, equally in process and after the I2 read: `Fulfillment` holds `Shipment`, `Orders` holds `OrderView` and `Payments` holds `Payment`, and each is an emitted `object_type` node of the selected package, and none holds a `model_member`. | Test (TC-1064) |
+| FR-384-AC-10 | Over FR-383-AC-62's unit, the role slot of `Outlet` holds the node of `Sys` and the `model_member` `{package, node}` of `pump_out`, that of `Inlet` the node of `Sys` and the `model_member` of `tank_in`, and those of `Operator` and the whole-model role hold none; the slots from the in-process package equal those from the package read back through the I2 reader. | Test (TC-1064) |
 
 ## Dependencies
 

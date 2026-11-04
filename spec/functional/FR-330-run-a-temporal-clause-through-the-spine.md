@@ -100,11 +100,15 @@ FR-267 writer writes these as the report holds them and derives none.
 The report also carries `decisive` (`ClauseRunReport::decisive`), present only
 for a temporal violation, a `Completed(false)` whose deciding `holds` atom is
 decided by FR-107's clause evaluator, and absent for every other report: it
-holds `{ quantifier, element, index, value_path }`, the deciding collection
+holds `{ position, quantifier, element, index, value_path }`: the
+`TemporalPosition` at which the deciding atom fails, the deciding collection
 quantifier's occurrence key (absent when none decides), the deciding element,
 its index (absent when none decides) and the FR-207 value path, for the first
-`holds` atom in clause-node order that evaluates false at the failing position
-for the failing activation, evaluated over the observation at that position.
+`holds` atom, in position order over the positions the failing activation read
+and then in clause-node order, that evaluates false there, evaluated over the
+observation at `decisive.position`. The report's violation position stays the
+failing activation's position (FR-327) and `decisive.position` is a position
+that activation read, never earlier than the activation's own.
 When no collection quantifier decides it, `quantifier` and `index` are absent,
 `element` is `false` and `value_path` is the empty path at the observation's
 root. `decisive` is not a member of the `TemporalCounterexample`, whose shape
@@ -189,7 +193,7 @@ stays QSpec FR-364's, and FR-267 does not write it.
 | FR-330-AC-9 | From source, a clause under the finite-window profile run over `TraceInput::Timestamped` reports the outcomes of FR-501-AC-11 and never `unsupported_profile` or `ProfileNotEvaluated`; the same clause over `Finite` reports stage `admit`, `invalid_runtime_input`/`invalid-value`, and `Bounded` (event-position) over `Timestamped` reports the same. A `ledger` holding binding B at watermark 100 and a second request under B with watermark 60 reports stage `evaluate`, category `refusal`, `contradicted_dimension` `Watermark`. | Test (TC-1295, TC-1296) |
 | FR-330-AC-10 | From source, an event-position clause and a fixed-sample clause run over `TraceInput::Progressed` report the outcomes of FR-504-AC-1 and AC-2, and return the updated `ledger`; a `Progressed` request for an infinite-trace clause, or over a `Lasso`, reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1299) |
 | FR-330-AC-11 | From source, a `Timestamped` request whose `binding` asserts another clock name reports stage `admit`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Clock`, a `Progressed` request whose `binding` asserts another profile reports `Profile`, and a `Timestamped` request with no `binding` reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1317) |
-| FR-330-AC-12 | `Bounded`'s violation of AC-1 over `Finite` snapshots `c.value` 0, 1, 2 reports a `decisive` with no `quantifier` and no `index`, `element` `false` and the empty `value_path`; a clause `always holds(forall i in self.items : i > 0)` over a position-2 snapshot with `items` 3, 0, 5 reports a `decisive` with the `forall` occurrence key as `quantifier`, `element` 0, `index` 1 and the FR-207 `value_path` to `items`; a pending, a successful and an `Undefined` report carry no `decisive`. | Test (TC-840) |
+| FR-330-AC-12 | `Bounded`'s violation of AC-1 over `Finite` snapshots `c.value` 0, 1, 2 reports a `decisive` with `position` 0, no `quantifier` and no `index`, `element` `false` and the empty `value_path`; a clause `always holds(c.value <= 1)` `on origin` under the infinite-trace profile over the same snapshots reports the violation at position 0 and a `decisive` with `position` 2; a clause `always holds(forall i in self.items : i > 0)` `on origin` over snapshots whose positions 0 and 1 hold `items` 1, 2, 3 and whose position 2 holds `items` 3, 0, 5 reports the violation at position 0 and a `decisive` with `position` 2, the `forall` occurrence key as `quantifier`, `element` 0, `index` 1 and the FR-207 `value_path` to `items`; a pending, a successful and an `Undefined` report carry no `decisive`. | Test (TC-840) |
 
 ## Dependencies
 

@@ -25,6 +25,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-218
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-326
+    type: depends_on
 ---
 # FR-337: Emit a checked temporal clause as a v2 temporal clause node
 
@@ -108,6 +110,17 @@ reader returns.
   `temporal_interval` with `{lower, upper}` as decimal strings, an `[a,*]`
   operator's interval as `{lower, upper: null}`, and an unbounded
   operator's interval as `null` (QSpec FR-370).
+- The emitter SHALL write an interval of a clause under the finite-window
+  profile as `temporal_interval` `{lower, upper}` of its integer tick bounds,
+  never as a `timed_interval` or a rational. The check admits only integral
+  closed tick intervals under that profile (FR-326), so an interval of another
+  shape reaching the emitter breaks the check's invariant: the emitter SHALL
+  fail with an internal fault (`StageFailure::Fault`) and SHALL NOT refuse it
+  as a binding or write it.
+- The I2 reader SHALL refuse a clause node selecting the finite-window profile
+  whose interval member is a `timed_interval` or a `temporal_interval` with
+  `upper: null`, `invalid_package`/`operation-member-mismatch` at the member's
+  locus, so a package from other bytes meets the same rule at read time.
 - The emitter SHALL write one `quire.op.temporal.fair` application per
   member of the resolved fairness set, in fairness-set order, each with the
   resolved `fairness_kind` and `granularity`, so an unmarked constraint and
@@ -525,6 +538,7 @@ FR-488 and FR-447.
 | FR-337-AC-21 | Under an unclocked profile (infinite-trace) the package carries the name rows and no `temporal_bindings` member. | Test (TC-1326) |
 | FR-337-AC-22 | The same declarations written in reversed source order emit `temporal_clause_names` and `temporal_bindings` arrays equal to those of the original order, each sorted by (`declaration` NodeId, `occurrence`); an emitter that writes rows in node or declaration order fails this. | Test (TC-1326) |
 | FR-337-AC-23 | For two structurally equal clauses with ordinals 0 and 1 under a clocked profile, `Emission` returns two `TemporalClauseRef` values whose `declaration` and `occurrence` equal the two `temporal_clause_names` rows read back from the emitted bytes, whose `clause` positions name the two declarations in the checked graph, and whose rows for `profile_selections` and `temporal_bindings` equal the lock's and the package's byte for byte; reordering the declarations changes `clause` and no `declaration`. | Test (TC-1326) |
+| FR-337-AC-24 | `eventually[0,5] holds(p)` under the finite-window profile emits `temporal_interval` `{lower: "0", upper: "5"}`; a checked clause of that profile whose interval is constructed as the timed interval `(0 ms, 5 ms]` (past the check) makes the emitter fail with an internal fault and writes no node; fed to the I2 reader, the emitted node with its interval replaced by a `timed_interval` member, and with `temporal_interval` `{lower: "0", upper: null}`, each refuse `invalid_package`/`operation-member-mismatch`. | Test (TC-524) |
 
 ### Aggregate formula emission
 

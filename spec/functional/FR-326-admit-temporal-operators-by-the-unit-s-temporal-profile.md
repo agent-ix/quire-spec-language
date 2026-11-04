@@ -27,6 +27,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-255
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-233
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-393
+    type: references
 ---
 # FR-326: Admit temporal operators by the unit's temporal profile and record the clause's requirement
 
@@ -100,6 +104,15 @@ for negotiation whether the claim is bounded.
 - When an interval has `a > b`, under every profile, the check SHALL refuse
   `ill_typed`/`type-mismatch` at the interval's span, the refusal
   `TemporalInterval`'s constructor gives.
+- Under `quire.temporal.timestamped-event.finite-window/v1`, each operator
+  interval SHALL be a step interval `[a,b]` of unsigned integer tick bounds,
+  closed at both ends, and the check SHALL admit no other shape. The check owns
+  every other shape: a timed interval (FR-393), whether its bound carries a
+  unit, is rational or has an open end, SHALL be refused `ill_typed`/
+  `type-mismatch` at the interval's span, as FR-233 refuses a unit-bearing bound
+  under a step count. A checked clause of this profile therefore holds only
+  integral closed tick intervals, and no later layer meets another shape
+  except as a fault of its own input (FR-337).
 - The check SHALL compute the horizon of a bounded-profile formula as the
   greatest reach of its intervals with checked arithmetic. When the sum
   exceeds `u64`, it SHALL refuse with `LimitExceeded`, limit kind work
@@ -141,6 +154,7 @@ for negotiation whether the claim is bounded.
 | FR-326-AC-3 | Under event-position false-extension, `eventually[0,18446744073709551615] eventually[0,1] holds(p)` refuses `stage_limit_exceeded` with limit kind work budget at the operator whose interval overflowed. | Test (TC-836) |
 | FR-326-AC-4 | A unit holding a temporal clause with no temporal profile selection refuses `unknown_profile`/`unsupported-selection` at the clause's span; one selecting both the event-position and the infinite-trace profiles refuses the same way, naming both. | Test (TC-836) |
 | FR-326-AC-5 | A bounded-profile clause over `over (c: Counter)` with no unbounded type has record (`temporal-satisfaction`, `Bounded`); the `[0,2]` interval's key under event-position differs from the `[0,2]` key under fixed-sample. | Test (TC-836) |
+| FR-326-AC-6 | Under the finite-window profile with the clock unit `ms`, `eventually[0,5] holds(p)` checks with the tick interval `[0,5]`; `eventually[0 ms, 5 ms] holds(p)`, `eventually[0 ms, 5 ms) holds(p)`, `eventually[0.5 ms, 5 ms] holds(p)` and `eventually(1 ms, 5 ms] holds(p)` are each refused `ill_typed`/`type-mismatch` at the interval's span; `eventually[3,*] holds(p)` is refused `unsupported_construct`/`expression-form`. | Test (TC-836) |
 
 ## Dependencies
 

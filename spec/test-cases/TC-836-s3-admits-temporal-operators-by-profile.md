@@ -14,7 +14,7 @@ Verify the S3 TemporalTrace check's profile identity rule, the bounded and
 infinite-trace interval rules, the horizon and its overflow, and the
 requirement record.
 
-Scope: FR-326-AC-1 to FR-326-AC-5.
+Scope: FR-326-AC-1 to FR-326-AC-6.
 
 ## Test Procedure
 
@@ -29,6 +29,9 @@ Scope: FR-326-AC-1 to FR-326-AC-5.
    and one selecting two temporal profiles.
 5. Check a bounded clause over `over (c: Counter)` and compare the `[0,2]`
    interval keys under event-position and fixed-sample.
+6. Under the finite-window profile with clock unit `ms`, check
+   `eventually[0,5] holds(p)`, the four timed-interval forms of FR-326-AC-6
+   and `eventually[3,*] holds(p)`.
 
 Tag the tests `#[trace("TC-836", "FR-326-AC-n")]`.
 
@@ -47,3 +50,4 @@ Tag the tests `#[trace("TC-836", "FR-326-AC-n")]`.
 - Step 4: `unknown_profile`/`unsupported-selection` at the clause, naming the
   selections found.
 - Step 5: record (`temporal-satisfaction`, `Bounded`); unequal keys.
+- Step 6: the tick interval `[0,5]`; each timed form `ill_typed`/`type-mismatch` at the interval's span; `[3,*]` `unsupported_construct`/`expression-form`.
