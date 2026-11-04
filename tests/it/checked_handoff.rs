@@ -287,6 +287,38 @@ fn the_written_package_is_admitted_and_matches_its_sidecar() {
         .expect("models/0.json is the document the evidence holds");
         let package = admitted(&files["checked-package.json"], &held);
         let selection = Selection::read(&files["selection.json"]).expect("sidecar parses");
+        // FR-048-AC-10: the lock keeps every selection the request makes, as
+        // exactly this role list (the protocol profile only where the unit
+        // has a protocol clause), the selected library, and the domain
+        // package whose document the evidence holds.
+        let temporal = match kind {
+            "event_position" => "quire.temporal.event-position.false-extension/v1",
+            "fixed_sample" => "quire.temporal.fixed-sample.false-extension/v1",
+            _ => "quire.temporal.timestamped-event.finite-window/v1",
+        };
+        let mut expected_roles = Vec::new();
+        if kind == "event_position" {
+            expected_roles.push(("protocol_profile", "quire.protocol.finite-global/v1"));
+        }
+        expected_roles.push(("temporal_profile", temporal));
+        let lock = serde_json::to_value(package.lock()).unwrap();
+        let roles: Vec<(&str, &str)> = lock["profile_selections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|selected| {
+                (
+                    selected["role"].as_str().unwrap(),
+                    selected["definition"]["identity"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(roles, expected_roles, "{kind}: the lock's role selections");
+        assert_eq!(
+            lock["dependency_selections"],
+            serde_json::json!([{"identity": "agent-ix/checked-handoff-library"}]),
+            "{kind}"
+        );
         assert_eq!(selection.check(&package), Ok(()));
         let sidecar: Value = serde_json::from_slice(&files["selection.json"]).unwrap();
         let rows = sidecar["clauses"].as_array().unwrap();
