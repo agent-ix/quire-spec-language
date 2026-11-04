@@ -95,6 +95,7 @@ fn iteration<'a>(node: CheckedNode<'a>) -> Box<Iteration<CheckedNode<'a>>> {
         sources: vec![],
         accumulator: None,
         count: Integer::zero(),
+        owner: Owner::None,
     })
 }
 
@@ -419,6 +420,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
                     reference(),
                 ),
                 node: node.root(),
+                owner: Owner::None,
             })))
         }
     );
@@ -490,6 +492,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
                 receiver.clone(),
             ),
             node: node.root(),
+            owner: Owner::None,
         })))
         .unwrap_or_else(|_| panic!("linked guard body"));
     finish_tasks(&mut machine).unwrap_or_else(|_| panic!("guard result"));
@@ -1801,6 +1804,7 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
                 ),
             ),
             node: root.root(),
+            owner: Owner::None,
         })))
     });
     probe!("evaluation-branch-node-expected", m, [], {
