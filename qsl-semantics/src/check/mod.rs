@@ -1993,6 +1993,7 @@ impl PackageDeclarations {
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
                     source_owners: &self.source_owners,
+                    spellings: &self.model_spellings,
                     clock_reading: &self.clock_reading,
                     operation_bodies: &self.operation_bodies,
                     units: &units,
@@ -2179,17 +2180,10 @@ impl PackageDeclarations {
         )
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
-        .with_model_selections(
-            self.models
-                .iter()
-                .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
-                .collect(),
-        )
         .with_model_ports(
             self.models
                 .iter()
                 .flat_map(AdmittedModel::port_roles)
-                .map(|(alias, artifact, key, owner)| ((alias, artifact), (key, owner)))
                 .collect(),
         )
         .with_declared_units(&self.units)
@@ -3130,6 +3124,7 @@ impl PackageDeclarations {
             if matches!(terminal.kind, terminal::TerminalClauseKind::Any)
                 && !models.iter().any(|model| {
                     model.alias() == Some(terminal.model.as_str())
+                        && model.selection().identity == terminal.package
                         && model.terminal_object().is_some()
                 })
             {
@@ -5633,6 +5628,7 @@ impl PackageDeclarations {
             match lowering.terminal(&lowering::TerminalInput {
                 index,
                 model: &declaration.model,
+                package: &declaration.package,
                 declaration: &checked.declaration,
             }) {
                 Ok(key) => lowered_terminals.push((index, declaration.model.clone(), key)),

@@ -952,17 +952,15 @@ pub struct Scope {
     /// Every admitted model currently uses `quire.model.complete/v1`; an
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
-    /// The selected package behind each source model alias, used by static
-    /// protocol roles that act on a whole model.
-    model_selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
     /// The package-owned type names each unit's model aliases spell (FR-480
     /// "Selections and imports").
     model_spellings: ModelSpellings,
     /// The source unit of each top-level declaration, by declared name; a
     /// name with no entry is the primary unit's.
     source_owners: BTreeMap<String, RawSourceRef>,
-    /// Admitted systems-model ports by their `M::artifact` source name,
-    /// with the exact declaration and owning object type used by a role.
+    /// Admitted systems-model ports by their package identity and source
+    /// artifact name, with the exact declaration and owning object type
+    /// used by a role.
     model_ports: BTreeMap<(String, String), (DeclarationKey, EffectiveId)>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// FR-150: each object type a `symmetric` population covers, with that
@@ -977,7 +975,7 @@ pub struct Scope {
     imports: BTreeMap<String, super::AdmittedImport>,
 }
 
-qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, model_selections: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
+qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
 
 /// Drops the chain of imported checked graphs over an explicit stack
 /// (ADR-030): each import holds its library's graph, whose scope holds that
@@ -1002,6 +1000,28 @@ impl<'a> SourceScope<'a> {
     /// [`Scope::object_type_named`].
     pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
         self.scope.object_type_named(self.source, name)
+    }
+
+    /// The selected package this unit binds its model alias `alias` to, for
+    /// a static protocol role that acts on a whole model (FR-480
+    /// "Selections and imports").
+    pub(crate) fn model_selection(
+        &self,
+        alias: &str,
+    ) -> Option<&'a crate::model::domain_package::DomainPackageRef> {
+        self.scope.model_spellings.selection(self.source, alias)
+    }
+
+    /// The selected Port declaration `M::artifact` names in this unit, through
+    /// the package the unit binds `M` to, and the owning effective object
+    /// type that provides its runtime value context.
+    pub(crate) fn model_port(&self, name: &str) -> Option<(&'a DeclarationKey, &'a EffectiveId)> {
+        let (alias, artifact) = name.split_once("::")?;
+        let package = self.model_selection(alias)?;
+        self.scope
+            .model_ports
+            .get(&(package.identity.clone(), artifact.to_owned()))
+            .map(|(key, owner)| (key, owner))
     }
 }
 
@@ -1194,7 +1214,6 @@ impl Scope {
             clock_reading: BTreeSet::new(),
             history_names: Vec::new(),
             complete_model: false,
-            model_selections: BTreeMap::new(),
             model_spellings: ModelSpellings::default(),
             source_owners: BTreeMap::new(),
             model_ports: BTreeMap::new(),
@@ -1372,24 +1391,8 @@ impl Scope {
         self
     }
 
-    /// The selected domain package for each model alias in this unit.
-    pub(crate) fn with_model_selections(
-        mut self,
-        selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
-    ) -> Self {
-        self.model_selections = selections;
-        self
-    }
-
-    /// The selected package of a source model alias.
-    pub(crate) fn model_selection(
-        &self,
-        alias: &str,
-    ) -> Option<&crate::model::domain_package::DomainPackageRef> {
-        self.model_selections.get(alias)
-    }
-
-    /// This scope with the selected models' typed Port declarations.
+    /// This scope with the selected models' typed Port declarations, by
+    /// package identity and source artifact name.
     pub(crate) fn with_model_ports(
         mut self,
         ports: BTreeMap<(String, String), (DeclarationKey, EffectiveId)>,
@@ -1398,13 +1401,14 @@ impl Scope {
         self
     }
 
-    /// The selected Port declaration named by `M::artifact` and the owning
-    /// effective object type that provides its runtime value context.
-    pub(crate) fn model_port(&self, name: &str) -> Option<(&DeclarationKey, &EffectiveId)> {
-        let (alias, artifact) = name.split_once("::")?;
-        self.model_ports
-            .get(&(alias.to_owned(), artifact.to_owned()))
-            .map(|(key, owner)| (key, owner))
+    /// Each unit's model aliases bound to their packages.
+    pub(crate) fn model_spellings(&self) -> &ModelSpellings {
+        &self.model_spellings
+    }
+
+    /// The source unit of each top-level declaration, by declared name.
+    pub(crate) fn source_owners(&self) -> &BTreeMap<String, RawSourceRef> {
+        &self.source_owners
     }
 
     /// This scope with the unit's admitted dimension and unit declarations
@@ -4946,5 +4950,73 @@ mod holds_float_tests {
             .expect("in the unit"),
         ));
         assert!(!holds_float(&bounded));
+    }
+}
+
+#[cfg(test)]
+mod source_scope_tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+    use crate::model::domain_package::DomainPackageRef;
+
+    fn source(identity: &str) -> RawSourceRef {
+        RawSourceRef::new("repo".to_owned(), identity.to_owned()).expect("a source reference")
+    }
+
+    fn port(package: &str) -> (DeclarationKey, EffectiveId) {
+        (
+            DeclarationKey {
+                package: package.to_owned(),
+                node: format!("ix://{package}/out"),
+            },
+            EffectiveId::new(
+                None,
+                quire_exact::OriginalDeclarationKey::new(package, format!("ix://{package}/Sys")),
+            ),
+        )
+    }
+
+    /// FR-480 "Selections and imports" (QSL-1638): unit `a` binds `N` to
+    /// package `x` and unit `b` binds `N` to package `y`, both declaring the
+    /// Port `out`. A protocol of each unit reads its own unit's package for
+    /// a whole-model role `N` and a Port role `N::out`, whichever package is
+    /// selected last; the primary unit reads `a`'s.
+    #[trace("FR-480")]
+    #[test]
+    fn a_shared_model_alias_names_each_units_own_selection_and_port() {
+        let mut spellings = ModelSpellings::new(source("a"));
+        for (unit, identity) in [("a", "x"), ("b", "y")] {
+            let package = spellings.add_package(DomainPackageRef {
+                identity: identity.to_owned(),
+            });
+            spellings.bind_model(&source(unit), "N", Some(package));
+        }
+        let scope = crate::check::family::fixtures::empty_scope()
+            .with_model_spellings(spellings)
+            .with_source_owners(BTreeMap::from([
+                ("Pa".to_owned(), source("a")),
+                ("Pb".to_owned(), source("b")),
+            ]))
+            .with_model_ports(BTreeMap::from([
+                (("x".to_owned(), "out".to_owned()), port("x")),
+                (("y".to_owned(), "out".to_owned()), port("y")),
+            ]));
+        for (protocol, identity) in [("Pa", "x"), ("Pb", "y"), ("Unowned", "x")] {
+            let unit = scope.for_declaration(protocol);
+            assert_eq!(
+                unit.model_selection("N")
+                    .map(|selection| selection.identity.as_str()),
+                Some(identity),
+                "{protocol}"
+            );
+            let (expected_key, expected_owner) = port(identity);
+            assert_eq!(
+                unit.model_port("N::out"),
+                Some((&expected_key, &expected_owner)),
+                "{protocol}"
+            );
+            assert_eq!(unit.model_port("M::out"), None, "{protocol}: no alias M");
+        }
     }
 }

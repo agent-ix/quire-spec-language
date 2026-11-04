@@ -122,11 +122,11 @@ pub fn content(
             .or_default()
             .push(role.name.span);
         let whole_model = alias_names.get(&role.context.name) == Some(&AliasKind::Model)
-            && scope.model_selection(&role.context.name).is_some();
+            && types.model_selection(&role.context.name).is_some();
         if !whole_model
             && types.object_type_named(&role.context.name).is_none()
             && types.named_types(&role.context.name).is_empty()
-            && scope.model_port(&role.context.name).is_none()
+            && types.model_port(&role.context.name).is_none()
         {
             refusals.push((
                 role.context.span,

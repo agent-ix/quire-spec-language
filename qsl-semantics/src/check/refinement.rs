@@ -3410,6 +3410,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 self.concrete_side.model,
                 self.declarations.models,
                 self.clock_reading,
+                self.declarations.scope,
                 object,
             ) {
                 self.findings.refuse(span, RefinementCause::ClockRead);

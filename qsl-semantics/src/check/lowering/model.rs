@@ -407,29 +407,28 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
-    /// The selected model's Port roles, each with its qualified source
-    /// artifact, declaration key and owning effective object type.
-    pub(crate) fn port_roles(&self) -> Vec<(String, String, DeclarationKey, EffectiveId)> {
-        let Some(alias) = self.alias.as_ref() else {
-            return Vec::new();
-        };
-        self.records
-            .values()
-            .filter_map(|record| {
-                let DomainPackageRecord::Endpoint(port) = record else {
-                    return None;
-                };
-                let artifact =
-                    crate::model::intake::type_identity_segment(&port.key.package, &port.key.node)?;
-                let DomainPackageRecord::Component(part) =
-                    self.records.get(&port.owning_component)?
-                else {
-                    return None;
-                };
-                let owner = self.object_type_id(&part.owning_type)?;
-                Some((alias.clone(), artifact.to_owned(), port.key.clone(), owner))
-            })
-            .collect()
+    /// The selected model's Port roles, each keyed by its package identity
+    /// and source artifact, with its declaration key and owning effective
+    /// object type.
+    pub(crate) fn port_roles(
+        &self,
+    ) -> impl Iterator<Item = ((String, String), (DeclarationKey, EffectiveId))> + '_ {
+        self.records.values().filter_map(|record| {
+            let DomainPackageRecord::Endpoint(port) = record else {
+                return None;
+            };
+            let artifact =
+                crate::model::intake::type_identity_segment(&port.key.package, &port.key.node)?;
+            let DomainPackageRecord::Component(part) = self.records.get(&port.owning_component)?
+            else {
+                return None;
+            };
+            let owner = self.object_type_id(&part.owning_type)?;
+            Some((
+                (self.selection.identity.clone(), artifact.to_owned()),
+                (port.key.clone(), owner),
+            ))
+        })
     }
 
     /// The effective object types at the ends of an admitted FR-152
