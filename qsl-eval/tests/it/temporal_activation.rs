@@ -29,7 +29,7 @@ use qsl_eval::temporal::{
 use qsl_package::{CheckedNodeId, CheckedSelection, ClockConfiguration, TemporalBinding};
 use qsl_semantics::check::{FormulaNode, SCALAR_LIMITS_UNLIMITED};
 use quire_eval::{CallAdmissionFailure, CallFailure};
-use quire_exact::{Meter, ScalarLimits};
+use quire_exact::Meter;
 use serde_json::json;
 
 use crate::temporal_trace::{fixture, Fixture};
@@ -66,6 +66,22 @@ pub(crate) fn env(activation: &str, body: &str) -> Env {
 }
 
 const EVENT_POSITION: &str = "quire.temporal.event-position.false-extension/v1";
+const FIXED_SAMPLE: &str = "quire.temporal.fixed-sample.false-extension/v1";
+
+/// A clause under the fixed-sample profile (FR-504).
+pub(crate) fn fixed_env(activation: &str, body: &str) -> Env {
+    build(
+        FIXED_SAMPLE,
+        json!({
+            "kind": "fixed_sample",
+            "epoch": {"kind": "integer", "decimal": "0"},
+            "period": {"kind": "integer", "decimal": "1"},
+            "unit": "sample",
+        }),
+        activation,
+        body,
+    )
+}
 
 /// A clause under the event-position profile (FR-504).
 pub(crate) fn event_env(activation: &str, body: &str) -> Env {
@@ -79,6 +95,11 @@ pub(crate) fn event_env(activation: &str, body: &str) -> Env {
 
 fn build(profile_identity: &str, clock: serde_json::Value, activation: &str, body: &str) -> Env {
     let fixture = fixture(profile_identity, "c: Counter", activation, body);
+    rows_for(fixture, profile_identity, clock)
+}
+
+/// The recipe rows around an already checked clause.
+pub(crate) fn rows_for(fixture: Fixture, profile_identity: &str, clock: serde_json::Value) -> Env {
     let declaration: CheckedNodeId =
         serde_json::from_value(json!({"package": "recipe", "path": ["Due"], "ordinal": 0}))
             .expect("a node identity");
@@ -255,7 +276,7 @@ pub(crate) fn unlimited() -> Meter {
     Meter::new(SCALAR_LIMITS_UNLIMITED)
 }
 
-fn scope() -> TriggerScope {
+pub(crate) fn scope() -> TriggerScope {
     TriggerScope {
         closure: ProgressClosure::Closed,
         evidence: TriggerEvidence::Admitted,
@@ -263,7 +284,7 @@ fn scope() -> TriggerScope {
     }
 }
 
-fn input(deliveries: Vec<TriggerDelivery>) -> ActivationInput {
+pub(crate) fn input(deliveries: Vec<TriggerDelivery>) -> ActivationInput {
     ActivationInput {
         scope: scope(),
         deliveries,
@@ -275,14 +296,15 @@ fn input(deliveries: Vec<TriggerDelivery>) -> ActivationInput {
     }
 }
 
-const THREE_CAPTURES: &str =
+pub(crate) const THREE_CAPTURES: &str =
     "capture a: Int[0, 9] = q.level; capture b: Int[0, 9] = q.level; capture c2: Int[0, 9] = q.level; eventually[0, 2] holds(p)";
-const ONE_CAPTURE: &str = "capture amount: Int[0, 9] = q.level; eventually[0, 2] holds(p)";
-const EACH: &str = "on each (q: Counter)";
-const GUARDED: &str = "on each (q: Counter) when (q.level > 0)";
+pub(crate) const ONE_CAPTURE: &str =
+    "capture amount: Int[0, 9] = q.level; eventually[0, 2] holds(p)";
+pub(crate) const EACH: &str = "on each (q: Counter)";
+pub(crate) const GUARDED: &str = "on each (q: Counter) when (q.level > 0)";
 
 /// Activate over `clause` with an unlimited meter.
-fn run(
+pub(crate) fn run(
     env: &Env,
     input: ActivationInput,
 ) -> Result<qsl_eval::temporal::evidence::Activation, ActivationStop> {
@@ -296,14 +318,17 @@ fn run(
     )
 }
 
-fn activated(env: &Env, input: ActivationInput) -> qsl_eval::temporal::evidence::Activation {
+pub(crate) fn activated(
+    env: &Env,
+    input: ActivationInput,
+) -> qsl_eval::temporal::evidence::Activation {
     match run(env, input) {
         Ok(activation) => activation,
         Err(stop) => panic!("an activation, not {stop:?}"),
     }
 }
 
-fn fault_of(
+pub(crate) fn fault_of(
     activation: &qsl_eval::temporal::evidence::Activation,
     identity: &str,
 ) -> (FaultSubject, FaultKind) {
@@ -439,14 +464,26 @@ fn a_different_payload_under_one_identity_is_the_contradiction_refusal() {
         }
         other => panic!("a contradiction, not {other:?}"),
     }
-    assert_eq!(first.ledger, ledger);
+    // The retained entry is the first delivery's: payload, one receipt, the
+    // captured amount and one instance.
     let kept = ledger
         .instance(&env.obligation(), &id("t1"))
         .expect("retained");
     assert_eq!(kept.payload().as_bytes(), b"one");
+    assert_eq!(kept.receipts().len(), 1);
+    assert_eq!(kept.receipts()[0].as_bytes(), b"r1");
+    assert_eq!(
+        kept.environment()
+            .get("amount")
+            .expect("kept")
+            .value()
+            .as_bytes(),
+        b"5"
+    );
+    assert_eq!(ledger.instance_count(), 1);
 }
 
-fn origin(identity: &str, payload: &str) -> ExecutionOrigin {
+pub(crate) fn origin(identity: &str, payload: &str) -> ExecutionOrigin {
     ExecutionOrigin {
         identity: id(identity),
         payload: Payload::new(payload.as_bytes()),
@@ -505,7 +542,7 @@ fn a_false_guard_makes_no_instance_and_an_unknown_guard_is_a_fault() {
     assert_eq!(faulted.ledger.instance_count(), 1);
 }
 
-fn capture_named(name: &str) -> FaultSubject {
+pub(crate) fn capture_named(name: &str) -> FaultSubject {
     FaultSubject::Capture(name.to_owned())
 }
 
@@ -693,7 +730,7 @@ fn an_evicted_capture_of_a_retained_instance_is_a_missing_fault_and_recomputes_n
     assert_eq!(again.ledger, first.ledger);
 }
 
-fn charges(env: &Env, input: ActivationInput) -> [u64; 4] {
+pub(crate) fn charges(env: &Env, input: ActivationInput) -> [u64; 4] {
     let mut meter = unlimited();
     let mut call = CallMeter::new(TemporalEvidenceLimits::default(), &mut meter);
     activate(
@@ -793,7 +830,7 @@ fn a_scope_with_no_instance_reports_one_of_four_dispositions() {
 
 // The evidence call.
 
-fn at_t0(values: &[(u64, Valuation)]) -> Vec<EvidencePosition> {
+pub(crate) fn at_t0(values: &[(u64, Valuation)]) -> Vec<EvidencePosition> {
     vec![
         position(0, values),
         position(1, values),
@@ -801,7 +838,7 @@ fn at_t0(values: &[(u64, Valuation)]) -> Vec<EvidencePosition> {
     ]
 }
 
-fn call(
+pub(crate) fn call(
     env: &Env,
     subject: &EvidenceSubject<'_>,
     request: &EvidenceRequest,
@@ -826,7 +863,7 @@ pub(crate) fn expect_refusal(result: Result<EvidenceResult, CallFailure>, cause:
     }
 }
 
-fn each_env() -> (Env, u64) {
+pub(crate) fn each_env() -> (Env, u64) {
     let env = env(EACH, ONE_CAPTURE);
     let p = env.atom("p");
     (env, p)
@@ -988,29 +1025,6 @@ fn an_instance_bound_atom_reads_only_its_own_instance() {
     assert_eq!(t2.settlement, Some(Settlement::ClosedScope));
 }
 
-#[trace("FR-524-AC-24", "FR-524-AC-25", "TC-1319")]
-#[test]
-fn an_evicted_required_valuation_is_incomplete_and_its_presence_evaluates() {
-    let (env, p) = each_env();
-    let subject = env.subject(&[]);
-    let mut asked = request(&env, at_t0(&[(p, Valuation::True)]));
-    asked.deliveries = vec![delivery("t1", "r", "p", &["5"])];
-    asked.trigger = Some(id("t1"));
-    let present = call(&env, &subject, &asked).expect("a result");
-    assert_eq!(present.truth, Some(Truth::True));
-    asked.evicted = vec![Evicted::Valuation {
-        instance: None,
-        position: 0,
-        atom: p,
-    }];
-    let gone = call(&env, &subject, &asked).expect("a result");
-    assert_eq!(gone.truth, None);
-    assert!(matches!(
-        gone.incomplete,
-        Some(EvidenceIncomplete::EvictedValuation { position: 0, .. })
-    ));
-}
-
 #[trace("FR-516-AC-15", "FR-516-AC-16", "TC-1311")]
 #[test]
 fn control_must_map_to_the_clause() {
@@ -1081,7 +1095,7 @@ fn an_each_clause_activates_at_its_anchor_and_an_origin_clause_at_zero() {
     assert_eq!(result.truth, Some(Truth::False));
 }
 
-#[trace("FR-516-AC-7", "FR-523-AC-3", "TC-1311")]
+#[trace("FR-516-AC-7", "TC-1311")]
 #[test]
 fn each_counter_completes_at_its_usage_and_one_below_is_incomplete() {
     let (env, p) = each_env();
@@ -1119,7 +1133,7 @@ fn each_counter_completes_at_its_usage_and_one_below_is_incomplete() {
     }
 }
 
-#[trace("FR-516-AC-17", "TC-1311")]
+#[trace("FR-516-AC-17", "FR-502-AC-1", "TC-1311")]
 #[test]
 fn a_regressing_watermark_is_refused_and_the_progress_ledger_is_unchanged() {
     let (env, p) = each_env();
@@ -1134,82 +1148,15 @@ fn a_regressing_watermark_is_refused_and_the_progress_ledger_is_unchanged() {
     let refused = evaluate_temporal_evidence(&subject, &asked, &mut meter);
     expect_refusal(refused, "progress-contradiction");
     assert!(meter.admitted_charges().is_empty());
-    assert_eq!(kept.len(), 1);
-}
-
-#[trace("FR-516-AC-9", "TC-1311")]
-#[test]
-fn opaque_evidence_members_change_only_the_echo() {
-    let (env, p) = each_env();
-    let subject = env.subject(&[]);
-    let mut asked = request(&env, at_t0(&[(p, Valuation::True)]));
-    asked.deliveries = vec![delivery("t1", "r", "p", &["5"])];
-    asked.trigger = Some(id("t1"));
-    let base = call(&env, &subject, &asked).expect("a result");
-    let mut changed = asked.clone();
-    changed.correspondence.digest = vec![9, 9];
-    changed.correspondence.contract = String::new();
-    changed.positions[0].observation.schema_digest = Vec::new();
-    changed.positions[0].observation.authority_digest = vec![1];
-    let other = call(&env, &subject, &changed).expect("a result");
-    assert_eq!(other.truth, base.truth);
-    assert_eq!(other.settlement, base.settlement);
-    assert_eq!(other.activation, base.activation);
-    assert_eq!(other.correspondence.digest, vec![9, 9]);
-    assert_eq!(
-        other.support.iter().map(|s| s.atom).collect::<Vec<_>>(),
-        base.support.iter().map(|s| s.atom).collect::<Vec<_>>()
-    );
-}
-
-#[trace("FR-516-AC-3", "TC-1311")]
-#[test]
-fn a_withdrawn_fact_after_activation_is_a_missing_non_value_not_a_default() {
-    let (env, p) = each_env();
-    let subject = env.subject(&[]);
-    let mut asked = request(&env, at_t0(&[(p, Valuation::True)]));
-    asked.deliveries = vec![delivery("t1", "r", "p", &["5"])];
-    asked.trigger = Some(id("t1"));
-    asked.decision_closure = None;
-    let result = call(&env, &subject, &asked).expect("a result");
-    assert_eq!(result.activation, ActivationState::Active);
-    assert_eq!(result.decision_closure, None);
-    let named = result.non_value.expect("a non-value");
-    assert_eq!(
-        (named.kind, named.dimension.as_deref()),
-        (NonValueKind::Missing, Some("decision_closure"))
-    );
-    assert_ne!(result.settlement, Some(Settlement::ClosedScope));
-}
-
-#[trace("FR-523-AC-14", "TC-1318")]
-#[test]
-fn a_shared_meter_stops_the_second_instance_at_the_visit_charge_point() {
-    let (env, p) = each_env();
-    let subject = env.subject(&[]);
-    let mut asked = request(&env, at_t0(&[(p, Valuation::True)]));
-    asked.deliveries = vec![
-        delivery("t1", "r", "p", &["5"]),
-        delivery("t2", "r", "p", &["5"]),
-    ];
-    asked.trigger = Some(id("t1"));
-    let mut probe = unlimited();
-    let first = evaluate_temporal_evidence(&subject, &asked, &mut probe).expect("a result");
-    let used = probe.admitted_charges().len() as u64;
-    let limits = ScalarLimits {
-        work_units: used,
-        ..SCALAR_LIMITS_UNLIMITED
+    let binding = {
+        let mut b = subject.progress.clone();
+        b.occurrence = 0;
+        b
     };
-    let mut shared = Meter::new(limits);
-    let one = evaluate_temporal_evidence(&subject, &asked, &mut shared).expect("a result");
-    assert_eq!(one.truth, first.truth);
-    asked.trigger = Some(id("t2"));
-    let two = evaluate_temporal_evidence(&subject, &asked, &mut shared).expect("a result");
-    assert_eq!(two.truth, None);
-    assert!(matches!(two.incomplete, Some(EvidenceIncomplete::Meter(_))));
+    assert_eq!(kept.entry(&binding).expect("an entry").watermark(), 100);
 }
 
-#[trace("FR-516-AC-2", "FR-516-AC-8", "TC-1311")]
+#[trace("FR-516-AC-2", "TC-1311")]
 #[test]
 fn an_event_position_clause_is_evaluated_through_the_progress_carrier() {
     let env = event_env("on origin", "eventually[0, 1] holds(p)");

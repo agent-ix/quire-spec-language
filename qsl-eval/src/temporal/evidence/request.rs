@@ -301,7 +301,13 @@ pub enum EvidenceIncomplete {
     /// A counter reached its ceiling.
     Limit(LimitReached),
     /// The meter denied a `temporal.visit` charge.
-    Meter(quire_exact::Incomplete),
+    Meter {
+        /// The meter's denial, with its charge point.
+        incomplete: quire_exact::Incomplete,
+        /// The opaque identity of the assessed instance, when the stop is at
+        /// the instance.
+        instance: Option<Box<[u8]>>,
+    },
     /// A valuation the activation required is in `evicted`.
     EvictedValuation {
         /// The instance the valuation is bound to, when it is.

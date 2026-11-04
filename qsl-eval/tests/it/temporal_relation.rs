@@ -5,9 +5,8 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{
-    evaluate_temporal_evidence, EmptyIdentity, EvidenceCounter, EvidenceIncomplete,
-    EvidenceRequest, EvidenceResult, Relation, SemanticTriggerIdentity, TemporalEvidenceLimits,
-    Truth,
+    evaluate_temporal_evidence, EmptyIdentity, EvidenceRequest, EvidenceResult, Relation,
+    SemanticTriggerIdentity, Truth,
 };
 use qsl_eval::temporal::Valuation;
 use quire_eval::CallFailure;
@@ -95,8 +94,14 @@ fn a_chain_of_corrections_names_each_direct_predecessor_and_leaves_earlier_resul
         (r2.lineage, &r2.relation),
         (1, &Relation::Superseding(r1_identity.clone()))
     );
-    assert_eq!(r1.result_identity, r1_identity);
-    assert_eq!(r1.lineage, 0);
+    // The ledger of the first call still holds the first result as the
+    // latest of its own chain: the later call wrote another ledger.
+    let own = r1
+        .ledger
+        .result(&env.obligation(), Some(&id("t1")))
+        .expect("the first ledger's entry");
+    assert_eq!(own.result_identity(), &r1_identity);
+    assert_eq!(own.lineage(), 0);
     let latest = r2
         .ledger
         .result(&env.obligation(), Some(&id("t1")))
@@ -226,45 +231,6 @@ fn another_obligation_trigger_or_correspondence_is_not_the_predecessors() {
     let mut corr = correct(&env, p, Valuation::False, &r1, Relation::Superseding);
     corr.correspondence.identity = "another".to_owned();
     expect_refusal(run(&env, &corr), "correspondence-changed");
-}
-
-#[trace("FR-526-AC-12", "TC-1321")]
-#[test]
-fn the_lineage_ceiling_stops_the_chain_at_the_named_counter() {
-    let (env, p) = setup();
-    let values = [
-        Valuation::True,
-        Valuation::False,
-        Valuation::Missing,
-        Valuation::True,
-    ];
-    let chain = |ceiling: u64| {
-        let mut previous: Option<EvidenceResult> = None;
-        for (index, value) in values.iter().enumerate() {
-            let mut asked = match &previous {
-                None => asking(&env, p, value.clone()),
-                Some(earlier) => correct(&env, p, value.clone(), earlier, Relation::Superseding),
-            };
-            asked.limits =
-                TemporalEvidenceLimits::default().with_ceiling(EvidenceCounter::Lineage, ceiling);
-            let result = run(&env, &asked).expect("a result");
-            if index == 3 {
-                return result;
-            }
-            previous = Some(result);
-        }
-        unreachable!("four requests")
-    };
-    let stopped = chain(2);
-    assert_eq!(stopped.lineage, 3);
-    assert_eq!(stopped.truth, None);
-    match stopped.incomplete {
-        Some(EvidenceIncomplete::Limit(reached)) => {
-            assert_eq!(reached.counter, EvidenceCounter::Lineage);
-        }
-        other => panic!("a lineage stop, not {other:?}"),
-    }
-    assert_eq!(chain(3).lineage, 3);
 }
 
 #[trace("FR-526-AC-16", "TC-1321")]

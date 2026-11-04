@@ -193,7 +193,13 @@ impl Outcome {
 fn incomplete_of(stop: EvidenceStop) -> EvidenceIncomplete {
     match stop {
         EvidenceStop::Limit(reached) => EvidenceIncomplete::Limit(reached),
-        EvidenceStop::Meter { incomplete, .. } => EvidenceIncomplete::Meter(incomplete),
+        EvidenceStop::Meter {
+            incomplete,
+            instance,
+        } => EvidenceIncomplete::Meter {
+            incomplete,
+            instance,
+        },
     }
 }
 
@@ -816,6 +822,8 @@ struct EvidenceLetters<'a> {
     assessed: Option<&'a SemanticTriggerIdentity>,
     evicted: Option<EvidenceIncomplete>,
     holders: BTreeMap<(u64, u64), Vec<SemanticTriggerIdentity>>,
+    /// The `(position, atom)` valuations the request does not hold.
+    absent: Vec<(u64, u64)>,
 }
 
 impl EvidenceLetters<'_> {
@@ -880,11 +888,13 @@ impl TemporalLetters for EvidenceLetters<'_> {
             return Err(Self::invariant("valuation-is-retained"));
         }
         if !self.bound.contains(&atom_index) {
-            return Ok(supplied
-                .valuations
-                .get(&atom_index)
-                .cloned()
-                .unwrap_or(Valuation::Missing));
+            return Ok(match supplied.valuations.get(&atom_index) {
+                Some(valuation) => valuation.clone(),
+                None => {
+                    self.absent.push((position.index(), atom_index));
+                    Valuation::Missing
+                }
+            });
         }
         let own = self
             .assessed
@@ -901,6 +911,7 @@ impl TemporalLetters for EvidenceLetters<'_> {
             })
             .map(|(identity, _)| identity.clone())
             .collect();
+        self.absent.push((position.index(), atom_index));
         self.holders.insert((position.index(), atom_index), others);
         Ok(Valuation::Missing)
     }
@@ -974,9 +985,12 @@ fn admit_trace(
         return match TimestampedTrace::admit_progressed(clause, observations, progress, meter) {
             Err(_) => Err(fault("trace-admits")),
             Ok(Ok(trace)) => Ok(Ok(trace)),
-            Ok(Err(ProgressedRefusal::Incomplete(incomplete))) => Ok(Err(Box::new(
-                Outcome::stopped(EvidenceIncomplete::Meter(incomplete)),
-            ))),
+            Ok(Err(ProgressedRefusal::Incomplete(incomplete))) => {
+                Ok(Err(Box::new(Outcome::stopped(EvidenceIncomplete::Meter {
+                    incomplete,
+                    instance: None,
+                }))))
+            }
             Ok(Err(refused)) => Err(refusal(
                 "progress-inconsistent",
                 "positions",
@@ -1314,6 +1328,7 @@ fn evaluate(
         assessed: Some(trigger),
         evicted: None,
         holders: BTreeMap::new(),
+        absent: Vec::new(),
     };
     let mut scratch = Meter::new(*call.meter().limits());
     let mut charger = UnitCharger { call, stop: None };
@@ -1418,7 +1433,10 @@ fn evaluate(
             outcome.activation = ActivationState::Unavailable;
             outcome.incomplete = Some(match stop {
                 Some(stop) => incomplete_of(stop),
-                None => EvidenceIncomplete::Meter(incomplete),
+                None => EvidenceIncomplete::Meter {
+                    incomplete,
+                    instance: Some(trigger.as_bytes().into()),
+                },
             });
             outcome.settlement = None;
         }
@@ -1427,30 +1445,33 @@ fn evaluate(
         }
     }
     for pair in &evaluation.support {
-        let observation = trace
+        // A pair at a silent sample names no observed fact.
+        let Some(observation) = trace
             .supplied_index(pair.position)
             .and_then(|index| request.positions.get(index))
             .map(|position| position.observation.clone())
-            .ok_or_else(|| fault("support-position-is-supplied"))?;
+        else {
+            continue;
+        };
         outcome.support.push(SupportRef {
             observation,
             atom: u64::try_from(pair.atom.index()).map_err(|_| fault("atom-in-u64"))?,
         });
     }
     if outcome.truth.is_some() {
+        let absent = letters
+            .absent
+            .first()
+            .map(|(position, atom)| format!("valuation:{atom}@{position}"));
         let withdrawn = if request.decision_closure.is_none() {
-            Some("decision_closure")
+            Some("decision_closure".to_owned())
         } else if request.completeness.is_none() {
-            Some("completeness")
+            Some("completeness".to_owned())
         } else {
-            None
+            absent
         };
         if let Some(fact) = withdrawn {
-            outcome = outcome.with_non_value(
-                NonValueKind::Missing,
-                "fact-withdrawn",
-                Some(fact.to_owned()),
-            );
+            outcome = outcome.with_non_value(NonValueKind::Missing, "fact-withdrawn", Some(fact));
         }
     }
     Ok(outcome)
