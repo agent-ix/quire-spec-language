@@ -41,3 +41,24 @@ Examined, clean: FR-532-AC-5 (binding names the package, equal on the two routes
 ## Verdict
 
 Not mergeable as written. FND-001 to FND-005 are criteria of this PR's own requirement (FR-532) or tests whose removal this PR caused, and each names new logic that survives mutation. The coder's list resolves as: due here and a gap: FR-532-AC-2, AC-3, AC-7, AC-8, AC-12 and FR-531-AC-6 (temporal half); belong to #2311 or part B: FR-531-AC-1, AC-3, AC-5, AC-7 (slot half), AC-8, AC-12, AC-13; gated: FR-532-AC-11. FR-531-AC-7 (temporal half: no source label or span in the encoded result) is due with the PR that delivers the slot value, provided it covers `EvidenceResult` too.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | FR-531-AC-6 and FR-532-AC-7/AC-12 name packages (no `temporal_clause_names` row, no `profile_selections` row, no clock row, an unbounded interval) that Contract IR refuses before any evaluation, so `clause-name`, `profile-selection`, the absent-clock `Unavailable` result and the bare `not-finite-window-profile` row cannot be met by an admitted package. The tests assert the reader's refusal by Debug substring (`TimedNodeReference`) and, for the missing profile row, only that the text is non-empty. The spec lane should restate those ACs as reader refusals; the branches in `subject()` are defensive. | tests/it/bare_package.rs:608-632, tests/it/bare_package.rs:806-830, qsl-eval/src/temporal/evidence/package.rs:367-372 |
+| FND-009 | low | The third sentence of FR-532-AC-4 (a request keyed by the arena index reads a different atom) is untested on a route; the facts unit test `a_shared_node_is_one_node_and_one_atom_numbered_by_first_use` asserts counts only and survives numbering by use position (only `bound_atom_indices`' unit test kills it); `let _ = EvidenceCounter::FormulaNodes;` is a leftover in `matrix`. | qsl-eval/src/temporal/facts.rs:637-654, tests/it/bare_package.rs:62 |
+
+## Dispositions
+
+Round 1, head 003b53ccd. Mutation re-runs (each reverted): atom numbering by use position KILLED (`a_leaf_count_that_differs_from_the_holds_count_maps_no_atoms`); `dependencies()` without recursion KILLED (chain and diamond test); `capture_value_types` returning none KILLED (`a_record_typed_capture_projects_with_the_source_identities`); `instance_bound_atoms` view guard removed SURVIVES as an equivalent mutant (`bound_atom_indices` returns the same `atom-count` reason); `bound_atom_indices` guard removed KILLED; `release`, `historically`, `triggered` mapped to the non-dual scan KILLED (`each_operation_maps_to_its_scan_family_and_dual`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Record-typed captures project with the source identities and equal the in-process types; the reasons that no admitted package can meet are asserted as reader refusals (FND-008). |
+| FND-002 | fixed | Forged-bytes tests: a clock row replaced drives the bare result (`binding-mismatch`, `Bindings` on `from_emission`); a replaced interval changes usage and the source routes refuse `formula-differs`; twins pair by key over `from_package`; the 12 operators agree over three routes and the plan table is unit-tested. The cycle, out-of-range operand and timed-interval shapes are reader refusals and `ClauseFormula` unit tests. |
+| FND-003 | fixed | `matrix` runs 4 clauses over truth, activation and `Incomplete` requests per counter; the test asserts True, False, Pending, Active, Inactive, Unavailable and an incomplete row were seen. |
+| FND-004 | fixed | `after[2].node = after[1].node` case (distinct atom after a shared one is atom 1), shared instance-bound atom and swapped order are asserted; numbering by use position is killed. Residue: FND-009. |
+| FND-005 | fixed | `None` assertions restored; guard removal killed at `bound_atom_indices`. |
+| FND-006 | fixed | Chain and diamond fixtures. |
+| FND-007 | fixed | `FR-531-AC-4` tagged; AC-9 reads declarations with `syn` and carries a probe that a missing row fails. |

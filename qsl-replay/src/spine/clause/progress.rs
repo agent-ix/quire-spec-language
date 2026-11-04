@@ -65,7 +65,9 @@ pub struct ProgressAssertion {
 /// The whole binding one progress assertion is made under (FR-502 Inputs).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LedgerBinding {
-    /// The checked package's name.
+    /// The caller's label of the source (its identity string). The replay
+    /// route emits no package; the label equals the name of the package the
+    /// source emits (FR-532).
     pub package: String,
     /// The checked clause identity: the declaration node, which is keyed by
     /// the clause's content and so is shared by two clauses of one body.
