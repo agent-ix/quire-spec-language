@@ -549,10 +549,39 @@ fn aggregate_atoms_are_checked_and_admitted() {
         "sum of c over past[0 s, 1000 ms] <= 1000 ms",
     ));
     let wrong_threshold_dimension = timestamped_source("sum of c over past[0 s, 1000 ms] <= 1 m");
+    // FR-194-AC-7: `5 m` against a time value is a unit mismatch at the
+    // threshold.
     let refusals = assemble(&wrong_threshold_dimension)
         .check(CheckingLimits::default())
         .expect_err("a threshold of another dimension is refused at S3");
     assert_eq!(refusals[0].cause.code(), Code::IllTyped);
+    assert_eq!(refusals[0].cause.cause(), Some("unit-mismatch"));
+    assert_eq!(
+        refusals[0].location,
+        crate::check::lowering::temporal_location(
+            0,
+            crate::check::lowering::TemporalSite::Aggregate(
+                0,
+                crate::check::lowering::AggregatePart::Threshold
+            )
+        )
+    );
+
+    // An exact fraction `n/d` threshold is the rational literal `n/d`; on
+    // `count` it is of another family.
+    package_admits(&source(
+        &[EVENT],
+        "Int[0,9]",
+        "fraction holds(c > 1) over past[0,3] >= 1/2",
+    ));
+    let rational_count = source(&[EVENT], "Int[0,9]", "count over past[0,3] >= 1/2");
+    let refusals = assemble(&rational_count)
+        .check(CheckingLimits::default())
+        .expect_err("a rational count threshold is refused");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+    );
 
     let ill_typed = source(
         &[EVENT],

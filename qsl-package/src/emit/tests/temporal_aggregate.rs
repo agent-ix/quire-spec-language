@@ -148,7 +148,7 @@ fn each_aggregate_kind_emits_the_qspec_vector_argument() {
         ("min of e.v over past[0,9] >= 1", "AG-03-min"),
         ("max of e.v over past[0,9] < 10", "AG-04-max"),
         (
-            "fraction holds(e.w = 0) over past[0,3] >= 1",
+            "fraction holds(e.w = 0) over past[0,3] >= 1/2",
             "AG-05-fraction",
         ),
         ("quantile 0.5 of e.v over past[0,9] = 4", "AG-06-quantile"),
@@ -165,13 +165,7 @@ fn each_aggregate_kind_emits_the_qspec_vector_argument() {
         let compiled = compile(&sampled(&format!("always[0,3] ({atom})")));
         let wire = &compiled.wire;
         let node = aggregate(wire);
-        let mut expected = shape(&vector(id));
-        if id == "AG-05-fraction" {
-            // The vector's threshold is 1/2; this source writes the integer
-            // 1, emitted as the rational 1.
-            let threshold = expected.last_mut().expect("a threshold");
-            threshold.1 = threshold.1.replace(" 1/2 ", " 1 ");
-        }
+        let expected = shape(&vector(id));
         assert_eq!(shape(argument(node)), expected, "{atom}");
         let over = &parameter_named(wire, "e")["node_id"];
         for read in ["predicate", "value", "filter"] {

@@ -546,8 +546,9 @@ require omitted:
    under timestamped-event;
 7. `lower` and `upper`: the bounds `a` and `b` of `past[a, b]`, integer
    literals for `positions`; for `duration` quantity literals typed by the
-   node of the lower bound's written time unit, both bounds converted
-   exactly to it;
+   clause's clock unit node, both bounds converted exactly to it (QSpec
+   FR-370), so `past[0 s, 300000 ms]` under a clock in `ms` is `0` and
+   `300000` of `ms`;
 8. `min_count`: the integer literal `min_count`, 1 when the source omits it;
 9. `comparison`: the text `<`, `<=`, `=`, `>=` or `>`;
 10. `threshold`: the threshold term, of the aggregate's result family.
@@ -556,21 +557,25 @@ Each `predicate`, `value` and `filter` term SHALL be lowered in the clause's
 binder scope and bound as a reference to its node. A threshold written as a
 literal SHALL be bound as a literal of the result family: `integer` for
 `count`, `rational` for `fraction`, otherwise the value's family, an integer
-literal written as the rational of its value where a rational is required; a
-quantity threshold in another unit of the value's dimension is converted to
+literal written as the rational of its value where a rational is required,
+and an exact fraction `n/d` of integer literals (FR-194) as the rational
+literal `n/d`, so `fraction holds(e.w = 0) over past[0, 3] >= 1/2` binds the
+threshold of QSpec's AG-05 vector; a quantity threshold in another unit of the value's dimension is converted to
 the value's unit and bound as a reference to the converted node; any other
 threshold is bound as a reference to its node. S3 refuses, before emission,
 a value that is not of family `integer`, `rational` or `quantity` and a
 threshold of another family, as FR-194 states.
 
-QSpec FR-370 types a `duration` bound by the clause's clock unit, the
-`scalar_type`/`unit` node whose path is `["scalar_type", "unit", T]`, `T`
-the selected clock's `timestamp_unit`. The emitter SHALL refuse a clause
-whose `duration` window's unit node is not that node with
-`InvalidTemporalClockValue` naming `timestamp_unit`, and SHALL write no
-package. A source-declared unit's node path is its declared name, and a
-source cannot yet name a model package's unit (QSL-1478), so no `duration`
-window emits today; `positions` windows do.
+The clause's clock unit is the `scalar_type`/`unit` node whose path is
+`["scalar_type", "unit", T]`, `T` the selected clock's `timestamp_unit`.
+The emitter SHALL refuse a clause whose `duration` window's unit node is not
+that node with `InvalidTemporalClockValue` naming `timestamp_unit`, and SHALL
+write no package. S3 does not yet know the selected clock, so it converts
+both bounds to the lower bound's written time unit, and a window whose lower
+bound is written in another unit than the clock's is refused rather than
+converted (Remaining work: QSL-1648). A source-declared unit's node path is
+its declared name, and a source cannot yet name a model package's unit
+(QSL-1478), so no `duration` window emits today; `positions` windows do.
 
 The bindings are inputs of the node's structural identity, so a change of any
 binding changes the formula node, and an omitted `min_count` and `min_count 1`

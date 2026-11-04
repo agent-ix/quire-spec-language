@@ -96,7 +96,15 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   aggregate's result family, `integer` for `count`, `rational` for
   `fraction` (an integer literal standing for the rational of its value),
   otherwise the value's family (QSpec FR-370 "Window aggregate atom"); S3
-  SHALL refuse another value or threshold `ill_typed`/`type-mismatch` at it.
+  SHALL refuse a value or threshold of another family
+  `ill_typed`/`type-mismatch` at it. A quantity threshold against a quantity
+  value is of the value's family; one of another dimension, or in a unit
+  that does not convert exactly to the value's, SHALL be refused
+  `ill_typed`/`unit-mismatch` at the threshold, as the item above states.
+  An exact fraction `n/d` of two integer literals written as the threshold
+  SHALL be checked as the rational literal `rational(n, d)`, as the
+  quantile level `q` is, so `fraction holds(P) over past[0, 3] >= 1/2`
+  binds the rational threshold `1/2`.
 - An aggregate atom (the aggregate term with its comparison and threshold)
   with several of these faults SHALL report each, in source order.
 - When a bound of `past[a, b]` has the wrong kind, S3 SHALL report that

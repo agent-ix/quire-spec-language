@@ -261,13 +261,29 @@ pub(crate) fn check_conditions(
                     qsl_forms::AggregateKindForm::Fraction(predicate) => {
                         Some(typed(Goal::Boolean, predicate, AggregatePart::Predicate)?)
                     }
-                    _ => None,
+                    qsl_forms::AggregateKindForm::Count
+                    | qsl_forms::AggregateKindForm::Sum
+                    | qsl_forms::AggregateKindForm::Min
+                    | qsl_forms::AggregateKindForm::Max
+                    | qsl_forms::AggregateKindForm::Quantile(_) => None,
                 };
-                let threshold = typed(
-                    Goal::Threshold(aggregate_value_type.as_ref()),
+                // FR-194: an exact fraction `n/d` of integer literals is the
+                // rational literal `rational(n, d)`, folded as the quantile
+                // level is.
+                let threshold = match exact_fraction(
                     &atom.threshold,
-                    AggregatePart::Threshold,
-                )?;
+                    input.checking_limits.rational_bits(),
+                    &at(AggregatePart::Threshold),
+                )? {
+                    Some((form, point)) => {
+                        typed(Goal::Declared(&point), &form, AggregatePart::Threshold)?
+                    }
+                    None => typed(
+                        Goal::Threshold(aggregate_value_type.as_ref()),
+                        &atom.threshold,
+                        AggregatePart::Threshold,
+                    )?,
+                };
                 // QSpec FR-370: the threshold is of the aggregate's result
                 // family, `integer` for `count`, `rational` for `fraction`,
                 // otherwise the family of the value, and for a quantity
@@ -278,19 +294,35 @@ pub(crate) fn check_conditions(
                 let required = match &atom.term.kind {
                     qsl_forms::AggregateKindForm::Count => Some(Family::Integer),
                     qsl_forms::AggregateKindForm::Fraction(_) => Some(Family::Rational),
-                    _ => aggregate_value_type.as_ref().and_then(family),
-                };
-                let compatible = match (required, family(threshold_root.value_type())) {
-                    (Some(required), Some(found)) if required == found => true,
-                    (Some(Family::Rational), Some(Family::Integer)) => {
-                        is_integer_literal(threshold_root)
+                    qsl_forms::AggregateKindForm::Sum
+                    | qsl_forms::AggregateKindForm::Min
+                    | qsl_forms::AggregateKindForm::Max
+                    | qsl_forms::AggregateKindForm::Quantile(_) => {
+                        aggregate_value_type.as_ref().and_then(family)
                     }
-                    _ => false,
                 };
-                if !compatible {
+                // FR-194-AC-7, QSpec FR-370 step 5: a quantity threshold the
+                // conversion above left in another unit, of another dimension
+                // or not convertible exactly, is a unit mismatch; any other
+                // family is a type mismatch.
+                let mismatch = match (required, family(threshold_root.value_type())) {
+                    (Some(required), Some(found)) if required == found => None,
+                    (Some(Family::Rational), Some(Family::Integer))
+                        if is_integer_literal(threshold_root) =>
+                    {
+                        None
+                    }
+                    (Some(Family::Quantity(_)), Some(Family::Quantity(_))) => {
+                        Some(CheckCause::UnitMismatch)
+                    }
+                    _ => Some(CheckCause::IllTyped(
+                        quire_exact::IllTypedCause::TypeMismatch,
+                    )),
+                };
+                if let Some(cause) = mismatch {
                     return Err(CheckRefusal {
                         location: at(AggregatePart::Threshold),
-                        cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                        cause,
                     });
                 }
                 conditions.aggregates.insert(
@@ -397,6 +429,59 @@ pub(crate) fn family(value_type: &ValueType) -> Option<Family> {
         ValueType::Quantity(unit) => Some(Family::Quantity(unit.clone())),
         _ => None,
     }
+}
+
+/// FR-194: a threshold written as an exact fraction `n/d` of two integer
+/// literals, as the form `rational(n, d)` and the point type of its value,
+/// reduced and measured against the rational-bits `ceiling` as the quantile
+/// level is (`quantity_magnitude`); `None` for any other threshold.
+fn exact_fraction(
+    threshold: &qsl_forms::ExpressionForm,
+    ceiling: u64,
+    location: &Location,
+) -> Result<Option<(qsl_forms::ExpressionForm, ValueType)>, CheckRefusal> {
+    use qsl_forms::{BinaryOperator, ExprNode};
+    let expression = &threshold.expression;
+    let root = expression.root();
+    let ExprNode::Binary {
+        operator: BinaryOperator::Divide,
+        left,
+        right,
+    } = root.node()
+    else {
+        return Ok(None);
+    };
+    let operand = |id| match expression.get(id).map(qsl_forms::ExprRef::node) {
+        Some(ExprNode::Integer(value)) => Some(value.clone()),
+        _ => None,
+    };
+    let (Some(numerator), Some(denominator)) = (operand(*left), operand(*right)) else {
+        return Ok(None);
+    };
+    let written = qsl_forms::ExactValueForm {
+        kind: qsl_forms::ExactValueKind::Rational,
+        first: numerator,
+        second: denominator,
+        span: qsl_foundation::Span { start: 0, end: 0 },
+    };
+    let value = crate::check::probabilistic::quantity_magnitude(&written, ceiling, location)?;
+    let point = |value: &quire_exact::Integer| {
+        quire_exact::IntegerInterval::new(value.clone(), value.clone())
+    };
+    let (Some(numerators), Some(denominators)) = (
+        point(value.numerator()).ok(),
+        point(value.denominator()).ok(),
+    ) else {
+        return Ok(None);
+    };
+    let Ok(domain) = quire_exact::RationalDomain::new(numerators, denominators) else {
+        return Ok(None);
+    };
+    let leaf = ExprNode::Rational(value.numerator().clone(), value.denominator().clone());
+    let Some(form) = threshold.cut(root.id(), &BTreeMap::from([(root.id(), leaf)])) else {
+        return Ok(None);
+    };
+    Ok(Some((form, ValueType::Rational(domain))))
 }
 
 /// Whether `node` is an integer literal.

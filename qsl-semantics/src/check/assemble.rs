@@ -5796,7 +5796,11 @@ fn aggregate_parts(
     use super::lowering::AggregatePart;
     let predicate = match &atom.term.kind {
         qsl_forms::AggregateKindForm::Fraction(predicate) => Some(predicate),
-        _ => None,
+        qsl_forms::AggregateKindForm::Count
+        | qsl_forms::AggregateKindForm::Sum
+        | qsl_forms::AggregateKindForm::Min
+        | qsl_forms::AggregateKindForm::Max
+        | qsl_forms::AggregateKindForm::Quantile(_) => None,
     };
     atom.term
         .value
