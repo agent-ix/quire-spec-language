@@ -15,7 +15,7 @@ use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
 use qsl_forms::Expression;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Presence, TextType};
+use quire_exact::{Presence, RationalDomain, TextType};
 use quire_semantic_value::location::OperationClauseKind;
 
 /// `Model.profile` of a domain-package model: the Semantic IR contract its
@@ -443,6 +443,14 @@ pub enum ScalarValueDomain {
     },
     /// A bounded text `Text[min, max; profile]` (FR-056's Text value type).
     Text(TextType),
+    /// A bounded or unbounded exact Rational value type (FR-505), optionally
+    /// carrying a nominal unit. An absent domain is the unbounded Rational.
+    Rational {
+        /// Exact numerator and positive-denominator bounds, when bounded.
+        domain: Option<RationalDomain>,
+        /// Unit name in the package's unit namespace, when authored.
+        unit: Option<String>,
+    },
     /// An alias for a native value type.
     Native(NativeValueType),
 }

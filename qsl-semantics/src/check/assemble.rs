@@ -41,9 +41,9 @@ use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, IdentityLimits, Setting, SettingLimits, Span};
 use quire_exact::{
-    Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, EnumShape, Identifier,
-    IeeeWidth, Integer, IntegerInterval, InvalidNodeKey, NodeKey, Presence, RoundingMode,
-    ValueType,
+    Cancel, CardinalityBound, CarriedQuantityType, CollectionKind, CollectionType, EffectiveId,
+    EnumShape, Identifier, IeeeWidth, Integer, IntegerInterval, InvalidNodeKey, NodeKey, Presence,
+    QuantityCarrier, RoundingMode, ValueType,
 };
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -2065,6 +2065,26 @@ fn model_value_type(
                         .map_err(|_| Unmapped::Unsupported)?,
                 ),
                 ScalarValueDomain::Text(text) => ValueType::Text(*text),
+                ScalarValueDomain::Rational {
+                    domain: Some(domain),
+                    unit: None,
+                } => ValueType::Rational(domain.clone()),
+                ScalarValueDomain::Rational {
+                    domain: Some(domain),
+                    unit: Some(name),
+                } => {
+                    let unit = units
+                        .get(name)
+                        .ok_or_else(|| Unmapped::QuantityName(name.clone()))?
+                        .clone();
+                    ValueType::carried_quantity(CarriedQuantityType::new(
+                        unit,
+                        QuantityCarrier::Rational(domain.clone()),
+                    ))
+                }
+                ScalarValueDomain::Rational { domain: None, .. } => {
+                    return Err(Unmapped::Unsupported)
+                }
                 ScalarValueDomain::Native(NativeValueType::Uuid) => ValueType::Uuid,
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
                 ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),

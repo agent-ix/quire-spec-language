@@ -163,11 +163,11 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 | Behavior | Successor | Disposition |
 | --- | --- | --- |
 | Objects, roles, operations (FR-041 description) | FR-056, FR-084, FR-086, FR-120, FR-300, FR-303 | PARTIAL |
-| Bounded exact-rational scalar sites, consistent bounds across sites (FR-041-AC-2) | none: FR-056 states `Rational` has no bounds on the spine; FR-056-AC-6 is the `normalize.record` charge | PORT QSL-1505 |
+| Bounded exact-rational scalar sites, consistent bounds across sites (FR-041-AC-2) | FR-505-AC-1..10; TC-1300 (exact Rational admission, shared ranged type identity, sites and refusal order) | COVERED by the bounded Rational spine model |
 | `/1` versus `/2` profile-bearing identity (FR-041-AC-6) and the `native-state-model/1,2` strings | none; FR-110 is header selection | RETIRE (planner decision 5: the identity strings die with the retired carrier); no successor claimed |
-| Roles, entries, nodes, depth, artifact-byte limits and their refusals (FR-041-AC-7, FR-015) | analogue for one counter only | PORT QSL-1505 unless the spine has an equivalent limit for the same resource |
-| FR-015-AC-1 to AC-4, AC-6 (TC-040 to TC-045), `link_native` conflicts | none | PORT/disposition QSL-1505 |
-| Function exclusion, integer overflow semantics gate, sequence ceiling 10_000 | none | PORT QSL-1505 (ADR-014 B-6 evidence cites the ceiling) |
+| Roles, entries, nodes, depth, artifact-byte limits and their refusals (FR-041-AC-7, FR-015) | FR-506-AC-1..8; TC-1301 (named declaration-record, sequence, intake-byte and node limits; depth is explicitly not a limit) | COVERED for resources with the same named spine counter; native artifact-byte admission has no retained spine artifact and is deleted with the carrier |
+| FR-015-AC-1 to AC-4, AC-6 (TC-040 to TC-045), `link_native` conflicts | FR-506-AC-1..8 / TC-1301 cover retained model-intake and normalization resource limits; profile/role link conflicts have no spine consumer after native_model retirement | PORT only for no equivalent same-resource spine limit; delete carrier-only link conflicts with native_model |
+| Function exclusion, integer overflow semantics gate, sequence ceiling 10_000 | FR-506-AC-2, AC-3, AC-7, AC-8 / TC-1301 preserve the sequence ceiling and caller-set boundaries; native-model function exclusion and integer-overflow gate have no spine successor | COVERED for sequence maximum; delete carrier-only function and integer-overflow gate with native_model |
 
 ## QSL-868 and QSL-830: the composed-lane remainder
 
