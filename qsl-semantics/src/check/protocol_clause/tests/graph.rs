@@ -255,7 +255,8 @@ fn a_repeat_records_its_parts_and_needs_progress() {
             panic!("a no-progress refusal, got {cause:?}");
         };
         assert_eq!(repeat, "Loop");
-        assert_eq!(*profile, None);
+        // `flow` selects the finite-global protocol profile.
+        assert_eq!(profile.as_deref(), Some("quire.protocol.finite-global/v1"));
         assert_eq!(located(&text, &cause), "Loop");
     }
 }
@@ -401,7 +402,8 @@ fn awaiting(members: &str, within: &str, matched: &str) -> String {
 /// `unsupported_construct`/`declaration-form` at the `await`, naming the
 /// form; an inverted or open `within` refuses `ill_typed`/`type-mismatch`
 /// at the interval; a unit selecting no temporal profile refuses
-/// `missing_declaration`/`missing-selection` at the `await`.
+/// `missing_declaration`/`missing-selection` at the `await`, and
+/// `MissingProfile` at the undeclared alias the `await` names.
 #[trace("TC-663")]
 #[test]
 fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
@@ -415,7 +417,7 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
             node: node(&source, "Wait", ProtocolNodeKind::Await),
             clock: "wall".to_owned(),
             within: CheckedDeadline { lower: 2, upper: 5 },
-            profile: Some(crate::check::TemporalProfile::InfiniteTrace),
+            profile: Some(crate::check::TemporalProfile::EventPositionFalseExtension),
         }]
     );
 
@@ -477,27 +479,53 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
         assert_eq!(located(&text, &cause), within);
     }
 
-    let header = HEADER.replace("profile t = \"quire.temporal.infinite-trace/v1\";\n", "");
-    assert_ne!(
-        header, HEADER,
-        "the fixture header selects a temporal profile"
+    // No temporal profile at all: the header drops both temporal aliases.
+    let header = HEADER
+        .replace("profile t = \"quire.temporal.infinite-trace/v1\";\n", "")
+        .replace(
+            "profile e = \"quire.temporal.event-position.false-extension/v1\";\n",
+            "",
+        );
+    assert_eq!(
+        header.matches("quire.temporal.").count(),
+        0,
+        "the header selects no temporal profile"
     );
     let (text, assembled) = assemble_with(&header, &source);
     let found = assembled
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect_err("an await under no temporal profile refuses");
-    let [cause] = protocol_causes(&found)[..] else {
-        panic!("one refusal: {found:?}");
+    // `flow`'s protocol input is a Boolean, which the lowering stage reports
+    // as `NoOwnerModel`; that emission refusal is not this check's subject.
+    let found: Vec<CheckRefusal> = found
+        .into_iter()
+        .filter(|refusal| {
+            !matches!(
+                refusal.cause,
+                crate::check::CheckCause::ProtocolReference(_)
+            )
+        })
+        .collect();
+    // The unit selects no temporal profile (the original refusal, at the
+    // `await`), and the alias `e` the `await` names is not declared.
+    let causes = protocol_causes(&found);
+    let [missing_alias, missing_selection] = causes[..] else {
+        panic!("two refusals: {found:?}");
     };
     assert_eq!(
-        (cause.code().as_str(), cause.tag()),
+        (missing_selection.code().as_str(), missing_selection.tag()),
         ("missing_declaration", "missing-selection")
     );
     assert!(matches!(
-        cause,
+        missing_selection,
         ProtocolAnchorCause::MissingTemporalProfile { node, .. } if node == "Wait"
     ));
-    assert_eq!(located(&text, cause), "Wait");
+    assert_eq!(located(&text, missing_selection), "Wait");
+    assert!(matches!(
+        missing_alias,
+        ProtocolAnchorCause::MissingProfile { alias, .. } if alias == "e"
+    ));
+    assert_eq!(located(&text, missing_alias), "e");
 }
 
 /// FR-218-AC-11: a `send` via a name that is no channel refuses

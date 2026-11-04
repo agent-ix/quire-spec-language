@@ -72,7 +72,7 @@ fn obligation_model() -> crate::model::intake::SelectedModel {
     ])
 }
 
-fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+fn assembled(text: &str) -> PackageDeclarations {
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u"),
         "unit.native",
@@ -90,11 +90,27 @@ fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
-    .check(CheckingLimits::default())
 }
 
+fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    assembled(text).check(CheckingLimits::default())
+}
+
+/// The checked graph of `text`, which must raise no refusal other than an
+/// emission refusal (`NotEmitted`): these tests read the S3 check of the
+/// protocol's slots, and what the lowering stage emits is its own contract.
 fn checks(text: &str) -> CheckedGraph {
-    check(text).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"))
+    let graph = assembled(text)
+        .check_with_protocol_results(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+    let refusals: Vec<&CheckRefusal> = graph
+        .protocol_refusals()
+        .iter()
+        .flat_map(|result| result.refusals.iter())
+        .filter(|refusal| !matches!(refusal.cause, CheckCause::ProtocolReference(_)))
+        .collect();
+    assert!(refusals.is_empty(), "{text}: {refusals:?}");
+    graph
 }
 
 /// The one refusal's cause, its catalog pair and the text at its span.
@@ -603,7 +619,7 @@ fn a_node_records_the_role_that_owns_it() {
 const PAY: &str = "protocol Pay using p over (k: M::Node) on origin {\n\
     role w on M::Node;\n\
     compensate Refund for Main::Paid as (fwd: M::Receipt)\n\
-        by w on M::Node::undo using v clock \"c\" {\n\
+        by w on M::Node::undo using e clock \"c\" {\n\
       activate first (f: M::Flag) when { f.ready } { }\n\
       within [0, 10];\n\
       attempts 1 of M::Attempt;\n\
@@ -718,8 +734,8 @@ fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
         .unwrap_or_else(|refusals| panic!("the controls are written: {refusals:?}"));
     let choosing = workers("workflow").replacen(
         "check After using v { true };",
-        "repeat Again by r visible (e.ready) while { not e.ready } \
-         sequence Body { event E by r as (e: M::Flag) { true }; }",
+        "repeat Again by r visible (seen.ready) while { not seen.ready } \
+         sequence Body { event E by r as (seen: M::Flag) { true }; }",
         1,
     );
     let found: Vec<ProtocolConstruct> = check(&with_profile(&choosing))

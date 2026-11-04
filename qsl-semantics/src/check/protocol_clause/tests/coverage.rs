@@ -43,11 +43,15 @@ fn recovery_flow_with_await(await_form: &str) -> String {
 )]
 #[test]
 fn protocol_use_sites_refuse_a_profile_of_the_wrong_kind() {
+    // Profile declarations precede the `model` declaration of the header.
+    let (profiles, model) = super::HEADER
+        .split_once("model ")
+        .expect("the header declares its model");
     let header = format!(
-        "{}profile i = \"quire.temporal.infinite-trace/v1\";\n\
+        "{profiles}profile i = \"quire.temporal.infinite-trace/v1\";\n\
          profile tm = \"quire.temporal.timed/v1\";\n\
-         profile s = \"quire.state.core/v1\";\n",
-        super::HEADER
+         profile s = \"quire.state.core/v1\";\n\
+         model {model}"
     );
     let protocol = attempt_flow("Flow", "").replace("using pp", "using v");
     let await_form = "await Wait after Applied using v clock \"ticks\" within [0,1] \

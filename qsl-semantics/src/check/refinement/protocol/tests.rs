@@ -512,9 +512,9 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
 
 /// Selection half of FR-135-AC-10 (the header grammar is not built): the rows
 /// that name `Fill` select it, and the clause is recorded by its
-/// node whichever way the clause and the refinement are ordered; a unit that
-/// selects no protocol profile has no node to record, so it refuses at the
-/// first row that names the clause.
+/// node whichever way the clause and the refinement are ordered; a clause
+/// whose profile alias the unit does not declare (`pp` under `header(false)`)
+/// has no node to record, so the unit refuses `missing-name` at the alias.
 #[trace("TC-541", "FR-136-AC-6", "TC-540", "FR-135-AC-10")]
 #[test]
 fn the_rows_select_the_concrete_protocol_and_record_its_node() {
@@ -533,13 +533,9 @@ fn the_rows_select_the_concrete_protocol_and_record_its_node() {
     let unselected = only(&found);
     assert_eq!(
         unselected.pair(),
-        (Code::MissingDeclaration, Some("missing-selection"))
+        (Code::MissingDeclaration, Some("missing-name"))
     );
-    assert_eq!(unselected.at, "step fork M::Fill::Both -> stutter;");
-    assert!(matches!(
-        unselected.refinement(),
-        RefinementCause::Check(CheckCause::MissingSelection { .. })
-    ));
+    assert_eq!(unselected.at, "pp");
 }
 
 /// A missing `join` or `finish` row refuses naming it, and a second row for
@@ -1886,7 +1882,7 @@ fn a_refinement_is_covered_against_the_clause_it_selects() {
 const SEQ: &str = "protocol Seq using pp over (k: A::Acc) on origin {\n\
      role r on A::Acc;\n\
      run sequence S {\n\
-     attempt x by r on A::Acc::add contracts [] as (p: Boolean) { true };\n\
+     attempt x by r on A::Acc::add contracts [] as (px: Boolean) { true };\n\
      }\n\
      finish F as (f: Boolean) { true };\n\
      }\n";

@@ -698,7 +698,7 @@ mod tests {
     /// between the roles and `run`, and the given run control.
     fn pipeline(members: &str, run: &str) -> String {
         format!(
-            "{RECORD}protocol Pipeline using p over (input: Boolean) on origin {{\n\
+            "{RECORD}protocol Pipeline using pp over (input: M::Actor) on origin {{\n\
              role Seller on M::Actor;\n\
              role Buyer on M::Actor;\n\
              {members}\n\

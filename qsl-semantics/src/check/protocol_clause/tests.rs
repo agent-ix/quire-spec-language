@@ -110,22 +110,47 @@ fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, Che
     (text, protocol, result)
 }
 
+/// The S3 refusals of the full check over `declarations`: every refusal
+/// except an emission refusal (`NotEmitted`), which belongs to the lowering
+/// stage. These tests read the protocol check under the selected protocol
+/// profile, whose lowering is not their subject.
+fn check_refusals(declarations: &str) -> (String, Result<CheckedGraph, Vec<CheckRefusal>>) {
+    let (text, assembled) = assemble(declarations);
+    let not_emission =
+        |refusal: &CheckRefusal| !matches!(refusal.cause, CheckCause::ProtocolReference(_));
+    let result = match assembled.check_with_protocol_results(CheckingLimits::default()) {
+        Ok(graph) => {
+            let refusals: Vec<CheckRefusal> = graph
+                .protocol_refusals()
+                .iter()
+                .flat_map(|result| result.refusals.iter().cloned())
+                .filter(not_emission)
+                .collect();
+            if refusals.is_empty() {
+                Ok(graph)
+            } else {
+                Err(refusals)
+            }
+        }
+        Err(refusals) => Err(refusals.into_iter().filter(not_emission).collect()),
+    };
+    (text, result)
+}
+
 /// The full `PackageDeclarations::check` pipeline over `declarations`,
 /// expecting it to refuse.
 fn refusals(declarations: &str) -> (String, Vec<CheckRefusal>) {
-    let (text, assembled) = assemble(declarations);
-    match assembled.check(CheckingLimits::default()) {
-        Err(refusals) => (text, refusals),
-        Ok(_) => panic!("{declarations}: checking refuses"),
+    match check_refusals(declarations) {
+        (text, Err(refusals)) => (text, refusals),
+        (_, Ok(_)) => panic!("{declarations}: checking refuses"),
     }
 }
 
 /// The full `PackageDeclarations::check` pipeline over `declarations`,
 /// expecting it to succeed.
 fn checks(declarations: &str) -> CheckedGraph {
-    let (_, assembled) = assemble(declarations);
-    assembled
-        .check(CheckingLimits::default())
+    check_refusals(declarations)
+        .1
         .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
 }
 
