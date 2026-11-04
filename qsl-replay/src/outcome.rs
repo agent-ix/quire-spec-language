@@ -368,13 +368,16 @@ pub struct ItemCause {
     /// A `memory-bound-reached` or `instance-bound-reached` cause's count of
     /// limited states.
     #[serde(skip_serializing_if = "Option::is_none")]
-    states: Option<u64>,
+    states: Option<ItemCauseStates>,
     /// Every `weak-access-shape` failure, with its shape written as JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
     failures: Option<Vec<ItemWeakAccessFailure>>,
     /// A `recovery-view` cause's template, by its qualified name.
     #[serde(skip_serializing_if = "Option::is_none")]
     predicate: Option<String>,
+    /// An unsupported delay distribution's operation identity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation: Option<String>,
     /// The requested tagged identity of `stale-dependency`.
     #[serde(skip_serializing_if = "Option::is_none")]
     requested: Option<StaleIdentityWire>,
@@ -391,6 +394,13 @@ pub struct ItemCause {
     /// own spelling; it supplies the cause's `kind`.
     #[serde(flatten)]
     reason: Option<ReasonWire>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+enum ItemCauseStates {
+    Count(u64),
+    Cycle(Vec<String>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -554,6 +564,7 @@ impl ItemCause {
             states: None,
             failures: None,
             predicate: None,
+            operation: None,
             requested: None,
             recompiled: None,
             state: None,
@@ -661,7 +672,7 @@ impl ItemCause {
             }) => {
                 item.bound = Some(bound.member.as_str());
                 item.value = Some(bound.value);
-                item.states = Some(*states);
+                item.states = Some(ItemCauseStates::Count(*states));
             }
             ReportedInconclusiveCause::Cause(InconclusiveCause::InstanceBoundReached {
                 bound,
@@ -669,7 +680,7 @@ impl ItemCause {
             }) => {
                 item.bound = Some(InstanceBound::MEMBER);
                 item.value = Some(bound.value);
-                item.states = Some(*states);
+                item.states = Some(ItemCauseStates::Count(*states));
             }
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
@@ -848,6 +859,18 @@ impl OutcomeItem {
                     }
                     UnavailabilityCause::RecoveryView { predicate } => {
                         item.predicate = Some(predicate.clone());
+                    }
+                    UnavailabilityCause::StrictClockConstraint { span } => {
+                        item.at = Some(format!("{}..{}", span.start, span.end));
+                    }
+                    UnavailabilityCause::DelayDistribution { operation } => {
+                        item.operation = Some(operation.clone());
+                    }
+                    UnavailabilityCause::ZeroDelayCycle { states } => {
+                        item.states = Some(ItemCauseStates::Cycle(states.clone()));
+                    }
+                    UnavailabilityCause::TimedFormShape { span } => {
+                        item.at = Some(format!("{}..{}", span.start, span.end));
                     }
                     UnavailabilityCause::ValueCheck { reason, .. } => {
                         item.refusal = Some(reason.as_str());
@@ -1841,7 +1864,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_foundation::{Position, SourceIdentity};
+    use qsl_foundation::{BackendId, Position, RequestIndex, SourceIdentity};
 
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{Cancel, CancelCause, Identifier, ScalarLimits};
@@ -1875,6 +1898,67 @@ mod tests {
         );
         assert_eq!(value["identity"]["receiver"], serde_json::Value::Null);
         assert_eq!(value["identity"]["arguments"][0]["value"], "1");
+    }
+
+    #[trace("TC-639", "FR-204-AC-2", "FR-204-AC-3", "FR-204-AC-4")]
+    #[test]
+    fn digital_unsupported_causes_keep_their_detail_on_the_wire() {
+        let cases = [
+            (
+                UnavailabilityCause::StrictClockConstraint {
+                    span: qsl_foundation::Span { start: 8, end: 17 },
+                },
+                "strict-clock-constraint",
+                "8..17",
+                None,
+            ),
+            (
+                UnavailabilityCause::DelayDistribution {
+                    operation: "M::Call::send".to_owned(),
+                },
+                "delay-distribution",
+                "M::Call::send",
+                None,
+            ),
+            (
+                UnavailabilityCause::ZeroDelayCycle {
+                    states: vec!["product-state-a".to_owned(), "product-state-b".to_owned()],
+                },
+                "zero-delay-cycle",
+                "3",
+                Some(vec!["product-state-a", "product-state-b"]),
+            ),
+        ];
+
+        for (cause, kind, detail, states) in cases {
+            let record = TerminalRecord::unsupported(
+                RequestIndex::new(0),
+                BackendId::new("qsl-en-5"),
+                cause,
+            );
+            let wire = serde_json::to_value(OutcomeItem::from_terminal(&record))
+                .expect("the FR-331 item serializes");
+            assert_eq!(wire["cause"]["kind"], kind);
+            if kind == "strict-clock-constraint" {
+                assert_eq!(wire["cause"]["where"], detail);
+            } else if kind == "delay-distribution" {
+                assert_eq!(wire["cause"]["operation"], detail);
+            } else {
+                assert_eq!(wire["cause"]["states"], serde_json::json!(states.unwrap()));
+            }
+        }
+
+        let timed_form = TerminalRecord::unsupported(
+            RequestIndex::new(1),
+            BackendId::new("qsl-en-5"),
+            UnavailabilityCause::TimedFormShape {
+                span: qsl_foundation::Span { start: 20, end: 32 },
+            },
+        );
+        let wire = serde_json::to_value(OutcomeItem::from_terminal(&timed_form))
+            .expect("the FR-331 item serializes");
+        assert_eq!(wire["cause"]["kind"], "timed-form-shape");
+        assert_eq!(wire["cause"]["where"], "20..32");
     }
 
     /// QSL-381: a node id nested 200 deep, past serde_json's 128-level
