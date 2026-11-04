@@ -12,7 +12,7 @@ relationships:
 
 Verify path-set replay, scheduler, support, post-state and prefix checks, subsystem evidence through the checker, the fairness check, and the path-count setting.
 
-Scope: FR-202-AC-1 to FR-202-AC-4, FR-202-AC-6 and FR-202-AC-7.
+Scope: FR-202-AC-1 to FR-202-AC-4, FR-202-AC-6 to FR-202-AC-8.
 
 ## Test Procedure
 
@@ -24,6 +24,7 @@ Fixtures: §15.4's and §15.2's one-path refutations; §15.3's per-window subsys
 4. Refute §15.4 with `max_witness_paths` 0 and replay; replay one envelope twice.
 5. Set the caller's `ReplayLimits.input_bytes` to one less than the measured encoded size of a `ReplayRequestWire`, then replay with that wire and otherwise valid inputs.
 6. Replay the FR-202-AC-6 quantile path sets over the two-point model and its half-activated variant.
+7. Replay FR-204-AC-10's `Detour` maximum witness and path set, then the copies with its `FreeDelays` rows swapped, with the row given `[3]` removed, with `B` delay 4, and with the entry replaced by `WorkloadResolve{B, 1}`.
 
 Tag the tests `#[trace("TC-637", "FR-202-AC-n")]`.
 Tag the caller-configured input-limit assertion `#[trace("TC-637", "FR-202-AC-7")]`.
@@ -36,3 +37,4 @@ Tag the caller-configured input-limit assertion `#[trace("TC-637", "FR-202-AC-7"
 - Step 4: subsystem evidence that replays `refuted`; equal outcomes.
 - Step 5: `ReplayRefusal::Request(ReplayRequestRefusal::BoundExceeded(BoundExceeded { bound: B - 1, actual: B }))`; byte-provision lookup and recompile are not reached. Trace this assertion as `FR-202-AC-7`.
 - Step 6: the two-point model: `refuted`, then `inconclusive`, `ReplayParity`; its half-activated variant: `refuted` with `N` counted, then `inconclusive`, `ReplayParity` without the not-activated path.
+- Step 7: `refuted` with `3/4`, the merged steps' `1/2` and `1/2` recomputed from rows `[1]` and `[3]`; each copy refuses `invalid_runtime_input`/`invalid-value`.

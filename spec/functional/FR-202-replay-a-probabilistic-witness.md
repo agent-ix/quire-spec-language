@@ -51,11 +51,8 @@ pub struct ProbabilisticCounterexample {
     pub evidence: WitnessEvidence,
 }
 pub struct WitnessScheduler { pub entries: Vec<(ProductKey, WitnessEntry)> }
-pub enum WitnessEntry { Choice(WitnessChoice), Randomized(Vec<(WitnessChoice, Rational)>) }
-pub enum WitnessChoice {
-    Action(ProductAction), // FR-196 closed semantic actions
-    FreeDelays(Vec<(Vec<Rational>, Vec<(ScheduledIdentity, Rational)>)>),
-} // per actual drawn given-delay vector, each free racing identity's chosen delay
+pub enum WitnessEntry { Choice(ProductAction), Randomized(Vec<(ProductAction, Rational)>) }
+// FR-196's closed ProductAction, including FreeDelays: per drawn given-delay vector, every free racing identity's delay
 pub enum WitnessEvidence { Paths(Vec<WitnessPath>), Subsystem(ProbabilityCertificate),
     Undefined { path: WitnessPath, undefined: UndefinedEvaluation } }   // ADR-028 XV-8
 pub struct WitnessPath { pub steps: Vec<WitnessStep> }  // CX-2 content plus mandatory semantic choice, post-key, draw, elapsed
@@ -82,17 +79,26 @@ canonical key order; equality/order cannot use local product IDs. A Choice
 names exactly one enabled semantic choice. A Randomized entry names distinct
 enabled choices in canonical choice order with positive reduced exact
 Rational probabilities summing to1; duplicates, zero/negative mass, missing
-mass and disabled choices refuse. For Action, canonical choice body is the
-FR-196 action body. For FreeDelays it is
-`["free-delays",[[given,[[schedule,delay],...]],...]]`, where given is the
-actual given-delay vector of reduced Rational bodies in declaration order,
-each delay is the reduced
-FR-196 Rational body, and schedule is the full ScheduledIdentity body.
-Rows cover the actual conditioned given-delay support once in lexicographic
-canonical vector order; free identity rows are sorted by full schedule
-bytes, unique and cover exactly the free racing identities. This existing
-race-policy form cannot name IdleObserve or change a fixed workload weight.
-No guessed QSpec wire spelling is adopted by this semantic contract.
+mass and disabled choices refuse. The canonical choice body is the FR-196
+action body. A `FreeDelays` choice, `["free-delays",[[given,free],...]]`, is
+enabled only at a mixed given/free workload race state (FR-204): its rows
+cover the actual conditioned given-delay support once in FR-196's numeric
+row order, each row's `given` and `free` name exactly the given and the free
+racing identities sorted by full schedule bytes, and each free delay lies in
+its identity's window; any other FreeDelays body is a disabled choice and
+refuses. This race-policy form cannot name IdleObserve or change a fixed
+workload weight. No guessed QSpec wire spelling is adopted by this semantic
+contract.
+
+EN-5 SHALL form the WitnessScheduler from the optimizer's attaining policy on
+the evidence's states: each entry is the complete pre-choice ProductKey and the
+ProductAction the policy takes there; at a FreeDelays state the entry is the
+whole action, each row holding FR-204's least attaining assignment for its
+given vector. A path step through a FreeDelays action is a merged step
+(FR-196): it names the action, the post-key and the elapsed winning delay, and
+no single given vector; replay recomputes its probability as the sum over the
+action's rows of the row's given-vector probability times the mass the row's
+race gives that post-key and elapsed amount.
 
 ## Behavior
 
@@ -134,9 +140,10 @@ No guessed QSpec wire spelling is adopted by this semantic contract.
 - For a path set it SHALL re-execute each path through `ModelSystem`:
   rederive the named semantic action and complete post-key, select each
   step's successor by its post-state; check that each
-  drawn value lies in its support; over every scheduler check that each step
-  takes a choice the witness scheduler gives positive probability at its
-  product state; recompute each path's probability exactly, as the product
+  drawn value lies in its support; over every scheduler, and under a workload
+  at a state with a free delay, check that each step takes a choice the
+  witness scheduler gives positive probability at its product state;
+  recompute each path's probability exactly, as the product
   of its draw probabilities and the scheduler's choice probabilities, or of
   its step probabilities under the workload; evaluate the event with SM-1;
   check that the paths are pairwise prefix-free; and check the sum against
@@ -186,6 +193,7 @@ No guessed QSpec wire spelling is adopted by this semantic contract.
 | FR-202-AC-4 | With `max_witness_paths` 0, §15.4's refutation carries subsystem evidence instead of a path set and still replays `refuted`. Replaying one envelope twice gives equal outcomes. | Test (TC-637) |
 | FR-202-AC-7 | Given a `ReplayRequestWire` whose measured encoded size is `B`, when the replay facade receives caller-configured `ReplayLimits` with `input_bytes = B - 1`, it returns `ReplayRefusal::Request(ReplayRequestRefusal::BoundExceeded(BoundExceeded { bound: B - 1, actual: B }))` before byte-provision lookup or recompile. | Test |
 | FR-202-AC-6 | Over the two-point model (`M` 1 or 3, probability 1/2 each), the path to `M = 1` (`V = 1/2`, `N = 0`) replays `refuted` for `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) (equality refutes), and settles `inconclusive`, `ReplayParity` for `quantile 0.9 of (M) >= 3`, which holds. Over its variant that activates with probability 1/2 (`M` 1 or 3 with probability 1/4 each), the path set of the `M = 1` path and the not-activated path (`V = 1/4`, `N = 1/2`) replays `refuted` for `quantile 0.5 of (M) >= 3`, and the `M = 1` path alone settles `inconclusive`, `ReplayParity`. | Test (TC-637) |
+| FR-202-AC-8 | FR-204-AC-10's `Detour` maximum witness (`FreeDelays` rows given `[1]` to `B` delay 2 and given `[3]` to `B` delay 1, path set `A` at 1 ms and `B` at 1 ms followed by `G` at 2 ms) replays `refuted` with `3/4 > 7/10`, the first step's merged probability `1/2` recomputed from row `[1]` and the `B` step's `1/2` from row `[3]`. The same witness with its rows swapped in order, with the row given `[3]` removed, with `B` delay 4 (outside `[1, 3]`), or as a `Choice` naming `WorkloadResolve{B, 1}` at that state refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-637) |
 | FR-202-AC-5 | FR-196-AC-5's `Undefined` evidence (`drop` with `b = 0`, `UndefinedEvaluation{where: 1, cause: absent-key}`) replays `refuted`; the same evidence with `where` set to 0 settles `inconclusive`, `ReplayParity`. | Test (TC-641) |
 
 ## Dependencies
