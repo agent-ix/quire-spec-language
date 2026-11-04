@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_eval::temporal::evidence::SubjectOccurrence;
 use qsl_eval::temporal::evidence::{
     activate, evaluate_temporal_evidence, ActivationInput, ActivationRow, ActivationState,
     ActivationStop, CaptureFact, CapturedValue, CompletenessRecord, Disposition, Evicted,
@@ -21,7 +22,7 @@ use qsl_eval::temporal::evidence::{
     Relation, SemanticTriggerIdentity, Settlement, TemporalEvidenceLimits, TriggerDelivery,
     TriggerEvidence, TriggerRecord, TriggerScope, Truth, UnknownKind,
 };
-use qsl_eval::temporal::evidence::{CallMeter, ClauseSelection, ClauseShape, TraceBinding};
+use qsl_eval::temporal::evidence::{CallMeter, ClauseShape, TraceBinding};
 use qsl_eval::temporal::{
     ClockCover, LedgerBinding, ProgressClosure, ProgressCompleteness, Valuation,
 };
@@ -34,6 +35,11 @@ use serde_json::json;
 use crate::temporal_trace::{fixture, Fixture};
 
 const FINITE_WINDOW: &str = "quire.temporal.timestamped-event.finite-window/v1";
+
+/// The occurrence `{ claim, ordinal }` of a clause declaration.
+pub(crate) fn claim(ordinal: u64) -> qsl_package::CheckedOccurrence {
+    serde_json::from_value(json!({"role": "claim", "ordinal": ordinal})).expect("an occurrence key")
+}
 
 pub(crate) fn id(text: &str) -> SemanticTriggerIdentity {
     SemanticTriggerIdentity::new(text.as_bytes()).expect("a non-empty identity")
@@ -107,19 +113,19 @@ fn build(profile_identity: &str, clock: serde_json::Value, activation: &str, bod
 impl Env {
     pub(crate) fn subject(&self, bound: &[u64]) -> EvidenceSubject<'_> {
         EvidenceSubject {
-            selection: ClauseSelection {
-                declaration: &self.declaration,
-                profile: &self.profile,
+            declaration: &self.declaration,
+            profile: &self.profile,
+            occurrences: vec![SubjectOccurrence {
+                occurrence: claim(self.occurrence),
                 clock: Some(&self.row),
-            },
+            }],
             clause: &self.fixture.clause,
             instance_bound: bound.iter().copied().collect(),
-            occurrence: self.occurrence,
             activation_map: &self.rows,
             progress: LedgerBinding {
                 package: qsl_foundation::SourceIdentity::new("a", "u"),
                 clause: crate::support::ids::node_key(b"Due"),
-                occurrence: self.occurrence,
+                occurrence: 0,
                 clock: "stamp-clock".to_owned(),
                 profile: FINITE_WINDOW.to_owned(),
             },
@@ -144,7 +150,7 @@ impl Env {
     pub(crate) fn obligation(&self) -> ObligationKey {
         ObligationKey::new(
             self.declaration.package.clone(),
-            serde_json::to_vec(&self.declaration).expect("encodes"),
+            serde_json::to_vec(&(&self.declaration, &claim(self.occurrence))).expect("encodes"),
             self.occurrence,
         )
     }
@@ -218,6 +224,7 @@ pub(crate) fn request(env: &Env, positions: Vec<EvidencePosition>) -> EvidenceRe
         relation: Relation::Original,
         control: None,
         binding: env.binding.clone(),
+        occurrence: None,
         limits: TemporalEvidenceLimits::default(),
     }
 }
@@ -443,6 +450,7 @@ fn origin(identity: &str, payload: &str) -> ExecutionOrigin {
     ExecutionOrigin {
         identity: id(identity),
         payload: Payload::new(payload.as_bytes()),
+        captures: Vec::new(),
     }
 }
 
@@ -487,7 +495,14 @@ fn a_false_guard_makes_no_instance_and_an_unknown_guard_is_a_fault() {
         fault_of(&faulted, "t2"),
         (FaultSubject::Guard, FaultKind::Missing)
     );
-    assert_eq!(faulted.ledger.instance_count(), 0);
+    // The faulted delivery is retained as an unavailable entry (FR-524).
+    let kept = faulted
+        .ledger
+        .instance(&env.obligation(), &id("t2"))
+        .expect("retained");
+    assert!(kept.fault().is_some());
+    assert_eq!(kept.environment().entries().len(), 0);
+    assert_eq!(faulted.ledger.instance_count(), 1);
 }
 
 fn capture_named(name: &str) -> FaultSubject {
@@ -624,7 +639,7 @@ fn a_faulted_instance_leaves_its_sibling_active() {
         activation.instances[1].state,
         InstanceState::Unavailable(_)
     ));
-    assert_eq!(activation.ledger.instance_count(), 1);
+    assert_eq!(activation.ledger.instance_count(), 2);
 }
 
 #[trace("FR-524-AC-18", "FR-524-AC-22", "TC-1319")]

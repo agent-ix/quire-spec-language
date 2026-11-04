@@ -7,11 +7,11 @@
 
 use std::collections::BTreeMap;
 
-use qsl_package::CheckedNodeId;
+use qsl_package::{CheckedNodeId, CheckedOccurrence, CheckedSelection, TemporalBinding};
 use qsl_semantics::check::CheckedTemporalClause;
 
-use super::activation::{ClauseShape, ExecutionDisposition, Instance};
-use super::binding::{AuthenticatedBinding, ClauseSelection, TraceBinding};
+use super::activation::{ExecutionDisposition, Instance};
+use super::binding::{AuthenticatedBinding, TraceBinding};
 use super::counters::LimitReached;
 use super::identity::{InputIdentity, ResultIdentity};
 use super::ledger::EvidenceLedger;
@@ -171,6 +171,9 @@ pub struct EvidenceRequest {
     pub control: Option<CheckedNodeId>,
     /// The profile, clock name and parameters the request asserts.
     pub binding: TraceBinding,
+    /// The occurrence of the declaration the call assesses; may be omitted
+    /// for a node with one occurrence (FR-516).
+    pub occurrence: Option<CheckedOccurrence>,
     /// The thirteen ceilings.
     pub limits: TemporalEvidenceLimits,
 }
@@ -377,13 +380,32 @@ pub struct ActivationRow {
     pub clause: CheckedNodeId,
 }
 
+/// One occurrence of a clause's declaration and its clock row, keyed by
+/// `{ role, ordinal }` (QSpec FR-322; FR-515 `clock_of`).
+#[derive(Clone, Debug)]
+pub struct SubjectOccurrence<'p> {
+    /// The occurrence's key.
+    pub occurrence: CheckedOccurrence,
+    /// The `temporal_bindings` row keyed by the declaration and this
+    /// occurrence, or `None` when the lock selects no clock configuration.
+    pub clock: Option<&'p TemporalBinding>,
+}
+
 /// The checked package's facts about the clause a call assesses (FR-515):
-/// the rows that authenticate the binding, the clause's formula, activation
-/// and captures, the atoms that read an instance's binders, and the FR-449
-/// rows.
+/// the declaration and profile row, each occurrence with the clock row its
+/// key selects, the clause's formula, activation and captures, the atoms that
+/// read an instance's binders, and the FR-449 rows.
+///
+/// The occurrences are listed in the order the package carries them, which
+/// need not ascend by ordinal; the call pairs a request's `occurrence` with
+/// its row by the key, never by position.
 pub struct EvidenceSubject<'p> {
-    /// The profile and clock rows of the clause.
-    pub selection: ClauseSelection<'p>,
+    /// The clause's declaration node.
+    pub declaration: &'p CheckedNodeId,
+    /// The lock's `profile_selections` row of the clause.
+    pub profile: &'p CheckedSelection,
+    /// The declaration's occurrences with their clock rows.
+    pub occurrences: Vec<SubjectOccurrence<'p>>,
     /// The checked clause.
     pub clause: &'p CheckedTemporalClause,
     /// The node indices of the `holds` atoms whose operand reads the trigger
@@ -391,16 +413,7 @@ pub struct EvidenceSubject<'p> {
     pub instance_bound: std::collections::BTreeSet<u64>,
     /// The package's FR-449 activation-map rows.
     pub activation_map: &'p [ActivationRow],
-    /// The occurrence of the clause's declaration (the `occurrence` of its
-    /// `temporal_bindings` row): the evidence ledger keys instances and
-    /// results by it, so clauses of equal bodies keep separate ones.
-    pub occurrence: u64,
-    /// The binding progress is retained under (FR-502).
+    /// The binding progress is retained under (FR-502); the call sets its
+    /// `occurrence` to the selected occurrence's ordinal.
     pub progress: LedgerBinding,
-}
-
-impl EvidenceSubject<'_> {
-    pub(super) fn shape(&self) -> ClauseShape {
-        ClauseShape::of(self.clause)
-    }
 }

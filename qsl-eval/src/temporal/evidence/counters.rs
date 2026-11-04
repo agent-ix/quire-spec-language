@@ -68,6 +68,16 @@ pub enum Visit {
     /// An evicted record consulted (FR-524): `evaluation_steps` and
     /// `visited`.
     Evicted,
+    /// An atomic lookup at a silent sample (FR-504): `valuations` and
+    /// `visited`, and the meter at `temporal.visit`. A silent sample is not
+    /// an observed position, so no charge made at one spends
+    /// `evaluation_steps` or `positions` (FR-523).
+    SilentLookup,
+    /// An operator node visited at a silent sample: the meter at
+    /// `temporal.visit` only (FR-523).
+    SilentStep,
+    /// A silent sample scanned by an operator node: the meter only.
+    SilentScan,
 }
 
 impl Visit {
@@ -91,6 +101,8 @@ impl Visit {
                 EvidenceCounter::Visited,
             ],
             Self::Evicted => &[EvidenceCounter::EvaluationSteps, EvidenceCounter::Visited],
+            Self::SilentLookup => &[EvidenceCounter::Valuations, EvidenceCounter::Visited],
+            Self::SilentStep | Self::SilentScan => &[],
         }
     }
 }

@@ -20,7 +20,7 @@ use super::activation::{
     activate, retained_instance, scope_disposition, ActivationInput, ActivationStop, ClauseShape,
     Disposition, FaultKind, FaultSubject, Instance, InstanceState, UnknownKind,
 };
-use super::binding::AuthenticatedBinding;
+use super::binding::{AuthenticatedBinding, ClauseSelection};
 use super::counters::{CallMeter, ClauseStop, EvidenceStop, LimitReached, Visit};
 use super::identity::{
     IdentityBuilder, IdentityMember, InputIdentity, MemberEncoder, ResultIdentity,
@@ -35,6 +35,7 @@ use super::request::{
 use super::trigger::{
     CaptureFact, Evicted, SemanticTriggerIdentity, TriggerEvidence, TriggerRecord, TriggerScope,
 };
+use super::work::{ClauseWork, ReachFault};
 use crate::temporal::finite_window::{
     evaluate_finite_window_at, Basis, ClockCover, IndeterminateReason, LowerBoundary,
     ProgressedRefusal, SampleProgress, TimestampedObservation, TimestampedTrace, Valuation,
@@ -45,6 +46,7 @@ use crate::temporal::ledger::{
     DEFAULT_COVERED_POSITIONS,
 };
 use crate::temporal::letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters};
+use crate::temporal::outcome::TemporalRefusal;
 use crate::temporal::position::TemporalPosition;
 use qsl_semantics::check::FormulaNodeId;
 
@@ -73,9 +75,60 @@ fn refusal(cause: &'static str, member: &str, fields: &[(&'static str, String)])
     )))
 }
 
+/// The subject with the occurrence the request selected and its clock row.
+struct ResolvedSubject<'p> {
+    selection: ClauseSelection<'p>,
+    clause: &'p qsl_semantics::check::CheckedTemporalClause,
+    instance_bound: &'p BTreeSet<u64>,
+    activation_map: &'p [super::request::ActivationRow],
+    progress: crate::temporal::ledger::LedgerBinding,
+    occurrence: u64,
+    occurrence_key: Vec<u8>,
+}
+
+impl ResolvedSubject<'_> {
+    fn shape(&self) -> ClauseShape {
+        ClauseShape::of(self.clause)
+    }
+}
+
+/// Select the occurrence the request names by its key `{ role, ordinal }`,
+/// never by position (FR-516 `occurrence`).
+fn resolve<'p>(
+    subject: &'p EvidenceSubject<'p>,
+    request: &EvidenceRequest,
+) -> Result<ResolvedSubject<'p>, CallFailure> {
+    let chosen = match (&request.occurrence, subject.occurrences.as_slice()) {
+        (Some(key), rows) => rows
+            .iter()
+            .find(|row| row.occurrence == *key)
+            .ok_or_else(|| refusal("occurrence-unknown", "occurrence", &[]))?,
+        (None, [only]) => only,
+        (None, _) => return Err(refusal("occurrence-required", "occurrence", &[])),
+    };
+    let occurrence_key = serde_json::to_vec(&(subject.declaration, &chosen.occurrence))
+        .map_err(|_| fault("clause-identity-encodes"))?;
+    Ok(ResolvedSubject {
+        selection: ClauseSelection {
+            declaration: subject.declaration,
+            profile: subject.profile,
+            clock: chosen.clock,
+        },
+        clause: subject.clause,
+        instance_bound: &subject.instance_bound,
+        activation_map: subject.activation_map,
+        progress: crate::temporal::ledger::LedgerBinding {
+            occurrence: chosen.occurrence.ordinal,
+            ..subject.progress.clone()
+        },
+        occurrence: chosen.occurrence.ordinal,
+        occurrence_key,
+    })
+}
+
 /// Everything of the request that is not an instance, derived once.
 struct Facts<'a> {
-    subject: &'a EvidenceSubject<'a>,
+    subject: &'a ResolvedSubject<'a>,
     request: &'a EvidenceRequest,
     authenticated: AuthenticatedBinding,
     obligation: ObligationKey,
@@ -162,14 +215,15 @@ pub fn evaluate_temporal_evidence(
     request: &EvidenceRequest,
     meter: &mut Meter,
 ) -> Result<EvidenceResult, CallFailure> {
-    let facts = admit(subject, request, meter)?;
-    let shape = subject.shape();
+    let resolved = resolve(subject, request)?;
+    let facts = admit(&resolved, request, meter)?;
+    let shape = resolved.shape();
     let outcome = assess(&facts, &shape, meter)?;
     Ok(conclude(&facts, outcome, meter))
 }
 
 fn admit<'a>(
-    subject: &'a EvidenceSubject<'a>,
+    subject: &'a ResolvedSubject<'a>,
     request: &'a EvidenceRequest,
     meter: &Meter,
 ) -> Result<Facts<'a>, CallFailure> {
@@ -201,11 +255,9 @@ fn admit<'a>(
             Some(_) => {}
         }
     }
-    let clause_bytes =
-        serde_json::to_vec(declaration).map_err(|_| fault("clause-identity-encodes"))?;
     let obligation = ObligationKey::new(
         declaration.package.clone(),
-        clause_bytes,
+        subject.occurrence_key.clone(),
         subject.occurrence,
     );
     let progress_ledger = admit_progress(subject, request)?;
@@ -237,7 +289,7 @@ fn admit<'a>(
 /// FR-502 as the call applies it: the contradiction is a refusal and the
 /// progress ledger the caller holds is then unchanged.
 fn admit_progress(
-    subject: &EvidenceSubject<'_>,
+    subject: &ResolvedSubject<'_>,
     request: &EvidenceRequest,
 ) -> Result<Option<crate::temporal::ledger::ProgressLedger>, CallFailure> {
     let Some(ledger) = &request.progress_ledger else {
@@ -356,7 +408,7 @@ fn encode_valuation(encoder: MemberEncoder, valuation: &Valuation) -> MemberEnco
         Valuation::True => encoder.u64(1),
         Valuation::False => encoder.u64(2),
         Valuation::Missing => encoder.u64(3),
-        Valuation::Undefined(cause) => encoder.u64(4).text(&format!("{cause:?}")),
+        Valuation::Undefined(_) => encoder.u64(4),
     }
 }
 
@@ -389,7 +441,23 @@ fn canonical(positions: &[EvidencePosition]) -> Vec<&EvidencePosition> {
     ordered
 }
 
-fn encode_trace(subject: &EvidenceSubject<'_>, request: &EvidenceRequest) -> Vec<u8> {
+fn encode_captures(mut encoder: MemberEncoder, captures: &[CaptureFact]) -> MemberEncoder {
+    encoder = encoder.u64(captures.len() as u64);
+    for fact in captures {
+        encoder = match fact {
+            CaptureFact::Value { anchor, value } => {
+                encoder.u64(1).text(anchor).bytes(value.as_bytes())
+            }
+            CaptureFact::Missing => encoder.u64(2),
+            CaptureFact::Null => encoder.u64(3),
+            CaptureFact::WrongType => encoder.u64(4),
+            CaptureFact::Stale => encoder.u64(5),
+        };
+    }
+    encoder
+}
+
+fn encode_trace(subject: &ResolvedSubject<'_>, request: &EvidenceRequest) -> Vec<u8> {
     let mut encoder = MemberEncoder::new().u64(request.positions.len() as u64);
     // The listing is the order of an event-position or fixed-sample trace;
     // a timestamped trace has the canonical order of FR-501.
@@ -409,12 +477,11 @@ fn encode_trace(subject: &EvidenceSubject<'_>, request: &EvidenceRequest) -> Vec
             encoder = encode_valuations(encoder.bytes(instance.as_bytes()), valuations);
         }
     }
-    encoder = encoder.u64(subject.occurrence);
-    encoder = encoder.option(request.anchor.as_ref(), |encoder, anchor| {
-        encoder.text(anchor)
-    });
-    encoder = encode_ref(encoder, &request.correspondence);
-    encoder = encoder.u64(request.deliveries.len() as u64);
+    encoder.finish()
+}
+
+fn encode_deliveries(request: &EvidenceRequest) -> Vec<u8> {
+    let mut encoder = MemberEncoder::new().u64(request.deliveries.len() as u64);
     for delivery in &request.deliveries {
         encoder = encoder
             .bytes(delivery.identity.as_bytes())
@@ -423,27 +490,25 @@ fn encode_trace(subject: &EvidenceSubject<'_>, request: &EvidenceRequest) -> Vec
             .bytes(delivery.payload.as_bytes())
             .option(delivery.guard.as_ref(), |encoder, guard| {
                 encoder.flag(*guard)
-            })
-            .u64(delivery.captures.len() as u64);
-        for fact in &delivery.captures {
-            encoder = match fact {
-                CaptureFact::Value { anchor, value } => {
-                    encoder.u64(1).text(anchor).bytes(value.as_bytes())
-                }
-                CaptureFact::Missing => encoder.u64(2),
-                CaptureFact::Null => encoder.u64(3),
-                CaptureFact::WrongType => encoder.u64(4),
-                CaptureFact::Stale => encoder.u64(5),
-            };
-        }
+            });
+        encoder = encode_captures(encoder, &delivery.captures);
     }
-    encoder = encoder.u64(request.origins.len() as u64);
+    encoder.finish()
+}
+
+fn encode_origins(request: &EvidenceRequest) -> Vec<u8> {
+    let mut encoder = MemberEncoder::new().u64(request.origins.len() as u64);
     for origin in &request.origins {
         encoder = encoder
             .bytes(origin.identity.as_bytes())
             .bytes(origin.payload.as_bytes());
+        encoder = encode_captures(encoder, &origin.captures);
     }
-    encoder = encoder.u64(request.evicted.len() as u64);
+    encoder.finish()
+}
+
+fn encode_evicted(request: &EvidenceRequest) -> Vec<u8> {
+    let mut encoder = MemberEncoder::new().u64(request.evicted.len() as u64);
     for record in &request.evicted {
         encoder = match record {
             Evicted::Capture { instance, capture } => {
@@ -510,10 +575,17 @@ fn encode_retained(request: &EvidenceRequest, obligation: &ObligationKey) -> Vec
             for receipt in entry.receipts() {
                 encoder = encoder.bytes(receipt.as_bytes());
             }
+            encoder = encoder.option(entry.fault(), |encoder, fault| {
+                let encoder = match &fault.subject {
+                    super::activation::FaultSubject::Guard => encoder.u64(1),
+                    super::activation::FaultSubject::Anchor => encoder.u64(2),
+                    super::activation::FaultSubject::Capture(name) => encoder.u64(3).text(name),
+                };
+                encoder.flag(fault.kind == super::activation::FaultKind::Missing)
+            });
             for capture in entry.environment().entries() {
                 encoder = encoder
                     .text(capture.name())
-                    .text(&format!("{:?}", capture.declared_type()))
                     .bytes(capture.value().as_bytes())
                     .u64(capture.source().index as u64)
                     .text(capture.anchor());
@@ -523,7 +595,7 @@ fn encode_retained(request: &EvidenceRequest, obligation: &ObligationKey) -> Vec
     encoder.finish()
 }
 
-fn encode_progress_entry(subject: &EvidenceSubject<'_>, request: &EvidenceRequest) -> Vec<u8> {
+fn encode_progress_entry(subject: &ResolvedSubject<'_>, request: &EvidenceRequest) -> Vec<u8> {
     let entry = request
         .progress_ledger
         .as_ref()
@@ -545,7 +617,7 @@ fn encode_progress_entry(subject: &EvidenceSubject<'_>, request: &EvidenceReques
 }
 
 fn identity_of(
-    subject: &EvidenceSubject<'_>,
+    subject: &ResolvedSubject<'_>,
     request: &EvidenceRequest,
     authenticated: &AuthenticatedBinding,
     obligation: &ObligationKey,
@@ -559,12 +631,8 @@ fn identity_of(
     };
     let relation = match &request.relation {
         Relation::Original => MemberEncoder::new().u64(0),
-        Relation::Superseding(prev) => MemberEncoder::new()
-            .u64(1)
-            .bytes(&format!("{prev:?}").into_bytes()),
-        Relation::Invalidating(prev) => MemberEncoder::new()
-            .u64(2)
-            .bytes(&format!("{prev:?}").into_bytes()),
+        Relation::Superseding(prev) => MemberEncoder::new().u64(1).bytes(prev.as_bytes()),
+        Relation::Invalidating(prev) => MemberEncoder::new().u64(2).bytes(prev.as_bytes()),
     }
     .finish();
     let trigger = MemberEncoder::new()
@@ -589,7 +657,26 @@ fn identity_of(
             IdentityMember::ProgressLedger,
             encode_progress_entry(subject, request),
         )
-        .member(IdentityMember::Relation, relation))
+        .member(IdentityMember::Relation, relation)
+        .member(IdentityMember::Deliveries, encode_deliveries(request))
+        .member(IdentityMember::Origins, encode_origins(request))
+        .member(
+            IdentityMember::Anchor,
+            MemberEncoder::new()
+                .option(request.anchor.as_ref(), |encoder, anchor| {
+                    encoder.text(anchor)
+                })
+                .finish(),
+        )
+        .member(IdentityMember::Evicted, encode_evicted(request))
+        .member(
+            IdentityMember::Correspondence,
+            encode_ref(MemberEncoder::new(), &request.correspondence).finish(),
+        )
+        .member(
+            IdentityMember::Occurrence,
+            MemberEncoder::new().bytes(&subject.occurrence_key).finish(),
+        ))
 }
 
 /// The byte lengths of the request's opaque byte members: their total and
@@ -701,6 +788,9 @@ impl WindowCharge for UnitCharger<'_, '_> {
             WindowUnit::Step => Visit::Step,
             WindowUnit::Scan => Visit::Scan,
             WindowUnit::Lookup => Visit::Lookup,
+            WindowUnit::SilentLookup => Visit::SilentLookup,
+            WindowUnit::SilentStep => Visit::SilentStep,
+            WindowUnit::SilentScan => Visit::SilentScan,
         };
         match self.call.visit(visit) {
             Ok(()) => Ok(()),
@@ -1001,6 +1091,22 @@ fn assess(
             )],
         ));
     }
+    if let Some(surplus) = input.surplus(shape) {
+        return Err(refusal(
+            "surplus-capture",
+            "captures",
+            &[
+                (
+                    "surplus_capture_identity",
+                    format!("{:?}", surplus.surplus_capture_identity.as_bytes()),
+                ),
+                (
+                    "surplus_capture_index",
+                    surplus.surplus_capture_index.to_string(),
+                ),
+            ],
+        ));
+    }
     let listed: BTreeSet<&SemanticTriggerIdentity> = request
         .deliveries
         .iter()
@@ -1041,6 +1147,16 @@ fn assess(
         .get(activation_position)
         .map(|position| position.stamp)
         .ok_or_else(|| fault("activation-position-is-admitted"))?;
+    match ClauseWork::of(facts.subject.clause.formula()) {
+        Ok(_) | Err(ReachFault::Overflow) => {}
+        Err(unreadable) => {
+            return Err(refusal(
+                "clause-unreadable",
+                "clause",
+                &[("reason", unreadable.to_string())],
+            ));
+        }
+    }
     let mut call = CallMeter::new(request.limits, meter);
     let prepared = Prepared {
         scope,
@@ -1116,8 +1232,8 @@ fn run_instance(
     }
     let activation = match activate(shape, &facts.obligation, input.clone(), call) {
         Ok(activation) => activation,
-        Err(ActivationStop::Contradiction(_)) => {
-            return Err(fault("contradiction-refused-before-charges"));
+        Err(ActivationStop::Contradiction(_) | ActivationStop::Surplus(_)) => {
+            return Err(fault("refusals-precede-charges"));
         }
         Err(ActivationStop::Stop(stop)) => return Ok(Outcome::stopped(incomplete_of(stop))),
     };
@@ -1214,16 +1330,24 @@ fn evaluate(
         Ok(evaluation) => evaluation,
         Err(refused) => {
             if let Some(evicted) = letters.evicted.take() {
-                return Ok(Outcome {
-                    activation: ActivationState::Active,
-                    ..Outcome::stopped(evicted)
-                });
+                // One `evicted` visit for the hit (FR-524); the result is an
+                // `Incomplete`, whichever charge stops it.
+                return Ok(Outcome::stopped(match call.visit(Visit::Evicted) {
+                    Ok(()) => evicted,
+                    Err(stop) => incomplete_of(stop),
+                }));
             }
-            return Err(refusal(
-                "temporal-refusal",
-                "positions",
-                &[("refusal", format!("{refused:?}"))],
-            ));
+            return match refused {
+                TemporalRefusal::Fault(internal) => Err(CallFailure::Fault(internal)),
+                // A refusal of the evaluation itself (for example two
+                // positions of one stamp with no usable order) is a result
+                // of a call that ran, not a refusal before any charge.
+                other => Ok(Outcome::of(ActivationState::Active).with_non_value(
+                    NonValueKind::Refused,
+                    "temporal-refusal",
+                    Some(format!("{other:?}")),
+                )),
+            };
         }
     };
     let mut outcome = Outcome::of(ActivationState::Active);
@@ -1291,6 +1415,7 @@ fn evaluate(
             outcome = outcome.with_non_value(NonValueKind::Refused, "undefined-atom", None);
         }
         WindowVerdict::Incomplete(incomplete) => {
+            outcome.activation = ActivationState::Unavailable;
             outcome.incomplete = Some(match stop {
                 Some(stop) => incomplete_of(stop),
                 None => EvidenceIncomplete::Meter(incomplete),
@@ -1377,7 +1502,11 @@ fn conclude(facts: &Facts<'_>, outcome: Outcome, _meter: &Meter) -> EvidenceResu
         input_identity: facts.input_identity.clone(),
         result_identity: facts.result_identity.clone(),
         ledger,
-        progress_ledger: facts.progress_ledger.clone(),
+        progress_ledger: if stopped {
+            request.progress_ledger.clone()
+        } else {
+            facts.progress_ledger.clone()
+        },
         authenticated: facts.authenticated.clone(),
         instances: outcome.instances,
     }

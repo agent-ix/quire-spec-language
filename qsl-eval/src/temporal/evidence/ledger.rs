@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use quire_exact::ValueType;
 
+use super::activation::ActivationFault;
 use super::identity::{InputIdentity, ResultIdentity};
 use super::trigger::{CapturedValue, Payload, Receipt, SemanticTriggerIdentity};
 
@@ -167,6 +168,7 @@ pub struct RetainedInstance {
     receipts: Vec<Receipt>,
     environment: CaptureEnvironment,
     evaluations: u64,
+    fault: Option<ActivationFault>,
 }
 
 impl RetainedInstance {
@@ -180,6 +182,23 @@ impl RetainedInstance {
             receipts: receipt.into_iter().collect(),
             environment: env,
             evaluations: 1,
+            fault: None,
+        }
+    }
+
+    /// An instance whose activation faulted: its identity's payload and
+    /// receipts, the fault, and no capture environment (FR-524).
+    pub(super) fn faulted(
+        payload: Payload,
+        receipt: Option<Receipt>,
+        fault: ActivationFault,
+    ) -> Self {
+        Self {
+            payload,
+            receipts: receipt.into_iter().collect(),
+            environment: CaptureEnvironment::default(),
+            evaluations: 0,
+            fault: Some(fault),
         }
     }
 
@@ -204,8 +223,14 @@ impl RetainedInstance {
         &self.environment
     }
 
+    /// The fault of an instance whose activation could not be established,
+    /// which stays the instance's state for the life of the entry.
+    pub fn fault(&self) -> Option<&ActivationFault> {
+        self.fault.as_ref()
+    }
+
     /// How many times the instance's initializers were evaluated: one, for
-    /// the life of the instance.
+    /// the life of the instance, and none for a faulted one.
     pub fn evaluations(&self) -> u64 {
         self.evaluations
     }

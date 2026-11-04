@@ -238,11 +238,25 @@ pub struct Contradiction {
     pub contradicted_identity: SemanticTriggerIdentity,
 }
 
+/// A delivery or origin that supplies more capture facts than the clause
+/// declares: `invalid_runtime_input`/`invalid-value` carrying
+/// `surplus_capture_identity` and `surplus_capture_index` (FR-524 "Outputs").
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("a delivery carries more capture facts than the clause declares")]
+pub struct SurplusCapture {
+    /// The delivery's or origin's identity.
+    pub surplus_capture_identity: SemanticTriggerIdentity,
+    /// The index of the first fact beyond the declared captures.
+    pub surplus_capture_index: usize,
+}
+
 /// Why [`activate`] returned no activation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ActivationStop {
     /// A contradiction refusal; nothing was charged.
     Contradiction(Contradiction),
+    /// A surplus-capture refusal; nothing was charged.
+    Surplus(SurplusCapture),
     /// A counter or the meter stopped the work.
     Stop(EvidenceStop),
 }
@@ -289,6 +303,28 @@ impl ActivationInput {
         None
     }
 
+    /// The first delivery or origin, in list order, that supplies more capture
+    /// facts than `clause` declares. Nothing is charged.
+    pub fn surplus(&self, clause: &ClauseShape) -> Option<SurplusCapture> {
+        let declared = clause.captures.len();
+        let listed = self
+            .deliveries
+            .iter()
+            .map(|delivery| (&delivery.identity, delivery.captures.len()))
+            .chain(
+                self.origins
+                    .iter()
+                    .map(|origin| (&origin.identity, origin.captures.len())),
+            );
+        listed
+            .into_iter()
+            .find(|(_, supplied)| *supplied > declared)
+            .map(|(identity, _)| SurplusCapture {
+                surplus_capture_identity: identity.clone(),
+                surplus_capture_index: declared,
+            })
+    }
+
     fn is_evicted_capture(&self, identity: &SemanticTriggerIdentity, name: &str) -> bool {
         self.evicted.iter().any(|record| {
             matches!(record, Evicted::Capture { instance, capture }
@@ -325,6 +361,9 @@ pub fn activate(
     if let Some(contradiction) = input.contradiction(obligation) {
         return Err(ActivationStop::Contradiction(contradiction));
     }
+    if let Some(surplus) = input.surplus(clause) {
+        return Err(ActivationStop::Surplus(surplus));
+    }
     let arrivals: Vec<Arrival<'_>> = match clause.activation() {
         ClauseActivation::Each { .. } => input
             .deliveries
@@ -347,7 +386,7 @@ pub fn activate(
                 receipt: None,
                 guard: Some(true),
                 anchor: None,
-                captures: &[],
+                captures: &origin.captures,
             })
             .collect(),
     };
@@ -364,13 +403,13 @@ pub fn activate(
         if let Some(entry) = retained {
             // A redelivery of an instance created earlier in this call or
             // retained: no initializer runs (FR-524 "Captures").
-            let fault = retained_fault(&input, arrival.identity, &entry, call)?;
-            let next = match (&fault, arrival.receipt) {
+            let evicted = retained_fault(&input, arrival.identity, &entry, call)?;
+            let next = match (&evicted, arrival.receipt) {
                 (None, Some(receipt)) => entry.with_receipt(receipt),
                 (_, _) => entry.clone(),
             };
-            let instance = instance_of(arrival.identity, &next, fault.clone());
-            if fault.is_none() {
+            let instance = instance_of(arrival.identity, &next, evicted.clone());
+            if evicted.is_none() {
                 ledger = ledger.with_instance(obligation, arrival.identity, next);
             }
             match listed {
@@ -396,13 +435,13 @@ pub fn activate(
                 instances.push(instance);
             }
             Established::Faulted(fault) => {
-                let instance = Instance {
-                    identity: arrival.identity.clone(),
-                    receipts: arrival.receipt.into_iter().cloned().collect(),
-                    environment: CaptureEnvironment::default(),
-                    state: InstanceState::Unavailable(fault),
-                    evaluations: 0,
-                };
+                let entry = RetainedInstance::faulted(
+                    arrival.payload.clone(),
+                    arrival.receipt.cloned(),
+                    fault,
+                );
+                let instance = instance_of(arrival.identity, &entry, None);
+                ledger = ledger.with_instance(obligation, arrival.identity, entry);
                 match listed {
                     Some(index) => {
                         if let Some(slot) = instances.get_mut(index) {
@@ -436,7 +475,9 @@ fn instance_of(
         identity: identity.clone(),
         receipts: entry.receipts().to_vec(),
         environment: entry.environment().clone(),
-        state: fault.map_or(InstanceState::Active, InstanceState::Unavailable),
+        state: fault
+            .or_else(|| entry.fault().cloned())
+            .map_or(InstanceState::Active, InstanceState::Unavailable),
         evaluations: entry.evaluations(),
     }
 }

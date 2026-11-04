@@ -34,8 +34,15 @@ pub enum WindowUnit {
     Step,
     /// One position scanned by an operator node.
     Scan,
-    /// One atomic `holds` read at a position.
+    /// One atomic `holds` read at an observed position.
     Lookup,
+    /// One atomic `holds` read at a silent sample (FR-504), which is no
+    /// observation and no evaluated position visit.
+    SilentLookup,
+    /// A temporal operator node visited at a silent sample.
+    SilentStep,
+    /// One silent sample scanned by an operator node.
+    SilentScan,
 }
 
 /// Where an evaluation charges its `temporal.visit` units instead of the
@@ -434,7 +441,12 @@ impl<L: TemporalLetters> Run<'_, L> {
     /// `ConflictingValuation` at every position of that stamp (FR-501
     /// "Verdicts"), whatever order they were listed in.
     fn read_atom(&mut self, node: usize, position: usize) -> Result<(), Stop> {
-        self.charge(WindowUnit::Lookup)?;
+        let silent = position >= self.trace.observed;
+        self.charge(if silent {
+            WindowUnit::SilentLookup
+        } else {
+            WindowUnit::Lookup
+        })?;
         let class = self.class(node);
         let id = self
             .clause
@@ -492,7 +504,12 @@ impl<L: TemporalLetters> Run<'_, L> {
     /// scan's direction (one charge each), keep the ones whose stamp lies in
     /// the interval, and read what a continuation could still add.
     fn scan(&mut self, node: usize, position: usize) -> Result<ScanFrame, Stop> {
-        self.charge(WindowUnit::Step)?;
+        let silent = position >= self.trace.observed;
+        self.charge(if silent {
+            WindowUnit::SilentStep
+        } else {
+            WindowUnit::Step
+        })?;
         let Node::Scan(scan) = slot(&self.plan.nodes, node)? else {
             return Err(fault("scan-node").into());
         };
@@ -509,7 +526,11 @@ impl<L: TemporalLetters> Run<'_, L> {
         let cover = self.trace.clock.cover;
         let mut candidates: Vec<Candidate> = Vec::new();
         for candidate in order {
-            self.charge(WindowUnit::Scan)?;
+            self.charge(if candidate >= self.trace.observed {
+                WindowUnit::SilentScan
+            } else {
+                WindowUnit::Scan
+            })?;
             let stamp = u64::try_from(self.stamp(candidate)?).map_err(|_| fault("stamp-in-u64"))?;
             let anchor_stamp = u64::try_from(anchor).map_err(|_| fault("stamp-in-u64"))?;
             let part = match cover.eligible(

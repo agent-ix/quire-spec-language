@@ -192,11 +192,16 @@ fn shape(node: &FormulaNode) -> Result<NodeShape, ReachFault> {
     let upper = match interval {
         None => return Err(ReachFault::Unbounded),
         // A finite-window clause measures ticks of its clock unit, both ends
-        // inclusive (FR-501): an integral closed upper bound is a tick count.
+        // inclusive (FR-501): closed, integral bounds are a tick count (the predicate of the planner's
+        // `Window::of`).
         // Any other timed interval counts rational time and has no tick
         // reach.
         Some(CheckedInterval::Timed(timed)) => {
-            if !timed.lower_closed() || !timed.upper_closed() || !timed.upper().is_integer() {
+            if !timed.lower_closed()
+                || !timed.upper_closed()
+                || !timed.lower().is_integer()
+                || !timed.upper().is_integer()
+            {
                 return Err(ReachFault::Timed);
             }
             timed

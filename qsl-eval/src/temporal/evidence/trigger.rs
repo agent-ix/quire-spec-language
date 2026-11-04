@@ -129,6 +129,9 @@ pub struct ExecutionOrigin {
     pub identity: SemanticTriggerIdentity,
     /// The payload.
     pub payload: Payload,
+    /// The capture facts, in the clause's authored order, which a clause
+    /// with captures establishes from exactly as a delivery does.
+    pub captures: Vec<CaptureFact>,
 }
 
 /// A retained record the caller reports as no longer available (FR-524

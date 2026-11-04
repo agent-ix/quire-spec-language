@@ -26,7 +26,7 @@ mod work;
 pub use activation::{
     activate, scope_disposition, Activation, ActivationFault, ActivationInput, ActivationStop,
     ClauseShape, Completeness, Contradiction, Disposition, ExecutionDisposition, FaultKind,
-    FaultSubject, Instance, InstanceState, UnknownKind,
+    FaultSubject, Instance, InstanceState, SurplusCapture, UnknownKind,
 };
 pub use binding::{
     AuthenticatedBinding, BindingMismatch, ClauseSelection, MismatchedDimension, TraceBinding,
@@ -45,7 +45,7 @@ pub use limits::{CounterKind, EvidenceCounter, EvidenceUsage, TemporalEvidenceLi
 pub use request::{
     ActivationRow, ActivationState, CompletenessRecord, EvidenceIncomplete, EvidencePosition,
     EvidenceRef, EvidenceRequest, EvidenceResult, EvidenceSubject, Indeterminate, NonValue,
-    NonValueKind, Relation, Settlement, SupportRef, Truth,
+    NonValueKind, Relation, Settlement, SubjectOccurrence, SupportRef, Truth,
 };
 pub use trigger::{
     CaptureFact, CapturedValue, EmptyIdentity, Evicted, ExecutionOrigin, Payload, Receipt,
