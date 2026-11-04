@@ -60,3 +60,19 @@ Checked against FR-050, FR-337, FR-515, FR-516, FR-502, FR-255, merged #2227 (d2
 | FND-008 | fixed | stale in-memory wording removed |
 | FND-009 | fixed | AC-37 covers both sample profiles |
 | FND-010 | fixed | gating moved to Dependencies Delivery entries |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-015 | low | The `clause-unreadable` row still says the formula is built from the subject view's `formula()` entries and `operands` edges; after the fix `formula()` has no `operands` and the construction reads `formula_graph()` (FR-515 "One evaluator formula"). | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:148 | wrong-requirement |
+
+## Dispositions (round 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-011 | fixed | formula() back to FR-527 and AC-3 shape; formula_graph() carries every node; FR-527 untouched |
+| FND-012 | fixed | AC-22 indices 0..3, set {0,3}, swap gives {1,3} |
+| FND-013 | fixed | FR-516 defines the cause names and cross-references the owning catalog codes |
+| FND-014 | fixed | capacity stop in the incomplete row, AC-25 and AC-31 |
+| FND-015 | still-open | clause-unreadable row names formula() for operands edges |
