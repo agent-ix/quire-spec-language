@@ -964,12 +964,11 @@ mod foundation_tests {
     use ix_trace_rs::trace;
     use quire_semantic_value::catalog::{CatalogCode, Category, InternalFault};
 
-    /// FR-285-AC-1, AC-9 and AC-11 (TC-769 step 1): each table row maps to
-    /// its code, with undefined folding to 10 beside violation, an
-    /// inconclusive proof or `analyze` item at 22, a supplied-trace clause
-    /// pending at the trace's end (`Category::Pending`) at 0 and a
-    /// finite-window `Category::Indeterminate` at 11.
-    #[trace("TC-769", "FR-285-AC-1", "FR-285-AC-9", "FR-285-AC-11")]
+    /// FR-285-AC-1 (TC-769 step 1): each of the ten table rows maps to its
+    /// code, with undefined folding to 10 beside violation, an inconclusive
+    /// proof or `analyze` item at 22 and a supplied-trace clause pending at
+    /// the trace's end at 0.
+    #[trace("TC-769", "FR-285-AC-1")]
     #[test]
     fn tc_769_exit_function_maps_every_table_row() {
         let rows = [
@@ -979,13 +978,12 @@ mod foundation_tests {
             Category::Refusal.exit_code(),
             Category::Unsupported.exit_code(),
             Category::Incomplete.exit_code(),
-            Category::Inconclusive.exit_code(),
-            Category::Inconclusive.trace_exit_code(),
             Category::Pending.exit_code(),
             Category::Indeterminate.exit_code(),
+            Category::Inconclusive.exit_code(),
             Category::InternalFailure.exit_code(),
         ];
-        assert_eq!(rows, [0, 10, 10, 20, 21, 22, 22, 22, 0, 11, 30]);
+        assert_eq!(rows, [0, 10, 10, 20, 21, 22, 0, 11, 22, 30]);
         for category in Category::ALL {
             assert_eq!(
                 category.trace_exit_code(),

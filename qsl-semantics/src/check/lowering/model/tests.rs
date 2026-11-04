@@ -1442,11 +1442,12 @@ mod quantities {
         }
     }
 
-    /// FR-497-AC-1 and FR-505-AC-7 (TC-1287, TC-1300): a `Rational[..]`
-    /// carrier lowers to a carried type over the `rational_range` node of
-    /// its bounds with the exact mode; equal bounds share a node and each
-    /// differing bound makes another.
-    #[trace("FR-497-AC-1", "FR-505-AC-7", "TC-1287", "TC-1300")]
+    /// FR-497-AC-1 (TC-1287): a `Rational[..]` carrier lowers to a carried
+    /// type over the `rational_range` node of its bounds with the exact mode;
+    /// equal bounds share a node and each differing bound makes another. The
+    /// FR-505-AC-7 unit binding and its refusals are proved by the intake
+    /// and assembly tests tagged with it.
+    #[trace("FR-497-AC-1", "TC-1287")]
     #[test]
     fn a_rational_carrier_lowers_over_its_rational_range_with_exact_mode() {
         use quire_exact::{CarriedQuantityType, QuantityCarrier, RationalDomain};

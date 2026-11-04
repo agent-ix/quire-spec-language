@@ -1195,15 +1195,16 @@ fn an_undefined_evaluation_over_a_finite_trace_is_a_violation_at_its_position() 
     assert_eq!(exit_code(&report), 10);
 }
 
-/// `Reaches` over the same `Finite` trace is pending: inconclusive, exit 0,
+/// `Reaches` over the same `Finite` trace is pending: the catalog's pending, exit 0,
 /// no truth. Over a lasso with loop 0, 1 it violates at position 0; over a
 /// lasso with loop 0, 1, 2 it holds.
 #[trace("TC-840", "FR-330-AC-2")]
+#[trace("TC-769", "FR-285-AC-9")]
 #[test]
 fn an_infinite_trace_clause_reads_a_finite_prefix_as_pending_and_a_lasso_exactly() {
     let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
     assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
-    assert_eq!(pending.disposition.category(), Category::Inconclusive);
+    assert_eq!(pending.disposition.category(), Category::Pending);
     assert_eq!(exit_code(&pending), 0);
     assert_eq!(pending.disposition.truth(), None);
 
@@ -2765,8 +2766,8 @@ fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
     );
 }
 
-/// FR-285-AC-10 and AC-12 (TC-769), FR-501-AC-11 (TC-1295 row 24): one
-/// interim mapping gives a finite-window outcome's label and exit, and the
+/// FR-285-AC-10 and AC-12 (TC-769), FR-501-AC-11 (TC-1295 row 24): the
+/// catalog category gives a finite-window outcome's label and exit, and the
 /// multi-item ranking reads the same one: pending `pending`/0, indeterminate
 /// `indeterminate`/11, true `success`/0, false `violation`/10, work stop
 /// `incomplete`/22.
@@ -2820,6 +2821,42 @@ fn timestamped_category_label_and_exit_come_from_one_mapping() {
     assert_eq!(pick(&[0, 3]), 11);
     assert_eq!(pick(&[3, 4]), 22);
     assert_eq!(pick(&[0, 2]), 0);
+}
+
+/// FR-285-AC-11 (TC-769 step 10): a pending finite-window clause is the
+/// catalog's `Category::Pending` and an indeterminate one its
+/// `Category::Indeterminate`; the label and exit are the catalog's, the exits
+/// are 0 and 11, and the trace exit equals the exit.
+#[trace("TC-769", "FR-285-AC-11")]
+#[test]
+fn pending_and_indeterminate_outcomes_read_the_catalog_label_and_exit() {
+    let pending = report(timestamped(&[0], &[0], 1, Some(1)));
+    let indeterminate = report(timestamped(&[0], &[0], 5, None));
+    for (run, category, label, exit) in [
+        (&pending, Category::Pending, "pending", 0),
+        (&indeterminate, Category::Indeterminate, "indeterminate", 11),
+    ] {
+        assert_eq!(run.disposition.category(), category);
+        assert_eq!(run.category_label(), label);
+        assert_eq!(category.as_str(), label);
+        assert_eq!(run.disposition.exit_code(), exit);
+        assert_eq!(category.exit_code(), exit);
+        assert_eq!(category.trace_exit_code(), exit);
+    }
+    let table = [
+        Category::Success,
+        Category::Violation,
+        Category::Undefined,
+        Category::Refusal,
+        Category::Unsupported,
+        Category::Incomplete,
+        Category::Pending,
+        Category::Indeterminate,
+        Category::Inconclusive,
+        Category::InternalFailure,
+    ]
+    .map(Category::exit_code);
+    assert_eq!(table, [0, 10, 10, 20, 21, 22, 0, 11, 22, 30]);
 }
 
 /// FR-501-AC-12 (TC-1295 row 26): running a request twice gives equal outcomes
