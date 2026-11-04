@@ -161,6 +161,18 @@ pub struct UnsupportedView {
 }
 
 impl UnsupportedView {
+    /// A binder type with no kernel representation, at its node.
+    pub(crate) fn missing_type(package: &str, key: NodeKey) -> Self {
+        Self {
+            package: package.to_owned(),
+            locus: ViewLocus {
+                key,
+                location: None,
+            },
+            reason: UnsupportedReason::MissingTypeRepresentation,
+        }
+    }
+
     /// The catalog code and cause every unsupported view carries.
     pub fn catalog(&self) -> (&'static str, &'static str) {
         ("unknown_required_feature", "unsupported-feature")
@@ -398,6 +410,16 @@ impl<'wire> WireIndex<'wire> {
 
     fn node(&self, id: &CheckedNodeId) -> Option<&'wire CheckedSemanticNodeV2> {
         self.nodes.get(id).copied()
+    }
+
+    fn types(&self) -> TypeReader<'_> {
+        TypeReader {
+            admitted: self.admitted,
+            identities: &self.identities,
+            nodes: &self.nodes,
+            graph: &self.graph,
+            work_limit: self.work_limit,
+        }
     }
 
     fn key(&self, id: &CheckedNodeId) -> Result<NodeKey, InternalFault> {
@@ -1509,7 +1531,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     }
 
     fn value_type(&self, id: &CheckedNodeId) -> Result<ValueType, BuildError> {
-        node_value_type(self.index, id).map_err(|error| match error {
+        node_value_type(&self.index.types(), id).map_err(|error| match error {
             TypeError::Unsupported => BuildError::Unsupported {
                 reason: UnsupportedReason::MissingTypeRepresentation,
                 node: id.clone(),
@@ -1548,7 +1570,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     }
 }
 
-enum TypeError {
+pub(crate) enum TypeError {
     Unsupported,
     Fault(InternalFault),
 }
@@ -1559,9 +1581,28 @@ impl From<InternalFault> for TypeError {
     }
 }
 
+/// What reading the exact type of an admitted node needs: the package, the
+/// selected identity witness, the nodes by id and the structural keys.
+pub(crate) struct TypeReader<'a> {
+    pub(crate) admitted: &'a CheckedPackageV2,
+    pub(crate) identities: &'a quire_contract_model::SelectedExactIdentities,
+    pub(crate) nodes: &'a BTreeMap<&'a CheckedNodeId, &'a CheckedSemanticNodeV2>,
+    pub(crate) graph: &'a WireGraph,
+    pub(crate) work_limit: u64,
+}
+
+impl TypeReader<'_> {
+    fn node(&self, id: &CheckedNodeId) -> Option<&CheckedSemanticNodeV2> {
+        self.nodes.get(id).copied()
+    }
+}
+
 /// The selected exact type of admitted node `id`, joining declared and
 /// structural identities where IR's projection leaves the join to QSL.
-fn node_value_type(index: &WireIndex<'_>, id: &CheckedNodeId) -> Result<ValueType, TypeError> {
+pub(crate) fn node_value_type(
+    index: &TypeReader<'_>,
+    id: &CheckedNodeId,
+) -> Result<ValueType, TypeError> {
     use quire_contract_model::ExactTypeProjectionErrorCode as Code;
     use quire_contract_model::SelectedExactIdentity as Identity;
     let error = match index
