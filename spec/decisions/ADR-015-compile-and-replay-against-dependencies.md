@@ -249,16 +249,17 @@ the call site.
 
 A reference to an imported function lowers to QSpec FR-322's
 `dependency_reference` term `{term: "dependency_reference", package, node}`,
-with the view's `package_id` and the node's `WireNodeId`, in the node body
-and in its node-identity preimage alike. So the call `l::f(x)` is a
+with `package` the dependency's name (its `LibraryName`, the FR-322
+`DependencySelection.identity`, never a `package_id`) and `node` the node's
+`WireNodeId`, in the node body and in its node-identity preimage alike. So the call `l::f(x)` is a
 `quire.op.function.call` application whose callee argument is that term and
 whose `result_type` is `f`'s result type node. The referenced dependency's
-`package_id` and node id enter the referencing node's id; the term is never
+name and node id enter the referencing node's id; the term is never
 listed in the node's `dependencies` (FR-322-AC-36, FR-322-AC-37). This
 answers ADR-013 QC-27's open question: an application's join does not count
 a `dependency_reference`. A node-identity preimage never holds the id of the
 node's own package (ADR-013 QC-18). A `dependency_reference` holds a
-dependency's `package_id`, fixed before the importing unit compiles, and
+dependency's name and a node id fixed before the importing unit compiles, and
 D-1's cycle refusal keeps the dependency graph acyclic, so the preimage
 stays acyclic.
 
@@ -291,8 +292,9 @@ stays acyclic.
 ## Consequences
 
 - A package can import libraries on the spine, and its `package_id` binds
-  each dependency's selection twice: through `dependency_selections` and
-  through every node that references into it.
+  each dependency's selection twice: by name through `dependency_selections`,
+  and by name and referenced node id through every node that references
+  into it.
 - A compile reads each library's source every time; nothing reads a
   dependency's v2 bytes as authority. The v2 bytes a compile emits for a
   library are only read back to build its import view.
@@ -311,6 +313,12 @@ stays acyclic.
   (FR-001-AC-6 to AC-12). Where this record says "four FR-001 labels" it now
   reads "two": D-1's labels that name a dependency source are its authority and
   identity. The decision itself is unchanged.
+- 2026-11-04: D-5's `dependency_reference` carries the dependency's name
+  (`LibraryName`) as `package`, not the view's `package_id`, as QSpec FR-322,
+  ADR-013 QC-10 and the emitter state; the earlier wording said
+  `package_id`. A node's id therefore binds a dependency through its name and
+  the referenced node id; no checked package carries a dependency's
+  `package_id`, which only the dependency's own compile yields.
 
 ## References
 

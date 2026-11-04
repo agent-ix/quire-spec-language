@@ -474,9 +474,9 @@ adapter converts its `ProviderRequest` to them and drops `emitted`.
 
 `prove` always passes the run's `CheckedPackage` and passes the
 `EmittedPackage` only when `package` emitted one. S4 refuses to emit a package
-that holds a random parameter, a workload, a reward or a probabilistic claim
-(FR-185), while its checked package remains, so `emitted` is `None` for such a
-package. An in-process provider, such as a QSL engine of OP-2, reads `package`
+that holds a random parameter, a workload or a reward (FR-185), while its
+checked package remains, so `emitted` is `None` for such a package; a
+claim-only package is emitted (FR-498). An in-process provider, such as a QSL engine of OP-2, reads `package`
 and ignores `emitted`, whatever `prove` passes, so EN-4 serves a probabilistic claim through `prove`.
 The process adapter needs the package bytes: given `None` it writes no
 request frame and returns `unsupported` for each routed item with the

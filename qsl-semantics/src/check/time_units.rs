@@ -366,6 +366,18 @@ impl TimeUnits {
             }))
     }
 
+    /// The time unit whose node is the clock unit node a timestamped-event
+    /// clock's `timestamp_unit` names (QSpec FR-370), as a conversion
+    /// target; `None` when no time unit of the graph has that node.
+    pub(crate) fn clock_target(&self, timestamp_unit: &str) -> Option<TimeScale> {
+        let (name, _) = self.units.iter().find(|(_, unit)| {
+            unit.node
+                .as_ref()
+                .is_some_and(|node| is_clock_unit_node(node, timestamp_unit))
+        })?;
+        self.target(name).ok().flatten()
+    }
+
     fn nominal_dependency_closure(
         &self,
         roots: impl IntoIterator<Item = NodeKey>,
@@ -424,6 +436,23 @@ impl TimeUnits {
             .ok_or_else(other)?;
         Ok(roots.mul(&to.reciprocal))
     }
+}
+
+/// Whether `unit` is the `scalar_type`/`unit` node whose path is
+/// `["scalar_type", "unit", timestamp_unit]`: the clock unit node a
+/// timestamped-event clock's `timestamp_unit` names (QSpec FR-370).
+pub fn is_clock_unit_node(unit: &NodeKey, timestamp_unit: &str) -> bool {
+    use quire_exact::PathSegmentView as Segment;
+    let mut path = unit.view().path();
+    matches!(
+        (path.next(), path.next(), path.next(), path.next()),
+        (
+            Some(Segment::Text("scalar_type")),
+            Some(Segment::Text("unit")),
+            Some(Segment::Text(last)),
+            None,
+        ) if last == timestamp_unit
+    )
 }
 
 /// The exact scale and composed offset of an FCD unit along its target chain.
