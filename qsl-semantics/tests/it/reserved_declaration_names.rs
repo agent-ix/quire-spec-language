@@ -49,6 +49,48 @@ fn a_function_named_by_a_reserved_spelling_refuses_at_s1() {
     }
 }
 
+/// A function selecting its profile through a reserved alias spelling, and a
+/// record whose field takes one: before FR-035-AC-7 covered every name
+/// position, the alias passed S1 to S3 with the selection silently dropped
+/// and the field failed only at S2 with a span over the whole production.
+#[trace("TC-113", "FR-035-AC-7")]
+#[test]
+fn a_reserved_alias_or_field_name_refuses_at_s1_at_the_name() {
+    for name in ["helper", "rec", "cast", "Tuple"] {
+        for (declaration, before) in [
+            (
+                format!("function f using {name}(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}"),
+                "function f using ",
+            ),
+            (format!("record R {{ {name}: Integer; }}"), "record R { "),
+        ] {
+            let text = format!("{HEADER}{declaration}\n");
+            let parsed = qsl_cst::parse(
+                SourceIdentity::new("test", "reserved-declaration-names"),
+                "reserved.native",
+                text.as_bytes(),
+                qsl_cst::Limits::default(),
+            )
+            .expect("S1 reads the unit");
+            assert!(!parsed.is_admissible(), "{text}");
+            let [refusal] = parsed.diagnostics() else {
+                panic!("{text}: one refusal: {:?}", parsed.diagnostics());
+            };
+            assert_eq!(refusal.code, CompleteCode::InvalidSyntax, "{text}");
+            let start = HEADER.len() + before.len();
+            assert_eq!(
+                refusal.byte_span().map(|span| (span.start, span.end)),
+                Some((start, start + name.len())),
+                "{text}"
+            );
+            assert!(
+                build_unit(&parsed).is_err(),
+                "{text}: S2 builds no unit from a refused parse"
+            );
+        }
+    }
+}
+
 #[trace("TC-113", "FR-035-AC-7")]
 #[test]
 fn a_function_named_by_a_near_spelling_is_declared_and_called() {
