@@ -13,6 +13,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-330
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: verifies
 ---
 # TC-1160: A temporal clause run travels the clause-run request and result wires
 
@@ -24,7 +26,7 @@ every FR-330 temporal disposition is written and read as
 basis, and that a refused `holds` condition settles as a refusal at its
 position.
 
-Scope: FR-312-AC-7, FR-312-AC-8, FR-267-AC-13, FR-267-AC-14, FR-267-AC-15, FR-267-AC-16, FR-266-AC-4,
+Scope: FR-312-AC-7, FR-312-AC-8, FR-267-AC-13, FR-267-AC-14, FR-267-AC-15, FR-267-AC-16, FR-267-AC-18, FR-266-AC-4,
 FR-327-AC-6, FR-330-AC-7.
 
 ## Test Procedure
@@ -51,6 +53,9 @@ snapshots with `c.value` 0, 1, 2.
 5. Run FR-330-AC-7's clause (`InUnit(c.value)`) from source over `c.value`
    0, 2.
 6. Apply each edit FR-267-AC-16 lists and read the documents.
+7. Write and read back each finite-window report FR-267-AC-18 lists
+   (constructed reports, not runs), check the `indeterminate` report's exit,
+   and apply each edit that AC lists.
 
 Tag the tests `#[trace("TC-1160", "<criterion>")]` with the criterion each
 step asserts.
@@ -80,3 +85,6 @@ step asserts.
   `Int[0, 1]` and the condition's locus; no `truth`, no `internal_fault`.
 - Step 6: each edited document refuses with a located diagnostic naming
   the member.
+- Step 7: each report reads back to its row with the label `pending` or
+  `indeterminate` and the reason intact; the `indeterminate` report exits
+  11; each edited document refuses naming the member.

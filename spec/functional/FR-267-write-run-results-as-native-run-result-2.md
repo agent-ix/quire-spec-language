@@ -29,6 +29,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-031
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-501
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-502
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: depends_on
 ---
 # FR-267: Write and read run results as native-run-result/2
 
@@ -211,15 +217,43 @@ row.
 | `undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample` | `violation`, `false`, `closed-scope` | `{"kind": "undefined", "reason": R}`, `R` the undefined value's FR-100 reason |
 | `insufficient-data` | `InsufficientData` (FR-327) | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | `{"kind": "undefined", "reason": "insufficient-data"}` |
 | `pending` | `Pending` | none | `pending`, absent, `unsettled` | absent |
+| `pending-window` | FR-501's `Pending` of a finite-window activation | `position`, `deadline` | `pending`, absent, `unsettled` | absent |
+| `pending-next-event` | FR-504's `Pending` whose deadline is the next event | `position` | `pending`, absent, `unsettled` | absent |
+| `indeterminate` | FR-501's `Indeterminate` | `position`, `reason` | `indeterminate`, absent, `unavailable` | absent |
 | `missing-fairness-premise` | `MissingFairnessPremise` | `constraint` | `unsupported`, absent, `unavailable` | `{"kind": "refused", "code": "unsupported_projection", "cause": "missing-fairness-premise"}` |
 | `incomplete` | `Incomplete` | none | `incomplete`, absent, `unavailable` | FR-100's `{"kind": "incomplete", "limit": ...}` |
+| `activation-incomplete` | FR-501's `ActivationIncomplete` (an `on each` guard it could not establish) | `position`, `guard` | `incomplete`, absent, `unavailable` | absent |
 | `window-limit-reached` | `WindowLimitReached` | `limit`, `value`, `setting` | `incomplete`, absent, `unavailable` | `{"kind": "incomplete", "limit": "max_window_values"}` |
+| `progress-limit-reached` | FR-502's covered-position limit | `limit`, `value`, `setting` | `incomplete`, absent, `unavailable` | absent |
+| `progress-contradicted` | FR-502's progress contradiction | `dimension`, `clock`, `retained`, `asserted` | `refusal`, absent, `unavailable` | FR-100's `refused` form with the record's `code` (`invalid_runtime_input`), `cause` (`invalid-value`) and `fields` |
 | `condition-refused` | a `holds` condition refused (FR-327 "Refused condition"), other than `CheckedInvariant` | `position` | the record code's category, absent, `unavailable` | FR-100's `refused` form with the record's `code`, `cause`, `fields` and `locus` |
 | `trace-refused` | a `TemporalRefusal` other than `Fault` | `variant`, and the variant's members below | the refusal code's category, absent, `unavailable` | `{"kind": "refused", "code": ..., "cause": ...}`, the refusal's catalog code |
 
 - `position` is the zero-based trace position as an unsigned integer;
-  `count`, `min_count` and `value` are unsigned integers; `limit` and
-  `setting` are the limit's and its setting's names.
+  `count`, `min_count`, `value` and `deadline` are unsigned integers;
+  `limit` and `setting` are the limit's and its setting's names.
+- `category` of the `pending`, `pending-window` and `pending-next-event`
+  rows is `pending`, and of the `indeterminate` row `indeterminate`: the
+  label of FR-285's interim mapping that `TemporalVerdict::label_and_exit`
+  returns (exit 0 and 11). The writer SHALL write that label; the reader
+  SHALL accept `pending` and `indeterminate` only in those rows, so a
+  machine-output reader keeps an `Indeterminate` run's label and reason
+  (FR-285-AC-7).
+- `reason` is FR-501's indeterminate reason, a closed object whose `kind`
+  is one of: `missing-valuation` with `position`, `atom` (the atom's source
+  text) and, for an instance-bound atom of an evidence call (FR-524),
+  `instance` and `also_held_by` (an array of instance names) together;
+  `conflicting-valuation` with `position` and `atom`; `incomplete-input`,
+  `missing-history` and `straddles-bound` with no other member.
+- `guard` is the checked location of the unresolved guard, in the form of
+  FR-100's outcome `location` (`origin` and `path`).
+- `dimension` is `watermark`, `completeness` or `closure`; `clock` is the
+  binding's clock name; `retained` and `asserted` are each a closed object
+  whose `kind` is one of `watermark` (with `watermark`), `complete` (with
+  `through`), `incomplete` (no other member), `decision-scope` and
+  `surrounding-execution` (each with `closure`, `closed` or `open`), and
+  `position` (with `identity` and `stamp`). The outcome `fields` SHALL equal
+  the record FR-502 derives from those members.
 - `constraint` is QSpec FR-364's fairness member form `{kind, operation,
   granularity}`.
 - `counterexample` is the report's `TemporalCounterexample` (FR-330
@@ -229,7 +263,16 @@ row.
   Its `trace_position` is QSpec's backend-provider `Count` form, an unsigned
   JSON integer from 0 to 9007199254740991 (2^53 - 1, the largest integer
   RFC 8785 serializes exactly), equal to `position`; it is never a decimal
-  string.
+  string. Each step of `prefix` and `loop` is `{"document": D}`, `D` the
+  snapshot's FR-106 `DocumentRef` in the closed `{authority, identity}`
+  form of the frame witness. `kind` is `"formula"` for `violated`, and for
+  `undefined` QSpec FR-364's undefined-evaluation envelope
+  `{"type": "undefined-evaluation", "where": {"position", "document",
+  "locus"}, "cause"}`, whose `locus` is `{"formula_node": N}`, `N` the
+  checked clause's formula node index of the first undefined atom, and
+  whose `cause` is the undefined value's FR-100 reason. `interval` is the
+  first interval-carrying operator's `{"lower", "upper"}` decimal strings
+  (`upper` `"*"` when open) for `violated`, and `null` for `undefined`.
 - `variant` names the `TemporalRefusal` variant, and the members beside it
   carry its payload, so the document reads back to an equal refusal:
 
@@ -247,6 +290,7 @@ row.
   | `position-outside-trace` | `position` | `Position(OutsideTrace)` |
   | `window-outside-trace` | `position` | `Window(OutsideTrace)` |
   | `window-kind-mismatch`, `timestamps-decrease` | none | `Window(WindowKindMismatch \| TimestampsDecrease)` |
+  | `same-stamp-order-unavailable` | `position` | `SameStampOrderUnavailable` |
 
 - The reader SHALL refuse, naming the member: a `temporal` at a stage other
   than `evaluate`; a `temporal` on the disposition of a selection that is
@@ -346,7 +390,11 @@ condition is false; the reader refuses `null` or a default in its place.
 | Declaration key | `node` | FR-056, FR-115 | IR node identity | Restore key node |
 | Clause run | `extraction` | FR-031, FR-267, QSpec FR-352 | Extraction record of an extracted clause body, absent otherwise | Restore record or absence |
 | Disposition | `temporal` | FR-330, FR-267 | Closed temporal disposition, evaluate stage of a Temporal selection only | Restore typed temporal verdict or trace refusal |
-| Temporal | `kind` | FR-267 | One of the ten tags of the temporal table | Select verdict variant |
+| Temporal | `kind` | FR-267 | One of the sixteen tags of the temporal table | Select verdict variant |
+| Temporal | `deadline` | FR-501 | Unsigned watermark tick | Restore deadline |
+| Temporal | `reason` | FR-501 | Closed indeterminate reason object | Restore reason |
+| Temporal | `guard` | FR-501 | FR-100 outcome `location` form | Restore guard location |
+| Temporal | `dimension`, `clock`, `retained`, `asserted` | FR-502 | Contradicted dimension, clock name, two closed progress values | Restore typed contradiction and check `outcome.fields` |
 | Temporal | `position` | FR-327 | Unsigned trace position | Restore position |
 | Temporal | `counterexample` | QSpec FR-364, FR-330, FR-331 | Observed-arm `TemporalCounterexample` the report holds | Restore and check against FR-364 |
 | Temporal | `count`, `min_count` | FR-327 | Unsigned counts | Restore counts |
@@ -429,6 +477,7 @@ condition is false; the reader refuses `null` or a default in its place.
 | FR-267-AC-14 | Each of these FR-330 reports writes its temporal table row and reads back to an equal disposition: FR-330-AC-2's `pending` (`pending`, `basis` `unsettled`, no `truth`, no `outcome`) and `holds`; FR-330-AC-4's `incomplete` (`outcome` limit `work_units`); FR-330-AC-5's `undefined` (`position` 2, `outcome` `{"kind": "undefined", "reason": "division-by-zero"}`, `basis` `closed-scope`, the envelope `cause` `division-by-zero`, `prefix` the three snapshots); FR-330-AC-6's `missing-fairness-premise` (`outcome` refused `unsupported_projection`/`missing-fairness-premise`, `constraint` `{"kind": "weak", "operation": ..., "granularity": "whole"}`); FR-330-AC-3's empty-loop report (`trace-refused`, `variant` `empty-loop`, `outcome` refused `invalid_runtime_input`/`invalid-value`) and the empty `Finite` report (`variant` `empty-trace`, same `outcome`), which read back to `EmptyLoop` and `EmptyTrace` respectively; and FR-330-AC-7's `condition-refused`. None writes a `refusal` member. Independently adding `temporal {"kind": "holds"}` to FR-109-AC-3's dangling-parent stage `admit` document, setting `kind` to `held`, setting `variant` to `empty-hoop`, dropping `counterexample` from AC-13's document, setting its `trace_position` to `1`, setting it to the string `"0"`, to `-1`, to `0.5` or to `9007199254740992`, adding a top-level `witness` to AC-13's document, adding a `refusal` member to the empty-loop document, and setting the `pending` document's `basis` to `unavailable` each refuse with a located wire diagnostic naming the member. | Test (TC-1160) |
 | FR-267-AC-15 | Through FR-330, the `Counter` clause `Windowed` under event-position false-extension, `on origin`, `always[0,2] (count where holds(c.value >= 0) over past[0, 9] >= 1)` with `min_count 5` (TC-629's count form), over `Finite` snapshots with `c.value` 0, 1, 2, writes `insufficient-data` at `position` 0 with `count` 1, `min_count` 5 and `outcome` `{"kind": "undefined", "reason": "insufficient-data"}`, category `undefined`; as a wire vector (no run: a clause run has no window-limit input, and the default `max_window_values` is 2^20), a `Windowed` report built to hold `TemporalVerdict::WindowLimitReached{limit: max_window_values, value: 2, setting: monitor.max_window_values}` writes `window-limit-reached`, category `incomplete`, with `limit` `max_window_values`, `value` 2 and `setting` `monitor.max_window_values` and `outcome` `{"kind": "incomplete", "limit": "max_window_values"}`, and reads back to that verdict; the clause `always[0,2] holds(lookup<Counters::Counter>(cs, c) absent undefined = c)` (FR-090-AC-12's `lookup` form) over snapshots whose population bound to `cs` holds no member for `c` writes `undefined` at `position` 0 with `outcome` reason `absent-key` and envelope `cause` `absent-key`; FR-328-AC-1's `always holds(c.value <= 1)` over the infinite-trace `Finite` prefix 0, 1, 2 writes `violated` at `position` 0 with a counterexample whose `prefix` holds the three snapshots, `loop` is empty and `interval` is `null`. Each reads back to an equal disposition, and independently dropping `count`, `min_count`, `limit`, `value` or `setting` refuses naming it. | Test (TC-1160) |
 | FR-267-AC-16 | Independently: adding `temporal` `{"kind": "holds"}` to FR-109-AC-3's exhausted-work report (stage `evaluate`); adding a `refusal` member to AC-13's `violated` document; setting the `outcome` reason of AC-14's `undefined` document to `insufficient-data`; setting the `outcome` limit of AC-14's `incomplete` document to `max_window_values`; setting the `outcome` reason of FR-109-AC-7's `precondition-false` report to `insufficient-data`; and setting the `outcome` limit of FR-109-AC-3's exhausted-work report to `max_window_values`, each refuse with a located wire diagnostic naming the member (QSpec FR-352-AC-11, FR-352-AC-12). | Test (TC-1160) |
+| FR-267-AC-18 | Each finite-window report writes its row and reads back to an equal verdict: a `TemporalVerdict::Indeterminate` at position 2 with reason `MissingValuation` (position 1, atom `c.value = 2`) writes category `indeterminate`, `basis` `unavailable`, no `truth`, no `outcome` and `temporal` `{"kind": "indeterminate", "position": 2, "reason": {"kind": "missing-valuation", "position": 1, "atom": "c.value = 2"}}`, while the report's exit stays 11 (FR-285-AC-7); `PendingWindow` (position 0, deadline 4) writes `pending-window` with category `pending` and `basis` `unsettled`; `ActivationIncomplete` writes `activation-incomplete` with its guard location; `ProgressLimitReached` writes `progress-limit-reached`; FR-502-AC-1's watermark contradiction writes `progress-contradicted` with `dimension` `watermark`, `retained` `{"kind": "watermark", "watermark": 100}` and `asserted` `{"kind": "watermark", "watermark": 60}`. Independently setting the `indeterminate` document's category to `undefined`, dropping its `reason`, adding an unknown `reason` member, setting the `pending-window` document's `basis` to `unavailable`, and changing a `progress-contradicted` outcome field each refuse with a located wire diagnostic naming the member. | Test (TC-1160) |
 | FR-267-AC-17 | A clause-run report over an extracted Markdown clause body is written with a top-level `extraction` member holding exactly QSpec FR-352's `original`, `body`, `binding`, `outcome` and `map` members, plus `original_regions` for a refusal whose locus names a body span, and reads back to an equal record; a report over a unit given as bytes writes no `extraction`; an `extraction` with an unknown top-level member `source`, with `map` missing, with `binding` `null`, with a numeric `body.identity`, and with `map.segments` `[]` each refuse naming `extraction` and the member (QSpec FR-352-AC-13). | Test (TC-109) |
 
 ## Dependencies
