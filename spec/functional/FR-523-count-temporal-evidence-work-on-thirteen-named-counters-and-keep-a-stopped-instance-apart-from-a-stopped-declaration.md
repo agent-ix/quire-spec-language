@@ -87,13 +87,21 @@ at each eligible position and one scan per position).
 | `captures` | cumulative | one capture record retained, across all instances | `captures` |
 | `support` | peak | the greatest number of `(position, atom)` pairs an unsettled activation retains, and the number of pairs in a settled decision support | `support`; NFR-008 `retention` |
 | `history_span` | peak | the greatest interval upper bound of the clause, in ticks (FR-326 horizon) | `history_span`; NFR-008 `horizon` |
-| `evaluation_steps` | cumulative | one charge per evaluated position visit at the `temporal.visit` charge point (FR-327), including one per delivery or origin resolved, one per capture established and one per evicted record consulted (FR-524); a silent-sample lookup is charged at the same meter point but is not a visit and is not an `evaluation_steps` unit | `evaluation_steps`; NFR-008 `visits` |
+| `evaluation_steps` | cumulative | one charge per evaluated position visit at the `temporal.visit` charge point (FR-327), including one per delivery or origin resolved, one per capture established and one per evicted record consulted (FR-524); a silent-sample lookup is charged at the same meter point but is not a visit and is not an `evaluation_steps` unit (see "Evaluated position visit") | `evaluation_steps`; NFR-008 `visits` |
 | `lineage` | peak | the length of the result's chain of predecessors (FR-526) | `lineage` |
 | `visited` | cumulative | one unit of the usage of `formula_nodes`, `positions`, `valuations` and `captures`, and one evicted record consulted | `visited` |
 | `request_bytes` | peak | one byte of the request's opaque byte members, in total (FR-516) | `input_bytes` |
 | `result_bytes` | peak | one byte of the result's opaque byte members, in total | `output_bytes` |
 | `member_bytes` | peak | one byte of the longest single opaque member | `string_bytes` |
 
+- An evaluated position visit is one of FR-501-AC-12's `temporal.visit` charges
+  (a temporal node at its activation, a `holds` lookup at a position, one scan of
+  a position) made at a position that carries an observation of the trace, or at
+  an observed position's false extension beyond the watermark's samples as FR-504
+  reads it. The one `temporal.visit` charge that is not an evaluated position
+  visit is the `holds` lookup at a silent sample, a fixed-sample watermark sample
+  with no observation (FR-504); the node-activation and scan charges FR-501-AC-12
+  lists are unchanged.
 - The evaluator SHALL charge a counter only for work it performs.
 - The evaluator SHALL charge a lookup at a silent sample (FR-504) as the lookup
   that finds no valuation that it is: one unit of `valuations` and its `visited`

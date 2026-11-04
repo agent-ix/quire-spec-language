@@ -93,3 +93,23 @@ the gate is kept or replaced. FND-006 to FND-009 are low.
 ## Verdict (disposition pass 1)
 
 FND-001 to FND-009 are fixed. FND-010 (medium) is a new contradiction introduced by the FND-007 fix and blocks merge until the evaluation_steps definition or the charge point is amended; FND-011 is low. Verified: quire validate exit 0 on all 12 changed files and on this file; TC rows and tag ranges end at FR-515-AC-20, FR-516-AC-35, FR-523-AC-23, FR-524-AC-39 and match the AC ids; the new ids are unused on open PRs 2222, 2224, 2225 and 2226.
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-012 | medium | FR-515 now says `occurrences()` lists a node's occurrences "in declaration (source) order" and FR-515-AC-20, FR-516-AC-32 and TC-1310 row 20 depend on 7 then 3 with lock rows 3 then 7. In the QSL writer a claim ordinal is a repeat count: `Spans::next_ordinal` gives the next counted occurrence last+1 from 0, so occurrences of one clause node are numbered 0, 1, 2 in source order and `temporal_binding_rows` writes `occurrence: temporal.claim().ordinal()`; source order and ascending ordinal coincide for every package QSL emits, so no QSL source produces 7 then 3 and the in-memory half of the criteria (the I2 package) cannot realize the twin. For a read-back package the view reads the node's `occurrences` array in wire order, which QSpec FR-322 does not constrain (it states ordinals are producer-assigned and a source-map occurrence order "in ascending ordinal, which is not a requirement"), and a read-back package does not carry source order, so "declaration (source) order" is not what a reader can compute. QSpec FR-322 rows ascend by occurrence and BO-P1 to BO-R9 use ordinals 0 to 2 only. Say `occurrences()` follows the order of the node's `occurrences` array, state that the twin fixture is a constructed package (and constructed in-memory package) with that array order 7, 3, and keep the 3, 7 row order. Otherwise a test over a QSL-emitted package passes under position pairing and the AC cannot fail. | spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md:153-157,197 | wrong-requirement |
+| FND-013 | low | FR-523 now defines `evaluation_steps` as "one charge per evaluated position visit" and says a silent-sample lookup "is not a visit", but FR-501's work rule charges `temporal.visit` "once per visit of a temporal node at a position" and FR-504 defines a silent sample as a fixed-sample watermark sample where every atom reads false; "evaluated position visit" is defined nowhere and the holds atom at a silent sample reads as a visit under FR-501's wording. Define it by FR-504 (an observed position versus a watermark sample with no observation). | spec/functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-instance-apart-from-a-stopped-declaration.md:90 | missing-requirement |
+
+## Dispositions (round 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-010 | fixed | The `evaluation_steps` row now excludes a silent-sample lookup and FR-523-AC-15, FR-523-AC-21, FR-516-AC-27 and TC-1318 row 24 assert that meter usage at `temporal.visit` exceeds `evaluation_steps` by the number of silent lookups, which fails if a silent lookup is charged to `evaluation_steps`; counters stay thirteen. Residue is FND-013. |
+| FND-011 | fixed | The `clock()` row, FR-522 and `occurrences()` order are stated. The order rule itself is wrong for what the writer and reader produce, recorded as FND-012. |
+| FND-012 | still-open | medium: declaration (source) order equals ascending ordinal in every QSL-emitted package and is not computable from a read-back package; the twin AC can fail only on a constructed wire order. |
+| FND-013 | still-open | low: "evaluated position visit" undefined and read against FR-501's per-position visit charge. |
+
+## Verdict (disposition pass 2)
+
+FND-001 to FND-011 are fixed. FND-012 (medium) blocks merge: restate the `occurrences()` order as the node's array order and name a constructed-package fixture. FND-013 is low. quire validate exits 0 on all 12 changed files and on this file; TC ranges end at FR-515-AC-20, FR-516-AC-35, FR-523-AC-23, FR-524-AC-39; no id collides with open PRs.

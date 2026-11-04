@@ -152,9 +152,11 @@ only when one is written.
   row per clause occurrence, keyed by the declaration and the occurrence
   `{ role, ordinal }` with the producer-assigned ordinal (QSpec FR-322 "Temporal
   clock bindings"), and the reader admits one row per occurrence of a shared
-  node. `occurrences()` lists a node's occurrences in declaration (source) order,
-  which may differ from ascending ordinal because the producer assigns ordinals,
-  while the lock lists the clock rows ascending by ordinal (QSpec FR-322).
+  node. `occurrences()` lists a node's occurrences in the order of the node's
+  `occurrences` array as the package carries it, which QSpec FR-322 does not
+  constrain, while the lock lists the clock rows ascending by occurrence. QSL's own
+  emitter assigns ordinals in ascending order, so both orders agree for every
+  package it emits; a package from another producer may carry them differently.
   `clock_of(&ClauseOccurrence) -> Option<&TemporalBinding>` returns the row
   whose key equals that occurrence's `{ role, ordinal }`; it never pairs by the
   position of the occurrence or of the row, because producer-assigned ordinals
@@ -197,7 +199,7 @@ bytes.
 | FR-515-AC-17 | `checked_predicate` of a `ClauseLeaf` returns a view whose `source_span` is the entry of the leaf node whose regions lie inside the source regions of the clause's formula root node. | Test (TC-1310) |
 | FR-515-AC-18 | Over the in-memory package of the I2 write before emit, `temporal_subject` returns the `profile()` and `clock()` equal to those of the package read back from the emitted bytes, for each of **R**'s clauses. | Test (TC-1310) |
 | FR-515-AC-19 | In a package with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row, in the in-memory and the read-back package alike. | Test (TC-1310) |
-| FR-515-AC-20 | Over twins of one node whose declaration order gives `occurrences()` as ordinal 7 then ordinal 3, with the lock's clock rows ascending as ordinal 3 then ordinal 7 and different clock configurations, `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3 and `clock_of` of ordinal 7 returns the row keyed ordinal 7, `clock()` is `None`, and the same holds for the in-memory and the read-back package; a pairing by position fails this criterion. | Test (TC-1310) |
+| FR-515-AC-20 | Over a constructed package of twins of one node, built in memory and read back, whose node `occurrences` array order is ordinal 7 then ordinal 3 while the lock's clock rows ascend as ordinal 3 then ordinal 7, with different clock configurations (QSL's emitter cannot produce this order, which is why the package is constructed), `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3 and `clock_of` of ordinal 7 returns the row keyed ordinal 7, `clock()` is `None`, and the same holds for the in-memory and the read-back package; a pairing by position fails this criterion. | Test (TC-1310) |
 
 ## Dependencies
 
