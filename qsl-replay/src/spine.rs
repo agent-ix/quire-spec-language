@@ -1037,15 +1037,6 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `receive` via `{receive_channel}` names a `send` via \
                      `{send_channel}`"
                 ),
-                ProtocolAnchorCause::ChannelDeliveryRange {
-                    channel,
-                    lower,
-                    upper,
-                    ..
-                } => format!(
-                    "{message}: channel `{channel}` delivers within [{lower}, {upper}], \
-                     whose lower count is above its upper count"
-                ),
                 ProtocolAnchorCause::Shadow { name, shadowed, .. } => {
                     let shadowed = match shadowed {
                         ShadowedDeclaration::ProfileAlias => "the unit's own profile alias",
