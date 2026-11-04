@@ -115,7 +115,9 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
         ),
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
-        | RunCause::CompleteRunSelection(_) => (types::Stage::Request, types::Details::None),
+        | RunCause::CompleteRunSelection(_)
+        | RunCause::ExtractionRequiresRun
+        | RunCause::EmptyCompileProgram => (types::Stage::Request, types::Details::None),
         RunCause::Spine(failure) => (
             types::Stage::Spine(failure.refusal.stage()),
             types::Details::Spine {

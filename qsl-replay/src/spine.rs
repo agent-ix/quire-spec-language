@@ -48,13 +48,13 @@ use quire_semantic_value::declaration::StorageUnit;
 mod lifecycle;
 mod subject;
 pub use lifecycle::{
-    admit_parsed_unit_list, check, check_units, check_with_execution_points,
-    check_with_execution_points_and_refinement_internals, check_with_refinement_internals,
-    check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
-    parse, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
-    AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
-    ParseRequest, ParsedUnitSource, PendingObligation, TypeDeclaration, TypeReport,
-    TypeRequirement,
+    admit_parsed_unit_list, check, check_units, check_units_with_refinement_internals,
+    check_with_execution_points, check_with_execution_points_and_refinement_internals,
+    check_with_refinement_internals, check_with_temporal_selections_and_execution_points, package,
+    package_with_temporal_selections, parse, preflight_unit_list, refusal_or_fault, select,
+    select_units, AdmittedModels, AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure,
+    ObligationState, PackageLimits, ParseRequest, ParsedUnitSource, PendingObligation,
+    TypeDeclaration, TypeReport, TypeRequirement,
 };
 pub(crate) use lifecycle::{
     check_for_continuation, check_units_with_options, parse_for_continuation, ContinuationInputs,
@@ -1036,15 +1036,6 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 } => format!(
                     "{message}: `receive` via `{receive_channel}` names a `send` via \
                      `{send_channel}`"
-                ),
-                ProtocolAnchorCause::ChannelDeliveryRange {
-                    channel,
-                    lower,
-                    upper,
-                    ..
-                } => format!(
-                    "{message}: channel `{channel}` delivers within [{lower}, {upper}], \
-                     whose lower count is above its upper count"
                 ),
                 ProtocolAnchorCause::Shadow { name, shadowed, .. } => {
                     let shadowed = match shadowed {
