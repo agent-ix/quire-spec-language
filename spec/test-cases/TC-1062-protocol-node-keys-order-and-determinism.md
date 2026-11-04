@@ -17,7 +17,7 @@ declares it in, that only a sequence's children and the captures carry order,
 that repeats collapse, that keys are the application-node preimage and stable
 under reformatting, and that equal sources give equal bytes. Scope:
 FR-383-AC-9 to FR-383-AC-16 and the approved Option A requirements in
-FR-383-AC-24 and FR-383-AC-25.
+FR-383-AC-24 and FR-383-AC-25, and FR-383-AC-62.
 
 Catches a declaration path that spells a branch label, equal-named role,
 channel, template and control that collide, a binder numbered by source
@@ -54,6 +54,7 @@ authored node order is permuted.
 | 13 | **L** | SCC discovery and membership assignment complete iteratively in O(V + E); the emitted package reads back successfully within the caller's supplied shared `s3.work_units` budget, without native stack overflow; the implementation does not merge groups quadratically |
 | 14 | **L** with zero work units; **L** with exactly the measured required work units; **L** with one fewer unit | zero and one-short refuse with the existing typed limit refusal naming `s3.work_units`; exact budget succeeds; no independent recursion depth, group-size, node-count or group-count cap is applied |
 | 15 | the two authored-order variants of **L** | the group identity, member ordinals, node bytes and package identity are identical; no global lock or serialized package-emission section is used |
+| 16 | the architecture unit of FR-383-AC-62, emitted and read back through the I2 reader | `Outlet` and `Inlet` emit `model_member` `{package, node}` of their own Port and a `model` reference to `Sys`, with different node ids; `Operator` and the whole-model role emit no third argument and unchanged bytes; the read-back role holds the checked role's Port key |
 
 ## Expected Results
 

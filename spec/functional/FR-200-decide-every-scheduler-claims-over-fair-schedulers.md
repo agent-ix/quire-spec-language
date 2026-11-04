@@ -85,7 +85,7 @@ FR-198 and FR-199 return them, with a policy of `SchedulerChoice`s.
   FR-198's policy for that maximum at states of positive value, the uniform
   choice over each fair end component's actions in `U`, and the uniform
   choice over the enabled actions elsewhere.
-- For `ExpectedReward`, the minimum SHALL be FR-198's. For the maximum, EN-5
+- For `ExpectedReward` and `MeanTime` (whose reward is elapsed time, FR-204), the minimum SHALL be FR-198's. For the maximum, EN-5
   SHALL give `+∞` where the fair infimum of reaching `B` is below 1, and
   where, among states whose fair infimum is 1, an end component holding an
   action of positive reward is reachable; elsewhere it SHALL collapse

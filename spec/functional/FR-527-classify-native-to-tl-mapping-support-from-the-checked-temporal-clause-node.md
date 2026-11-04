@@ -75,8 +75,9 @@ surrounding: Closure) -> Result<Classification, MappingRefusal>`.
 premises }` or `Unsupported { dimensions }`, the retained native subject (the
 clause's `CheckedNodeId`, the clause's `profile_selections` row, which is the
 profile identity, and the activation), and `selection: AuthenticatedSelection`.
-The retained subject holds the clause's name once Contract IR IR-1278 lets the
-package carry it, and holds none until then, as FR-515's `name()` does.
+The retained subject holds the clause's name as FR-515's `name()` reads it from
+the `temporal_clause_names` row: `Some(name)` for a node with one occurrence and
+`None` for a node with several, whose occurrence names FR-515's `name_of` returns.
 
 `AuthenticatedSelection` holds the package identity, the clause's
 `CheckedNodeId` and the definition artifact the clause's `profile_selections`
@@ -174,14 +175,12 @@ view names a definition identity that is none of the five temporal profiles the
 | FR-527-AC-21 | The reader refuses a package whose lock has no `profile_selections` row for a temporal clause's `temporal_profile` law, so the package yields no `TemporalSubjectView`. | Test (TC-1322) |
 | FR-527-AC-22 | A clause selected under `quire.temporal.timed/v1` returns `Unsupported` naming `TimedProfile` and no TL target. | Test (TC-1322) |
 | FR-527-AC-23 | A timed clause holding a past and a future operator returns `Unsupported` naming `TimedProfile` and `MixedDirection`. | Test (TC-1322) |
-| FR-527-AC-24 | With a reader that implements IR-1278, an unsupported result and a supported result hold the clause's name equal to `name()` of the view. This is gated on IR-1278. | Test (TC-1322) |
+| FR-527-AC-24 | Over a package whose clause `Gamma` has one occurrence, a supported result and an unsupported result (AC-22's timed clause named `Delta`, with one occurrence) hold the retained name `Some("Gamma")` and `Some("Delta")` respectively, each equal to `name()` of the view; over FR-337-AC-16's package of the two structurally equal clauses `Alpha` and `Beta`, the result holds `None`, equal to `name()` of the view. | Test (TC-1322) |
 
 ## Dependencies
 
 - FR-045-AC-1 to AC-6 (the legacy criteria this requirement succeeds), FR-515
   (the view), FR-337 (the node), FR-050 (the binding and selection).
-- Contract IR IR-1278 (the checked package carries no temporal clause name):
-  FR-527-AC-24.
 - Contract IR FR-350 and IR-1005 consume the classification; they repoint from
   `temporal::mapping_support_v2` to `mapping_support`.
 - Does not depend on FR-522 to FR-526: classification takes no trace.
