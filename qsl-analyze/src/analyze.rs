@@ -48,7 +48,7 @@ use qsl_replay::{
 };
 use qsl_route::routing::Disposition;
 use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, DeclarationFamily};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
@@ -394,6 +394,15 @@ pub enum Payload {
         /// The modes its manifest advertises for the kind.
         modes: Vec<Mode>,
     },
+    /// A capability kind that does not apply to the checked claim family.
+    Inapplicable {
+        /// The request item's index.
+        request_index: RequestIndex,
+        /// The requested capability kind.
+        capability: Capability,
+        /// The claim's declaration family, absent for an unknown claim node.
+        family: Option<DeclarationFamily>,
+    },
 }
 
 /// The FR-272 diagnostic of a record settled by a disposition.
@@ -485,6 +494,9 @@ type Work<'a> = Box<dyn FnOnce(&Cancel, &Engine) -> EngineReport + 'a>;
 pub struct AnalyzeItem<'a> {
     index: RequestIndex,
     kind: Capability,
+    /// The checked claim's declaration family, read from its admitted claim
+    /// identity before an engine item is built.
+    family: Option<DeclarationFamily>,
     mode: Mode,
     disposition: Disposition,
     diagnostic: Option<Diagnostic>,
@@ -497,6 +509,7 @@ impl<'a> AnalyzeItem<'a> {
     pub(crate) fn new(
         index: RequestIndex,
         kind: Capability,
+        family: Option<DeclarationFamily>,
         mode: Mode,
         backend: &str,
         work: impl FnOnce(&Cancel) -> EngineReport + 'a,
@@ -504,6 +517,7 @@ impl<'a> AnalyzeItem<'a> {
         Self {
             index,
             kind,
+            family,
             mode,
             disposition: Disposition::Supported(Candidate::new(BackendId::new(backend))),
             diagnostic: None,
@@ -516,6 +530,7 @@ impl<'a> AnalyzeItem<'a> {
     pub(crate) fn new_with_engine(
         index: RequestIndex,
         kind: Capability,
+        family: Option<DeclarationFamily>,
         mode: Mode,
         backend: &str,
         work: impl FnOnce(&Cancel, &Engine) -> EngineReport + 'a,
@@ -523,6 +538,7 @@ impl<'a> AnalyzeItem<'a> {
         Self {
             index,
             kind,
+            family,
             mode,
             disposition: Disposition::Supported(Candidate::new(BackendId::new(backend))),
             diagnostic: None,
@@ -533,10 +549,15 @@ impl<'a> AnalyzeItem<'a> {
     /// An item of claim kind `kind` that no item adapter builds: no engine
     /// is given work for it, so it settles `unsupported` with
     /// `unsupported-requested-capability`, naming the kind.
-    pub fn unadapted(index: RequestIndex, kind: Capability) -> Self {
+    pub fn unadapted(
+        index: RequestIndex,
+        kind: Capability,
+        family: Option<DeclarationFamily>,
+    ) -> Self {
         Self {
             index,
             kind,
+            family,
             mode: Mode::Bounded,
             disposition: Disposition::Unsupported,
             diagnostic: Some(unsupported_kind(kind)),
@@ -816,6 +837,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
     let AnalyzeItem {
         index,
         kind,
+        family,
         mode,
         disposition,
         diagnostic,
@@ -837,6 +859,17 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
             diagnostic,
         }))
     };
+    if family.is_none_or(|family| !kind.applies_to_declaration(family)) {
+        let diagnostic = Diagnostic {
+            code: CatalogCode::new("invalid_capability", "inapplicable-kind"),
+            payload: Payload::Inapplicable {
+                request_index: index,
+                capability: kind,
+                family,
+            },
+        };
+        return disposed(DispositionKind::InvalidRequest, Some(diagnostic));
+    }
     let candidate = match disposition {
         Disposition::Supported(candidate) => candidate,
         Disposition::RequiresBound => return disposed(DispositionKind::RequiresBound, diagnostic),
@@ -1057,14 +1090,38 @@ mod tests {
         )
     }
 
+    fn engine_all(id: &str) -> Engine {
+        let advertisements = Capability::ALL
+            .iter()
+            .map(|kind| (Some(kind.to_wire()), Some(Mode::Bounded.to_wire())))
+            .collect::<Vec<_>>();
+        Engine::new(
+            descriptor_from_manifest(
+                Candidate::new(BackendId::new(id)),
+                ProviderOrigin::Linked,
+                advertisements,
+                qsl_route::ManifestMembers {
+                    domains: Some(&[DomainKind::Population.to_wire()]),
+                    fairness_kinds: Some(qsl_route::FairnessKindsMember::List(&[])),
+                    evidence_kinds: Some(&["statistical", "exact"]),
+                    memory_models: None,
+                    reductions: None,
+                },
+            )
+            .expect("a well-formed test engine that advertises every capability"),
+        )
+    }
+
     fn item<'a>(
         backend: &str,
         kind: Capability,
+        family: DeclarationFamily,
         ran: &'a std::cell::Cell<bool>,
     ) -> AnalyzeItem<'a> {
         AnalyzeItem::new(
             RequestIndex::new(0),
             kind,
+            Some(family),
             Mode::Bounded,
             backend,
             move |_| {
@@ -1075,6 +1132,231 @@ mod tests {
                 )))
             },
         )
+    }
+
+    #[trace("TC-1302", "FR-507-AC-10")]
+    #[test]
+    fn inapplicable_claim_kind_overrides_the_handed_disposition_without_running() {
+        let dispositions = [
+            (
+                Disposition::Supported(Candidate::new(BackendId::new("test-all"))),
+                None,
+            ),
+            (
+                Disposition::Supported(Candidate::new(BackendId::new("test-missing"))),
+                None,
+            ),
+            (
+                Disposition::Supported(Candidate::new(BackendId::new("test-vv"))),
+                None,
+            ),
+            (Disposition::RequiresBound, None),
+            (Disposition::Unsupported, None),
+            (
+                Disposition::InvalidRequest,
+                Some(Diagnostic::new(CatalogCode::new(
+                    "invalid_capability",
+                    "absent-extent",
+                ))),
+            ),
+            (
+                Disposition::InvalidRequest,
+                Some(Diagnostic::new(CatalogCode::new(
+                    "invalid_capability",
+                    "ambiguous-backend",
+                ))),
+            ),
+        ];
+
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("test-all");
+        engines
+            .with(engine("test-vv", Capability::ValueValidity))
+            .expect("test-vv");
+        for (disposition, handed_diagnostic) in dispositions {
+            let ran = std::cell::Cell::new(false);
+            let item = item(
+                "test-all",
+                Capability::FiniteReplay,
+                DeclarationFamily::StateModel,
+                &ran,
+            )
+            .disposed(disposition, handed_diagnostic);
+            let record = analyze_items(&engines, vec![item], &Cancel::new())
+                .into_iter()
+                .next()
+                .expect("one requested item has one result");
+            let Settlement::Disposed(disposed) = record.settlement else {
+                panic!("inapplicable item must settle by disposition");
+            };
+            assert_eq!(disposed.kind, DispositionKind::InvalidRequest);
+            let diagnostic = disposed.diagnostic.expect("inapplicable-kind diagnostic");
+            assert_eq!(
+                diagnostic.code,
+                CatalogCode::new("invalid_capability", "inapplicable-kind")
+            );
+            assert_eq!(
+                diagnostic.payload,
+                Payload::Inapplicable {
+                    request_index: RequestIndex::new(0),
+                    capability: Capability::FiniteReplay,
+                    family: Some(DeclarationFamily::StateModel),
+                }
+            );
+            assert!(!ran.get(), "an inapplicable item must not run an engine");
+        }
+    }
+
+    #[trace("TC-1302", "FR-507-AC-1")]
+    #[test]
+    fn every_capability_family_pair_is_admitted_or_refused_before_engine_work() {
+        let families = [
+            DeclarationFamily::Value,
+            DeclarationFamily::StateModel,
+            DeclarationFamily::TemporalTrace,
+            DeclarationFamily::RelationClaim,
+            DeclarationFamily::Protocol,
+            DeclarationFamily::Probabilistic,
+            DeclarationFamily::RealTime,
+        ];
+        let mut expected_runs = 0;
+        let ran = std::cell::Cell::new(0);
+        let mut index = 0;
+        let items = Capability::ALL
+            .iter()
+            .copied()
+            .flat_map(|kind| families.into_iter().map(move |family| (kind, family)))
+            .map(|(kind, family)| {
+                let request_index = RequestIndex::new(index);
+                index += 1;
+                if kind.applies_to_declaration(family) {
+                    expected_runs += 1;
+                }
+                AnalyzeItem::new(
+                    request_index,
+                    kind,
+                    Some(family),
+                    Mode::Bounded,
+                    "test-all",
+                    |_| {
+                        ran.set(ran.get() + 1);
+                        EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                            "runtime_invariant",
+                            "established-invariant-broken",
+                        )))
+                    },
+                )
+            })
+            .collect();
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+        let records = analyze_items(&engines, items, &Cancel::new());
+
+        assert_eq!(records.len(), 12 * 7);
+        assert_eq!(ran.get(), expected_runs);
+        assert_eq!(expected_runs, 14);
+        for record in &records {
+            let Settlement::Disposed(disposed) = &record.settlement else {
+                continue;
+            };
+            assert_eq!(disposed.kind, DispositionKind::InvalidRequest);
+            let Some(Diagnostic {
+                code,
+                payload:
+                    Payload::Inapplicable {
+                        request_index,
+                        capability,
+                        family,
+                    },
+            }) = disposed.diagnostic.as_ref()
+            else {
+                panic!("inapplicable pair has its typed family diagnostic");
+            };
+            assert_eq!(*request_index, record.request_index);
+            assert!(!capability
+                .applies_to_declaration(family.expect("this matrix row has a known family")));
+            assert_eq!(code.cause(), "inapplicable-kind");
+        }
+    }
+
+    #[trace("TC-1302", "FR-507-AC-5")]
+    #[test]
+    fn an_inapplicable_required_item_keeps_its_position_and_skips_engine_work() {
+        let calls = std::cell::Cell::new(0);
+        let supported = AnalyzeItem::new(
+            RequestIndex::new(0),
+            Capability::OperationContract,
+            Some(DeclarationFamily::StateModel),
+            Mode::Bounded,
+            "test-all",
+            |_| {
+                calls.set(calls.get() + 1);
+                EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                    "runtime_invariant",
+                    "established-invariant-broken",
+                )))
+            },
+        );
+        let inapplicable = AnalyzeItem::new(
+            RequestIndex::new(1),
+            Capability::FiniteReplay,
+            Some(DeclarationFamily::StateModel),
+            Mode::Bounded,
+            "test-all",
+            |_| {
+                calls.set(calls.get() + 1);
+                EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                    "runtime_invariant",
+                    "established-invariant-broken",
+                )))
+            },
+        );
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+
+        let records = analyze_items(&engines, vec![supported, inapplicable], &Cancel::new());
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].request_index, RequestIndex::new(0));
+        assert!(matches!(&records[0].settlement, Settlement::Terminal(_)));
+        assert_eq!(records[1].request_index, RequestIndex::new(1));
+        let Settlement::Disposed(disposed) = &records[1].settlement else {
+            panic!("the required inapplicable item is declined");
+        };
+        assert_eq!(disposed.kind, DispositionKind::InvalidRequest);
+        assert_eq!(
+            disposed
+                .diagnostic
+                .as_ref()
+                .map(|diagnostic| diagnostic.code),
+            Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
+        );
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[trace("TC-1302", "FR-507-AC-9")]
+    #[test]
+    fn an_unresolved_claim_family_is_inapplicable_for_every_kind() {
+        for kind in Capability::ALL.iter().copied() {
+            let record = analyze_items(
+                &Engines::default(),
+                vec![AnalyzeItem::unadapted(RequestIndex::new(7), kind, None)],
+                &Cancel::new(),
+            )
+            .remove(0);
+            let Settlement::Disposed(disposed) = record.settlement else {
+                panic!("a claim with no resolved family cannot run");
+            };
+            assert_eq!(disposed.kind, DispositionKind::InvalidRequest);
+            assert_eq!(
+                disposed.diagnostic.expect("typed refusal").payload,
+                Payload::Inapplicable {
+                    request_index: RequestIndex::new(7),
+                    capability: kind,
+                    family: None,
+                }
+            );
+        }
     }
 
     fn disposed(records: &[AnalyzeRecord]) -> &Disposed {
@@ -1136,7 +1418,12 @@ mod tests {
         let ran = std::cell::Cell::new(false);
         let records = analyze_items(
             &engines,
-            vec![item("test-a", Capability::OperationContract, &ran)],
+            vec![item(
+                "test-a",
+                Capability::OperationContract,
+                DeclarationFamily::StateModel,
+                &ran,
+            )],
             &Cancel::new(),
         );
         assert!(ran.get());
@@ -1156,7 +1443,12 @@ mod tests {
         let ran = std::cell::Cell::new(false);
         let records = analyze_items(
             &engines,
-            vec![item("test-a", Capability::TemporalSatisfaction, &ran)],
+            vec![item(
+                "test-a",
+                Capability::TemporalSatisfaction,
+                DeclarationFamily::TemporalTrace,
+                &ran,
+            )],
             &Cancel::new(),
         );
         let settled = disposed(&records);
@@ -1173,7 +1465,12 @@ mod tests {
         );
         let records = analyze_items(
             &engines,
-            vec![item("test-c", Capability::ValueValidity, &ran)],
+            vec![item(
+                "test-c",
+                Capability::ValueValidity,
+                DeclarationFamily::Value,
+                &ran,
+            )],
             &Cancel::new(),
         );
         let diagnostic = disposed(&records).diagnostic.clone().expect("a diagnostic");
@@ -1201,9 +1498,19 @@ mod tests {
         let records = analyze_items(
             &engines,
             vec![
-                item("test-a", Capability::ValueValidity, &ran)
-                    .disposed(Disposition::InvalidRequest, Some(ambiguous.clone())),
-                item("test-a", Capability::ValueValidity, &ran),
+                item(
+                    "test-a",
+                    Capability::ValueValidity,
+                    DeclarationFamily::Value,
+                    &ran,
+                )
+                .disposed(Disposition::InvalidRequest, Some(ambiguous.clone())),
+                item(
+                    "test-a",
+                    Capability::ValueValidity,
+                    DeclarationFamily::Value,
+                    &ran,
+                ),
             ],
             &Cancel::new(),
         );
@@ -1217,6 +1524,7 @@ mod tests {
         AnalyzeItem::new(
             RequestIndex::new(0),
             Capability::OperationContract,
+            Some(DeclarationFamily::StateModel),
             Mode::Bounded,
             "test-a",
             move |_| EngineReport::Refused(refusal()),
