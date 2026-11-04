@@ -64,6 +64,7 @@ mod protocol_compensation;
 mod protocol_controls;
 mod protocol_function_bodies;
 mod protocol_graph;
+mod protocol_locations;
 mod protocol_occurrence;
 mod protocol_recursion;
 mod protocol_reference;
@@ -1684,6 +1685,12 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::MissingDispatchIdentityContext { .. }) => {
                 panic!("every dispatched call retains its exact producer decision")
+            }
+            Err(
+                EmitRefusal::MissingProtocolLocationContext { .. }
+                | EmitRefusal::UnrecordedProtocolTerm { .. },
+            ) => {
+                panic!("every protocol slot term has one recorded application occurrence")
             }
             Err(EmitRefusal::ForeignDimensionOperand { .. }) => {
                 panic!("the fixture set declares no cross-package dimension equivalence")
