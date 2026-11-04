@@ -100,6 +100,11 @@ comparing copied source references.
    (`src/linking/composed`, `src/checking/composed`, `src/parser/composed*`,
    `src/syntax/composed*` and the callers of `parse_native` and
    `parse_native_source`) is still present and is retired family by family.
+   The order in which the families and the other old-architecture units are
+   deleted, and the gate each waits for, is ADR-011's "Deletion order of the
+   remaining old-architecture units". A family's composed arms are deleted
+   only when every row of that family in `docs/deletion-table.md` is green,
+   kept, or retired under a cited ruling (FR-499).
 10. **The inventory.** The owner-issued source inventory of QSL's checked
    requirements and pending obligations is built from the checked unit and
    from nothing else. A unit that the S3 type phase refuses is an error outcome

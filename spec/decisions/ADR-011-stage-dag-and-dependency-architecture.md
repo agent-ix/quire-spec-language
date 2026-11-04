@@ -1292,6 +1292,36 @@ replacement (#219 for M-6b, #224 for M-6c to M-6e). This per-lane reading of
 #216 is an owner ruling (2026-09-19); the coordinator amends the text of #216,
 #219 and #224 at the #212 consolidation (T-4).
 
+#### Deletion order of the remaining old-architecture units
+
+The row-level status of every behavior in the units below is
+[docs/deletion-table.md](../../docs/deletion-table.md) (D-S2, 2026-11-04). Each
+row maps to a green successor test, to a named open ticket, to a keep, to a
+retirement under a cited ruling, or to the list of rows with no successor that
+the owner decides. FR-499 owns the dispositions and the per-unit tables;
+FR-521 owns the quire-protocol gate. This section fixes the order in which the
+units delete and what each step waits for. A unit deletes only when every one
+of its rows is green, kept, or retired under a cited ruling, and its gate below
+is closed. A row with no successor blocks its unit until the owner supplies a
+port ticket or a sunset ruling.
+
+| Step | Unit (ticket) | Deletes after | Gate that must be closed |
+|---|---|---|---|
+| 0 | Gates, no deletion | none | The quire-protocol repoint (FR-521-AC-3, QSL-1501) is merged in quire-protocol; QSL-1446 (authenticated temporal provenance joined to the evaluator), QSL-1595, QSL-1596 and QSL-1582 are merged; QSL-1380 has closed its FR-043 to FR-053 items. |
+| 1 | `protocol_artifact` B8 sink, handoff writer, examples, `handoff-writer` feature (QSL-840) | step 0 | FR-521 row 2 green; every `protocol_artifact` row in the table that names QSL-840 is green, kept or retired. |
+| 2 | `protocol_artifact` B9 readers (QSL-838) and `src/temporal` (QSL-858), in one change | step 1, or in the same change | FR-499 order item 2: the three profile-identity constants leave `crate::temporal` first. The `temporal` public surface (`mapping_support_v2`, `Classification`, `AuthenticatedSelection`, `Trace`, `Report`, `evaluate_v2`, `Closure`, `Completeness`, `Execution`, `Evidence`, `Position`, `OrderKey`) stays until the quire-protocol repoint and IR-1005 are merged (FR-521 row 5). `number.rs` stays as the root module `number` (FR-511). |
+| 3 | The composed `Protocol` family (QSL-841, QSL-316 S2) | step 1 | Six `protocol_artifact/native` files match `DeclarationKind::Protocol` and go with step 1; FR-499-AC-2 holds after the change. |
+| 4 | The composed-lane remainder (QSL-868, QSL-830) | step 3 and QSL-837 | `formal_source` is kept and `qsl_inventory` has moved (QSL-1509, QSL-1512); the multi-unit namespace (QSL-1508) is green; CLI `parse` runs on `qsl_cst::parse` with its flags, output and exits (FR-499-AC-5). |
+| 5 | `src/native_model` (QSL-499) | steps 1 to 4 | The change that removes the last importer of `native_model` removes it (ADR-016 section 9); FR-499-AC-4. |
+| 6 | Close QSL-316 and the epic QSL-67 | step 5 | Their last child has landed. |
+| 7 | Gate evaluation: QSL-15, then QSL-462 | step 6 | The architecture evaluation checklist in [docs/deletion-gate-evaluation-checklist.md](../../docs/deletion-gate-evaluation-checklist.md) passes. |
+
+Each deleting change also deletes the interim wording it makes obsolete
+(FR-499 behavior bullet 3), edits the names FR-499 lists under "Names that
+break", and re-owns or retires every acceptance criterion that only the
+deleted tests tagged, so that `quire matrix` lists none of them untagged
+(FR-499-AC-6).
+
 The approved crate extractions are X-1 to X-11.
 
 ## 8. Lane convergence
