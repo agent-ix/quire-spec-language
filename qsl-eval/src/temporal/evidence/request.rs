@@ -20,6 +20,7 @@ use super::trigger::{
     EmptyIdentity, Evicted, ExecutionOrigin, SemanticTriggerIdentity, TriggerDelivery,
     TriggerEvidence,
 };
+use super::work::ClauseFormula;
 use crate::temporal::finite_window::{ClockCover, OrderKey, Valuation};
 use crate::temporal::ledger::{
     LedgerBinding, ProgressClosure, ProgressCompleteness, ProgressLedger,
@@ -421,6 +422,10 @@ pub struct EvidenceSubject<'p> {
     pub occurrences: Vec<SubjectOccurrence<'p>>,
     /// The checked clause.
     pub clause: &'p CheckedTemporalClause,
+    /// The clause's formula as the call measures it: built from the checked
+    /// package's `formula_graph()` for a package route, from the checked
+    /// formula otherwise.
+    pub formula: ClauseFormula,
     /// The node indices of the `holds` atoms whose operand reads the trigger
     /// binder or a capture (FR-515 `binders()`).
     pub instance_bound: std::collections::BTreeSet<u64>,

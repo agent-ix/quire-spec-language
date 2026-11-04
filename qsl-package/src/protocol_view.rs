@@ -834,10 +834,21 @@ pub fn delivery(channel: &CheckedSemanticNodeV2) -> Result<Delivery, ViewRefusal
         .strip_prefix('[')
         .and_then(|rest| rest.strip_suffix(']'))
         .and_then(|inner| inner.split_once(','))
-        .and_then(|(lower, upper)| Some((lower.trim().parse().ok()?, upper.trim().parse().ok()?)));
+        .and_then(|(lower, upper)| Some((canonical_u64(lower)?, canonical_u64(upper)?)))
+        .filter(|(lower, upper)| lower <= upper);
     bounds
         .map(|(lower, upper)| Delivery::Between { lower, upper })
         .ok_or_else(|| malformed(&channel.node_id, "delivery"))
+}
+
+fn canonical_u64(value: &str) -> Option<u64> {
+    if value.is_empty()
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+        || (value.len() > 1 && value.starts_with('0'))
+    {
+        return None;
+    }
+    value.parse().ok()
 }
 
 /// A queue's capacity (QSpec FR-465 "Queue").

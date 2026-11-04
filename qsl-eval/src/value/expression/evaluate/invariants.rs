@@ -4,6 +4,7 @@
 use super::*;
 use ix_trace_rs::trace;
 use qsl_semantics::check::CheckedBody;
+use quire_checked::node::CheckedLiteral;
 use quire_semantic_value::location::Origin;
 
 #[path = "../../../../../tests/support/admitted_charge.rs"]
@@ -36,7 +37,7 @@ macro_rules! probe_package {
         let objects = $objects;
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let _fault = {
-            let mut __probe_machine_storage = Machine::new(
+            let mut __probe_machine_storage = CheckedMachine::new(
                 graph.scope(),
                 graph,
                 &objects,
@@ -84,7 +85,7 @@ fn collection(elements: Vec<Value>) -> Arc<CollectionValue> {
     value
 }
 
-fn iteration<'a>(node: CheckedNode<'a>) -> Box<Iteration<'a>> {
+fn iteration<'a>(node: CheckedNode<'a>) -> Box<Iteration<CheckedNode<'a>>> {
     Box::new(Iteration {
         node,
         source: collection(vec![Value::Boolean(true)]),
@@ -157,7 +158,7 @@ fn admitted_owner_fixture(
     (types, model)
 }
 
-fn claim_level(machine: &mut Machine<'_, '_>) {
+fn claim_level(machine: &mut CheckedMachine<'_, '_>) {
     set_frames(machine, vec![vec![]]);
     machine.iterations = 0;
     machine.trail = Some(Trail::new(
@@ -173,7 +174,7 @@ fn earlier_charge_controls<'a>(
     package: &'a qsl_package::CheckedPackage,
     objects: &'a ObjectEnvironment,
     point: ChargePoint,
-    mut action: impl for<'meter> FnMut(&mut Machine<'a, 'meter>) -> Result<(), Halt>,
+    mut action: impl for<'meter> FnMut(&mut CheckedMachine<'a, 'meter>) -> Result<(), Halt>,
 ) {
     let graph = package.graph();
     for cause in [
@@ -219,7 +220,7 @@ fn earlier_charge_controls<'a>(
     }
 }
 
-fn finish_tasks(machine: &mut Machine<'_, '_>) -> Result<(), Halt> {
+fn finish_tasks(machine: &mut CheckedMachine<'_, '_>) -> Result<(), Halt> {
     while let Some(task) = machine.tasks.pop() {
         machine.step(task)?;
     }
@@ -293,12 +294,12 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
     )
 }
 
-fn set_values(machine: &mut Machine<'_, '_>, values: Vec<Value>) {
+fn set_values(machine: &mut CheckedMachine<'_, '_>, values: Vec<Value>) {
     machine.values = values;
     machine.value_guard_provenance = vec![false; machine.values.len()];
 }
 
-fn set_frames(machine: &mut Machine<'_, '_>, frames: Vec<Vec<Option<Value>>>) {
+fn set_frames(machine: &mut CheckedMachine<'_, '_>, frames: Vec<Vec<Option<Value>>>) {
     machine.frame_guard_provenance = frames
         .iter()
         .map(|frame| vec![false; frame.len()])
@@ -1303,7 +1304,7 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
             .attribute(storage.graph().scope().types(), &reference(), &field)
             .unwrap()
             .clone();
-        let fault = match Machine::slot_edge_targets(declared.field(), &slot) {
+        let fault = match CheckedMachine::slot_edge_targets(declared.field(), &slot) {
             Err(Halt::Fault(fault)) => fault,
             _ => panic!("producer was not reached: {identifier}"),
         };
@@ -1693,7 +1694,7 @@ fn native_integer_capacity_breach_becomes_a_typed_internal_fault() {
     assert!(qsl_semantics::check::received_kernel_causes().contains(&cause));
     let refusal = Refusal::CheckedInvariant { cause };
     assert_eq!(kernel_refusal_record(&refusal, None), None);
-    let fault = Machine::stopped(Stop::Refused(refusal), None).unwrap_err();
+    let fault = CheckedMachine::stopped(Stop::Refused(refusal), None).unwrap_err();
     assert_eq!(fault.stage(), "S6a");
     assert_eq!(fault.invariant(), "checked-program-invariant");
     assert_eq!(fault.kernel_cause(), Some(cause));
@@ -1713,7 +1714,8 @@ fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
         charge_call(&mut meter).unwrap();
         let before = meter.admitted_charges().to_vec();
         for location in [None, Some(&location)] {
-            let fault = Machine::stopped(Stop::Refused(refusal.clone()), location).unwrap_err();
+            let fault =
+                CheckedMachine::stopped(Stop::Refused(refusal.clone()), location).unwrap_err();
             assert_eq!(fault.stage(), "S6a");
             assert_eq!(fault.invariant(), "checked-program-invariant");
             assert_eq!(fault.kernel_cause(), Some(cause));
@@ -1733,7 +1735,7 @@ fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
         }
     }
     let evaluation =
-        Machine::stopped(Stop::Undefined(Undefined::NoneValue), Some(&location)).unwrap();
+        CheckedMachine::stopped(Stop::Undefined(Undefined::NoneValue), Some(&location)).unwrap();
     assert!(matches!(
         evaluation.outcome,
         FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::NoneValue))
@@ -1957,7 +1959,7 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
 #[trace("TC-917", "FR-090-AC-16")]
 fn valid_required_and_optional_projection_preserves_values_without_a_charge() {
     let slot = FieldValue::Present(Value::Boolean(true));
-    let required = Machine::project(
+    let required = CheckedMachine::project(
         &TypeEnvironment::default(),
         &slot,
         false,
@@ -1966,7 +1968,7 @@ fn valid_required_and_optional_projection_preserves_values_without_a_charge() {
     )
     .unwrap_or_else(|_| panic!("required projection"));
     assert!(matches!(required, Value::Boolean(true)));
-    let optional = Machine::project(
+    let optional = CheckedMachine::project(
         &TypeEnvironment::default(),
         &slot,
         true,
@@ -2141,7 +2143,7 @@ fn projection_and_ordering_shape_faults_keep_their_original_channels() {
     let slot = FieldValue::Present(Value::Integer(Integer::one()));
     probe!("field-option-payload-rejected", m, [], {
         let _ = m;
-        Machine::project(
+        CheckedMachine::project(
             &TypeEnvironment::default(),
             &slot,
             true,
@@ -2153,7 +2155,7 @@ fn projection_and_ordering_shape_faults_keep_their_original_channels() {
     for slot in [FieldValue::Absent, FieldValue::Null] {
         probe!("field-projection-shape-invalid", m, [], {
             let _ = m;
-            Machine::project(
+            CheckedMachine::project(
                 &TypeEnvironment::default(),
                 &slot,
                 false,
@@ -2162,7 +2164,7 @@ fn projection_and_ordering_shape_faults_keep_their_original_channels() {
             )
             .map(|_| ())
         });
-        let control = Machine::project(
+        let control = CheckedMachine::project(
             &TypeEnvironment::default(),
             &slot,
             true,
@@ -2223,7 +2225,7 @@ fn a_conforming_option_payload_projects_and_an_unrelated_one_is_rejected() {
             .unwrap()
     };
     let payload = ValueType::option(ValueType::Composite(money));
-    let child = Machine::project(
+    let child = CheckedMachine::project(
         &types,
         &FieldValue::Present(value(taxed.clone())),
         true,
@@ -2241,7 +2243,7 @@ fn a_conforming_option_payload_projects_and_an_unrelated_one_is_rejected() {
     );
     probe!("field-option-payload-rejected", m, [], {
         let _ = m;
-        Machine::project(
+        CheckedMachine::project(
             &types,
             &FieldValue::Present(value(fee)),
             true,
@@ -2473,7 +2475,7 @@ fn scalar_query_resume_retains_the_valid_result_and_preserves_earlier_stops() {
 #[trace("TC-917", "FR-090-AC-16")]
 fn fold_resume_and_finish_retain_the_real_accumulator_and_earlier_stop() {
     fn run<'a>(
-        machine: &mut Machine<'a, '_>,
+        machine: &mut CheckedMachine<'a, '_>,
         node: CheckedNode<'a>,
         resume: bool,
     ) -> Result<(), Halt> {

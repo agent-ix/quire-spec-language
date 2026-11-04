@@ -468,12 +468,13 @@ fn sorted(keys: impl IntoIterator<Item = NodeKey>) -> Vec<NodeKey> {
 }
 
 /// A channel's `delivery` text (FR-465 "Channel").
-const fn delivery_text(delivery: ChannelDelivery) -> &'static str {
+fn delivery_text(delivery: ChannelDelivery) -> String {
     match delivery {
-        ChannelDelivery::Unknown => "unknown",
-        ChannelDelivery::AtMostOnce => "at-most-once",
-        ChannelDelivery::AtLeastOnce => "at-least-once",
-        ChannelDelivery::ExactlyOncePremise => "exactly-once-premise",
+        ChannelDelivery::Unknown => "unknown".to_owned(),
+        ChannelDelivery::AtMostOnce => "at-most-once".to_owned(),
+        ChannelDelivery::AtLeastOnce => "at-least-once".to_owned(),
+        ChannelDelivery::ExactlyOncePremise => "exactly-once-premise".to_owned(),
+        ChannelDelivery::Between { lower, upper } => format!("[{lower},{upper}]"),
     }
 }
 
@@ -1917,7 +1918,7 @@ impl Lowering<'_> {
             let to = end(&channel.to)?;
             let carries = self.type_node(&channel.carries, &location)?;
             let ordering = self.ordering(channel, carries.clone(), readable, &location)?;
-            let delivery = self.text_literal(delivery_text(channel.delivery), &location)?;
+            let delivery = self.text_literal(&delivery_text(channel.delivery), &location)?;
             let declaration = vec![
                 identifier(name, &location)?,
                 identifier("channel", &location)?,

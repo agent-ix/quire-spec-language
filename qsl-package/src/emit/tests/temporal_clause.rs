@@ -65,6 +65,16 @@ pub(super) struct Compiled {
 /// `unit` through S1, S2, I1, the assembler, check, link and the v2
 /// emitter, with nothing omitted.
 pub(super) fn compile(unit: &str) -> Compiled {
+    compile_with(unit, &|clause| fixture_clock(clause.profile()))
+}
+
+/// [`compile`] with the clock configuration `clock` selects for each clause.
+pub(super) fn compile_with(
+    unit: &str,
+    clock: &dyn Fn(
+        &qsl_semantics::check::CheckedTemporalClause,
+    ) -> Option<quire_contract_model::ClockConfiguration>,
+) -> Compiled {
     let graph = check_graph(unit);
     let mut selections: Vec<_> = graph
         .temporal_clauses()
@@ -73,7 +83,7 @@ pub(super) fn compile(unit: &str) -> Compiled {
             Some(crate::emit::TemporalClockSelection {
                 source: graph.source().clone(),
                 declaration_span: temporal.clause().span(),
-                clock: fixture_clock(temporal.clause().profile())?,
+                clock: clock(temporal.clause())?,
             })
         })
         .collect::<Vec<_>>();
@@ -97,6 +107,76 @@ pub(super) fn compile(unit: &str) -> Compiled {
         emission,
         wire,
     }
+}
+
+/// The emitted temporal row table retains the exact checked wire identity for
+/// each declaration occurrence, so spine evaluation can join strict read-back
+/// to the compiler's selected clause without a name-based fallback.
+#[trace("TC-138", "FR-050-AC-6")]
+#[test]
+fn emitted_temporal_rows_retain_checked_declaration_identity() {
+    let compiled = compile(&unit(
+        EVENT,
+        &declared("Bound", "eventually[0,1] holds(c.versionNumber = 2)"),
+    ));
+    let temporal = compiled.clauses.first().expect("one checked clause");
+    let declaration = compiled
+        .emission
+        .temporal_binding_rows()
+        .declaration(&temporal.identity(), temporal.claim().ordinal())
+        .expect("each emitted temporal occurrence has a checked declaration ID");
+    let binding = compiled
+        .emission
+        .temporal_binding_rows()
+        .get(&temporal.identity(), temporal.claim().ordinal())
+        .expect("the configured clause has its exact temporal binding");
+
+    assert_eq!(declaration, &binding.declaration);
+}
+
+/// The emitted temporal sidecar is admitted at an exact byte ceiling; a
+/// one-byte-short read is incomplete and a fresh exact retry admits the same
+/// package.
+#[trace("TC-138", "FR-050-AC-5")]
+#[test]
+fn emitted_temporal_sidecar_strict_read_has_exact_retry_boundary() {
+    let compiled = compile(&unit(
+        EVENT,
+        &declared("Bound", "eventually[0,1] holds(c.versionNumber = 2)"),
+    ));
+    let bytes = compiled.emission.package().bytes();
+    let evidence = evidence(&compiled.wire);
+    let byte_limit = u64::try_from(bytes.len()).expect("package byte count fits u64");
+    let exact = quire_contract_model::CheckedPackageReadLimits {
+        bytes: byte_limit,
+        ..quire_contract_model::CheckedPackageReadLimits::bounded()
+    };
+    let admitted = match quire_contract_model::CheckedPackageV2::read(bytes, exact, &evidence) {
+        quire_contract_model::CheckedPackageV2ReadResult::Admitted(package) => *package,
+        other => panic!("exact temporal package byte limit admits: {other:?}"),
+    };
+
+    let one_short = quire_contract_model::CheckedPackageReadLimits {
+        bytes: byte_limit.saturating_sub(1),
+        ..exact
+    };
+    let incomplete = quire_contract_model::CheckedPackageV2::read(bytes, one_short, &evidence);
+    let quire_contract_model::CheckedPackageV2ReadResult::Incomplete(incomplete) = incomplete
+    else {
+        panic!("one byte below the emitted size refuses before parsing");
+    };
+    assert_eq!(
+        incomplete.limit_kind,
+        quire_contract_model::CheckedPackageLimit::Bytes
+    );
+    assert_eq!(incomplete.limit, byte_limit.saturating_sub(1));
+    assert_eq!(incomplete.consumed, byte_limit);
+
+    let retried = match quire_contract_model::CheckedPackageV2::read(bytes, exact, &evidence) {
+        quire_contract_model::CheckedPackageV2ReadResult::Admitted(package) => *package,
+        other => panic!("fresh exact retry admits the same temporal package: {other:?}"),
+    };
+    assert_eq!(admitted, retried);
 }
 
 pub(super) fn fixture_clock(

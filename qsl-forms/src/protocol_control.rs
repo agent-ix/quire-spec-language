@@ -50,6 +50,13 @@ pub enum ChannelDelivery {
     AtLeastOnce,
     /// `delivery exactly-once-premise`.
     ExactlyOncePremise,
+    /// `delivery [lower,upper]`, both bounds inclusive.
+    Between {
+        /// The least number of deliveries for one send.
+        lower: u64,
+        /// The greatest number of deliveries for one send.
+        upper: u64,
+    },
 }
 
 /// A channel's capacity.
@@ -380,6 +387,16 @@ fn delivery_form(cst: &LosslessCst, delivery: &CstNode) -> Result<ChannelDeliver
         Ok(ChannelDelivery::AtLeastOnce)
     } else if has_token(&delivery_items, b"exactly-once-premise") {
         Ok(ChannelDelivery::ExactlyOncePremise)
+    } else if let Some(interval) = nodes_of(&delivery_items, Production::DeliveryInterval).first() {
+        let interval_items = items(cst, interval);
+        let bounds = tokens_of(&interval_items, TokenKind::Integer);
+        match bounds.as_slice() {
+            [lower, upper] => Ok(ChannelDelivery::Between {
+                lower: u64_token(lower, interval)?,
+                upper: u64_token(upper, interval)?,
+            }),
+            _ => Err(unexpected(interval)),
+        }
     } else {
         Err(unexpected(delivery))
     }

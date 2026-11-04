@@ -141,6 +141,9 @@ impl Env {
                 clock: Some(&self.row),
             }],
             clause: &self.fixture.clause,
+            formula: qsl_eval::temporal::evidence::ClauseFormula::of_checked(
+                self.fixture.clause.formula(),
+            ),
             instance_bound: bound.iter().copied().collect(),
             activation_map: &self.rows,
             progress: LedgerBinding {

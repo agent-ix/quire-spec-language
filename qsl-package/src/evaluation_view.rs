@@ -144,11 +144,12 @@ impl<'package> AdmittedEvaluationView<'package> {
                 .map(|source| source.node.clone())
                 .collect::<Vec<_>>();
             // The admitted wire carries no semantic location for a leaf
-            // root, and the producer writes no `protocol_locations` rows
-            // yet, so the reader projection reports no location. It never
-            // takes one from the source package's CheckedBody (FR-390).
+            // root, and this projection does not yet pair the
+            // `protocol_locations` rows with its visits (QSL-1625), so it
+            // reports no location. It never takes one from the source
+            // package's CheckedBody (FR-390).
             let projection = reader
-                .protocol_reference_slot(&root_node, &binders)
+                .protocol_reference_slot(&root_node, &binders, body.root().value_type())
                 .map_err(SlotSelectionFailure::Fault)?
                 .ok_or_else(|| {
                     SlotSelectionFailure::Fault(InternalFault::new(

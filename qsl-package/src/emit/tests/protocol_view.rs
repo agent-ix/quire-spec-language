@@ -936,8 +936,7 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
         }
     );
 
-    // A declared interval (FR-509) is the delivery text `[lower,upper]`; the
-    // source syntax is not yet accepted, so the node carries the text here.
+    // A declared interval (FR-509) uses canonical decimal bounds.
     let with_text = |text: &str| {
         let mut channel = charges.clone();
         let CheckedTerm::Application { arguments, .. } = &mut channel.body else {
@@ -959,10 +958,33 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
         Delivery::Between { lower: 0, upper: 3 }
     );
     assert_eq!(
-        delivery(&with_text("[ 2 , 2 ]")).unwrap(),
+        delivery(&with_text("[2,2]")).unwrap(),
         Delivery::Between { lower: 2, upper: 2 }
     );
-    for bad in ["[3", "[a,b]", "sometimes", "[1,2,3]"] {
+    assert_eq!(
+        delivery(&with_text("[0,18446744073709551615]")).unwrap(),
+        Delivery::Between {
+            lower: 0,
+            upper: u64::MAX
+        }
+    );
+    for bad in [
+        "[4,3]",
+        "[0, 3]",
+        "[ 2 , 2 ]",
+        "[00,3]",
+        "[+0,3]",
+        "[-1,3]",
+        "[0.5,3]",
+        "[0,18446744073709551616]",
+        "[3]",
+        "[0,3",
+        "0,3",
+        "[3",
+        "[a,b]",
+        "sometimes",
+        "[1,2,3]",
+    ] {
         assert_eq!(
             delivery(&with_text(bad)).unwrap_err(),
             ViewRefusal::MalformedMember {
@@ -1020,6 +1042,29 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
             "{words}"
         );
     }
+}
+
+/// FR-509-AC-4 (TC-1304): emission writes normalized interval spelling and
+/// the strict typed reader returns the same checked bounds.
+#[trace("FR-509-AC-4", "TC-1304")]
+#[test]
+fn an_interval_channel_emits_and_reads_back_its_delivery_premise() {
+    let source = tc134_source().replace("delivery at-least-once", "delivery [ 0 , 3 ]");
+    let fixture = fixture_over(&source);
+    let charge = by_name(&fixture.admitted, "Charges");
+    assert_eq!(
+        delivery(charge).unwrap(),
+        Delivery::Between { lower: 0, upper: 3 }
+    );
+    assert_eq!(
+        fixture.protocol.channels[0].delivery,
+        qsl_forms::ChannelDelivery::Between { lower: 0, upper: 3 }
+    );
+    let qsl_charge = by_name(&fixture.qsl_read, "Charges");
+    assert_eq!(
+        delivery(qsl_charge).unwrap(),
+        Delivery::Between { lower: 0, upper: 3 }
+    );
 }
 
 /// FR-519-AC-5, locus: the package source-map entry of a node; and the clock

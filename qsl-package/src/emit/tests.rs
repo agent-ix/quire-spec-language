@@ -64,6 +64,7 @@ mod protocol_compensation;
 mod protocol_controls;
 mod protocol_function_bodies;
 mod protocol_graph;
+mod protocol_locations;
 mod protocol_occurrence;
 mod protocol_recursion;
 mod protocol_reference;
@@ -82,6 +83,7 @@ mod state_graph_claim;
 mod state_transition;
 mod step_relation;
 mod temporal_clause;
+mod temporal_package_route;
 mod terminal;
 mod timed_clauses;
 mod timed_source;
@@ -1684,6 +1686,12 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::MissingDispatchIdentityContext { .. }) => {
                 panic!("every dispatched call retains its exact producer decision")
+            }
+            Err(
+                EmitRefusal::MissingProtocolLocationContext { .. }
+                | EmitRefusal::UnrecordedProtocolTerm { .. },
+            ) => {
+                panic!("every protocol slot term has one recorded application occurrence")
             }
             Err(EmitRefusal::ForeignDimensionOperand { .. }) => {
                 panic!("the fixture set declares no cross-package dimension equivalence")
@@ -3545,9 +3553,10 @@ fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> S
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
          model Config = \"example/config-version\";\n\
          {declarations}\n\
-         protocol Flow using p over (input: Boolean) on origin {{\n\
+         protocol Flow using p over (input: Config::ConfigVersion) on origin {{\n\
          role R on Config::ConfigVersion;\n\
          run sequence Main {{\n\
          attempt Update by R on {operation} contracts [{contracts}] \
@@ -3872,7 +3881,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
             "missing_declaration",
         ),
         (
-            "over (input: Boolean)",
+            "over (input: Config::ConfigVersion)",
             "over (input: Nope::Input)",
             "missing_declaration",
         ),

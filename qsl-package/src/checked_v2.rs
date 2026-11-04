@@ -861,6 +861,21 @@ pub fn read_evaluation_package<'package>(
         package: identity.clone(),
         refusal: Some(refusal),
     })?;
+    read_evaluation_emission(package, &emission, identity, domain_packages, limits)
+}
+
+/// Admit `emission`, the bytes `package` was emitted to (with the clock
+/// selections of its temporal clauses, FR-050), and its dependency closure
+/// through the I2 reader, and retain the successful read for evaluator use.
+///
+/// Refuses [`ImportViewRefusal::Emission`] for an emission that omits a node.
+pub fn read_evaluation_emission<'package>(
+    package: &'package CheckedPackage,
+    emission: &Emission,
+    identity: LibraryName,
+    domain_packages: &qsl_semantics::model::intake::PackageInput,
+    limits: V2ReadLimits,
+) -> Result<AdmittedPackageRead<'package>, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
     let mut reader = ClosureReader {
@@ -869,7 +884,7 @@ pub fn read_evaluation_package<'package>(
         admitted: BTreeMap::new(),
         limits,
     };
-    let read = reader.read_emitted(package, &emission, identity.clone())?;
+    let read = reader.read_emitted(package, emission, identity.clone())?;
     let mut closure = reader.admitted;
     closure.insert(identity.clone(), Arc::clone(&read.admitted));
     let reader_nodes = reader_node_keys(&read.admitted).map_err(|_| ImportViewRefusal::Read {
@@ -902,6 +917,16 @@ impl AdmittedPackageRead<'_> {
     /// The structural exports admitted for this package.
     pub fn import_view(&self) -> &ImportView {
         &self.read.package
+    }
+
+    /// The admitted package the reader returned for these bytes.
+    pub fn admitted(&self) -> &CheckedPackageV2 {
+        &self.read.admitted
+    }
+
+    /// The in-process package whose emission these bytes are.
+    pub fn source(&self) -> &CheckedPackage {
+        self.source
     }
 
     /// The source map retained from the successful I2 read.
@@ -951,12 +976,14 @@ impl AdmittedPackageRead<'_> {
     }
 
     /// Resolve a reader-retained expression reference to its supplied frame
-    /// slot. This is a plain-data projection of the admitted graph; it does
-    /// not construct a checked term or consult the source package body.
+    /// slot. The field operation and selected identity come from the admitted
+    /// graph; the already-checked source root supplies its exact recursive
+    /// value type where the wire projector has no recursive member support.
     pub(crate) fn protocol_reference_slot(
         &self,
         node: &NodeKey,
         binders: &[Option<NodeKey>],
+        checked_root_type: &quire_exact::ValueType,
     ) -> Result<Option<crate::evaluation_view::ReaderProtocolProjection>, InternalFault> {
         let graph = wire_graph(&self.read.admitted).map_err(|_| {
             InternalFault::new("FR-390", "reader-protocol-graph-has-structural-keys")
@@ -979,30 +1006,12 @@ impl AdmittedPackageRead<'_> {
                 .iter()
                 .position(|binder| binder.as_ref() == Some(&target_key))
             {
-                let identities = self
-                    .source
-                    .graph()
-                    .selected_exact_identities(&self.read.admitted)
-                    .map_err(|_| {
-                        InternalFault::new("FR-390", "reader-selected-identities-are-admitted")
-                    })?;
-                let value_type = self
-                    .read
-                    .admitted
-                    .project_exact_type(
-                        &selected.semantic_type,
-                        &identities,
-                        self.read.effective_limits.work,
-                    )
-                    .map_err(|_| InternalFault::new("FR-390", "reader-result-type-is-admitted"))?
-                    .value_type()
-                    .clone();
                 return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
                     slot,
                     field: crate::evaluation_view::ReaderProtocolField::Local,
                     optional: false,
                     derefed: false,
-                    value_type,
+                    value_type: checked_root_type.clone(),
                 }));
             }
             return Ok(None);
@@ -1010,7 +1019,6 @@ impl AdmittedPackageRead<'_> {
         let quire_contract_model::CheckedTerm::Application {
             operation,
             arguments,
-            result_type,
             ..
         } = &selected.body
         else {
@@ -1086,25 +1094,31 @@ impl AdmittedPackageRead<'_> {
                         )
                     }
                     quire_contract_model::SelectedExactIdentity::Record(record_key) => {
-                        let projection = self
-                            .read
-                            .admitted
-                            .project_exact_type(
-                                declaration,
-                                &identities,
-                                self.read.effective_limits.work,
-                            )
-                            .map_err(|_| {
+                        // The I2 selected identity is already joined to this
+                        // source declaration above. Read presence from the
+                        // checked source type: the wire projector does not
+                        // yet recurse through Option and Collection members.
+                        let record = self
+                            .source
+                            .graph()
+                            .scope()
+                            .types()
+                            .composite(record_key.clone())
+                            .ok_or_else(|| {
                                 InternalFault::new(
                                     "FR-390",
                                     "reader-record-field-declaration-is-admitted",
                                 )
                             })?;
-                        let record = projection.record_view().ok_or_else(|| {
-                            InternalFault::new("FR-390", "reader-record-field-view-is-admitted")
-                        })?;
-                        let selected_field = record
-                            .fields()
+                        let quire_semantic_value::declaration::CompositeShape::Record(fields) =
+                            record.shape()
+                        else {
+                            return Err(InternalFault::new(
+                                "FR-390",
+                                "reader-record-field-view-is-admitted",
+                            ));
+                        };
+                        let selected_field = fields
                             .iter()
                             .find(|selected| selected.name() == field.as_ref())
                             .ok_or_else(|| {
@@ -1128,13 +1142,6 @@ impl AdmittedPackageRead<'_> {
                         ));
                     }
                 };
-                let value_type = self
-                    .read
-                    .admitted
-                    .project_exact_type(result_type, &identities, self.read.effective_limits.work)
-                    .map_err(|_| InternalFault::new("FR-390", "reader-result-type-is-admitted"))?
-                    .value_type()
-                    .clone();
                 return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
                     slot: index,
                     field,
@@ -1143,7 +1150,7 @@ impl AdmittedPackageRead<'_> {
                         read_form,
                         Some(quire_contract_model::CheckedFieldReadForm::ExplicitDeref)
                     ),
-                    value_type,
+                    value_type: checked_root_type.clone(),
                 }));
             }
             if !visited.insert(target.clone()) {

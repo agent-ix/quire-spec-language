@@ -917,11 +917,11 @@ fn a_second_read_of_the_same_bytes_gives_the_same_view() {
 
 /// FR-515-AC-13 (TC-1310 row 13): two structurally equal clauses under a
 /// clock-configured profile are one node with two occurrences of different
-/// ordinals. Today IR refuses the package (`TimedNodeReference` at the second
-/// `temporal_bindings` row).
+/// ordinals and one `temporal_bindings` row per occurrence, admitted by the
+/// reader. `clock()` is `None` for a node with several occurrences
+/// (FR-515-AC-19's rule) and `clock_of` returns each occurrence's row.
 #[trace("FR-515-AC-13", "TC-1310")]
 #[test]
-#[ignore = "IR-1279: IR refuses a second temporal_bindings row for a shared clause node"]
 fn equal_clauses_under_a_clock_profile_share_a_node_with_two_occurrences() {
     let body = "always[0,30] holds(c.versionNumber <= 1)";
     let declarations = format!(
@@ -936,7 +936,12 @@ fn equal_clauses_under_a_clock_profile_share_a_node_with_two_occurrences() {
     assert_eq!(ordinals.len(), 2);
     assert_ne!(ordinals[0], ordinals[1]);
     assert!(view.occurrences().iter().all(|o| o.node == node));
-    assert_eq!(view.clock().map(|row| &row.declaration), Some(&node));
+    assert_eq!(view.clock(), None);
+    for occurrence in view.occurrences() {
+        let row = view.clock_of(occurrence).expect("one row per occurrence");
+        assert_eq!(row.declaration, node);
+        assert_eq!(row.occurrence, occurrence.ordinal);
+    }
 }
 
 /// FR-515-AC-11 (TC-1310 row 11): a guard equal to a `holds` operand is one

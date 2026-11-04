@@ -106,6 +106,9 @@ serde_json_canonicalizer = "0.3.2"
 # the evaluator trait without routing them through FR-100's scalar-only run
 # result carrier.
 qsl-eval = { path = "qsl-eval" }
+# FR-515-AC-20, FR-516-AC-32: `Emission::with_package_bytes` presents the twin
+# package no emitter produces. Only this dev-dependency enables it.
+qsl-package = { path = "qsl-package", features = ["test-support"] }
 quire-eval = { workspace = true }
 # `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
 # `DeclarationKey::fixture`, `check::family::fixtures`, ...) for this crate's
