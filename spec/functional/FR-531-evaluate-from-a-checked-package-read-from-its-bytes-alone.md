@@ -85,18 +85,32 @@ impl<'p> BarePackage<'p> {
 
 pub struct BareSupply<'p> {
     pub identities: &'p ReadIdentityRows,
-    pub dependencies: &'p AdmittedPackages,
+}
+
+impl ReadIdentityRows {
+    pub fn read(identities_json: &[u8], package: &CheckedPackageV2)
+        -> Result<Self, IdentityFileRefusal>;
 }
 ```
 
 - `package` is the `CheckedPackageV2` that `read_checked_package` returned. A
   caller cannot build a `BarePackage` from bytes, from a decoded graph or from a
   term; `BarePackage` has no other constructor.
-- `ReadIdentityRows` is the QSL-owned wrapper of FR-390 that pairs the selected
-  model identity rows with the package, and `AdmittedPackages` is the closure of
-  the packages the lock's `dependency_selections` name, each admitted by
-  `read_checked_package`. Only the protocol-slot call reads them (FR-533); the
-  temporal evidence call reads neither (FR-532).
+- `ReadIdentityRows` is the QSL-owned read-evidence wrapper of FR-390: the selected
+  model identity rows (IR's `SelectedExactDeclarationRow` and
+  `SelectedExactFieldRow`) paired with the package they were produced for. A
+  consumer obtains it with `ReadIdentityRows::read(bytes, package)` from the
+  `identities.json` of the handoff directory and the package (below), and by no
+  other route. Only the protocol-slot call reads it (FR-533); the temporal
+  evidence call reads nothing but the package (FR-532).
+- The dependency closure is not a supply. `BarePackage` derives the admitted
+  closure from the direct dependencies the reader retained in the package, which
+  the consumer passed to `read_checked_package` as read evidence; a consumer
+  builds no `AdmittedPackages`, which has no public constructor. QSL reads the
+  retained dependencies through the read access Contract IR gives to the packages
+  a `CheckedPackageV2` holds. That access is an IR dependency: until it is public
+  the slot call over a package that has dependencies is unmet parity, and a
+  package with none is unaffected.
 - The domain package documents (FR-056's `PackageInput`) stay a caller input of
   observation admission, as for the in-process route; they are bytes the caller
   holds, not source.
@@ -114,6 +128,18 @@ entry defines no result type of its own.
 
 ## Behavior
 
+### Requirements
+
+- The entry SHALL take a `CheckedPackageV2` and no value of the source side.
+- The entry SHALL derive every fact of the table below from the package's bytes.
+- The bare route SHALL give the same result, the same refusal and the same charge
+  log as the in-process route for one package and one request.
+- The entry SHALL refuse a call only with a cause, dimension or reason named here
+  or in FR-390, FR-515, FR-516 and FR-532.
+- Every capability of the in-process route SHALL be available from the bare
+  package or be listed in the inventory as unmet parity with its reason; none
+  is dropped.
+
 ### What the entry derives from the bytes
 
 | Fact | Where it is read | In-process route reads it from |
@@ -127,6 +153,8 @@ entry defines no result type of its own.
 | package identity of a progress binding and of a result identity | the package's `name()` | the source identity labels |
 | protocol slot, binders, binder types and levels, locations, callees | the admitted protocol nodes and `protocol_locations` rows (FR-390, FR-464) | the source `CheckedBody` and checked package |
 | model selections and type environment of an observation | the package's `model_root` nodes and the caller's domain package documents | the source graph's model selections and scope |
+| dependency closure | the direct dependencies the package retains from its read evidence | the source package's closure |
+| clause name, capture names and capture value types | the occurrence's `temporal_clause_names` row, the captures argument's binding names and the typed result types of the capture initializer terms | the source clause's `name()` and `captures()` |
 | arithmetic exactness and bounds | the lock and the nodes' types | the same, through the source |
 
 Every row of the in-process column that names the source is replaced on the
@@ -136,9 +164,11 @@ routes then read the bytes column too, so that one value exists per fact.
 ### What the bytes do not carry
 
 The package holds no source text and no source spans beyond its source map (FR-528
-integrity claims and `CheckedSourceMapEntry` regions), no clause name until the
-reader decides one (the `name()` of FR-515), and no source arena order of a checked
-formula. The outputs of the bare route therefore spell positions and keys by what
+integrity claims and `CheckedSourceMapEntry` regions), no source arena order of a
+checked formula, and no clause name on the clause node itself (IR-1278 gates the
+`name()` of FR-515). The declared name of each clause occurrence is carried by its
+`temporal_clause_names` row, and the bare route SHALL use that row wherever the
+evaluator reads a clause name. The outputs of the bare route therefore spell positions and keys by what
 the bytes carry, and the in-process routes spell them the same way:
 
 - a clause is its `CheckedNodeId` plus an occurrence `{ role, ordinal }`;
@@ -165,28 +195,47 @@ from the bare package, or is listed here with the reason it needs source:
 | the construction refusals of `PackageMismatch` | `AmbiguousName` applies; `ClauseRow`, `ProfileSelections` and `Bindings` need an `Emission` and have no bare route (FR-532) |
 | `evaluate_protocol_slot` and `evaluate_selected_protocol_slot` | available; FR-533 |
 | `AdmittedEvaluationView::admit_protocol_observation` | available; FR-533 |
-| `call`, `call_supplied`, `call_observing_applications` (call by `QualifiedName`) | not carried: a `QualifiedName` is a source declaration name, which the package does not hold (FR-515 `name()`); a call by the callee's node identity is the slot route's own dispatch |
-| `evaluate` (a `CheckedExpression`) | not carried: its argument is a source-checked value a bytes-only consumer cannot hold; the slot call is its package form |
-| `evaluate_holds`, `evaluate_holds_traced`, `evaluate_guard`, `evaluate_hyper_holds`, `evaluate_step_predicate`, `evaluate_clause`, `evaluate_clause_set`, `evaluate_value_invariants`, `check_separation`, `evaluate_frame`, `evaluate_collection_write` | not carried: each takes a source-checked clause, node or state clause; the evidence route takes the `holds` valuations as request facts (FR-516), and no consumer of the handoff evaluates the others |
+| `call`, `call_supplied`, `call_observing_applications` (call by `QualifiedName`) | unmet parity: a `QualifiedName` is a source declaration name, which the package does not hold (FR-515 `name()`); a call by the callee's node identity is the slot route's own dispatch |
+| `evaluate` (a `CheckedExpression`) | unmet parity: its argument is a source-checked value a bytes-only consumer cannot hold; the slot call is its package form |
+| `evaluate_holds`, `evaluate_holds_traced`, `evaluate_guard`, `evaluate_hyper_holds`, `evaluate_step_predicate`, `evaluate_clause`, `evaluate_clause_set`, `evaluate_value_invariants`, `check_separation`, `evaluate_frame`, `evaluate_collection_write` | unmet parity: each takes a source-checked clause, node or state clause; the evidence route takes the `holds` valuations as request facts (FR-516), and no consumer of the handoff evaluates the others |
 
-### The identity rows of a handoff directory
+### The identity file
 
-The directory FR-517 writes carries `identities.json`, the selected model identity
-rows of FR-390 as the writer's in-process unit holds them, written once beside
-`checked-package.json`. A consumer builds `ReadIdentityRows` from that file and the
-package, joined by IR's `SelectedExactIdentities` projection, never from the
-package bytes, a display name or source text.
+The directory FR-517 writes carries `identities.json`, written once beside
+`checked-package.json`. Its encoding follows `selection.json`: one JSON object,
+pretty-printed with two-space indent, members in the order below, closed (an
+unknown member is a refusal), UTF-8, ending in one newline, byte-identical for
+equal inputs.
+
+| Member | Content |
+| --- | --- |
+| `format` | the string `quire.checked-handoff.identities/1` |
+| `declarations` | the unit's `SelectedExactDeclarationRow` values in the order the emitter holds them; each is an object `{ "structural_node", "selected_document", "form", "original_identity", "exact_identity" }` with `structural_node` the wire node id string, `form` one of `record_value_type`, `object_type`, `union`, `declared_unit`, and `exact_identity` a tagged object `{ "kind": "record" \| "object" \| "union" \| "declared_unit", ... }` carrying the variant's members under their Rust field names |
+| `fields` | the unit's `SelectedExactFieldRow` values in emitter order; each is `{ "record_node", "selected_document", "record_original_identity", "field_original_identity", "member_id" }` |
+
+`ReadIdentityRows::read(bytes, package)` parses the file, joins the rows to the
+package by IR's `SelectedExactIdentities` projection, and never derives a row from
+the package bytes, a display name or source text. `IdentityFileRefusal` is closed:
+`Malformed` (not JSON or not this shape, an unknown or repeated member),
+`Format` (another `format` string, naming it), `Unjoined` (a row whose
+`structural_node` the package does not hold, or whose form does not match its
+identity), naming the first row. A refusal returns no rows and charges nothing.
+quire-protocol's admission input list (its FR-043) names this file beside
+`checked-package.json`.
 
 ### Refusals
 
-- A call refuses with FR-516's cause table (temporal) or FR-390's catalog
-  refusals (protocol), unchanged; this requirement adds no call cause.
-- A slot call on a `BarePackage` that has no supply refuses
+- A call SHALL refuse with FR-516's cause table (temporal) or FR-390's catalog
+  refusals (protocol), unchanged. This requirement adds no call cause; it adds the
+  `clause-unreadable` reasons `profile-unknown`, `clause-name` and `capture-type`
+  and the supply refusals below, and FR-516's cause table lists the reasons.
+- A slot call on a `BarePackage` that has no supply SHALL refuse
   `ViewFailure::Unsupported` with `MissingIdentityWitness` at the package locus
   (FR-390). A supply whose rows name no admitted identity or another package
   refuses `UnknownIdentityWitness` or `ForeignIdentityWitness`. A dependency the
   lock selects and `dependencies` does not hold refuses `DependencyUnheld`
-  naming the package. Each is evaluation-input admission before S6a, category
+  naming the package (a package whose lock selects a dependency that the package
+  retains none of). Each is evaluation-input admission before S6a, category
   unsupported, exit 21, `CallFailure::Admission` carrying the catalog pair
   `unknown_required_feature`/`unsupported-feature`, with nothing charged.
 - A package that carries no `temporal_bindings` rows, or none for a clause
@@ -205,8 +254,8 @@ package bytes, a display name or source text.
 
 The bare route charges exactly the counters, at exactly the charge points, that
 the in-process route charges for the same package and the same request (FR-523's
-thirteen temporal counters; FR-255's ten value counters, attributed as FR-520 row
-`EvaluationReport` states once IR-1280 lands). Construction of a `BarePackage`,
+thirteen temporal counters; FR-255's ten value counters, attributed per binder as
+FR-520-AC-11 states). Construction of a `BarePackage`,
 supply admission and view creation charge nothing and accept no `Meter`.
 
 ### Relationship to the consumers
@@ -224,13 +273,14 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-2 | `BarePackage` has no constructor from bytes, from a decoded graph or from a term, and no public signature of `BarePackage`, `BareSupply`, `EvidencePackage::from_package` or the `BarePackage` evaluation names `CheckedPackage`, `Emission` or `AdmittedPackageRead`; compile-fail probes of each construction fail, and an API-surface inspection lists the signatures. | Test (TC-1331) |
 | FR-531-AC-3 | The evaluation code reached from `BarePackage` does not read a source graph: the same calls over a `BarePackage` whose package was read in a run where the source unit was never compiled give the results the calls give where it was (TC-1331 row 1 runs the calls in a child run that is given the handoff directory only). | Test (TC-1331) |
 | FR-531-AC-4 | Over **R**'s three packages the bare route evaluates every temporal clause form (event position, fixed sample, timestamped event) and every protocol slot kind of FR-390's slot table that **R** holds; a node that is not a temporal clause refuses `clause-root-unresolved` and a slot node that is not a protocol node refuses as FR-390-AC-4 states, each with an empty charge log. | Test (TC-1331) |
-| FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows naming no admitted identity, `UnknownIdentityWitness`; with a lock whose dependency is not in `dependencies`, `DependencyUnheld` naming it. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result. | Test (TC-1331) |
+| FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows naming no admitted identity, `UnknownIdentityWitness`; with a lock that selects a dependency the package retains none of, `DependencyUnheld` naming it. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result. | Test (TC-1331) |
 | FR-531-AC-6 | Over a package whose `temporal_bindings` rows are absent, the call returns `activation = Unavailable` with the `Missing` non-value for the clock row; over a lock with no `profile_selections` row for the clause, `clause-unreadable` with reason `profile-selection`; over a lock whose row names a definition no profile of the evaluator, `clause-unreadable` with reason `profile-unknown`; over a row naming an infinite-trace profile, the `not-finite-window-profile` temporal refusal. Each has the charges FR-516 gives its counterpart over a source. | Test (TC-1331) |
-| FR-531-AC-7 | No result of the bare route holds, in its canonical bytes or its fields, a clause name, a source label or a source span: over **R**, the encoded `EvidenceResult` and `ProtocolSlotEvaluation` values do not contain the clause names (`Due`, `DueLate`, `DueSample`, `DueTimestamp`), the unit's `source:` labels or a byte region of the source map. Identity is spelled as the "What the bytes do not carry" list states, and the progress binding of a result holds `package.name()`. | Test (TC-1331) |
-| FR-531-AC-8 | The handoff directory of **R** holds `identities.json`; `ReadIdentityRows` built from it and the package gives a slot call that evaluates, and the file equals the identity rows of the in-process unit, byte for byte; deleting the file makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
-| FR-531-AC-9 | For each public method of `EvidencePackage` and of `CheckedPackageEvaluation`, a test over the inventory table of this requirement finds exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
+| FR-531-AC-7 | No result of the bare route holds, in its canonical bytes or its fields, a clause name, a source label or a source span: over **R**, the encoded `EvidenceResult` and `ProtocolSlotEvaluation` values do not contain the unit's `source:` labels or a byte region of the source map, and a clause name appears only as the `temporal_clause_names` row of its occurrence gives it, identically on every route. Identity is spelled as the "What the bytes do not carry" list states, and the progress binding of a result holds `package.name()`. | Test (TC-1331) |
+| FR-531-AC-8 | The handoff directory of **R** holds `identities.json` with `format` `quire.checked-handoff.identities/1`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
+| FR-531-AC-12 | `ReadIdentityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with another `format`, one with a row whose `structural_node` the package does not hold and one whose `form` does not match its identity returns `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the format string or the first row, and returns no rows. | Test (TC-1331) |
+| FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
 | FR-531-AC-10 | The charge log of each call over the bare package equals the charge log of the same call over the in-process route (FR-532-AC-1, FR-533-AC-1); `BarePackage::new`, `with_supply` and view creation take no `Meter` and a call that refuses at supply admission leaves a caller's meter byte-identical. | Test (TC-1331) |
-| FR-531-AC-11 | FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |
+| FR-531-AC-11 | A search of FR-515 for the phrases `bytes-only` and `separate future capability` and of FR-515, FR-516 and FR-520 for the heading `Consumer entry` finds that FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |
 
 ## Dependencies
 
