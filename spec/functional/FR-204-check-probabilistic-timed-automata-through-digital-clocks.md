@@ -147,9 +147,23 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
   The action form therefore loses nothing, adds no ProductKey member, and is
   the representation; a randomized choice over functions induces the same
   per-row distributions as a randomized choice per row.
-- The witness policy at a FreeDelays state SHALL take FR-198's attaining
-  choice and, among the assignments that attain a row's optimum, the least
-  one, comparing the free delays as unsigned integers in `free` order.
+- The set of all functions is the semantic choice set; the product builds row
+  choices only (FR-196), and EN-5 SHALL evaluate a FreeDelays state through
+  the row-factored operator `Σ_g P(g) opt_a Q(g, a)`. Graph precomputations
+  (Prob0, Prob1, end components) read an action's support as the union of its
+  row choices' supports, so a state has an action that stays inside a set
+  exactly when every row has a row choice that stays inside it.
+- The witness entry at a FreeDelays state SHALL be the action FR-198's witness
+  policy rules choose: for a maximum the MEC exit rule first, otherwise the
+  attaining action with ties broken by FR-196's canonical transition order.
+  Because an action attains exactly when every row attains its row optimum,
+  and that order is numeric row by row, the least attaining action is the
+  least attaining assignment of each row. Where a row's least attaining
+  assignment stays inside an end component and another attaining assignment
+  leaves it, the MEC exit rule takes the leaving one: with a free `B` that
+  resets the clock and returns to `Idle` at delay 1 and races a given `A` at 2
+  at delay 2, both attain the maximum's upper iterate, and the witness takes
+  delay 2, the exit, so replay reaches the target.
 - An every-scheduler run SHALL carry `Identity` where a workload run carries
   `WorkloadResolve` or `FreeDelays`, because there the scheduler chooses the
   identity itself.
@@ -194,6 +208,7 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
 | FR-204-AC-9 | Over AC-8's `Race` the initial state offers nine `FreeDelays` actions (two rows, given `[1]` and `[3]`, each assigning `B` one of 1, 2, 3) and no `WorkloadResolve`. The witness scheduler for the maximum `3/4` holds the `FreeDelays` entry with the rows given `[1]` to `B` delay 1 and given `[3]` to `B` delay 1, and for the minimum `1/4` the rows given `[1]` to `B` delay 2 and given `[3]` to `B` delay 3 (least attaining delay per row). A single race whose payoff falls as `B`'s delay rises gives equal optima before and after the draw, so AC-8 cannot separate them; AC-10 does. | Test (TC-642) |
 | FR-204-AC-10 | Separating vector. The model `Detour` (`time dense unit ms`) has `phase` (`Idle`, `Half` or `Done`) and `b`. `A`, guarded by `phase = Idle`, sets `Done` and `b` and declares `delay Detour::A ~ discrete { 1 ms: 1, 3 ms: 1 }`; `B` has no `delay` declaration, is guarded by `phase = Idle and x >= 1 ms` under the time invariant `x <= 3 ms` while `Idle`, and sets `Half`; `G` and `L` are guarded by `phase = Half` and declare `delay Detour::G ~ discrete { 1 ms: 1 }` and `delay Detour::L ~ discrete { 1 ms: 1 }`; `G` sets `Done` and `b`, `L` sets `Done`. The workload `All` weights `A`, `B`, `G` and `L` 1. For `eventually[0 ms, 2 ms] holds(d.b)`, write `Q(g, d)` for the probability after the draw `g` with `B` at delay `d`: `Q(1, 1) = 3/4` (tie: `A` wins `1/2`; `B` wins `1/2`, then `G` wins the tie at 2 ms with `1/2`), `Q(1, 2) = Q(1, 3) = 1` (`A` wins at 1 ms); `Q(3, 1) = 1/2` (`B` at 1 ms, then `G` at 2 ms), `Q(3, 2) = Q(3, 3) = 0` (nothing sets `b` by 2 ms). After the draw the maximum is `(1 + 1/2)/2 = 3/4` and the minimum `(3/4 + 0)/2 = 3/8`; a choice before the draw gives `5/8`, `1/2` and `1/2` for `B` at 1, 2 and 3, so maximum `5/8` and minimum `1/2`. Under `All`, `probability <= 0.7` settles `refuted` on the maximum `ExactValue{3/4}`, its witness entry the `FreeDelays` rows given `[1]` to `B` delay 2 and given `[3]` to `B` delay 1, and with `max_witness_paths` at least 2 its path set (`A` at 1 ms, `1/2`; `B` at 1 ms then `G` at 2 ms, `1/4`) replays `refuted`; `probability >= 0.45` settles `refuted` on the minimum `ExactValue{3/8}`, its witness entry the rows given `[1]` to `B` delay 1 and given `[3]` to `B` delay 2. A product that chose before the draw would prove both claims. | Test (TC-642) |
 | FR-204-AC-11 | Every free identity in each row. AC-6's `Race` with a second free operation `C`, guarded by `phase = Idle and x >= 1 ms` under the same invariant, setting `Done` and not `b`, and `Both` weighting `A`, `B` and `C` 1: the initial state offers nine `FreeDelays` actions, each one row given `[2]` assigning both `B` and `C` a delay in `[1, 3]`. The maximum is `ExactValue{1}` with the row `B` delay 1, `C` delay 2; the minimum is `ExactValue{0}` with the row `B` delay 2, `C` delay 1 (`C` wins at 1 ms). A witness row naming `B` alone refuses `invalid_runtime_input`/`invalid-value` at replay. | Test (TC-642) |
+| FR-204-AC-12 | Witness at an end component. The model `Loop` (`time dense unit ms`) has `phase` (`Idle` or `Done`) and `b`; `A`, guarded by `phase = Idle`, sets `Done` and `b` and declares `delay Loop::A ~ discrete { 2 ms: 1 }`; `B` has no `delay` declaration, is guarded by `phase = Idle and x >= 1 ms` under the time invariant `x <= 2 ms` while `Idle`, resets `x` and keeps `Idle`; the workload `Both` weights `A` and `B` 1. The initial state offers two `FreeDelays` actions, one row given `[2]` each: `B` delay 1 (`B` wins and returns to the initial state) and `B` delay 2 (tie: `A` wins `1/2`, `B` returns `1/2`). Both attain the maximum's upper iterate 1. The `Reach` claim `probability <= 0.9 [eventually holds(r.b)]` under `Both` settles `refuted` on the maximum `ExactValue{1}`, its witness entry the row given `[2]` to `B` delay 2 (the MEC exit, not the least delay 1), and the refutation replays `refuted`; the chain the entry `B` delay 1 would induce never reaches `b` (value `0`), which is why the least attaining delay is not the witness. | Test (TC-642) |
 
 ## Rulings
 
@@ -203,13 +218,13 @@ the last column names the fact that reopens it.
 
 | Question | Ruling | Reason | Reopen when |
 | --- | --- | --- | --- |
-| How the post-draw choice is represented | As the MDP action `FreeDelays` (FR-196) at the pre-draw state, one action per function from given vectors to free assignments, not as an intermediate chance-then-decision state with a new ProductKey member. | ADR-026 SD-3 names the choice; the factorization in Behavior shows the action form has the value of ADR-028 SCH-2's intermediate-state form for every objective EN-5 decides, so no new ProductKey tag is needed. | An objective whose one-step operator is not linear in the successor distribution is admitted at a mixed race, or the enumerated actions exceed `max_transitions` on a model the product must decide; then a pending given-draw ProductKey member with canonical bytes replaces the enumeration. |
+| How the post-draw choice is represented | As the MDP action `FreeDelays` (FR-196) at the pre-draw state, one action per function from given vectors to free assignments as the semantic choice set, built and evaluated row by row (FR-196), not as an intermediate chance-then-decision state with a new ProductKey member. | ADR-026 SD-3 names the choice; the factorization in Behavior shows the action form has the value of ADR-028 SCH-2's intermediate-state form for every objective EN-5 decides, so no new ProductKey tag is needed. | An objective whose one-step operator is not linear in the successor distribution is admitted at a mixed race; then a pending given-draw ProductKey member with canonical bytes replaces the row-factored operator. The built size is `s · w^k` row choices either way, so size is no reason to reopen. |
 | Which free identities a row covers | Every free racing identity at the state; a row naming a subset refuses. `WorkloadResolve` names one free identity before the draw; in a mixed state with one free identity it equals the constant `FreeDelays` action, with two or more it names no SD-3 choice, and the mixed state offers `FreeDelays` only (author decision under this ruling). | SD-3's race delays once over every racing identity, so it needs every free delay in one step; keeping both names in a mixed state would give one decision two spellings. | SD-3 is amended to let the workload exclude free identities from a race. |
 | Witness types in scope | `WitnessScheduler` and `WitnessEntry` (FR-202) are specified here; FR-202's separate `WitnessChoice` wrapper is removed, the choice is FR-196's `ProductAction`, of which `FreeDelays` is a member (author decision under this ruling). | One closed choice type gives one canonical body for the product edge, the witness entry and the certificate policy; a second enum with a second `free-delays` spelling would duplicate it. | A witness choice is needed that is not a product action. |
 
 ## Dependencies
 
-- The post-draw `FreeDelays` action (AC-6 to AC-11) is implemented under
+- The post-draw `FreeDelays` action (AC-6 to AC-12) is implemented under
   QSL-1667, in the lane of the EN-5 provider ticket QSL-1498. That change
   replaces the mixed-state `WorkloadResolve` path in the digital product in
   the same PR; it is not a Layer 4 deletion-table unit.

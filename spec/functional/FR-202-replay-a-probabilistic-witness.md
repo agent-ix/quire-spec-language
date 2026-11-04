@@ -92,9 +92,10 @@ contract.
 
 EN-5 SHALL form the WitnessScheduler from the optimizer's attaining policy on
 the evidence's states: each entry is the complete pre-choice ProductKey and the
-ProductAction the policy takes there; at a FreeDelays state the entry is the
-whole action, each row holding FR-204's least attaining assignment for its
-given vector. A path step through a FreeDelays action is a merged step
+ProductAction the policy takes there, chosen by FR-198's witness policy rules
+(the MEC exit rule of a maximum first, then the attaining choice with ties
+broken by canonical transition order). At a FreeDelays state the entry is the
+whole action FR-198 chose, one row choice per row. A path step through a FreeDelays action is a merged step
 (FR-196): it names the action, the post-key and the elapsed winning delay, and
 no single given vector; replay recomputes its probability as the sum over the
 action's rows of the row's given-vector probability times the mass the row's

@@ -15,7 +15,7 @@ Verify that under a workload EN-5 leaves the delay of an operation with no
 `>= θ` bound on the minimum and a `<= θ` bound on the maximum over that
 choice.
 
-Scope: FR-204-AC-5 to FR-204-AC-11.
+Scope: FR-204-AC-5 to FR-204-AC-12.
 
 ## Test Procedure
 
@@ -36,6 +36,8 @@ workload `One` with weight 1 on `send`.
 6. Over FR-204-AC-10's `Detour` under `All`, decide `probability <= 0.7 [eventually[0 ms, 2 ms] holds(d.b)]` with `max_witness_paths` 2 and `probability >= 0.45` over the same event; read each value, witness entry and path set, and replay the path set.
 7. Over FR-204-AC-11's `Race` with the free operations `B` and `C`, list the initial state's choices, decide the maximum and the minimum of `eventually[0 ms, 5 ms] holds(r.b)` under `Both`, and replay a witness whose row names `B` alone.
 
+8. Over FR-204-AC-12's `Loop` under `Both`, list the initial state's choices, decide `probability <= 0.9 [eventually holds(r.b)]`, read the witness entry, replay the refutation, and evaluate the chain induced by the entry `B` delay 1.
+
 Tag the tests `#[trace("TC-642", "<AC id>")]`.
 
 ## Expected Results
@@ -51,3 +53,4 @@ Tag the tests `#[trace("TC-642", "<AC id>")]`.
 - Step 5: `refuted` on the maximum `ExactValue{3/4}` with the rows given `[1]` to `B` delay 1 and given `[3]` to `B` delay 1; `refuted` on the minimum `ExactValue{1/4}` with the rows given `[1]` to `B` delay 2 and given `[3]` to `B` delay 3; nine `FreeDelays` choices and no `WorkloadResolve`.
 - Step 6: `refuted` on the maximum `ExactValue{3/4}` with the rows given `[1]` to `B` delay 2 and given `[3]` to `B` delay 1, the path set `A` at 1 ms (`1/2`) and `B` at 1 ms then `G` at 2 ms (`1/4`) replaying `refuted`; `refuted` on the minimum `ExactValue{3/8}` with the rows given `[1]` to `B` delay 1 and given `[3]` to `B` delay 2. Neither value is the before-draw `5/8` or `1/2`.
 - Step 7: nine `FreeDelays` choices, each one row given `[2]` naming `B` and `C`; maximum `ExactValue{1}` with `B` delay 1, `C` delay 2; minimum `ExactValue{0}` with `B` delay 2, `C` delay 1; the `B`-only row refuses `invalid_runtime_input`/`invalid-value`.
+- Step 8: two `FreeDelays` choices; `refuted` on the maximum `ExactValue{1}` with the row given `[2]` to `B` delay 2; replay `refuted`; the `B` delay 1 chain has value `0`.

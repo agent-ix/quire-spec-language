@@ -217,8 +217,11 @@ ascending lexicographic order of the given delays read as unsigned integers in
 `given` or `free` identities differ from those sets, a duplicate or missing
 support vector, a row out of order, or a free delay outside its identity's
 window at that state refuses.
-Unknown/extra/missing members refuse. Action equality/order uses complete
-JCS UTF-8 bytes. These are explicit new semantic choices, not a claim that
+Unknown/extra/missing members refuse. Action equality uses complete JCS
+UTF-8 bytes, and so does action order, except between two `FreeDelays`
+actions: those order row by row in row order, and within a row by the free
+delays read as unsigned integers in `free` order (numeric, so delay 9 precedes
+delay 10). This is the canonical transition order FR-198 breaks ties by. These are explicit new semantic choices, not a claim that
 QSpec FR-413/412 transport already accepts these spellings. No fake operation
 NodeId, receiver or random draw is assigned to a timed tail choice.
 
@@ -239,21 +242,32 @@ identities all have free delays offers UnitDelay and one
 identity and whose mass splits over every enabled identity by the workload's
 weights; a state whose racing identities all have given delays labels each
 race edge `Identity(r)` with `r` its first racing identity. A state in which
-given-delay and free-delay identities race together offers one `FreeDelays`
-choice per function from the conditioned given-delay support to free-delay
-assignments (FR-204): each row's free delays are chosen after its given vector
-is drawn. The choice is one distribution of total probability 1 over the race
-outcomes, the sum over its rows of the row's given-vector probability times
-that row's race outcome; each outcome edge advances its winning delay. Outcome
-edges of one FreeDelays choice that reach the same post-key with the same
-rewards (elapsed included) are one merged edge, as FR-187 merges draws; the
-edge names no given row, and replay recomputes its probability from the rows.
+given-delay and free-delay identities race together has as its choice set one
+`FreeDelays` action per function from the conditioned given-delay support to
+free-delay assignments (FR-204): each row's free delays are chosen after its
+given vector is drawn. An action is one distribution of total probability 1
+over the race outcomes, the sum over its rows of the row's given-vector
+probability times that row's race outcome; each outcome advances its winning
+delay. The product SHALL NOT build one edge set per action. It SHALL build,
+per row `g` and per assignment `a` of that row, the row-choice edges of `(g, a)`:
+the race outcomes of `g` with `a`, each with probability `P(g)` times the
+outcome's mass, outcomes reaching the same post-key with the same rewards
+(elapsed included) merged as FR-187 merges draws. A row-choice edge's `choice`
+is the one-row body `FreeDelays([row])`, which names that row only and is not
+an enabled action by itself. An action is one row choice per row, and its
+edges are the union of those row choices' edges, merged again by post-key and
+rewards; FR-198 and FR-201 evaluate a state's actions through the row-factored
+operator of FR-204, so `s · w^k` row choices (support size `s`, window size
+`w`, `k` free identities), not `(w^k)^s` actions, are built. A path step
+through the action names no given row, and replay recomputes its probability
+from the rows.
 The mixed state offers no WorkloadResolve: the choice made before the draw is
 the FreeDelays choice whose rows all hold one assignment, so a second name for
 it would duplicate a decision. FreeDelays adds no ProductKey member: the drawn
 given vector is not an intermediate state (ADR-028 SCH-2 is not used for the
 race); FR-204 shows the two representations give equal values. Each built
-outcome edge counts against `max_transitions`.
+row-choice edge counts against `max_transitions`; an action not built adds
+none.
 TerminalStutter retains its existing untimed profile meaning and is not a
 synonym for IdleObserve. FR-202 owns choice entries/path replay, FR-201 owns
 certificate policy entries, and FR-204 enumerates these actual digital actions.
