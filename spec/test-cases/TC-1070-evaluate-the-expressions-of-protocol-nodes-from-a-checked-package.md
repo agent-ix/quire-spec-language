@@ -246,7 +246,7 @@ slot, and its binder `m` or `choice` is shared with no other slot.
 | C14f | the package of C14e | any | the `Picked` constraint's visit is paired and not reported unpaired (AC-58) |
 | C15 | every slot of fixtures E, E-C and L, selected on the source route and on the bytes route | the slot's supply | the same triple (node, member, index), root, binders and origin; the bytes descriptor carries no span; `Decide.visible[0]` and `Decide.cases.guard[1]` select distinct origins (AC-65) |
 | C16 | a bare package with no supply, with identity rows of another package, with rows naming no identity; a missing node; a missing member | any | the three witness refusals report `CallAdmissionLocus::Package` and the in-process view the `Package` locus of `UnsupportedView`; the node and member refusals report `Node` and `Member`; no witness refusal reports `Node` or `Binder` (AC-66) |
-| C17 | a package with unsupported projections of several reasons at once, including the three equality-witness reasons | any | the first reason in FR-390's order is reported; equality-witness reasons at the `Package` locus, no charge (AC-67) |
+| C17 | a package with unsupported projections of several reasons at once | any | the first by locus (`Package` before `Node`), then node key, then reason order: `ForeignIdentityWitness` over a `Node` `MissingTypeRepresentation`; `MissingEqualityWitness` over a `Node` `MissingLiteralProjection`; `ForeignIdentityWitness` over `MissingEqualityWitness`; the three equality reasons in the order Missing, Unknown, Foreign; no charge (AC-67) |
 
 ## Fixture E-P: reference-population provenance extension
 

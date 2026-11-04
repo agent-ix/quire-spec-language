@@ -275,9 +275,13 @@ The directory FR-517 writes carries `equality.json`, written once beside
 `identities.json`, with its encoding rules: one JSON object, pretty-printed with
 two-space indent, members in the order below, closed (an unknown or repeated member
 is a refusal), UTF-8, ending in one newline, byte-identical for equal inputs. The
-rows are the producer's, issued at checking time and not derivable from the package
-(FR-533 "Equality slots"); the writer takes them from the in-process unit, never from
-the emitted bytes.
+rows are the producer's witness, issued at checking time (FR-533 "Equality slots");
+the writer builds each row from the in-process unit's rows, and joins every node and
+key member to the wire node id the emitted package spells that node with
+(`WireGraph::of_package_bytes` over the emitted bytes, as the inventory file does for
+its `node` member), because an in-process `CheckedNodeId` or `NodeKey` carries
+structural path segments and the wire form carries operand indices. A node the
+package does not name is the writer's `Error::Unnameable`.
 
 | Member | Content |
 | --- | --- |
@@ -609,9 +613,9 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
 | FR-531-AC-10 | The charge log of each call over the bare package equals the charge log of the same call over the in-process route (FR-532-AC-1, FR-533-AC-1); `BarePackage::new`, `with_supply` and view creation take no `Meter` and a call that refuses at supply admission leaves a caller's meter byte-identical. | Test (TC-1331) |
 | FR-531-AC-11 | A search of FR-515 for the phrases `bytes-only` and `separate future capability` and of FR-515, FR-516 and FR-520 for the heading `Consumer entry` finds that FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |
-| FR-531-AC-14 | The handoff directory of **R** holds `equality.json` with `format` `quire.checked-handoff.equality/1`; `ReadEqualityRows::read` over it and the package gives a slot call whose walk holds an equality application that evaluates to the in-process route's value and charge log; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files. | Test (TC-1331) |
+| FR-531-AC-14 | The handoff directory written for TC-1070 fixture E holds `equality.json` with `format` `quire.checked-handoff.equality/1`; `ReadEqualityRows::read` over it and the package gives a slot call on `Refund`'s retry relation (an integer `=` application) that evaluates to the in-process route's value and charge log; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files. | Test (TC-1331) |
 | FR-531-AC-15 | `ReadEqualityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with an unknown fact tag, one with another `format`, one with a row whose node id string the package does not hold and one whose application is not an equality application returns `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the tag, the format string or the first row, and returns no rows. | Test (TC-1331) |
-| FR-531-AC-16 | A slot call whose walk holds an equality application refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows that join to no equality application of the package, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; a slot call whose walk holds no equality application over the same supply evaluates. | Test (TC-1331) |
+| FR-531-AC-16 | A slot call on TC-1070 fixture E's `Refund` retry relation refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows that join to no equality application of the package, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; `Refund`'s `trigger.guard`, whose walk holds no equality application, over the same supply evaluates. | Test (TC-1331) |
 | FR-531-AC-17 | The encoding of the rows of "The equality file" vector equals the vector's bytes exactly; `ReadEqualityRows::read` over those bytes and a package that holds the node `["E"]` and `["U"]` returns rows equal to the input rows; for a row of every fact tag, every value-type tag, every owner kind and a compound unit id in a fact row, writing then reading returns equal rows and a second write is byte-identical; a checked rational whose numerator is spelled `+1`, `01` or `-0`, or whose denominator is `0` or `-2`, returns `Malformed`; a compound unit id in a `source_units` row returns `Malformed`. | Test (TC-1331) |
 
 ## Dependencies

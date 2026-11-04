@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the checked-package handoff writer on the ported IT-001 recipe **R**.
-Scope: FR-517-AC-1 to FR-517-AC-20.
+Scope: FR-517-AC-1 to FR-517-AC-22.
 
 ## Test Procedure
 
@@ -37,8 +37,10 @@ Scope: FR-517-AC-1 to FR-517-AC-20.
 | 18 | 18 | target state, un-ignored by the change that delivers it and replacing row 16's matching refusal: over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, write a source that reads no unit-typed member | the package holds the `dimension` and `unit` nodes; the reader admits it |
 | 19 | 19 | target state, un-ignored by the change that delivers it and replacing row 16's matching refusal: `sum<M::Total>` over the receipts and `capture targetFull: M::Total` | both check; the alias's bounds apply; no `UnresolvedTypeName` |
 | 20 | 20 | target state, un-ignored by the change that delivers it and replacing row 16's matching refusal: `sum<Cash>` with `type Cash = Quantity<U>;`, and `Healthy`'s sum over `Quantity<U>`, evaluated over receipts of 2 U and 3 U | the clause checks, lowers to the quantity family's `quire.op.collection.sum` identity and evaluates to 5 U |
+| 21 | 21 | write TC-1070 fixture E, then the `unit.native` of the inventory vector, and read each `equality.json`; write each twice | fixture E: bytes equal the FR-531 encoding of the in-process rows, three lists non-empty; `unit.native`: three empty lists; two writes byte-identical |
+| 22 | 22 | a unit whose equality rows name a node the package does not hold; the written file | `Error::Unnameable`, nothing written; the file holds no source text, digest or unlisted member |
 
-Tag the test `#[trace("FR-517-AC-1", ..., "FR-517-AC-20", "TC-1312")]`; row 3 and 4 also carry FR-042-AC-10.
+Tag the test `#[trace("FR-517-AC-1", ..., "FR-517-AC-22", "TC-1312")]`; row 3 and 4 also carry FR-042-AC-10.
 
 ## Expected Results
 

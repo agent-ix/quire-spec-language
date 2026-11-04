@@ -117,7 +117,10 @@ with no copy of the format.
 
 The writer builds `equality.json` from the in-process unit's `Emission` rows
 (`equality_producer_identity_rows`, `equality_fact_witness_rows` and
-`selected_source_unit_rows`), never from the emitted bytes. A unit that holds no
+`selected_source_unit_rows`). The emitted package bytes are used for one join only:
+every node and key member is written as the wire node id of that node, which the
+writer reads from `WireGraph::of_package_bytes` over the emitted bytes, as for the
+`node` member of `inventory.json`. A unit that holds no
 equality application writes the file with `applications`, `facts` and `source_units`
 empty, so the directory has the same paths for every unit.
 
@@ -361,8 +364,8 @@ the three directories. The packages hold:
 | FR-517-AC-18 | A measurement unit that the selected model's types name is part of the emitted package even when no expression of the compiled source reaches it: the package holds its `dimension` and `unit` nodes, and Contract IR's reader admits a package whose model `typeRef` names it. Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source that reads no unit-typed member is written and admitted. | Test (TC-1312) |
 | FR-517-AC-19 | A model alias is a source type name: over **R**'s model, `sum<M::Total>` and `capture targetFull: M::Total` resolve to the alias's unit-bearing bounded type, with its bounds, and neither refuses `UnresolvedTypeName`. | Test (TC-1312) |
 | FR-517-AC-20 | `sum<N>` checks a summand of any numeric family QSpec FR-145 and FR-322 give a `quire.op.collection.sum` identity for, the carried-quantity family included, and lowers to that family's identity; over **R**, the `Healthy` invariant's receipt sum over `Quantity<U>` checks and evaluates to the sum of the receipts' magnitudes in `U`. | Test (TC-1312) |
-| FR-517-AC-21 | Each handoff directory written for **R** contains `equality.json`, whose bytes equal the encoding FR-531 states of the rows of the in-process unit; for a unit with an `==` application the three row lists are non-empty and each row's node id strings name nodes of `checked-package.json`; for **R**'s unit with no equality application the file holds the three empty lists; two writes of equal requests give byte-identical files. | Test |
-| FR-517-AC-22 | A writer given a unit whose equality rows name a node the package does not hold returns `Error::Unnameable` and writes nothing, as for `inventory.json`; the written file holds no source text, no digest and no member the encoding of FR-531 does not list. | Test |
+| FR-517-AC-21 | The handoff directory written for TC-1070 fixture E contains `equality.json`, whose bytes equal the encoding FR-531 states of the rows of the in-process unit, with the three row lists non-empty (the unit holds integer `=` applications) and each row's node members naming nodes of `checked-package.json`; the directory written for the unit of the inventory vector (`unit.native`, which holds no `==` or `!=` application) contains `equality.json` with the three lists empty; two writes of equal requests give byte-identical files. | Test (TC-1312) |
+| FR-517-AC-22 | A writer given a unit whose equality rows name a node the package does not hold returns `Error::Unnameable` and writes nothing, as for `inventory.json`; the written file holds no source text, no digest and no member the encoding of FR-531 does not list. | Test (TC-1312) |
 
 ## Dependencies
 
