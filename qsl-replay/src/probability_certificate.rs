@@ -434,7 +434,7 @@ mod tests {
         }
     }
 
-    #[trace("FR-201-AC-6")]
+    #[trace("TC-636")]
     #[test]
     fn exact_certificate_checks_each_state_and_reports_first_bad_key() {
         let graph = graph();
@@ -466,7 +466,7 @@ mod tests {
         );
     }
 
-    #[trace("FR-201-AC-6")]
+    #[trace("TC-636")]
     #[test]
     fn exact_certificate_rejects_threshold_miss_and_cycles() {
         let graph = graph();
