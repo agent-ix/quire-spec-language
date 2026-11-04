@@ -1,0 +1,540 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-397-AC-27 and FR-397-AC-28 (TC-1091 steps 22 and 23): the IEEE width
+//! conversion, exact-to-IEEE conversion, IEEE-to-exact conversion and the
+//! standalone numeric-equality node evaluate through the owned `quire_exact`
+//! operation and charge exactly its `ieee.*` points, read from the meter's
+//! charge log under the row's limit tuple.
+
+use ix_trace_rs::trace;
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_package::CheckedPackage;
+use qsl_semantics::check::PackageDeclarations;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
+use quire_eval::FamilyOutcome;
+use quire_exact::{
+    compare_ieee, ChargePoint, Decimal, IeeeComparison, IeeeFlag, IeeeFlags, IeeeValue, Incomplete,
+    Integer, LimitKind, Meter, Outcome, Rational, Refusal, ScalarLimits, Undefined, Value,
+};
+use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::loss::ValueLoss;
+
+/// `I(i,o,w,r)` of QSpec TC-193: integer bits, value occurrences, work units
+/// and result units; every other limit is zero.
+fn limits(integer_bits: u64, occurrences: u64, work: u64, results: u64) -> ScalarLimits {
+    ScalarLimits {
+        integer_bits,
+        decimal_digits: 0,
+        scale_expansion: 0,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: occurrences,
+        work_units: work,
+        result_units: results,
+    }
+}
+
+const UNLIMITED: ScalarLimits = ScalarLimits {
+    integer_bits: u64::MAX,
+    decimal_digits: u64::MAX,
+    scale_expansion: u64::MAX,
+    text_input_bytes: u64::MAX,
+    text_scalars: u64::MAX,
+    normalized_scalars: u64::MAX,
+    unit_edges: u64::MAX,
+    value_occurrences: u64::MAX,
+    work_units: u64::MAX,
+    result_units: u64::MAX,
+};
+
+struct Run {
+    outcome: Outcome<Value>,
+    charges: Vec<ChargePoint>,
+    flags: Vec<IeeeFlag>,
+    consumed: [u64; 10],
+}
+
+/// A function body that reads the node's operands and does nothing else: the
+/// call's own charges, which come before the node and are not its budget.
+type Baseline = (&'static str, &'static str);
+
+/// Evaluates the node with `row` as the meter's remaining budget at the node:
+/// the budget is the row plus whatever the call spends before it, and the
+/// outcome and the charge log are read back relative to the node.
+fn run(
+    params: &str,
+    result: &str,
+    body: &str,
+    arguments: Vec<Value>,
+    row: ScalarLimits,
+    base: Baseline,
+) -> Run {
+    let before = evaluate(params, base.0, base.1, arguments.clone(), UNLIMITED);
+    let row_kinds = [
+        row.integer_bits,
+        row.decimal_digits,
+        row.scale_expansion,
+        row.text_input_bytes,
+        row.text_scalars,
+        row.normalized_scalars,
+        row.unit_edges,
+        row.value_occurrences,
+        row.work_units,
+        row.result_units,
+    ];
+    let mut sum = [0_u64; 10];
+    for (slot, (row, before)) in sum.iter_mut().zip(row_kinds.iter().zip(before.consumed)) {
+        *slot = row + before;
+    }
+    let mut at_node = evaluate(params, result, body, arguments, limits_of(sum));
+    at_node.charges.drain(..before.charges.len());
+    if let Outcome::Incomplete(incomplete) = &mut at_node.outcome {
+        let index = LimitKind::ALL
+            .iter()
+            .position(|kind| *kind == incomplete.limit_kind)
+            .expect("a limit kind");
+        incomplete.limit -= before.consumed[index];
+        incomplete.consumed -= before.consumed[index];
+    }
+    at_node
+}
+
+fn limits_of(kinds: [u64; 10]) -> ScalarLimits {
+    ScalarLimits {
+        integer_bits: kinds[0],
+        decimal_digits: kinds[1],
+        scale_expansion: kinds[2],
+        text_input_bytes: kinds[3],
+        text_scalars: kinds[4],
+        normalized_scalars: kinds[5],
+        unit_edges: kinds[6],
+        value_occurrences: kinds[7],
+        work_units: kinds[8],
+        result_units: kinds[9],
+    }
+}
+
+/// Checks `function f using v(<params>): <result> pure { <body> }` and
+/// evaluates it at `arguments` with `limits` as the meter's budget.
+fn evaluate(
+    params: &str,
+    result: &str,
+    body: &str,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+) -> Run {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function f using v({params}): {result} pure {{ {body} }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler admits the unit");
+    declarations.ieee_profile =
+        Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}")),
+    );
+    let mut meter = Meter::new(limits);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("f").expect("f is an identifier"),
+            arguments,
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect("the call runs");
+    let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
+        panic!("a kernel outcome, not {:?}", evaluation.outcome);
+    };
+    let flags = evaluation
+        .losses
+        .into_iter()
+        .filter_map(|each| match each.loss {
+            ValueLoss::IeeeFlags(flags) => Some(flags),
+            _ => None,
+        })
+        .flat_map(IeeeFlags::iter)
+        .collect();
+    Run {
+        outcome,
+        charges: meter
+            .admitted_charges()
+            .iter()
+            .map(|charge| charge.point)
+            .collect(),
+        flags,
+        consumed: LimitKind::ALL.map(|kind| meter.consumed(kind)),
+    }
+}
+
+fn f32v(bits: u32) -> Value {
+    Value::Float(IeeeValue::binary32(bits))
+}
+
+fn f64v(bits: u64) -> Value {
+    Value::Float(IeeeValue::binary64(bits))
+}
+
+fn incomplete(
+    kind: LimitKind,
+    limit: u64,
+    consumed: u64,
+    next: u64,
+    point: ChargePoint,
+) -> Outcome<Value> {
+    Outcome::Incomplete(Incomplete {
+        limit_kind: kind,
+        limit,
+        consumed,
+        next_charge: Integer::from(next),
+        charge_point: point,
+    })
+}
+
+/// `Value` has no equality; outcomes compare by their rendering.
+fn same(actual: &Outcome<Value>, expected: Outcome<Value>) {
+    assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+}
+
+const DECIMAL: &str = "Decimal[0, 100; 0, 2; nearest-even]";
+const F32: &str = "Float32[nearest-even]";
+const F64: &str = "Float64[nearest-even]";
+
+/// F24 and F25: a width conversion rounds once through
+/// `convert_ieee_width`, keeps a NaN's sign and payload, and refuses a
+/// payload the target cannot hold after `ieee.operands` only.
+#[trace("TC-1091", "FR-397-AC-27")]
+#[test]
+fn f24_f25_width_conversion_evaluates_and_charges_through_the_owned_operation() {
+    let widen = |bits, budget| {
+        run(
+            &format!("a: {F32}"),
+            F64,
+            &format!("convert<{F64}>(a)"),
+            vec![f32v(bits)],
+            budget,
+            (F32, "a"),
+        )
+    };
+    let wide = widen(0x3f80_0000, limits(64, 1, 4, 1));
+    same(
+        &wide.outcome,
+        Outcome::Completed(f64v(0x3ff0_0000_0000_0000)),
+    );
+    assert!(wide.flags.is_empty());
+    same(
+        &widen(0x3f80_0000, limits(32, 1, 4, 1)).outcome,
+        incomplete(
+            LimitKind::IntegerBits,
+            32,
+            32,
+            64,
+            ChargePoint::IeeeExactIntermediate,
+        ),
+    );
+    // The widening of the quiet NaN keeps its payload and raises nothing.
+    let nan = widen(0x7fc0_0001, limits(32, 1, 2, 1));
+    same(
+        &nan.outcome,
+        Outcome::Completed(f64v(0x7ff8_0000_0000_0001)),
+    );
+    assert!(nan.flags.is_empty());
+
+    let narrow = |bits, budget| {
+        run(
+            &format!("a: {F64}"),
+            F32,
+            &format!("convert<{F32}>(a)"),
+            vec![f64v(bits)],
+            budget,
+            (F64, "a"),
+        )
+    };
+    let signaling = narrow(0x7ff0_0000_0000_0001, limits(64, 1, 2, 1));
+    same(&signaling.outcome, Outcome::Completed(f32v(0x7fc0_0001)));
+    assert_eq!(signaling.flags, [IeeeFlag::Invalid]);
+    let negative = narrow(0xfff8_0000_0000_0003, limits(64, 1, 2, 1));
+    same(&negative.outcome, Outcome::Completed(f32v(0xffc0_0003)));
+    assert!(negative.flags.is_empty());
+    // Payload 2^22 does not fit binary32: refused after `ieee.operands`,
+    // before `ieee.result-retain`; the signaling source raises no `invalid`.
+    for bits in [0x7ff8_0000_0040_0000, 0x7ff0_0000_0040_0000] {
+        let refused = narrow(bits, limits(64, 1, 1, 0));
+        assert!(
+            matches!(
+                refused.outcome,
+                Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable { .. })
+            ),
+            "{bits:#x}: {:?}",
+            refused.outcome
+        );
+        assert!(refused.flags.is_empty(), "{bits:#x}");
+        assert_eq!(refused.charges, [ChargePoint::IeeeOperands], "{bits:#x}");
+    }
+    same(
+        &narrow(0x7ff8_0000_0040_0000, limits(64, 1, 0, 0)).outcome,
+        incomplete(LimitKind::WorkUnits, 0, 0, 1, ChargePoint::IeeeOperands),
+    );
+    // F31: charges of a finite narrowing, then strict `exact`.
+    let tenth = narrow(0x3fb9_9999_9999_999a, limits(64, 1, 4, 1));
+    same(&tenth.outcome, Outcome::Completed(f32v(0x3dcc_cccd)));
+    assert_eq!(tenth.flags, [IeeeFlag::Inexact]);
+    let strict = |budget| {
+        run(
+            &format!("a: {F64}"),
+            "Float32[exact]",
+            "convert<Float32[exact]>(a)",
+            vec![f64v(0x3fb9_9999_9999_999a)],
+            budget,
+            (F64, "a"),
+        )
+    };
+    let refused = strict(limits(64, 1, 3, 1));
+    let Outcome::Refused(Refusal::IeeeNotExact { would_be, .. }) = refused.outcome else {
+        panic!("ieee_not_exact, not {:?}", refused.outcome);
+    };
+    assert_eq!(would_be.iter().collect::<Vec<_>>(), [IeeeFlag::Inexact]);
+    assert_eq!(refused.charges.last(), Some(&ChargePoint::IeeeRound));
+    same(
+        &strict(limits(64, 1, 2, 1)).outcome,
+        incomplete(LimitKind::WorkUnits, 2, 2, 1, ChargePoint::IeeeRound),
+    );
+    let infinity = narrow(0xfff0_0000_0000_0000, limits(64, 1, 2, 1));
+    same(&infinity.outcome, Outcome::Completed(f32v(0xff80_0000)));
+    assert_eq!(
+        infinity.charges,
+        [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain]
+    );
+    same(
+        &narrow(0xfff0_0000_0000_0000, limits(64, 1, 1, 1)).outcome,
+        incomplete(LimitKind::WorkUnits, 1, 1, 1, ChargePoint::IeeeResultRetain),
+    );
+}
+
+/// F28 and the F24 rational: an exact operand rounds once under the target's
+/// mode and a decimal is sized by its retained coefficient and scale.
+#[trace("TC-1091", "FR-397-AC-27")]
+#[test]
+fn f28_exact_to_ieee_conversion_sizes_a_decimal_by_its_retained_representation() {
+    let decimal = || Value::Decimal(Decimal::new(Integer::from(100_i64), 2));
+    let convert = |budget| {
+        run(
+            "d: Decimal[0, 100; 0, 2; nearest-even]",
+            F32,
+            &format!("convert<{F32}>(d)"),
+            vec![decimal()],
+            budget,
+            (DECIMAL, "d"),
+        )
+    };
+    let done = convert(limits(32, 1, 4, 1));
+    same(&done.outcome, Outcome::Completed(f32v(0x3f80_0000)));
+    assert!(done.flags.is_empty());
+    assert_eq!(
+        done.charges.first(),
+        Some(&ChargePoint::IeeeOperands),
+        "the operand charges first"
+    );
+    same(
+        &convert(limits(6, 1, 4, 1)).outcome,
+        incomplete(LimitKind::IntegerBits, 6, 0, 7, ChargePoint::IeeeOperands),
+    );
+
+    let third = |budget| {
+        run(
+            "r: Rational[0, 1; 1, 3]",
+            F32,
+            &format!("convert<{F32}>(r)"),
+            vec![Value::Rational(
+                Rational::new(Integer::from(1_i64), Integer::from(3_i64)).unwrap(),
+            )],
+            budget,
+            ("Rational[0, 1; 1, 3]", "r"),
+        )
+    };
+    let rounded = third(limits(32, 1, 4, 1));
+    same(&rounded.outcome, Outcome::Completed(f32v(0x3eaa_aaab)));
+    assert_eq!(rounded.flags, [IeeeFlag::Inexact]);
+    same(
+        &third(limits(2, 1, 4, 1)).outcome,
+        incomplete(
+            LimitKind::IntegerBits,
+            2,
+            2,
+            32,
+            ChargePoint::IeeeExactIntermediate,
+        ),
+    );
+}
+
+/// F27: the IEEE-to-exact conversion charges `ieee.operands`,
+/// `ieee.exact-intermediate`, then `ieee.result-retain`.
+#[trace("TC-1091", "FR-397-AC-27")]
+#[test]
+fn f27_ieee_to_exact_conversion_charges_through_the_owned_operation() {
+    let to_half = |bits, budget| {
+        run(
+            &format!("a: {F32}"),
+            "Rational[0, 1; 1, 2]",
+            "convert<Rational[0, 1; 1, 2]>(a)",
+            vec![f32v(bits)],
+            budget,
+            (F32, "a"),
+        )
+    };
+    let done = to_half(0x3f00_0000, limits(32, 1, 3, 1));
+    same(
+        &done.outcome,
+        Outcome::Completed(Value::Rational(
+            Rational::new(Integer::from(1_i64), Integer::from(2_i64)).unwrap(),
+        )),
+    );
+    assert_eq!(
+        done.charges,
+        [
+            ChargePoint::IeeeOperands,
+            ChargePoint::IeeeExactIntermediate,
+            ChargePoint::IeeeResultRetain
+        ]
+    );
+    let nan = to_half(0x7fc0_0000, limits(32, 1, 2, 1));
+    same(&nan.outcome, Outcome::Undefined(Undefined::IeeeNotFinite));
+    assert_eq!(nan.charges, [ChargePoint::IeeeOperands]);
+    same(
+        &to_half(0x7f80_0000, limits(32, 1, 0, 0)).outcome,
+        incomplete(LimitKind::WorkUnits, 0, 0, 1, ChargePoint::IeeeOperands),
+    );
+}
+
+/// FR-397-AC-28 (F17): a standalone numeric equality charges as
+/// `compare_ieee`: `ieee.operands` then `ieee.result-retain`, identical to
+/// the owned comparison over the same operands and budget.
+#[trace("TC-1091", "FR-397-AC-28")]
+#[test]
+fn f17_standalone_numeric_equality_charges_as_compare_ieee() {
+    for (width, ty, qn, one) in [
+        (
+            32_u64,
+            F32,
+            Value::Float(IeeeValue::binary32(0x7fc0_0001)),
+            Value::Float(IeeeValue::binary32(0x3f80_0000)),
+        ),
+        (
+            64,
+            F64,
+            Value::Float(IeeeValue::binary64(0x7ff8_0000_0000_0001)),
+            Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000)),
+        ),
+    ] {
+        let params = format!("qn: {ty}, one: {ty}");
+        let args = vec![qn.clone(), one.clone()];
+        let (Value::Float(qn), Value::Float(one)) = (qn, one) else {
+            unreachable!()
+        };
+        let budgets = [
+            limits(width, 2, 2, 1),
+            limits(width, 2, 1, 1),
+            limits(width, 0, 2, 1),
+        ];
+        for (body, left, right) in [
+            ("qn = one", qn, one),
+            ("quire::value::ieee::numericEqual(qn, one)", qn, one),
+            ("one = one", one, one),
+        ] {
+            for budget in budgets {
+                let mut reference = Meter::new(budget);
+                let expected =
+                    compare_ieee(IeeeComparison::NumericEqual, left, right, &mut reference)
+                        .expect("same-width operands");
+                let reference_charges: Vec<_> = reference
+                    .admitted_charges()
+                    .iter()
+                    .map(|charge| charge.point)
+                    .collect();
+                let actual = run(&params, "Boolean", body, args.clone(), budget, (ty, "qn"));
+                let expected = match expected {
+                    Outcome::Completed(value) => Outcome::Completed(Value::Boolean(value)),
+                    Outcome::Incomplete(incomplete) => Outcome::Incomplete(incomplete),
+                    other => panic!("{other:?}"),
+                };
+                assert_eq!(
+                    format!("{:?}", actual.outcome),
+                    format!("{expected:?}"),
+                    "{body} under {budget:?}"
+                );
+                assert_eq!(actual.charges, reference_charges, "{body} under {budget:?}");
+            }
+        }
+        // The values and the exact charge log under the F17 tuple.
+        let equal = run(
+            &params,
+            "Boolean",
+            "qn = one",
+            args.clone(),
+            budgets[0],
+            (ty, "qn"),
+        );
+        same(&equal.outcome, Outcome::Completed(Value::Boolean(false)));
+        assert_eq!(
+            equal.charges,
+            [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain]
+        );
+        let unequal = run(
+            &params,
+            "Boolean",
+            "qn != one",
+            args.clone(),
+            // `!=` is the node followed by `not`, which charges its own work
+            // and result after the node; leave room for it.
+            limits(width, 2, 2 + 8, 1 + 8),
+            (ty, "qn"),
+        );
+        same(&unequal.outcome, Outcome::Completed(Value::Boolean(true)));
+        assert_eq!(
+            unequal.charges[..2],
+            [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain]
+        );
+        same(
+            &run(
+                &params,
+                "Boolean",
+                "qn = one",
+                args.clone(),
+                budgets[1],
+                (ty, "qn"),
+            )
+            .outcome,
+            incomplete(LimitKind::WorkUnits, 1, 1, 1, ChargePoint::IeeeResultRetain),
+        );
+        same(
+            &run(&params, "Boolean", "qn = one", args, budgets[2], (ty, "qn")).outcome,
+            incomplete(
+                LimitKind::ValueOccurrences,
+                0,
+                0,
+                2,
+                ChargePoint::IeeeOperands,
+            ),
+        );
+    }
+}

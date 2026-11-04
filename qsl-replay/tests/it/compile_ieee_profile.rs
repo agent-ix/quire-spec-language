@@ -723,16 +723,100 @@ fn square_root_lowers_with_its_float_width_rounding_mode_and_profile_law() {
     }
 }
 
+/// FR-397-AC-8 (QSL-1655): an exact source lowers to `from_exact`, a float of
+/// the other width to `to_float32` (with the target's mode) or `to_float64`
+/// (with none), each with the law and the target as the type argument; the
+/// strict IR reader admits each package (`compile_admitted` reads it).
 #[trace("TC-1091", "FR-397-AC-8")]
 #[test]
-fn conversion_into_a_float_is_never_admitted() {
+fn conversion_into_a_float_lowers_to_the_owned_ieee_operation() {
+    let rounding = |mode: &str| json!({"kind": "rounding", "value": mode});
+    for (source, target, identity, mode) in [
+        (
+            "Int[0, 10]",
+            "Float64[nearest-even]",
+            "from_exact",
+            Some("nearest-even"),
+        ),
+        (
+            "Rational[-10, 10; 1, 10]",
+            "Float64[nearest-even]",
+            "from_exact",
+            Some("nearest-even"),
+        ),
+        (
+            "Decimal[0, 100; 0, 3; nearest-even]",
+            "Float64[nearest-even]",
+            "from_exact",
+            Some("nearest-even"),
+        ),
+        (
+            "Float64[nearest-even]",
+            "Float32[toward-zero]",
+            "to_float32",
+            Some("toward-zero"),
+        ),
+        (
+            "Float32[nearest-even]",
+            "Float64[exact]",
+            "to_float64",
+            None,
+        ),
+    ] {
+        let text = format!(
+            "{HEADER}function c using v(a: {source}): {target} pure {{ convert<{target}>(a) }}"
+        );
+        let wire = wire(&text);
+        let node = operation(&wire, &format!("quire.op.ieee.{identity}"));
+        assert_ieee_law(&wire, node);
+        let lowered = &node["body"]["operation"];
+        assert_eq!(
+            lowered["mode"],
+            mode.map_or(Value::Null, rounding),
+            "{text}"
+        );
+        assert_eq!(lowered["member"]["kind"], "type_argument", "{text}");
+    }
+}
+
+/// FR-397-AC-8 and FR-397-AC-18: a conversion to the operand's own type, or to
+/// the same width under another mode, builds no conversion node; a float to
+/// `Decimal[..]`, `Integer` or `Int[..]`, and a quantity or `Boolean` to a
+/// float, refuse `ill_typed`/`type-mismatch`.
+#[trace("TC-1091", "FR-397-AC-8", "FR-397-AC-18")]
+#[test]
+fn same_width_conversion_builds_no_node_and_non_exact_sources_refuse() {
+    for target in [
+        "Float64[nearest-even]",
+        "Float64[toward-zero]",
+        "Float64[exact]",
+    ] {
+        let text = format!("{HEADER}function c using v(a: Float64[nearest-even]): {target} pure {{ convert<{target}>(a) }}");
+        let wire = wire(&text);
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        assert!(
+            nodes.iter().all(|node| {
+                let identity = node["body"]["operation"]["identity"].as_str().unwrap_or("");
+                !identity.starts_with("quire.op.ieee.to_float")
+                    && !identity.contains("convert")
+                    && identity != "quire.op.ieee.from_exact"
+            }),
+            "{target}"
+        );
+    }
     for (source, target) in [
-        ("Int[0, 10]", "Float64[nearest-even]"),
-        ("Float32[nearest-even]", "Float64[nearest-even]"),
-        ("Float64[nearest-even]", "Float32[nearest-even]"),
+        (
+            "Float64[nearest-even]",
+            "Decimal[0, 100; 0, 3; nearest-even]",
+        ),
+        ("Float64[nearest-even]", "Integer"),
+        ("Float64[nearest-even]", "Int[0, 10]"),
+        ("Boolean", "Float64[nearest-even]"),
     ] {
         refusal(
-            &format!("{HEADER}function convert_float using v(a: {source}): {target} pure {{ convert<{target}>(a) }}"),
+            &format!(
+                "{HEADER}function c using v(a: {source}): {target} pure {{ convert<{target}>(a) }}"
+            ),
             Code::IllTyped,
             "type-mismatch",
         );

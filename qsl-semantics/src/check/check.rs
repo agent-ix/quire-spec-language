@@ -4575,6 +4575,35 @@ impl<'a> Typer<'a> {
                     location,
                 ))
             }
+            // FR-397 "Conversion into a float": a float of the target's width
+            // whose mode differs is the operand retyped. The mode is part of
+            // the type; no node is built, nothing is charged.
+            (ValueType::Float(source), ValueType::Float(to)) if source.width() == to.width() => {
+                let mut retyped = operand;
+                retyped.value_type = target.clone();
+                Ok(retyped)
+            }
+            // A cross-width float, or an `Integer`, `Int[..]`, `Rational[..]`
+            // or `Decimal[..]`, converts through the owned IEEE operation.
+            (
+                ValueType::Float(_)
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_),
+                ValueType::Float(_),
+            ) => {
+                if self.scope.ieee_profile.is_none() {
+                    return Err(refuse(location, CheckCause::IeeeProfileNotAdmitted));
+                }
+                let converted =
+                    EqualityOperand::converted(operand.value_type.clone(), target.clone());
+                Ok(node(
+                    NodeKind::ConvertScalar(converted, self.push(operand)),
+                    target.clone(),
+                    location,
+                ))
+            }
             (ValueType::Rational(_) | ValueType::Decimal(_), ValueType::Decimal(decimal))
                 if !admits_equality_conversion(&operand.value_type, target, &self.units) =>
             {
