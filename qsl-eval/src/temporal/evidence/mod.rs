@@ -24,6 +24,7 @@ mod request;
 mod trigger;
 mod work;
 
+pub use super::facts::{ClauseFacts, ClauseFormula};
 pub use activation::{
     activate, scope_disposition, Activation, ActivationFault, ActivationInput, ActivationStop,
     ClauseShape, Completeness, Contradiction, Disposition, ExecutionDisposition, FaultKind,
@@ -43,7 +44,7 @@ pub use ledger::{
     SourceBinding,
 };
 pub use limits::{CounterKind, EvidenceCounter, EvidenceUsage, TemporalEvidenceLimits};
-pub use package::{instance_bound_indices, EvidencePackage, PackageMismatch, PackageRows};
+pub use package::{bound_atom_indices, ClauseName, EvidencePackage, PackageMismatch, PackageRows};
 pub use request::{
     ActivationRow, ActivationState, CompletenessRecord, EvidenceIncomplete, EvidencePosition,
     EvidenceRef, EvidenceRequest, EvidenceResult, EvidenceSubject, Indeterminate, NonValue,
@@ -53,4 +54,5 @@ pub use trigger::{
     CaptureFact, CapturedValue, EmptyIdentity, Evicted, ExecutionOrigin, Payload, Receipt,
     SemanticTriggerIdentity, TriggerDelivery, TriggerEvidence, TriggerRecord, TriggerScope,
 };
-pub use work::{ClauseFormula, ClauseWork, NodeReach, NodeShape, ReachFault};
+pub(super) use work::shape;
+pub use work::{ClauseWork, NodeReach, NodeShape, ReachFault};

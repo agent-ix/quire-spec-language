@@ -81,7 +81,7 @@ pub(crate) fn compensation_origin(protocol: &str, template: &str) -> String {
 /// occurrence of the node it declares is recorded there, and a location that
 /// roots an expression tree resolves its paths against that tree's spans.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ProtocolSite<'a> {
+pub enum ProtocolSite<'a> {
     /// The protocol's declaration: its `protocol_clause` node's `declaration`
     /// occurrence and the `over` and activation binders' `expression`
     /// occurrences.
@@ -128,7 +128,7 @@ pub(crate) enum ProtocolSite<'a> {
 
 /// The `Origin::TypeDeclaration` name of `site` of protocol `protocol`.
 /// Spaced, so it names no declared type.
-pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
+pub fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
     match site {
         ProtocolSite::Declaration => declaration_origin(protocol),
         ProtocolSite::Finish(name) => format!("protocol {protocol} finish {name}"),

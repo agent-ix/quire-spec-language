@@ -107,9 +107,10 @@ pub use model::{
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{
-    compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
-    CompensationNodes, ProtocolInput, ProtocolSite,
+    compensation_origin, declaration_origin, protocol_location, AttemptNodes, CompensationNodes,
+    ProtocolInput,
 };
+pub use protocol::{protocol_site, ProtocolSite};
 pub(crate) use state::{
     protocol_attempt_operation_location, protocol_attempt_operation_site,
     state_clause_name_location, state_clause_name_site, state_operation_location,
@@ -4025,6 +4026,10 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
+            NodeKind::QuantityPower(base, exponent) => (
+                Keyed::Application(Operator::Binary, plain("quire.op.quantity.pow")),
+                Operands::Two(base, exponent),
+            ),
             NodeKind::Ieee(operator, rounding, left, right) => {
                 let ValueType::Float(float) = node.at(*left).value_type() else {
                     return Err(fault(node.location(), KeyFault::UntypedIeeeOperand));
@@ -4470,7 +4475,29 @@ impl<'a> Lowering<'a> {
                 };
                 let target = target.clone();
                 let member = self.type_argument(&target, node.location())?;
-                let operation = if matches!(
+                let operation = if let ValueType::Float(to) = &target {
+                    // FR-397 "Conversion into a float": a float source is a
+                    // width conversion (`to_float32` rounds under the
+                    // target's mode, `to_float64` is exact and carries none);
+                    // an exact source is `from_exact` under the target's mode.
+                    let law = self.law(LawRole::IeeeProfile, node.location())?;
+                    let rounding = OperationMode::Rounding(to.rounding());
+                    let (identity, mode) = match (node.at(*operand).value_type(), to.width()) {
+                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary32) => {
+                            ("quire.op.ieee.to_float32", Some(rounding))
+                        }
+                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary64) => {
+                            ("quire.op.ieee.to_float64", None)
+                        }
+                        _ => ("quire.op.ieee.from_exact", Some(rounding)),
+                    };
+                    Operation {
+                        laws: vec![law],
+                        mode,
+                        member: Some(member),
+                        ..plain(identity)
+                    }
+                } else if matches!(
                     node.at(*operand).value_type(),
                     ValueType::Quantity(_) | ValueType::CarriedQuantity(_)
                 ) {
@@ -4658,6 +4685,44 @@ impl<'a> Lowering<'a> {
                         Operation {
                             leaves,
                             ..plain("quire.op.collection.contains")
+                        },
+                    ),
+                    Operands::Two(collection, item),
+                )
+            }
+            NodeKind::DropFirst(source) => {
+                let ValueType::Collection(collection_type) = node.at(*source).value_type() else {
+                    return Err(fault(node.location(), KeyFault::UnorderedFirstOccurrence));
+                };
+                let identity = match collection_type.kind() {
+                    CollectionKind::Sequence => "quire.op.collection.sequence.drop_first",
+                    CollectionKind::OrderedSet => "quire.op.collection.ordered_set.drop_first",
+                    CollectionKind::Set | CollectionKind::Bag => {
+                        return Err(fault(node.location(), KeyFault::UnorderedFirstOccurrence))
+                    }
+                };
+                (
+                    Keyed::Application(Operator::Collection, plain(identity)),
+                    Operands::One(source),
+                )
+            }
+            NodeKind::RemoveOne(collection, item) => {
+                let leaves = if let ValueType::Collection(collection_type) =
+                    node.at(*collection).value_type()
+                {
+                    self.leaves(
+                        LeafSource::Compared(collection_type.element()),
+                        node.location(),
+                    )?
+                } else {
+                    Vec::new()
+                };
+                (
+                    Keyed::Application(
+                        Operator::Collection,
+                        Operation {
+                            leaves,
+                            ..plain("quire.op.collection.remove_one")
                         },
                     ),
                     Operands::Two(collection, item),

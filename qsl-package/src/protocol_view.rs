@@ -358,7 +358,7 @@ fn malformed(node: &CheckedNodeId, member: &'static str) -> ViewRefusal {
 }
 
 /// The argument `name` of `node`'s application body.
-fn argument<'n>(node: &'n Node, name: &str) -> Option<&'n CheckedTerm> {
+pub(crate) fn argument<'n>(node: &'n Node, name: &str) -> Option<&'n CheckedTerm> {
     let CheckedTerm::Application { arguments, .. } = &node.body else {
         return None;
     };
@@ -373,7 +373,7 @@ fn required<'n>(node: &'n Node, name: &'static str) -> Result<&'n CheckedTerm, V
 }
 
 /// The member `name` of the Group `term`.
-fn group_member<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedTerm> {
+pub(crate) fn group_member<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedTerm> {
     let CheckedTerm::Aggregate { members } = term else {
         return None;
     };
@@ -383,14 +383,14 @@ fn group_member<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedTerm
     })
 }
 
-fn reference(term: &CheckedTerm) -> Option<&CheckedNodeId> {
+pub(crate) fn reference(term: &CheckedTerm) -> Option<&CheckedNodeId> {
     match term {
         CheckedTerm::Reference { target } => Some(target),
         _ => None,
     }
 }
 
-fn text(term: &CheckedTerm) -> Option<&str> {
+pub(crate) fn text(term: &CheckedTerm) -> Option<&str> {
     match term {
         CheckedTerm::Literal {
             value_kind: LiteralKind::Text,
@@ -401,7 +401,7 @@ fn text(term: &CheckedTerm) -> Option<&str> {
     }
 }
 
-fn integer(term: &CheckedTerm) -> Option<u64> {
+pub(crate) fn integer(term: &CheckedTerm) -> Option<u64> {
     match term {
         CheckedTerm::Literal {
             value_kind: LiteralKind::Integer,

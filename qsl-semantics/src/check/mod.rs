@@ -118,6 +118,7 @@ mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
+pub use lowering::{protocol_site, ProtocolSite};
 mod hybrid;
 mod hyper_clause;
 mod node_key;

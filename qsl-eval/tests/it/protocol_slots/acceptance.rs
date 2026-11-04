@@ -60,6 +60,17 @@ fn fixture_from_document(
     CheckedPackage,
     qsl_semantics::model::normalize::EffectiveView,
 ) {
+    fixture_named(source, bytes, "acceptance")
+}
+
+fn fixture_named(
+    source: &str,
+    bytes: &[u8],
+    name: &str,
+) -> (
+    CheckedPackage,
+    qsl_semantics::model::normalize::EffectiveView,
+) {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("protocol", "acceptance"),
         "acceptance.native",
@@ -80,7 +91,7 @@ fn fixture_from_document(
         CheckedPackage::link(
             PackageDeclarations::assemble(
                 parsed.source().reference().clone(),
-                "acceptance".to_owned(),
+                name.to_owned(),
                 unit,
                 models,
                 Vec::new(),
@@ -4695,4 +4706,261 @@ fn observation_fault_is_preserved_without_charging_the_meter() {
         panic!("the original observation fault is returned: {result:?}");
     };
     assert_eq!(returned, fault);
+}
+
+fn bare_rows(
+    package: &CheckedPackage,
+    v2: &qsl_package::CheckedPackageV2,
+) -> qsl_package::ReadIdentityRows {
+    qsl_package::ReadIdentityRows::of_rows(
+        v2,
+        package.graph().selected_exact_declaration_rows().to_vec(),
+        package.graph().selected_exact_field_rows().to_vec(),
+    )
+}
+
+/// FR-533-AC-1 (selection half), AC-4 (selection path), with the bytes-route
+/// site names equal to the source selector's: over every slot kind of TC-1070
+/// the selection read from the package's nodes alone names the root and the
+/// binders (name, level, type, key) the source selector names.
+#[trace("FR-533-AC-1", "FR-533-AC-4", "TC-1333")]
+#[test]
+fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let bare = qsl_package::BarePackage::new(v2)
+        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let view = package.evaluation_view();
+    let row_origins: std::collections::BTreeSet<String> = v2
+        .checked_term_data()
+        .unwrap()
+        .protocol_locations
+        .iter()
+        .map(|row| format!("{:?}", row.location.origin))
+        .collect();
+    let mut kinds = std::collections::BTreeSet::new();
+    let spanned = [
+        "visible",
+        "cases.guard",
+        "related.from",
+        "related.to",
+        "guard",
+    ];
+    for parity in parity_slots(&package) {
+        let wanted = slot(
+            &package,
+            parity.protocol,
+            parity.owner,
+            parity.member,
+            parity.index,
+        );
+        let descriptor = qsl_package::ProtocolSlotDescriptor::new(
+            wanted.node.clone(),
+            wanted.member.clone(),
+            wanted.index,
+        );
+        let source = view
+            .select_protocol_slot(&descriptor)
+            .expect("source selects");
+        // The source selector reads a compensation node's slots from the
+        // template at the node's position in the id-sorted `keys`, a
+        // position the source-ordered template list does not share (the
+        // node `slot()` returns for "Refund" is declared "Partial"). The
+        // bare selection reads the node's own body, so it is compared
+        // through the node whose declaration names the owner.
+        let node = if parity.protocol == parity.owner {
+            wanted.node.clone()
+        } else {
+            let declared = v2
+                .graph()
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.declaration.as_ref().is_some_and(|d| {
+                        d.qualified_name.last().map(|s| &**s) == Some(parity.owner)
+                            && d.qualified_name.first().map(|s| &**s) == Some(parity.protocol)
+                    }) && &*node.node_tag == "protocol"
+                })
+                .expect("the owner is declared");
+            let ids = qsl_semantics::check::wire_id::WireGraph::new(
+                v2.graph().nodes.iter().map(|node| &node.node_id),
+            )
+            .expect("wire ids")
+            .key(&declared.node_id)
+            .expect("key");
+            if &*declared.semantic_form == "compensation" {
+                ids
+            } else {
+                wanted.node.clone()
+            }
+        };
+        let bare_descriptor =
+            qsl_package::ProtocolSlotDescriptor::new(node, wanted.member.clone(), wanted.index);
+        let chosen = bare
+            .select_protocol_slot(&bare_descriptor)
+            .unwrap_or_else(|failure| panic!("{}: {failure:?}", parity.name));
+        assert_eq!(
+            chosen.root(),
+            source.root().node(),
+            "{} owner {} node {:?}",
+            parity.name,
+            parity.owner,
+            descriptor.node()
+        );
+        let mut expected: Vec<_> = source
+            .sources()
+            .iter()
+            .map(|s| {
+                (
+                    s.level(),
+                    s.binder().clone(),
+                    s.name().to_owned(),
+                    s.value_type().clone(),
+                )
+            })
+            .collect();
+        expected.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+        let got: Vec<_> = chosen
+            .sources()
+            .iter()
+            .map(|s| {
+                (
+                    s.level(),
+                    s.binder().clone(),
+                    s.name().to_owned(),
+                    s.value_type().clone(),
+                )
+            })
+            .collect();
+        assert_eq!(got, expected, "{}", parity.name);
+        assert_eq!(chosen.frame_len(), got.len());
+        // The site name the source selector locates the slot under.
+        let source_origin = format!("{:?}", source.checked_body().root().location().origin);
+        let ours: Vec<String> = chosen
+            .origins()
+            .iter()
+            .map(|origin| format!("TypeDeclaration {{ name: {origin:?} }}"))
+            .collect();
+        if ours.len() == 1 && !spanned.contains(&parity.member) {
+            assert_eq!(ours[0], source_origin, "{}", parity.name);
+        } else if !ours.is_empty() {
+            assert!(
+                ours.contains(&source_origin),
+                "{}: {ours:?} does not hold {source_origin}",
+                parity.name
+            );
+        }
+        for origin in &ours {
+            assert!(
+                row_origins.contains(origin) || origin.ends_with(" body\" }"),
+                "{}: {origin}",
+                parity.name
+            );
+        }
+        kinds.insert(parity.member);
+    }
+    assert!(kinds.len() >= 12, "{kinds:?}");
+}
+
+/// FR-531-AC-5: rows produced for another package are `Foreign`. `Unknown` is
+/// not reachable through a package read: the intake join drops a row naming a
+/// node the package does not hold, so IR's `from_stage_rows` only fails for a
+/// row the join cannot reconcile, which this fixture cannot produce; it is
+/// not claimed here.
+#[trace("FR-531-AC-5", "TC-1331")]
+#[test]
+fn rows_of_another_package_are_a_foreign_identity_witness() {
+    use qsl_package::{BareSelectionFailure, IdentityWitnessRefusal};
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let rows = bare_rows(&package, read.admitted());
+    let (other, _) = fixture_named(SOURCE, &serde_json::to_vec(&document()).unwrap(), "other");
+    let domain = qsl_semantics::model::intake::package_input([serde_json::to_vec(&document())
+        .unwrap()
+        .as_slice()])
+    .unwrap();
+    let other_read = qsl_package::read_evaluation_package(
+        &other,
+        qsl_semantics::library::LibraryName::new("other").unwrap(),
+        &domain,
+        qsl_package::V2ReadLimits::default(),
+    )
+    .expect("the other package is admitted");
+    let bare = qsl_package::BarePackage::new(other_read.admitted())
+        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let clause = slot(&other, "Refunds", "Refunds", "activation.guard", None).node;
+    let result = bare.select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+        clause,
+        "activation.guard",
+        None,
+    ));
+    assert!(matches!(
+        result,
+        Err(BareSelectionFailure::Identity(
+            IdentityWitnessRefusal::Foreign
+        ))
+    ));
+}
+
+/// FR-531-AC-5 (Missing) and FR-390 selection rules 1 and 2 over the
+/// bare package: no supply is `Missing` before any node is read; an unknown
+/// node, a non-protocol node, an absent member and an index defect refuse as
+/// the source selector does.
+#[trace("FR-531-AC-4", "TC-1331")]
+#[test]
+fn the_bare_selection_refuses_as_the_source_selection_does() {
+    use qsl_package::{BareSelectionFailure, IdentityWitnessRefusal, SlotSelectionFailure};
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let bare = qsl_package::BarePackage::new(v2)
+        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let view = package.evaluation_view();
+    let clause = slot(&package, "Refunds", "Refunds", "activation.guard", None).node;
+    let descriptor = |member: &str, index| {
+        qsl_package::ProtocolSlotDescriptor::new(clause.clone(), member, index)
+    };
+    let unsupplied = qsl_package::BarePackage::new(v2)
+        .select_protocol_slot(&descriptor("activation.guard", None));
+    assert!(matches!(
+        unsupplied,
+        Err(BareSelectionFailure::Identity(
+            IdentityWitnessRefusal::Missing
+        ))
+    ));
+    for (member, index) in [
+        ("activation.guard", Some(0)),
+        ("captures", None),
+        ("captures", Some(9)),
+        ("nothing", None),
+    ] {
+        let d = descriptor(member, index);
+        let want = view.select_protocol_slot(&d).err().expect("source refuses");
+        let got = bare.select_protocol_slot(&d).expect_err("bare refuses");
+        assert_eq!(
+            format!("{want:?}"),
+            match got {
+                BareSelectionFailure::Slot(failure) => format!("{failure:?}"),
+                other => panic!("{other:?}"),
+            }
+        );
+    }
+    let expression = view
+        .select_protocol_slot(&descriptor("activation.guard", None))
+        .expect("source selects")
+        .root()
+        .node()
+        .clone();
+    let d = qsl_package::ProtocolSlotDescriptor::new(expression, "x", None);
+    let want = view.select_protocol_slot(&d).err().expect("source refuses");
+    assert!(matches!(want, SlotSelectionFailure::MalformedNode(_)));
+    assert!(matches!(
+        bare.select_protocol_slot(&d),
+        Err(BareSelectionFailure::Slot(
+            SlotSelectionFailure::MalformedNode(_)
+        ))
+    ));
 }

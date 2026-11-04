@@ -40,6 +40,7 @@ mod float_callables;
 mod float_rounding;
 mod footprints;
 mod hyper_tuple;
+mod ieee_node_charges;
 mod inherited_attributes;
 mod int_arithmetic_expected_type;
 mod kernel_refusal_payloads;
