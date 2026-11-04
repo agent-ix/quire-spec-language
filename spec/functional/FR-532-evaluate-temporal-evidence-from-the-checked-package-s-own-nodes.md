@@ -153,8 +153,8 @@ no package for such a clause, FR-337-AC-15 is untagged, the in-process plan faul
 `aggregate-formula-not-emitted`, and no operation catalog entry exists for the node
 in QSpec or in Contract IR's reader. The criteria for aggregate atoms are specified
 now and are gated, as the IR-gated criteria of FR-533 are, on QSL-1643 (emission of
-aggregate clauses), a QSpec catalog entry for the node and its admission by Contract
-IR. No hand-built wire package can stand in: `read_checked_package` refuses an
+aggregate clauses) and QSL-1644 (a QSpec catalog entry for the node and its
+admission by Contract IR). No hand-built wire package can stand in: `read_checked_package` refuses an
 operation its catalog does not hold.
 
 ### The package identity of a progress binding and a result
@@ -205,6 +205,6 @@ the three routes. Construction charges nothing.
   call and the arena index as an atom spelling, and makes `ClauseFormula::of_graph`
   dedupe shared nodes by the entry's `node` (the per-use list it reads today would
   count a shared node once per use in `formula_nodes`, against FR-523-AC-6 and
-  FR-532-AC-10). The aggregate criteria are gated on QSL-1643, a QSpec catalog
-  entry for the aggregate node and its admission by Contract IR.
+  FR-532-AC-10). The aggregate criteria are gated on QSL-1643 and QSL-1644 (the QSpec catalog
+  entry for the aggregate node and its admission by Contract IR).
 - **Downstream:** quire-protocol FR-046.

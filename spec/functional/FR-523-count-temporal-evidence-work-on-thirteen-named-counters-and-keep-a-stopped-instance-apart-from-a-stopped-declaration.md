@@ -102,7 +102,7 @@ at each eligible position and one scan per position).
   (QSpec FR-414-AC-8's one unit per window position visited). `visited` counts those
   `valuations` units by its own definition and takes no further unit; `positions` and
   `formula_nodes` are unchanged by a window read, and a window position that is no
-  request position is not visited. A silent sample holds no window position.
+  request position is not visited. A silent sample holds no window position. The atom lookups are charged in addition to the window units of QSpec FR-414-AC-8: a clause that looks an aggregate atom up at four positions and reads windows of 1, 2, 3 and 3 positions charges 4 + 9 = 13 `valuations` units.
 - **Evaluated position visit.** A silent sample is a fixed-sample watermark
   sample with no observation (FR-504); it is not an observed position. Every
   `temporal.visit` charge FR-501-AC-12 lists (a temporal node at its activation, a

@@ -26,7 +26,7 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-13. **R** is the pa
 | 8 | 9 | enumerate the public methods of `EvidencePackage` and `CheckedPackageEvaluation` against the inventory table | one row each; an unlisted method fails the test |
 | 9 | 10 | charge logs of bare and in-process calls; `new`, `with_supply`, view creation | equal; no `Meter` taken; a refusing call leaves the meter identical |
 | 10 | 12 | `ReadIdentityRows::read` over a non-JSON file, an unknown or repeated member, another `format`, a row the package does not hold, a form that does not match its identity | `Malformed`, `Malformed`, `Format`, `Unjoined`, `Unjoined`; no rows |
-| 11 | 13 | **R**'s identity file: every identity kind; an uppercase digest; a short digest; an absent node reference; a forged row that joins | encodings as stated; rows equal the writer's; `Malformed`; `Malformed`; `Unjoined`; accepted with no authority claimed |
+| 11 | 13 | **R**'s identity file: every identity kind; a unit with kind `compound`; a declared unit with an absent node reference; a `declared_unit` row whose identity is a record; a forged row that joins | encodings as stated; rows equal the writer's; `Malformed`; `Unjoined`; `Unjoined`; accepted with no authority claimed |
 | 12 | 11 | read FR-515, FR-516, FR-520 | the out-of-scope sentence is gone; each has a "Consumer entry" section naming FR-531 |
 
 Tag the test `#[trace("FR-531-AC-1", ..., "FR-531-AC-13", "TC-1331")]`.

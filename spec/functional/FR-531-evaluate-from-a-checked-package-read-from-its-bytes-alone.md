@@ -223,9 +223,16 @@ An **`EffectiveId`** is `{ "chain": [ { "package": <text>, "node": <text> }, ...
 the root effective type first and then each member in owner order. A **`MemberId`**
 (`member_id`) is `{ "owner": { "kind": "node", "node": <node reference> } | { "kind":
 "effective", "effective": <EffectiveId> }, "member": <nonempty text> }`. A **`UnitId`**
-is `{ "domain": "declared" | "compound", "digest": <64 lowercase hexadecimal
-digits> }`, the 32 digest bytes in order. Text is UTF-8 as written, and a number
-is never used for an identity.
+of a `declared_unit` row is `{ "kind": "declared", "node": <node reference> }`, the
+declared unit's node. The pinned `UnitId` is `Declared(NodeKey)` or
+`Compound(list of (NodeKey, Integer))`, with no digest, so no digest spelling exists.
+A compound unit is the evaluator's own product over declared root units and is no
+selected declaration: the `declared_unit` form takes only a declared unit, `read`
+refuses any other `kind` as `Malformed`, and the file carries no compound unit. A
+slot over a quantity of a compound unit needs the reader projection of compound
+`UnitId` (QSL-1626), which is the existing unmet-parity dependency of FR-533, not a
+gap of the file. Text is UTF-8 as written, and a number is never used for an
+identity.
 
 Trust boundary. Rows read from a consumer-parsed file grant no authority: IR
 states that a row constructed by a caller does not make its Exact identity
@@ -306,7 +313,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-7 | No result of the bare route holds, in its canonical bytes or its fields, a clause name, a source label or a source span: over **R**, the encoded `EvidenceResult` and `ProtocolSlotEvaluation` values do not contain the unit's `source:` labels or a byte region of the source map, and a clause name appears only as the `temporal_clause_names` row of its occurrence gives it, identically on every route. Identity is spelled as the "What the bytes do not carry" list states, and the progress binding of a result holds `package.name()`. | Test (TC-1331) |
 | FR-531-AC-8 | The handoff directory of **R** holds `identities.json` with `format` `quire.checked-handoff.identities/1`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
 | FR-531-AC-12 | `ReadIdentityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with another `format`, one with a row whose `structural_node` the package does not hold and one whose `form` does not match its identity returns `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the format string or the first row, and returns no rows. | Test (TC-1331) |
-| FR-531-AC-13 | The identity file of **R** encodes every identity as the "Value encodings" state: a node reference is the wire node id string of the package, an `EffectiveId` has the `chain` list root first, a `MemberId` has `owner` and `member`, and a `UnitId` has `domain` and 64 lowercase hexadecimal digits; `read` returns rows equal to the writer's, an uppercase or short digest returns `Malformed`, and a node reference the package does not hold returns `Unjoined`. A forged row that passes the joins is accepted by `read` and the slot call over it evaluates against the admitted nodes, so the test records that `read` makes no claim of authority. | Test (TC-1331) |
+| FR-531-AC-13 | The identity file of **R** encodes every identity as the "Value encodings" state: a node reference is the wire node id string of the package, an `EffectiveId` has the `chain` list root first, a `MemberId` has `owner` and `member`, and a declared `UnitId` has `kind` `declared` and a `node` reference; `read` returns rows equal to the writer's, a unit with `kind` other than `declared` returns `Malformed`, a declared unit whose node reference the package does not hold returns `Unjoined`, and a `declared_unit` row whose `exact_identity` has another `kind` returns `Unjoined`. A forged row that passes the joins is accepted by `read` and the slot call over it evaluates against the admitted nodes, so the test records that `read` makes no claim of authority. | Test (TC-1331) |
 | FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
 | FR-531-AC-10 | The charge log of each call over the bare package equals the charge log of the same call over the in-process route (FR-532-AC-1, FR-533-AC-1); `BarePackage::new`, `with_supply` and view creation take no `Meter` and a call that refuses at supply admission leaves a caller's meter byte-identical. | Test (TC-1331) |
 | FR-531-AC-11 | A search of FR-515 for the phrases `bytes-only` and `separate future capability` and of FR-515, FR-516 and FR-520 for the heading `Consumer entry` finds that FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |
