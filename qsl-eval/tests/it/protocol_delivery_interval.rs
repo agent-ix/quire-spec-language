@@ -3,12 +3,11 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
-use qsl_eval::simulation::explore::TransitionSystem;
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::protocol::{ProtocolSystem, ResolvedMemory, Sc, SendOutcome, StepKind};
-use qsl_foundation::selection::DefinitionRef;
+use qsl_eval::simulation::{Expansion, TransitionSystem};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -23,6 +22,18 @@ use std::collections::BTreeMap;
 
 const DOMAIN: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 const POPULATION: &str = "ix://acme/orders/Gadget";
+const METER: ScalarLimits = ScalarLimits {
+    integer_bits: u64::MAX,
+    decimal_digits: u64::MAX,
+    scale_expansion: u64::MAX,
+    text_input_bytes: u64::MAX,
+    text_scalars: u64::MAX,
+    normalized_scalars: u64::MAX,
+    unit_edges: u64::MAX,
+    value_occurrences: u64::MAX,
+    work_units: u64::MAX,
+    result_units: u64::MAX,
+};
 
 struct Fixture {
     package: CheckedPackage,
@@ -121,7 +132,7 @@ fn system<'a>(fixture: &'a Fixture) -> ProtocolSystem<'a, Sc> {
         expansion: ExpansionLimits {
             max_candidates: 100_000,
         },
-        meter: ScalarLimits::default(),
+        meter: METER,
     };
     let model = ModelSystem::new(request.clone()).expect("model subject built");
     let protocol = fixture
@@ -158,7 +169,7 @@ fn system<'a>(fixture: &'a Fixture) -> ProtocolSystem<'a, Sc> {
 }
 
 fn send_transitions(
-    expansion: &qsl_eval::simulation::expansion::Expansion<
+    expansion: &Expansion<
         qsl_eval::simulation::protocol::ProtocolTransition,
         qsl_eval::simulation::protocol::ProtocolState<Sc>,
         qsl_eval::simulation::model::ModelFinding,
@@ -181,10 +192,14 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         "[2,2]",
         2,
         "block",
-        "sequence Main { send Sent via Pay as (sent: Boolean) { true }; }",
+        "sequence Main { send Sent via Pay as (sent: Boolean) { true }; \
+         receive R1 via Pay of Main::Sent as (r1: Boolean) { true }; \
+         receive R2 via Pay of Main::Sent as (r2: Boolean) { true }; \
+         receive R3 via Pay of Main::Sent as (r3: Boolean) { true }; }",
     );
     let exact_system = system(&exact);
-    let [initial] = exact_system.initial().as_slice() else {
+    let initial_states = exact_system.initial();
+    let [initial] = initial_states.as_slice() else {
         panic!("one initial state");
     };
     let expansion = exact_system.successors(initial).expect("send expands");
@@ -196,6 +211,69 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         assert_eq!(record.entries(), Some(&[SendOutcome::Accepted; 2][..]));
         assert_eq!(record.pending(), Some(0));
     }
+    let sent_state = expansion
+        .successors
+        .iter()
+        .find(|(transition, _)| {
+            transition
+                .send_record()
+                .is_some_and(|record| record.count() == Some(2))
+        })
+        .expect("one d=2 successor")
+        .1
+        .clone();
+    let received_once = exact_system
+        .successors(&sent_state)
+        .expect("first receive expands");
+    let [(_, after_first)] = received_once
+        .successors
+        .iter()
+        .filter(|(transition, _)| transition.kind() == StepKind::Receive)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one distinct first receive");
+    };
+    let received_twice = exact_system
+        .successors(after_first)
+        .expect("second receive expands");
+    assert!(received_twice
+        .successors
+        .iter()
+        .any(|(transition, _)| transition.kind() == StepKind::Receive));
+    let [(_, after_second)] = received_twice
+        .successors
+        .iter()
+        .filter(|(transition, _)| transition.kind() == StepKind::Receive)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one distinct second receive");
+    };
+    let received_third = exact_system
+        .successors(after_second)
+        .expect("third receive waits on empty queue");
+    assert!(!received_third
+        .successors
+        .iter()
+        .any(|(transition, _)| transition.kind() == StepKind::Receive));
+
+    let rejected = fixture(
+        "[2,2]",
+        1,
+        "reject",
+        "sequence Main { send Sent via Pay as (sent: Boolean) { true }; }",
+    );
+    let rejected_system = system(&rejected);
+    let rejected_initial = rejected_system.initial();
+    let rejected_expansion = rejected_system
+        .successors(&rejected_initial[0])
+        .expect("overflow send expands");
+    for send in send_transitions(&rejected_expansion) {
+        assert_eq!(
+            send.send_record().unwrap().entries(),
+            Some(&[SendOutcome::Accepted, SendOutcome::Rejected][..])
+        );
+        assert_eq!(send.send_record().unwrap().pending(), Some(0));
+    }
 
     let optional = fixture(
         "[0,1]",
@@ -205,7 +283,8 @@ fn interval_send_records_count_entries_and_zero_delivery() {
          receive Got via Pay of Main::Sent as (got: Boolean) { true }; }",
     );
     let optional_system = system(&optional);
-    let [initial] = optional_system.initial().as_slice() else {
+    let initial_states = optional_system.initial();
+    let [initial] = initial_states.as_slice() else {
         panic!("one initial state");
     };
     let sends = optional_system
@@ -229,4 +308,127 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         .successors
         .iter()
         .any(|(transition, _)| transition.kind() == StepKind::Receive));
+
+    let full = fixture(
+        "[0,3]",
+        1,
+        "block",
+        "sequence Main { send First via Pay as (first: Boolean) { true }; \
+         send Second via Pay as (second: Boolean) { true }; }",
+    );
+    let full_system = system(&full);
+    let full_initial = full_system.initial();
+    let first_expansion = full_system
+        .successors(&full_initial[0])
+        .expect("first send expands");
+    let after_first = first_expansion
+        .successors
+        .iter()
+        .find(|(transition, _)| {
+            transition
+                .send_record()
+                .is_some_and(|record| record.count() == Some(1))
+        })
+        .expect("first send can enqueue one entry")
+        .1
+        .clone();
+    let second_expansion = full_system
+        .successors(&after_first)
+        .expect("full queue send expands");
+    assert!(send_transitions(&second_expansion)
+        .iter()
+        .all(|transition| transition.send_record().unwrap().count() == Some(0)));
+
+    let pending = fixture(
+        "[1,3]",
+        2,
+        "block",
+        "parallel par { \
+           branch l sequence Sender { \
+             send Sent via Pay as (sent: Boolean) { sent }; \
+             check Valid using v { sent }; \
+           } \
+           branch r receive Got via Pay of l::Sender::Sent as (got: Boolean) { true }; \
+         } join all [l, r];",
+    );
+    let pending_system = system(&pending);
+    let pending_initial = pending_system.initial();
+    let fork_expansion = pending_system
+        .successors(&pending_initial[0])
+        .expect("parallel forks");
+    let after_fork = fork_expansion
+        .successors
+        .iter()
+        .find(|(transition, _)| transition.kind() == StepKind::Fork)
+        .expect("parallel fork step")
+        .1
+        .clone();
+    let send_expansion = pending_system
+        .successors(&after_fork)
+        .expect("parallel branches expand");
+    let partial = send_transitions(&send_expansion)
+        .into_iter()
+        .find(|transition| {
+            transition.send_record().is_some_and(|record| {
+                record.count() == Some(3) && record.pending() == Some(1)
+            })
+        })
+        .expect("count three appends two entries and remains pending");
+    assert_eq!(
+        partial.send_record().unwrap().entries(),
+        Some(&[SendOutcome::Accepted; 2][..])
+    );
+    let partial_state = send_expansion
+        .successors
+        .iter()
+        .find(|(transition, _)| {
+            transition
+                .send_record()
+                .is_some_and(|record| record.count() == Some(3))
+        })
+        .expect("partial send successor")
+        .1
+        .clone();
+    let receive_expansion = pending_system
+        .successors(&partial_state)
+        .expect("receiver frees one queue slot");
+    let after_receive = receive_expansion
+        .successors
+        .iter()
+        .find(|(transition, _)| transition.kind() == StepKind::Receive)
+        .expect("receiver consumes one entry")
+        .1
+        .clone();
+    let continuation = pending_system
+        .successors(&after_receive)
+        .expect("blocked send resumes");
+    let continuation_send = send_transitions(&continuation)
+        .into_iter()
+        .find(|transition| {
+            transition.send_record().is_some_and(|record| {
+                record.count() == Some(1)
+                    && record.entries() == Some(&[SendOutcome::Accepted][..])
+                    && record.pending() == Some(0)
+            })
+        })
+        .expect("remaining send appends one entry and settles");
+    let continued_state = continuation
+        .successors
+        .iter()
+        .find(|(transition, _)| {
+            transition
+                .send_record()
+                .is_some_and(|record| record.count() == Some(1))
+        })
+        .expect("continuation state")
+        .1
+        .clone();
+    let after_continuation = pending_system
+        .successors(&continued_state)
+        .expect("send binder is available to the following check");
+    assert!(after_continuation
+        .successors
+        .iter()
+        .any(|(transition, _)| transition.kind() == StepKind::Check));
+    let _ = continuation_send;
 }
