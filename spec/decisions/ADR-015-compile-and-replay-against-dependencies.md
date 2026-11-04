@@ -162,7 +162,7 @@ the wire's `contract_version`, which the in-process request does not
 carry (ADR-013 O-26). `sources` is the
 proved package's own `sources`. `dependencies` holds one entry per
 entry of the proved package's `dependency_selections`, in order, each
-`{identity, package_id, sources}`, where `sources` is that
+`{identity, sources}`, where `sources` is that
 dependency's own `sources`. CG copies them from the proved package
 and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).

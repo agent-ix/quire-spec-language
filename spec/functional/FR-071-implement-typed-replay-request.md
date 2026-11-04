@@ -100,7 +100,7 @@ key or request `over` member on that arm.
 - The request type SHALL carry exactly the ADR-013 O-26 members (the O-25
   packet plus the FR-070 envelope members) and SHALL invent no additional
   member; a construct → serialize → read round trip SHALL preserve the
-  package reference (`package_id`, every source
+  package reference (its own `package_id`, every source
   (authority, identity) pair), the replay members (`ReplaySource`, `QualifiedName`, a `function`
   request's occurrence key, arguments
   keyed by parameter node id, profile selections, proof bounds and declared
