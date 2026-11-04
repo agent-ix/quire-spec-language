@@ -4561,6 +4561,10 @@ impl PackageDeclarations {
                 units.append(table);
             }
         }
+        for protocol in &mut checked_protocols {
+            units.append(std::mem::take(&mut protocol.obligations.formed_units));
+            units.append(std::mem::take(&mut protocol.slots.formed_units));
+        }
         let mut lowering = lowering::Lowering::new_with_source_owners(
             &scope,
             &owner,

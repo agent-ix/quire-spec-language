@@ -252,6 +252,8 @@ pub struct CheckedSlots {
     /// `Out(root)`: the indices into `binders` readable after the root
     /// control, which `finish` reads.
     pub root_out: BTreeSet<usize>,
+    /// Compound units formed while checking protocol slot expressions.
+    pub(crate) formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
 /// One binder a protocol's slots read (FR-218 "Scopes"), at the local slot
@@ -364,6 +366,7 @@ struct Checker<'c, 'a> {
     /// Each replicated role's own binder, by role index: its name and
     /// `Reference` to the role's object type.
     role_binders: BTreeMap<usize, (String, ValueType)>,
+    formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
 impl Checker<'_, '_> {
@@ -491,7 +494,7 @@ impl Checker<'_, '_> {
             cx,
         );
         self.nodes = nodes;
-        let (body, slot_names) = match typed {
+        let (body, slot_names, formed_units) = match typed {
             Ok(named) => named,
             Err(CheckRefusal { location, cause }) => {
                 let span = span_of(slot.form, &location);
@@ -510,6 +513,7 @@ impl Checker<'_, '_> {
                 return None;
             }
         };
+        self.formed_units.append(formed_units);
         if slot.bars_model_state {
             let input = self
                 .binders
@@ -1082,6 +1086,7 @@ pub(crate) fn check(
         refusals: Vec::new(),
         roots,
         role_binders,
+        formed_units: quire_semantic_value::quantity::UnitTable::default(),
     };
     let mut slots = CheckedSlots::default();
 
@@ -1628,6 +1633,7 @@ pub(crate) fn check(
         .map(|(node, entry)| (ProtocolNodeId(node), entry))
         .collect();
     slots.root_out = flow.root_out;
+    slots.formed_units = std::mem::take(&mut checker.formed_units);
     slots.binders = checker
         .binders
         .iter()
