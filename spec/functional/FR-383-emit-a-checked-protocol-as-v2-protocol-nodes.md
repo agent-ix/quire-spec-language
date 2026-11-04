@@ -228,7 +228,7 @@ site-name registry that a slot expression can have are:
 | capture initializer | `protocol <P> capture <name> initializer` |
 | registration capture, trigger guard, activation capture, retry relation, recovery predicate of a compensation `<N>` | `protocol <P> compensate <N> <stage> <index>`, the stage being `registration-capture`, `trigger-guard`, `activation-capture`, `retry` or `recovery`, and the index the capture's position (zero for the other three) |
 | constraint or condition of the control at path `<path>` | `protocol <P> run <path> body`, the path from the run root with the root's name first, joined by spaces |
-| `related` end, `visible` entry, case guard | `protocol <P> run <path> related <start> <end>` or `... decision <start>..<end>`, by source span |
+| `related` end, `visible` entry, case guard | `protocol <P> run <path> related <start> <end>` or `... decision <start>..<end>`, by source span; the span is a source-route alias, the slot's identity is its control node, member and ordinal (FR-390, FR-533) |
 | `finish` constraint, `terminal when` condition, role `until`, channel key | `protocol <P> finish <name> body`, `protocol <P> terminal body`, `protocol <P> role <role> until`, `protocol <P> channel <channel> key` |
 
 The emitter SHALL write each slot's rows under that slot's own site name as the

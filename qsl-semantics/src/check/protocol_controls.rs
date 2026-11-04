@@ -825,11 +825,11 @@ mod tests {
         )
     }
 
-    /// FR-218 "Channels" (TC-1056 rows 1 to 4): a `to` role that is no
+    /// FR-218-AC-10 and FR-218 "Channels" (TC-1056 rows 1 to 4): a `to` role that is no
     /// declared role, both ends undeclared, an unresolved payload type and
     /// two channels of one name each refuse at the name with the members the
     /// requirement retains.
-    #[trace("TC-1056")]
+    #[trace("TC-1056", "FR-218-AC-10")]
     #[test]
     fn a_channel_naming_nothing_the_protocol_declares_refuses_at_the_name() {
         let base = pipeline(&pay(), RUN);
