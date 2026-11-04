@@ -3150,11 +3150,11 @@ fn a_dimension_without_a_map_anchors_no_base_dimension_obligation() {
     );
 }
 
-/// QSpec FR-142-AC-17, TC-187 U11q and FR-091-AC-46: source order is the
-/// documents as the request lists them, then the byte offset, so a document
-/// whose declarations sit at larger offsets still comes first. The request
-/// order is the order of the sources' `(authority, identity)` references.
-#[trace("FR-091-AC-46", "QSpec-TC-187", "QSpec-FR-142-AC-17")]
+/// QSpec FR-142-AC-17, TC-187 U11q, FR-091-AC-46 and FR-480-AC-6: aggregate
+/// source order is the caller's document list, then the byte offset, so a
+/// document whose declarations sit at larger offsets still takes its turn
+/// first when it appears first in the list.
+#[trace("FR-091-AC-46", "FR-480-AC-6", "QSpec-TC-187", "QSpec-FR-142-AC-17")]
 #[test]
 fn u11q_the_first_document_takes_the_first_turn_whatever_its_offsets() {
     let padding = " ".repeat(400);
@@ -3166,12 +3166,12 @@ fn u11q_the_first_document_takes_the_first_turn_whatever_its_offsets() {
         "",
         "dimension L; unit u_self : L = rational(1, 1) * u_self;",
     );
-    let run = |first: &str, second: &str| {
-        let (source_a, unit_a) = parsed_unit_as("repo", "a", first);
-        let (source_b, unit_b) = parsed_unit_as("repo", "b", second);
+    let run = |first: (&str, &str), second: (&str, &str)| {
+        let (source_a, unit_a) = parsed_unit_as("repo", first.0, first.1);
+        let (source_b, unit_b) = parsed_unit_as("repo", second.0, second.1);
         let refusal = PackageDeclarations::assemble_units(
             "test/package".to_owned(),
-            vec![(source_b, unit_b), (source_a, unit_a)],
+            vec![(source_a, unit_a), (source_b, unit_b)],
             crate::model::intake::SelectedModels::default(),
             Vec::new(),
             super::AssemblyLimits::default(),
@@ -3185,11 +3185,11 @@ fn u11q_the_first_document_takes_the_first_turn_whatever_its_offsets() {
     };
     let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
     assert_eq!(
-        run(&time, &length).0,
+        run(("1", &time), ("2", &length)).0,
         "invalid_package/invalid-value".to_owned()
     );
     assert_eq!(
-        run(&length, &time),
+        run(("2", &length), ("1", &time)),
         (
             "invalid_package/definition-cycle".to_owned(),
             AssemblyCause::QuantityCycle {
