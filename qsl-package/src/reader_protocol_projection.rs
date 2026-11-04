@@ -1607,7 +1607,7 @@ pub(crate) fn node_value_type(
     use quire_contract_model::SelectedExactIdentity as Identity;
     let error = match index
         .admitted
-        .project_exact_type(id, &index.identities, index.work_limit)
+        .project_exact_type(id, index.identities, index.work_limit)
     {
         Ok(projection) => return Ok(projection.value_type().clone()),
         Err(error) => error,

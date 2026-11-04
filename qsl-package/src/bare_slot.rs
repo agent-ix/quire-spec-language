@@ -159,17 +159,20 @@ fn slot_term<'n>(
     use ControlOperation as Op;
     let (member, index) = (descriptor.member(), descriptor.index());
     let no = || absent(descriptor);
-    let indexed = match (op, member) {
+    let indexed = matches!(
+        (op, member),
         (Op::Protocol, "captures")
-        | (Op::Compensate, "registration_captures" | "activation_captures")
-        | (Op::Choice, "cases.guard" | "visible")
-        | (Op::Repeat, "visible")
-        | (
-            Op::Send | Op::Receive | Op::Attempt | Op::Effect | Op::Event,
-            "related.from" | "related.to",
-        ) => true,
-        _ => false,
-    };
+            | (
+                Op::Compensate,
+                "registration_captures" | "activation_captures"
+            )
+            | (Op::Choice, "cases.guard" | "visible")
+            | (Op::Repeat, "visible")
+            | (
+                Op::Send | Op::Receive | Op::Attempt | Op::Effect | Op::Event,
+                "related.from" | "related.to",
+            )
+    );
     if indexed != index.is_some() {
         return Err(no());
     }

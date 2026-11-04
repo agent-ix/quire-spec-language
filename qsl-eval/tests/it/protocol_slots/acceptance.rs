@@ -4865,7 +4865,7 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
     ] {
         let d = descriptor(member, index);
         let want = view.select_protocol_slot(&d).err().expect("source refuses");
-        let got = bare.select_protocol_slot(&d).err().expect("bare refuses");
+        let got = bare.select_protocol_slot(&d).expect_err("bare refuses");
         assert_eq!(
             format!("{want:?}"),
             match got {
