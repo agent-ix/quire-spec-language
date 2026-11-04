@@ -384,10 +384,17 @@ mod tests {
                 "delay-distribution",
             ),
             (
-                UnavailabilityCause::ZeroDelayCycle { states: 1 },
+                UnavailabilityCause::ZeroDelayCycle {
+                    states: vec!["state-1".to_owned()],
+                },
                 "zero-delay-cycle",
             ),
-            (UnavailabilityCause::TimedFormShape, "timed-form-shape"),
+            (
+                UnavailabilityCause::TimedFormShape {
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                },
+                "timed-form-shape",
+            ),
         ];
 
         for (cause, wire_name) in cases {

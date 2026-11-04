@@ -572,12 +572,15 @@ pub enum UnavailabilityCause {
     },
     /// FR-204: the digital product contains a reachable cycle with no delay.
     ZeroDelayCycle {
-        /// Number of product states in the reachable cycle component.
-        states: usize,
+        /// The product states in the reachable zero-delay cycle component.
+        states: Vec<String>,
     },
     /// FR-204: the timed claim uses a form outside the admitted digital
     /// product shapes.
-    TimedFormShape,
+    TimedFormShape {
+        /// The source span of the unsupported form.
+        span: qsl_foundation::Span,
+    },
     /// ADR-020 AX-5: a refinement with a hidden abstract field and a
     /// non-empty `F_A` has no liveness half to decide. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
@@ -739,7 +742,7 @@ impl UnavailabilityCause {
             Self::StrictClockConstraint { .. } => "strict-clock-constraint",
             Self::DelayDistribution { .. } => "delay-distribution",
             Self::ZeroDelayCycle { .. } => "zero-delay-cycle",
-            Self::TimedFormShape => "timed-form-shape",
+            Self::TimedFormShape { .. } => "timed-form-shape",
             Self::PunctualInterval { .. } => "punctual-interval",
             Self::ValueCheck { .. } | Self::ContractCheck { .. } => {
                 "unsupported-requested-capability"
@@ -764,7 +767,7 @@ impl UnavailabilityCause {
             | Self::StrictClockConstraint { .. }
             | Self::DelayDistribution { .. }
             | Self::ZeroDelayCycle { .. }
-            | Self::TimedFormShape => None,
+            | Self::TimedFormShape { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::HybridProviderAbsent
             | Self::UnsupportedReduction { .. }

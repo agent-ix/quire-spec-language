@@ -31,13 +31,11 @@ pub fn settle_product_refusal(
         }
         ProductRefusal::ZeroDelayCycle { states } => {
             ExactProbBuildIssue::Unsupported(UnavailabilityCause::ZeroDelayCycle {
-                states: states.len(),
+                states: states.iter().map(|state| format!("{state:?}")).collect(),
             })
         }
-        // Other timed-form support is decided at the plan boundary; the
-        // FR-204 settlement map does not own those outcomes.
-        ProductRefusal::TimedFormShape { .. } => {
-            ExactProbBuildIssue::Unsupported(UnavailabilityCause::TimedFormShape)
+        ProductRefusal::TimedFormShape { span } => {
+            ExactProbBuildIssue::Unsupported(UnavailabilityCause::TimedFormShape { span })
         }
         request @ ProductRefusal::NotStochastic { .. } => return Err(request),
         ProductRefusal::NotSimulated(
@@ -146,6 +144,13 @@ mod tests {
             expansion: ExpansionLimits { max_candidates: 2 },
             meter: &meter,
         };
+        let cycle_state = super::super::ProbKey {
+            binding: None,
+            model: vec![0, 1, 2],
+            monitor: None,
+            accumulator: None,
+            pending: None,
+        };
         let cases = [
             (
                 ProductRefusal::StrictClockConstraint {
@@ -164,14 +169,20 @@ mod tests {
                 },
             ),
             (
-                ProductRefusal::ZeroDelayCycle { states: Vec::new() },
-                UnavailabilityCause::ZeroDelayCycle { states: 0 },
+                ProductRefusal::ZeroDelayCycle {
+                    states: vec![cycle_state.clone()],
+                },
+                UnavailabilityCause::ZeroDelayCycle {
+                    states: vec![format!("{cycle_state:?}")],
+                },
             ),
             (
                 ProductRefusal::TimedFormShape {
                     span: qsl_foundation::Span { start: 0, end: 1 },
                 },
-                UnavailabilityCause::TimedFormShape,
+                UnavailabilityCause::TimedFormShape {
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                },
             ),
         ];
 
