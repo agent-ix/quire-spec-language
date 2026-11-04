@@ -6,6 +6,7 @@
 
 use super::*;
 use qsl_eval::value::{BinderCharges, ChargeAmounts, BINDER_ACCOUNTING_VERSION};
+use quire_exact::{Charge, ChargePoint};
 
 const COUNTERS: [LimitKind; 10] = [
     LimitKind::IntegerBits,
@@ -766,39 +767,176 @@ fn a_slot_call_logs_each_binder_it_read_with_the_accounting_version() {
     );
 }
 
+const NOTHING: [u64; 10] = [0; 10];
+
+/// The TC-1070 package with its source rewritten by `edit`.
+fn variant(edit: impl Fn(String) -> String) -> CheckedPackage {
+    fixture_from_source(&edit(SOURCE.to_owned())).0
+}
+
+/// The Refund slot `recovery.predicate` over `recovered`, `target` and
+/// `activated` with `body` as its expression.
+fn recovery_variant(body: &str) -> CheckedPackage {
+    let original =
+        "recover (recovered: M::Receipt) { recovered.total = target and not activated };";
+    variant(|source| {
+        source.replace(
+            original,
+            &format!("recover (recovered: M::Receipt) {{ {body} }};"),
+        )
+    })
+}
+
+fn recovery_log(package: &CheckedPackage) -> (ProtocolSlotEvaluation, [u64; 10]) {
+    charge_log(package, &recovery_supply(package, None))
+}
+
+fn entry(package: &CheckedPackage, charges: &BinderCharges, name: &str) -> [u64; 10] {
+    amounts(
+        charges
+            .binder(&binder(package, "Refunds", name))
+            .expect("every binder the expression reads has an entry"),
+    )
+}
+
+// Counter order: [integer_bits, decimal_digits, scale_expansion,
+// text_input_bytes, text_scalars, normalized_scalars, unit_edges,
+// value_occurrences, work_units, result_units].
+
 #[test]
 #[trace("FR-520-AC-11", "TC-1315")]
-fn the_binder_entries_and_the_unattributed_entry_combine_to_the_meter_total() {
+fn an_operation_over_two_binders_is_unattributed_and_a_later_single_binder_operation_is_its_own() {
     let package = fixture();
-    let supply = recovery_supply(&package, None);
-    let (result, used) = charge_log(&package, &supply);
+    let (result, used) = recovery_log(&package);
     let charges = charges_of(&result);
-    let by_name = |name: &str| {
-        amounts(
-            charges
-                .binder(&binder(&package, "Refunds", name))
-                .expect("every binder the expression reads has an entry"),
-        )
-    };
-    // [integer_bits, decimal_digits, scale_expansion, text_input_bytes,
-    //  text_scalars, normalized_scalars, unit_edges, value_occurrences,
-    //  work_units, result_units]
-    assert_eq!(by_name("recovered"), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(by_name("target"), [0, 0, 0, 0, 0, 0, 0, 1, 5, 1]);
-    assert_eq!(by_name("activated"), [0, 0, 0, 0, 0, 0, 0, 0, 2, 2]);
-    assert_eq!(amounts(charges.unattributed()), [0; 10]);
+    assert_eq!(entry(&package, charges, "recovered"), NOTHING);
+    assert_eq!(entry(&package, charges, "target"), NOTHING);
+    assert_eq!(
+        entry(&package, charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+        "`not activated` reads one binder after others were read"
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 1, 5, 1],
+        "`recovered.total = target` reads two binders"
+    );
     assert_eq!(
         amounts(&charges.total()),
         used,
         "work and results sum, the eight high-water counters take the maximum"
     );
-    assert!(used.iter().any(|amount| *amount > 0));
-    let (again, _) = charge_log(&package, &supply);
+    let (again, _) = recovery_log(&package);
     assert_eq!(
         charges_of(&again),
         charges,
         "equal supplies give equal logs"
     );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn operations_over_one_binder_each_are_charged_to_that_binder() {
+    let package = recovery_variant("recovered.total + 1 = target + 1 and not activated");
+    let (result, used) = recovery_log(&package);
+    let charges = charges_of(&result);
+    let one_operand = [4, 0, 0, 0, 0, 0, 0, 2, 3, 1];
+    assert_eq!(entry(&package, charges, "recovered"), one_operand);
+    assert_eq!(entry(&package, charges, "target"), one_operand);
+    assert_eq!(
+        entry(&package, charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2]
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 1, 5, 1],
+        "only the equality over both sums is unattributed"
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_literal_only_subexpression_is_unattributed_wherever_it_runs() {
+    let package = recovery_variant("(1 + 2 = 3) and recovered.total = target and not activated");
+    let (result, used) = recovery_log(&package);
+    let charges = charges_of(&result);
+    let base = fixture();
+    let (base_result, _) = recovery_log(&base);
+    for name in ["recovered", "target", "activated"] {
+        assert_eq!(
+            entry(&package, charges, name),
+            entry(&base, charges_of(&base_result), name),
+            "{name}: the literal prefix adds nothing to a binder"
+        );
+    }
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [3, 0, 0, 0, 0, 0, 0, 2, 14, 4],
+        "the literal prefix runs before the first binder read"
+    );
+    assert_eq!(amounts(&charges.total()), used);
+    let late = recovery_variant("recovered.total = target and (1 + 2 = 3) and not activated");
+    let (late_result, late_used) = recovery_log(&late);
+    let late_charges = charges_of(&late_result);
+    assert_eq!(
+        entry(&late, late_charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+        "a literal-only subexpression after a binder read is not that binder's"
+    );
+    assert_eq!(amounts(&late_charges.total()), late_used);
+    assert!(
+        late_charges.unattributed().amount(LimitKind::WorkUnits)
+            > charges_of(&base_result)
+                .unattributed()
+                .amount(LimitKind::WorkUnits),
+        "the literal subexpression's work is unattributed"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn commuting_the_operands_of_a_two_binder_operation_leaves_the_log_unchanged() {
+    let forward = recovery_variant("recovered.total + target = 10 and not activated");
+    let backward = recovery_variant("target + recovered.total = 10 and not activated");
+    let (forward_result, used) = recovery_log(&forward);
+    let (backward_result, _) = recovery_log(&backward);
+    let charges = charges_of(&forward_result);
+    assert_eq!(charges, charges_of(&backward_result));
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [4, 0, 0, 0, 0, 0, 0, 2, 8, 2]
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_call_made_before_any_read_registers_no_binder_in_the_callee_frame() {
+    let package = variant(|source| {
+        source
+            .replace(
+                "profile S =",
+                "profile v = \"quire.value.complete/v1\";\nprofile S =",
+            )
+            .replace(
+                "recover (recovered: M::Receipt) { recovered.total = target and not activated };",
+                "recover (recovered: M::Receipt) { plus(1) = 3 and recovered.total = target and not activated };",
+            )
+            + "function plus using v(a: Integer): Integer pure { a + 1 }\n"
+    });
+    let (result, used) = recovery_log(&package);
+    let charges = charges_of(&result);
+    assert_eq!(
+        charges.binders().count(),
+        0,
+        "the callee's parameter slot is no binder read, and the short-circuit reads none"
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [2, 0, 0, 0, 0, 0, 0, 2, 11, 4]
+    );
+    assert_eq!(amounts(&charges.total()), used);
 }
 
 #[test]
@@ -818,7 +956,10 @@ fn a_high_water_counter_is_the_largest_binder_entry_not_the_sum() {
     let charges = charges_of(&result);
     assert!(charges.binders().count() > 1);
     for kind in COUNTERS {
-        let entries = charges.binders().map(|(_, held)| held.amount(kind));
+        let entries = charges
+            .binders()
+            .map(|(_, held)| held.amount(kind))
+            .chain([charges.unattributed().amount(kind)]);
         let expected = if kind.is_cumulative() {
             entries.sum::<u64>()
         } else {
@@ -841,7 +982,7 @@ fn a_high_water_counter_is_the_largest_binder_entry_not_the_sum() {
 
 #[test]
 #[trace("FR-520-AC-11", "TC-1315")]
-fn a_call_restores_the_meters_interval_capture_to_the_state_it_found() {
+fn a_call_restores_the_meters_capture_state_and_drains_a_caller_interval_it_found() {
     let package = fixture();
     let supply = recovery_supply(&package, None);
     let slot = slot(&package, "Refunds", "Refund", "recovery.predicate", None);
@@ -855,15 +996,24 @@ fn a_call_restores_the_meters_interval_capture_to_the_state_it_found() {
     );
     let mut on = Meter::new(UNLIMITED);
     on.enable_charge_accounting();
-    package
+    on.charge(Charge::new(ChargePoint::CollectionVisit))
+        .expect("the caller's own charge");
+    let before = on.consumed(LimitKind::WorkUnits);
+    assert!(before > 0);
+    let result = package
         .evaluate_protocol_slot(&slot, &supply, &mut on)
         .expect("evaluates");
+    assert_eq!(
+        charges_of(&result).total().amount(LimitKind::WorkUnits),
+        on.consumed(LimitKind::WorkUnits) - before,
+        "the returned log is the call's own total, without the caller's interval"
+    );
     let drained = on
         .take_charge_accounting()
         .expect("capture stays enabled for a caller that enabled it");
     assert_eq!(
         COUNTERS.map(|kind| drained.amount(kind)),
-        [0; 10],
-        "the call drained its own interval"
+        NOTHING,
+        "the caller's interval before the call and the call's own charges are not in it"
     );
 }

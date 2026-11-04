@@ -75,10 +75,12 @@ fn position(kind: LimitKind) -> usize {
 
 /// The charges of one protocol-slot call, attributed per binder.
 ///
-/// A charge belongs to the binder whose supplied value the evaluation read
-/// most recently; charges made before the first binder read belong to no
-/// binder. A binder the expression read has an entry even when it made no
-/// charge; a binder it never read has none.
+/// A charge belongs to binder B when it is made by reading B or by an
+/// operation whose binder-derived operands all come from B (operand
+/// provenance). An operation over operands from two binders, and a charge
+/// made by a literal-only computation, belong to no binder and are recorded
+/// as unattributed. A binder the expression read has an entry even when it
+/// made no charge; a binder it never read has none.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BinderCharges {
     binders: BTreeMap<NodeKey, ChargeAmounts>,
@@ -118,16 +120,117 @@ impl BinderCharges {
     }
 }
 
-/// The routing state of one call: which binder's interval is open.
+/// Which binder, if any, a value or a charge is derived from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Owner {
+    /// Derived from no binder (a literal-only computation).
+    None,
+    /// Derived from the binder supplied at this root-frame source slot only.
+    Binder(usize),
+    /// Derived from more than one binder.
+    Mixed,
+}
+
+impl Owner {
+    /// The owner of a computation over operands owned by `self` and `other`:
+    /// a binder-free operand adds nothing, and operands from two binders make
+    /// the result belong to no single binder.
+    pub(crate) fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::None, owner) | (owner, Self::None) => owner,
+            (Self::Binder(left), Self::Binder(right)) if left == right => Self::Binder(left),
+            (Self::Binder(_) | Self::Mixed, Self::Binder(_) | Self::Mixed) => Self::Mixed,
+        }
+    }
+}
+
+/// The owner of every stack value and frame slot, and of the step being run.
+/// Its stacks mirror the machine's value and frame stacks.
+#[derive(Default)]
+pub(crate) struct Owners {
+    values: Vec<Owner>,
+    frames: Vec<Vec<Owner>>,
+    step: Option<Owner>,
+    popped: Vec<Owner>,
+}
+
+impl Owners {
+    pub(crate) fn begin_step(&mut self) {
+        self.step = Some(Owner::None);
+    }
+
+    pub(crate) fn step(&self) -> Owner {
+        self.step.unwrap_or(Owner::None)
+    }
+
+    pub(crate) fn absorb(&mut self, owner: Owner) {
+        self.step = Some(self.step().merge(owner));
+    }
+
+    pub(crate) fn push_value(&mut self) {
+        self.values.push(self.step());
+    }
+
+    pub(crate) fn pop_value(&mut self) -> Option<()> {
+        let owner = self.values.pop()?;
+        self.absorb(owner);
+        Some(())
+    }
+
+    pub(crate) fn pop_values(&mut self, count: usize) -> Option<()> {
+        let start = self.values.len().checked_sub(count)?;
+        self.popped = self.values.split_off(start);
+        for owner in self.popped.clone() {
+            self.absorb(owner);
+        }
+        Some(())
+    }
+
+    /// The owners of the values the last [`Self::pop_values`] took.
+    pub(crate) fn popped(&self) -> &[Owner] {
+        &self.popped
+    }
+
+    pub(crate) fn push_frame(&mut self, owners: Vec<Owner>) {
+        self.frames.push(owners);
+    }
+
+    pub(crate) fn pop_frame(&mut self) -> Option<()> {
+        self.frames.pop().map(|_| ())
+    }
+
+    pub(crate) fn set_frame(&mut self, owners: Vec<Owner>) -> Option<()> {
+        *self.frames.last_mut()? = owners;
+        Some(())
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> Owner {
+        self.frames
+            .last()
+            .and_then(|frame| frame.get(slot))
+            .copied()
+            .unwrap_or(Owner::None)
+    }
+
+    pub(crate) fn set_slot(&mut self, slot: usize, owner: Owner) -> Option<()> {
+        let frame = self.frames.last_mut()?;
+        if frame.len() <= slot {
+            frame.resize(slot + 1, Owner::None);
+        }
+        frame[slot] = owner;
+        Some(())
+    }
+}
+
+/// The routing state of one call: the binders the expression read and the
+/// charges attributed so far.
 pub(crate) struct ChargeRouting {
-    current: Option<NodeKey>,
     charges: BinderCharges,
 }
 
 impl ChargeRouting {
     pub(crate) fn new() -> Self {
         Self {
-            current: None,
             charges: BinderCharges {
                 binders: BTreeMap::new(),
                 unattributed: ChargeAmounts::default(),
@@ -135,32 +238,26 @@ impl ChargeRouting {
         }
     }
 
-    /// A binder's supplied value is read: close the open interval onto the
-    /// binder that owned it, register the reader and open the next interval.
-    /// `None` when the meter has charge accounting disabled.
-    pub(crate) fn read(&mut self, meter: &mut Meter, binder: &NodeKey) -> Option<()> {
-        if self.current.as_ref() == Some(binder) {
-            return Some(());
-        }
-        self.close(meter)?;
+    /// A binder's supplied value is read: register it, so it has an entry
+    /// even when it is charged nothing.
+    pub(crate) fn register(&mut self, binder: &NodeKey) {
         self.charges.binders.entry(binder.clone()).or_default();
-        self.current = Some(binder.clone());
-        Some(())
     }
 
-    /// Close the last interval and return the finished charges.
-    pub(crate) fn finish(mut self, meter: &mut Meter) -> Option<BinderCharges> {
-        self.close(meter)?;
-        Some(self.charges)
-    }
-
-    fn close(&mut self, meter: &mut Meter) -> Option<()> {
+    /// Drain the meter's interval onto `binder`, or onto no binder.
+    /// `None` when the meter has charge accounting disabled.
+    pub(crate) fn attribute(&mut self, meter: &mut Meter, binder: Option<&NodeKey>) -> Option<()> {
         let interval = meter.take_charge_accounting()?;
-        let owner = match &self.current {
+        let owner = match binder {
             Some(binder) => self.charges.binders.entry(binder.clone()).or_default(),
             None => &mut self.charges.unattributed,
         };
         owner.absorb_interval(&interval);
         Some(())
+    }
+
+    /// The finished charges.
+    pub(crate) fn finish(self) -> BinderCharges {
+        self.charges
     }
 }

@@ -2878,14 +2878,23 @@ fn read_checked_package_with_model_document<'p>(
 /// A call result with its location removed. A reader-backed result carries no
 /// location (the admitted wire has none for a leaf root yet, and a reader view
 /// never takes one from the source package), so parity is compared on
-/// everything else: outcome, value, binder, cause and losses.
+/// everything else: outcome, value, binder, cause, losses and the per-binder
+/// charge log (FR-520-AC-9).
 fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> String {
     match result {
-        Ok(ProtocolSlotEvaluation::Evaluated(evaluation, _)) => {
-            format!("{:?} {:?}", evaluation.outcome, evaluation.losses)
+        Ok(ProtocolSlotEvaluation::Evaluated(evaluation, charges)) => {
+            format!(
+                "{:?} {:?} {charges:?}",
+                evaluation.outcome, evaluation.losses
+            )
         }
-        Ok(ProtocolSlotEvaluation::Unavailable { binder, cause, .. }) => {
-            format!("unavailable {binder:?} {cause:?}")
+        Ok(ProtocolSlotEvaluation::Unavailable {
+            binder,
+            cause,
+            charges,
+            ..
+        }) => {
+            format!("unavailable {binder:?} {cause:?} {charges:?}")
         }
         other => format!("{other:?}"),
     }
@@ -2901,7 +2910,7 @@ fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> Str
 /// AC-18's required recursively nested Option/Collection identities, so that
 /// criterion remains unclaimed here.
 #[test]
-#[trace("TC-142", "TC-1073", "FR-049-AC-9")]
+#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-520-AC-9")]
 fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unmet() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);

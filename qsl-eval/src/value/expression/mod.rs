@@ -851,6 +851,12 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// FR-390: select and evaluate one checked expression stored on a V2
     /// protocol node, admitting only the expression's exact binder sources
     /// before the shared S6a evaluator runs.
+    ///
+    /// The result carries the call's per-binder charge log (FR-520-AC-11). The
+    /// call owns `meter`'s interval capture while it runs: an interval the
+    /// caller had open at entry is drained without being added to the log, so
+    /// the log is the call's own total, and capture is left enabled or
+    /// disabled as the caller left it.
     fn evaluate_protocol_slot(
         &self,
         slot: &ProtocolSlot,
@@ -1122,6 +1128,9 @@ impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
 /// ```
 pub trait AdmittedEvaluationViewEvaluation: admitted_view_sealed::Sealed {
     /// Evaluate one protocol slot selected through this exact admitted view.
+    ///
+    /// The meter's interval capture is owned by the call as in
+    /// [`CheckedPackageEvaluation::evaluate_protocol_slot`].
     fn evaluate_protocol_slot(
         &self,
         slot: &ProtocolSlot,
