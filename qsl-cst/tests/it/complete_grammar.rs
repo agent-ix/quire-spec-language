@@ -684,7 +684,17 @@ fn undeclared_extension_refuses_at_the_extension_token() {
 #[trace("QSpec-TC-180", "QSpec-FR-339-AC-1")]
 #[test]
 fn contextual_complete_words_remain_eligible_identifiers() {
-    let contextual = ["exact", "set", "bag", "orderedSet", "unknown"];
+    let contextual = [
+        "exact",
+        "set",
+        "bag",
+        "orderedSet",
+        "unknown",
+        "helper",
+        "rec",
+        "cast",
+        "Tuple",
+    ];
     let declarations = contextual
         .iter()
         .map(|word| format!("record {word} {{ {word}: M::{word}; }}"))

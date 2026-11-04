@@ -49,20 +49,22 @@ fn a_function_named_by_a_reserved_spelling_refuses_at_s1() {
     }
 }
 
-/// A function selecting its profile through a reserved alias spelling, and a
-/// record whose field takes one: before FR-035-AC-7 covered every name
-/// position, the alias passed S1 to S3 with the selection silently dropped
-/// and the field failed only at S2 with a span over the whole production.
+/// A function or predicate selecting its profile through a reserved alias
+/// spelling: before FR-035-AC-7 covered the `using` position, the alias
+/// passed S1 to S3 with the profile selection silently dropped.
 #[trace("TC-113", "FR-035-AC-7")]
 #[test]
-fn a_reserved_alias_or_field_name_refuses_at_s1_at_the_name() {
+fn a_reserved_using_alias_refuses_at_s1_at_the_alias() {
     for name in ["helper", "rec", "cast", "Tuple"] {
         for (declaration, before) in [
             (
                 format!("function f using {name}(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}"),
                 "function f using ",
             ),
-            (format!("record R {{ {name}: Integer; }}"), "record R { "),
+            (
+                format!("predicate p using {name}(x: Int[0, 9]): Boolean {{ x = 1 }}"),
+                "predicate p using ",
+            ),
         ] {
             let text = format!("{HEADER}{declaration}\n");
             let parsed = qsl_cst::parse(

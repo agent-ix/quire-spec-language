@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-035-AC-7: a spelling the recognizer reserves as unsupported cannot name
-//! a native declaration or binder under `1-draft`, in any name position; a
-//! longer identifier that starts with one still can, and a qualified
-//! `member-name` position still admits the exact spelling.
+//! a function or predicate, nor select its profile through `using`, under
+//! `1-draft`; a longer identifier that starts with one still can. Every other
+//! name position parses as before until the QSpec ruling (QSL-1649).
 use ix_trace_rs::trace;
 use qsl_cst::{CompleteCause, CompleteCode, Limits, ParsedSource};
 use qsl_foundation::{SourceIdentity, Span};
@@ -12,9 +12,9 @@ const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
 const RESERVED: [&str; 4] = ["helper", "rec", "cast", "Tuple"];
 const NEAR: [&str; 4] = ["helperz", "recount", "caster", "TupleX"];
 
-/// Every native declaration and binder name position, one per family. `@`
-/// marks the name; the text around it is a whole `1-draft` unit.
-const POSITIONS: [(&str, &str); 17] = [
+/// The function and predicate name and `using` alias positions that refuse a
+/// reserved spelling. `@` marks the name; the text is a whole `1-draft` unit.
+const REFUSED: [(&str, &str); 4] = [
     (
         "function name",
         "{P}function @ using v(x: Integer): Integer pure { x + 1 }",
@@ -31,6 +31,11 @@ const POSITIONS: [(&str, &str); 17] = [
         "predicate `using` alias",
         "{P}predicate p using @(x: Integer): Boolean { x = 1 }",
     ),
+];
+
+/// The other native name positions, one per family: S1 still admits a
+/// reserved spelling there, unchanged, pending QSL-1649.
+const UNCHANGED: [(&str, &str); 13] = [
     (
         "parameter",
         "{P}function f using v(@: Integer): Integer pure { 1 }",
@@ -80,8 +85,8 @@ fn parse(text: &str) -> ParsedSource {
 
 #[trace("TC-113", "FR-035-AC-7")]
 #[test]
-fn a_reserved_spelling_cannot_name_any_native_declaration_or_binder() {
-    for (position, template) in POSITIONS {
+fn a_reserved_spelling_cannot_name_a_function_or_predicate_or_its_alias() {
+    for (position, template) in REFUSED {
         let at = LANGUAGE.len()
             + template
                 .replace("{P}", PROFILE)
@@ -119,8 +124,24 @@ fn a_reserved_spelling_cannot_name_any_native_declaration_or_binder() {
 #[trace("TC-113", "FR-035-AC-7")]
 #[test]
 fn a_longer_identifier_starting_with_a_reserved_spelling_names_every_position() {
-    for (position, template) in POSITIONS {
+    for (position, template) in REFUSED.into_iter().chain(UNCHANGED) {
         for name in NEAR {
+            let text = unit(template, name);
+            let parsed = parse(&text);
+            assert!(
+                parsed.is_admissible(),
+                "{position}: {text}: {:?}",
+                parsed.diagnostics()
+            );
+        }
+    }
+}
+
+#[trace("TC-113", "FR-035-AC-7")]
+#[test]
+fn other_name_positions_still_admit_a_reserved_spelling_at_s1() {
+    for (position, template) in UNCHANGED {
+        for name in RESERVED {
             let text = unit(template, name);
             let parsed = parse(&text);
             assert!(

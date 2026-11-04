@@ -33,18 +33,16 @@ and `qsl-semantics/tests/it/reserved_declaration_names.rs`.
    spellings as native binders. Compare edition-specific keyword treatment with a
    valid historical identifier newly reserved by the composed edition.
 5. For each exact spelling `helper`, `rec`, `cast` and `Tuple`, use it under
-   `1-draft` in each native declaration and binder name position family: a
-   function and a predicate name, the `using` alias of each, a parameter, a
-   `let` binder, a record, enum, tuple, union and type-alias name, a record
-   field, an enum and a union member, and a profile, import and model alias.
-   Require one located syntax refusal whose span covers the spelling and whose
-   diagnostic names it, with no admissible parsed unit. Confirm a qualified
-   `M::<spelling>` type and an `x.<spelling>` member access still parse. Then
-   use `helperz`, `recount`, `caster` and `TupleX` in every one of those
-   positions and confirm each unit is admissible, and check a unit whose
-   second function calls a first function so named. Under `0-draft`, use each
-   of the four exact spellings in a value position and confirm the historical
-   `unsupported_construct` refusal is unchanged.
+   `1-draft` as a function name, a predicate name, and the `using` alias of
+   each. Require one located syntax refusal whose span covers the spelling and
+   whose diagnostic names it, with no admissible parsed unit. Confirm every
+   other native name position, and a qualified `M::<spelling>` type or
+   `x.<spelling>` member access, parses as before. Then use `helperz`,
+   `recount`, `caster` and `TupleX` in those positions and confirm each unit
+   is admissible, and check a unit whose second function calls a first
+   function so named. Under `0-draft`, use each of the four exact spellings in
+   a value position and confirm the historical `unsupported_construct` refusal
+   is unchanged.
 6. Insert CRLF, comments, escaped quotes and multibyte string values. Check spans
    by slicing the original bytes at every selected declaration/reference/literal,
    including delimiters, rather than comparing decoded-character offsets.
@@ -56,11 +54,11 @@ and `qsl-semantics/tests/it/reserved_declaration_names.rs`.
 The composed forms produce typed, located syntax with no linked or checked claim.
 Malformed forms return their typed source-bound diagnostics; budget failures are
 `stage_limit_exceeded` with the budget's cause, a token budget
-`token-count-exceeded`. A reserved spelling in any `1-draft` native
-declaration or binder name position has one diagnostic spanning and naming
-that exact spelling and produces no admissible unit, while qualified member
-names still admit it; the near-spelling controls remain identifiers in every
-position and a call of a function so named checks, and the same spellings
-under `0-draft` keep their historical `unsupported_construct` refusal. All historical expectations remain byte-for-byte
-unchanged. Each step has unconditional assertions; a missing declaration or absent
+`token-count-exceeded`. A reserved spelling as a `1-draft` function or
+predicate name or `using` alias has one diagnostic spanning and naming that
+exact spelling and produces no admissible unit, while every other name position
+parses as before; the near-spelling controls remain identifiers and a call of a
+function so named checks, and the same spellings under `0-draft` keep their
+historical `unsupported_construct` refusal. All historical expectations remain
+byte-for-byte unchanged. Each step has unconditional assertions; a missing declaration or absent
 error object fails the test rather than skipping the check.
