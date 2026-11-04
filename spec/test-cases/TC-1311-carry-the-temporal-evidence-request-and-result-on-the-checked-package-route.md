@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the typed request and result of the temporal evidence route. Scope:
-FR-516-AC-1 to FR-516-AC-41. The numeric vectors are the QSpec FR-370 and
+FR-516-AC-1 to FR-516-AC-44. The numeric vectors are the QSpec FR-370 and
 FR-043 cases and TC-144; they are referenced, never copied.
 
 ## Test Procedure
@@ -44,7 +44,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 24 | 24 | closed complete scope, no delivery, `trigger` `None`, `anchor` naming no observed position | `Unavailable`, not `Inactive` |
 | 25 | 25 | a counter stop, a meter stop, a `lineage` stop, an evicted required valuation, a `formula_nodes` stop, a `history_span` stop, a non-fitting tick sum, a `progress.covered_positions` capacity stop; a withdrawn anchor | each stop `Ok` with `Unavailable`, no truth and `incomplete` naming the stop; the anchor `Ok` with `Unavailable`, a `Missing` non-value and `incomplete` `None`; no `Err`; no unset activation |
 | 26 | 26 | a clause whose verdict is `PendingNextEvent`; one whose verdict is `Pending` | `Truth::Pending` each |
-| 27 | 27 | the clause of FR-523-AC-21 through the evidence call | `evaluation_steps` 4, `positions` 1, `valuations` 4, meter usage at `temporal.visit` 10, thirteen counters |
+| 27 | 27 | the clause of FR-523-AC-21 through the evidence call | `evaluation_steps` 4, `positions` 1, `valuations` 4, meter usage at `temporal.visit` 13, thirteen counters |
 | 28 | 28 | a guard-`None` delivery with a healthy one; a request with a surplus capture fact | both listed, the first `Unavailable`; `Err(CallFailure::Admission)`, empty charge log |
 | 29 | 29 | the package from the `Emission` vs the read-back package | equal profile selection and `TemporalBinding` row; the clause's own `binding` authenticates |
 | 30 | 30 | a package with two clauses of different formulas and clock rows; a `binding` asserting the other's row | `binding-mismatch` with the FR-522 dimension, in the package from the `Emission` and the read-back package |
@@ -59,8 +59,11 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 39 | 39 | formula with an unbounded operator; a timed interval; a cyclic or out-of-range `operands`; a `predicate_leaves()`/`holds` count mismatch; a readable twin of each; a tick sum over `u64` | `clause-unreadable` each, empty charge log; the readable ones return a result; the overflow is the `history_span` `Incomplete` |
 | 40 | 40 | `control` naming a clause with no FR-449 row; a row naming another clause; the call's own row | `activation-mapping-missing`; `activation-mapping-mismatch`; evaluated, each refusal with an empty charge log |
 | 41 | 41 | every cause of the table, each with its condition met and then unmet | `Err` with the cause, empty charge log, ledgers unchanged; `Ok`; no cause outside the table and the cross-referenced ones |
+| 42 | 42 | timestamped-event `p until[0,5] q`, two positions of one stamp without order keys; the same with distinct keys of one authority; `eventually[0,5] holds(p)` over the same two positions | `Ok`, `Active`, no truth, `Refused`/`temporal-refusal`/`unordered-tie`; a truth; a truth |
+| 43 | 43 | a support valuation absent at position 1 of atom 0; present; a read but non-support valuation absent (atom 1, position 2); with the decision closure withdrawn too | `Missing`/`fact-withdrawn`/`valuation:0@1`; no non-value; `valuation:1@2`; `decision_closure` |
+| 44 | 44 | fixed-sample clause with a support pair at a silent sample | support holds the observed pairs' entries only |
 
-Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-41", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
+Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-44", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
 
 ## Expected Results
 
