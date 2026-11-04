@@ -39,8 +39,11 @@ pub(crate) trait NodeSource<'a>: Copy + 'a {
     /// The node's checked static type.
     fn value_type(self) -> &'a ValueType;
 
-    /// The node's source location.
-    fn location(self) -> &'a Location;
+    /// The node's location: a checked node's source location; a reader
+    /// node's admitted location, `None` where the admitted wire carries none
+    /// for it (FR-390, QSpec FR-322-AC-310). A source never supplies a
+    /// location it does not hold.
+    fn location(self) -> Option<&'a Location>;
 
     /// Whether the node is a numeric-equality part of a float ordering's
     /// composition (FR-397).
@@ -90,8 +93,8 @@ impl<'a> NodeSource<'a> for CheckedNode<'a> {
         CheckedNode::value_type(self)
     }
 
-    fn location(self) -> &'a Location {
-        CheckedNode::location(self)
+    fn location(self) -> Option<&'a Location> {
+        Some(CheckedNode::location(self))
     }
 
     fn is_ordering_part(self) -> bool {

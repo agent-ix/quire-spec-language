@@ -1163,7 +1163,8 @@ fn object_package(
     qsl_package::CheckedPackage::link(graph)
 }
 
-/// QSL-1470 (FR-049-AC-2/AC-3): the protocol reader's attribute read and
+/// QSL-1470 (FR-049-AC-2/AC-3): the machine's attribute read, which the
+/// protocol reader's projection also evaluates through, and
 /// `reaches`'s edge read take their slot through `admitted_slot`, so a stored
 /// value that is not of the package's declared type refuses instead of
 /// reaching a shape fault or projecting another type.
@@ -1198,22 +1199,17 @@ fn the_reader_and_edge_reads_refuse_a_stored_value_of_another_type() {
         machine.edge_targets(literal.root(), &reference(), &field),
         Err(Halt::Family(FamilyResult::Refused(_)))
     ));
-    set_frames(
-        &mut machine,
-        vec![vec![Some(Value::Reference(reference()))]],
-    );
-    let read = ReaderRoot {
-        slot: 0,
-        field: qsl_package::ReaderProtocolField::Attribute {
-            owner: field.owner.clone(),
-            name: field.name.to_string(),
-        },
+    // The reader's attribute read is the machine's own `Attribute` arm
+    // (FR-390-AC-16), here over the reference operand already evaluated.
+    let attribute = body(|ids| NodeKind::Attribute {
+        reference: ids[0],
+        field: field.clone(),
         optional: false,
         derefed: false,
-        value_type: reference_type.clone(),
-    };
+    });
+    machine.push_value(Value::Reference(reference()), false);
     assert!(matches!(
-        machine.eval_reader_read(read),
+        machine.apply(attribute.root()),
         Err(Halt::Family(FamilyResult::Refused(_)))
     ));
 }
