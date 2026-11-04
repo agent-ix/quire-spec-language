@@ -374,6 +374,7 @@ fn corpus() -> Vec<(&'static str, String)> {
                     "role Workers each M::Actor from Buyer max 2 lifetime workflow;\n",
                     "relationship Order = M::Order;\n",
                     "channel Messages from Buyer to Workers carries M::Message ordering unordered delivery at-least-once capacity 10 overflow reject;\n",
+                    "channel IntervalDelivery from Buyer to Workers carries M::Message ordering unordered delivery [0,3] capacity 2 overflow block;\n",
                     "channel Ordered from Workers to Buyer carries M::Message ordering fifo by (key: Integer) { true } delivery exactly-once-premise capacity symbolic(Cap) overflow block;\n",
                     "channel Lossy from Buyer to Workers carries M::Message ordering unordered delivery unknown capacity 2 overflow loss tail;\n",
                     "requires temporal Watch;\n",

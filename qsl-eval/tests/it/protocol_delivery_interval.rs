@@ -6,8 +6,10 @@ use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, Role
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
-use qsl_eval::simulation::protocol::{ProtocolSystem, ResolvedMemory, Sc, SendOutcome, StepKind};
-use qsl_eval::simulation::{Expansion, TransitionSystem};
+use qsl_eval::simulation::protocol::{
+    explore_protocol, ProtocolSystem, ResolvedMemory, Sc, SendOutcome, StepKind,
+};
+use qsl_eval::simulation::{Expansion, Limits, Outcome, SubjectSystem, TransitionSystem};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -21,7 +23,8 @@ use serde_json::json;
 use std::collections::BTreeMap;
 
 const DOMAIN: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
-const POPULATION: &str = "ix://acme/orders/Gadget";
+const TYPE: &str = "ix://acme/orders/Gadget";
+const POPULATION: &str = "ix://acme/orders/gadgets";
 const METER: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
     decimal_digits: u64::MAX,
@@ -40,10 +43,29 @@ struct Fixture {
     packages: qsl_semantics::model::intake::PackageInput,
     snapshots: DocumentProvision,
     initial: DocumentRef,
+    max_candidates: u64,
 }
 
 fn fixture(delivery: &str, capacity: u64, overflow: &str, run: &str) -> Fixture {
-    let packages = package_input([DOMAIN]).expect("domain package admitted");
+    let mut domain: serde_json::Value =
+        serde_json::from_slice(DOMAIN).expect("domain fixture JSON");
+    domain["constructs"].as_array_mut().unwrap().push(json!({
+        "kind": {"module": "acme/orders", "name": "population"},
+        "moduleVersion": "1.0.0",
+        "construct": {"identity": "none", "shape": "record", "members": {},
+            "meaning": "quire.meaning.model.population/v1"}
+    }));
+    domain["populations"] = json!([{
+        "identity": POPULATION,
+        "displayName": "gadgets",
+        "kind": {"module": "acme/orders", "name": "population"},
+        "members": [TYPE],
+        "extent": "closed",
+        "origin": {"generated": {"generatorIdentity": POPULATION,
+            "generatorVersion": "1.0.0", "inputIdentities": [POPULATION]}}
+    }]);
+    let domain = serde_json::to_vec(&domain).expect("domain fixture serializes");
+    let packages = package_input([domain.as_slice()]).expect("domain package admitted");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -52,7 +74,7 @@ fn fixture(delivery: &str, capacity: u64, overflow: &str, run: &str) -> Fixture 
          protocol P using p over (input: M::Gadget) on origin {{\n\
            role Seller on M::Gadget;\n\
            role Buyer on M::Gadget;\n\
-           channel Pay from Seller to Buyer carries Boolean ordering unordered \
+           channel Pay from Seller to Buyer carries Boolean ordering fifo by (m: Boolean) {{ m }} \
              delivery {delivery} capacity {capacity} overflow {overflow};\n\
            run {run}\n\
            finish End as (outcome: Boolean) {{ true }};\n\
@@ -65,7 +87,11 @@ fn fixture(delivery: &str, capacity: u64, overflow: &str, run: &str) -> Fixture 
         qsl_cst::Limits::default(),
     )
     .expect("unit parsed");
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert!(
+        parsed.is_admissible(),
+        "{:?}\n{source}",
+        parsed.diagnostics()
+    );
     let unit = qsl_forms::build_unit(&parsed).expect("unit forms built");
     let models = admit_unit(
         &unit.selections().models,
@@ -95,7 +121,7 @@ fn fixture(delivery: &str, capacity: u64, overflow: &str, run: &str) -> Fixture 
         "populations": [{
             "population": POPULATION,
             "complete": true,
-            "objects": [{"key": "g1", "type": POPULATION, "fields": {}}]
+            "objects": [{"key": "g1", "type": TYPE, "fields": {"code": {"integer": "1"}}}]
         }]
     }))
     .expect("snapshot serializes");
@@ -110,6 +136,7 @@ fn fixture(delivery: &str, capacity: u64, overflow: &str, run: &str) -> Fixture 
         packages,
         snapshots,
         initial,
+        max_candidates: 1_000_000,
     }
 }
 
@@ -130,7 +157,7 @@ fn system<'a>(fixture: &'a Fixture) -> ProtocolSystem<'a, Sc> {
         universes: vec![universe],
         observation: ObservationLimits::default(),
         expansion: ExpansionLimits {
-            max_candidates: 100_000,
+            max_candidates: fixture.max_candidates,
         },
         meter: METER,
     };
@@ -183,6 +210,16 @@ fn send_transitions(
         .collect()
 }
 
+fn pending_payload(key: &serde_json::Value) -> bool {
+    key["control"]["entries"]
+        .as_array()
+        .expect("control entries are a list")
+        .iter()
+        .find(|entry| entry["key"]["type"] == "send-pending")
+        .and_then(|entry| entry["value"]["payload"]["value"].as_bool())
+        .unwrap_or_else(|| panic!("pending Boolean payload in {key}"))
+}
+
 /// FR-509-AC-5/AC-9 (TC-1304): interval counts are choices, overflow outcomes
 /// are recorded entry by entry, and a zero count settles without queueing.
 #[trace("FR-509-AC-5", "FR-509-AC-9", "TC-1304")]
@@ -193,9 +230,9 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         2,
         "block",
         "sequence Main { send Sent via Pay as (sent: Boolean) { true }; \
-         receive R1 via Pay of Main::Sent as (r1: Boolean) { true }; \
-         receive R2 via Pay of Main::Sent as (r2: Boolean) { true }; \
-         receive R3 via Pay of Main::Sent as (r3: Boolean) { true }; }",
+         receive ReadA via Pay of Main::Sent as (readA: Boolean) { true }; \
+         receive ReadB via Pay of Main::Sent as (readB: Boolean) { true }; \
+         receive ReadC via Pay of Main::Sent as (readC: Boolean) { true }; }",
     );
     let exact_system = system(&exact);
     let initial_states = exact_system.initial();
@@ -313,8 +350,8 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         "[0,3]",
         1,
         "block",
-        "sequence Main { send First via Pay as (first: Boolean) { true }; \
-         send Second via Pay as (second: Boolean) { true }; }",
+        "sequence Main { send First via Pay as (readA: Boolean) { readA }; \
+         send Second via Pay as (readB: Boolean) { readB }; }",
     );
     let full_system = system(&full);
     let full_initial = full_system.initial();
@@ -335,9 +372,14 @@ fn interval_send_records_count_entries_and_zero_delivery() {
     let second_expansion = full_system
         .successors(&after_first)
         .expect("full queue send expands");
-    assert!(send_transitions(&second_expansion)
+    let second_counts = send_transitions(&second_expansion)
         .iter()
-        .all(|transition| transition.send_record().unwrap().count() == Some(0)));
+        .map(|transition| transition.send_record().unwrap().count())
+        .collect::<Vec<_>>();
+    assert!(
+        second_counts.iter().all(|count| *count == Some(0)),
+        "{second_counts:?}"
+    );
 
     let pending = fixture(
         "[1,3]",
@@ -366,67 +408,277 @@ fn interval_send_records_count_entries_and_zero_delivery() {
     let send_expansion = pending_system
         .successors(&after_fork)
         .expect("parallel branches expand");
-    let partial = send_transitions(&send_expansion)
-        .into_iter()
-        .find(|transition| {
-            transition
-                .send_record()
-                .is_some_and(|record| record.count() == Some(3) && record.pending() == Some(1))
-        })
-        .expect("count three appends two entries and remains pending");
-    assert_eq!(
-        partial.send_record().unwrap().entries(),
-        Some(&[SendOutcome::Accepted; 2][..])
+    let mut checked_payloads = Vec::new();
+    for (send, partial_state) in &send_expansion.successors {
+        let Some(record) = send.send_record() else {
+            continue;
+        };
+        if record.count() != Some(3) || record.pending() != Some(1) {
+            continue;
+        }
+        assert_eq!(record.entries(), Some(&[SendOutcome::Accepted; 2][..]));
+        let (partial_key, _) = pending_system
+            .state_key(partial_state)
+            .expect("partial key");
+        let partial_key: serde_json::Value = serde_json::from_slice(&partial_key).unwrap();
+        let payload = pending_payload(&partial_key);
+        let receive_expansion = pending_system
+            .successors(partial_state)
+            .expect("receiver frees one queue slot");
+        let after_receive = receive_expansion
+            .successors
+            .iter()
+            .find(|(transition, _)| transition.kind() == StepKind::Receive)
+            .expect("receiver consumes one entry")
+            .1
+            .clone();
+        let continuation = pending_system
+            .successors(&after_receive)
+            .expect("blocked send resumes");
+        let (_, continued_state) = continuation
+            .successors
+            .iter()
+            .find(|(transition, _)| {
+                transition.kind() == StepKind::Send
+                    && transition.send_record().is_some_and(|record| {
+                        record.count() == Some(1)
+                            && record.entries() == Some(&[SendOutcome::Accepted][..])
+                            && record.pending() == Some(0)
+                    })
+            })
+            .expect("continuation accepts one entry and settles");
+        let rest_nodes = pending_system
+            .threads(continued_state)
+            .expect("sender thread view")
+            .into_iter()
+            .filter_map(|thread| thread.rest_point.node)
+            .collect::<Vec<_>>();
+        let remains_at_check = rest_nodes.iter().any(|node| node.ends_with("/Valid"));
+        assert_eq!(
+            remains_at_check, !payload,
+            "the send binder must preserve payload {payload}: {rest_nodes:?}"
+        );
+        checked_payloads.push(payload);
+    }
+    assert!(!checked_payloads.is_empty());
+}
+
+/// FR-509-AC-9 (TC-1304): pending-only states preserve count and payload in
+/// the sole differing state-key member, and each continuation keeps its own
+/// payload binding.
+#[trace("FR-509-AC-9", "TC-1304")]
+#[test]
+fn fifo_pending_states_keep_count_payload_and_distinct_keys() {
+    let pending = fixture(
+        "[2,3]",
+        1,
+        "block",
+        "parallel par { \
+           branch l sequence Sender { \
+             send Sent via Pay as (sent: Boolean) { true }; \
+             check Valid using v { sent }; \
+           } \
+           branch r receive Got via Pay of l::Sender::Sent as (got: Boolean) { true }; \
+         } join all [l, r];",
     );
-    let partial_state = send_expansion
+    let system = system(&pending);
+    let initial_states = system.initial();
+    let [initial] = initial_states.as_slice() else {
+        panic!("one initial state");
+    };
+    let fork = system.successors(initial).expect("parallel forks");
+    let after_fork = fork
         .successors
         .iter()
-        .find(|(transition, _)| {
-            transition
-                .send_record()
-                .is_some_and(|record| record.count() == Some(3))
-        })
-        .expect("partial send successor")
+        .find(|(step, _)| step.kind() == StepKind::Fork)
+        .expect("fork transition")
         .1
         .clone();
-    let receive_expansion = pending_system
-        .successors(&partial_state)
-        .expect("receiver frees one queue slot");
-    let after_receive = receive_expansion
-        .successors
+    let send_expansion = system.successors(&after_fork).expect("send expands");
+    let mut pending_states = Vec::new();
+    for (send, after_send) in &send_expansion.successors {
+        let Some(record) = send.send_record() else {
+            continue;
+        };
+        let Some(count @ (2 | 3)) = record.count() else {
+            continue;
+        };
+        let receives = system.successors(after_send).expect("receive expands");
+        for (receive, after_receive) in &receives.successors {
+            if receive.kind() != StepKind::Receive {
+                continue;
+            }
+            let (bytes, _) = system
+                .state_key(after_receive)
+                .expect("pending key encodes");
+            let key: serde_json::Value =
+                serde_json::from_slice(&bytes).expect("canonical JSON key");
+            let entries = key["control"]["entries"]
+                .as_array()
+                .expect("control entries are a list");
+            let pending_member = entries
+                .iter()
+                .find(|entry| entry["key"]["type"] == "send-pending")
+                .unwrap_or_else(|| panic!("one pending send member: {key}"));
+            let pending_value = &pending_member["value"];
+            let remaining = pending_value["remaining"]
+                .as_str()
+                .and_then(|text| text.parse::<u64>().ok())
+                .or_else(|| pending_value["remaining"].as_u64())
+                .expect("pending count encoded");
+            let payload = &pending_value["payload"];
+            let value = payload["value"]
+                .as_bool()
+                .unwrap_or_else(|| panic!("unexpected Boolean payload encoding: {payload}"));
+            let mut without_pending = key.clone();
+            without_pending["control"]["entries"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|entry| entry["key"]["type"] != "send-pending");
+            pending_states.push((
+                count - 1,
+                value,
+                remaining,
+                bytes,
+                without_pending,
+                after_receive.clone(),
+            ));
+        }
+    }
+    let expected = [(1, true), (1, false), (2, true)];
+    for (count, payload) in expected {
+        assert!(
+            pending_states
+                .iter()
+                .any(|(candidate, value, remaining, ..)| {
+                    *candidate == count && *value == payload && *remaining == count
+                }),
+            "missing pending ({count}, {payload}): {pending_states:?}"
+        );
+    }
+    for (pending_count, payload, remaining, _, _, state) in &pending_states {
+        if *pending_count != 1 || *remaining != 1 {
+            continue;
+        }
+        let continuation = system.successors(state).expect("one pending entry resumes");
+        let (_, continued_state) = continuation
+            .successors
+            .iter()
+            .find(|(transition, _)| {
+                transition.kind() == StepKind::Send
+                    && transition.send_record().is_some_and(|record| {
+                        record.count() == Some(1)
+                            && record.entries() == Some(&[SendOutcome::Accepted][..])
+                            && record.pending() == Some(0)
+                    })
+            })
+            .expect("continuation settles its one remaining entry");
+        let rests = system
+            .threads(continued_state)
+            .expect("sender thread view")
+            .into_iter()
+            .filter_map(|thread| thread.rest_point.node)
+            .collect::<Vec<_>>();
+        let remains_at_check = rests.iter().any(|node| node.ends_with("/Valid"));
+        assert_eq!(
+            remains_at_check, !*payload,
+            "continuation must bind its own payload {payload}: {rests:?}"
+        );
+    }
+    for left in 0..pending_states.len() {
+        for right in left + 1..pending_states.len() {
+            if pending_states[left].0 == pending_states[right].0
+                && pending_states[left].1 == pending_states[right].1
+            {
+                continue;
+            }
+            assert_ne!(pending_states[left].3, pending_states[right].3);
+            assert_eq!(
+                pending_states[left].4, pending_states[right].4,
+                "only the send-pending entry may distinguish these states"
+            );
+        }
+    }
+}
+
+/// FR-509-AC-10 (TC-1304): work exhaustion preserves the send state on the
+/// frontier after exactly the d=0 and d=1 work, while unlimited expansion
+/// generates every count in ascending order.
+#[trace("FR-509-AC-10", "TC-1304")]
+#[test]
+fn interval_send_work_limit_keeps_frontier_and_unlimited_counts() {
+    let run = "sequence Main { send P via Pay as (payload: Boolean) { payload }; }";
+    let unlimited = fixture("[0,1000]", 2, "reject", run);
+    let unlimited_system = system(&unlimited);
+    let initial_states = unlimited_system.initial();
+    let [initial] = initial_states.as_slice() else {
+        panic!("one initial state");
+    };
+    let all = unlimited_system
+        .successors(initial)
+        .expect("unlimited send expands");
+    let counts = send_transitions(&all)
         .iter()
-        .find(|(transition, _)| transition.kind() == StepKind::Receive)
-        .expect("receiver consumes one entry")
-        .1
-        .clone();
-    let continuation = pending_system
-        .successors(&after_receive)
-        .expect("blocked send resumes");
-    assert!(send_transitions(&continuation).iter().any(|transition| {
-        transition.send_record().is_some_and(|record| {
-            record.count() == Some(1)
-                && record.entries() == Some(&[SendOutcome::Accepted][..])
-                && record.pending() == Some(0)
-        })
-    }));
-    let continued_state = continuation
-        .successors
-        .iter()
-        .find(|(transition, _)| {
-            transition
-                .send_record()
-                .is_some_and(|record| record.count() == Some(1))
-        })
-        .expect("continuation state")
-        .1
-        .clone();
-    assert!(!pending_system
-        .threads(&continued_state)
-        .expect("sender thread view")
-        .iter()
-        .any(|thread| thread
-            .rest_point
-            .node
-            .as_deref()
-            .is_some_and(|node| node.ends_with("::Valid"))));
+        .map(|step| step.send_record().unwrap().count().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(counts, (0..=1000).collect::<Vec<_>>());
+
+    let mut d0 = fixture("[0,0]", 2, "reject", run);
+    d0.max_candidates = 3;
+    let d0_system = system(&d0);
+    let d0_initial = d0_system.initial();
+    let [state] = d0_initial.as_slice() else {
+        panic!("one d=0 initial state");
+    };
+    let d0_expansion = d0_system.successors(state).expect("W0 + 1 admits d=0");
+    let d0_steps = send_transitions(&d0_expansion);
+    assert_eq!(d0_steps.len(), 1);
+    assert_eq!(d0_steps[0].send_record().unwrap().count(), Some(0));
+
+    let mut d1 = fixture("[0,1]", 2, "reject", run);
+    d1.max_candidates = 5;
+    let d1_system = system(&d1);
+    let d1_initial = d1_system.initial();
+    let [state] = d1_initial.as_slice() else {
+        panic!("one d=1 initial state");
+    };
+    let d1_expansion = d1_system
+        .successors(state)
+        .expect("W0 + 3 admits d=0 and d=1");
+    let d1_steps = send_transitions(&d1_expansion);
+    assert_eq!(
+        d1_steps
+            .iter()
+            .map(|step| step.send_record().unwrap().count().unwrap())
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+
+    let mut limited = fixture("[0,1000]", 2, "reject", run);
+    limited.max_candidates = 5; // W0 = 2 Boolean values; W0 + 3 charges d=0, d=1 and its entry.
+    let limited_system = system(&limited);
+    let initial_states = limited_system.initial();
+    let [initial] = initial_states.as_slice() else {
+        panic!("one initial state");
+    };
+    let (send_key, _) = limited_system.state_key(initial).expect("send state key");
+    let exploration = explore_protocol(&limited_system, 1_000_000, Limits::default(), || false)
+        .expect("work limit is an incomplete result");
+    let Outcome::Stopped {
+        cause, frontier, ..
+    } = &exploration.outcome
+    else {
+        panic!(
+            "expected a stopped exploration, got {:?}",
+            exploration.outcome
+        );
+    };
+    assert_eq!(cause.code(), "resource_exhausted");
+    assert_eq!(cause.cause(), "insufficient-next-charge");
+    assert_eq!(frontier.len(), 1);
+    assert_eq!(frontier[0].as_bytes(), send_key.as_slice());
+    assert_eq!(
+        exploration.outcome.category(),
+        quire_semantic_value::catalog::Category::Incomplete
+    );
 }

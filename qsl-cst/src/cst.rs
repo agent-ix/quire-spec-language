@@ -140,6 +140,8 @@ productions! {
     #[doc = "`fair [weak | strong] [whole | each] <qualified-name> ;`: a fairness constraint over one model operation, before a `temporal` clause's captures."]
     Fairness,
     Interval,
+    #[doc = "`[ <uint> , <uint> ]`: inclusive channel delivery count bounds (FR-509)."]
+    DeliveryInterval,
     #[doc = "`( [ | ( ) <quantity-literal> , <quantity-literal> ( ] | ) )`: a temporal operator's timed interval, each end closed or open (FR-393)."]
     TimedInterval,
     #[doc = "`time <identifier> (dense | tick <qualified-name> period <quantity-literal>) unit <qualified-name> ;`: a model's time source (FR-393)."]
@@ -221,7 +223,6 @@ productions! {
     StateGraphRelation, StateGraphUnary,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
-    DeliveryInterval,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]
     ProtocolTerminal,
     #[doc = "`scheduling adversarial;`: a protocol clause's opt-out of derived scheduler fairness."]
