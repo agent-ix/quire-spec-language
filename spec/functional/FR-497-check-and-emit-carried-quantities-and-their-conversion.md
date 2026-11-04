@@ -58,7 +58,7 @@ states only how `check`, lowering and the kernel realize them, and invents none.
   `Quantity<u>` (FR-094). The carrier `C` is a bounded `Int[..]`,
   `Decimal[..]` or `Rational[..]` type, an `Int[..]` carrier taking an
   optional trailing `; mode`; a `Rational[..]` carrier names no mode and its
-  mode is `exact`. `check` SHALL refuse a bare `Integer`, a bare `Decimal`, a
+  mode is `exact`. A `Decimal[..]` carrier writes its rounding mode (`Decimal[lo, hi; smin, smax; mode]`, the qsl-cst grammar's only `Decimal` form), and a `Decimal[..]` written without one is a syntax refusal at parse, not an implied `exact`; QSpec FR-140's "optional rounding spelling" is read with that grammar. `check` SHALL refuse a bare `Integer`, a bare `Decimal`, a
   bare `Rational`, a `Text[..]` or a record carrier `ill_typed`/`type-mismatch`
   at `C`, a carrier with `lo > hi` or `smin > smax` as FR-140 refuses its
   `Decimal[..]`, and a `Rational[..]` carrier with `n1 > n2` or outside
