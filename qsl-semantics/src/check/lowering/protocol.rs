@@ -198,12 +198,9 @@ impl ProtocolInput<'_> {
         let form = self.form;
         let slots = &self.checked.slots;
         let mut unemitted = Vec::new();
-        if self
-            .checked
-            .roles
-            .iter()
-            .any(|role| !role.replicated && role.context.is_none())
-        {
+        if self.checked.roles.iter().any(|role| {
+            !role.replicated && role.context.is_none() && role.model_selection.is_none()
+        }) {
             unemitted.push(ProtocolConstruct::WholeModelRole);
         }
         if self
@@ -1242,8 +1239,7 @@ impl Lowering<'_> {
     /// in source order. A role on a model type refers to that type's model
     /// node. A static role's `replication` Group is empty; a replicated role's
     /// holds its population, `max`, binder, lifetime and, for `until`, the
-    /// term. A role on a whole model is refused before this
-    /// ([`ProtocolConstruct::WholeModelRole`]).
+    /// term. A whole-model role uses its selected package identity as text.
     fn role_nodes(
         &mut self,
         protocol: &ProtocolInput<'_>,
@@ -1256,10 +1252,22 @@ impl Lowering<'_> {
         for (index, role) in protocol.checked.roles.iter().enumerate() {
             let location = protocol_location(name, ProtocolSite::Role(&role.name));
             let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
-            let context = role.context.clone().ok_or_else(unchecked)?;
-            let model = LeafTerm::reference(self.object_node(context.clone(), &location)?);
+            let model = match &role.context {
+                Some(context) => LeafTerm::reference(self.object_node(context.clone(), &location)?),
+                None if !role.replicated => self.text_literal(
+                    role.model_selection.as_deref().ok_or_else(unchecked)?,
+                    &location,
+                )?,
+                None => return Err(unchecked()),
+            };
             let replication = if role.replicated {
-                self.replication(protocol, index, context, readable, &location)?
+                self.replication(
+                    protocol,
+                    index,
+                    role.context.clone().ok_or_else(unchecked)?,
+                    readable,
+                    &location,
+                )?
             } else {
                 empty_group()
             };
