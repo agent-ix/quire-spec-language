@@ -369,9 +369,9 @@ fn interval_send_records_count_entries_and_zero_delivery() {
     let partial = send_transitions(&send_expansion)
         .into_iter()
         .find(|transition| {
-            transition.send_record().is_some_and(|record| {
-                record.count() == Some(3) && record.pending() == Some(1)
-            })
+            transition
+                .send_record()
+                .is_some_and(|record| record.count() == Some(3) && record.pending() == Some(1))
         })
         .expect("count three appends two entries and remains pending");
     assert_eq!(
@@ -402,16 +402,13 @@ fn interval_send_records_count_entries_and_zero_delivery() {
     let continuation = pending_system
         .successors(&after_receive)
         .expect("blocked send resumes");
-    let continuation_send = send_transitions(&continuation)
-        .into_iter()
-        .find(|transition| {
-            transition.send_record().is_some_and(|record| {
-                record.count() == Some(1)
-                    && record.entries() == Some(&[SendOutcome::Accepted][..])
-                    && record.pending() == Some(0)
-            })
+    assert!(send_transitions(&continuation).iter().any(|transition| {
+        transition.send_record().is_some_and(|record| {
+            record.count() == Some(1)
+                && record.entries() == Some(&[SendOutcome::Accepted][..])
+                && record.pending() == Some(0)
         })
-        .expect("remaining send appends one entry and settles");
+    }));
     let continued_state = continuation
         .successors
         .iter()
@@ -423,12 +420,13 @@ fn interval_send_records_count_entries_and_zero_delivery() {
         .expect("continuation state")
         .1
         .clone();
-    let after_continuation = pending_system
-        .successors(&continued_state)
-        .expect("send binder is available to the following check");
-    assert!(after_continuation
-        .successors
+    assert!(!pending_system
+        .threads(&continued_state)
+        .expect("sender thread view")
         .iter()
-        .any(|(transition, _)| transition.kind() == StepKind::Check));
-    let _ = continuation_send;
+        .any(|thread| thread
+            .rest_point
+            .node
+            .as_deref()
+            .is_some_and(|node| node.ends_with("::Valid"))));
 }

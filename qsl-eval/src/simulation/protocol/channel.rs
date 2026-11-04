@@ -474,7 +474,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             channel.name.clone(),
             payload_enc.clone(),
             count,
-            entries.clone(),
+            entries,
             pending,
             displaced.as_ref().map(|(entry, _)| entry.enc.clone()),
         );
