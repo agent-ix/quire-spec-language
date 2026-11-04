@@ -105,33 +105,34 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
   its exact probability. A delay no distribution gives SHALL be an action of
   the scheduler. A state where no identity races and delay is bounded SHALL
   settle `Unsupported(NotStochastic)`.
-- Under a workload, a given-delay identity (one with a `discrete` delay
-  distribution) and a free-delay identity (one with none) SHALL race in one
-  state, and EN-5 SHALL NOT refuse the mixture. The given draws resolve as
-  above to a least delay `m` and the set `T` of identities tied at `m`
-  (ordered by the workload's weights). For each free identity and each delay
-  `d` in its window, in digital units, the scheduler's choice
-  `WorkloadResolve{identity, delay: d}` SHALL be one distribution of total
-  probability 1 over the race outcomes: for `d < m` the free identity wins at
-  `d`; for `d = m` the free identity joins `T` and the winner among them is
-  chosen by the workload's weights (ADR-026 SD-3); for `d > m` the winner is
-  the one the given draws give at `m`. A race with no given-delay identity
-  has the same choices, in which the free identity wins at `d` with
-  probability 1.
-- `ProductAction::WorkloadResolve{identity, delay}` (FR-196) SHALL name only
-  such a choice, which belongs to a workload run; an every-scheduler run
-  never has it, because there the scheduler chooses the identity itself
-  (`Identity`).
-- A deadline event SHALL add one digital clock that no step resets, capped
-  at `D + 1`. `expected elapsed` SHALL carry one unit of time as the reward
-  of each delay move (1/scale in the model unit); IdleObserve has reward0.
-  Reach/elapsed target predicates are read on initial observation, resolved
-  discrete steps and IdleObserve, never pure delay. Deadline same-time
-  closure includes actual available IdleObserve at D, and crossing D
-  fails by elapsed time before a later success letter (FR-196).
-- EN-5 SHALL decompose the subgraph of discrete moves into SCCs and settle
-  `Unsupported(ZeroDelayCycle{states})` when a reachable cycle has no delay
-  move.
+- Under a workload, a state whose racing identities all have given delays
+  (`discrete` distributions) SHALL resolve as above, each race edge carrying
+  `Identity(r)` with `r` the first racing identity in canonical order.
+- Under a workload, a state whose racing identities all have free delays
+  SHALL offer `UnitDelay` and a single `WorkloadResolve{identity, delay: 0}`
+  whose `identity` is the first enabled identity and whose probability mass
+  splits over every enabled identity in proportion to the workload's weights.
+- Under a workload, a state in which given-delay and free-delay identities race
+  together SHALL NOT be refused. The given draws resolve to a least delay `m`
+  and the set `T` of identities tied at `m` (ordered by the workload's
+  weights). For each free identity and each delay `d` in its window, in digital
+  units, the state SHALL offer the choice `WorkloadResolve{identity, delay: d}`
+  as one distribution of total probability 1 over the race outcomes: for
+  `d < m` the free identity wins at `d`; for `d = m` it joins `T` and the
+  winner among them is chosen by the workload's weights (ADR-026 SD-3); for
+  `d > m` the winner is the one the given draws give at `m`.
+- An every-scheduler run SHALL carry `Identity` where a workload run carries
+  `WorkloadResolve`, because there the scheduler chooses the identity itself.
+
+ADR-026 SD-3 lets the scheduler choose each free delay after the given delays
+are drawn, so its choice may depend on the drawn vector; FR-202's `FreeDelays`
+form names that decision. `WorkloadResolve` is made before the given draw
+resolves and cannot depend on it. The two give equal minima and maxima whenever
+the payoff is monotone in the chosen delay, which includes every probability
+of one event after a single race (FR-204-AC-8). Parity with SD-3 for a payoff
+that is not monotone in the delay, under a given distribution of several
+support points, needs the post-draw choice, and the product does not offer it:
+that parity is unmet and is owned by the EN-5 provider ticket QSL-1498.
 
 ### Evidence
 
@@ -142,7 +143,7 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
   free-delay/observation choices; fixed race weights/distributions remain
   unchanged. A timed path names the same choice, exact elapsed amount and
   complete post-key; a race edge of a mixed given and free state names
-  `WorkloadResolve{identity, delay}` as its choice. Neither action None nor a local node/index chooses an
+  `WorkloadResolve{identity, delay}` as its choice, and a witness scheduler of the SD-3 form names `FreeDelays` (FR-202) for the same decision taken after the given draw. Neither action None nor a local node/index chooses an
   observation. Randomized exact-rational entries are allowed for derived
   TS-5 even without an authored fairness declaration.
 - A timed witness path SHALL carry ADR-026 CT-1 delays and replay by CT-3
@@ -165,9 +166,10 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
 | FR-204-AC-2 | §15.5 `MeanTime` settles `proved`, `ExactValue{20/9 ms}` (maximum; the minimum is `10/9 ms`). The no-operation x>=1/cap2 oracle of FR-196 has elapsed infimum1 and supremum+infinity despite eventual observation almost surely; at threshold3 its geometric IdleDelay3/4/IdleObserve1/4 policy has exact value5 and a checked infinite observation continuation. A finite maximum3 or delay-only witness fails. With the guard `self.x > 1 ms` the items settle `unsupported`, `StrictClockConstraint`, naming the guard. | Test (TC-639) |
 | FR-204-AC-3 | `Retx` with `delay Msg::send ~ discrete { 1 ms: 1, 2 ms: 1 };`, under a workload `One` with weight 1 on `send`, is a DTMC over digital timed states; `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` settles `proved`, `ExactValue{159129/160000}`: after every reset `send` waits 1 or 2 ms with probability 1/2 each, both inside its window `[1, 2]`, loses with `1/10`, and attempts at time stamps up to 4 ms inclusive count. The same claim `under every scheduler` settles `unsupported`, `DelayDistribution`, naming `send`; with `delay Msg::send ~ exponential(1 per ms);` under `One` it settles `unsupported`, `DelayDistribution`. | Test (TC-639) |
 | FR-204-AC-4 | A variant of `Retx` whose `send` has no `x >= 1 ms` guard and no reset settles `unsupported`, `ZeroDelayCycle`, naming the cycle's states. `probability >= 0.99 [always[0 ms, 4 ms] holds(not m.delivered)]` over `Retx` settles `unsupported`, `TimedFormShape`. | Test (TC-639) |
-| FR-204-AC-5 | §15.5 `Retx`, whose `send` has no `delay` declaration, under the workload `One` (weight 1 on `send`): the workload resolves the scheduled identity and `send`'s delay stays the scheduler's choice in `[1, 2]` ms after each reset, with no distribution assumed for it. `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` under `One` settles `proved`, `ExactValue{99/100}`, its entry marked a minimum. `probability <= 0.999` over the same event under `One` settles `refuted` on the maximum `9999/10000`, its entry marked a maximum and its witness scheduler sending at `x = 1`. At the same quiescent D=1 idle-delayed key, IdleObserve reads success at D with elapsed0 while IdleDelay crosses D with elapsed1; replay/certificates preserve the distinct actions, post-keys and predicate positions. | Test (TC-642) |
+| FR-204-AC-5 | §15.5 `Retx`, whose `send` has no `delay` declaration, under the workload `One` (weight 1 on `send`): the workload resolves the scheduled identity and `send`'s delay stays the scheduler's choice in `[1, 2]` ms after each reset, with no distribution assumed for it. `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` under `One` settles `proved`, `ExactValue{99/100}`, its entry marked a minimum. `probability <= 0.999` over the same event under `One` settles `refuted` on the maximum `9999/10000`, its entry marked a maximum and its witness scheduler choosing `UnitDelay` at `x = 0` and `WorkloadResolve{send, 0}` at `x = 1`. At the same quiescent D=1 idle-delayed key, IdleObserve reads success at D with elapsed0 while IdleDelay crosses D with elapsed1; replay/certificates preserve the distinct actions, post-keys and predicate positions. | Test (TC-642) |
 | FR-204-AC-6 | The model `Race` (`time dense unit ms`) has `phase` (`Idle` or `Done`) and `b`; the operation `A` is guarded by `phase = Idle`, sets `Done` and declares `delay Race::A ~ discrete { 2 ms: 1 }`; the operation `B` has no `delay` declaration, is guarded by `phase = Idle and x >= 1 ms` under the time invariant `x <= 3 ms` while `Idle`, sets `Done` and `b`; the workload `Both` weights `A` and `B` 1. Under `Both`, `probability >= 0.5 [eventually[0 ms, 5 ms] holds(r.b)]` settles `refuted` on the minimum `ExactValue{0}`, its witness scheduler choosing `WorkloadResolve{B, 3}` (`A` wins at 2 ms, mass 1); `probability <= 0.5` settles `refuted` on the maximum `ExactValue{1}`, its witness scheduler choosing `WorkloadResolve{B, 1}` (`B` wins at 1 ms, mass 1). The choice `WorkloadResolve{B, 2}` is the tie at `m = 2`: `B` and `A` each win with probability `1/2`. | Test (TC-642) |
 | FR-204-AC-7 | With `B`'s guard changed to `phase = Idle and x >= 2 ms`, the choices of `B` are the delays 2 and 3, so the maximum is `1/2` (the tie) and the minimum `0`: `probability <= 0.5 [eventually[0 ms, 5 ms] holds(r.b)]` under `Both` settles `proved`, `ExactValue{1/2}`, its entry marked a maximum, and `probability <= 0.4` settles `refuted` on that maximum with `WorkloadResolve{B, 2}` as its witness choice. The same claim `under every scheduler` settles `unsupported`, `DelayDistribution`, naming `A`, and not a mixed-delay refusal. | Test (TC-642) |
+| FR-204-AC-8 | In `Race` with `A` declaring `delay Race::A ~ discrete { 1 ms: 1, 3 ms: 1 }`, `B` guarded by `phase = Idle and x >= 1 ms` under the invariant `x <= 3 ms` while `Idle`, and `Both` as before: `probability <= 0.7 [eventually[0 ms, 5 ms] holds(r.b)]` settles `refuted` on the maximum `ExactValue{3/4}` (with the draw `1`, `B` at delay 1 ties for `1/2`; with the draw `3`, `B` at delay 1 wins), and `probability >= 0.3` settles `refuted` on the minimum `ExactValue{1/4}` (with the draw `1`, `B` at delay 2 loses; with the draw `3`, `B` at delay 3 ties for `1/2`). The product's witness choices are `WorkloadResolve{B, 1}` for the maximum and `WorkloadResolve{B, 3}` for the minimum; the SD-3 witness scheduler of the same values holds a `FreeDelays` entry with the rows given `[1]` to `B` delay 1 and given `[3]` to `B` delay 1 for the maximum, and given `[1]` to `B` delay 2 and given `[3]` to `B` delay 3 for the minimum. | Test (TC-642) |
 
 ## Dependencies
 

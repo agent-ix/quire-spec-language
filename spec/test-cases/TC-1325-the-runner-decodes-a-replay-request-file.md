@@ -22,7 +22,7 @@ Verify FR-350-AC-11 to FR-350-AC-14 and FR-350-AC-16 to FR-350-AC-18 (AC-15 is r
 | 2 | 12 | a `sources` entry of the package and of a dependency | two members as written; no revision label; `bytes_path` bytes read raw |
 | 3 | 13 | `object_environment` `{identity: {authority, identity}}`; the same with another member | the closed identity; the second is a `tool-failure` |
 | 4 | 14 | an unknown member; a `sources` entry without `identity`; a wrong JSON kind | each `tool-failure` holding cause `corpus-decode` and the JSON pointer of the defect (Settlement) |
-| 5 | 16 | a file with `package`; the same without it; with `package` the string `"orders"` | decoded to the package reference with no package-name member; each of the others a `tool-failure`, `corpus-decode`, `/package` |
+| 5 | 16 | a file whose `package` holds `checked_package` for `orders`, the corpus `contract_version`, one source and a `lib/money` dependency entry; the same without `package`; with `package` the string `"orders"`; with `contract_version` altered | the package reference with `package_id` `orders`, the source and the dependency entry; no version or package-name member; the others `tool-failure`, `corpus-decode`, at `/package`, `/package` and `/package/contract_version` |
 | 6 | 17 | `bytes_path` `missing.bin`, `unlisted.bin`, `/etc/hostname`, `../x.bin`; a listed path | each of the four a `tool-failure`, `corpus-decode`, `/byte_provision/0/bytes_path`, no request; the listed path read as raw bytes |
 | 7 | 18 | `stage_limits` with `depth`; with `s1.input_bytes` `"1024"` | a `tool-failure`, `corpus-decode`, `/stage_limits/depth`; the entry `("s1.input_bytes", 1024)` |
 

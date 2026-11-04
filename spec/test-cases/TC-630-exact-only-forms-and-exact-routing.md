@@ -21,7 +21,7 @@ Fixtures: §15.6's `Coin` claims; `Link` with a `cost` reward of 1 on both sends
 1. Check `Terminates`, `FairTerminates`, the `Link` until claim, the nested-eventually claim, an `until` whose right operand is `eventually`, `always not holds(…)`, `eventually true`, and `eventually[0, 5] holds(…)` under the infinite-trace profile and `eventually holds(…)` under a bounded one.
 2. Check the `Link` expected-cost claim at `rational(6, 5)` and at `6/5`, an integer-reward claim at `3`, `0` and `rational(-1, 2)` and at `5 ms`, a quantity-reward claim at `0.005 s`, `5 m` and a bare `3`, a claim naming an undeclared reward, `MeanTime` at `3 ms`, `0.003 s`, `3 m` and a bare `3`, and `expected elapsed` over the untimed `Link`.
 3. Read `exact_only` for each claim of steps 1 and 2 and for `P95` with and without confidence.
-4. Run EN-4's gate on the checked `FairTerminates`, on the `Link` expected-cost claim under a workload, on a bounded event under a workload with no confidence parameters, and on `P95` under `Steady` with its confidence parameters.
+4. Run EN-4's gate on the checked `FairTerminates`, on the `Link` expected-cost claim under a workload, on a bounded event under a workload with no confidence parameters, and on `P95` under `Steady` with its confidence parameters, and on §15.5's `MeanTime` claim `<= 3 ms` under a workload with no confidence parameters.
 5. Read EN-5's manifest; settle each refusal of step 4 through FR-192's map.
 
 Tag the tests `#[trace("TC-630", "FR-195-AC-n")]`.
@@ -31,5 +31,5 @@ Tag the tests `#[trace("TC-630", "FR-195-AC-n")]`.
 - Step 1: `Reach` forms with the fairness set recorded and distinct identities; the nested claim, the `until` over `eventually`, `always not` and `eventually true` each `not-state-predicate` at the operand; `unbounded-event` for the interval-bearing event and for `eventually` under the bounded profile.
 - Step 2: `ExpectedReward` over `cost` with threshold `6/5`, refused for `6/5` written with `/`; thresholds 3, 0 and `-1/2` check for the integer reward, `5 ms` is `unit-mismatch`; `0.005 s` records 5, `5 m` is `unit-mismatch`, the bare `3` is `type-mismatch`; `missing-name` for the undeclared reward; `MeanTime` with `AtMost(3)` for `3 ms` and `0.003 s`, `unit-mismatch` for `3 m`, `type-mismatch` for the bare `3`, and `type-mismatch` located at the quantity for the untimed `Link`.
 - Step 3: true for all but `P95` with confidence.
-- Step 4: `EveryScheduler`; `ExactOnlyForm`; `MissingConfidence`; the `P95` claim passes; no sample drawn for any refusal.
+- Step 4: `EveryScheduler`; `ExactOnlyForm`; `MissingConfidence`; the `P95` claim passes; `ExactOnlyForm` for the `MeanTime` claim; no sample drawn for any refusal.
 - Step 5: `probabilistic-satisfaction` with the evidence kind `exact` only; each refusal settles `unsupported` with `every-scheduler`, `exact-only-form` or `missing-confidence`.

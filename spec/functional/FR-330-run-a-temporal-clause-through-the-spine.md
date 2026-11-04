@@ -98,21 +98,19 @@ atom's locus. A refused condition's disposition carries its position. The
 FR-267 writer writes these as the report holds them and derives none.
 
 The report also carries `decisive` (`ClauseRunReport::decisive`), present only
-for a temporal violation, a `Completed(false)` whose deciding `holds` atom is
-decided by FR-107's clause evaluator, and absent for every other report: it
-holds `{ position, quantifier, element, index, value_path }`: the
-`TemporalPosition` at which the deciding atom fails, the deciding collection
-quantifier's occurrence key (absent when none decides), the deciding element,
-its index (absent when none decides) and the FR-207 value path, for the first
-`holds` atom, in position order over the positions the failing activation read
-and then in clause-node order, that evaluates false there, evaluated over the
-observation at `decisive.position`. The report's violation position stays the
-failing activation's position (FR-327) and `decisive.position` is a position
-that activation read, never earlier than the activation's own.
-When no collection quantifier decides it, `quantifier` and `index` are absent,
-`element` is `false` and `value_path` is the empty path at the observation's
-root. `decisive` is not a member of the `TemporalCounterexample`, whose shape
-stays QSpec FR-364's, and FR-267 does not write it.
+for a temporal violation, a `Completed(false)` for which a decisive atom exists
+("The decisive atom" below) and FR-107's clause evaluator decides it, and
+absent for every other report. It holds
+`{ position, quantifier, element, index, value_path }`: the `TemporalPosition`
+of the decisive atom, the deciding collection quantifier's occurrence key
+(absent when none decides), the deciding element, its index (absent when none
+decides) and the FR-207 value path, all read by evaluating the atom over the
+observation at `decisive.position`. When no collection quantifier decides it,
+`quantifier` and `index` are absent, `element` is `false` and `value_path` is
+the empty path at the observation's root. `decisive` is not a member of the
+`TemporalCounterexample`, whose shape stays QSpec FR-364's, and FR-267 does
+not write it. The report's violation position stays the failing activation's
+position (FR-327); `decisive.position` may be later or earlier than it.
 
 ## Behavior
 
@@ -178,6 +176,41 @@ stays QSpec FR-364's, and FR-267 does not write it.
   `violation`, an undefined evaluation included, exits with the violation
   exit, 10.
 
+### The decisive atom
+
+- The decisive atom of a `Completed(false)` SHALL be the `holds` atom reached by
+  this descent, which starts at the failing activation's clause formula `φ`
+  evaluated at the activation's position and always visits a subformula that
+  evaluates false at the position it is visited at:
+  - `holds(P)`: the atom, at that position.
+  - `not φ'`: none; the clause then has no decisive atom.
+  - `φ1 and φ2`: the descent continues into the first operand that is false.
+  - `φ1 or φ2`: into `φ1`, both operands being false.
+  - `φ1 implies φ2`: into `φ2`, the antecedent being true.
+  - `always[a,b] φ'` and `release` (its second operand): into `φ'` at the least
+    eligible position where it is false. An unbounded `always` over a
+    finite prefix or a lasso reads every position of the trace.
+  - `eventually[a,b] φ'`: into `φ'` at the least eligible position, every
+    eligible position being false.
+  - `φ1 until[a,b] φ2`: let `j` be the least eligible position where `φ1` is
+    false; into `φ1` at `j` when it exists, and otherwise into `φ2` at the
+    least eligible position.
+  - a past operator (`once`, `historically`, `since`, `triggered`): the mirror
+    of its future counterpart over the eligible positions at or before the
+    visited position, taking the nearest eligible position first. The decisive
+    position may therefore be earlier than the activation's.
+  - a window aggregate atom (FR-194): the atom, at the position it is read.
+- If the descent reaches a position before the first position of the trace
+  (where a false-extension profile reads every atom false), the clause SHALL
+  have no decisive atom and the report SHALL carry no `decisive`.
+- Over a `Lasso` and a `Model` trace, `decisive.position` is the position in the
+  prefix-then-loop order the evaluator names (FR-329), and the least such
+  position is taken. Over `Progressed`, positions index the supplied
+  `trace`, and the observation is that of the supplied position; a descent that
+  reaches history before the supplied trace has no decisive atom. A
+  `Timestamped` run carries no `decisive`: FR-501's decision support is its
+  record.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -194,6 +227,8 @@ stays QSpec FR-364's, and FR-267 does not write it.
 | FR-330-AC-10 | From source, an event-position clause and a fixed-sample clause run over `TraceInput::Progressed` report the outcomes of FR-504-AC-1 and AC-2, and return the updated `ledger`; a `Progressed` request for an infinite-trace clause, or over a `Lasso`, reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1299) |
 | FR-330-AC-11 | From source, a `Timestamped` request whose `binding` asserts another clock name reports stage `admit`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Clock`, a `Progressed` request whose `binding` asserts another profile reports `Profile`, and a `Timestamped` request with no `binding` reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1317) |
 | FR-330-AC-12 | `Bounded`'s violation of AC-1 over `Finite` snapshots `c.value` 0, 1, 2 reports a `decisive` with `position` 0, no `quantifier` and no `index`, `element` `false` and the empty `value_path`; a clause `always holds(c.value <= 1)` `on origin` under the infinite-trace profile over the same snapshots reports the violation at position 0 and a `decisive` with `position` 2; a clause `always holds(forall i in self.items : i > 0)` `on origin` over snapshots whose positions 0 and 1 hold `items` 1, 2, 3 and whose position 2 holds `items` 3, 0, 5 reports the violation at position 0 and a `decisive` with `position` 2, the `forall` occurrence key as `quantifier`, `element` 0, `index` 1 and the FR-207 `value_path` to `items`; a pending, a successful and an `Undefined` report carry no `decisive`. | Test (TC-840) |
+| FR-330-AC-13 | Over the `Counter` prefix `c.value` 0, 1, 2 under the infinite-trace profile, FR-328-AC-2's `always (holds(c.value = 1) implies eventually[0,1] holds(c.value = 3))` is violated at position 0 with a `decisive` of `position` 1 (the antecedent is true at position 1 and the consequent atom `c.value = 3` is false at positions 1 and 2, the least being 1); `holds(c.value <= 1) until holds(c.value = 9)` is violated at position 0 with a `decisive` of `position` 2 (`φ1` first fails there); FR-328-AC-3's `always (holds(c.value = 0) implies once[1,1] holds(c.value = 9))` is violated at position 0 and carries no `decisive` (the descent reaches the position before the trace); `always not holds(c.value = 2)` is violated at position 0 and carries no `decisive`. | Test (TC-840) |
+| FR-330-AC-14 | Over `Lasso` with prefix `c.value` 0 and loop 1, 2, `always holds(c.value <= 1)` is violated at position 0 with a `decisive` of `position` 2. Over `Progressed` carrying `c.value` 0, 1, 2 under event-position false-extension, `always[0,2] holds(c.value <= 1)` `on origin` reports a violation at position 0 and a `decisive` of `position` 2; over `Timestamped` FR-501-AC-1's trace, `always[0,5] holds(p)` reports a violation at position 0 and no `decisive`. | Test (TC-840) |
 
 ## Dependencies
 

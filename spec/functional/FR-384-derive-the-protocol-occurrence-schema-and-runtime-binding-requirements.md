@@ -164,6 +164,7 @@ package lock's `binding_contract` selection supplies both (QSpec FR-465
 
 ## Dependencies
 
+- Contract IR IR-1310: the reader sees the declaration kinds of the selected model package, which a Port role's `model_member` check needs (QSpec FR-465).
 - [FR-383](FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md) (the nodes
   and their keys, ordering and declarations).
 - [FR-218](FR-218-check-every-protocol-control-construct-at-s3.md) (the

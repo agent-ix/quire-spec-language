@@ -180,23 +180,11 @@ in the place of `holds`, under ADR-014 A-4:
 - `decisive` is a member of the record beside `position` and `counterexample`,
   not a member of the counterexample, and it carries the decisive information
   of a temporal violation: `{ position, quantifier, element, index, value_path }`,
-  with `position` the `TemporalPosition` at which the deciding atom fails (it
-  equals the record's `position` when the atom fails at the failing
-  activation's own position, and is a later position that activation read
-  otherwise); `quantifier` the occurrence key of the deciding collection quantifier (absent
-  when none decides), `element` the deciding element, `index` the deciding
-  element's index (absent when no quantifier decides) and `value_path` the
-  FR-207 value path. They are the deciding quantifier, element, index and value
-  path FR-107's clause evaluator retains for the deciding atom: the first
-  `holds` atom, in position order over the positions the failing activation
-  read and then in clause-node order, that evaluates false there, evaluated over
-  the observation at `decisive.position`; the clause
-  run report carries them as `ClauseRunReport::decisive` (FR-330 Outputs defines the member and its presence rule). When that
-  atom's evaluation is decided by no collection quantifier, `quantifier` and
-  `index` are absent, `element` is the atom's value `false`, and `value_path` is
-  the empty path at the observation's root. The `counterexample` stays QSpec
-  FR-364's closed record, and FR-267's `temporal` member and the FR-364 wire are
-  unchanged by `decisive`.
+  as FR-330 defines it, including which atom is decisive, when there is none,
+  and its `position`. The clause run report carries it as
+  `ClauseRunReport::decisive`. The `counterexample` stays QSpec FR-364's closed
+  record, and FR-267's `temporal` member and the FR-364 wire are unchanged by
+  `decisive`.
 - A temporal `Violated` or `Undefined` record has no `witness` member: FR-266
   gives a temporal run the basis `closed-scope` and no FR-351 separating
   witness record, and FR-267 writes the counterexample in its `temporal`

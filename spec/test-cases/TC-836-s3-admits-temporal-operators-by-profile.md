@@ -31,7 +31,7 @@ Scope: FR-326-AC-1 to FR-326-AC-6.
    interval keys under event-position and fixed-sample.
 6. Under the finite-window profile with clock unit `ms`, check
    `eventually[0,5] holds(p)`, the four timed-interval forms of FR-326-AC-6
-   and `eventually[3,*] holds(p)`.
+   `eventually[3,*] holds(p)`, `eventually[3 ms, *] holds(p)` and the aggregate window `count over past[0 ms, 300 ms] min_count 1 >= 1`.
 
 Tag the tests `#[trace("TC-836", "FR-326-AC-n")]`.
 
@@ -50,4 +50,4 @@ Tag the tests `#[trace("TC-836", "FR-326-AC-n")]`.
 - Step 4: `unknown_profile`/`unsupported-selection` at the clause, naming the
   selections found.
 - Step 5: record (`temporal-satisfaction`, `Bounded`); unequal keys.
-- Step 6: the tick interval `[0,5]`; each timed form `ill_typed`/`type-mismatch` at the interval's span; `[3,*]` `unsupported_construct`/`expression-form`.
+- Step 6: the tick interval `[0,5]`; each timed form `ill_typed`/`type-mismatch` at the interval's span; `[3,*]` `unsupported_construct`/`expression-form`; `[3 ms, *]` `ill_typed`/`type-mismatch`; the aggregate window checks.

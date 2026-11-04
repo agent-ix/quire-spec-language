@@ -118,8 +118,7 @@ the elapsed time of a timed subject is the subject's own, and FR-204 decides it.
   naming the dimension.
 - If a claim is `expected elapsed until holds(B)` over a subject whose model
   declares no time binding, S3 SHALL refuse it `ill_typed`/`type-mismatch`
-  located at the `expected elapsed` quantity: an untimed subject has no
-  elapsed time to measure, so the form is a type error and not a deferral.
+  located at the `expected elapsed` quantity.
 
 The claim's profile prohibits `/` and the unary minus, so a quotient is
 written `rational(6, 5)` and a negative quantity cannot be written.
@@ -127,7 +126,7 @@ written `rational(6, 5)` and a negative quantity cannot be written.
   their granularity) on a claim `under every scheduler`, and record it in
   the claim and its obligation identity. A fairness set on a claim under a
   workload stays refused (FR-186).
-- `exact_only` SHALL be true for a `Reach` or `ExpectedReward` form, for a
+- `exact_only` SHALL be true for a `Reach`, `ExpectedReward` or `MeanTime` form, for a
   claim `under every scheduler`, and for a claim that states no confidence
   parameters.
 - S3 SHALL write one requirement record for each checked probabilistic
@@ -154,7 +153,7 @@ written `rational(6, 5)` and a negative quantity cannot be written.
   `exact_only` is true for the checked claim, the gate SHALL refuse it before
   that reduced claim is built and before a sample is drawn, with the first
   cause that applies: `EveryScheduler` for a claim `under every scheduler`,
-  then `ExactOnlyForm` for a `Reach` or `ExpectedReward` form, then
+  then `ExactOnlyForm` for a `Reach`, `ExpectedReward` or `MeanTime` form, then
   `MissingConfidence` (FR-189). A claim whose `exact_only` is false passes
   the gate.
 - The settlement map SHALL settle each of those refusals `unsupported` with
@@ -166,8 +165,8 @@ written `rational(6, 5)` and a negative quantity cannot be written.
 |----|----------|--------------|
 | FR-195-AC-1 | §15.6's `Terminates` and `FairTerminates` check as `Reach{AtLeast(99/100), Eventually(p.done)}` under `Every`, the second with fairness `[strong flip]`; their obligation identities differ. `probability >= 0.95 [holds(not m.delivered) until holds(m.delivered)]` over `Link` checks as `Until`. `probability >= 0.9 [eventually eventually holds(p.done)]` is refused `not-state-predicate` located at the inner `eventually`, as are `[holds(p.done) until eventually holds(p.done)]` (at the second `eventually`), `[always not holds(p.done)]` (at `not holds(p.done)`) and `[eventually true]` (at `true`). `[eventually[0, 5] holds(p.done)]` under the infinite-trace profile is refused `unbounded-event`, and so is `[eventually holds(p.done)]` under a bounded profile. | Test (TC-630) |
 | FR-195-AC-2 | `expected accumulate cost until holds(m.delivered or m.attempts = 2) <= rational(6, 5)` over `Link` with a `cost` reward of 1 on both sends checks as `ExpectedReward` with threshold `6/5`; written `<= 6/5` it is refused, since the profile prohibits `/`. With an integer reward, `>= 3` checks with threshold 3, `<= 0` and `<= rational(-1, 2)` check, and `<= 5 ms` is refused `ill_typed`/`unit-mismatch`. With a quantity reward declared in `ms`, `<= 0.005 s` checks and records `5`; `<= 5 m` is refused `ill_typed`/`unit-mismatch`, and the bare `<= 3` is refused `ill_typed`/`type-mismatch`. A reward the model does not declare is refused `missing-name`. `expected elapsed until …` is checked by FR-195-AC-7. | Test (TC-630) |
-| FR-195-AC-3 | `exact_only` is true for each claim of AC-1 and AC-2 that checks and for `P95` with no confidence parameters, and false for `P95` under `Steady` with its confidence parameters. | Test (TC-630) |
-| FR-195-AC-4 | EN-4's gate given the checked `FairTerminates` refuses `EveryScheduler`; given the `Link` expected-reward claim under a workload it refuses `ExactOnlyForm`; given a bounded event under a workload with no confidence parameters it refuses `MissingConfidence`; given `P95` under `Steady` with its confidence parameters it passes. Each refusal is returned before a `StatisticalClaim` is built and so before a sample is drawn, and for every claim of AC-1 to AC-3 that checks the gate refuses exactly when `exact_only` is true. | Test (TC-630) |
+| FR-195-AC-3 | `exact_only` is true for each claim of AC-1 and AC-2 that checks, for §15.5's `MeanTime` at `3 ms` and for `P95` with no confidence parameters, and false for `P95` under `Steady` with its confidence parameters. | Test (TC-630) |
+| FR-195-AC-4 | EN-4's gate given the checked `FairTerminates` refuses `EveryScheduler`; given the `Link` expected-reward claim under a workload it refuses `ExactOnlyForm`; given §15.5's `MeanTime` claim `<= 3 ms` under a workload with no confidence parameters it refuses `ExactOnlyForm` (and not `MissingConfidence`); given a bounded event under a workload with no confidence parameters it refuses `MissingConfidence`; given `P95` under `Steady` with its confidence parameters it passes. Each refusal is returned before a `StatisticalClaim` is built and so before a sample is drawn, and for every claim of AC-1 to AC-3 that checks the gate refuses exactly when `exact_only` is true. | Test (TC-630) |
 | FR-195-AC-5 | EN-5's manifest lists `probabilistic-satisfaction` with the evidence kind `exact` only. Each of the three refusals of AC-4 settles `unsupported` with its cause (`every-scheduler`, `exact-only-form`, `missing-confidence`) through FR-192's map. | Test (TC-630) |
 | FR-195-AC-6 | The use case's `FairTerminates` (`under every scheduler`, no confidence parameters) has one requirement record, keyed by its claim node's `claim` occurrence, with kind `probabilistic-satisfaction`, extent `Unbounded` with `domains` naming `FairTerminates`, the `Boolean` result bound, no conversion context, an empty path condition and evidence kind `exact`; a `Reach` claim under a workload with confidence parameters records `exact`; FR-186's `P95` (a quantile form under `Steady` with `alpha`, `beta` and `indifference`) records `statistical`. `P95`'s obligation identity is equal across a request naming no evidence selection, one naming `exact` and one naming both kinds (QSpec FR-407-AC-6). | Test (TC-1163) |
 | FR-195-AC-7 | §15.5's `MeanTime` (`time dense unit ms`) written `<= 3 ms` checks as `MeanTime` with `AtMost(3)`; written `<= 0.003 s` it records `3`; written `>= 2 ms` it checks with `AtLeast(2)`; written `<= 3 m` it is refused `ill_typed`/`unit-mismatch`; written with the bare `<= 3` it is refused `ill_typed`/`type-mismatch`. `Link`, whose model declares no time binding, with `expected elapsed until holds(m.delivered) <= 3 ms` is refused `ill_typed`/`type-mismatch` located at the `expected elapsed` quantity, and not `not-yet-implemented`. | Test (TC-630) |
