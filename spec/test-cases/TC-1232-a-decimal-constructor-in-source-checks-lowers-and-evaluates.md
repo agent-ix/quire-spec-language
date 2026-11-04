@@ -17,7 +17,7 @@ malformed spellings, S2 builds one `DecimalValue` per constructor, check types
 it at its expected `Decimal[..]` type, lowers it to a `decimal` literal node,
 discharges the nonzero obligation of a divisor for a nonzero coefficient, and
 the evaluator reads the coefficient and scale as written. Scope: FR-091-AC-57,
-FR-091-AC-58 and FR-093-AC-38 to FR-093-AC-42.
+FR-091-AC-58 and FR-093-AC-38 to FR-093-AC-42, FR-093-AC-45 and FR-093-AC-52 to FR-093-AC-57.
 
 ## Test Procedure
 
@@ -33,10 +33,13 @@ FR-091-AC-58 and FR-093-AC-38 to FR-093-AC-42.
 4. Check each ambiguous, mismatched and non-member constructor of
    FR-093-AC-40, and the constructors that are members by value although their
    written coefficient or scale lies outside the type's bounds.
-5. Compile and run the divisions of FR-093-AC-41.
-6. Compile and run the conversions of FR-093-AC-42.
-7. Check the constructors of FR-093-AC-38 at scales 65534, 65535, 65536 and
-   4294967295, and at a literal-scale setting of 4.
+5. Compile and run the divisions of FR-093-AC-41, and the refusals of
+   FR-093-AC-54 and FR-093-AC-55.
+6. Compile and run the conversions of FR-093-AC-42 and FR-093-AC-56, and the
+   negated constructors of FR-093-AC-57.
+7. Check the constructors of FR-093-AC-38, AC-45, AC-52 and AC-53: scales
+   65534, 65535, 65536 and 4294967295, a literal-scale setting of 4, and the
+   unit totals.
 
 ## Expected Results
 
@@ -56,9 +59,11 @@ FR-091-AC-58 and FR-093-AC-38 to FR-093-AC-42.
    coefficient 150 and scale 2; the zero constructors, the parameter divisor,
    the conditional divisor and the negated literal divisor refuse
    `undefined_expression`/`unproved-nonzero`.
-6. The conversions check and evaluate to the listed values; the `exact`
-   conversion of 2/3 refuses.
+6. The conversions check, lower and evaluate to the listed values; the `exact`
+   conversion of 2/3 refuses `inexact_decimal`/`nonzero-discarded-digit`; the
+   negated constructors check as their values.
 7. Scales 65534 and 65535 of a zero constructor check and spell `0.` and that
    many zeros; 65536 and 4294967295 refuse
    `stage_limit_exceeded`/`work-budget-exceeded` naming bound 65535; at a
-   setting of 4, scale 5 refuses naming bound 4.
+   setting of 4, scale 5 refuses naming bound 4; 17 literals of scale 65535
+   refuse at the 17th naming bound 1048576.

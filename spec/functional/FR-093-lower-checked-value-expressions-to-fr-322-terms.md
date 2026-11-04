@@ -21,6 +21,14 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/NFR-011
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: traces_to
+  - target: ix://agent-ix/quire-specification/FR-140
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-146
+    type: depends_on
 ---
 # FR-093: Lower checked Value expressions to FR-322 nodes with catalogued operations
 
@@ -323,58 +331,74 @@ for its magnitude's kind.
 A value-position `decimal(c, s)` (FR-091 "Decimal constructor") is one exact
 decimal of coefficient `c` and scale `s`, kept as written: `decimal(100, 2)`
 and `decimal(1, 0)` are the values 1.00 and 1, and neither is reduced.
-`check` types it by the decimal type its position gives it and decides, in this
-order:
 
-1. A position that gives no type refuses `ill_typed`/`ambiguous-literal`
+`check` SHALL type the constructor by the decimal type its position gives it:
+the declared result of a function gives one, and a literal operand of `+`, `-`,
+`*` or `/` beside an operand of one named decimal type takes that type
+(FR-104 "Infix decimal arithmetic"). A negated literal takes its operand's
+decimal type from the position and is typed by it. A `let` binding gives no
+type.
+
+`check` SHALL decide a constructor in this order, and the first failing step
+is the refusal:
+
+1. A position that gives no type SHALL refuse `ill_typed`/`ambiguous-literal`
    (FR-104-AC-16), and a position that expects a type that is not a
-   `Decimal[..]` refuses `ill_typed`/`type-mismatch`. A `let` binding gives
-   no type, and the declared result of a function gives one. A literal operand of `+`, `-`,
-   `*` or `/` beside an operand of one named decimal type takes that type
-   (FR-104 "Infix decimal arithmetic"), and a negated literal takes its
-   operand's type.
+   `Decimal[..]` SHALL refuse `ill_typed`/`type-mismatch`.
 2. **Literal scale limit.** A written scale `s` above the S3 setting
-   `s3.decimal_literal_scale`, default 65535 digits, refuses
+   `s3.decimal_literal_scale`, default 65535 digits, SHALL refuse
    `stage_limit_exceeded`/`work-budget-exceeded` (limit kind work budget) at the
    literal, naming the bound, the actual `s` and the setting, before any charge
-   and with no node. The limit exists because the literal's wire spelling has
-   exactly `s` fractional digits and a zero coefficient is a member of every
-   `Decimal[..]` type whatever its scale (step 3), so without a limit
-   `decimal(0, 4294967295)` would spell four billion digits. The limit is on
-   the written scale alone: it is decided before membership, so
-   `decimal(1, 65536)` refuses the limit and not `type-mismatch`, and
-   `decimal(0, 65536)`, a member of every type, refuses it too. It is not
-   FR-091's decimal-scale limit (`s3.decimal_scale`, 4096), which bounds the
-   `10^s` an assembler forms for a unit declaration's exact number; a
-   value-position constructor forms no power of ten.
-3. **Membership by value.** The literal must be a member of its type by value
+   and with no node.
+3. **Literal scale total.** The written scales of the `decimal(c, s)`
+   literals of one checked unit, each occurrence counted and each counted when
+   it passes step 2, SHALL total at most the S3 setting
+   `s3.decimal_literal_scale_total`, default 1048576 digits. The literal
+   whose scale takes the running total above it SHALL refuse
+   `stage_limit_exceeded`/`work-budget-exceeded` at that literal, naming the
+   bound, the running total including that literal and the setting, before any
+   charge and with no node.
+4. **Membership by value.** The literal SHALL be a member of its type by value
    (QSpec FR-140): its value normalized to scale `max(s', smin)`, where `s'` is
-   the lowest scale at which it is exact, must have no more than `smax`
-   fractional digits and a coefficient within the bounds. A non-member refuses
+   the lowest scale at which it is exact, has no more than `smax` fractional
+   digits and a coefficient within the bounds. A non-member SHALL refuse
    `ill_typed`/`type-mismatch` at the literal at type checking, before any
    charge (QSpec FR-140-AC-8). A constructor can be a member although its
    written coefficient or scale is outside the type's: `decimal(100, 2)` is a
-   member of a scale-0 type, being the value 1.
+   member of a scale-0 type, being the value 1. A negated literal is a member
+   when its negated value is: `-decimal(5, 0)` is the value -5, a member of
+   `Decimal[-9, 0; 0, 0; toward-zero]`, and `decimal(5, 0)` alone is not.
 
-A checked literal keeps its written scale as its retained representation.
-It lowers to one `value`/`literal` node of `value_kind` `decimal` whose `type` and
-`semantic_type` are the type's node and whose `value` is the coefficient with
-the decimal point placed `s` digits from the right: exactly `s` fractional
-digits, no digit for `s` = 0, a leading `0` before the point where the
-coefficient has no more digits than `s`, and a `-` before a negative value
-(`decimal(125, 2)` is `"1.25"`, `decimal(5, 2)` `"0.05"`, `decimal(10, 0)`
-`"10"`, `decimal(0, 2)` `"0.00"`, `decimal(-5, 1)` `"-0.5"`). Two
-constructors of one value, type and scale are one node, and two scales of one
-magnitude (`decimal(125, 2)`, `decimal(1250, 3)`) are two. A negated literal
-lowers to one `quire.op.decimal.negate` node over the literal's node. The
-evaluator reads the retained coefficient and scale, so the operand charges of
-QSpec FR-140 are those of the written representation, not of the normalized
-value.
+The two limits exist because the literal's wire spelling has exactly `s`
+fractional digits and a zero coefficient is a member of every `Decimal[..]`
+type whatever its scale (step 4), so without them `decimal(0, 4294967295)`
+would spell four billion digits and a unit of many such literals would spell
+far more than its source bytes. A limit is decided before membership, so
+`decimal(1, 65536)` and `decimal(0, 65536)` refuse the limit and not
+`type-mismatch`. Neither is FR-091's decimal-scale limit (`s3.decimal_scale`,
+4096), which bounds the `10^s` an assembler forms for a unit declaration's
+exact number; a value-position constructor forms no power of ten. The stop's
+locus is in FR-096.
 
-A divisor that is a `decimal(c, s)` of nonzero coefficient is a nonzero fact
-that discharges the division's nonzero obligation at every scale
-(`a / decimal(400, 2)`). A zero coefficient never discharges it
-(`decimal(0, 2)`), and no other divisor does: a parameter, a `let` name, a
+A checked literal SHALL keep its written scale as its retained
+representation, and SHALL lower to one `value`/`literal` node of `value_kind`
+`decimal` whose `type` and `semantic_type` are the type's node and whose
+`value` is the coefficient with the decimal point placed `s` digits from the
+right: exactly `s` fractional digits, no digit for `s` = 0, a leading `0` before
+the point where the coefficient has no more digits than `s`, and a `-` before
+a negative value (`decimal(125, 2)` is `"1.25"`, `decimal(5, 2)` `"0.05"`,
+`decimal(10, 0)` `"10"`, `decimal(0, 2)` `"0.00"`, `decimal(-5, 1)` `"-0.5"`).
+Two constructors of one value, type and scale SHALL be one node, and two
+scales of one magnitude (`decimal(125, 2)`, `decimal(1250, 3)`) SHALL be two. A
+negated literal SHALL lower to one `quire.op.decimal.negate` node over the
+literal's node. The evaluator reads the retained coefficient and scale, so the
+operand charges of QSpec FR-140 are those of the written representation, not
+of the normalized value.
+
+A divisor that is a `decimal(c, s)` of nonzero coefficient SHALL be a nonzero
+fact that discharges the division's nonzero obligation at every scale
+(`a / decimal(400, 2)`; QSpec FR-146). A zero coefficient SHALL NOT discharge
+it (`decimal(0, 2)`), and no other divisor SHALL: a parameter, a `let` name, a
 conditional of two nonzero literals, or a negated literal is not proved
 nonzero, and each refuses `undefined_expression`/`unproved-nonzero` at the
 division.
@@ -909,11 +933,18 @@ fix the leaf spelling.
 | FR-093-AC-35 | Over `t: Text[0, 8; nfc]`, each of `convert<Int[0, 99]>(t)`, `convert<Decimal[0, 1000; 0, 2; nearest-even]>(t)`, `convert<Rational[-9, 9; 1, 9]>(t)`, `convert<Float32[toward-zero]>(t)`, `convert<Float64>(t)` and, with FR-091-AC-44's units, `convert<Quantity<ms>>(t)` as a pure function body lowers to one `convert` node over `[ref(t)]` with member `type_argument` naming the target type node. The identities are `quire.op.text.to_integer`, `to_decimal`, `to_rational`, `to_float32`, `to_float64` and `to_quantity`. Each carries law `text_profile` with the layer table's `quire.value.text.unicode-17.0.0/v1` definition; `to_float32` and `to_float64` also carry law `ieee_profile`. The modes are: none for `to_integer` and `to_rational`, `{"kind":"rounding","value":"nearest-even"}` for `to_decimal`, `toward-zero` for `to_float32`, `exact` for `to_float64` and `exact` for `to_quantity`. No node carries a `text_profile` mode. Over `s: String` the same six bodies lower to `quire.op.string.to_integer` to `quire.op.string.to_quantity` with the same members and modes, the `ieee_profile` law for the two IEEE targets and no `text_profile` law. No function carries a body obligation. | Test (TC-1196) |
 | FR-093-AC-36 | With FR-091-AC-44's units and `dimension Length;`, `unit m : Length = rational(1, 1);`, `dimension Velocity = Length / Time;` and `unit mps : Velocity = rational(1, 1);`, each of these checks and lowers: `function p1 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, two `quire.op.quantity.div` nodes with arguments `[ref(d), ref(L)]` and `[ref(e), ref(L)]`, `L` the one shared `3 ms` literal node, each with `result_type` the dimensionless compound-unit node, under one `quire.op.quantity.eq`; `function p2 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / 3 ms) = b }`, a quotient whose compound unit has the terms `m` to the power 1 and `s` to the power -1, which `convert` admits to `mps`; `function p3 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / rational(-3, 1) ms) = b }`, divisor literal of value `"-3"`; `function p4 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / 0.5 s) = b }`, divisor literal of value `"1/2"` at the `s` node; `function p5 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 s = e / 3 s }`; and `function p6 using v(d: Quantity<ms>): Boolean pure { d = 0 ms }`. Evaluating the lowered bodies gives: `p1` true for `d` = `6 ms`, `e` = `6 ms` and false for `d` = `6 ms`, `e` = `3 ms`; `p2` true for `a` = `6 m`, `b` = `2000 mps`; `p3` true for `a` = `6 m`, `b` = `-2000 mps`; `p4` true for `a` = `6 m`, `b` = `12 mps`; `p5` true for `d` = `6000 ms`, `e` = `6000 ms` and false for `d` = `6000 ms`, `e` = `3000 ms`; `p6` true for `d` = `0 ms`. IR's v2 reader admits each package. | Test (TC-483) |
 | FR-093-AC-37 | Under AC-36's units, each of these refuses and emits no node: `function z1 using v(d: Quantity<ms>): Boolean pure { d / 0 ms = d / 0 ms }`, `function z2 using v(d: Quantity<ms>): Boolean pure { d / rational(0, 1) ms = d / 0 ms }` and `function z3 using v(d: Quantity<ms>): Boolean pure { d / 0.0 ms = d / 0.0 ms }`, each `undefined_expression`/`unproved-nonzero` at the first division; `function z4 using v(d: Quantity<ms>): Boolean pure { d / rational(1, 0) ms = d / 3 ms }`, `undefined_expression`/`unproved-nonzero` at the literal; `function z5 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / e = d / e }`, `function z6 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { if e = 3 ms then d / e = d / e else true }`, `function z7 using v(d: Quantity<ms>): Boolean pure { let k = 3 ms in d / k = d / k }` and `function z8 using v(d: Quantity<ms>): Boolean pure { d / convert<Quantity<ms>>(3 s) = d / 3 ms }`, each `undefined_expression`/`unproved-nonzero` at the first division; and `function z9 using v(d: Quantity<ms>): Boolean pure { d / -3 ms = d / 3 ms }`, `undefined_expression`/`unproved-nonzero` at the first division, a negation being no nonzero fact (FR-093-AC-49). | Test (TC-483) |
-| FR-093-AC-38 | With `type Z = Decimal[-99, 99; 0, 2; nearest-even];`, `function z using v(): Z pure { decimal(0, N) }` checks for `N` = 65534 and 65535 and lowers one `decimal` literal node whose `value` is `0.` followed by `N` zeros (length `N` + 2); for `N` = 65536 and 4294967295, and for `decimal(1, 65536)` and `decimal(0, 65536)` at the same position, it refuses `stage_limit_exceeded`/`work-budget-exceeded` at the literal, naming bound 65535, actual `N` (or 65536) and the setting `s3.decimal_literal_scale`, before any charge and with no node (not `ill_typed`). With `s3.decimal_literal_scale` set to 4, `decimal(0, 4)` checks and `decimal(0, 5)` refuses naming bound 4 and actual 5. `decimal(1, 4294967295)` still builds at S2 (FR-091-AC-57), and a unit declaration's `decimal(1, 5000) * m` is refused by `s3.decimal_scale` (FR-091-AC-67), not by this setting. With no expected type, `let v = decimal(0, 65536) in v` refuses `ill_typed`/`ambiguous-literal`, and `decimal(0, 65536)` at an `Int[0, 9]` position refuses `ill_typed`/`type-mismatch`, each before the limit. | Test (TC-1232) |
+| FR-093-AC-38 | With `type Z = Decimal[-99, 99; 0, 2; nearest-even];`, `function z using v(): Z pure { decimal(0, N) }` checks for `N` = 65534 and 65535 and lowers one `decimal` literal node whose `value` is `0.` followed by `N` zeros (length `N` + 2). For `N` = 65536 and 4294967295, and for `decimal(1, 65536)` and `decimal(0, 65536)` at the same position, it refuses `stage_limit_exceeded`/`work-budget-exceeded` at the literal, naming bound 65535, the actual scale and the setting `s3.decimal_literal_scale`, before any charge and with no node, and the refusal is not `ill_typed`. | Test (TC-1232) |
+| FR-093-AC-45 | With `s3.decimal_literal_scale` set to 4 and AC-38's `Z`, `decimal(0, 4)` checks and `decimal(0, 5)` refuses `stage_limit_exceeded`/`work-budget-exceeded` naming bound 4 and actual 5. With no expected type, `let v = decimal(0, 65536) in v` refuses `ill_typed`/`ambiguous-literal`, and `decimal(0, 65536)` at an `Int[0, 9]` position refuses `ill_typed`/`type-mismatch`, each before the limit. | Test (TC-1232) |
+| FR-093-AC-52 | With AC-38's `Z` and the default settings, a unit of 16 functions each of body `decimal(0, 65535)` checks (the total is 1048560 digits) and a unit of 17 such functions refuses `stage_limit_exceeded`/`work-budget-exceeded` at the 17th literal, naming bound 1048576, actual 1114095 and the setting `s3.decimal_literal_scale_total`, before any charge and with no node for that literal; with `s3.decimal_literal_scale_total` set to 10, a unit of `decimal(0, 5)` twice checks and with a third `decimal(0, 1)` it refuses naming bound 10 and actual 11. | Test (TC-1232) |
+| FR-093-AC-53 | `decimal(1, 4294967295)` builds at S2 (FR-091-AC-57) and, at a `Decimal[..]` position, is refused by `s3.decimal_literal_scale` as in AC-38 and not at S2; `decimal(1, 4294967296)` is refused `invalid_syntax`/`invalid-token` at S1 (FR-091-AC-58); and a unit declaration's `unit c : Length = decimal(1, 5000) * m;` is refused by `s3.decimal_scale` with bound 4096 (FR-091-AC-67), not by either literal setting. | Test (TC-1232) |
 | FR-093-AC-39 | With `type Q = Decimal[-99999, 99999; 0, 2; nearest-even];` and `function c1 using v(): Q pure { decimal(125, 2) }`, `c2` over `decimal(5, 2)`, `c3` over `decimal(10, 0)`, `c4` over `decimal(0, 2)`, `c5` over `decimal(-5, 1)` and `c6` over `decimal(1250, 3)`, each checks and lowers one `value`/`literal` node of `value_kind` `decimal` at `Q`'s type node, with `value` `"1.25"`, `"0.05"`, `"10"`, `"0.00"`, `"-0.5"` and `"1.250"`. Two functions over `decimal(125, 2)` share one literal node, and `c1` and `c6` are two. `function n using v(): Q pure { -decimal(5, 0) }` lowers one `quire.op.decimal.negate` node over the literal `"5"`. `function add using v(p: Q): Q pure { p + decimal(125, 2) }` lowers the literal typed `Q` and one `quire.op.decimal.add` node over `[ref(p), ref(the literal)]`; evaluated at `p` = coefficient 100, scale 2 it returns coefficient 225, scale 2, and `c1` returns coefficient 125, scale 2. IR's v2 reader admits each package. | Test (TC-1232) |
-| FR-093-AC-40 | Under AC-39's `Q` and `type P = Decimal[0, 1000; 2, 2; exact];`: `function a1 using v(): P pure { let v = decimal(15, 1) + decimal(225, 2) in v }` refuses `ill_typed`/`ambiguous-literal`; `function a2 using v(): Int[0, 9] pure { decimal(1, 0) }` and `function a3 using v(): Boolean pure { decimal(1, 0) }` refuse `ill_typed`/`type-mismatch`; and, at the literal, with no charge and no node, `function a4 using v(): Decimal[-9, 9; 0, 0; toward-zero] pure { decimal(150, 2) }` (1.50 has two fractional digits), `function a5 using v(): Decimal[-1000, 1000; 0, 1; nearest-even] pure { decimal(1234, 3) }` and `function a6 using v(): Decimal[-9, 9; 0, 0; toward-zero] pure { decimal(10, 0) }` (above the bound) refuse `ill_typed`/`type-mismatch`. Each of `decimal(100, 2)` at `Decimal[-9, 9; 0, 0; toward-zero]` (the value 1), `decimal(1200, 3)` at `Decimal[-1000, 1000; 0, 1; nearest-even]` (the value 1.2) and `decimal(0, 7)` at that scale-0 type checks, and its literal keeps the scale as written. | Test (TC-1232) |
-| FR-093-AC-41 | With `type W = Decimal[-99999, 99999; 2, 2; nearest-even];`, each of `function x1 using v(a: W): W pure { a / decimal(4, 0) }`, `function x2 using v(a: W): W pure { a / decimal(400, 2) }` and `function x3 using v(a: W): Boolean pure { a / decimal(4, 0) = a }` checks, with one `quire.op.decimal.div` node over `[ref(a), ref(the literal)]` typed `W`, and `x1` evaluated at `a` = coefficient 600, scale 2 returns coefficient 150, scale 2. Each of `function y1 using v(a: W): W pure { a / decimal(0, 2) }`, `y2` over `decimal(0, 0)`, `function y3 using v(a: W, b: W): W pure { a / b }`, `function y4 using v(a: W, b: W): Boolean pure { a / b = a }`, `function y5 using v(a: W, c: Boolean): W pure { a / (if c then decimal(5, 2) else decimal(6, 2)) }` and `function y6 using v(a: W): W pure { a / -decimal(4, 0) }` refuses `undefined_expression`/`unproved-nonzero` at the division, with no node. | Test (TC-1232) |
-| FR-093-AC-42 | With `type P = Decimal[0, 1000; 2, 2; exact];` and `type R = Decimal[0, 1000; 1, 1; exact];`, `function f using v(r: R): P pure { convert<P>(decimal(15, 1) + r) }` checks, the literal typed `R` by its peer `r` and the sum typed `R` before the conversion. With `function g using v(q: Rational[0, 2; 1, 3]): Decimal[0, 100; 2, 2; nearest-even] pure { convert<Decimal[0, 100; 2, 2; nearest-even]>(q) }`, evaluating `g` at `q` = 2/3 returns coefficient 67, scale 2, and the same body with the mode `exact` returns a refusal and no value (2/3 has no exact two-digit decimal). | Test (TC-1232, QSpec TC-185) |
+| FR-093-AC-40 | Under AC-39's `Q`: `function a2 using v(): Int[0, 9] pure { decimal(1, 0) }` and `function a3 using v(): Boolean pure { decimal(1, 0) }` refuse `ill_typed`/`type-mismatch`; and, at the literal, with no charge and no node, `function a4 using v(): Decimal[-9, 9; 0, 0; toward-zero] pure { decimal(150, 2) }` (1.50 has two fractional digits), `function a5 using v(): Decimal[-1000, 1000; 0, 1; nearest-even] pure { decimal(1234, 3) }`, `function a6 using v(): Decimal[-9, 9; 0, 0; toward-zero] pure { decimal(10, 0) }` (above the bound) and `function a7 using v(): Q pure { decimal(100000000000000000000000000000000000000000, 2) }` (a coefficient far above any type's bounds) refuse `ill_typed`/`type-mismatch`. Each of `decimal(100, 2)` at `Decimal[-9, 9; 0, 0; toward-zero]` (the value 1), `decimal(1200, 3)` at `Decimal[-1000, 1000; 0, 1; nearest-even]` (the value 1.2) and `decimal(0, 7)` at that scale-0 type checks, and its literal keeps the scale as written. | Test (TC-1232) |
+| FR-093-AC-41 | With `type W = Decimal[-99999, 99999; 2, 2; nearest-even];`, each of `function x1 using v(a: W): W pure { a / decimal(4, 0) }`, `function x2 using v(a: W): W pure { a / decimal(400, 2) }` and `function x3 using v(a: W): Boolean pure { a / decimal(4, 0) = a }` checks, with one `quire.op.decimal.div` node over `[ref(a), ref(the literal)]` typed `W`, and `x1` evaluated at `a` = coefficient 600, scale 2 returns coefficient 150, scale 2. | Test (TC-1232) |
+| FR-093-AC-54 | Under AC-41's `W`, `function y1 using v(a: W): W pure { a / decimal(0, 2) }` and `function y2 using v(a: W): W pure { a / decimal(0, 0) }` each refuse `undefined_expression`/`unproved-nonzero` at the division, with no node: a zero coefficient discharges nothing at any scale. | Test (TC-1232) |
+| FR-093-AC-55 | Under AC-41's `W`, each of `function y3 using v(a: W, b: W): W pure { a / b }`, `function y4 using v(a: W, b: W): Boolean pure { a / b = a }`, `function y5 using v(a: W, c: Boolean): W pure { a / (if c then decimal(5, 2) else decimal(6, 2)) }` and `function y6 using v(a: W): W pure { a / -decimal(4, 0) }` refuses `undefined_expression`/`unproved-nonzero` at the division, with no node: a parameter, a conditional of nonzero literals and a negated literal are no nonzero fact. | Test (TC-1232) |
+| FR-093-AC-42 | With `type P = Decimal[0, 1000; 2, 2; exact];` and `type R = Decimal[0, 1000; 1, 1; exact];`, `function f using v(r: R): P pure { convert<P>(decimal(15, 1) + r) }` checks, the literal typed `R` by its peer `r` (its `decimal` literal node `"1.5"` at `R`'s type node) and the sum typed `R` before the conversion, and lowers one `convert` node over the sum's node whose `result_type` is `P`'s type node. `convert<Decimal[0, 100; 0, 3]>(a)` over `a: Float64[nearest-even]` is refused `ill_typed`/`type-mismatch` as FR-397-AC-18 states. | Test (TC-1232) |
+| FR-093-AC-56 | With `function g using v(q: Rational[0, 2; 1, 3]): Decimal[0, 100; 2, 2; nearest-even] pure { convert<Decimal[0, 100; 2, 2; nearest-even]>(q) }`, evaluating `g` at `q` = 2/3 returns coefficient 67, scale 2 with the charge points of QSpec TC-185 D24 plus the call's `FunctionCall`. The same body with the mode `exact` is refused `inexact_decimal`/`nonzero-discarded-digit` after the `decimal.arithmetic` charge, with no `decimal.rounding` charge and no value. | Test (TC-1232, QSpec TC-185) |
+| FR-093-AC-57 | With `type N = Decimal[-9, 0; 0, 0; toward-zero];`, `function m1 using v(): N pure { -decimal(5, 0) }` checks and evaluates to coefficient -5, scale 0, `function m2 using v(): N pure { decimal(5, 0) }` refuses `ill_typed`/`type-mismatch` at the literal, `function m3 using v(): N pure { -decimal(-5, 0) }` refuses `ill_typed`/`type-mismatch` (the value 5 is above the bound), and `-decimal(5, 0)` at AC-39's `Q` checks. | Test (TC-1232) |
 | FR-093-AC-43 | With FR-091-AC-44's units (`Time`, `s`, `ms`), `dimension Period;`, `unit sec : Period = rational(1, 1);`, `unit msec : Period = rational(1, 1000) * sec;` and `dimension Period ~ Time by 1 sec = 1 s;` (root ratio 1), each of these checks and lowers: `function c1 using v(d: Quantity<s>): Boolean pure { convert<Quantity<sec>>(d) = 3 sec }`, a `quire.op.quantity.convert` node with mode `rounding` = `exact` over `d` then `quire.op.quantity.eq` over it and the `3 sec` literal at the `sec` node; `function c2 using v(d: Quantity<s>): Boolean pure { convert<Quantity<msec>>(d) = 3000 msec }`; and `function c3 using v(e: Quantity<msec>): Boolean pure { convert<Quantity<s>>(e) = rational(3, 2) s }`. IR's v2 reader admits each package, and evaluating the lowered bodies gives: `c1` true for `d` = `3 s` and false for `d` = `4 s`; `c2` true for `d` = `3 s`; `c3` true for `e` = `1500 msec`. With `dimension Length;` and `unit m : Length = rational(1, 1);` beside them, `function c4 using v(d: Quantity<s>): Boolean pure { convert<Quantity<m>>(d) = 3 m }` refuses `ill_typed` at the conversion, and in the same units without `dimension Period ~ Time by 1 sec = 1 s;` `c1` refuses `ill_typed` at the conversion. | Test (TC-483) |
 | FR-093-AC-44 | Under AC-43's units, each of these refuses `ill_typed`/`type-mismatch` at the operation and emits no node: `function a1 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d + p = d + p }`, `function a2 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d = p }`, `function a3 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d < p }` and, with `function f using v(d: Quantity<s>): Boolean pure { true }`, `function a4 using v(): Boolean pure { f(3 sec) }`. Each of these checks and lowers: `function a5 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { convert<Quantity<s>>(p) + d = 6 s }`, true for `d` = `3 s` and `p` = `3 sec`; `function a6 using v(): Boolean pure { f(convert<Quantity<s>>(3 sec)) }`; `function a7 using v(d: Quantity<s>): Boolean pure { d / 3 sec = d / 3 s }`, two `quire.op.quantity.div` nodes whose `result_type` is the one dimensionless compound-unit node, true for `d` = `6 s`; and `function a8 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d * p = d * d }`, whose two products have one compound-unit node over the class root unit squared, true for `d` = `2 s` and `p` = `2 sec`. | Test (TC-483) |
 | FR-093-AC-46 | Unequal roots (QSpec FR-142-AC-26). With FR-091-AC-44's units, `dimension Beat;`, `unit beat : Beat = rational(1, 1);`, `unit bar : Beat = rational(4, 1) * beat;` and `dimension Beat ~ Time by 1 beat = rational(1, 4) s;` (root ratio 1/4: a beat is a quarter of a second), each of these checks and lowers: `function u1 using v(d: Quantity<beat>): Boolean pure { convert<Quantity<s>>(d) = rational(1, 4) s }`, true for `d` = `1 beat` and false for `d` = `2 beat`; `function u2 using v(d: Quantity<s>): Boolean pure { convert<Quantity<beat>>(d) = 12 beat }`, true for `d` = `3 s`; `function u3 using v(d: Quantity<bar>): Boolean pure { convert<Quantity<ms>>(d) = 1000 ms }`, true for `d` = `1 bar`; and `function u4 using v(d: Quantity<s>): Boolean pure { d / 3 beat = d / rational(3, 4) s }`, two `quire.op.quantity.div` nodes with the one dimensionless compound-unit node, true for `d` = `6 s` (both quotients are `8`). In the same units with `dimension Beat ~ Time by 1 beat = 1 s;` (root ratio 1) `u1` is false for `d` = `1 beat` and true for `d` = `rational(1, 4) beat`, and `u2` is true for `d` = `12 s`. `function u5 using v(d: Quantity<s>, p: Quantity<beat>): Boolean pure { d + p = d + p }` refuses `ill_typed`/`type-mismatch` at the operation under either declaration. | Test (TC-483) |
