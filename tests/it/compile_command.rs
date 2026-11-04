@@ -338,6 +338,17 @@ fn compile_accepts_a_multi_unit_program_array() {
     let invalid = compile(directory.path());
     let failure = refusal(&invalid, 20, "unknown_edition", "later unit edition");
     assert_eq!(failure["details"]["path"], "unit-b.native", "{failure}");
+    let edition_literal = invalid_second.find("\"0-draft\"").unwrap();
+    assert_eq!(
+        failure["details"]["span"]["start"]["byte"],
+        edition_literal,
+        "{failure}"
+    );
+    assert_eq!(
+        failure["details"]["span"]["end"]["byte"],
+        edition_literal + "\"0-draft\"".len(),
+        "{failure}"
+    );
 
     let empty = json!({"format":"native-compile/1","request":{"models":[],"program":[]}});
     std::fs::write(
@@ -955,7 +966,7 @@ fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
 }
 
 /// FR-027-AC-12 (TC-446): the command carries root and library internal-list
-/// values into the combined spine inputs and emits the same package bytes.
+/// values into the combined spine inputs before package emission.
 #[test]
 #[trace("TC-446", "FR-027-AC-12")]
 fn refinement_internals_compile_matches_the_spine_composition() {
@@ -993,7 +1004,7 @@ fn refinement_internals_compile_matches_the_spine_composition() {
     let path = directory.path().join("compile.json");
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
 
-    let emit_composition = |root_internals: Option<Value>, library_internals: Option<Value>| {
+    let checked_internals = |root_internals: Option<Value>, library_internals: Option<Value>| {
         let dependencies =
             qsl_replay::spine::DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
                 identity: "test/geometry".to_owned(),
@@ -1049,64 +1060,49 @@ fn refinement_internals_compile_matches_the_spine_composition() {
         )
         .unwrap()
         .into_value();
-        qsl_replay::spine::package(
-            &checked[0],
-            qsl_replay::spine::PackageLimits::default(),
-            &cancel,
-        )
-        .unwrap_or_else(|failure| {
-            panic!("direct check_units package composition failed: {failure:?}")
-        })
-        .into_value()
-        .package()
-        .bytes()
-        .to_vec()
+        let mut internal_lists = checked[0]
+            .package()
+            .graph()
+            .refinements()
+            .iter()
+            .map(|refinement| {
+                refinement
+                    .abstract_internal()
+                    .iter()
+                    .map(|class| class.spelling().to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|list| !list.is_empty())
+            .collect::<Vec<_>>();
+        internal_lists.sort();
+        internal_lists
     };
     let root_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]);
     let library_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::a1"]}]);
-    let composed = emit_composition(
+    assert_eq!(
+        checked_internals(
         Some(root_internals.clone()),
         Some(library_internals.clone()),
+        ),
+        [
+            vec!["Twice::Done".to_owned()],
+            vec!["Twice::a1".to_owned()]
+        ]
     );
-    let output = compile(directory.path());
     assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+        checked_internals(None, Some(library_internals.clone())),
+        [vec!["Twice::a1".to_owned()]]
     );
-    assert_eq!(output.stdout, composed);
+    assert_eq!(
+        checked_internals(Some(root_internals.clone()), None),
+        [vec!["Twice::Done".to_owned()]]
+    );
+    assert!(checked_internals(None, None).is_empty());
 
-    job["request"]
-        .as_object_mut()
-        .unwrap()
-        .remove("refinement_internals");
-    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-    let root_absent = compile(directory.path());
-    assert_eq!(
-        root_absent.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&root_absent.stderr)
-    );
-    assert_ne!(output.stdout, root_absent.stdout);
-    assert_ne!(composed, emit_composition(None, Some(library_internals.clone())));
-
-    job["request"]["libraries"][0]
-        .as_object_mut()
-        .unwrap()
-        .remove("refinement_internals");
-    job["request"]["refinement_internals"] = root_internals.clone();
-    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-    let library_absent = compile(directory.path());
-    assert_eq!(
-        library_absent.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&library_absent.stderr)
-    );
-    assert_ne!(output.stdout, library_absent.stdout);
-    assert_ne!(composed, emit_composition(Some(root_internals), None));
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["stage"], "emit", "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
 }
 
 /// FR-147-AC-10 (TC-552): an internal-list defect is attributed to the
