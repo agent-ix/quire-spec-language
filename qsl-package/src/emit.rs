@@ -478,10 +478,14 @@ pub struct Emission {
         Vec<quire_contract_model::SelectedModelEnumDeclarationRow>,
     pub(crate) selected_model_enum_member_rows:
         Vec<quire_contract_model::SelectedModelEnumMemberRow>,
+    /// QSL-stage identities for emitted source-owned enum declarations and
+    /// their cases (FR-092 "Source enum identity rows").
+    pub(crate) selected_enum_declaration_rows:
+        Vec<quire_contract_model::SelectedEnumDeclarationRow>,
+    pub(crate) selected_enum_member_rows: Vec<quire_contract_model::SelectedEnumMemberRow>,
     /// The checking stage's selected model declaration rows (record, object,
-    /// union, declared unit), retained from the acquisition these bytes were
-    /// emitted from. QSL builds no row for a source-owned enum declaration or
-    /// member, nor for a collection; those row kinds have no producer yet.
+    /// declared unit), retained from the acquisition these bytes were
+    /// emitted from. A collection type is structural and has no row.
     pub(crate) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     /// The checking stage's selected record-field rows, retained from the same
@@ -665,6 +669,8 @@ impl DebugWith for Emission {
             selected_source_unit_rows,
             selected_model_enum_declaration_rows,
             selected_model_enum_member_rows,
+            selected_enum_declaration_rows,
+            selected_enum_member_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
             equality_producer_identity_rows,
@@ -695,6 +701,11 @@ impl DebugWith for Emission {
                 "selected_model_enum_member_rows",
                 selected_model_enum_member_rows,
             )
+            .field(
+                "selected_enum_declaration_rows",
+                selected_enum_declaration_rows,
+            )
+            .field("selected_enum_member_rows", selected_enum_member_rows)
             .field(
                 "selected_exact_declaration_rows",
                 selected_exact_declaration_rows,
@@ -916,8 +927,20 @@ impl Emission {
         &self.selected_model_enum_member_rows
     }
 
-    /// Selected model declaration rows (record, object, union, declared unit)
-    /// of the acquisition these bytes were emitted from.
+    /// Source-owned enum declaration rows carried by this emission.
+    pub fn selected_enum_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedEnumDeclarationRow] {
+        &self.selected_enum_declaration_rows
+    }
+
+    /// Source-owned enum member rows carried by this emission.
+    pub fn selected_enum_member_rows(&self) -> &[quire_contract_model::SelectedEnumMemberRow] {
+        &self.selected_enum_member_rows
+    }
+
+    /// Selected model declaration rows (record, object, declared unit) of the
+    /// acquisition these bytes were emitted from.
     pub fn selected_exact_declaration_rows(
         &self,
     ) -> &[quire_contract_model::SelectedExactDeclarationRow] {
@@ -4856,6 +4879,8 @@ pub fn emit_timed_models(
         selected_source_unit_rows: Vec::new(),
         selected_model_enum_declaration_rows: Vec::new(),
         selected_model_enum_member_rows: Vec::new(),
+        selected_enum_declaration_rows: Vec::new(),
+        selected_enum_member_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
@@ -5846,6 +5871,8 @@ fn emit_package_inner(
             ))
         })
         .collect();
+    let (selected_enum_declaration_rows, selected_enum_member_rows) =
+        source_enum_rows(graph.semantic_graph(), &emitted_node_ids)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -5898,6 +5925,8 @@ fn emit_package_inner(
         selected_source_unit_rows,
         selected_model_enum_declaration_rows,
         selected_model_enum_member_rows,
+        selected_enum_declaration_rows,
+        selected_enum_member_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
         equality_producer_identity_rows,
@@ -5905,6 +5934,58 @@ fn emit_package_inner(
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows,
     })
+}
+
+/// FR-092 "Source enum identity rows": one declaration row per emitted
+/// source-owned enum and one member row per emitted case, joined to the
+/// final structural ids. A member's declaration is its `semantic_type`, so an
+/// emitted member whose declaration is not emitted is a writer fault.
+fn source_enum_rows(
+    graph: &qsl_semantics::check::SemanticGraph,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<
+    (
+        Vec<quire_contract_model::SelectedEnumDeclarationRow>,
+        Vec<quire_contract_model::SelectedEnumMemberRow>,
+    ),
+    EmitRefusal,
+> {
+    let declarations: BTreeMap<&NodeKey, &qsl_semantics::check::SourceEnumDeclaration> =
+        graph.source_enum_declarations().collect();
+    let declaration_rows = declarations
+        .iter()
+        .filter_map(|(key, declaration)| {
+            Some(quire_contract_model::SelectedEnumDeclarationRow::new(
+                emitted.get(*key)?.clone(),
+                declaration.owner.authority(),
+                declaration.owner.identity(),
+                declaration.qualified_declaration.clone(),
+                (*key).clone(),
+            ))
+        })
+        .collect();
+    let member_rows = graph
+        .source_enum_members()
+        .filter_map(|(key, member)| Some((key, member, emitted.get(key)?)))
+        .map(|(key, member, structural_node)| {
+            let declaration = declarations
+                .get(&member.declaration_key)
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            let declaration_node = emitted
+                .get(&member.declaration_key)
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            Ok(quire_contract_model::SelectedEnumMemberRow::new(
+                structural_node.clone(),
+                declaration.owner.authority(),
+                declaration.owner.identity(),
+                declaration_node.clone(),
+                declaration.qualified_declaration.clone(),
+                member.case.clone(),
+                key.clone(),
+            ))
+        })
+        .collect::<Result<_, EmitRefusal>>()?;
+    Ok((declaration_rows, member_rows))
 }
 
 fn temporal_clock_matches_profile(

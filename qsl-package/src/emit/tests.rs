@@ -78,6 +78,7 @@ mod refinement_rows;
 mod retained_rows;
 mod schedulability_claims;
 mod selected_model_rows;
+mod source_enum_rows;
 mod source_map_debug;
 mod state_graph_claim;
 mod state_transition;

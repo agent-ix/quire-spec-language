@@ -51,6 +51,11 @@ fn composite() -> Emission {
     let enums = emitted_enums(UNIT);
     base.selected_model_enum_declaration_rows = enums.selected_model_enum_declaration_rows.clone();
     base.selected_model_enum_member_rows = enums.selected_model_enum_member_rows.clone();
+    let (_, source_enums) = emit_from_text(super::source_enum_rows::STATUS);
+    base.selected_enum_declaration_rows = source_enums.selected_enum_declaration_rows.clone();
+    base.selected_enum_member_rows = source_enums.selected_enum_member_rows.clone();
+    base.wire_nodes
+        .extend(source_enums.wire_nodes.iter().cloned());
     base.equality_producer_identity_rows
         .extend(enums.equality_producer_identity_rows.iter().cloned());
     base.equality_fact_witness_rows
@@ -269,6 +274,44 @@ fn every_retained_row_kind_is_carried_with_its_node_ids_rekeyed() {
             got.declaration_node,
             renamed(&was.declaration_node),
             "member's declaration"
+        );
+    }
+
+    assert!(!emission.selected_enum_declaration_rows.is_empty());
+    assert_eq!(
+        rows.selected_enum_declaration_rows.len(),
+        emission.selected_enum_declaration_rows.len()
+    );
+    for (got, was) in rows
+        .selected_enum_declaration_rows
+        .iter()
+        .zip(&emission.selected_enum_declaration_rows)
+    {
+        assert_eq!(
+            got.structural_node,
+            renamed(&was.structural_node),
+            "source enum"
+        );
+    }
+    assert!(!emission.selected_enum_member_rows.is_empty());
+    assert_eq!(
+        rows.selected_enum_member_rows.len(),
+        emission.selected_enum_member_rows.len()
+    );
+    for (got, was) in rows
+        .selected_enum_member_rows
+        .iter()
+        .zip(&emission.selected_enum_member_rows)
+    {
+        assert_eq!(
+            got.structural_node,
+            renamed(&was.structural_node),
+            "source member"
+        );
+        assert_eq!(
+            got.declaration_node,
+            renamed(&was.declaration_node),
+            "source member's declaration"
         );
     }
 
