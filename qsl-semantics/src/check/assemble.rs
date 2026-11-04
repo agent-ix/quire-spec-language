@@ -3134,13 +3134,68 @@ impl PackageDeclarations {
     /// the spine's FR-480 preflight stage.
     pub fn assemble_units(
         package_name: String,
+        units: Vec<(RawSourceRef, ParsedUnit)>,
+        models: impl Into<SelectedModels>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+        cancel: &Cancel,
+    ) -> Result<Self, AssemblyRefusal> {
+        let models = models.into();
+        let mut canonical_units = units.clone();
+        canonical_units.sort_by(|(left, _), (right, _)| left.cmp(right));
+        let units_are_canonical = units
+            .iter()
+            .map(|(source, _)| source)
+            .eq(canonical_units.iter().map(|(source, _)| source));
+
+        let canonical_result = Self::assemble_units_in_order(
+            package_name,
+            canonical_units,
+            models.clone(),
+            imports.clone(),
+            limits,
+            cancel,
+        );
+
+        // The aggregate quantity walk can contain independent defects in
+        // different source units. When its canonical pass finds one, an
+        // ordered pass selects the first such defect in the caller's list.
+        // Successful packages are assembled only once and stay canonical.
+        match canonical_result {
+            Err(canonical_refusal)
+                if !units_are_canonical
+                    && canonical_refusal.errors.first().is_some_and(|error| {
+                        matches!(
+                            error.cause,
+                            AssemblyCause::QuantityCycle { .. }
+                                | AssemblyCause::UnitGraphTopology { .. }
+                        )
+                    }) =>
+            {
+                match Self::assemble_units_in_order(
+                    package_name,
+                    units,
+                    models,
+                    imports,
+                    limits,
+                    cancel,
+                ) {
+                    Err(ordered_refusal) => Err(ordered_refusal),
+                    Ok(_) => Err(canonical_refusal),
+                }
+            }
+            result => result,
+        }
+    }
+
+    fn assemble_units_in_order(
+        package_name: String,
         mut units: Vec<(RawSourceRef, ParsedUnit)>,
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
-        units.sort_by(|(left, _), (right, _)| left.cmp(right));
         let Some((source, _)) = units.first() else {
             return Err(AssemblyRefusal {
                 errors: vec![AssemblyError {

@@ -96,7 +96,7 @@ use qsl_foundation::{Code, SourceIdentity};
 use qsl_package as pkg;
 use qsl_package::{read_import_view, AdmittedPackages, Emission, Import, ImportViewRefusal};
 use qsl_semantics::check::{
-    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CheckRefusal,
+    resolve_profiles, AdmittedImport, AssemblyCause, AssemblyError, CheckCause, CheckRefusal,
     CorrespondenceConflict, KeyFault, PackageDeclarations,
 };
 use qsl_semantics::library::{ImportView, LibraryName};
@@ -457,6 +457,7 @@ pub struct ParsedUnitSource {
 #[derive(Clone, Debug)]
 pub struct AdmittedUnitList {
     units: Vec<ParsedUnitSource>,
+    input_order: Vec<ParsedUnitSource>,
 }
 
 impl AdmittedUnitList {
@@ -620,6 +621,7 @@ pub fn admit_parsed_unit_list(
             }
         }
     }
+    let input_order = units.clone();
     let mut paired: Vec<_> = requests.into_iter().zip(units.drain(..)).collect();
     paired.sort_by(|(left, _), (right, _)| {
         left.authority
@@ -629,6 +631,7 @@ pub fn admit_parsed_unit_list(
     });
     Ok(AdmittedUnitList {
         units: paired.into_iter().map(|(_, unit)| unit).collect(),
+        input_order,
     })
 }
 
@@ -682,6 +685,39 @@ impl ParsedUnitSource {
     pub fn protocol_results(&self) -> &[super::ProtocolResult] {
         &self.protocol_results
     }
+}
+
+/// The source that owns an assembler error whose cause names its declaration.
+/// Aggregate units have source-local spans, so the primary source alone
+/// cannot identify the declaration that caused a cross-unit refusal.
+fn assembly_error_source<'a>(
+    error: &AssemblyError,
+    source_units: &'a [ParsedUnitSource],
+) -> Option<&'a RawSourceRef> {
+    let names = match &error.cause {
+        AssemblyCause::QuantityCycle { edges } => edges
+            .first()
+            .map(|(declaration, _)| vec![declaration.as_str()]),
+        AssemblyCause::UnitGraphTopology { declarations, .. } => {
+            Some(declarations.iter().map(String::as_str).collect())
+        }
+        _ => None,
+    }?;
+
+    source_units.iter().find_map(|source_unit| {
+        let owns_declaration = source_unit
+            .unit()
+            .forms()
+            .iter()
+            .any(|form| match form.form() {
+                qsl_forms::DeclarationForm::Dimension(dimension) => {
+                    names.contains(&dimension.name.name.as_str())
+                }
+                qsl_forms::DeclarationForm::Unit(unit) => names.contains(&unit.name.name.as_str()),
+                _ => false,
+            });
+        owns_declaration.then(|| source_unit.source().reference())
+    })
 }
 
 /// The domain packages a unit's `model` declarations selected, admitted at
@@ -2852,12 +2888,19 @@ impl Frame {
         models: SelectedModels,
         refinement_internals: Option<serde_json::Value>,
     ) -> Self {
-        let source_units = admitted.units.clone();
-        let unit = ParsedUnit::combine(source_units.iter().map(|source| source.unit.clone()));
+        let source_units = admitted.input_order.clone();
+        let unit = ParsedUnit::combine(admitted.units.iter().map(|source| source.unit.clone()));
         let imports = unit.selections().imports.len();
+        let canonical_primary = admitted
+            .units
+            .first()
+            .expect("an AdmittedUnitList is non-empty")
+            .source()
+            .reference()
+            .clone();
         Self {
             package_name,
-            raw: source_units[0].source().reference().clone(),
+            raw: canonical_primary,
             unit,
             source_units,
             models,
@@ -3109,7 +3152,10 @@ impl<'a> Resolution<'a> {
                             AssemblyCause::TypeLimit(_) | AssemblyCause::DecimalScaleLimit(_)
                         )
                     })
-                    .and_then(|error| region(&raw, error.span)),
+                    .and_then(|error| {
+                        let source = assembly_error_source(error, &source_units).unwrap_or(&raw);
+                        region(source, error.span)
+                    }),
                 refusal,
             })
         })?;
