@@ -26,6 +26,17 @@ struct Significant {
     spelling: Box<str>,
 }
 
+impl Significant {
+    /// FR-035-AC-7: whether this token can name a function or predicate or
+    /// select its profile alias. A spelling the recognizer classes as
+    /// [`Kind::Unsupported`] (`helper`, `rec`, `cast`, `Tuple`) has an
+    /// identifier's shape but is reserved, so those positions refuse it at
+    /// its own span.
+    fn names(&self) -> bool {
+        crate::token::identifier_spelling(&self.spelling) && self.kind != Some(Kind::Unsupported)
+    }
+}
+
 type Scan = (
     Vec<super::CstToken>,
     Vec<Significant>,
@@ -158,7 +169,13 @@ pub(super) fn parse(
                         },
                         span.start,
                         span.end,
-                        format!("expected {expected}"),
+                        match significant.get(failure.position) {
+                            Some(token) if token.kind == Some(Kind::Unsupported) => format!(
+                                "`{}` is a reserved spelling; expected {expected}",
+                                token.spelling
+                            ),
+                            _ => format!("expected {expected}"),
+                        },
                     ));
                     recoveries.push(Recovery {
                         kind: if failure.position == significant.len() {
@@ -1673,10 +1690,10 @@ impl<'a> Engine<'a> {
                         crate::token::identifier_spelling(&token.spelling)
                             && !self.reserved_words.contains(token.spelling.as_ref())
                     }
-                    Terminal::IdentifierAllowReserved(allowed) => {
-                        crate::token::identifier_spelling(&token.spelling)
+                    Terminal::CallableName(allowed) => {
+                        token.names()
                             && (!self.reserved_words.contains(token.spelling.as_ref())
-                                || token.spelling.as_ref() == *allowed)
+                                || Some(token.spelling.as_ref()) == *allowed)
                     }
                     Terminal::MemberName => crate::token::identifier_spelling(&token.spelling),
                     Terminal::Text => matches!(token.kind, Some(Kind::Text(_))),
@@ -1728,9 +1745,8 @@ impl Terminal {
                 format!("`{value}`")
             }
             Self::Identifier => "identifier".into(),
-            Self::IdentifierAllowReserved(allowed) => {
-                format!("identifier or `{allowed}`")
-            }
+            Self::CallableName(None) => "identifier".into(),
+            Self::CallableName(Some(allowed)) => format!("identifier or `{allowed}`"),
             Self::MemberName => "qualified ASCII member name".into(),
             Self::Text => "quoted string".into(),
             Self::TextValue(value) => format!("`\"{value}\"`"),
