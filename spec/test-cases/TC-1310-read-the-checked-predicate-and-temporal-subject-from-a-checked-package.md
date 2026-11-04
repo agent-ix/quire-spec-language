@@ -12,7 +12,7 @@ relationships:
 
 Verify the two checked-package views that succeed the retired
 `checked_predicate` and `temporal_subject` modules. Scope: FR-515-AC-1 to
-FR-515-AC-20. **R** is the package FR-517 emits from the ported IT-001 recipe.
+FR-515-AC-23. **R** is the package FR-517 emits from the ported IT-001 recipe.
 
 ## Test Procedure
 
@@ -35,11 +35,14 @@ FR-515-AC-20. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 15 | 15 | a clause named by no protocol `requirements` entry; a clause named by one | empty; the protocol clause's node id |
 | 16 | 16 | `checked_predicate` of an activation guard | `source_span` is an entry of the guard node |
 | 17 | 17 | `checked_predicate` of a `ClauseLeaf` that is neither a `holds` operand nor the guard | `source_span` inside the formula root's source regions |
-| 18 | 18 | the in-memory package before emit vs the read-back package, each of **R**'s clauses | equal `profile()` and `clock()` |
+| 18 | 18 | the evaluation package from the `Emission` vs the read-back package, each of **R**'s clauses; the rows held vs the `Emission`'s | equal `profile()`, `clock()`, `occurrences()`; rows byte-equal |
 | 19 | 19 | two clauses of different nodes and clock rows | each node's `clock()` is its own row, in both packages |
-| 20 | 20 | a constructed twin package (in memory and read back): node `occurrences` array 7 then 3, lock rows ascending 3 then 7, different clock configurations | `clock_of` returns the row keyed by each ordinal; `clock()` `None`; same in both packages |
+| 20 | 20 | a constructed V2 twin package (node `occurrences` 7 then 3, lock rows ascending 3 then 7, different clock configurations) read back through the reader; no `Emission` | `clock_of` returns the row keyed by each ordinal; `clock()` `None`; a position pairing fails |
+| 21 | 21 | each `TemporalClauseRef` vs the read-back `temporal_clause_names` row; the evaluation package's ids vs the read-back package's | equal ids; no id derivation in the API |
+| 22 | 22 | a clause with a trigger-reading guard and four `holds` atoms at indices 0 to 3 (capture; `over()` only; neither; trigger and capture); the first and second swapped | the derived set is `{0, 3}`, none for the guard, equal in both packages; after the swap `{1, 3}`; no caller-supplied set |
+| 23 | 23 | the evaluator formula from each route for **R**'s clauses and AC-22's clause, from `formula_graph()`; `formula()` of AC-3's clause; a view with a cyclic or out-of-range `operands` | equal node for node; `formula()` as AC-3; the bad view is unreadable |
 
-Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-20", "TC-1310")]` for the criteria each row covers.
+Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-23", "TC-1310")]` for the criteria each row covers.
 
 ## Expected Results
 

@@ -16,7 +16,7 @@ nodes so a clause with an `on each` activation and a capture is compiled with a
 distinct key, and that the engine fixes a capture at the activation and ends
 the run with `UndefinedEvaluation` located at a capture it cannot evaluate.
 
-Scope: FR-337-AC-8 to FR-337-AC-14, with FR-218-AC-16 (TC-1056 row 23a) over
+Scope: FR-337-AC-8 to FR-337-AC-14 and FR-524-AC-23 (the S3 refusal of a capture initializer that reads a later capture is FR-337-AC-8's mutation), with FR-218-AC-16 (TC-1056 row 23a) over
 the emitted clause.
 
 ## Test Procedure
@@ -68,7 +68,7 @@ infinite-trace unless a step names another profile.
    mutate each aggregate binding, and read the emitted formula node and
    source map.
 
-Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`.
+Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`, and the test of AC-8's later-capture mutation also `"FR-524-AC-23"`.
 
 ## Expected Results
 
