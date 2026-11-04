@@ -455,6 +455,60 @@ fn the_number_module_exemption_is_one_path_and_seven_items() {
         .len(),
         2
     );
+    // The exemption is the one path `number.rs`, not a suffix or a directory.
+    assert_eq!(scan_one("sub/number.rs", seven.to_owned()).len(), 7);
+    assert_eq!(scan_one("other_number.rs", seven.to_owned()).len(), 7);
+    // It skips `pub use` only: a `pub type` or `pub extern crate` still fails.
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{seven}pub type X = qsl_package::CheckedPackage;\n")
+        ),
+        ["X"]
+    );
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{seven}pub extern crate qsl_package;\n")
+        ),
+        ["qsl_package"]
+    );
+    // An item under another `qsl_package` path is unexpected, and the
+    // `number` item it displaces is missing.
+    let displaced = seven.replace("NumberError, ", "");
+    assert_eq!(
+        scan_one(
+            "number.rs",
+            format!("{displaced}pub use qsl_package::other::NumberError;\n")
+        ),
+        [
+            "unexpected pub use qsl_package::other::NumberError",
+            "missing or repeated pub use qsl_package::number::NumberError"
+        ]
+    );
+}
+
+/// TC-256 step 3: `number.rs` is exempt from exposures but still feeds the
+/// crate-wide layer-name set, so a name it binds privately from a layer crate
+/// is a layer name in every other module.
+#[trace("FR-087-AC-9", "TC-256")]
+#[test]
+fn the_number_module_still_feeds_the_layer_name_set() {
+    let layers: BTreeSet<String> = ["qsl_package"].into_iter().map(str::to_owned).collect();
+    let sources = [
+        (
+            "number.rs",
+            "use qsl_package as pkg;\n\
+             pub use qsl_package::number::{ExactInteger, ExactRational, NumberComponent, \
+             NumberError, NumberWire, ProtocolNumber, NUMERIC_PROFILE};\n",
+        ),
+        ("b.rs", "pub use pkg::CheckedPackage;\n"),
+    ]
+    .map(|(file, source)| (file.to_owned(), source.to_owned()));
+    assert_eq!(
+        scan(&sources, &layers),
+        [("b.rs".to_owned(), "pub use", "CheckedPackage".to_owned())]
+    );
 }
 
 /// The scanner against each shape it must catch and each it must pass.
