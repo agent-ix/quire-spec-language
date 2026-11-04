@@ -589,6 +589,10 @@ pub struct PackageDeclarations {
     /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
     /// name, "internal": [class, ...]}` objects. `None` is the empty list.
     pub refinement_internals: Option<serde_json::Value>,
+    /// FR-337 "Aggregate formula emission": the selected timestamped-event
+    /// clock unit of each clause whose clock the caller already knows, so a
+    /// `duration` window converts both bounds to it (QSpec FR-370).
+    pub clock_units: Vec<super::temporal_clause::ClockUnitSelection>,
     /// FR-135: the refinement features this build has built. A build
     /// capability, not a request parameter; only a test replaces it.
     pub refinement_support: super::RefinementSupport,
@@ -652,6 +656,17 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_refinement_internals(mut self, value: serde_json::Value) -> Self {
         self.refinement_internals = Some(value);
+        self
+    }
+
+    /// These declarations with the selected timestamped-event clock unit of
+    /// each clause `units` names (FR-337 "Aggregate formula emission").
+    #[must_use]
+    pub fn with_clock_units(
+        mut self,
+        units: Vec<super::temporal_clause::ClockUnitSelection>,
+    ) -> Self {
+        self.clock_units = units;
         self
     }
 
@@ -763,6 +778,7 @@ impl PackageDeclarations {
             hybrids: Vec::new(),
             hybrid_claims: Vec::new(),
             refinement_internals: None,
+            clock_units: Vec::new(),
             refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,
             emit_unwritten_protocols: false,

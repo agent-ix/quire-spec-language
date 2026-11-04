@@ -39,8 +39,8 @@ use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::temporal_clause::condition::{family, Family, TypedCondition, TypedConditions};
 use crate::check::temporal_clause::{
     AggregateKind, AggregateWindow, BinaryTemporal, CheckedAggregate, CheckedFairnessMember,
-    CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
-    UnaryTemporal,
+    CheckedFormula, CheckedInterval, CheckedTemporalClause, DurationWindow, FormulaNode,
+    FormulaNodeId, TimeNominalOrigin, UnaryTemporal,
 };
 use crate::value::member::{FairnessTarget, Member, TimedMember};
 
@@ -634,8 +634,22 @@ impl Lowering<'_> {
                 self.integer_literal(Integer::from(*lower), location)?,
                 self.integer_literal(Integer::from(*upper), location)?,
             ),
-            AggregateWindow::Duration { lower, upper, unit } => {
-                self.unit_nodes(unit.clone(), location)?;
+            AggregateWindow::Duration(window) => {
+                let DurationWindow {
+                    lower,
+                    upper,
+                    unit,
+                    nominal_nodes,
+                } = &**window;
+                // A source unit is a node of the unit graph lowering holds;
+                // a model-owned unit and its closure are written by the
+                // emitter (FR-322 "Model-owned members").
+                let model_owned = nominal_nodes.iter().any(|node| {
+                    node.key == *unit && matches!(node.origin, TimeNominalOrigin::Model(_))
+                });
+                if !model_owned {
+                    self.unit_nodes(unit.clone(), location)?;
+                }
                 (
                     "duration",
                     LeafTerm::literal(unit.clone(), LiteralValue::Quantity(lower.clone())),

@@ -72,7 +72,10 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   durations under the timestamped-event profile. A duration window under
   event-position, or a position window under timestamped-event, SHALL be
   refused `ill_typed`/`unit-mismatch` at the first bound whose kind the
-  profile does not take. A window with `a > b` SHALL be refused
+  profile does not take. A `duration` bound whose unit is not a time unit,
+  or is a time unit that does not convert to the window's unit (the
+  selected clock unit, FR-337), is no duration and SHALL be refused
+  `ill_typed`/`unit-mismatch` at the bound's unit. A window with `a > b` SHALL be refused
   `invalid_package`/`invalid-value` at the window `past[a, b]`.
 - `quantile q` SHALL have an exact rational `0 < q < 1`; another `q` SHALL be
   refused `invalid_package`/`invalid-value` at the literal `q`. A `min`,

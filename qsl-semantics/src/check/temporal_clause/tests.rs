@@ -102,6 +102,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
             units: &units,
             time_sources: &package.time_sources,
             rational_bits: CheckingLimits::default().rational_bits(),
+            clock_units: &package.clock_units,
         },
     };
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
@@ -538,11 +539,20 @@ fn aggregate_atoms_are_checked_and_admitted() {
         package_refusal(&inverted_duration),
         TemporalCause::InvalidAggregateWindow { .. }
     ));
-    let wrong_duration_dimension = timestamped_source("count over past[0 m, 1 m] >= 1");
-    assert!(matches!(
-        package_refusal(&wrong_duration_dimension),
-        TemporalCause::TimeQuantity { .. }
-    ));
+    // FR-194: a bound of another dimension is no duration, a unit
+    // mismatch at its unit, whichever bound it is.
+    for window in ["past[0 m, 1 m]", "past[0 s, 1 m]"] {
+        let refusal = package_refusal(&timestamped_source(&format!("count over {window} >= 1")));
+        assert_eq!(
+            (refusal.code(), refusal.tag()),
+            (Code::IllTyped, "unit-mismatch"),
+            "{window}"
+        );
+        assert!(
+            matches!(refusal, TemporalCause::AggregateWindowKindMismatch { .. }),
+            "{window}: {refusal:?}"
+        );
+    }
 
     // The threshold may use another unit of the value's dimension.
     package_admits(&timestamped_source(
