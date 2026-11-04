@@ -3690,10 +3690,7 @@ fn inspection_source_map(
         }
         mapped.push((key, regions));
     }
-    PackageSourceMap::from_entries(mapped).map_err(|e| {
-        eprintln!("DBG from_entries {e:?}");
-        EmitRefusal::SourceMapInvariant
-    })
+    PackageSourceMap::from_entries(mapped).map_err(|_| EmitRefusal::SourceMapInvariant)
 }
 
 /// A refinement's V2 node (QSpec FR-375), its source-map entries and its
