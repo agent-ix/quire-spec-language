@@ -106,8 +106,7 @@ fn emitted_selecting(
         bytes,
         packages,
         dependencies,
-        limits,
-        clocks,
+        (limits, clocks),
     );
     Ok(original)
 }
@@ -122,8 +121,7 @@ fn assert_format_identity(
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
-    limits: SpineLimits,
-    clocks: Clocks,
+    (limits, clocks): (SpineLimits, Clocks),
 ) {
     // AC-9 isolates semantic identity; the AC-4/5/6 tests exercise exhaustion.
     // Give a fixture with an exact original S1 byte bound enough bytes for
