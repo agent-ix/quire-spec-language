@@ -3482,13 +3482,7 @@ pub fn check_hyper_clauses(
     .with_complete_value(complete_value)
     .with_known_populations(super::refinement::population_names(&package.models))
     .with_complete_model(!package.models.is_empty())
-    .with_model_selections(
-        package
-            .models
-            .iter()
-            .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
-            .collect(),
-    )
+    .with_model_spellings(package.model_spellings.clone())
     .with_declared_units(&package.units);
     // The declared functions' signatures, which a body's calls resolve
     // against; a function that does not resolve is left out.

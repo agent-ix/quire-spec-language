@@ -3570,7 +3570,8 @@ impl PackageDeclarations {
                 model_spellings.bind_model(unit_source, &selection.alias, Some(*package));
                 continue;
             }
-            let package = model_spellings.add_package();
+            let package =
+                model_spellings.add_package(model.view.domain_package().model_selection.clone());
             packages.insert(&selection.identity, package);
             model_spellings.bind_model(unit_source, &selection.alias, Some(package));
             match model_object_types(
@@ -4327,7 +4328,7 @@ impl PackageDeclarations {
         // over.
         let (admitted, bound_errors) = match population_bounds(
             &unit.population_bounds,
-            &models,
+            &resolve,
             &unit.state_clauses,
             &unit.functions,
         ) {
@@ -5253,7 +5254,11 @@ fn terminal_declarations(
     models: &[AdmittedModel],
 ) -> Result<Vec<TerminalClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
-        profiles, types, ..
+        source_owners,
+        profiles,
+        spellings,
+        types,
+        ..
     } = *resolve;
     let mut errors = Vec::new();
     let mut declarations = Vec::with_capacity(forms.len());
@@ -5271,8 +5276,14 @@ fn terminal_declarations(
                 form.profile.span,
             ));
         }
+        // The model the declaration's own unit binds the alias to (FR-480
+        // "Selections and imports").
         let alias = form.model.name.as_str();
-        let Some(model) = models.iter().find(|model| model.alias() == Some(alias)) else {
+        let package = spellings.selection(source_owners.get(&form.name.name), alias);
+        let Some(model) = models
+            .iter()
+            .find(|model| model.alias() == Some(alias) && Some(model.selection()) == package)
+        else {
             errors.push(error(
                 AssemblyCause::UnresolvedTerminalModel {
                     alias: alias.to_owned(),
@@ -5344,6 +5355,7 @@ fn terminal_declarations(
         declarations.push(TerminalClauseDeclaration {
             name: form.name.name.clone(),
             model: alias.to_owned(),
+            package: model.selection().identity.clone(),
             selection,
             span: form.span,
             kind,
@@ -5356,9 +5368,10 @@ fn terminal_declarations(
     }
 }
 
-/// The authored bound of each bounded population, by `model` alias and then
-/// the population's declaration key (FR-380).
-type PopulationBounds = BTreeMap<String, BTreeMap<DeclarationKey, AuthoredBound>>;
+/// The authored bound of each bounded population, by `model` alias and the
+/// identity of the package it binds, and then the population's declaration
+/// key (FR-380).
+type PopulationBounds = BTreeMap<(String, String), BTreeMap<DeclarationKey, AuthoredBound>>;
 
 /// FR-380 "The declaration": each `bound` declaration resolved. Its alias
 /// must name a `model` declaration of the unit and its population a
@@ -5369,10 +5382,16 @@ type PopulationBounds = BTreeMap<String, BTreeMap<DeclarationKey, AuthoredBound>
 /// not depend on the order of the declarations.
 fn population_bounds(
     forms: &[PopulationBoundForm],
-    selected: &[SelectedModel],
+    resolve: &Resolve<'_>,
     clauses: &[StateClauseForm],
     functions: &[FunctionDeclaration],
 ) -> Result<PopulationBounds, Vec<AssemblyError>> {
+    let Resolve {
+        source_owners,
+        spellings,
+        selected,
+        ..
+    } = *resolve;
     let mut errors = Vec::new();
     // Every declaration involved in an ambiguity, by what it shares.
     let mut ambiguous: Vec<(String, Vec<Span>)> = Vec::new();
@@ -5412,7 +5431,13 @@ fn population_bounds(
             },
             span: name.span,
         };
-        let Some(model) = selected.iter().find(|model| model.alias == form.model.name) else {
+        // The model the bound's own unit binds the alias to (FR-480
+        // "Selections and imports").
+        let package = spellings.selection(source_owners.get(&form.label.name), &form.model.name);
+        let Some(model) = selected.iter().find(|model| {
+            model.alias == form.model.name
+                && Some(&model.view.domain_package().model_selection) == package
+        }) else {
             errors.push(unresolved(&form.model));
             continue;
         };
@@ -5446,7 +5471,11 @@ fn population_bounds(
             .entry((form.model.name.as_str(), population.clone()))
             .or_default()
             .push(form.label.span);
-        bounds.entry(form.model.name.clone()).or_default().insert(
+        let bound_model = (
+            form.model.name.clone(),
+            model.view.domain_package().model_selection.identity.clone(),
+        );
+        bounds.entry(bound_model).or_default().insert(
             population.clone(),
             AuthoredBound {
                 maximum,
@@ -5490,12 +5519,14 @@ fn apply_population_bounds(
 ) -> Vec<AdmittedModel> {
     models
         .into_iter()
-        .map(
-            |model| match model.alias().and_then(|alias| bounds.remove(alias)) {
+        .map(|model| {
+            match model.alias().and_then(|alias| {
+                bounds.remove(&(alias.to_owned(), model.selection().identity.clone()))
+            }) {
                 Some(held) => model.with_population_bounds(held),
                 None => model,
-            },
-        )
+            }
+        })
         .collect()
 }
 
