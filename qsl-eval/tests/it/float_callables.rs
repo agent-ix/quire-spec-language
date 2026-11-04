@@ -177,6 +177,7 @@ const VECTORS: [Vectors; 2] = [
     "QSpec-TC-193",
     "QSpec-FR-148-AC-12"
 )]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-13")]
 #[test]
 fn ordering_and_equality_vectors_hold_at_both_widths() {
     for v in &VECTORS {
@@ -217,6 +218,7 @@ fn ordering_and_equality_vectors_hold_at_both_widths() {
 
 /// Trace: FR-397-AC-16
 #[trace("TC-1091", "FR-397-AC-16")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-13")]
 #[test]
 fn total_order_and_bit_identity_calls_separate_zero_signs_and_nan_payloads() {
     let f64 = |name, left, right| call(name, 64, left, right);

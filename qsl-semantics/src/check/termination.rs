@@ -554,9 +554,10 @@ fn component_obligations<'m>(
                     argument == ArgumentShape::Parameter(caller_slot),
                     argument == ArgumentShape::Decremented(caller_slot),
                 ),
-                Element::Cardinality(_) => {
-                    (argument == ArgumentShape::Parameter(caller_slot), false)
-                }
+                Element::Cardinality(_) => (
+                    argument == ArgumentShape::Parameter(caller_slot),
+                    argument == ArgumentShape::Shrunk(caller_slot),
+                ),
                 Element::Structural(_) => (
                     argument == ArgumentShape::Parameter(caller_slot),
                     argument == ArgumentShape::Projection(caller_slot),
