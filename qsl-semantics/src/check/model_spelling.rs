@@ -9,17 +9,19 @@
 //! declaration, independent of the alias (QSpec FR-322-AC-71, AC-132 and
 //! AC-142, FR-480-AC-3).
 //!
-//! [`ModelSpellings`] holds each selected package's type names by member
-//! `T`, and each unit's model aliases bound to their packages. A
-//! model-qualified type name `N::T` resolves through the alias `N` the
-//! writing unit binds, so the same spelling in two units can name two
-//! packages' declarations, and a unit never reaches a declaration through
-//! another unit's alias.
+//! [`ModelSpellings`] holds each selected package's selection and type
+//! names by member `T`, and each unit's model aliases bound to their
+//! packages. A model-qualified type name `N::T`, and a model alias `N`
+//! itself, resolve through the alias `N` the writing unit binds, so the same
+//! spelling in two units can name two packages, and a unit never reaches a
+//! package through another unit's alias.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::source::provenance::RawSourceRef;
 use quire_exact::{EffectiveId, ValueType};
+
+use crate::model::domain_package::DomainPackageRef;
 
 /// What one package-owned type name `M::T` names.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -69,6 +71,13 @@ pub(crate) enum Spelled<'a> {
     Other,
 }
 
+/// One selected package: its selection and its type names.
+#[derive(Clone, Debug)]
+struct Package {
+    selection: DomainPackageRef,
+    names: PackageNames,
+}
+
 /// Each selected package's type names and each source unit's model aliases.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ModelSpellings {
@@ -82,8 +91,8 @@ pub(crate) struct ModelSpellings {
     others: BTreeMap<RawSourceRef, BTreeSet<String>>,
     /// Every unit's model aliases.
     model_aliases: BTreeSet<String>,
-    /// Each selected package's type names.
-    packages: Vec<PackageNames>,
+    /// Each selected package.
+    packages: Vec<Package>,
 }
 
 impl ModelSpellings {
@@ -96,17 +105,42 @@ impl ModelSpellings {
         }
     }
 
-    /// Add a selected package with no names yet, returning its position.
-    pub(crate) fn add_package(&mut self) -> usize {
-        self.packages.push(PackageNames::new());
+    /// Add the selected package `selection` with no names yet, returning
+    /// its position.
+    pub(crate) fn add_package(&mut self, selection: DomainPackageRef) -> usize {
+        self.packages.push(Package {
+            selection,
+            names: PackageNames::new(),
+        });
         self.packages.len() - 1
     }
 
     /// Give the package at `package` its type names.
     pub(crate) fn set_names(&mut self, package: usize, names: PackageNames) {
         if let Some(slot) = self.packages.get_mut(package) {
-            *slot = names;
+            slot.names = names;
         }
+    }
+
+    /// The package `unit` (the primary unit when `None`) binds its model
+    /// alias `alias` to; `None` when the unit binds no admitted model alias
+    /// `alias`.
+    fn package(&self, unit: Option<&RawSourceRef>, alias: &str) -> Option<&Package> {
+        let package = self
+            .units
+            .get(unit.or(self.primary.as_ref())?)?
+            .get(alias)?;
+        self.packages.get(*package)
+    }
+
+    /// The selected package `unit` (the primary unit when `None`) binds its
+    /// model alias `alias` to.
+    pub(crate) fn selection(
+        &self,
+        unit: Option<&RawSourceRef>,
+        alias: &str,
+    ) -> Option<&DomainPackageRef> {
+        self.package(unit, alias).map(|package| &package.selection)
     }
 
     /// `unit` selects a model under `alias`, bound to the package at
@@ -138,18 +172,16 @@ impl ModelSpellings {
         if !self.model_aliases.contains(alias) {
             return Spelled::Other;
         }
-        let unit = unit.or(self.primary.as_ref());
         if unit
+            .or(self.primary.as_ref())
             .and_then(|unit| self.others.get(unit))
             .is_some_and(|others| others.contains(alias))
         {
             return Spelled::Other;
         }
         Spelled::Model(
-            unit.and_then(|unit| self.units.get(unit))
-                .and_then(|aliases| aliases.get(alias))
-                .and_then(|package| self.packages.get(*package))
-                .and_then(|names| names.get(member)),
+            self.package(unit, alias)
+                .and_then(|package| package.names.get(member)),
         )
     }
 
@@ -196,6 +228,12 @@ mod tests {
         RawSourceRef::new("repo".to_owned(), identity.to_owned()).expect("a source reference")
     }
 
+    fn selection(identity: &str) -> DomainPackageRef {
+        DomainPackageRef {
+            identity: identity.to_owned(),
+        }
+    }
+
     fn scalar(value_type: ValueType) -> ModelName {
         ModelName {
             types: vec![value_type],
@@ -207,7 +245,10 @@ mod tests {
     /// package 1, and both declare `T`.
     fn spellings() -> ModelSpellings {
         let mut spellings = ModelSpellings::new(source("a"));
-        let (x, y) = (spellings.add_package(), spellings.add_package());
+        let (x, y) = (
+            spellings.add_package(selection("x")),
+            spellings.add_package(selection("y")),
+        );
         spellings.set_names(
             x,
             package_names(
@@ -245,6 +286,23 @@ mod tests {
             spellings.spelled(None, "N::T"),
             Spelled::Model(Some(&scalar(ValueType::String)))
         );
+    }
+
+    /// FR-480 "Selections and imports": a model alias names the package its
+    /// writing unit binds it to, never another unit's.
+    #[test]
+    fn each_unit_reads_a_model_alias_as_its_own_package() {
+        let spellings = spellings();
+        let read = |unit: Option<&str>, alias: &str| {
+            spellings
+                .selection(unit.map(source).as_ref(), alias)
+                .map(|selection| selection.identity.clone())
+        };
+        assert_eq!(read(Some("a"), "N").as_deref(), Some("x"));
+        assert_eq!(read(Some("b"), "N").as_deref(), Some("y"));
+        assert_eq!(read(None, "N").as_deref(), Some("x"), "the primary unit's");
+        assert_eq!(read(Some("b"), "M"), None, "b's M is an import alias");
+        assert_eq!(read(Some("c"), "N"), None);
     }
 
     /// A unit's own non-model alias, and a qualifier no unit binds as a

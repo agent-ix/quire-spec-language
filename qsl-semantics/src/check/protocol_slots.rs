@@ -1447,6 +1447,7 @@ pub(crate) fn check(
         };
         let population = if declarations
             .scope
+            .for_declaration(&protocol.name.name)
             .model_selection(&role.context.name)
             .is_some()
         {
