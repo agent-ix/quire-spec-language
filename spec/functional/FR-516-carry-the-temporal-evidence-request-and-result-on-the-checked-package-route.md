@@ -108,7 +108,7 @@ instance is identified by the trigger identity (FR-053).
 | `predecessor()`, `lineage()`, `relation_kind()` | `relation` echoed with `prev`; `lineage: u64`; `input_identity` (FR-526); the updated `ledger` and `progress_ledger` |
 | none | `authenticated: AuthenticatedBinding` (FR-522), present on every result because a refused binding returns no result |
 | none | `instances`: every instance the lists resolved, each with its identity and activation state (`Active`, or `Unavailable` with its fault, a guard fault included), so that the siblings of the assessed instance stay inspectable (FR-524); a delivery with a false guard is not listed |
-| none | `incomplete: Option<EvidenceIncomplete>`: the counter, meter, lineage or evicted-valuation stop, or the clause stop (`formula_nodes`, `history_span`, a tick sum that does not fit), that ended the call, naming what stopped it (a tick sum that does not fit names `history_span`); `None` when the call ran to its result, and `None` for a withdrawn anchor, which is a `Missing` non-value (Independent facts) |
+| none | `incomplete: Option<EvidenceIncomplete>`: the counter, meter, lineage or evicted-valuation stop, the clause stop (`formula_nodes`, `history_span`, a tick sum that does not fit), or the progress-ledger capacity stop (`LimitReached` naming `progress.covered_positions`), that ended the call, naming what stopped it (a tick sum that does not fit names `history_span`); `None` when the call ran to its result, and `None` for a withdrawn anchor, which is a `Missing` non-value (Independent facts) |
 | `request_identity()`, `subject_identity()`, `document().*` | `result_identity` as FR-043-AC-13 states it (an evaluator identity, not a digest); the rest end with the documents |
 
 Entry: `CheckedPackageEvaluation::evaluate_temporal_evidence(&self, clause:
@@ -121,12 +121,17 @@ construction (an empty trigger identity), a selection or supply refused before S
 capture fact (FR-524), an occurrence selector that is absent for a node with several occurrences (`occurrence-required`) or names no occurrence of the node (`occurrence-unknown`), a
 progress contradiction (FR-502), a `trigger-required` or `trigger-unknown`
 refusal, a control that does not map to the clause (below) and each relation
-refusal (FR-526). Each refusal names a `cause`. The causes this requirement owns are the table
-below. The causes owned elsewhere are cross-referenced and not restated:
-`binding-mismatch` (FR-522; its `mismatched_dimension` is a field of the refusal,
-not a cause), `delivery-contradiction` and `surplus-capture` (FR-524), and
-`no-ledger`, `predecessor-unknown`, `predecessor-not-latest`, `unchanged-input` and
-`correspondence-changed` (FR-526). Every refusal charges nothing and leaves the
+refusal (FR-526). Each refusal names a `cause`, and this requirement defines the cause names,
+which the call reports with the catalog code its owning requirement states. The
+causes of the table below are owned here. The causes of refusals that another
+requirement owns are named here and cross-referenced by that requirement's catalog
+code and field: `binding-mismatch` for FR-522's `invalid_runtime_input`/`invalid-value`
+refusal carrying `mismatched_dimension` (a field of the refusal, not a cause),
+`delivery-contradiction` for FR-524's refusal carrying `contradicted_identity`,
+`surplus-capture` for FR-524's refusal carrying `surplus_capture_identity` and
+`surplus_capture_index`, and `no-ledger`, `predecessor-unknown`,
+`predecessor-not-latest`, `unchanged-input` and `correspondence-changed`, which
+FR-526 names itself. Every refusal charges nothing and leaves the
 caller's ledgers unchanged. No other cause exists.
 
 | `cause` | Condition |
@@ -303,13 +308,13 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-22 | For a clause `on each` whose `anchor` names the observation at index 2, the activation outcome reports position 2, and for a clause `on origin` it reports position 0 whatever the `anchor` names among the positions. | Test (TC-1311) |
 | FR-516-AC-23 | A request whose `anchor` names no observed position returns `Unavailable` with a `Missing` non-value naming the anchor. | Test (TC-1311) |
 | FR-516-AC-24 | A request with a closed complete trigger scope, no delivery, `trigger` `None` and an `anchor` naming no observed position returns `Unavailable`, not `Inactive`. | Test (TC-1311) |
-| FR-516-AC-25 | A call stopped by a counter ceiling, by the meter, by the `lineage` ceiling, by an evicted required valuation, by `formula_nodes` and by `history_span` (including a tick sum that does not fit) each returns `Ok` with `activation = Unavailable`, `truth = None` and `incomplete` naming the stop (`history_span` for the last), and none returns `Err` or an unset activation. A request whose anchor names no observed position returns `Ok` with `activation = Unavailable`, a `Missing` non-value naming the anchor and `incomplete = None`. | Test (TC-1311) |
+| FR-516-AC-25 | A call stopped by a counter ceiling, by the meter, by the `lineage` ceiling, by an evicted required valuation, by `formula_nodes`, by `history_span` (including a tick sum that does not fit) and by the progress-ledger capacity `progress.covered_positions` each returns `Ok` with `activation = Unavailable`, `truth = None` and `incomplete` naming the stop (`history_span` for the tick sum, `progress.covered_positions` for the capacity), and none returns `Err` or an unset activation. A request whose anchor names no observed position returns `Ok` with `activation = Unavailable`, a `Missing` non-value naming the anchor and `incomplete = None`. | Test (TC-1311) |
 | FR-516-AC-26 | A finite-window verdict `PendingNextEvent` and a verdict `Pending` each return `truth = Pending`. | Test (TC-1311) |
 | FR-516-AC-27 | Over the clause of FR-523-AC-21 through `evaluate_temporal_evidence`, `usage` reports `evaluation_steps` 4, `positions` 1, `valuations` 4, the meter's `temporal.visit` usage is 10, and `usage` reports exactly thirteen counters. | Test (TC-1311) |
 | FR-516-AC-28 | A request with a guard-`None` delivery and a healthy delivery lists both in `instances` (the first `Unavailable` with a guard fault), assessing the healthy one by `trigger`, and a request with a surplus capture fact returns `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
 | FR-516-AC-29 | Over the `CheckedPackageEvaluation` constructed from the `Emission`, the clause's profile selection and `TemporalBinding` row equal the rows of the package read back from its bytes, and `evaluate_temporal_evidence` over it authenticates the clause's own `binding`. | Test (TC-1311) |
 | FR-516-AC-30 | In a package with two temporal clauses of different formulas and different clock rows, each clause's `CheckedNodeId` pairs with its own row: a `binding` asserting the other clause's row is refused with cause `binding-mismatch` and the dimension FR-522 names, over the package constructed from the `Emission` and the read-back package alike. | Test (TC-1311) |
-| FR-516-AC-31 | For each stop kind of AC-25 other than the withdrawn anchor, the result's `ledger` and `progress_ledger` equal the request's byte for byte, even when instances were created or a receipt was added before the stop, and the retry of FR-523-AC-11 equals the call that never stopped. | Test (TC-1311) |
+| FR-516-AC-31 | For each stop kind of AC-25 other than the withdrawn anchor, including the progress-ledger capacity stop, the result's `ledger` and `progress_ledger` equal the request's byte for byte, even when instances were created or a receipt was added before the stop, and the retry of FR-523-AC-11 equals the call that never stopped. | Test (TC-1311) |
 | FR-516-AC-32 | Over the constructed V2 twin package of FR-515-AC-20 (node `occurrences` 7 then 3, lock rows ascending 3 then 7, different clock rows), read back and evaluated through the read-back route only, a request with `occurrence` ordinal 3 authenticates a `binding` equal to the row keyed ordinal 3 and refuses one equal to the row keyed ordinal 7 with cause `binding-mismatch` and the dimension FR-522 names, and the reverse for ordinal 7; a pairing by position fails this criterion, and no in-process comparison exists for this package because no `Emission` produces it. | Test (TC-1311) |
 | FR-516-AC-33 | Over the twins of AC-32, a request with no `occurrence` returns `Err(CallFailure::Admission)` with cause `occurrence-required` and a request with ordinal 5 returns cause `occurrence-unknown`, each with an empty charge log; over a node with one occurrence a request with no `occurrence` is evaluated. | Test (TC-1311) |
 | FR-516-AC-34 | `execution` `Failed` and `execution` `Completed` over an otherwise equal request with open trigger scope return `Unknown` carrying `Failed` and `Completed` respectively, and over an admitted delivery the two requests return the same activation and truth. | Test (TC-1311) |

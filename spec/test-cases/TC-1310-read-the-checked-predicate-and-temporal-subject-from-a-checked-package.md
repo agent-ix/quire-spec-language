@@ -39,8 +39,8 @@ FR-515-AC-23. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 19 | 19 | two clauses of different nodes and clock rows | each node's `clock()` is its own row, in both packages |
 | 20 | 20 | a constructed V2 twin package (node `occurrences` 7 then 3, lock rows ascending 3 then 7, different clock configurations) read back through the reader; no `Emission` | `clock_of` returns the row keyed by each ordinal; `clock()` `None`; a position pairing fails |
 | 21 | 21 | each `TemporalClauseRef` vs the read-back `temporal_clause_names` row; the evaluation package's ids vs the read-back package's | equal ids; no id derivation in the API |
-| 22 | 22 | a clause with a trigger-reading guard and four `holds` atoms (capture; `over()` only; neither; trigger and capture); the first and second swapped | the derived set holds the first and fourth atoms' indices only, none for the guard, equal in both packages; the swap moves the indices; no caller-supplied set |
-| 23 | 23 | the evaluator formula from each route for **R**'s clauses and AC-22's clause; a view with a cyclic or out-of-range `operands` | equal node for node; the bad view is unreadable |
+| 22 | 22 | a clause with a trigger-reading guard and four `holds` atoms at indices 0 to 3 (capture; `over()` only; neither; trigger and capture); the first and second swapped | the derived set is `{0, 3}`, none for the guard, equal in both packages; after the swap `{1, 3}`; no caller-supplied set |
+| 23 | 23 | the evaluator formula from each route for **R**'s clauses and AC-22's clause, from `formula_graph()`; `formula()` of AC-3's clause; a view with a cyclic or out-of-range `operands` | equal node for node; `formula()` as AC-3; the bad view is unreadable |
 
 Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-23", "TC-1310")]` for the criteria each row covers.
 

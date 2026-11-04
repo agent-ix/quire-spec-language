@@ -36,3 +36,27 @@ Checked against FR-050, FR-337, FR-515, FR-516, FR-502, FR-255, merged #2227 (d2
 | FND-008 | medium | Stale in-memory wording remains. TC-1311 row 29 still reads "the in-memory package of the I2 write before emit"; FR-515-AC-20, FR-516-AC-32 and TC rows 20 and 32 say "in memory" without naming the Emission-constructed package. | spec/test-cases/TC-1311-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:49 | wrong-requirement |
 | FND-009 | low | `progress-inconsistent` says a fixed-sample watermark or a `Complete{through}` below the last coordinate; progressed.rs refuses a `through` below the last coordinate under event-position too. AC-37 tests fixed-sample only. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:139 | missing-requirement |
 | FND-010 | low | Five ACs end "Gated on QSL-1608 until the code lands": a ticket id and a delivery state inside normative criteria, and no Dependencies entry. | spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md:227-231 | missing-requirement |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-011 | high | Widening FR-515 `formula()` to every formula node (connectives, constants, `holds`) falsifies merged FR-527, which states that `formula()` "lists the `quire.op.temporal.*` applications only" and that FR-515 "lists only the operators of the clause"; the PR does not touch FR-527, so the classifier's stated inputs now contradict the view it reads. | spec/functional/FR-527-classify-native-to-tl-mapping-support-from-the-checked-temporal-clause-node.md:100-106 | wrong-requirement |
+| FND-012 | low | FR-515-AC-22 says swapping the first and second atoms "moves the two indices"; with {0,3} the swap gives {1,3}, so one index moves and one stays. | spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md:242 | wrong-requirement |
+| FND-013 | low | The cause table says `binding-mismatch` is owned by FR-522 and `delivery-contradiction` and `surplus-capture` by FR-524; those requirements name the refusals by catalog code (`invalid_runtime_input`/`invalid-value`, `contradicted_identity`, `surplus_capture_identity`) and never use these cause names. The names exist only in FR-516 and in call.rs. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:124-129 | wrong-requirement |
+| FND-014 | low | The progress-ledger capacity stop is added to the Incomplete prose but not to the `incomplete` member row (FR-516 outputs), the stop list of FR-516-AC-25 or the "each stop kind of AC-25" of AC-31. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:111 | missing-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-18 covers R's three clauses; AC-20 and AC-32 make the twin read-back only |
+| FND-002 | fixed | AC-22 has four holds atoms and a guard; hand count gives two |
+| FND-003 | fixed | Ok Incomplete(LimitReached) with ledgers unchanged, matches FR-502-AC-8 and FR-255 |
+| FND-004 | fixed | table now whole with activation-mapping rows; cross-references listed |
+| FND-005 | fixed | AC-39, AC-40, AC-41 each carry a met and unmet pair |
+| FND-006 | fixed | trigger from activation() Each, captures(), over() excluded |
+| FND-007 | fixed | one shared construction and AC-23; see FND-011 for the side effect |
+| FND-008 | fixed | stale in-memory wording removed |
+| FND-009 | fixed | AC-37 covers both sample profiles |
+| FND-010 | fixed | gating moved to Dependencies Delivery entries |
