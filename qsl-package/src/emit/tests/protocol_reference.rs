@@ -640,6 +640,31 @@ fn constructs_without_a_node_yet_refuse_naming_the_construct() {
     assert_eq!(ProtocolConstruct::WholeModelRole.tracking(), "IR-874");
 }
 
+/// FR-383-AC-23: once the whole-model role node is implemented, a protocol
+/// selecting `role W on M` is admitted and its protocol node is present.
+/// The criterion remains gated on QSL-1623, which owns the missing IR node.
+#[trace("FR-383-AC-23", "TC-1021")]
+#[test]
+#[ignore = "gated on QSL-1623: whole-model role IR node is not implemented"]
+fn a_whole_model_role_is_emitted_and_admitted() {
+    let text = selecting(
+        "protocol Flow using p over (input: M::Gadget) on origin {\n\
+         role W on M;\n\
+         run sequence Main { }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n",
+    );
+    let models = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
+    let graph = assemble_with_models(text.as_bytes(), &models)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("whole-model role should be admitted: {refusals:?}"));
+    assert!(graph
+        .semantic_graph()
+        .nodes()
+        .any(|node| node.node_tag() == qsl_semantics::check::NodeTag::Protocol));
+}
+
 /// FR-464 "Term shapes": a `sequence`'s `children` are an ordered list whose
 /// order is the execution order, so it is the source order, not the name or
 /// the digest order: three children in two source orders each come back in

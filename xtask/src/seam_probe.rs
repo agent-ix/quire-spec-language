@@ -1103,6 +1103,33 @@ mod tests {
         }
     }
 
+    /// FR-390-AC-13 / TC-1074: protocol slots use the existing
+    /// `evaluate_declaration` dispatch arm and the one S6a
+    /// `ProtocolClauseFamily::evaluate` seam. The full `seam-probe` build
+    /// confirms those exact matches are the compile-fail evidence; this
+    /// focused check keeps both locations in the checked-in probe contract.
+    #[ix_trace_rs::trace("TC-1074", "FR-390-AC-13")]
+    #[test]
+    fn protocol_slots_keep_the_single_protocol_clause_seam() {
+        let locations = checked_in_locations();
+        assert!(locations.contains(&SeamLocation {
+            file: "qsl-eval/src/value/expression/mod.rs".to_owned(),
+            item: "evaluate_declaration".to_owned(),
+        }));
+        assert!(locations.contains(&SeamLocation {
+            file: "qsl-eval/src/value/expression/s6a/protocol_clause.rs".to_owned(),
+            item: "ProtocolClauseFamily::evaluate".to_owned(),
+        }));
+        assert_eq!(
+            locations
+                .iter()
+                .filter(|location| location.item == "ProtocolClauseFamily::evaluate")
+                .count(),
+            1,
+            "protocol slots must share the one ProtocolClause evaluation seam"
+        );
+    }
+
     /// FR-062-AC-8: the checked-in list actually names
     /// `CheckCause::code` as the S4 seam location -- not just a doc claim
     /// above.

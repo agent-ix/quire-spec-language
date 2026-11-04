@@ -708,6 +708,208 @@ fn complete_w_activation_map_matches_read_back() {
     );
 }
 
+/// FR-383-AC-11 / TC-1062: walk the complete protocol subtree of W. Every
+/// guarded/constraint-like position is a literal or a reference to an emitted
+/// expression node, and the wire body contains only the stratified
+/// Leaf/Group/Tuple/Member/Body forms, never an inline application.
+#[trace("TC-1062", "FR-383-AC-11")]
+#[test]
+fn every_w_protocol_term_position_uses_the_stratified_body_grammar() {
+    #[derive(Default)]
+    struct Counts {
+        leaves: usize,
+        groups: usize,
+        tuples: usize,
+        members: usize,
+        bodies: usize,
+    }
+
+    fn expression_member(name: &str) -> bool {
+        matches!(
+            name,
+            "guard"
+                | "condition"
+                | "constraint"
+                | "key"
+                | "initializer"
+                | "until"
+                | "visible"
+                | "start"
+                | "end"
+                | "invariant"
+                | "variant"
+                | "relation"
+                | "predicate"
+        )
+    }
+
+    fn assert_expression_roots(wire: &Value, value: &Value, all_children: bool) {
+        match value {
+            Value::Object(object) if object.contains_key("term") => {
+                match object["term"].as_str().expect("term kind") {
+                    "literal" => {}
+                    "reference" => {
+                        let target = nodes(wire)
+                            .iter()
+                            .find(|node| node["node_id"] == object["target"])
+                            .expect("the expression target is emitted");
+                        assert!(
+                            matches!(target["node_tag"].as_str(), Some("expression" | "value")),
+                            "a protocol term position must name an FR-093 expression/value leaf: {object:?}; target {target:?}"
+                        );
+                    }
+                    "binding" => {
+                        let name = object["name"].as_str().expect("member name");
+                        assert_expression_roots(
+                            wire,
+                            &object["value"],
+                            all_children || expression_member(name),
+                        );
+                    }
+                    "aggregate" => {
+                        for member in object["members"].as_array().expect("group members") {
+                            assert_expression_roots(wire, member, all_children);
+                        }
+                    }
+                    "tuple" => {
+                        for item in object["items"].as_array().expect("tuple items") {
+                            assert_expression_roots(wire, item, all_children);
+                        }
+                    }
+                    other => {
+                        panic!("expression position is not a stratified term: {other}: {value}")
+                    }
+                }
+            }
+            Value::Object(object) => {
+                if let (Some(name), Some(member_value)) = (
+                    object.get("name").and_then(Value::as_str),
+                    object.get("value"),
+                ) {
+                    assert_expression_roots(
+                        wire,
+                        member_value,
+                        all_children || expression_member(name),
+                    );
+                } else {
+                    for child in object.values() {
+                        assert_expression_roots(wire, child, all_children);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    assert_expression_roots(wire, item, all_children);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn visit(wire: &Value, value: &Value, counts: &mut Counts) {
+        match value {
+            Value::Object(object) if object.contains_key("term") => {
+                match object["term"].as_str().expect("term kind") {
+                    "literal" => counts.leaves += 1,
+                    "binding" => {
+                        counts.members += 1;
+                        let name = object["name"].as_str().expect("binding name");
+                        if expression_member(name) {
+                            assert_expression_roots(wire, &object["value"], name == "visible");
+                        }
+                        visit(wire, &object["value"], counts);
+                    }
+                    "reference" => counts.leaves += 1,
+                    "aggregate" => {
+                        let members = object["members"].as_array().expect("group members");
+                        if members.iter().all(|member| member.get("name").is_some()) {
+                            counts.groups += 1;
+                            for member in members {
+                                visit(wire, member, counts);
+                            }
+                        } else {
+                            counts.tuples += 1;
+                            for member in members {
+                                visit(wire, member, counts);
+                            }
+                        }
+                    }
+                    "tuple" => {
+                        counts.tuples += 1;
+                        for item in object["items"].as_array().expect("tuple items") {
+                            visit(wire, item, counts);
+                        }
+                    }
+                    other => panic!("not a stratified protocol term: {other}: {value}"),
+                }
+            }
+            Value::Object(object) => {
+                if let (Some(name), Some(member_value)) = (
+                    object.get("name").and_then(Value::as_str),
+                    object.get("value"),
+                ) {
+                    counts.members += 1;
+                    if expression_member(name) {
+                        assert_expression_roots(wire, member_value, name == "visible");
+                    }
+                    visit(wire, member_value, counts);
+                    return;
+                }
+                for (name, child) in object {
+                    if name == "body" {
+                        counts.bodies += 1;
+                    }
+                    if expression_member(name) {
+                        assert_expression_roots(wire, child, name == "visible");
+                    }
+                    visit(wire, child, counts);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    visit(wire, item, counts);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let lowered = lower_with(document(), PROFILES_W, W);
+    assert!(lowered.verified, "{}", lowered.text);
+    let mut counts = Counts::default();
+    for node in nodes(&lowered.wire) {
+        if matches!(
+            node["semantic_form"].as_str(),
+            Some(
+                "protocol"
+                    | "role"
+                    | "relationship"
+                    | "channel"
+                    | "queue"
+                    | "compensation"
+                    | "terminal"
+                    | "temporal_clause"
+                    | "control"
+            )
+        ) {
+            counts.bodies += 1;
+            let body = &node["body"];
+            if body["term"] == "application" {
+                for argument in body["arguments"].as_array().expect("body arguments") {
+                    visit(&lowered.wire, argument, &mut counts);
+                }
+            } else {
+                visit(&lowered.wire, body, &mut counts);
+            }
+        }
+    }
+    assert!(counts.leaves > 0, "W has stratified Leaf terms");
+    assert!(counts.groups > 0, "W has stratified Groups");
+    assert!(counts.tuples + counts.groups > 0, "W has Groups or Tuples");
+    assert!(counts.members > 0, "W has stratified Members");
+    assert!(counts.bodies > 0, "W has protocol Bodies");
+}
+
 #[trace("TC-1194", "FR-449-AC-2", "FR-449-AC-4")]
 #[test]
 fn origin_w_rebinds_the_capture_without_a_trigger() {
