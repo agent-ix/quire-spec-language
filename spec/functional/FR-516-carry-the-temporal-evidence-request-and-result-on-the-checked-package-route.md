@@ -241,7 +241,11 @@ ceilings from the same inputs is byte-equal to a call that never stopped
   `not-timed-profile`, `non-positive-loop-delay`,
   `loop-reenters-before-last-stamp`, `negative-stamp`, `decreasing-stamp`,
   `position-refusal` and `window-refusal` (the last two carry the inner refusal's
-  kebab-case kind as the `detail` pair `kind`). An internal fault is not this
+  kebab-case kind name as the `detail` pair `kind`; the inner set is not part of
+  the closed dimension set, and only the outer dimension string is normative).
+  The `detail` pairs are informational: no truth, settlement, support or activation
+  depends on them, and they are no member of `result_identity`, which FR-522
+  defines over the request's evidence members, the relation and the ledgers. An internal fault is not this
   result.
 - **Withdrawn facts.** For a result that has a truth, the first withdrawn fact in
   this order yields the `Missing` non-value with code `fact-withdrawn`: the decision

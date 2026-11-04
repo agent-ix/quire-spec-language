@@ -114,13 +114,18 @@ at each eligible position and one scan per position).
   the reach cannot afford ends `Incomplete` with nothing allocated. The
   materialization charges come first in the call, before the origin or delivery is
   resolved, and count in no counter.
-- **Charge order.** FR-501-AC-12 fixes the charges and not their order; for a
-  fixed-sample or timestamped call the evaluator charges, in this order: the
+- **Charge order.** FR-501-AC-12 fixes the charges and not their order. For a
+  clause with a single temporal operator, the evaluator charges, in this order: the
   materialization charges, the origin or delivery step, the `Step` of each
   temporal operator at its activation, then the scan charges of the operator's
   candidate positions in position order (a `Scan` at an observed position, a
   silent scan at a silent sample), and then the `holds` lookups in position order
-  (a `Lookup` at an observed position, a silent lookup at a silent sample).
+  (a `Lookup` at an observed position, a silent lookup at a silent sample). For a
+  clause with several temporal operators, the charges follow the evaluator's
+  demand-closure order, a breadth-first queue in which nested and sibling
+  operators interleave, and this requirement states no other order for it. Every
+  exact-ceiling vector of this specification (AC-10, AC-21, AC-24) uses a
+  single-operator clause.
 - The evaluator SHALL charge a counter only for work it performs.
 - The evaluator SHALL keep the counters at thirteen: no counter is added for
   silent samples or for evicted records, whose visit is one hit charged on
