@@ -866,52 +866,40 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
     program
 }
 
-/// A proven model protocol refinement with an optional importing function,
-/// used to test command forwarding of non-empty internal-list values.
-fn refinement_unit(protocol: &str, refinement: &str, imports_library: bool) -> String {
-    let function = if imports_library {
-        "function entry using v(): Boolean pure { g::geometryFn(0) }\n"
+/// Two row-empty protocol refinements, with an optional importing function,
+/// used to test independently supplied root and library internal lists.
+fn refinement_unit(imports_library: bool) -> String {
+    let import = if imports_library {
+        "import \"test/geometry\" as g;\n"
     } else {
-        "function geometryFn using v(x: Int[0, 9]): Boolean pure { true }\n"
+        ""
     };
-    let declaration = format!(
-        "profile p = \"quire.protocol.finite-global/v1\";\n\
-         protocol {protocol} using p over (c: Spec::Counter) on origin {{\n\
+    let function = if imports_library {
+        "function entry using v(): Boolean pure { g::geometryFn() }\n"
+    } else {
+        "function geometryFn using v(): Boolean pure { true }\n"
+    };
+    format!(
+        "{SPINE_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         {import}model Spec = \"{spec}\";\n\
+         model Impl = \"{concrete}\";\n\
+         protocol Twice using p over (c: Spec::Counter) on origin {{\n\
          role w on Spec::Counter; scheduling adversarial;\n\
-         run sequence Main {{\n\
-         attempt a1 by w on Spec::Counter::inc contracts [] as (r1: Spec::Counter) {{ true }};\n\
-         attempt a2 by w on Spec::Counter::inc contracts [] as (r2: Spec::Counter) {{ true }};\n\
-         }}\n\
+         run sequence Main {{ }}\n\
          finish Done as (d: Boolean) {{ true }};\n\
          }}\n\
-         refinement {refinement} using inf abstract Spec::{protocol} concrete Impl {{\n\
-         population Spec::counters from Impl::counters;\n\
-         object Spec::Counter from Impl::Counter {{ value = self.value; }}\n\
-         step Impl::Counter::commitA -> Spec::Counter::inc(self);\n\
-         step Impl::Counter::commitB -> Spec::Counter::inc(self);\n\
-         step Impl::Counter::beginA -> stutter;\n\
-         step Impl::Counter::beginB -> stutter;\n\
-         step Impl::Counter::retryA -> stutter;\n\
-         step Impl::Counter::retryB -> stutter;\n\
-         step Impl::Counter::peek -> stutter;\n\
-         }}\n"
-    );
-    let packages =
-        crate::support::refinement_cas::packages(crate::support::refinement_cas::Variant::CAS);
-    let mut unit = crate::support::refinement_cas::unit_text(
-        &packages,
-        &declaration,
-        crate::support::refinement_cas::Variant::CAS,
-    );
-    if imports_library {
-        unit = unit.replacen(
-            "model Spec =",
-            "import \"test/geometry\" as g;\nmodel Spec =",
-            1,
-        );
-    }
-    unit.push_str(function);
-    unit
+         protocol Other using p over (c: Spec::Counter) on origin {{\n\
+         role w on Spec::Counter; scheduling adversarial;\n\
+         run sequence Main {{ }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n\
+         refinement CasTwice using inf abstract Spec::Twice concrete Impl {{}}\n\
+         refinement CasOther using inf abstract Spec::Other concrete Impl {{}}\n\
+         {function}",
+        spec = crate::support::refinement_cas::SPEC,
+        concrete = crate::support::refinement_cas::CAS,
+    )
 }
 
 /// FR-027-AC-10 (TC-446 step 7): a `1-draft` request's `libraries` supply
@@ -972,9 +960,19 @@ fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
 fn refinement_internals_compile_matches_the_spine_composition() {
     use crate::support::refinement_cas::{self, Variant};
 
-    let documents = refinement_cas::documents(Variant::CAS);
-    let program = refinement_unit("Twice", "CasTwice", true).into_bytes();
-    let library = refinement_unit("Twice", "CasTwice", false).into_bytes();
+    let mut documents = refinement_cas::documents(Variant::CAS);
+    for document in documents.iter_mut().take(2) {
+        let mut value: Value = serde_json::from_slice(document).unwrap();
+        value["populations"] = json!([]);
+        for ty in value["types"].as_array_mut().unwrap() {
+            if ty["kind"]["name"] == "object_type" {
+                ty["operations"] = json!([]);
+            }
+        }
+        *document = serde_json::to_vec(&value).unwrap();
+    }
+    let program = refinement_unit(true).into_bytes();
+    let library = refinement_unit(false).into_bytes();
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join("program.native"), &program).unwrap();
     std::fs::write(directory.path().join("geometry.native"), &library).unwrap();
@@ -985,26 +983,24 @@ fn refinement_internals_compile_matches_the_spine_composition() {
         )
         .unwrap();
     }
-    let job = json!({"format":"native-compile/1","request":{
+    let mut job = json!({"format":"native-compile/1","request":{
         "models":[
             {"format":"semantic-ir/2.0.0","source":{"file":"model-0.json",
                 "authority":"agent-ix","identity":refinement_cas::SPEC,"document":"Abstract","formal_revision":1}},
             {"format":"semantic-ir/2.0.0","source":{"file":"model-1.json",
                 "authority":"agent-ix","identity":refinement_cas::CAS,"document":"Concrete","formal_revision":1}},
-            {"format":"semantic-ir/2.0.0","source":{"file":"model-2.json",
-                "authority":"agent-ix","identity":refinement_cas::THIRD,"document":"Third","formal_revision":1}}
         ],
         "program":{"source":{"file":"program.native","authority":"agent-ix",
             "identity":"test:spine","document":"Spine","formal_revision":1}},
         "refinement_internals":[{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}],
         "libraries":[{"identity":"test/geometry","source":{"file":"geometry.native",
             "authority":"agent-ix","identity":"test:geometry","document":"Geometry","formal_revision":1},
-            "refinement_internals":[{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]}]
+            "refinement_internals":[{"refinement":"CasOther","internal":["Spec::Other::Done"]}]}]
     }});
     let path = directory.path().join("compile.json");
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
 
-    let checked_internals = |root_internals: Option<Value>, library_internals: Option<Value>| {
+    let emit_composition = |root_internals: Option<Value>, library_internals: Option<Value>| {
         let dependencies =
             qsl_replay::spine::DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
                 identity: "test/geometry".to_owned(),
@@ -1060,49 +1056,53 @@ fn refinement_internals_compile_matches_the_spine_composition() {
         )
         .unwrap()
         .into_value();
-        let mut internal_lists = checked[0]
-            .package()
-            .graph()
-            .refinements()
-            .iter()
-            .map(|refinement| {
-                refinement
-                    .abstract_internal()
-                    .iter()
-                    .map(|class| class.spelling().to_owned())
-                    .collect::<Vec<_>>()
-            })
-            .filter(|list| !list.is_empty())
-            .collect::<Vec<_>>();
-        internal_lists.sort();
-        internal_lists
+        qsl_replay::spine::package(
+            &checked[0],
+            qsl_replay::spine::PackageLimits::default(),
+            &cancel,
+        )
+        .unwrap()
+        .into_value()
+        .package()
+        .bytes()
+        .to_vec()
     };
     let root_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]);
-    let library_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::a1"]}]);
-    assert_eq!(
-        checked_internals(
+    let library_internals = json!([{"refinement":"CasOther","internal":["Spec::Other::Done"]}]);
+    let composed = emit_composition(
         Some(root_internals.clone()),
         Some(library_internals.clone()),
-        ),
-        [
-            vec!["Twice::Done".to_owned()],
-            vec!["Twice::a1".to_owned()]
-        ]
     );
-    assert_eq!(
-        checked_internals(None, Some(library_internals.clone())),
-        [vec!["Twice::a1".to_owned()]]
-    );
-    assert_eq!(
-        checked_internals(Some(root_internals.clone()), None),
-        [vec!["Twice::Done".to_owned()]]
-    );
-    assert!(checked_internals(None, None).is_empty());
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, composed);
 
-    let error = compile_in_process(directory.path()).unwrap_err();
-    let value = error.value().unwrap();
-    assert_eq!(value["stage"], "emit", "{value}");
-    assert!(value.get("artifact").is_none(), "{value}");
+    job["request"]
+        .as_object_mut()
+        .unwrap()
+        .remove("refinement_internals");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let root_absent = compile(directory.path());
+    assert_eq!(root_absent.status.code(), Some(0), "{root_absent:?}");
+    assert_eq!(
+        root_absent.stdout,
+        emit_composition(None, Some(library_internals.clone()))
+    );
+    assert_ne!(output.stdout, root_absent.stdout);
+
+    job["request"]["libraries"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("refinement_internals");
+    job["request"]["refinement_internals"] = root_internals.clone();
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let library_absent = compile(directory.path());
+    assert_eq!(library_absent.status.code(), Some(0), "{library_absent:?}");
+    assert_eq!(
+        library_absent.stdout,
+        emit_composition(Some(root_internals), None)
+    );
+    assert_ne!(output.stdout, library_absent.stdout);
 }
 
 /// FR-147-AC-10 (TC-552): an internal-list defect is attributed to the
