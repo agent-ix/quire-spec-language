@@ -100,6 +100,23 @@ The linker SHALL validate each selected definition's identity, revision, bytes a
 
 If a definition is missing, conflicting or incompatible, then the linker SHALL refuse every dependent declaration with the failed selection retained.
 
+For spine compilation, `qsl_replay::spine::check` SHALL retain a typed
+per-use profile outcome in its checked result. The outcome SHALL distinguish
+the selected profile identity, required use-site kind, definition-closure
+status and any typed closure cause; closure completion SHALL remain distinct
+from use-site admission.
+
+When a protocol use selects `quire.observation.binding/v1`, the spine checker SHALL retain its exact definition closure, including the registered
+`quire.protocol.finite-global/v1` dependency and that definition's transitive
+requirements. The spine checker SHALL separately report `WrongProfileKind`
+for this protocol use because observation binding is not a protocol profile.
+
+When the required protocol definition is omitted, conflicting or incompatible,
+the spine checker SHALL retain the corresponding typed closure cause in the
+per-use outcome and mark the protocol declaration refused or incomplete. The
+spine checker SHALL NOT report a complete checked package while this closure
+failure remains.
+
 The linker SHALL resolve native references by required declaration kind, exact owner/type and lexical scope.
 
 If a native semantic dependency graph contains a cycle, then the linker SHALL refuse its participating declarations and dependents with the cycle's source occurrences retained.
@@ -164,6 +181,7 @@ The composed type checker SHALL refuse any other field type, and a domain value 
 | FR-036-AC-5 | Changing runtime population/window/trace or backend leaves static meaning unchanged; changing a required semantic selection changes it. Resource-only configuration changes remain visible without becoming semantic changes. | Test (TC-115) |
 | FR-036-AC-6 | Two required requested pairs over different FR-057 capability kinds both remain in the request report in caller order; when either is not settled `supported`, complete aggregate success joined from the FR-331 accounting records on request index is unavailable, and a family body refused by its checker is never represented as checked. | Test (TC-115) |
 | FR-036-AC-7 | A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
+| FR-036-AC-8 | Through `qsl_replay::spine::check`, the typed per-use profile outcome for `protocol P using ob`, where `ob` selects `quire.observation.binding/v1`, retains the selected identity, completed closure status, exact registered `quire.protocol.finite-global/v1` dependency and its transitive requirements; use-site admission separately refuses `WrongProfileKind`. If the required protocol definition is omitted, conflicting or incompatible, that outcome retains the corresponding typed closure cause, the declaration remains refused or incomplete, and no complete checked package is reported. | Test (TC-114) |
 | FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds, and a declaration of a kind the site does not bind refuses at the linker; a same-shaped declaration from another domain package or a changed selected identity or version refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
 
 ## Dependencies
