@@ -26,7 +26,7 @@ its new path with unchanged behavior. Scope: FR-511-AC-1 to FR-511-AC-4.
    missing members and tags) against the new path.
 3. Search `qsl-*/src` and the checked-package v2 writer and reader for the
    module path and the profile string.
-4. Read every `pub use` of `src/number.rs` and require that the set of re-exported items is exactly the seven names; a planted eighth item fails (TC-256 step 3 runs the same scan across the root crate).
+4. Read every `pub use` of `src/number.rs` and require that the set of re-exported items is exactly the FR-511 item set; a planted item outside it fails (TC-256 step 3 runs the same scan across the root crate).
 5. Run `quire matrix` and list the tags of FR-038-AC-1 to AC-5.
 
 Tag the test `#[trace("FR-511-AC-1", "FR-511-AC-2", "FR-511-AC-3", "FR-511-AC-4", "TC-1306")]`; the step 2 test also carries the FR-038-AC and TC-117 tags.
@@ -36,5 +36,5 @@ Tag the test `#[trace("FR-511-AC-1", "FR-511-AC-2", "FR-511-AC-3", "FR-511-AC-4"
 - Step 1: the first crate compiles and the second does not.
 - Step 2: every vector gives the expected string, kind or refusal TC-117 states.
 - Step 3: no match.
-- Step 4: the re-exported set is exactly the seven items.
+- Step 4: the re-exported set is exactly the FR-511 item set.
 - Step 5: each of the five criteria has a tagged test.

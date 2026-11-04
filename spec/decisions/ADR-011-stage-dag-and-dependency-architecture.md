@@ -151,7 +151,8 @@ layer WG, sits outside the qualified core.
    control that turns the gate red (§2.3).
 9. Compatibility disposition for every change in this record is **none**. QSL
    is prerelease, and each replaced path is removed in the change that lands
-   its successor.
+   its successor, except the one transitional exemption §7.2 records
+   (FR-511's `src/number.rs`).
 10. The ADR-010 findings routed to #209 are decided as §9 states.
 11. Other records cite this record's local ids as `ADR-011 S3`, `ADR-011 E5`,
     `ADR-011 FB-03`, `ADR-011 SEAM-1`, `ADR-011 X-1` or `ADR-011 M-4`.
@@ -1138,6 +1139,14 @@ Each layer-crate extraction (X-2 to X-10, §7.3):
   re-exports no moved item.
 - moves the tests that exercise only that layer into the layer crate's own
   `tests/` directory.
+
+Amended (transitional exemption): the rule that the root crate re-exports no moved
+item, and §1's disposition that a replaced path is removed in the change that lands
+its successor, have exactly one exemption, owned by FR-511: the root path
+`src/number.rs`, which re-exports the FR-511 item set from `qsl_package::number`
+while the external quire-protocol consumer imports
+`quire_spec_language::number::*`. It ends under FR-511's end condition, when the
+module is removed. No other root module and no other item is exempt.
 
 ### 7.3 Proposed extractions and module moves
 

@@ -64,11 +64,14 @@ depending on `check` is layer 4's permitted direction.
    `tests/it/layer_crate_reexports.rs`. (This step previously required
    exactly `pub use crate::checked_package::CheckedPackage;`.) **Exemption.** The
    scan skips exactly one path, `src/number.rs`, and for that path it requires
-   that every `pub use` re-exports from `qsl_package::number` only the seven
-   items `ProtocolNumber`, `ExactInteger`, `ExactRational`, `NumberComponent`,
-   `NumberError`, `NumberWire` and `NUMERIC_PROFILE` (FR-511). The exemption is a
-   single named path, not a pattern or a directory, and any other re-export of a
-   layer-crate item still fails the scan.
+   that every `pub use` re-exports from `qsl_package::number` only the FR-511 item
+   set, each item identified by its un-renamed name under the path
+   `qsl_package::number`, with no glob and no rename: a rename, a glob, or a path
+   such as `qsl_package::other::NumberError` fails. The exemption is a
+   single named path, not a pattern or a directory, and it skips only the check
+   that the path exposes no layer-crate item: `src/number.rs` still feeds the
+   crate-wide layer-name set the scan uses to recognize layer-crate paths in every
+   other module. Any other re-export of a layer-crate item still fails the scan.
 4. Confirm no code under `qsl-semantics/src/check/` constructs a `LibraryLock`, mutates
    one, or calls any method on it other than its read-only accessors.
 5. Read `package`'s `CheckedPackage` definition and confirm: it holds a
@@ -81,8 +84,8 @@ depending on `check` is layer 4's permitted direction.
 6. Adverse checks: a `qsl-semantics` dependency on `qsl-package` (normal or
    dev) fails TC-390's crate-edge check, and a planted `pub use` of a layer
    crate fails step 3's scan fixture; a planted `pub use` of a layer-crate item in any root module other
-   than `src/number.rs`, a planted `pub use` in `src/number.rs` of an eighth
-   item (for example `qsl_package::CheckedPackage`) and a planted `pub use` in
+   than `src/number.rs`, a planted `pub use` in `src/number.rs` of an item
+   outside the FR-511 item set (for example `qsl_package::CheckedPackage`) and a planted `pub use` in
    `src/number.rs` from another layer crate each fail the scan too. **Amended.** A `check`
    module importing `qsl_package::CheckedPackage` does not compile, so it
    needs no fixture of its own.
@@ -92,7 +95,7 @@ depending on `check` is layer 4's permitted direction.
 - Step 1: zero `check` → `package` edges, at `use`-line and inline-path
   level.
 - Step 2: `check` names no `CheckedPackage`.
-- Step 3: no root-crate `pub use` is rooted at a layer crate, except in `src/number.rs`, whose `pub use` lines re-export exactly the seven FR-511 items from `qsl_package::number`; a re-export anywhere else, or an eighth item in `src/number.rs`, fails.
+- Step 3: no root-crate `pub use` is rooted at a layer crate, except in `src/number.rs`, whose `pub use` lines re-export exactly the FR-511 item set from `qsl_package::number`; a re-export anywhere else, an item outside the set, a rename or a glob in `src/number.rs` fails.
 - Step 4: `LibraryLock` is only read by `check`.
 - Step 5: `CheckedPackage` wraps a `CheckedGraph`, is built only from one,
   and delegates to it; a re-declared or copied check-owned type fails this
