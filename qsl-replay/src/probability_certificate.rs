@@ -10,7 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
-use qsl_semantics::check::StatePredicate;
+use qsl_semantics::check::{CheckedProbabilisticClaim, ProbForm, ReachTarget, StatePredicate};
+
+use crate::identity::ObligationIdentity;
 
 /// A complete canonical product-state key, encoded by the checker.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -128,6 +130,12 @@ pub enum ExactProbabilityGraphError {
     LimitReached,
     /// The model API exposed a draw that was not a single-state probability.
     UnsupportedDraw,
+    /// No checked claim has the requested obligation's node as its checked
+    /// package identity, or more than one does.
+    ClaimNotBound,
+    /// The bound claim is not an unbounded `eventually` reachability claim,
+    /// the only form this bounded slice checks.
+    UnsupportedClaimForm,
 }
 
 /// Enumerate an unbound reachability graph from the checked model itself.
@@ -271,6 +279,50 @@ pub fn check_model_exact_reachability<P: StatePredicate>(
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
     let graph = enumerate_model_graph(system, target, max_states, max_edges)?;
     check_exact_reachability(&graph, certificate, objective, bound)
+}
+
+/// Bind `item` to its checked claim by checked node identity, then check the
+/// certificate over that claim's target predicate and bound (FR-498).
+///
+/// The claim is the one whose `occurrence().node()` equals the obligation's
+/// node; name, span and source order never select it. A claim without a
+/// package identity is never bound.
+pub fn check_claim_exact_reachability(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    certificate: &ExactProbabilityCertificate,
+    objective: ProbabilityObjective,
+    max_states: usize,
+    max_edges: usize,
+) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
+    let mut bound = claims.iter().filter(|claim| {
+        claim
+            .occurrence()
+            .is_some_and(|key| key.node() == item.node())
+    });
+    let claim = bound
+        .next()
+        .ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    if bound.next().is_some() {
+        return Err(ExactProbabilityGraphError::ClaimNotBound);
+    }
+    let ProbForm::Reach {
+        bound,
+        target: ReachTarget::Eventually(predicate),
+    } = &claim.form
+    else {
+        return Err(ExactProbabilityGraphError::UnsupportedClaimForm);
+    };
+    check_model_exact_reachability(
+        system,
+        predicate,
+        certificate,
+        objective,
+        bound,
+        max_states,
+        max_edges,
+    )
 }
 
 /// One successor and its exact probability mass.

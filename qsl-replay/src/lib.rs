@@ -317,10 +317,10 @@ pub use outcome::{
     ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use probability_certificate::{
-    check_model_exact_reachability, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
-    ExactProbabilityGraphError, ExactProbabilityValue, ProbabilityBoundSide,
-    ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
-    ProbabilityObjective, ProbabilityProductKey,
+    check_claim_exact_reachability, check_model_exact_reachability, ExactProbabilityCertificate,
+    ExactProbabilityCertificateCheck, ExactProbabilityGraphError, ExactProbabilityValue,
+    ProbabilityBoundSide, ProbabilityCertificateLocus, ProbabilityCertificateRejection,
+    ProbabilityCertificateRule, ProbabilityObjective, ProbabilityProductKey,
 };
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,
