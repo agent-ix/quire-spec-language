@@ -51,6 +51,15 @@ impl Built {
     }
 
     pub(super) fn read(&self, emission: &Emission) -> AdmittedPackageRead<'_> {
+        self.try_read(emission)
+            .expect("the reader admits the emission")
+    }
+
+    /// The read of `emission`, which the reader may refuse.
+    pub(super) fn try_read(
+        &self,
+        emission: &Emission,
+    ) -> Result<AdmittedPackageRead<'_>, qsl_package::ImportViewRefusal> {
         read_evaluation_emission(
             self.unit.package(),
             emission,
@@ -58,7 +67,6 @@ impl Built {
             &self.packages,
             V2ReadLimits::default(),
         )
-        .expect("the reader admits the emission")
     }
 }
 

@@ -299,14 +299,17 @@ impl<'p> TemporalSubjectView<'p> {
     /// The declared value type of each capture, in source order, projected
     /// from the typed result type of its initializer term as FR-390
     /// projects a binder type (FR-532 `captures`). `None` when a type has no
-    /// kernel representation without a selected identity witness.
-    pub fn capture_value_types(&self) -> Option<Vec<quire_exact::ValueType>> {
-        let identities = quire_contract_model::SelectedExactIdentities::empty();
+    /// kernel representation under `identities`, the selected model identity
+    /// rows a declaration-bearing type (a record, an object) needs.
+    pub fn capture_value_types(
+        &self,
+        identities: &quire_contract_model::SelectedExactIdentities,
+    ) -> Option<Vec<quire_exact::ValueType>> {
         self.captures
             .iter()
             .map(|initializer| {
                 self.package
-                    .project_exact_type(initializer, &identities, CAPTURE_TYPE_WORK)
+                    .project_exact_type(initializer, identities, CAPTURE_TYPE_WORK)
                     .ok()
                     .map(|projected| projected.value_type().clone())
             })

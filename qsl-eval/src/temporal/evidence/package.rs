@@ -21,7 +21,7 @@ use qsl_package::checked_views::{
 };
 use qsl_package::{
     AdmittedPackageRead, BarePackage, CheckedNodeId, CheckedOccurrence, CheckedPackageV2,
-    CheckedSelection, Emission, TemporalBinding, TemporalClauseRef,
+    CheckedSelection, Emission, SelectedExactIdentities, TemporalBinding, TemporalClauseRef,
 };
 use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProfile};
 use quire_eval::CallFailure;
@@ -142,6 +142,10 @@ struct SourceCheck<'p> {
 pub struct EvidencePackage<'p> {
     package: &'p CheckedPackageV2,
     source: Option<SourceCheck<'p>>,
+    /// The selected model identity rows a declaration-bearing capture type
+    /// needs: the source unit's on the routes that hold one, none on the bare
+    /// route.
+    identities: SelectedExactIdentities,
     rows: PackageRows,
     activation_map: Vec<ActivationRow>,
     progress_capacity: u64,
@@ -247,6 +251,16 @@ impl<'p> EvidencePackage<'p> {
         source: Option<SourceCheck<'p>>,
         rows: PackageRows,
     ) -> Self {
+        let identities = source
+            .as_ref()
+            .and_then(|held| {
+                held.read
+                    .source()
+                    .graph()
+                    .selected_exact_identities(held.read.admitted())
+                    .ok()
+            })
+            .unwrap_or_else(SelectedExactIdentities::empty);
         let activation_map = activation_relation(package)
             .into_iter()
             .map(|(control, clause)| ActivationRow { control, clause })
@@ -254,6 +268,7 @@ impl<'p> EvidencePackage<'p> {
         Self {
             package,
             source,
+            identities,
             rows,
             activation_map,
             progress_capacity: DEFAULT_COVERED_POSITIONS,
@@ -375,7 +390,7 @@ impl<'p> EvidencePackage<'p> {
         let reads = view_bound_atoms(&view).map_err(|_| unreadable("atom-count"))?;
         let instance_bound = bound_atom_indices(graph, &reads);
         let captures: Vec<(Box<str>, quire_exact::ValueType)> = view
-            .capture_value_types()
+            .capture_value_types(&self.identities)
             .ok_or_else(|| unreadable("capture-type"))?
             .into_iter()
             .zip(view.capture_names())
@@ -646,4 +661,44 @@ fn same_formula(graph: &[FormulaNodeUse<'_>], formula: &CheckedFormula) -> bool 
             .iter()
             .zip(&operands)
             .all(|(entry, listed)| entry.operands == *listed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::finite_window_profile;
+    use qsl_semantics::check::TemporalProfile;
+
+    /// FR-532 `profile`, FR-531-AC-6: the closed table of the finite-window
+    /// profile identities and the infinite-trace profile; any other identity
+    /// (the timed profile included) is `profile-unknown`.
+    #[test]
+    fn only_the_finite_window_and_infinite_trace_identities_name_a_profile() {
+        for (identity, profile) in [
+            (
+                "quire.temporal.event-position.false-extension/v1",
+                TemporalProfile::EventPositionFalseExtension,
+            ),
+            (
+                "quire.temporal.fixed-sample.false-extension/v1",
+                TemporalProfile::FixedSampleFalseExtension,
+            ),
+            (
+                "quire.temporal.timestamped-event.finite-window/v1",
+                TemporalProfile::TimestampedEventFiniteWindow,
+            ),
+            (
+                "quire.temporal.infinite-trace/v1",
+                TemporalProfile::InfiniteTrace,
+            ),
+        ] {
+            assert_eq!(finite_window_profile(identity), Some(profile));
+        }
+        for unknown in [
+            "quire.temporal.timed/v1",
+            "quire.temporal.event-position.false-extension/v2",
+            "",
+        ] {
+            assert_eq!(finite_window_profile(unknown), None, "{unknown}");
+        }
+    }
 }
