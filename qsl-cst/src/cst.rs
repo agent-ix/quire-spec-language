@@ -221,6 +221,7 @@ productions! {
     StateGraphRelation, StateGraphUnary,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
+    DeliveryInterval,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]
     ProtocolTerminal,
     #[doc = "`scheduling adversarial;`: a protocol clause's opt-out of derived scheduler fairness."]

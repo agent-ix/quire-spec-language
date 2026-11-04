@@ -86,6 +86,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::Capture,
     Production::Fairness,
     Production::Interval,
+    Production::DeliveryInterval,
     Production::TimedInterval,
     Production::TimeDeclaration,
     Production::TimeInvariant,

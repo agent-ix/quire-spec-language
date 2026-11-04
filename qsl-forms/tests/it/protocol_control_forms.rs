@@ -162,6 +162,28 @@ fn each_delivery_capacity_and_ordering_spelling_builds_its_own_value() {
         .any(|construct| construct.kind == ProtocolConstructKind::FifoOrdering));
 }
 
+/// FR-509-AC-1/AC-2 (TC-1304): delivery count intervals retain both u64
+/// bounds and their authored spelling in the channel form.
+#[trace("FR-509-AC-1", "FR-509-AC-2", "TC-1304")]
+#[test]
+fn a_channel_delivery_interval_builds_its_bounds() {
+    for (spelling, lower, upper) in [
+        ("[0,3]", 0, 3),
+        ("[ 2 , 2 ]", 2, 2),
+        ("[0,18446744073709551615]", 0, u64::MAX),
+    ] {
+        let member = format!(
+            "channel Pay from R to S carries {OBJECT} ordering unordered delivery {spelling} \
+             capacity 1 overflow reject;"
+        );
+        let text = source(&member, RUN);
+        let unit = build(&text);
+        let channel = only_channel(protocol(&unit));
+        assert_eq!(channel.delivery.value, ChannelDelivery::Between { lower, upper });
+        assert_eq!(slice(&text, channel.delivery.span), spelling);
+    }
+}
+
 /// FR-308-AC-13 (TC-1065 rows 1 and 2): the five overflow spellings build
 /// `Reject`, `Block` and `Loss` with their selector, each span slicing to its
 /// text; `overflow loss` with no selector and `overflow block head` fail at

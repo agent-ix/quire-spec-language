@@ -252,6 +252,18 @@ pub enum ProtocolAnchorCause {
         /// The span of the type form (or nested argument form) at fault.
         span: Span,
     },
+    /// FR-509-AC-2: a channel's inclusive delivery interval has its lower
+    /// count above its upper count.
+    ChannelDeliveryRange {
+        /// The channel's declared name.
+        channel: String,
+        /// The lower bound as written.
+        lower: u64,
+        /// The upper bound as written.
+        upper: u64,
+        /// The interval's source span.
+        span: Span,
+    },
     /// FR-218 "Admission for emission": a channel carries an object type,
     /// which is not a message type. `invalid_model_binding`/
     /// `malformed-declaration`, once, at the type name.
@@ -1064,6 +1076,7 @@ impl ProtocolAnchorCause {
             | Self::BinderType { span, .. }
             | Self::ChannelRole { span, .. }
             | Self::ChannelType { span, .. }
+            | Self::ChannelDeliveryRange { span, .. }
             | Self::ChannelCarriesObject { span, .. }
             | Self::RoleModel { span, .. }
             | Self::JoinList { span, .. }
@@ -1123,6 +1136,7 @@ impl ProtocolAnchorCause {
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
             | Self::CarriesMismatch { .. }
+            | Self::ChannelDeliveryRange { .. }
             | Self::AwaitWindow { .. }
             | Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
@@ -1180,6 +1194,7 @@ impl ProtocolAnchorCause {
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
             | Self::CarriesMismatch { .. }
+            | Self::ChannelDeliveryRange { .. }
             | Self::AwaitWindow { .. }
             | Self::RelatedEnd { .. }
             | Self::RolePopulationType { .. }
