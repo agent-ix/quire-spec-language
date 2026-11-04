@@ -9,6 +9,8 @@ pub mod located_json;
 pub mod native_protocol;
 pub mod native_rule_model;
 pub mod protocol_artifact;
+#[path = "refinement_cas.rs"]
+pub mod refinement_cas;
 pub mod spine_model;
 pub mod temporal;
 pub mod workspace;

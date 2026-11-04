@@ -546,14 +546,19 @@ pub fn unit_text(
     )
 }
 
-/// The two domain packages' documents, by identity.
+/// The selected abstract, concrete and unused third model documents.
+pub fn documents(variant: Variant) -> Vec<Vec<u8>> {
+    vec![
+        spec_document(SPEC, variant.add, variant.tick, variant.fairness_toggle),
+        cas_document(variant),
+        spec_document(THIRD, false, false, false),
+    ]
+}
+
+/// The selected model documents admitted as one package input.
 pub fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
-    package_input([
-        spec_document(SPEC, variant.add, variant.tick, variant.fairness_toggle).as_slice(),
-        cas_document(variant).as_slice(),
-        spec_document(THIRD, false, false, false).as_slice(),
-    ])
-    .unwrap()
+    let documents = documents(variant);
+    package_input(documents.iter().map(Vec::as_slice)).unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.

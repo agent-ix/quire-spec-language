@@ -57,7 +57,14 @@ fn spine_request(directory: &Path, program: &[u8]) {
 /// spine; stdout is exactly the bytes `qsl_replay::spine`'s operations emit, which
 /// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
 #[test]
-#[trace("TC-105", "FR-027-AC-2", "TC-435", "FR-027-AC-5")]
+#[trace(
+    "TC-105",
+    "FR-027-AC-2",
+    "TC-435",
+    "FR-027-AC-5",
+    "TC-785",
+    "FR-027-AC-11"
+)]
 fn a_complete_v1_program_compiles_through_the_spine() {
     let program = std::fs::read(SPINE_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
@@ -129,6 +136,31 @@ fn compile_refuses_runtime_request_shapes_without_reading_runtime_files() {
     }
 }
 
+/// FR-031-AC-6 (TC-109): `native-compile/1` recognizes the run-only
+/// `extraction` member and refuses before opening the selected source.
+#[test]
+#[trace("TC-109", "FR-031-AC-6")]
+fn compile_refuses_extraction_before_reading_selected_files() {
+    for extraction in [json!(null), json!({"source":"missing.md"})] {
+        let directory = tempfile::tempdir().unwrap();
+        let request = json!({"format":"native-compile/1","request":{
+            "models":[{"format":"semantic-ir/2.0.0","source":{
+                "file":"missing-model.json","authority":"agent-ix",
+                "identity":"test:model","document":"Model","formal_revision":1}}],
+            "program":{"source":{"file":"missing-program.native","authority":"agent-ix",
+                "identity":"test:compile","document":"Compile","formal_revision":1},
+                "extraction":extraction}}});
+        let request_path = directory.path().join("compile.json");
+        std::fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
+        let error = quire_spec_language::command::compile(&request_path).unwrap_err();
+        let value = error.value().unwrap();
+        assert_eq!(error.category().exit_code(), 20);
+        assert_eq!(value["code"], "extraction-requires-run", "{value}");
+        assert_eq!(value["stage"], "request", "{value}");
+        assert!(value.get("artifact").is_none(), "{value}");
+    }
+}
+
 /// FR-027-AC-3 (TC-105 steps 3–5): source selection and dependent-byte
 /// refusals retain typed causes and produce no partial package.
 #[test]
@@ -191,6 +223,159 @@ fn source_selection_and_dependent_byte_refusals_are_typed() {
     assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
     assert!(value["details"].get("option").is_none(), "{value}");
     assert!(value.get("artifact").is_none(), "{value}");
+}
+
+/// FR-027-AC-14 (TC-1210): native-compile/1 accepts a source-unit array,
+/// emits the FR-278 composition, and applies edition and byte limits to all
+/// units.
+#[test]
+#[trace("TC-1210", "FR-027-AC-14", "TC-446", "FR-027-AC-12")]
+fn compile_accepts_a_multi_unit_program_array() {
+    let first = format!("{SPINE_HEADER}function alphaUnit using v(): Boolean pure {{ true }}\n");
+    let second = format!("{SPINE_HEADER}function betaUnit using v(): Boolean pure {{ false }}\n");
+    let units = [
+        ("unit-a.native", "test:unit-a", first.as_bytes()),
+        ("unit-b.native", "test:unit-b", second.as_bytes()),
+    ];
+    let directory = tempfile::tempdir().unwrap();
+    for (file, _, bytes) in units {
+        std::fs::write(directory.path().join(file), bytes).unwrap();
+    }
+    let write_job = |indices: &[usize]| {
+        let program = indices
+            .iter()
+            .map(|index| {
+                let (file, identity, _) = units[*index];
+                json!({"file":file,"authority":"agent-ix","identity":identity,
+                    "document":"Unit","formal_revision":1})
+            })
+            .collect::<Vec<_>>();
+        let job = json!({"format":"native-compile/1","request":{
+            "models":[],"program":program,"refinement_internals":[]}});
+        std::fs::write(
+            directory.path().join("compile.json"),
+            serde_json::to_vec(&job).unwrap(),
+        )
+        .unwrap();
+    };
+    write_job(&[0, 1]);
+    let forward = compile(directory.path());
+    assert_eq!(
+        forward.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&forward.stderr)
+    );
+
+    let source_identities: Vec<_> = units
+        .iter()
+        .map(|(_, identity, _)| qsl_foundation::SourceIdentity::new("agent-ix", *identity))
+        .collect();
+    let parse_requests: Vec<_> = units
+        .iter()
+        .zip(&source_identities)
+        .map(
+            |((path, _, bytes), source)| qsl_replay::spine::ParseRequest {
+                source,
+                path,
+                bytes,
+            },
+        )
+        .collect();
+    let dependencies = qsl_replay::spine::DependencyInput::default();
+    qsl_replay::spine::preflight_unit_list(&parse_requests, &dependencies).unwrap();
+    let cancel = quire_exact::Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let parsed = parse_requests
+        .iter()
+        .map(|request| {
+            qsl_replay::spine::parse(request, limits.source, &cancel)
+                .unwrap()
+                .into_value()
+        })
+        .collect();
+    let admitted = qsl_replay::spine::admit_parsed_unit_list(parsed, &dependencies).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input(std::iter::empty::<&[u8]>()).unwrap();
+    let models =
+        qsl_replay::spine::select_units(&admitted, &packages, limits.model, limits.source, &cancel)
+            .unwrap()
+            .into_value();
+    let checked = qsl_replay::spine::check_units_with_refinement_internals(
+        &admitted,
+        "test:unit-a".to_owned(),
+        Some(json!([])),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let composed = qsl_replay::spine::package(
+        &checked[0],
+        qsl_replay::spine::PackageLimits::default(),
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    assert_eq!(forward.stdout, composed.package().bytes());
+
+    write_job(&[1, 0]);
+    let reversed = compile(directory.path());
+    assert_eq!(
+        reversed.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&reversed.stderr)
+    );
+    assert_eq!(reversed.stdout, forward.stdout);
+
+    let invalid_second = SPINE_HEADER.replacen("1-draft", "0-draft", 1)
+        + "function gammaUnit using v(): Boolean pure { true }\n";
+    std::fs::write(directory.path().join("unit-b.native"), &invalid_second).unwrap();
+    write_job(&[0, 1]);
+    let invalid = compile(directory.path());
+    let failure = refusal(&invalid, 20, "unknown_edition", "later unit edition");
+    assert_eq!(failure["details"]["path"], "unit-b.native", "{failure}");
+    let edition_literal = invalid_second.find("\"0-draft\"").unwrap();
+    assert_eq!(
+        failure["details"]["span"]["start"]["byte"], edition_literal,
+        "{failure}"
+    );
+    assert_eq!(
+        failure["details"]["span"]["end"]["byte"],
+        edition_literal + "\"0-draft\"".len(),
+        "{failure}"
+    );
+
+    let empty = json!({"format":"native-compile/1","request":{"models":[],"program":[]}});
+    std::fs::write(
+        directory.path().join("compile.json"),
+        serde_json::to_vec(&empty).unwrap(),
+    )
+    .unwrap();
+    let failure = refusal(
+        &compile(directory.path()),
+        20,
+        "invalid-request",
+        "empty list",
+    );
+    assert_eq!(failure["stage"], "request", "{failure}");
+
+    let oversized_first = format!("{first}//{}", "x".repeat(4_200_000));
+    let oversized_second = format!("{second}//{}", "x".repeat(4_200_000));
+    std::fs::write(directory.path().join("unit-a.native"), oversized_first).unwrap();
+    std::fs::write(directory.path().join("unit-b.native"), oversized_second).unwrap();
+    write_job(&[0, 1]);
+    let failure = refusal(
+        &compile(directory.path()),
+        22,
+        "resource_exhausted",
+        "aggregate dependent bytes",
+    );
+    assert_eq!(failure["details"]["limit"], "dependent_bytes", "{failure}");
+    assert_eq!(failure["details"]["maximum"], 8_388_608, "{failure}");
 }
 
 /// FR-287-AC-4 (TC-1262 step 2): the compile CLI enforces fixed request and
@@ -321,6 +506,36 @@ fn compile_file_count_refusal_names_the_models_group_before_file_io() {
     );
 }
 
+/// FR-027-AC-14 (TC-1210): each source selection in a program array consumes
+/// one slot in the shared 64-file limit and reports the `programs` group.
+#[test]
+#[trace("TC-1210", "FR-027-AC-14", "FR-027-AC-10")]
+fn compile_program_array_file_count_refusal_names_the_programs_group() {
+    let directory = tempfile::tempdir().unwrap();
+    let sources = (0..65)
+        .map(|index| {
+            json!({"file":format!("missing-{index}.native"),"authority":"agent-ix",
+                "identity":format!("test:unit-{index}"),"document":"Unit","formal_revision":1})
+        })
+        .collect::<Vec<_>>();
+    let request = json!({"format":"native-compile/1","request":{
+        "models":[],"program":sources}});
+    let path = directory.path().join("compile.json");
+    std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+
+    let error = quire_spec_language::command::compile(&path).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(error.category().exit_code(), 22);
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(
+        value["details"],
+        json!({
+            "limit":"selected files","category":"programs",
+            "requested":65,"remaining":64,"maximum":64
+        })
+    );
+}
+
 /// FR-026-AC-4 (TC-104): a clause run request selecting more observation files
 /// than the shared file limit allows refuses `resource_exhausted` with the
 /// category spelling `observations`, before any file is read.
@@ -440,7 +655,14 @@ fn retired_and_unknown_editions_refuse_before_emitting_package_bytes() {
 /// FR-027-AC-8 (TC-435 step 6): each spine stage's refusal reports that
 /// stage and its cause's code, exits on that code, and writes no bytes.
 #[test]
-#[trace("TC-105", "FR-027-AC-3", "TC-435", "FR-027-AC-8")]
+#[trace(
+    "TC-105",
+    "FR-027-AC-3",
+    "TC-435",
+    "FR-027-AC-8",
+    "TC-785",
+    "FR-027-AC-11"
+)]
 fn each_spine_stage_refusal_reports_its_stage_and_code() {
     for (body, stage, code, exit, located) in [
         (
@@ -525,7 +747,7 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
 /// package by the identity the program's `model` declaration
 /// names.
 #[test]
-#[trace("TC-442", "FR-027-AC-9")]
+#[trace("TC-442", "FR-027-AC-9", "TC-785", "FR-027-AC-11")]
 fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
     // The complete-V1 compile fixture with a domain package (FR-027-AC-9).
     let program = crate::support::spine_model::unit().into_bytes();
@@ -646,11 +868,54 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
     program
 }
 
+/// Two row-empty protocol refinements, with an optional importing function,
+/// used to test independently supplied root and library internal lists.
+fn refinement_unit(imports_library: bool) -> String {
+    let import = if imports_library {
+        "import \"test/geometry\" as g;\n"
+    } else {
+        ""
+    };
+    let function = if imports_library {
+        "function entry using v(): Boolean pure { g::geometryFn(0) }\n"
+    } else {
+        "function geometryFn using v(x: Int[0, 9]): Boolean pure { true }\n"
+    };
+    format!(
+        "{SPINE_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         {import}model Spec = \"{spec}\";\n\
+         model Impl = \"{concrete}\";\n\
+         protocol Twice using p over (c: Spec::Counter) on origin {{\n\
+         role w on Spec::Counter; scheduling adversarial;\n\
+         run sequence Main {{ }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n\
+         protocol Other using p over (c: Spec::Counter) on origin {{\n\
+         role w on Spec::Counter; scheduling adversarial;\n\
+         run sequence Main {{ }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n\
+         refinement CasTwice using inf abstract Spec::Twice concrete Impl {{}}\n\
+         refinement CasOther using inf abstract Spec::Other concrete Impl {{}}\n\
+         {function}",
+        spec = crate::support::refinement_cas::SPEC,
+        concrete = crate::support::refinement_cas::CAS,
+    )
+}
+
 /// FR-027-AC-10 (TC-446 step 7): a `1-draft` request's `libraries` supply
 /// the program's import. Stdout is exactly the bytes `qsl_replay::spine`'s
 /// operations emit over the same program and dependency input.
 #[test]
-#[trace("TC-446", "FR-027-AC-10", "TC-885", "FR-003-AC-9")]
+#[trace(
+    "TC-446",
+    "FR-027-AC-10",
+    "TC-885",
+    "FR-003-AC-9",
+    "TC-785",
+    "FR-027-AC-11"
+)]
 fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
     crate::support::front_end::emitted(
@@ -690,11 +955,162 @@ fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     assert_eq!(output.stdout, compiled.package().bytes());
 }
 
+/// FR-027-AC-12 (TC-446): the command carries root and library internal-list
+/// values into the combined spine inputs before package emission.
+#[test]
+#[trace("TC-446", "FR-027-AC-12")]
+fn refinement_internals_compile_matches_the_spine_composition() {
+    use crate::support::refinement_cas::{self, Variant};
+
+    let mut documents = refinement_cas::documents(Variant::CAS);
+    for document in documents.iter_mut().take(2) {
+        let mut value: Value = serde_json::from_slice(document).unwrap();
+        value["populations"] = json!([]);
+        for ty in value["types"].as_array_mut().unwrap() {
+            if ty["kind"]["name"] == "object_type" {
+                ty["operations"] = json!([]);
+            }
+        }
+        *document = serde_json::to_vec(&value).unwrap();
+    }
+    let program = refinement_unit(true).into_bytes();
+    let library = refinement_unit(false).into_bytes();
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("program.native"), &program).unwrap();
+    std::fs::write(directory.path().join("geometry.native"), &library).unwrap();
+    for (index, document) in documents.iter().enumerate() {
+        std::fs::write(
+            directory.path().join(format!("model-{index}.json")),
+            document,
+        )
+        .unwrap();
+    }
+    let mut job = json!({"format":"native-compile/1","request":{
+        "models":[
+            {"format":"semantic-ir/2.0.0","source":{"file":"model-0.json",
+                "authority":"agent-ix","identity":refinement_cas::SPEC,"document":"Abstract","formal_revision":1}},
+            {"format":"semantic-ir/2.0.0","source":{"file":"model-1.json",
+                "authority":"agent-ix","identity":refinement_cas::CAS,"document":"Concrete","formal_revision":1}},
+        ],
+        "program":{"source":{"file":"program.native","authority":"agent-ix",
+            "identity":"test:spine","document":"Spine","formal_revision":1}},
+        "refinement_internals":[{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}],
+        "libraries":[{"identity":"test/geometry","source":{"file":"geometry.native",
+            "authority":"agent-ix","identity":"test:geometry","document":"Geometry","formal_revision":1},
+            "refinement_internals":[{"refinement":"CasOther","internal":["Spec::Other::Done"]}]}]
+    }});
+    let path = directory.path().join("compile.json");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+
+    let emit_composition = |root_internals: Option<Value>, library_internals: Option<Value>| {
+        let dependencies =
+            qsl_replay::spine::DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
+                identity: "test/geometry".to_owned(),
+                source: geometry_identity(),
+                path: "geometry.native".to_owned(),
+                bytes: library.clone(),
+            }])
+            .unwrap();
+        let dependencies = match library_internals {
+            Some(value) => dependencies
+                .with_refinement_internals([("test/geometry".to_owned(), value)])
+                .unwrap(),
+            None => dependencies,
+        };
+        let source = qsl_foundation::SourceIdentity::new("agent-ix", "test:spine");
+        let cancel = quire_exact::Cancel::new();
+        let limits = qsl_replay::spine::SpineLimits::default();
+        let parse_requests = [qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "program.native",
+            bytes: &program,
+        }];
+        qsl_replay::spine::preflight_unit_list(&parse_requests, &dependencies).unwrap();
+        let parsed = parse_requests
+            .iter()
+            .map(|request| {
+                qsl_replay::spine::parse(request, limits.source, &cancel)
+                    .unwrap()
+                    .into_value()
+            })
+            .collect();
+        let admitted = qsl_replay::spine::admit_parsed_unit_list(parsed, &dependencies).unwrap();
+        let packages =
+            qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice))
+                .unwrap();
+        let models = qsl_replay::spine::select_units(
+            &admitted,
+            &packages,
+            limits.model,
+            limits.source,
+            &cancel,
+        )
+        .unwrap()
+        .into_value();
+        let checked = qsl_replay::spine::check_units_with_refinement_internals(
+            &admitted,
+            "test:spine".to_owned(),
+            root_internals,
+            &models,
+            &dependencies,
+            limits,
+            &cancel,
+        )
+        .unwrap()
+        .into_value();
+        qsl_replay::spine::package(
+            &checked[0],
+            qsl_replay::spine::PackageLimits::default(),
+            &cancel,
+        )
+        .unwrap()
+        .into_value()
+        .package()
+        .bytes()
+        .to_vec()
+    };
+    let root_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]);
+    let library_internals = json!([{"refinement":"CasOther","internal":["Spec::Other::Done"]}]);
+    let composed = emit_composition(
+        Some(root_internals.clone()),
+        Some(library_internals.clone()),
+    );
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, composed);
+
+    job["request"]
+        .as_object_mut()
+        .unwrap()
+        .remove("refinement_internals");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let root_absent = compile(directory.path());
+    assert_eq!(root_absent.status.code(), Some(0), "{root_absent:?}");
+    assert_eq!(
+        root_absent.stdout,
+        emit_composition(None, Some(library_internals.clone()))
+    );
+    assert_ne!(output.stdout, root_absent.stdout);
+
+    job["request"]["libraries"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("refinement_internals");
+    job["request"]["refinement_internals"] = root_internals.clone();
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let library_absent = compile(directory.path());
+    assert_eq!(library_absent.status.code(), Some(0), "{library_absent:?}");
+    assert_eq!(
+        library_absent.stdout,
+        emit_composition(Some(root_internals), None)
+    );
+}
+
 /// FR-147-AC-10 (TC-552): an internal-list defect is attributed to the
 /// unit's value or to the supplied library's own value, including when the
 /// library is not imported by the unit.
 #[test]
-#[trace("TC-552", "FR-147-AC-10")]
+#[trace("TC-552", "FR-147-AC-10", "TC-446", "FR-027-AC-12")]
 fn refinement_internal_list_defects_keep_their_input_owner() {
     let unit = tempfile::tempdir().unwrap();
     spine_request(

@@ -331,6 +331,25 @@ impl SemanticNode {
 /// nodes under, first among its members (FR-092 "Function nodes").
 const FUNCTION_PARAMETERS: &str = "parameters";
 
+/// The admitted facts of one lowered source-owned enum declaration
+/// (FR-092 "Source enum identity rows").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceEnumDeclaration {
+    /// The declaring source's owner.
+    pub owner: SourceOwner,
+    /// The declaration's qualified segments in that source.
+    pub qualified_declaration: Vec<Box<str>>,
+}
+
+/// The admitted facts of one lowered source-owned enum member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceEnumMember {
+    /// The member's enum declaration node key.
+    pub declaration_key: NodeKey,
+    /// The exact case name.
+    pub case: Box<str>,
+}
+
 /// The checked semantic graph: every lowered node by key.
 ///
 /// Nodes are held by hash, so a lookup costs a key's hash and, for the
@@ -347,6 +366,10 @@ pub struct SemanticGraph {
     selected_model_enum_declarations: BTreeMap<NodeKey, SelectedModelEnumDeclaration>,
     /// Selected model enum members keyed by their lowered member node.
     selected_model_enum_members: BTreeMap<NodeKey, SelectedModelEnumMember>,
+    /// Source-owned enum declarations keyed by their lowered declaration.
+    source_enum_declarations: BTreeMap<NodeKey, SourceEnumDeclaration>,
+    /// Source-owned enum members keyed by their lowered member node.
+    source_enum_members: BTreeMap<NodeKey, SourceEnumMember>,
     /// `nodes`' keys ascending, once ranked.
     order: Vec<NodeKey>,
 }
@@ -422,6 +445,24 @@ impl SemanticGraph {
         selected: SelectedModelEnumMember,
     ) {
         self.selected_model_enum_members.insert(member, selected);
+    }
+
+    /// The source-owned enum declarations associated with lowered nodes
+    /// (FR-092 "Source enum identity rows").
+    pub fn source_enum_declarations(
+        &self,
+    ) -> impl Iterator<Item = (&NodeKey, &SourceEnumDeclaration)> {
+        self.source_enum_declarations.iter()
+    }
+
+    /// The source-owned enum declaration lowered at `key`, if any.
+    pub fn source_enum_declaration(&self, key: &NodeKey) -> Option<&SourceEnumDeclaration> {
+        self.source_enum_declarations.get(key)
+    }
+
+    /// The source-owned enum members associated with lowered nodes.
+    pub fn source_enum_members(&self) -> impl Iterator<Item = (&NodeKey, &SourceEnumMember)> {
+        self.source_enum_members.iter()
     }
 
     /// The node keyed `key`.
@@ -2808,6 +2849,17 @@ impl<'a> Lowering<'a> {
                 .map(String::as_str),
             &site,
         )?;
+        let owner = self
+            .source_owners
+            .get(&binding.name)
+            .cloned()
+            .unwrap_or_else(|| self.owner.clone());
+        let qualified_declaration = binding
+            .declaration
+            .qualified_declaration()
+            .iter()
+            .map(|segment| segment.as_str().into())
+            .collect();
         let inserted = self.insert_nominal(
             &site,
             declaration.clone(),
@@ -2817,12 +2869,7 @@ impl<'a> Lowering<'a> {
                 semantic_form: "enum",
                 semantic_type: None,
                 declaration: Some(name),
-                owner: Some(Owner::Source(
-                    self.source_owners
-                        .get(&binding.name)
-                        .cloned()
-                        .unwrap_or_else(|| self.owner.clone()),
-                )),
+                owner: Some(Owner::Source(owner.clone())),
                 body: BodyTerm::aggregate(Vec::new()),
             },
             Some(NominalPayload::Enum(EnumPayload::of(
@@ -2830,16 +2877,31 @@ impl<'a> Lowering<'a> {
             ))),
         )?;
         // Two bindings of one admitted declaration are one node, declared
-        // once.
+        // once; its row comes from the binding that built the node, so the
+        // row's owner is the node's owner.
         if inserted {
             self.record(
                 declaration.clone(),
                 OccurrenceRole::Declaration,
                 site.clone(),
             );
+            self.graph.source_enum_declarations.insert(
+                declaration.clone(),
+                SourceEnumDeclaration {
+                    owner,
+                    qualified_declaration,
+                },
+            );
         }
         for member in &binding.members {
-            self.enum_member_node(&site, declaration.clone(), member)?;
+            let key = self.enum_member_node(&site, declaration.clone(), member)?;
+            self.graph
+                .source_enum_members
+                .entry(key)
+                .or_insert_with(|| SourceEnumMember {
+                    declaration_key: declaration.clone(),
+                    case: member.case().into(),
+                });
         }
         Ok(())
     }
