@@ -16,7 +16,7 @@
 //!   fields and `type` aliases of those crates' types;
 //! - the S3 input, the receiver of [`S3_CONSTRUCTOR`];
 //! - every type of `quire-contract-model`: any type path rooted at that
-//!   crate.
+//!   crate, bar its [`ADDRESSING_TYPES`].
 //!
 //! A fieldless enum (closed vocabulary such as `StateClauseKind`) is outside
 //! the set, and so is configuration: a type a `pub` free function of those
@@ -74,8 +74,25 @@ const PRE_CHECK_CRATES: [(&str, &str); 3] = [
     ("qsl-forms/src", "qsl_forms"),
 ];
 
-/// The IR crate whose every type is a pre-check representation (CK-2 (c)).
+/// The IR crate whose every type is a pre-check representation (CK-2 (c)),
+/// bar [`ADDRESSING_TYPES`].
 const CONTRACT_MODEL: &str = "quire_contract_model";
+
+/// ADR-032 CK-2 (c): the `quire-contract-model` addressing values outside
+/// the set. Each is an identity key or a clock row a stage entry selects
+/// with from a package the I2 reader already admitted; none holds checked
+/// nodes or terms, so none can be executed without that reader. A QSL
+/// requirement names each in a stage-entry signature: `CheckedNodeId` and
+/// `CheckedOccurrence` (FR-516's `evaluate_temporal_evidence` and
+/// `subject`), `TemporalBinding` and `ClockConfiguration` (FR-522's clock
+/// authentication), `SourceIdentity` (FR-514's `qsl_inventory`).
+const ADDRESSING_TYPES: [&str; 5] = [
+    "CheckedNodeId",
+    "CheckedOccurrence",
+    "TemporalBinding",
+    "ClockConfiguration",
+    "SourceIdentity",
+];
 
 /// The stage-entry crates: layer 5 `qsl-eval`, layer R `qsl-route` and the
 /// layer-6 `replay` facade `qsl-replay` (minus [`SPINE`]).
@@ -379,7 +396,7 @@ impl PreCheck {
             return false;
         };
         last == S3_CONSTRUCTOR.receiver
-            || first == CONTRACT_MODEL
+            || (first == CONTRACT_MODEL && !ADDRESSING_TYPES.contains(&last.as_str()))
             || Self::crate_named(first)
                 .is_some_and(|name| self.types.get(name).is_some_and(|t| t.contains(last)))
     }
@@ -1054,6 +1071,20 @@ mod tests {
                     "quire_contract_model::ContractPackage",
                 ),
             ),
+            // The addressing exemption is by exact name: a non-exempt model
+            // type beside an exempt one still fails, naming only the former.
+            (
+                EVAL_PLANT,
+                "use quire_contract_model::{CheckedNodeId, ContractPackage};\n\
+                 pub fn plant(c: &CheckedNodeId, p: &ContractPackage) {}\n",
+                finding(
+                    EVAL_PLANT,
+                    2,
+                    Rule::Signature,
+                    "plant",
+                    "quire_contract_model::ContractPackage",
+                ),
+            ),
         ];
         for (file, source, expected) in cases {
             assert_eq!(scan_planted(&[(file, source)]), vec![expected], "{source}");
@@ -1164,6 +1195,15 @@ mod tests {
             ),
             // Configuration: a stage takes it and none returns it.
             (EVAL_PLANT, "pub fn plant(l: qsl_cst::Limits) {}\n"),
+            // ADR-032 CK-2 (c): an addressing value into an admitted package.
+            (
+                EVAL_PLANT,
+                "use quire_contract_model::CheckedNodeId;\npub fn plant(c: &CheckedNodeId) {}\n",
+            ),
+            (
+                REPLAY_PLANT,
+                "pub fn plant(i: &quire_contract_model::SourceIdentity) {}\n",
+            ),
         ];
         for (file, source) in look_alikes {
             assert_eq!(scan_planted(&[(file, source)]), vec![], "{source}");
