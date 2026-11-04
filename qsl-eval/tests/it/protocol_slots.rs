@@ -202,7 +202,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     };
 
     let mut meter = Meter::new(UNLIMITED);
-    let evaluated = package
+    package
         .evaluate_protocol_slot(
             &slot,
             &ProtocolSupply {
@@ -1045,7 +1045,7 @@ fn evaluate_gate(precondition: bool) -> ProtocolSlotEvaluation {
         index: Some(1),
     };
     let mut meter = Meter::new(UNLIMITED);
-    let evaluated = package
+    package
         .evaluate_protocol_slot(
             &slot,
             &ProtocolSupply {
@@ -1074,8 +1074,7 @@ fn evaluate_gate(precondition: bool) -> ProtocolSlotEvaluation {
             },
             &mut meter,
         )
-        .expect("the capture slot evaluates");
-    evaluated
+        .expect("the capture slot evaluates")
 }
 
 /// TC-1072 rows 7 and 8 / FR-390-AC-8: a capture initializer whose

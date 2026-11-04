@@ -1476,10 +1476,6 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
-    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
-        Ok(self.pop_many_owned(count)?.0)
-    }
-
     /// [`Self::pop_many`] with the owner of each popped value.
     fn pop_many_owned(&mut self, count: usize) -> Result<(Vec<Value>, Vec<Owner>), Halt> {
         let start = self
@@ -1497,6 +1493,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             return Err(self.absent_key_halt(reference)?);
         }
         Ok((values, owners))
+    }
+
+    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
+        Ok(self.pop_many_owned(count)?.0)
     }
 
     fn pop_many_forwarded(&mut self, count: usize) -> Result<PoppedArguments, Halt> {
