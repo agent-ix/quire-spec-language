@@ -389,8 +389,8 @@ per position.
   new counter exists: the thirteen stay thirteen, and an exhausted counter stops the
   call as FR-523 states.
 
-The aggregate node is not yet written by QSL's emitter (lowering faults an aggregate
-atom), no QSpec operation catalog entry defines the node and Contract IR's reader
+QSL's emitter writes the aggregate node (FR-337 "Aggregate formula emission"), but
+no QSpec operation catalog entry defines the node and Contract IR's reader
 admits no `quire.op.temporal.aggregate` operation (the catalog is QSpec's
 `proposals/checked-package-v2/schema.json`), so no package carrying the node can be
 admitted today, a hand-built one included. The evaluation behavior above and its

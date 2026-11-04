@@ -147,11 +147,10 @@ from the entry's members read from the bytes and the per-position samples of the
 request. `formula_graph()` SHALL read the entry (FR-515: `aggregate` member) and the
 truth plan SHALL walk it as the atom it is.
 
-This does not run today, and no package route has ever raised a cause for it: the
-checker's lowering faults an aggregate atom (`aggregate-not-emitted`), so QSL emits
-no package for such a clause, FR-337-AC-15 is untagged, the in-process plan faults
+This does not run today, and no package route has ever raised a cause for it: QSL
+emits the node (FR-337-AC-15), but the in-process plan faults
 `aggregate-formula-not-emitted`, and no operation catalog entry exists for the node
-in QSpec or in Contract IR's reader. The criteria for aggregate atoms are specified
+in QSpec or in Contract IR's reader, so no package carrying it is admitted. The criteria for aggregate atoms are specified
 now and are gated, as the IR-gated criteria of FR-533 are, on QSL-1643 (emission of
 aggregate clauses) and QSL-1644 (a QSpec catalog entry for the node and its
 admission by Contract IR). No hand-built wire package can stand in: `read_checked_package` refuses an

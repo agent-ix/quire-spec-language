@@ -107,6 +107,6 @@ Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`, and the test of AC-8's later
   `ReplayParity` (FR-339's rejection waits on its checker); the footprint holds `Counter::value` with the `over` receiver only with the
   capture.
 - Step 8: each emitted formula atom uses `quire.op.temporal.aggregate` with
-  the closed ordered payload in QSpec FR-370; omitted and explicit `min_count 1` yield the
+  the closed ordered payload of FR-337 "Aggregate formula emission"; omitted and explicit `min_count 1` yield the
   same key, reformatting changes neither key nor package identity, and each
   semantic payload mutation changes both.

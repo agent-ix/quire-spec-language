@@ -461,25 +461,25 @@ fn the_package_check_refuses_a_clause_no_emission_writes() {
     ));
 }
 
-/// FR-194-AC-4 (TC-629): aggregate expressions are type checked at S3, while
-/// the clause remains explicitly not emitted until FR-370's wire is confirmed.
+/// The package check of `text` admits its one temporal clause.
+fn package_admits(text: &str) {
+    let graph = assemble(text)
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("`{text}` checks: {refusals:?}"));
+    assert_eq!(graph.temporal_clauses().len(), 1, "{text}");
+}
+
+/// FR-194-AC-4 (TC-629): aggregate atoms and their expressions are checked
+/// at S3, and a clause whose atoms check is admitted into the package.
 #[trace("TC-629", "FR-194-AC-4", "FR-194-AC-7", "FR-194-AC-8", "FR-194-AC-10")]
 #[test]
-fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
-    let valid = source(&[EVENT], "Int[0,9]", "count over past[0,3] >= 1");
-    let refusal = package_refusal(&valid);
-    assert_eq!(refusal.code(), Code::UnsupportedConstruct);
-    assert_eq!(refusal.tag(), "not-yet-implemented");
-
-    let zero_minimum_count = source(
+fn aggregate_atoms_are_checked_and_admitted() {
+    package_admits(&source(&[EVENT], "Int[0,9]", "count over past[0,3] >= 1"));
+    package_admits(&source(
         &[EVENT],
         "Int[0,9]",
         "count over past[0,3] min_count 0 >= 1",
-    );
-    assert_eq!(
-        package_refusal(&zero_minimum_count).tag(),
-        "not-yet-implemented"
-    );
+    ));
 
     let invalid_quantile = source(&[EVENT], "Int[0,9]", "quantile 1 of c over past[0,3] <= 1");
     assert!(matches!(
@@ -532,12 +532,7 @@ fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
         ]
     );
 
-    let timestamped = timestamped_source("count over past[0 s, 1000 ms] >= 1");
-    assert_eq!(
-        package_refusal(&timestamped).tag(),
-        "not-yet-implemented",
-        "duration bounds convert exactly before emission is refused"
-    );
+    package_admits(&timestamped_source("count over past[0 s, 1000 ms] >= 1"));
     let inverted_duration = timestamped_source("count over past[2 s, 1000 ms] >= 1");
     assert!(matches!(
         package_refusal(&inverted_duration),
@@ -549,12 +544,10 @@ fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
         TemporalCause::TimeQuantity { .. }
     ));
 
-    let converted_threshold = timestamped_source("sum of c over past[0 s, 1000 ms] <= 1000 ms");
-    assert_eq!(
-        package_refusal(&converted_threshold).tag(),
-        "not-yet-implemented",
-        "the threshold may use another unit of the value's dimension"
-    );
+    // The threshold may use another unit of the value's dimension.
+    package_admits(&timestamped_source(
+        "sum of c over past[0 s, 1000 ms] <= 1000 ms",
+    ));
     let wrong_threshold_dimension = timestamped_source("sum of c over past[0 s, 1000 ms] <= 1 m");
     let refusals = assemble(&wrong_threshold_dimension)
         .check(CheckingLimits::default())

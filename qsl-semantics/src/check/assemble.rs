@@ -4587,8 +4587,18 @@ impl PackageDeclarations {
             }
             for (id, node) in form.formula.iter() {
                 temporal_sites.push(TemporalSite::Node(id.index()));
-                if matches!(node, qsl_forms::TemporalNodeForm::Holds { .. }) {
-                    temporal_sites.push(TemporalSite::Condition(id.index()));
+                match node {
+                    qsl_forms::TemporalNodeForm::Holds { .. } => {
+                        temporal_sites.push(TemporalSite::Condition(id.index()));
+                    }
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => {
+                        temporal_sites.extend(
+                            aggregate_parts(atom)
+                                .map(|(part, _)| TemporalSite::Aggregate(id.index(), part)),
+                        );
+                    }
+                    qsl_forms::TemporalNodeForm::Constant { .. }
+                    | qsl_forms::TemporalNodeForm::Operator(_) => {}
                 }
             }
             temporal_sites.extend((0..form.fairness.len()).map(TemporalSite::Fairness));
@@ -4637,7 +4647,15 @@ impl PackageDeclarations {
                         *span
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
-                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => {
+                        for (part, expression) in aggregate_parts(atom) {
+                            declared_site_spans.insert(
+                                temporal_site(index, TemporalSite::Aggregate(id.index(), part)),
+                                expression.spans.clone(),
+                            );
+                        }
+                        atom.span
+                    }
                 };
                 declared_type_spans
                     .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
@@ -5768,6 +5786,30 @@ fn protocol_attempts(
     } else {
         refuse(errors)
     }
+}
+
+/// Each written expression of the window aggregate `atom` with its part:
+/// the value, the filter, the `fraction` predicate and the threshold.
+fn aggregate_parts(
+    atom: &qsl_forms::AggregateAtomForm,
+) -> impl Iterator<Item = (super::lowering::AggregatePart, &qsl_forms::ExpressionForm)> {
+    use super::lowering::AggregatePart;
+    let predicate = match &atom.term.kind {
+        qsl_forms::AggregateKindForm::Fraction(predicate) => Some(predicate),
+        _ => None,
+    };
+    atom.term
+        .value
+        .iter()
+        .map(|value| (AggregatePart::Value, value))
+        .chain(
+            atom.term
+                .filter
+                .iter()
+                .map(|filter| (AggregatePart::Filter, filter)),
+        )
+        .chain(predicate.map(|predicate| (AggregatePart::Predicate, predicate)))
+        .chain(std::iter::once((AggregatePart::Threshold, &atom.threshold)))
 }
 
 #[cfg(test)]

@@ -537,6 +537,27 @@ aggregate node identity SHALL include the window, normalized `min_count`,
 aggregate expressions, comparison and threshold. Source spans SHALL remain
 in the package source map and SHALL NOT enter the identity preimage.
 
+QSpec FR-414 defines the aggregate term and no QSpec criterion yet defines the
+node's wire members (QSL-1644), so until one does the application has no
+operation member and its arguments are these bindings, in this order:
+
+1. `kind`: the text `count`, `sum`, `min`, `max`, `fraction` or `quantile`;
+2. `level`: for `quantile` only, the exact rational level `q`;
+3. `filter`: when a `where holds(...)` filter is written, its Boolean term;
+4. `window`: an aggregate binding `lower` and `upper`, the integer offsets of
+   `past[a, b]` under event-position, or, under timestamped-event, the exact
+   rational bounds converted to the lower bound's written time unit followed by
+   `unit`, that unit's name as text;
+5. `min_count`: the integer `min_count`, 1 when the source omits it;
+6. `expression`: the value term of `sum`, `min`, `max` or `quantile`, or the
+   predicate term of `fraction`; absent for `count`;
+7. `comparison`: the text `<`, `<=`, `=`, `>=` or `>`;
+8. `threshold`: the threshold term, converted to the value's unit when it is a
+   quantity of another unit of the value's dimension.
+
+Each expression is located in the source map at its own expression tree, and the
+node at the aggregate atom.
+
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-018 QS-11, FA-6, IV-1.
