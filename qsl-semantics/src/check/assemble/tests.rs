@@ -4210,6 +4210,206 @@ fn model_population_projection_is_unique_across_package_aliases() {
     assert_eq!(checked.state_clauses()[0].name(), "ConfigNonNegative");
 }
 
+/// `declarations` in a unit selecting `example/config-version` as `Config`
+/// and then as `History`, under the model profile `s`, assembled and
+/// checked.
+fn check_two_aliases(declarations: &str) -> crate::check::CheckedGraph {
+    let source_text = text(
+        "profile s = \"quire.model.complete/v1\";\n",
+        &format!(
+            "model Config = \"example/config-version\";\n\
+             model History = \"example/config-version\";\n{declarations}"
+        ),
+    );
+    let (source, unit, selected) = admitted_config_version_aliases(&source_text);
+    PackageDeclarations::assemble(
+        source,
+        "test/two-model-aliases".to_owned(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("{declarations}: assembles: {refusal:?}"))
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("{declarations}: checks: {refusals:?}"))
+}
+
+/// FR-480-AC-9 (QSL-1578): the second alias of one admitted package names its
+/// object type, scalar type, operation and population in every position the
+/// first alias does -- a state clause's context, a `pre`/`post` operation, an
+/// `allInstances` type argument and population, a function signature and a
+/// population bound -- and each spelling resolves to the one package
+/// declaration, so a `History::ConfigVersion` and a `Config::ConfigVersion`
+/// are one type.
+#[trace("FR-480-AC-9")]
+#[test]
+fn a_second_alias_names_every_package_type_as_the_first_alias_does() {
+    for declarations in [
+        "invariant A using s on History::ConfigVersion at current { self.versionNumber >= 0 }",
+        "pre P using s on History::ConfigVersion::attemptUpdate { true }",
+        "post P using s on History::ConfigVersion::attemptUpdate { self.versionNumber >= 0 }",
+        "invariant A using s on History::ConfigVersion at current { \
+         forall(o in allInstances<History::ConfigVersion>(History::config_history) : \
+         o.versionNumber >= 0) }",
+        "invariant A using s on Config::ConfigVersion at current { \
+         forall(o in allInstances<History::ConfigVersion>(Config::config_history) : \
+         o.versionNumber >= 0) }",
+        "invariant A using s on History::ConfigVersion at current { \
+         present(self.parent) implies deref(value(self.parent)).versionNumber >= 0 }",
+        "bound Cap on History::config_history [3]\n\
+         invariant A using s on History::ConfigVersion at current { self.versionNumber >= 0 }",
+    ] {
+        check_two_aliases(declarations);
+    }
+
+    let checked = check_two_aliases(
+        "function same using s(c: History::ConfigVersion, d: Config::ConfigVersion): Boolean \
+         pure { c = d }\n\
+         function level using s(h: History::VersionNumber, c: Config::VersionNumber): Boolean \
+         pure { h = c }",
+    );
+    let parameters = |name: &str| -> Vec<ValueType> {
+        checked
+            .callable(name)
+            .unwrap_or_else(|| panic!("{name} is checked"))
+            .parameters
+            .iter()
+            .map(|(_, value_type)| value_type.clone())
+            .collect()
+    };
+    let same = parameters("same");
+    assert!(matches!(&same[0], ValueType::Reference(_)), "{same:?}");
+    assert_eq!(same[0], same[1], "both spellings name one object type");
+    let level = parameters("level");
+    assert!(matches!(&level[0], ValueType::Int(_)), "{level:?}");
+    assert_eq!(level[0], level[1], "both spellings name one scalar type");
+    let object_types: Vec<_> = checked
+        .scope()
+        .types()
+        .object_types()
+        .map(|declared| declared.name().to_owned())
+        .collect();
+    assert_eq!(
+        object_types,
+        ["Config::ConfigVersion"],
+        "the package's object type is declared once, under its first alias"
+    );
+}
+
+/// FR-480-AC-9 (QSL-1578): selecting the package under a second alias adds no
+/// package-owned projection: the checked graph has the same model nodes, the
+/// same one model root and the same operation-effect rows as the unit that
+/// selects it once.
+#[trace("FR-480-AC-9")]
+#[test]
+fn a_second_alias_projects_no_package_fact_twice() {
+    let clauses = "post P using s on Config::ConfigVersion::attemptUpdate { \
+                   self.versionNumber >= 0 }\n\
+                   pre Q using s on History::ConfigVersion::attemptUpdate { true }";
+    let check_with = |aliases: &str| {
+        let source_text = text(
+            "profile s = \"quire.model.complete/v1\";\n",
+            &format!("{aliases}{}", clauses.replace("History::", "Config::")),
+        );
+        let (source, unit, selected) = admitted_config_version_aliases(&source_text);
+        PackageDeclarations::assemble(
+            source,
+            "test/two-model-aliases".to_owned(),
+            unit,
+            selected,
+            Vec::new(),
+        )
+        .expect("assembles")
+        .check(CheckingLimits::default())
+        .expect("checks")
+    };
+    let once = check_with("model Config = \"example/config-version\";\n");
+    let twice = check_two_aliases(clauses);
+    let model_nodes = |checked: &crate::check::CheckedGraph| -> Vec<quire_exact::NodeKey> {
+        let mut nodes: Vec<_> = checked
+            .semantic_graph()
+            .nodes()
+            .filter(|node| {
+                matches!(
+                    node.node_tag(),
+                    crate::check::NodeTag::Model | crate::check::NodeTag::Relation
+                )
+            })
+            .map(|node| node.key())
+            .collect();
+        nodes.sort();
+        nodes
+    };
+    assert!(!model_nodes(&once).is_empty());
+    assert_eq!(model_nodes(&once), model_nodes(&twice));
+    assert_eq!(once.model_roots().count(), 1);
+    assert_eq!(twice.model_roots().count(), 1);
+    assert!(
+        once.operation_effects()
+            .is_some_and(|rows| !rows.is_empty()),
+        "attemptUpdate has an effect row"
+    );
+    assert_eq!(once.operation_effects(), twice.operation_effects());
+    assert_eq!(
+        once.scope().operations(),
+        twice.scope().operations(),
+        "one operation table entry per package operation"
+    );
+}
+
+/// FR-480-AC-9 (QSL-1578): a second alias is still a unit alias. Spelled like
+/// a profile alias it refuses as a duplicate alias, and a unit declaration
+/// that shares a package type's artifact name keeps its own bare name, apart
+/// from both alias spellings of the package type.
+#[trace("FR-480-AC-9")]
+#[test]
+fn a_second_alias_neither_shadows_nor_is_shadowed_by_a_unit_declaration() {
+    let source_text = text(
+        "profile s = \"quire.model.complete/v1\";\nprofile History = \"quire.value.complete/v1\";\n",
+        "model Config = \"example/config-version\";\n\
+         model History = \"example/config-version\";\n\
+         invariant A using s on History::ConfigVersion at current { self.versionNumber >= 0 }",
+    );
+    let (source, unit, selected) = admitted_config_version_aliases(&source_text);
+    let refusal = PackageDeclarations::assemble(
+        source,
+        "test/two-model-aliases".to_owned(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .expect_err("a profile and a model alias share the spelling History");
+    assert!(
+        refusal.errors.iter().any(|error| matches!(
+            &error.cause,
+            AssemblyCause::DuplicateAlias { alias, .. } if alias == "History"
+        )),
+        "{refusal:?}"
+    );
+
+    let checked = check_two_aliases(
+        "record ConfigVersion { versionNumber: Integer; }\n\
+         function local using s(r: ConfigVersion, c: History::ConfigVersion, \
+         d: Config::ConfigVersion): Boolean pure { r.versionNumber >= 0 and c = d }",
+    );
+    let parameters: Vec<ValueType> = checked
+        .callable("local")
+        .expect("local is checked")
+        .parameters
+        .iter()
+        .map(|(_, value_type)| value_type.clone())
+        .collect();
+    assert!(
+        matches!(&parameters[0], ValueType::Composite(_)),
+        "{parameters:?}"
+    );
+    assert!(
+        matches!(&parameters[1], ValueType::Reference(_)),
+        "{parameters:?}"
+    );
+    assert_eq!(parameters[1], parameters[2]);
+}
+
 /// FR-480-AC-2, AC-5, AC-8: the aggregate assembler resolves a function
 /// signature against another unit, keeps the declaring unit on the type
 /// node and its source region, and assigns stable identities in canonical

@@ -586,6 +586,41 @@ fn selected_relationships_are_rooted_in_the_checked_graph() {
     assert_eq!(generated[0].2, &declaration);
 }
 
+/// FR-480-AC-9 (QSL-1578): a package selected under two aliases roots each
+/// selected relationship once, at its first alias's declaration site.
+#[trace("FR-480-AC-9", "FR-094-AC-9")]
+#[test]
+fn repeated_aliases_root_each_relationship_once_at_the_first_alias() {
+    let acme = admitted("1.0.0");
+    let models = [
+        acme.model.clone().with_alias("M"),
+        acme.model.clone().with_alias("N"),
+    ];
+    let first = type_declaration("M");
+    let locations = BTreeMap::from([
+        ("M".to_owned(), first.clone()),
+        ("N".to_owned(), type_declaration("N")),
+    ]);
+    let (result, graph, occurrences) =
+        lower_with_occurrences(&models, Default::default(), |lowering| {
+            lowering.relationship_nodes(&locations)
+        });
+    result.expect("the selected relationship keys");
+    let relations: Vec<_> = graph
+        .nodes()
+        .filter(|node| node.node_tag() == NodeTag::Relation)
+        .collect();
+    assert_eq!(relations.len(), 1, "billedTo is one relation node");
+    let generated: Vec<_> = occurrences.iter_role(OccurrenceRole::Generated).collect();
+    assert_eq!(
+        generated.len(),
+        1,
+        "the relation has one root over both aliases"
+    );
+    assert_eq!(generated[0].0, relations[0].key());
+    assert_eq!(generated[0].2, &first);
+}
+
 /// FR-093-AC-8: the checked `Attribute`, `AllInstances`, `Lookup` (both
 /// absence modes) and `Dispatch` nodes lower to their rows' operation,
 /// member, mode and arguments. A `Pre` node is checked only in a standalone

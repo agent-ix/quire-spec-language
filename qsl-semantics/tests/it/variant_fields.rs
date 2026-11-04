@@ -414,6 +414,97 @@ fn the_keys_of_a_variant_type_do_not_depend_on_the_alias() {
     );
 }
 
+/// FR-480-AC-9 (QSL-1578): one unit selecting the FR-360 package as `Config`
+/// and as `Cfg` names its variant types and their cases, its record value
+/// type and its fields, its object type and its operations through either
+/// alias, and a value written through one alias is a value of the type the
+/// other alias names: one type environment entry per package declaration.
+#[trace("FR-480-AC-9")]
+#[test]
+fn a_second_alias_names_the_same_variant_record_and_object_types() {
+    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let packages = package_input([bytes.as_slice()]).unwrap();
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         model Config = {package:?};\n\
+         model Cfg = {package:?};\n\
+         function read using v(s: Cfg::Settings): Config::Tier pure {{ s.tier }}\n\
+         function gold using v(t: Cfg::Tier): Boolean pure {{ t = Config::Tier::Gold }}\n\
+         function standard using v(t: Config::Tier): Cfg::Tier pure {{ \
+             if t = Cfg::Tier::Standard then Cfg::Tier::Gold else t }}\n\
+         function same using v(a: Cfg::Account, b: Config::Account): Boolean pure {{ a = b }}\n\
+         pre Promotes using v on Cfg::Account::promote {{ t = Cfg::Tier::Gold }}\n",
+        package = fixture::PACKAGE,
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("test", "two-aliases"),
+        "two-aliases.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the source unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = build_unit(&parsed).expect("S2 builds the source unit");
+    let selected = admit_unit(
+        &unit.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the one package admits under both aliases");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"));
+    let names = |names: Vec<&str>| -> Vec<String> {
+        let mut names: Vec<String> = names.into_iter().map(str::to_owned).collect();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        names(
+            declarations
+                .variant_types
+                .iter()
+                .map(|d| d.name())
+                .collect()
+        ),
+        names(vec!["Config::Grade", "Config::Level", "Config::Tier"]),
+        "each variant type is declared once, under the first alias"
+    );
+    assert!(declarations
+        .types
+        .composites()
+        .all(|declared| !declared.name().starts_with("Cfg::")));
+    let tier = enum_of(&declarations, "Config", "Tier");
+    let checked = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let signature = |name: &str| {
+        let callable = checked
+            .callable(name)
+            .unwrap_or_else(|| panic!("{name} is checked"));
+        let parameters: Vec<ValueType> = callable
+            .parameters
+            .iter()
+            .map(|(_, value_type)| value_type.clone())
+            .collect();
+        (parameters, callable.result.clone())
+    };
+    let (read, read_result) = signature("read");
+    assert!(matches!(&read[0], ValueType::Composite(_)), "{read:?}");
+    assert_eq!(read_result, tier);
+    assert_eq!(signature("gold").0, std::slice::from_ref(&tier));
+    assert_eq!(signature("standard"), (vec![tier.clone()], tier.clone()));
+    let (same, _) = signature("same");
+    assert!(matches!(&same[0], ValueType::Reference(_)), "{same:?}");
+    assert_eq!(same[0], same[1]);
+}
+
 /// The checked graph of `declarations` over the FR-360 package, and the
 /// types a check below needs.
 struct Checked {
