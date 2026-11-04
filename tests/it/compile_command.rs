@@ -496,6 +496,33 @@ fn compile_file_count_refusal_names_the_models_group_before_file_io() {
     );
 }
 
+/// FR-027-AC-14 (TC-1210): each source selection in a program array consumes
+/// one slot in the shared 64-file limit and reports the `programs` group.
+#[test]
+#[trace("TC-1210", "FR-027-AC-14", "FR-027-AC-10")]
+fn compile_program_array_file_count_refusal_names_the_programs_group() {
+    let directory = tempfile::tempdir().unwrap();
+    let sources = (0..65)
+        .map(|index| {
+            json!({"file":format!("missing-{index}.native"),"authority":"agent-ix",
+                "identity":format!("test:unit-{index}"),"document":"Unit","formal_revision":1})
+        })
+        .collect::<Vec<_>>();
+    let request = json!({"format":"native-compile/1","request":{
+        "models":[],"program":sources}});
+    let path = directory.path().join("compile.json");
+    std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+
+    let error = quire_spec_language::command::compile(&path).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(error.category().exit_code(), 22);
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["details"], json!({
+        "limit":"selected files","category":"programs",
+        "requested":65,"remaining":64,"maximum":64
+    }));
+}
+
 /// FR-026-AC-4 (TC-104): a clause run request selecting more observation files
 /// than the shared file limit allows refuses `resource_exhausted` with the
 /// category spelling `observations`, before any file is read.
@@ -1036,7 +1063,7 @@ fn refinement_internals_compile_matches_the_spine_composition() {
         .to_vec()
     };
     let root_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]);
-    let library_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]);
+    let library_internals = json!([{"refinement":"CasTwice","internal":["Spec::Twice::a1"]}]);
     let composed = emit_composition(
         Some(root_internals.clone()),
         Some(library_internals.clone()),
@@ -1054,20 +1081,32 @@ fn refinement_internals_compile_matches_the_spine_composition() {
         .as_object_mut()
         .unwrap()
         .remove("refinement_internals");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let root_absent = compile(directory.path());
+    assert_eq!(
+        root_absent.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&root_absent.stderr)
+    );
+    assert_ne!(output.stdout, root_absent.stdout);
+    assert_ne!(composed, emit_composition(None, Some(library_internals.clone())));
+
     job["request"]["libraries"][0]
         .as_object_mut()
         .unwrap()
         .remove("refinement_internals");
+    job["request"]["refinement_internals"] = root_internals.clone();
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-    let absent = compile(directory.path());
+    let library_absent = compile(directory.path());
     assert_eq!(
-        absent.status.code(),
+        library_absent.status.code(),
         Some(0),
         "{}",
-        String::from_utf8_lossy(&absent.stderr)
+        String::from_utf8_lossy(&library_absent.stderr)
     );
-    assert_ne!(output.stdout, absent.stdout);
-    assert_ne!(composed, emit_composition(None, None));
+    assert_ne!(output.stdout, library_absent.stdout);
+    assert_ne!(composed, emit_composition(Some(root_internals), None));
 }
 
 /// FR-147-AC-10 (TC-552): an internal-list defect is attributed to the

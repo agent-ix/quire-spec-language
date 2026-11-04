@@ -539,7 +539,7 @@ fn complete(
     sources: &[FormalSource],
 ) -> Result<Vec<u8>> {
     if sources.len() == 1 {
-        return complete_single(request, intake, sources[0].source());
+        return complete_single(request, intake, &sources[0]);
     }
     complete_units(request, intake, sources)
 }
@@ -547,106 +547,9 @@ fn complete(
 fn complete_single(
     request: &wire::CompileRequest,
     intake: &mut Intake<'_>,
-    source: &Source,
+    source: &FormalSource,
 ) -> Result<Vec<u8>> {
-    if request.models.iter().any(|model| !is_domain_package(model)) {
-        return Err(RunCause::CompleteSelection(CompleteSelection::NativeModels));
-    }
-    let documents = request
-        .models
-        .iter()
-        .map(|model| intake.source(&model.source))
-        .collect::<Result<Vec<_>>>()?;
-    let packages = qsl_semantics::model::intake::package_input(
-        documents
-            .iter()
-            .map(|document| document.source().text().as_bytes()),
-    )
-    .map_err(|refusal| RunCause::ClauseRequest {
-        member: "models".to_owned(),
-        reason: refusal.detail,
-    })?;
-    let libraries = library_sources(request, intake)?;
-    // A refusal is rendered over the source its region is in, by that
-    // region's source reference: the program's or one library's, wherever in
-    // the closure it arose. A refusal with no region names the program.
-    let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
-        let located = refusal
-            .region()
-            .and_then(|region| {
-                std::iter::once(source)
-                    .chain(libraries.iter().map(|(_, read)| read.source()))
-                    .find(|candidate| candidate.reference() == region.source())
-            })
-            .unwrap_or(source);
-        RunCause::Spine(Box::new(SpineFailure {
-            source: located.identity().clone(),
-            path: located.path().to_owned(),
-            span: refusal.region().and_then(|region| located.render(region)),
-            refusal,
-        }))
-    };
-    let dependencies =
-        qsl_replay::spine::DependencyInput::new(libraries.iter().map(|(library, read)| {
-            qsl_replay::spine::SuppliedLibrary {
-                identity: library.identity.clone(),
-                source: read.source().identity().clone(),
-                path: read.source().path().to_owned(),
-                bytes: read.source().text().as_bytes().to_vec(),
-            }
-        }))
-        .and_then(|dependencies| {
-            dependencies.with_refinement_internals(libraries.iter().filter_map(|(library, _)| {
-                library
-                    .refinement_internals
-                    .clone()
-                    .map(|value| (library.identity.clone(), value))
-            }))
-        })
-        .map_err(|refusal| {
-            spine_failure(qsl_replay::spine::CompileRefusal::DependencyInput(refusal))
-        })?;
-    // The CLI owns this handle and shares it with nobody: it has no timer or
-    // signal to cancel with, so no stage is cancelled (FR-276).
-    let cancel = quire_exact::Cancel::new();
-    let limits = qsl_replay::spine::SpineLimits::default();
-    let failure = |failure| match qsl_replay::spine::refusal_or_fault(failure) {
-        Ok(refusal) => spine_failure(*refusal),
-        Err(fault) => RunCause::SpineRun(Box::new(qsl_replay::spine::RunRefusal::Fault(fault))),
-    };
-    let parsed = qsl_replay::spine::parse(
-        &qsl_replay::spine::ParseRequest {
-            source: source.identity(),
-            path: source.path(),
-            bytes: source.text().as_bytes(),
-        },
-        limits.source,
-        &cancel,
-    )
-    .map_err(failure)?
-    .into_value();
-    let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
-        .map_err(failure)?
-        .into_value();
-    let checked = qsl_replay::spine::check_with_refinement_internals(
-        &parsed,
-        package_name(source.identity()),
-        request.refinement_internals.clone(),
-        &models,
-        &dependencies,
-        limits,
-        &cancel,
-    )
-    .map_err(failure)?
-    .into_value();
-    let emitted = qsl_replay::spine::package(
-        &checked,
-        qsl_replay::spine::PackageLimits::default(),
-        &cancel,
-    )
-    .map_err(failure)?
-    .into_value();
-    Ok(emitted.package().bytes().to_vec())
+    complete_sources(request, intake, std::slice::from_ref(source), false)
 }
 
 /// Compile FR-480's ordered program-unit list as one checked package.
@@ -655,6 +558,18 @@ fn complete_units(
     intake: &mut Intake<'_>,
     sources: &[FormalSource],
 ) -> Result<Vec<u8>> {
+    complete_sources(request, intake, sources, true)
+}
+
+/// Shared request, dependency, parsing, and emission pipeline for one source
+/// and an ordered source-unit list. Only the spine's single-unit versus
+/// multi-unit entry points vary by `unit_list`.
+fn complete_sources(
+    request: &wire::CompileRequest,
+    intake: &mut Intake<'_>,
+    sources: &[FormalSource],
+    unit_list: bool,
+) -> Result<Vec<u8>> {
     if request.models.iter().any(|model| !is_domain_package(model)) {
         return Err(RunCause::CompleteSelection(CompleteSelection::NativeModels));
     }
@@ -673,17 +588,19 @@ fn complete_units(
         reason: refusal.detail,
     })?;
     let libraries = library_sources(request, intake)?;
+    let program_sources = sources.iter().map(FormalSource::source).collect::<Vec<_>>();
+    let first_source = program_sources[0];
     let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
         let located = refusal
             .region()
             .and_then(|region| {
-                sources
+                program_sources
                     .iter()
-                    .map(FormalSource::source)
+                    .copied()
                     .chain(libraries.iter().map(|(_, read)| read.source()))
                     .find(|candidate| candidate.reference() == region.source())
             })
-            .unwrap_or_else(|| sources[0].source());
+            .unwrap_or(first_source);
         RunCause::Spine(Box::new(SpineFailure {
             source: located.identity().clone(),
             path: located.path().to_owned(),
@@ -711,16 +628,18 @@ fn complete_units(
         .map_err(|refusal| {
             spine_failure(qsl_replay::spine::CompileRefusal::DependencyInput(refusal))
         })?;
-    let parse_requests: Vec<_> = sources
+    let parse_requests: Vec<_> = program_sources
         .iter()
         .map(|source| qsl_replay::spine::ParseRequest {
-            source: source.source().identity(),
-            path: source.source().path(),
-            bytes: source.source().text().as_bytes(),
+            source: source.identity(),
+            path: source.path(),
+            bytes: source.text().as_bytes(),
         })
         .collect();
-    qsl_replay::spine::preflight_unit_list(&parse_requests, &dependencies)
-        .map_err(|refusal| spine_failure(*refusal))?;
+    if unit_list {
+        qsl_replay::spine::preflight_unit_list(&parse_requests, &dependencies)
+            .map_err(|refusal| spine_failure(*refusal))?;
+    }
     let cancel = quire_exact::Cancel::new();
     let limits = qsl_replay::spine::SpineLimits::default();
     let failure = |failure| match qsl_replay::spine::refusal_or_fault(failure) {
@@ -735,26 +654,49 @@ fn complete_units(
                 .map_err(failure)
         })
         .collect::<Result<Vec<_>>>()?;
-    let admitted = qsl_replay::spine::admit_parsed_unit_list(parsed, &dependencies)
-        .map_err(|refusal| spine_failure(*refusal))?;
-    let models =
-        qsl_replay::spine::select_units(&admitted, &packages, limits.model, limits.source, &cancel)
+    let checked = if unit_list {
+        let admitted = qsl_replay::spine::admit_parsed_unit_list(parsed, &dependencies)
+            .map_err(|refusal| spine_failure(*refusal))?;
+        let models = qsl_replay::spine::select_units(
+            &admitted,
+            &packages,
+            limits.model,
+            limits.source,
+            &cancel,
+        )
+        .map_err(failure)?
+        .into_value();
+        let checked = qsl_replay::spine::check_units_with_refinement_internals(
+            &admitted,
+            package_name(canonical_unit_source(sources).source().identity()),
+            request.refinement_internals.clone(),
+            &models,
+            &dependencies,
+            limits,
+            &cancel,
+        )
+        .map_err(failure)?
+        .into_value();
+        checked.into_iter().next().ok_or(RunCause::EmptyCompileProgram)?
+    } else {
+        let parsed = parsed.into_iter().next().ok_or(RunCause::EmptyCompileProgram)?;
+        let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
             .map_err(failure)?
             .into_value();
-    let checked = qsl_replay::spine::check_units_with_refinement_internals(
-        &admitted,
-        package_name(canonical_unit_source(sources).source().identity()),
-        request.refinement_internals.clone(),
-        &models,
-        &dependencies,
-        limits,
-        &cancel,
-    )
-    .map_err(failure)?
-    .into_value();
-    let checked = checked.first().ok_or(RunCause::EmptyCompileProgram)?;
+        qsl_replay::spine::check_with_refinement_internals(
+            &parsed,
+            package_name(first_source.identity()),
+            request.refinement_internals.clone(),
+            &models,
+            &dependencies,
+            limits,
+            &cancel,
+        )
+        .map_err(failure)?
+        .into_value()
+    };
     let emitted = qsl_replay::spine::package(
-        checked,
+        &checked,
         qsl_replay::spine::PackageLimits::default(),
         &cancel,
     )
