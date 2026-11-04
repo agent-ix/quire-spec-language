@@ -1071,6 +1071,20 @@ mod tests {
                     "quire_contract_model::ContractPackage",
                 ),
             ),
+            // The addressing exemption is by exact name: a non-exempt model
+            // type beside an exempt one still fails, naming only the former.
+            (
+                EVAL_PLANT,
+                "use quire_contract_model::{CheckedNodeId, ContractPackage};\n\
+                 pub fn plant(c: &CheckedNodeId, p: &ContractPackage) {}\n",
+                finding(
+                    EVAL_PLANT,
+                    2,
+                    Rule::Signature,
+                    "plant",
+                    "quire_contract_model::ContractPackage",
+                ),
+            ),
         ];
         for (file, source, expected) in cases {
             assert_eq!(scan_planted(&[(file, source)]), vec![expected], "{source}");
