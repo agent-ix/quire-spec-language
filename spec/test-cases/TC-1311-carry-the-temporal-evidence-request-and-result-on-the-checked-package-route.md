@@ -59,8 +59,8 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 39 | 39 | formula with an unbounded operator; a timed interval; a cyclic or out-of-range `operands`; a `predicate_leaves()`/`holds` count mismatch; a readable twin of each; a tick sum over `u64` | `clause-unreadable` each, empty charge log; the readable ones return a result; the overflow is the `history_span` `Incomplete` |
 | 40 | 40 | `control` naming a clause with no FR-449 row; a row naming another clause; the call's own row | `activation-mapping-missing`; `activation-mapping-mismatch`; evaluated, each refusal with an empty charge log |
 | 41 | 41 | every cause of the table, each with its condition met and then unmet | `Err` with the cause, empty charge log, ledgers unchanged; `Ok`; no cause outside the table and the cross-referenced ones |
-| 42 | 42 | timestamped-event clause, two positions of one stamp without order keys; the same with distinct keys of one authority | `Ok`, `Active`, no truth, `Refused`/`temporal-refusal` with dimension beginning `UnorderedTie`; a truth |
-| 43 | 43 | a support valuation absent at position 1 of atom 0; present; absent with the decision closure withdrawn | `Missing`/`fact-withdrawn`/`valuation:0@1`; no non-value; `decision_closure` |
+| 42 | 42 | timestamped-event `p until[0,5] q`, two positions of one stamp without order keys; the same with distinct keys of one authority; `eventually[0,5] holds(p)` over the same two positions | `Ok`, `Active`, no truth, `Refused`/`temporal-refusal`/`unordered-tie`; a truth; a truth |
+| 43 | 43 | a support valuation absent at position 1 of atom 0; present; a read but non-support valuation absent (atom 1, position 2); with the decision closure withdrawn too | `Missing`/`fact-withdrawn`/`valuation:0@1`; no non-value; `valuation:1@2`; `decision_closure` |
 | 44 | 44 | fixed-sample clause with a support pair at a silent sample | support holds the observed pairs' entries only |
 
 Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-44", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.

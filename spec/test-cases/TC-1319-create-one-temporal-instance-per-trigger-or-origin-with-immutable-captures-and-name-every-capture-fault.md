@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-524-AC-1 to FR-524-AC-39. The vectors are the FR-044 cases and TC-123 and TC-1278, re-stated on the spine activation function. Captures are `Int` values at the delivery anchor.
+Verify FR-524-AC-1 to FR-524-AC-39 except FR-524-AC-23, which TC-1267 verifies. The vectors are the FR-044 cases and TC-123 and TC-1278, re-stated on the spine activation function. Captures are `Int` values at the delivery anchor.
 
 ## Test Procedure
 
@@ -56,7 +56,7 @@ Verify FR-524-AC-1 to FR-524-AC-39. The vectors are the FR-044 cases and TC-123 
 | 38 | 38 | contradiction on `t1` plus surplus capture on `t2`; the same without the contradiction | contradiction naming `t1`; surplus-capture refusal with `surplus_capture_identity` `t2` and `surplus_capture_index` |
 | 39 | 39 | open scope with `execution` `Failed` and `Completed`; missing and refused evidence likewise; closed complete scope | `Unknown` carrying each value; `Inactive` carries none; same kind |
 
-Tag the test `#[trace("FR-524-AC-1", ..., "FR-524-AC-39", "TC-1319")]`.
+Tag the test `#[trace("FR-524-AC-1", ..., "FR-524-AC-22", "FR-524-AC-24", ..., "FR-524-AC-39", "TC-1319")]`.
 
 ## Expected Results
 

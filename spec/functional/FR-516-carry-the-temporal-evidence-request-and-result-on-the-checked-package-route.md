@@ -230,16 +230,27 @@ ceilings from the same inputs is byte-equal to a call that never stopped
   begun charging (for example two positions of one stamp with no usable order,
   FR-501) is a result of a call that ran, not a refusal before any charge: the call
   returns `Ok` with `activation = Active`, `truth = None`, `settlement = None` and
-  a `non_value` of kind `Refused`, code `temporal-refusal` and dimension the
-  `Debug` text of the evaluation's refusal (its variant name followed by its
-  fields, `UnorderedTie` for that example). An internal fault is not this result.
+  a `non_value` of kind `Refused`, code `temporal-refusal`, a `dimension` that is
+  one string of the closed set below, and a `detail` member holding the refusal's
+  fields as ordered name and value text pairs (empty when it has none). No
+  implementation text is a dimension. The closed set, one string per kind of
+  refusal: `empty-trace`, `tuple-arity`, `align-skip-not-lockstep`,
+  `not-projection-aligned`, `empty-loop`, `trace-too-long`,
+  `lasso-under-bounded-profile`, `profile-not-evaluated`,
+  `trace-carries-no-stamps`, `not-finite-window-profile`, `unordered-tie`,
+  `not-timed-profile`, `non-positive-loop-delay`,
+  `loop-reenters-before-last-stamp`, `negative-stamp`, `decreasing-stamp`,
+  `position-refusal` and `window-refusal` (the last two carry the inner refusal's
+  kebab-case kind as the `detail` pair `kind`). An internal fault is not this
+  result.
 - **Withdrawn facts.** For a result that has a truth, the first withdrawn fact in
   this order yields the `Missing` non-value with code `fact-withdrawn`: the decision
   closure (dimension `decision_closure`), the completeness record (dimension
-  `completeness`), then the first support valuation the request does not carry
-  (dimension `valuation:<atom>@<pos>`, the atom index and the position the
-  evaluator read). A support pair at a silent sample (FR-504) names no observed
-  fact and is skipped: the result's `support` holds no entry for it.
+  `completeness`), then the first absent valuation the evaluator read, whether or
+  not that valuation is in the decision support (dimension
+  `valuation:<atom>@<pos>`, the atom index and the position the evaluator read).
+  A support pair at a silent sample (FR-504) names no observed fact and is skipped:
+  the result's `support` holds no entry for it.
 - **Independent facts.** Each of the four axes, the trigger scope, the
   completeness record, the anchor, the clock row and the execution disposition is
   returned as its own field; an absent fact yields a non-value, never a default
@@ -339,8 +350,8 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-39 | A clause whose formula holds an operator without a finite upper bound, one holding a timed interval, one whose view `operands` hold a cycle or an out-of-range position, and one whose `predicate_leaves()` count differs from its `holds` count each return cause `clause-unreadable` with an empty charge log; a readable clause of the same shape with a finite bound, a closed interval, acyclic in-range operands and equal counts returns a result; and a clause whose tick sum overflows `u64` returns the `history_span` `Incomplete` result and not this cause. | Test (TC-1311) |
 | FR-516-AC-40 | A request whose `control` names a protocol clause with no FR-449 row returns cause `activation-mapping-missing`, one whose row names another temporal clause returns `activation-mapping-mismatch`, and one whose row names the call's clause is evaluated, each refusal with an empty charge log (FR-516-AC-16). The cause `surplus-capture` is covered by FR-524-AC-33. | Test (TC-1311) |
 | FR-516-AC-41 | For each cause of the table above, the request that meets its condition returns `Err(CallFailure::Admission)` with that cause, an empty charge log and the request's `ledger` and `progress_ledger` unchanged, and the request that differs from it only in not meeting the condition returns `Ok`; every refusal the tests of TC-1311, TC-1317, TC-1319 and TC-1321 provoke carries a cause of the table or one of the cross-referenced causes. | Test (TC-1311) |
-| FR-516-AC-42 | Over **R**'s timestamped-event clause with two positions of one stamp, both participating in an order-sensitive operator and carrying no order keys, the call returns `Ok` (not `Err`) with `activation = Active`, `truth = None`, `settlement = None`, and a `non_value` of kind `Refused`, code `temporal-refusal` and a dimension that begins `UnorderedTie`; the same trace with distinct order keys of one authority returns a truth. | Test (TC-1311) |
-| FR-516-AC-43 | With a supported decisive witness whose support valuation at position 1 of atom 0 is absent from the request, the result's `non_value` is `Missing` with code `fact-withdrawn` and dimension `valuation:0@1`, and the result with the valuation present has no `non_value`; with the decision closure and the valuation both withdrawn the dimension is `decision_closure`. | Test (TC-1311) |
+| FR-516-AC-42 | Over **R**'s timestamped-event clause `p until[0,5] q` (an `until` scans with a guard, and the guarded operators `since`, `until`, `release` and `triggered` are the ones that need an order), two positions of one stamp carrying no order keys return `Ok` (not `Err`) with `activation = Active`, `truth = None`, `settlement = None`, and a `non_value` of kind `Refused`, code `temporal-refusal` and dimension exactly `unordered-tie`; the same trace with distinct order keys of one authority returns a truth, and the same two positions under `eventually[0,5] holds(p)` (not order-sensitive) return a truth. | Test (TC-1311) |
+| FR-516-AC-43 | With a decisive witness whose support valuation at position 1 of atom 0 is absent from the request, the result's `non_value` is `Missing` with code `fact-withdrawn` and dimension `valuation:0@1`, and the result with the valuation present has no `non_value`; with a valuation of atom 1 at position 2, read by the evaluator and not in the decision support, absent from the request, the dimension is `valuation:1@2`; with the decision closure and the valuation both withdrawn the dimension is `decision_closure`. | Test (TC-1311) |
 | FR-516-AC-44 | Over a fixed-sample clause whose support includes a pair at a silent sample, the result's `support` holds an entry for each support pair at an observed position and none for the pair at the silent sample, and the count equals the observed pairs. | Test (TC-1311) |
 
 ## Dependencies
