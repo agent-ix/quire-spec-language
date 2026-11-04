@@ -32,3 +32,20 @@ Verified against FR-286 table: labels (tested, refuted, pending, indeterminate, 
 ## Verdict
 
 Code is sound and gates are green on the trial merge. Not mergeable as is: FND-001 needs a lead/spec decision (below), FND-002 and FND-003 are fixes inside this PR.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Spec #2266 (c767e7380) splits FR-286-AC-8 to the producer only and moves the monitor-operation half to FR-286-AC-13 and FR-283-AC-14, delivered by QSL-597 per the Delivery line. |
+| FND-002 | fixed | incomplete_unsupported_and_declined_rows_carry_their_labels_and_causes added; the three mutations each fail it. |
+| FND-003 | fixed | Violated item carries position, counterexample (loop []) and a witness exactly when the report holds one; spec FR-286 table now says no cause. Mutations drop-position, drop-witness-guard and loop each fail a test. |
+| FND-004 | fixed | One spelling: ReasonWire From<&TemporalIndeterminateReason> feeds both the result report and the item; parity test over all six reason shapes; a spelling mutation in ReasonWire fails an existing wire test. |
+| FND-005 | fixed | count, min_count, position carried and tested; PendingWindow from a real run and PendingNextEvent synthetic tested. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-006 | low | FR-286-AC-10 says an item has "no cause member" but every item serializes `"cause": null` (the pre-existing writer shape for all items, proof items included); the tests assert is_null, which cannot tell an absent member from a null one. Spec lane should word the AC as "cause null" or the writer should skip it. | qsl-replay/src/outcome.rs:711 | wrong-requirement |
+| FND-007 | low | item_record re-reads its own serialized wire as JSON and matches on the kind strings ("violated", "undefined", "insufficient-data", "indeterminate") instead of matching the typed TemporalVerdict; a renamed wire kind silently drops members. A non-temporal disposition also carries a report witness without a Violated row. | qsl-replay/src/spine/native_result.rs:2379-2415 | implementation-bug-despite-evidence |

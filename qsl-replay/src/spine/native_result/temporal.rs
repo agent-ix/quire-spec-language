@@ -448,18 +448,53 @@ impl From<&TemporalIndeterminateReason> for ReasonWire {
     }
 }
 
+/// The counterexample at `at` the report holds, in its wire spelling.
+fn checked_counterexample(
+    counterexample: Option<&ObservedTemporalCounterexample>,
+    at: u64,
+    reason: Option<&'static str>,
+) -> Result<CounterexampleWire, NativeRunResultError> {
+    let counterexample = counterexample.ok_or(NativeRunResultError::Counterexample)?;
+    if counterexample.trace_position.index() != at {
+        return Err(NativeRunResultError::Counterexample);
+    }
+    counterexample_wire(counterexample, reason)
+}
+
+/// FR-283's `counterexample` of a violation or an undefined evaluation, as
+/// a JSON value in the one wire spelling; `None` for every other verdict.
+pub(super) fn item_counterexample(
+    verdict: &TemporalVerdict,
+    counterexample: Option<&ObservedTemporalCounterexample>,
+) -> Result<Option<serde_json::Value>, NativeRunResultError> {
+    let (at, reason) = match verdict {
+        TemporalVerdict::Violated { at } => (*at, None),
+        TemporalVerdict::Undefined {
+            cause: TemporalUndefinedCause::InsufficientData { .. },
+            ..
+        } => return Ok(None),
+        TemporalVerdict::Undefined { at, cause } => (*at, Some(undefined_reason(cause))),
+        TemporalVerdict::Holds
+        | TemporalVerdict::Pending
+        | TemporalVerdict::PendingWindow { .. }
+        | TemporalVerdict::PendingNextEvent { .. }
+        | TemporalVerdict::Indeterminate { .. }
+        | TemporalVerdict::MissingFairnessPremise { .. }
+        | TemporalVerdict::Incomplete(_)
+        | TemporalVerdict::ActivationIncomplete { .. }
+        | TemporalVerdict::WindowLimitReached { .. }
+        | TemporalVerdict::ProgressLimitReached(_) => return Ok(None),
+    };
+    let wire = checked_counterexample(counterexample, at, reason)?;
+    Ok(Some(serde_json::to_value(wire)?))
+}
+
 /// The `temporal` member and `outcome` of a verdict's table row.
 pub(super) fn verdict_wire(
     verdict: &TemporalVerdict,
     counterexample: Option<&ObservedTemporalCounterexample>,
 ) -> Result<(TemporalWire, Option<Outcome>), NativeRunResultError> {
-    let checked = |at: u64, reason| {
-        let counterexample = counterexample.ok_or(NativeRunResultError::Counterexample)?;
-        if counterexample.trace_position.index() != at {
-            return Err(NativeRunResultError::Counterexample);
-        }
-        counterexample_wire(counterexample, reason)
-    };
+    let checked = |at: u64, reason| checked_counterexample(counterexample, at, reason);
     Ok(match verdict {
         TemporalVerdict::Holds => (TemporalWire::Holds, None),
         TemporalVerdict::Violated { at } => (

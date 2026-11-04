@@ -2375,45 +2375,61 @@ pub(crate) struct ItemRecord {
 }
 
 pub(crate) fn item_record(report: &ClauseRunReport) -> Result<ItemRecord, NativeRunResultError> {
-    let witness = report
-        .witness
-        .as_ref()
-        .map(|witness| RecordWire::of(witness).and_then(|wire| Ok(serde_json::to_value(wire)?)))
-        .transpose()?;
+    use super::{TemporalIndeterminateReason as Reason, TemporalUndefinedCause, TemporalVerdict};
     let ClauseDisposition::Temporal(verdict) = &report.disposition else {
-        return Ok(ItemRecord {
-            witness,
-            ..ItemRecord::default()
-        });
+        return Ok(ItemRecord::default());
     };
-    let (wire, _) = temporal::verdict_wire(verdict, report.counterexample.as_ref())?;
-    let wire = serde_json::to_value(wire)?;
-    let member = |name: &str| wire.get(name).cloned();
-    let number = |name: &str| wire.get(name).and_then(serde_json::Value::as_u64);
-    let mut record = ItemRecord::default();
-    let violated = wire.get("kind").and_then(serde_json::Value::as_str) == Some("violated");
-    if violated {
-        record.witness = witness;
-    }
-    match wire.get("kind").and_then(serde_json::Value::as_str) {
-        Some("violated" | "undefined") => {
-            record.position = number("position");
-            record.counterexample = member("counterexample");
+    let counterexample = temporal::item_counterexample(verdict, report.counterexample.as_ref())?;
+    Ok(match verdict {
+        TemporalVerdict::Violated { at } => ItemRecord {
+            position: Some(*at),
+            counterexample,
+            witness: report
+                .witness
+                .as_ref()
+                .map(|witness| {
+                    RecordWire::of(witness).and_then(|wire| Ok(serde_json::to_value(wire)?))
+                })
+                .transpose()?,
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Undefined {
+            at,
+            cause: TemporalUndefinedCause::InsufficientData { count, min_count },
+        } => ItemRecord {
+            position: Some(*at),
+            count: Some(*count),
+            min_count: Some(*min_count),
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Undefined { at, .. } => ItemRecord {
+            position: Some(*at),
+            counterexample,
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Indeterminate {
+            reason:
+                Reason::MissingValuation { position, .. }
+                | Reason::ConflictingValuation { position, .. },
+            ..
+        } => ItemRecord {
+            position: Some(*position),
+            ..ItemRecord::default()
+        },
+        TemporalVerdict::Indeterminate {
+            reason: Reason::IncompleteInput | Reason::MissingHistory | Reason::StraddlesBound,
+            ..
         }
-        Some("insufficient-data") => {
-            record.position = number("position");
-            record.count = number("count");
-            record.min_count = number("min_count");
-        }
-        Some("indeterminate") => {
-            record.position = wire
-                .get("reason")
-                .and_then(|reason| reason.get("position"))
-                .and_then(serde_json::Value::as_u64);
-        }
-        _ => {}
-    }
-    Ok(record)
+        | TemporalVerdict::Holds
+        | TemporalVerdict::Pending
+        | TemporalVerdict::PendingWindow { .. }
+        | TemporalVerdict::PendingNextEvent { .. }
+        | TemporalVerdict::MissingFairnessPremise { .. }
+        | TemporalVerdict::Incomplete(_)
+        | TemporalVerdict::ActivationIncomplete { .. }
+        | TemporalVerdict::WindowLimitReached { .. }
+        | TemporalVerdict::ProgressLimitReached(_) => ItemRecord::default(),
+    })
 }
 
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.

@@ -3306,7 +3306,7 @@ fn a_pending_clause_run_is_a_pending_monitor_document_that_exits_zero() {
     assert_eq!(items[0]["category"], "pending");
     assert_eq!(items[0]["clause"], "Counters::Counter::Reaches");
     assert_eq!(items[0]["request_index"], 0);
-    assert!(items[0]["cause"].is_null());
+    assert_eq!(items[0].get("cause"), Some(&serde_json::Value::Null));
     for member in ["basis", "certification", "measured", "method"] {
         assert!(
             items[0].get(member).is_none(),
@@ -3457,7 +3457,7 @@ fn violated_undefined_and_insufficient_data_items_carry_their_record_members() {
     assert_eq!(violated["category"], "violation");
     assert_eq!(violated["clause"], "Bounded");
     assert_eq!(violated["position"], 0);
-    assert!(violated["cause"].is_null());
+    assert_eq!(violated.get("cause"), Some(&serde_json::Value::Null));
     assert_eq!(violated["counterexample"]["trace_position"], 0);
     assert_eq!(
         violated["counterexample"]["prefix"]
@@ -3609,7 +3609,7 @@ fn window_and_next_event_pending_runs_are_bare_pending_items() {
         let item = item_json("W", run);
         assert_eq!(item["result"], "pending");
         assert_eq!(item["category"], "pending");
-        assert!(item["cause"].is_null());
+        assert_eq!(item.get("cause"), Some(&serde_json::Value::Null));
         for member in [
             "position",
             "counterexample",
@@ -3639,9 +3639,59 @@ fn a_violated_item_carries_a_witness_exactly_when_the_report_holds_one() {
     assert_eq!(item["witness"], expected);
     assert_eq!(item["position"], 0);
     assert_eq!(item["counterexample"]["trace_position"], 0);
-    assert!(item["cause"].is_null());
+    assert_eq!(item.get("cause"), Some(&serde_json::Value::Null));
 
     let mut pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
     pending.witness = run.witness.clone();
     assert!(item_json("Reaches", &pending).get("witness").is_none());
+}
+
+/// An item whose clause-run record cannot be written is an error, not an
+/// item without its members: a violation whose report holds no counterexample.
+#[trace("TC-770", "FR-286-AC-10")]
+#[test]
+fn a_violation_without_its_counterexample_is_a_record_error() {
+    let run = synthetic_report(ClauseDisposition::Temporal(TemporalVerdict::Violated {
+        at: 0,
+    }));
+    assert!(matches!(
+        crate::OutcomeDocument::from_clause_runs(None, [("V", &run)]),
+        Err(crate::ClauseRunNotAnItem::Record(
+            crate::spine::NativeRunResultError::Counterexample
+        ))
+    ));
+}
+
+/// A verdict that has no record members gives an item with none, and a
+/// report's witness is written for a violation only.
+#[trace("TC-770", "FR-286-AC-8")]
+#[test]
+fn verdicts_without_record_members_give_items_with_none() {
+    let mut held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
+    held.witness = super::witness::run("AllBelow", super::witness::Snapshot::High, "mid").witness;
+    let verdicts = [
+        TemporalVerdict::Holds,
+        TemporalVerdict::Pending,
+        TemporalVerdict::PendingWindow { at: 0, deadline: 3 },
+        TemporalVerdict::PendingNextEvent { at: 0 },
+    ];
+    for verdict in verdicts {
+        let mut run = synthetic_report(ClauseDisposition::Temporal(verdict));
+        run.witness = held.witness.clone();
+        let item = item_json("V", &run);
+        for member in [
+            "position",
+            "counterexample",
+            "witness",
+            "count",
+            "min_count",
+        ] {
+            assert!(item.get(member).is_none(), "{member}");
+        }
+    }
+    let mut refuted_state = synthetic_report(ClauseDisposition::Evaluate(
+        crate::spine::CallOutcome::Completed(crate::spine::CallValue::Boolean(false)),
+    ));
+    refuted_state.witness = held.witness.clone();
+    assert!(item_json("V", &refuted_state).get("witness").is_none());
 }

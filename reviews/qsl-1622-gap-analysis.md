@@ -29,3 +29,10 @@ The monitor operation (qsl-analyze::monitor, FR-283) exists nowhere: no fn monit
 ## Verdict
 
 Coverage is complete for the pending, indeterminate, undefined and mixed-ranking paths and absent for the monitor-operation clause and three table rows.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-286 Delivery line now gives AC-8 to AC-12 to QSL-1622 and AC-13 (monitor records render through the producer) to the ticket that builds monitor, QSL-597; FR-283-AC-14 states it on the operation side; TC-770 step 7 no longer runs monitor. |
+| FND-002 | fixed | The label and cause rows for incomplete, unsupported and declined are tested from real runs; each label-swap mutation fails. |
