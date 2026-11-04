@@ -477,6 +477,14 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     Ok(value)
 }
 
+/// The arguments a call popped, with whether each forwards the absent-key
+/// parameter and the binder each derives from.
+struct PoppedArguments {
+    values: Vec<Value>,
+    provenance: Vec<bool>,
+    owners: Vec<Owner>,
+}
+
 /// The binder of each root-frame source slot and the routing of one call's
 /// charge intervals onto them (FR-520-AC-11).
 struct BinderRouting {
@@ -1491,21 +1499,18 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         Ok((values, owners))
     }
 
-    fn pop_many_forwarded(
-        &mut self,
-        count: usize,
-    ) -> Result<(Vec<Value>, Vec<bool>, Vec<Owner>), Halt> {
+    fn pop_many_forwarded(&mut self, count: usize) -> Result<PoppedArguments, Halt> {
         let start = self
             .values
             .len()
             .checked_sub(count)
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
         let owners = self.pop_owners(count)?;
-        Ok((
-            self.values.split_off(start),
-            self.value_guard_provenance.split_off(start),
+        Ok(PoppedArguments {
+            values: self.values.split_off(start),
+            provenance: self.value_guard_provenance.split_off(start),
             owners,
-        ))
+        })
     }
 
     fn pop_integer(&mut self) -> Result<Integer, Halt> {
@@ -2670,8 +2675,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     .callee(self.graph, *function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let arguments_len = arguments.len();
-                let (arguments, provenance, argument_owners) =
-                    self.pop_many_forwarded(arguments_len)?;
+                let PoppedArguments {
+                    values: arguments,
+                    provenance,
+                    owners: argument_owners,
+                } = self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
@@ -2714,8 +2722,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     return Err(invariant("evaluation-callable-unresolved"));
                 };
                 let arguments_len = arguments.len();
-                let (arguments, provenance, argument_owners) =
-                    self.pop_many_forwarded(arguments_len)?;
+                let PoppedArguments {
+                    values: arguments,
+                    provenance,
+                    owners: argument_owners,
+                } = self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
