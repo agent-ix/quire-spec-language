@@ -557,18 +557,20 @@ fn the_clock_selections_flag_emits_the_requests_bytes_and_bad_files_refuse() {
     let directory = tempfile::tempdir().unwrap();
     for kind in KINDS {
         let expected = request(kind, Corpus::None).emit;
-        let object: serde_json::Map<String, Value> = expected
+        // Written by hand, in selection order: a `serde_json::Map` would sort.
+        let entries: Vec<String> = expected
             .temporal_selections
             .iter()
             .map(|selection| {
-                (
-                    selection.clause.clone(),
-                    serde_json::to_value(&selection.clock).unwrap(),
+                format!(
+                    "{}:{}",
+                    serde_json::to_string(&selection.clause).unwrap(),
+                    serde_json::to_string(&selection.clock).unwrap()
                 )
             })
             .collect();
         let clocks = directory.path().join(format!("{kind}.json"));
-        std::fs::write(&clocks, serde_json::to_vec(&object).unwrap()).unwrap();
+        std::fs::write(&clocks, format!("{{{}}}", entries.join(","))).unwrap();
         let line = command_line(&expected, &clocks);
         assert_eq!(Request::parse(&line).unwrap(), expected, "{kind}");
         let mut stdout = Vec::new();
