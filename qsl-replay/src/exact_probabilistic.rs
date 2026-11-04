@@ -46,6 +46,8 @@ pub enum ExactProbBuildIssue {
     BrokenInvariant,
     /// A refusal carrying its own catalog diagnostic.
     Failed(CatalogCode),
+    /// A timed-product form the digital engine recognizes but does not admit.
+    Unsupported(UnavailabilityCause),
 }
 
 /// One settled EN-5 build issue. It is always non-refuted: a counterexample
@@ -136,6 +138,10 @@ pub fn settle_exact_prob_build_issue(
         ExactProbBuildIssue::Predicate(outcome) => predicate(outcome, incomplete, failed),
         ExactProbBuildIssue::BrokenInvariant => failed(BROKEN),
         ExactProbBuildIssue::Failed(diagnostic) => failed(*diagnostic),
+        ExactProbBuildIssue::Unsupported(cause) => ExactProbBuildRecord {
+            value: TerminalValue::Unsupported(cause.clone()),
+            diagnostic: None,
+        },
     }
 }
 
@@ -342,6 +348,58 @@ mod tests {
                 record.value().category(),
                 quire_semantic_value::catalog::Category::Success
             );
+        }
+    }
+
+    #[trace("TC-639", "FR-204-AC-2", "FR-204-AC-4")]
+    #[test]
+    fn digital_product_unsupported_causes_keep_their_wire_identities() {
+        let meter = ScalarLimits {
+            integer_bits: 64,
+            decimal_digits: 64,
+            scale_expansion: 64,
+            text_input_bytes: 64,
+            text_scalars: 64,
+            normalized_scalars: 64,
+            unit_edges: 64,
+            value_occurrences: 64,
+            work_units: 4_096,
+            result_units: 64,
+        };
+        let subject = SubjectLimits {
+            expansion: ExpansionLimits { max_candidates: 2 },
+            meter: &meter,
+        };
+        let cases = [
+            (
+                UnavailabilityCause::StrictClockConstraint {
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                },
+                "strict-clock-constraint",
+            ),
+            (
+                UnavailabilityCause::DelayDistribution {
+                    operation: "M::Call::send".to_owned(),
+                },
+                "delay-distribution",
+            ),
+            (
+                UnavailabilityCause::ZeroDelayCycle { states: 1 },
+                "zero-delay-cycle",
+            ),
+            (UnavailabilityCause::TimedFormShape, "timed-form-shape"),
+        ];
+
+        for (cause, wire_name) in cases {
+            let record = settle_exact_prob_build_issue(
+                &ExactProbBuildIssue::Unsupported(cause.clone()),
+                subject,
+            );
+            assert_eq!(record.value(), &TerminalValue::Unsupported(cause.clone()));
+            let TerminalValue::Unsupported(settled) = record.value() else {
+                unreachable!("an unsupported build issue stays unsupported")
+            };
+            assert_eq!(settled.as_str(), wire_name);
         }
     }
 }

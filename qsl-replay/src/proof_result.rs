@@ -558,6 +558,26 @@ pub enum UnavailabilityCause {
         /// state, in the order required by FR-220 and ADR-025 MA-4.
         failures: Vec<WeakAccessFailure>,
     },
+    /// FR-204: a timed probabilistic claim uses a strict clock constraint,
+    /// which has no digital-clock reading.
+    StrictClockConstraint {
+        /// The source span of the first unsupported strict constraint.
+        span: qsl_foundation::Span,
+    },
+    /// FR-204: an operation uses a delay distribution without an exact
+    /// digital-clock reading.
+    DelayDistribution {
+        /// The operation whose delay distribution is unsupported.
+        operation: String,
+    },
+    /// FR-204: the digital product contains a reachable cycle with no delay.
+    ZeroDelayCycle {
+        /// Number of product states in the reachable cycle component.
+        states: usize,
+    },
+    /// FR-204: the timed claim uses a form outside the admitted digital
+    /// product shapes.
+    TimedFormShape,
     /// ADR-020 AX-5: a refinement with a hidden abstract field and a
     /// non-empty `F_A` has no liveness half to decide. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
@@ -716,6 +736,10 @@ impl UnavailabilityCause {
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
             Self::RecoveryView { .. } => "recovery-view",
+            Self::StrictClockConstraint { .. } => "strict-clock-constraint",
+            Self::DelayDistribution { .. } => "delay-distribution",
+            Self::ZeroDelayCycle { .. } => "zero-delay-cycle",
+            Self::TimedFormShape => "timed-form-shape",
             Self::PunctualInterval { .. } => "punctual-interval",
             Self::ValueCheck { .. } | Self::ContractCheck { .. } => {
                 "unsupported-requested-capability"
@@ -736,7 +760,11 @@ impl UnavailabilityCause {
             | Self::ConfidenceBeyondPrecision
             | Self::WeakAccessShape { .. }
             | Self::RecoveryView { .. }
-            | Self::PunctualInterval { .. } => None,
+            | Self::PunctualInterval { .. }
+            | Self::StrictClockConstraint { .. }
+            | Self::DelayDistribution { .. }
+            | Self::ZeroDelayCycle { .. }
+            | Self::TimedFormShape => None,
             Self::MissingFairnessPremise { .. }
             | Self::HybridProviderAbsent
             | Self::UnsupportedReduction { .. }
