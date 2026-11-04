@@ -911,6 +911,8 @@ pub struct ClauseRunReport {
 pub struct AuthenticatedTemporalSelection {
     /// The checked package declaration identity.
     pub declaration: quire_contract_model::CheckedNodeId,
+    /// The exact checked source regions joined to this declaration.
+    pub source_regions: Vec<quire_contract_model::CheckedSourceRegion>,
     /// The selected profile definition identity.
     pub profile: quire_contract_model::CheckedArtifactRef,
     /// The selected temporal clock name.

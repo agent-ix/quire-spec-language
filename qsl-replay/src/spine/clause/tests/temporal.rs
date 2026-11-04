@@ -2718,8 +2718,9 @@ fn timestamped_binding_is_required_and_authenticated() {
 }
 
 /// The successful checked-spine run strictly reads its emitted package and
-/// retains the exact profile and typed clock row used to authenticate it.
-#[trace("TC-138", "FR-050-AC-6")]
+/// retains the exact declaration locus, profile and typed clock row used to
+/// authenticate it.
+#[trace("TC-138", "TC-150", "FR-050-AC-6")]
 #[test]
 fn strict_readback_temporal_run_retains_authenticated_selection() {
     let successful = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
@@ -2740,6 +2741,24 @@ fn strict_readback_temporal_run_retains_authenticated_selection() {
         }
     );
     assert!(!selection.declaration.path.is_empty());
+    assert_eq!(selection.source_regions.len(), 1);
+    let source_region = &selection.source_regions[0];
+    assert_eq!(source_region.source.authority.as_ref(), "agent-ix");
+    assert_eq!(source_region.source.identity.as_ref(), "clause-run-fixture");
+    let mut request = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
+    let source_bytes = program_source_bytes(&mut request);
+    let source_text = std::str::from_utf8(source_bytes).expect("fixture source is UTF-8");
+    let declaration = "temporal Window using t over (c: Counters::Counter) clock \"ms\"";
+    let declaration_start = source_text
+        .find(declaration)
+        .expect("fixture declares the checked Window temporal clause");
+    let declaration_name_start = declaration_start + "temporal ".len();
+    let expected_start = u64::try_from(declaration_name_start).expect("fixture offset fits");
+    let expected_end = expected_start + u64::try_from("Window".len()).expect("name length fits");
+    assert_eq!(
+        (source_region.start, source_region.end),
+        (expected_start, expected_end)
+    );
 }
 
 /// `request` with its `Window` clause body replaced by `body`.

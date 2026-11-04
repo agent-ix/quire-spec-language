@@ -434,6 +434,7 @@ fn authenticate_binding(
         })?;
     Ok(crate::spine::AuthenticatedTemporalSelection {
         declaration: authenticated.declaration,
+        source_regions: subject.source_span().regions.clone(),
         profile: authenticated.profile,
         clock_name: authenticated.clock_name,
         clock: authenticated.clock,
