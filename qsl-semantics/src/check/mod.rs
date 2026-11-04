@@ -367,8 +367,8 @@ pub use assemble::{
 };
 pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
-    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
-    VariantCaseDeclaration, VariantTypeDeclaration,
+    DecimalLiteralLimits, DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations,
+    ResolvedSignatures, VariantCaseDeclaration, VariantTypeDeclaration,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use checked_dispatch::checked_dispatch_selected_operation;

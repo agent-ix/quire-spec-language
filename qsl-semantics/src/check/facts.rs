@@ -1139,19 +1139,13 @@ impl<'a> Definedness<'a> {
                 right,
                 ..
             } => {
-                let zero = Integer::zero();
-                let divisor = node.at(*right);
-                // A `decimal(c, s)` divisor with a nonzero coefficient is a
-                // nonzero literal whatever its declared interval.
-                let literal = match divisor.kind() {
-                    NodeKind::Literal(CheckedLiteral(Value::Decimal(value))) => {
-                        value.representation().coefficient() != &zero
-                    }
-                    _ => false,
-                };
-                match divisor.value_type() {
-                    ValueType::Decimal(interval)
-                        if literal || interval.lower() > &zero || interval.upper() < &zero =>
+                // Only a `decimal(c, s)` literal of nonzero coefficient is a
+                // nonzero fact, at every scale (FR-093 "Decimal constructors",
+                // QSpec FR-146): no declared interval, parameter, `let` name,
+                // conditional or negated literal discharges the obligation.
+                match node.at(*right).kind() {
+                    NodeKind::Literal(CheckedLiteral(Value::Decimal(value)))
+                        if value.representation().coefficient() != &Integer::zero() =>
                     {
                         Ok(())
                     }

@@ -815,11 +815,10 @@ fn rational_literals_are_one_literal_node_through_check() {
 /// is `"0.00"` and `decimal(-5, 1)` is `"-0.5"`. A zero coefficient is a
 /// member of every type whatever its scale, and spells at that scale
 /// without a formatting width, so 65534 and 65535 digits build and a larger
-/// scale is refused `ill_typed`/`type-mismatch`.
-#[trace("FR-104-AC-16", "TC-1232")]
+/// scale is refused `stage_limit_exceeded`/`work-budget-exceeded`.
+#[trace("FR-093-AC-38", "FR-093-AC-39", "TC-1232")]
 #[test]
-fn a_decimal_constructor_lowers_with_its_written_scale_and_a_scale_past_65535_is_ill_typed_type_mismatch(
-) {
+fn a_decimal_constructor_lowers_with_its_written_scale_and_a_scale_past_65535_is_a_stage_limit() {
     let bounds = ["-99999", "99999", "0", "2", "nearest-even"];
     let lowered = |coefficient: i64, scale: u32| {
         let literal = function(
@@ -858,11 +857,19 @@ fn a_decimal_constructor_lowers_with_its_written_scale_and_a_scale_past_65535_is
         assert!(value.starts_with("0.") && value[2..].bytes().all(|each| each == b'0'));
     }
     for scale in [65_536_u32, u32::MAX] {
-        let refusals = lowered(0, scale).expect_err("a scale past the spelling bound");
+        let refusals = lowered(0, scale).expect_err("a scale past the literal scale limit");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");
         };
-        assert_eq!(refusal.cause.code().as_str(), "ill_typed", "{scale}");
-        assert_eq!(refusal.cause.cause(), Some("type-mismatch"), "{scale}");
+        assert_eq!(
+            refusal.cause.code().as_str(),
+            "stage_limit_exceeded",
+            "{scale}"
+        );
+        assert_eq!(
+            refusal.cause.cause(),
+            Some("work-budget-exceeded"),
+            "{scale}"
+        );
     }
 }

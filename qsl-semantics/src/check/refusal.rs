@@ -3522,7 +3522,10 @@ mod tests {
             (CheckingLimitKind::InputBytes, "input-bytes-exceeded"),
             (CheckingLimitKind::WorkBudget, "work-budget-exceeded"),
             (CheckingLimitKind::RationalBits, "rational-bits-exceeded"),
-            (CheckingLimitKind::DecimalLiteralScale, "work-budget-exceeded"),
+            (
+                CheckingLimitKind::DecimalLiteralScale,
+                "work-budget-exceeded",
+            ),
             (
                 CheckingLimitKind::DecimalLiteralScaleTotal,
                 "work-budget-exceeded",

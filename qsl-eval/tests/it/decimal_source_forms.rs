@@ -14,7 +14,9 @@
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckRefusal, PackageDeclarations};
+use qsl_semantics::check::{
+    CheckCause, CheckRefusal, CheckingLimitKind, DecimalLiteralLimits, PackageDeclarations,
+};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, Outcome, Rational, ScalarLimits, Value};
@@ -48,6 +50,14 @@ fn limits(integer_bits: u64, decimal_digits: u64, scale_expansion: u64, work: u6
 }
 
 fn compile(declarations: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
+    compile_limited(declarations, DecimalLiteralLimits::default())
+}
+
+/// [`compile`] under the S3 decimal literal limits `limits`.
+fn compile_limited(
+    declarations: &str,
+    limits: DecimalLiteralLimits,
+) -> Result<CheckedPackage, Vec<CheckRefusal>> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}"
@@ -61,16 +71,18 @@ fn compile(declarations: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    PackageDeclarations::assemble(
+    let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
     )
-    .expect("the unit assembles")
-    .check(CheckingLimits::default())
-    .map(CheckedPackage::link)
+    .expect("the unit assembles");
+    declarations.decimal_literal_limits = limits;
+    declarations
+        .check(CheckingLimits::default())
+        .map(CheckedPackage::link)
 }
 
 /// An admitted charge: its point and the integer-bits, decimal-digits and
@@ -185,7 +197,7 @@ fn conversion(mode: &str) -> CheckedPackage {
 /// vector's order, result `(67,2)`; `scale_expansion: 1` stops before any
 /// arithmetic; the `exact` target refuses after `decimal.arithmetic` with no
 /// rounding charge and no value.
-#[trace("QSpec-TC-185", "QSpec-FR-140-AC-7")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-7", "FR-093-AC-56", "TC-1232")]
 #[test]
 fn d24_a_rational_converts_to_a_decimal_as_the_division_at_the_target_scale() {
     let package = conversion("nearest-even");
@@ -644,4 +656,240 @@ fn the_conversion_negation_and_mismatch_forms_of_the_criterion() {
         )),
         mismatch()
     );
+}
+
+/// The `(kind, bound, actual)` of the one stage-limit refusal of a unit.
+fn limit_refusal(
+    declarations: &str,
+    limits: DecimalLiteralLimits,
+) -> (CheckingLimitKind, u64, u128) {
+    let Err(refusals) = compile_limited(declarations, limits) else {
+        panic!("{declarations} is refused");
+    };
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(refusal.cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(refusal.cause.cause(), Some("work-budget-exceeded"));
+    let CheckCause::ResourceExhausted(stop) = &refusal.cause else {
+        panic!("a stage limit, got {:?}", refusal.cause);
+    };
+    (stop.kind, stop.limit, stop.actual)
+}
+
+const Z: &str = "type Z = Decimal[-99, 99; 0, 2; nearest-even];\n";
+
+fn zero_functions(count: usize, scale: u32) -> String {
+    let mut text = String::from(Z);
+    for index in 0..count {
+        text.push_str(&format!(
+            "function z{index} using v(): Z pure {{ decimal(0, {scale}) }}\n"
+        ));
+    }
+    text
+}
+
+/// FR-093-AC-38, AC-45, AC-53: the written scale of one literal is limited by
+/// `s3.decimal_literal_scale` (default 65535) before membership, as a
+/// `stage_limit_exceeded`/`work-budget-exceeded` stop naming the bound and the
+/// actual scale; a position that gives no type or the wrong type refuses
+/// first.
+#[trace("FR-093-AC-38", "FR-093-AC-45", "FR-093-AC-53", "TC-1232")]
+#[test]
+fn the_literal_scale_limit_refuses_before_membership() {
+    let defaults = DecimalLiteralLimits::default();
+    for scale in [65_534_u32, 65_535] {
+        assert!(compile(&zero_functions(1, scale)).is_ok(), "{scale}");
+    }
+    for scale in [65_536_u32, u32::MAX] {
+        assert_eq!(
+            limit_refusal(&zero_functions(1, scale), defaults),
+            (
+                CheckingLimitKind::DecimalLiteralScale,
+                65_535,
+                u128::from(scale)
+            ),
+            "{scale}"
+        );
+    }
+    // A nonzero coefficient is limited the same way, not refused as a
+    // non-member.
+    assert_eq!(
+        limit_refusal(
+            &format!("{Z}function z using v(): Z pure {{ decimal(1, 65536) }}\n"),
+            defaults
+        ),
+        (CheckingLimitKind::DecimalLiteralScale, 65_535, 65_536)
+    );
+    let small = DecimalLiteralLimits {
+        scale: 4,
+        ..defaults
+    };
+    assert!(compile_limited(&zero_functions(1, 4), small).is_ok());
+    assert_eq!(
+        limit_refusal(&zero_functions(1, 5), small),
+        (CheckingLimitKind::DecimalLiteralScale, 4, 5)
+    );
+    assert_eq!(
+        refusal(&format!(
+            "{Z}function z using v(): Z pure {{ let v = decimal(0, 65536) in v }}\n"
+        )),
+        ambiguous()
+    );
+    assert_eq!(
+        refusal("function z using v(): Int[0, 9] pure { decimal(0, 65536) }\n"),
+        mismatch()
+    );
+    // S2 builds the largest scale; S1 refuses one past u32::MAX.
+    assert_eq!(
+        limit_refusal(
+            &format!("{Z}function z using v(): Z pure {{ decimal(1, 4294967295) }}\n"),
+            defaults
+        ),
+        (
+            CheckingLimitKind::DecimalLiteralScale,
+            65_535,
+            u128::from(u32::MAX)
+        )
+    );
+}
+
+/// FR-093-AC-52: the written scales of the literals of one checked package
+/// total at most `s3.decimal_literal_scale_total` (default 1048576).
+#[trace("FR-093-AC-52", "TC-1232")]
+#[test]
+fn the_literal_scale_total_limits_one_checked_package() {
+    let defaults = DecimalLiteralLimits::default();
+    assert!(compile(&zero_functions(16, 65_535)).is_ok());
+    assert_eq!(
+        limit_refusal(&zero_functions(17, 65_535), defaults),
+        (
+            CheckingLimitKind::DecimalLiteralScaleTotal,
+            1_048_576,
+            1_114_095
+        )
+    );
+    let ten = DecimalLiteralLimits {
+        total: 10,
+        ..defaults
+    };
+    let twice = format!(
+        "{Z}function a using v(): Z pure {{ decimal(0, 5) }}\n\
+         function b using v(): Z pure {{ decimal(0, 5) }}\n"
+    );
+    assert!(compile_limited(&twice, ten).is_ok());
+    assert_eq!(
+        limit_refusal(
+            &format!("{twice}function c using v(): Z pure {{ decimal(0, 1) }}\n"),
+            ten
+        ),
+        (CheckingLimitKind::DecimalLiteralScaleTotal, 10, 11)
+    );
+}
+
+/// FR-093-AC-57: a negated literal is typed by its position and its
+/// operand's membership decides: `-decimal(5, 0)` and `decimal(5, 0)` at
+/// `Decimal[-9, 0; 0, 0; toward-zero]` are refused (5 is no member);
+/// `-decimal(-5, 0)` checks and its negated value 5 is outside the type at
+/// evaluation; `-decimal(0, 0)` evaluates to 0; and `-decimal(5, 0)` at
+/// `Decimal[-99999, 99999; 0, 2; nearest-even]` evaluates to -5.
+#[trace("FR-093-AC-57", "TC-1232")]
+#[test]
+fn a_negated_literal_is_a_member_when_its_operand_is() {
+    let n = "type N = Decimal[-9, 0; 0, 0; toward-zero];\n";
+    let case = |body: &str| format!("{n}function f using v(): N pure {{ {body} }}\n");
+    assert_eq!(refusal(&case("-decimal(5, 0)")), mismatch());
+    assert_eq!(refusal(&case("decimal(5, 0)")), mismatch());
+    let outside = compile(&case("-decimal(-5, 0)")).expect("the operand -5 is a member");
+    let run = call(&outside, vec![], UNLIMITED);
+    let Outcome::Refused(stop) = &run.outcome else {
+        panic!("a refusal, not {:?}", run.outcome);
+    };
+    assert!(format!("{stop:?}").contains("Domain"), "{stop:?}");
+    let zero = compile(&case("-decimal(0, 0)")).expect("negative zero is a member");
+    assert_eq!(call(&zero, vec![], UNLIMITED).decimal(), (int(0), 0));
+    let wide = compile(
+        "type Q = Decimal[-99999, 99999; 0, 2; nearest-even];\n\
+         function f using v(): Q pure { -decimal(5, 0) }\n",
+    )
+    .expect("-decimal(5, 0) at Q checks");
+    // The negation retains the value -5 at the type's maximum scale 2: the
+    // operation rounds into the target scale (QSpec FR-140).
+    assert_eq!(call(&wide, vec![], UNLIMITED).decimal(), (int(-500), 2));
+}
+
+/// FR-104-AC-13 d, d2, e, f, g, h: a quotient by a nonzero literal checks and
+/// evaluates; a quotient of two parameters is typed `P` and refuses only its
+/// nonzero obligation, whatever its position.
+#[trace("FR-104-AC-13", "TC-1084")]
+#[test]
+fn a_quotient_is_typed_by_its_operands_and_refuses_only_its_nonzero_obligation() {
+    let p = "type P = Decimal[-99, 99; 2, 2; nearest-even];\n";
+    let function = |name: &str, parameters: &str, result: &str, body: &str| {
+        format!("{p}function {name} using v({parameters}): {result} pure {{ {body} }}\n")
+    };
+    let value = |coefficient: i64| Value::Decimal(quire_exact::Decimal::new(int(coefficient), 2));
+    let d = compile(&function("f", "a: P", "P", "a / decimal(8, 2)")).expect("d checks");
+    assert_eq!(call(&d, vec![value(1)], UNLIMITED).decimal(), (int(12), 2));
+    let e = compile(&function("f", "a: P", "Boolean", "a / decimal(8, 2) = a")).expect("e checks");
+    let _ = e;
+    let d2 = compile(&function("f", "a: P", "P", "a / decimal(2, 2)")).expect("d2 checks");
+    let run = call(&d2, vec![value(5)], UNLIMITED);
+    let Outcome::Refused(stop) = &run.outcome else {
+        panic!("a refusal, not {:?}", run.outcome);
+    };
+    assert!(format!("{stop:?}").contains("Domain"), "{stop:?}");
+    for (name, result, body) in [
+        ("f", "P", "a / b"),
+        ("g", "Boolean", "a / b = a"),
+        ("h", "Boolean", "let s = a / b in s = a"),
+    ] {
+        assert_eq!(
+            refusal(&function(name, "a: P, b: P", result, body)),
+            unproved_nonzero(),
+            "{name}"
+        );
+    }
+}
+
+/// FR-093-AC-41, AC-54, AC-55: only a `decimal(c, s)` literal of nonzero
+/// coefficient discharges a divisor's obligation, at every scale.
+#[trace("FR-093-AC-41", "FR-093-AC-54", "FR-093-AC-55", "TC-1232")]
+#[test]
+fn only_a_nonzero_literal_discharges_a_divisors_obligation() {
+    let w = "type W = Decimal[-99999, 99999; 2, 2; nearest-even];\n";
+    let function = |name: &str, parameters: &str, result: &str, body: &str| {
+        format!("{w}function {name} using v({parameters}): {result} pure {{ {body} }}\n")
+    };
+    let x1 = compile(&function("f", "a: W", "W", "a / decimal(4, 0)")).expect("x1 checks");
+    assert_eq!(
+        call(
+            &x1,
+            vec![Value::Decimal(quire_exact::Decimal::new(int(600), 2))],
+            UNLIMITED
+        )
+        .decimal(),
+        (int(150), 2)
+    );
+    assert!(compile(&function("f", "a: W", "W", "a / decimal(400, 2)")).is_ok());
+    assert!(compile(&function("f", "a: W", "Boolean", "a / decimal(4, 0) = a")).is_ok());
+    for (name, parameters, result, body) in [
+        ("y1", "a: W", "W", "a / decimal(0, 2)"),
+        ("y2", "a: W", "W", "a / decimal(0, 0)"),
+        ("y3", "a: W, b: W", "W", "a / b"),
+        ("y4", "a: W, b: W", "Boolean", "a / b = a"),
+        (
+            "y5",
+            "a: W, c: Boolean",
+            "W",
+            "a / (if c then decimal(5, 2) else decimal(6, 2))",
+        ),
+        ("y6", "a: W", "W", "a / -decimal(4, 0)"),
+    ] {
+        assert_eq!(
+            refusal(&function(name, parameters, result, body)),
+            unproved_nonzero(),
+            "{name}"
+        );
+    }
 }
