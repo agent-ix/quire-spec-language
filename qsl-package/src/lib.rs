@@ -21,6 +21,8 @@ extern crate alloc;
 
 #[cfg(feature = "std")]
 mod bare;
+#[cfg(feature = "std")]
+mod bare_slot;
 mod checked;
 #[cfg(feature = "std")]
 mod checked_v2;
@@ -47,9 +49,11 @@ mod reader_protocol_projection;
 
 #[cfg(feature = "std")]
 pub use bare::{
-    BarePackage, BareSupply, IdentityFileRefusal, IdentityMember, ReadIdentityRows,
-    IDENTITIES_FORMAT,
+    BarePackage, BareSupply, IdentityFileRefusal, IdentityMember, IdentityWitnessRefusal,
+    ReadIdentityRows, IDENTITIES_FORMAT,
 };
+#[cfg(feature = "std")]
+pub use bare_slot::{BareSelectionFailure, BareSlot, BareSource};
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};

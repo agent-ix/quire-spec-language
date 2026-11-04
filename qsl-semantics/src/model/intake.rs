@@ -70,7 +70,7 @@ use quire_exact::{Integer, IntegerInterval, Presence, RationalDomain, TextProfil
 /// Join the selected-model stage's producer rows to the declaration forms
 /// admitted in `package`. Rows for declarations not present in this package
 /// graph are outside the emitted projection and do not enter the witness.
-pub(crate) fn selected_exact_identities_from_rows(
+pub fn selected_exact_identities_from_rows(
     package: &quire_contract_model::CheckedPackageV2,
     declaration_rows: &[quire_contract_model::SelectedExactDeclarationRow],
     field_rows: &[quire_contract_model::SelectedExactFieldRow],
