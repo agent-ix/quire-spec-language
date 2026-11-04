@@ -14,6 +14,7 @@ use super::bundle::{
     link_bundle, BundleRefusal, CapabilityId, Definition, DefinitionCatalog, DefinitionRole, Facet,
     LinkedBundle, PackageError, PackageLimitKind, PackageLimits, ReaderAuthority, ResolutionCause,
 };
+use super::profile_closure::{resolve_profile_closure, ProfileClosureRefusal};
 
 const READER_AUTHORITY: ReaderAuthority = ReaderAuthority::fixture();
 
@@ -99,6 +100,74 @@ fn link_roots(
         &DefinitionCatalog::new(definitions.to_vec()).unwrap(),
         limits,
     )
+}
+
+/// FR-036-AC-8 / TC-114 row 7: the lower profile resolver retains the exact
+/// ObservationBinding closure, including the registered finite-global
+/// Protocol dependency, without requiring a complete-V1 bundle.
+#[trace("FR-036-AC-8", "TC-114")]
+#[test]
+fn observation_binding_profile_closes_over_registered_protocol_definition() {
+    let protocol = definition(
+        "quire.protocol.finite-global/v1",
+        DefinitionRole::Protocol,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        b"registered finite-global protocol",
+    );
+    let protocol_ref = protocol.exact().clone();
+    let observation = definition(
+        "quire.observation.binding/v1",
+        DefinitionRole::Observation,
+        [protocol_ref.clone()].into_iter().collect(),
+        BTreeSet::new(),
+        b"registered observation binding",
+    );
+    let observation_ref = observation.exact().clone();
+    let catalog = DefinitionCatalog::new(vec![observation, protocol]).unwrap();
+    let closure = resolve_profile_closure(&observation_ref, &catalog, PackageLimits::default())
+        .expect("the exact registered dependency closure resolves");
+    assert_eq!(closure.selected(), &observation_ref);
+    assert_eq!(closure.role(), DefinitionRole::Observation);
+    assert_eq!(
+        closure.definitions(),
+        &[observation_ref, protocol_ref].into_iter().collect()
+    );
+}
+
+/// FR-036-AC-8 / TC-114 row 7: omission and an incompatible definition
+/// remain typed closure failures.
+#[trace("FR-036-AC-8", "TC-114")]
+#[test]
+fn observation_binding_profile_refuses_omitted_or_incompatible_protocol_definition() {
+    let protocol_ref = DefinitionRef::new(AUTHORITY, "quire.protocol.finite-global/v1").unwrap();
+    let observation = definition(
+        "quire.observation.binding/v1",
+        DefinitionRole::Observation,
+        [protocol_ref.clone()].into_iter().collect(),
+        BTreeSet::new(),
+        b"registered observation binding",
+    );
+    let observation_ref = observation.exact().clone();
+    let missing = DefinitionCatalog::new(vec![observation.clone()]).unwrap();
+    assert!(matches!(
+        resolve_profile_closure(&observation_ref, &missing, PackageLimits::default()),
+        Err(ProfileClosureRefusal::Dependency(refusal))
+            if matches!(refusal.cause, PackageError::MissingDefinition(ref found) if found == &protocol_ref)
+    ));
+
+    let incompatible = definition(
+        "quire.protocol.finite-global/v1",
+        DefinitionRole::Observation,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        b"wrong role for registered protocol identity",
+    );
+    let catalog = DefinitionCatalog::new(vec![observation, incompatible]).unwrap();
+    assert_eq!(
+        resolve_profile_closure(&observation_ref, &catalog, PackageLimits::default()),
+        Err(ProfileClosureRefusal::IncompatibleProtocolDependency)
+    );
 }
 
 fn link_complete(definitions: &[Definition]) -> LinkedBundle {

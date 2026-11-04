@@ -29,6 +29,7 @@ use quire_exact::NodeKey;
 pub mod bundle;
 #[cfg(test)]
 mod bundle_tests;
+pub mod profile_closure;
 
 /// A library identity (ADR-015 D-3; QSpec FR-307, FR-322
 /// `DependencySelection.identity`): any non-empty string, with no segment
