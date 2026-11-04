@@ -122,6 +122,25 @@ use super::{BuildProvenance, StaticSubject, SubjectUnavailable};
 /// stage's refusal, a reached limit, a cancellation or a fault.
 pub type FrontEndFailure = StageFailure<Box<CompileRefusal>, Vec<super::ProtocolResult>>;
 
+/// A profile-aware check failure. Profile closure outcomes are retained even
+/// when closure or the subsequent ordinary S3 check refuses the unit.
+#[derive(Debug)]
+pub enum ProfileCheckFailure {
+    /// At least one selected profile's registered dependency closure refused;
+    /// no checked package was admitted.
+    Closure {
+        /// Every protocol profile use reached in source order.
+        profile_uses: Vec<super::ProfileUseResult>,
+    },
+    /// Profile closures completed, but the ordinary spine check refused.
+    Check {
+        /// The original typed spine failure.
+        failure: FrontEndFailure,
+        /// Every completed profile use, including wrong-kind site outcomes.
+        profile_uses: Vec<super::ProfileUseResult>,
+    },
+}
+
 struct StageError {
     refusal: Box<CompileRefusal>,
     protocol_results: Option<Vec<super::ProtocolResult>>,
@@ -759,6 +778,7 @@ pub struct CheckedUnit {
     source: Source,
     sources: Vec<Source>,
     type_report: TypeReport,
+    pub(crate) protocol_check_sites: Vec<ProtocolCheckSite>,
     libraries: Vec<Source>,
     /// The library identity of each entry of `libraries`, in the same order.
     library_names: Vec<LibraryName>,
@@ -766,9 +786,21 @@ pub struct CheckedUnit {
     /// during S4 for its import view and retained here by library identity.
     library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
     protocol_results: Vec<super::ProtocolResult>,
+    profile_uses: Vec<super::ProfileUseResult>,
     protocol_failure: Option<ProtocolFailure>,
     static_subject: Result<StaticSubject, SubjectUnavailable>,
     build_provenance: BuildProvenance,
+}
+
+/// One checked QSL protocol `check` clause's exact source region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolCheckSite {
+    /// Authored protocol declaration name.
+    pub protocol: String,
+    /// Authored check clause name.
+    pub clause: String,
+    /// Exact check-expression source region.
+    pub region: qsl_foundation::Span,
 }
 
 impl CheckedUnit {
@@ -787,6 +819,13 @@ impl CheckedUnit {
         &self.protocol_results
     }
 
+    /// Registered protocol profile closures retained by
+    /// [`check_with_profile_catalog`]. Ordinary [`check`] does not receive a
+    /// registry and therefore returns an empty slice.
+    pub fn profile_uses(&self) -> &[super::ProfileUseResult] {
+        &self.profile_uses
+    }
+
     /// The unit's own source, exactly as S1 read it (FND-016: a caller
     /// resolving a locus over it reuses this rather than reading the same
     /// bytes again).
@@ -799,6 +838,11 @@ impl CheckedUnit {
     /// [`Self::source`].
     pub fn type_report(&self) -> &TypeReport {
         &self.type_report
+    }
+
+    /// Authored protocol check clauses and their exact checked source spans.
+    pub fn protocol_check_sites(&self) -> &[ProtocolCheckSite] {
+        &self.protocol_check_sites
     }
 
     /// Every library the check actually resolved, transitively, each
@@ -834,6 +878,16 @@ impl CheckedUnit {
             .position(|name| name == identity)
             .and_then(|index| self.libraries.get(index))
     }
+}
+
+/// The registered profile-definition inventory supplied to
+/// [`check_with_profile_catalog`].
+#[derive(Clone, Copy, Debug)]
+pub struct ProfileCatalogInput<'a> {
+    /// Exact registered definitions.
+    pub catalog: &'a qsl_semantics::library::bundle::DefinitionCatalog,
+    /// Resource limits applied to every selected profile closure.
+    pub limits: qsl_semantics::library::bundle::PackageLimits,
 }
 
 /// Type evidence retained by S3 for one source unit.
@@ -1095,6 +1149,47 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
     }
 }
 
+fn protocol_check_sites(
+    parsed: &ParsedUnitSource,
+    graph: &qsl_semantics::check::CheckedGraph,
+    report: &TypeReport,
+) -> Vec<ProtocolCheckSite> {
+    parsed
+        .unit()
+        .forms()
+        .iter()
+        .filter_map(|form| {
+            let qsl_forms::DeclarationForm::Protocol(protocol_form) = form.form() else {
+                return None;
+            };
+            let protocol = graph.protocol(&protocol_form.name.name)?;
+            let keys = graph.protocol_node_keys(&protocol.name)?;
+            Some(
+                protocol
+                    .controls
+                    .controls
+                    .iter()
+                    .filter(|control| control.kind == qsl_forms::ProtocolNodeKind::Check)
+                    .filter_map(|control| {
+                        let key = keys.nodes.get(&control.node)?;
+                        let obligation = report.obligations.iter().find(|obligation| {
+                            &obligation.node == key
+                                && obligation.capability_kind
+                                    == qsl_semantics::check::Capability::GlobalConformance.to_wire()
+                        })?;
+                        Some(ProtocolCheckSite {
+                            protocol: protocol.name.clone(),
+                            clause: control.name.clone(),
+                            region: obligation.span,
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
+        .collect()
+}
+
 /// A checked package emitted as `quire.checked-package/v2` bytes, with the
 /// sources another party needs to import or replay it.
 #[derive(Clone, Debug)]
@@ -1319,6 +1414,107 @@ pub fn check(
     )
 }
 
+/// S3 and S4 with the caller's exact profile-definition registry. Profile
+/// closures are resolved before package admission and remain attached to both
+/// successful checked units and check refusals. The closure result is
+/// independent of protocol use-site-kind admission.
+pub fn check_with_profile_catalog(
+    parsed: &ParsedUnitSource,
+    package_name: String,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    profile_catalog: ProfileCatalogInput<'_>,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<CheckedUnit>, ProfileCheckFailure> {
+    let profile_uses = resolve_protocol_profile_uses(parsed, profile_catalog);
+    if profile_uses.iter().any(|profile_use| {
+        !matches!(
+            profile_use.closure,
+            super::ProfileClosureStatus::Complete(_)
+        )
+    }) {
+        return Err(ProfileCheckFailure::Closure { profile_uses });
+    }
+
+    match check(parsed, package_name, models, dependencies, limits, cancel) {
+        Ok(staged) => {
+            let work = staged.work();
+            let mut checked = staged.into_value();
+            checked.profile_uses = profile_uses;
+            Ok(Staged::new(checked).with_work(work))
+        }
+        Err(failure) => Err(ProfileCheckFailure::Check {
+            failure,
+            profile_uses,
+        }),
+    }
+}
+
+fn resolve_protocol_profile_uses(
+    parsed: &ParsedUnitSource,
+    input: ProfileCatalogInput<'_>,
+) -> Vec<super::ProfileUseResult> {
+    let selections = &parsed.unit().selections().profiles;
+    parsed
+        .unit()
+        .forms()
+        .iter()
+        .filter_map(|form| {
+            let qsl_forms::DeclarationForm::Protocol(protocol) = form.form() else {
+                return None;
+            };
+            let using = &protocol.using;
+            let selection = selections
+                .iter()
+                .find(|selection| selection.alias == using.alias);
+            let selected = selection.map(|selection| selection.identity.clone());
+            let (closure, admission) = match selected.as_deref() {
+                None => (
+                    super::ProfileClosureStatus::NotSelected,
+                    super::ProfileUseAdmission::MissingSelection,
+                ),
+                Some(identity) => {
+                    let closure =
+                        qsl_semantics::library::profile_closure::resolve_registered_profile(
+                            identity,
+                            input.catalog,
+                            input.limits,
+                        );
+                    let admission = match &closure {
+                        Ok(closure)
+                            if closure.role()
+                                == qsl_semantics::library::bundle::DefinitionRole::Protocol
+                                && qsl_semantics::library::profile_closure::profile_identity_kind(
+                                    identity,
+                                ) == qsl_semantics::library::profile_closure::ProfileIdentityKind::FiniteGlobalProtocol =>
+                        {
+                            super::ProfileUseAdmission::Admitted
+                        }
+                        Ok(_) => super::ProfileUseAdmission::WrongProfileKind,
+                        Err(_) => super::ProfileUseAdmission::ClosureRefused,
+                    };
+                    let closure = match closure {
+                        Ok(closure) => super::ProfileClosureStatus::Complete(closure),
+                        Err(refusal) => super::ProfileClosureStatus::Refused(refusal),
+                    };
+                    (closure, admission)
+                }
+            };
+            Some(super::ProfileUseResult {
+                source: parsed.source().reference().clone(),
+                protocol: protocol.name.name.clone(),
+                alias: using.alias.clone(),
+                selected,
+                required_kind: super::ProfileUseKind::Protocol,
+                region: using.span,
+                closure,
+                admission,
+            })
+        })
+        .collect()
+}
+
 /// S3 and S4: assemble an admitted source-unit list as one package and
 /// return one source-bound checked unit per canonical source. Every returned
 /// unit shares the same checked package; its report and `source()` are bound
@@ -1494,15 +1690,19 @@ pub(crate) fn check_units_with_options(
                 limits,
                 usage: resolution.work,
             };
+            let type_report = type_report(package.graph(), source.reference());
+            let protocol_check_sites = protocol_check_sites(parsed, package.graph(), &type_report);
             checked_units.push(CheckedUnit {
                 package: Arc::clone(&package),
-                type_report: type_report(package.graph(), source.reference()),
+                type_report,
+                protocol_check_sites,
                 source,
                 sources: sources.clone(),
                 libraries: libraries.clone(),
                 library_names: library_names.clone(),
                 library_packages: Arc::new(library_packages.clone()),
                 protocol_results,
+                profile_uses: Vec::new(),
                 protocol_failure,
                 static_subject,
                 build_provenance,
@@ -1768,15 +1968,18 @@ fn check_with_context_and_temporal_selections(
             limits,
             usage: *work,
         };
+        let protocol_check_sites = protocol_check_sites(parsed, package.graph(), &type_report);
         let checked = CheckedUnit {
             package,
             source: parsed.source().clone(),
             sources: vec![parsed.source().clone()],
             type_report,
+            protocol_check_sites,
             libraries,
             library_names,
             library_packages: Arc::new(library_packages),
             protocol_results,
+            profile_uses: Vec::new(),
             protocol_failure,
             static_subject,
             build_provenance,
