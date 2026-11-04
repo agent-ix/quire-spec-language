@@ -467,6 +467,7 @@ pub struct SendRecord {
     payload: Enc,
     outcome: SendOutcome,
     displaced: Option<Enc>,
+    interval: Option<(u64, Vec<SendOutcome>, u64)>,
 }
 
 impl SendRecord {
@@ -483,6 +484,27 @@ impl SendRecord {
             payload,
             outcome,
             displaced,
+            interval: None,
+        }
+    }
+
+    /// The record of one interval send step: `count` entries were requested,
+    /// `entries` records each attempted append, and `pending` remains blocked.
+    pub(crate) fn interval(
+        channel: String,
+        payload: Enc,
+        count: u64,
+        entries: Vec<SendOutcome>,
+        pending: u64,
+        displaced: Option<Enc>,
+    ) -> Self {
+        let outcome = entries.first().copied().unwrap_or(SendOutcome::Accepted);
+        Self {
+            channel,
+            payload,
+            outcome,
+            displaced,
+            interval: Some((count, entries, pending)),
         }
     }
 
@@ -496,6 +518,23 @@ impl SendRecord {
         self.outcome
     }
 
+    /// The count requested by this interval send step, when this is one.
+    pub fn count(&self) -> Option<u64> {
+        self.interval.as_ref().map(|(count, _, _)| *count)
+    }
+
+    /// The outcome of each attempted interval entry, in send order.
+    pub fn entries(&self) -> Option<&[SendOutcome]> {
+        self.interval
+            .as_ref()
+            .map(|(_, entries, _)| entries.as_slice())
+    }
+
+    /// The entries still pending behind a blocking full queue.
+    pub fn pending(&self) -> Option<u64> {
+        self.interval.as_ref().map(|(_, _, pending)| *pending)
+    }
+
     /// This record with `outcome` in place of its own, as a changed
     /// counterexample may record it (FR-217-AC-5).
     #[cfg(any(test, feature = "test-support"))]
@@ -505,15 +544,28 @@ impl SendRecord {
     }
 
     fn enc(&self) -> Enc {
-        Enc::tagged(
-            "send-record",
-            vec![
-                ("channel", Enc::text(self.channel.clone())),
-                ("payload", self.payload.clone()),
-                ("outcome", Enc::text(self.outcome.text())),
-                ("displaced", self.displaced.clone().unwrap_or(Enc::Null)),
-            ],
-        )
+        let mut fields = vec![
+            ("channel", Enc::text(self.channel.clone())),
+            ("payload", self.payload.clone()),
+            ("outcome", Enc::text(self.outcome.text())),
+            ("displaced", self.displaced.clone().unwrap_or(Enc::Null)),
+        ];
+        if let Some((count, entries, pending)) = &self.interval {
+            fields.extend([
+                ("count", Enc::text(count.to_string())),
+                (
+                    "entries",
+                    Enc::Array(
+                        entries
+                            .iter()
+                            .map(|outcome| Enc::text(outcome.text()))
+                            .collect(),
+                    ),
+                ),
+                ("pending", Enc::text(pending.to_string())),
+            ]);
+        }
+        Enc::tagged("send-record", fields)
     }
 }
 
