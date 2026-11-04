@@ -32,8 +32,8 @@ FR-327-AC-6, FR-330-AC-7.
 ## Test Procedure
 
 Use TC-840's `Counter` unit (clauses `Bounded` and `Reaches`), TC-848's
-clause `Fair`, TC-847's undefined clause, FR-267-AC-15's `Windowed` and `lookup` clauses and
-snapshots with `c.value` 0, 1, 2.
+clause `Fair`, TC-847's undefined and `GuardUndefined` clauses, FR-328-AC-1's
+`always holds(c.value <= 1)` and snapshots with `c.value` 0, 1, 2.
 
 1. Through `run`, send FR-312-AC-7's temporal request over the lasso with
    loop `s0`, `s1`, then over loop `s0`, `s1`, `s2`; build the same
@@ -45,7 +45,8 @@ snapshots with `c.value` 0, 1, 2.
    in an FR-070 envelope naming `Reaches` and replay it through FR-331.
    Write FR-330-AC-1's `Bounded` violation and read its `interval`.
 3. Write and read back each report FR-267-AC-14 and FR-267-AC-15 list
-   (the window-limit report is constructed, not run),
+   (the insufficient-data, window-limit and `absent-key` reports are
+   constructed, not run),
    checking each `basis` against FR-266-AC-4; apply each edit those ACs
    list to the documents and read them.
 4. Evaluate FR-327-AC-6's clause with a stub `holds` atom over the finite
@@ -72,7 +73,8 @@ step asserts.
   `trace_position` is the JSON integer `0`; the replay settles
   `reproduced-with-evaluated-witness`; `interval` is
   `{"lower": "0", "upper": "1"}`.
-- Step 3: each report reads back to an equal disposition with its table
+- Step 3: each report reads back to an equal typed verdict or trace
+  refusal (an `incomplete` report to its row only) with its table
   row's members, `outcome` and `basis`, the two trace refusals to
   `EmptyLoop` and `EmptyTrace`; no document has a `refusal` member; each
   edited document refuses with a located diagnostic naming the member.

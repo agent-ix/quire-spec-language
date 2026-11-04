@@ -24,8 +24,8 @@ use quire_checked::key::DeclarationKey;
 mod temporal;
 pub use temporal::{
     ClosureRead, CounterexampleRead, DimensionRead, EffectiveIdRead, FairnessGranularityRead,
-    FairnessKindRead, FairnessOperationRead, FairnessRead, IndeterminateReasonRead,
-    ProgressValueRead, TemporalRecord,
+    FairnessKindRead, FairnessOperationRead, FairnessRead, GuardRead, IndeterminateReasonRead,
+    ProgressValueRead, TemporalRecord, UndefinedLocusRead,
 };
 
 /// Why a clause-run report could not be written as a canonical document.
@@ -367,7 +367,7 @@ impl CommandErrorRecord {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 enum Basis {
     ClosedScope,
@@ -413,7 +413,7 @@ impl Stage {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 enum Category {
     Success,
@@ -555,6 +555,36 @@ pub struct CallLocationRead {
     pub origin: CallOriginRead,
     /// Child-index path within the origin.
     pub path: Vec<usize>,
+}
+
+impl CallLocationRead {
+    /// The typed location this record restores.
+    fn typed(&self) -> quire_semantic_value::location::Location {
+        use quire_semantic_value::location::{Location, Origin};
+        let origin = match &self.origin {
+            CallOriginRead::Body { function, index } => Origin::Body {
+                function: function.clone(),
+                index: *index,
+            },
+            CallOriginRead::Measure { function, index } => Origin::Measure {
+                function: function.clone(),
+                index: *index,
+            },
+            CallOriginRead::Expression => Origin::Expression,
+            CallOriginRead::TypeDeclaration { name } => {
+                Origin::TypeDeclaration { name: name.clone() }
+            }
+            CallOriginRead::StateClause { clause, index } => Origin::StateClause {
+                clause: clause.clone(),
+                index: *index,
+            },
+            CallOriginRead::ProtocolAttempt { protocol, attempt } => Origin::ProtocolAttempt {
+                protocol: *protocol,
+                attempt: *attempt,
+            },
+        };
+        Location::at(origin, &self.path)
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -81,13 +81,16 @@ enum Unit {
     /// TC-144 `Window` and `Other`: `eventually[0,5] holds(c.value = 2)` under
     /// finite-window, `on origin`.
     OwnerWindow,
+    /// `Safety`: FR-328-AC-1's `always holds(c.value <= 1)` under
+    /// infinite-trace.
+    Safety,
 }
 
 impl Unit {
     fn profile(self) -> &'static str {
         match self {
             Self::Bounded => "profile t = \"quire.temporal.event-position.false-extension/v1\";\n",
-            Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
+            Self::Infinite | Self::Safety => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
             Self::Undefined | Self::Guarded | Self::GuardUndefined => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
@@ -214,6 +217,10 @@ impl Unit {
                  on origin { eventually[0,5] holds(c.value = 2) }\n\
                  temporal Other using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { eventually[0,5] holds(c.value > 1) }\n"
+            }
+            Self::Safety => {
+                "temporal Safety using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always holds(c.value <= 1) }\n"
             }
         }
     }
@@ -1069,7 +1076,10 @@ fn observed_replay_request(
                 .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
                 .and_then(|index| clause_node.clause().formula().node_id(index))
                 .expect("the formula has a holds atom");
-            crate::ObservedTemporalKind::UndefinedEvaluation { locus, cause }
+            crate::ObservedTemporalKind::UndefinedEvaluation {
+                locus: qsl_eval::temporal::ObservedLocus::Atom(locus),
+                cause,
+            }
         }
         ObservedReplayExpectation::UndefinedAtNode(cause, index) => {
             let locus = clause_node
@@ -1077,7 +1087,10 @@ fn observed_replay_request(
                 .formula()
                 .node_id(index)
                 .expect("the formula node exists");
-            crate::ObservedTemporalKind::UndefinedEvaluation { locus, cause }
+            crate::ObservedTemporalKind::UndefinedEvaluation {
+                locus: qsl_eval::temporal::ObservedLocus::Atom(locus),
+                cause,
+            }
         }
     };
     let payload = crate::ObservedTemporalCounterexample {

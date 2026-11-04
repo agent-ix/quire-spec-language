@@ -33,6 +33,36 @@ fn read(value: &Value) -> Result<crate::spine::ClauseRunRecord, String> {
     }
 }
 
+/// Write `report`, read it back, and check that the record restores the
+/// report's typed disposition (FR-267): its verdict, trace refusal or
+/// contradiction. An `Incomplete` restores none: its outcome carries the
+/// limit kind only.
+fn round_trips(report: &ClauseRunReport) -> Value {
+    let value = document(report);
+    let record = read(&value).expect("the document reads");
+    let temporal = record.temporal().expect("a temporal row");
+    match &report.disposition {
+        ClauseDisposition::Temporal(TemporalVerdict::Incomplete(_)) => {
+            assert_eq!(temporal.verdict(), None);
+        }
+        ClauseDisposition::Temporal(verdict) => {
+            assert_eq!(temporal.verdict().as_ref(), Some(verdict));
+        }
+        ClauseDisposition::TemporalRefusal(refusal) => {
+            assert_eq!(temporal.trace_refusal().as_ref(), Some(refusal));
+            assert_eq!(temporal.verdict(), None);
+        }
+        ClauseDisposition::ProgressContradiction(refusal) => {
+            assert_eq!(
+                temporal.contradiction().as_ref(),
+                Some(&refusal.contradiction)
+            );
+        }
+        other => panic!("a temporal disposition, got {other:?}"),
+    }
+    value
+}
+
 fn refuses(value: &Value, member: &str) {
     let error = read(value).err().unwrap_or_else(|| {
         panic!("the edited document must refuse: {value}");
@@ -58,7 +88,7 @@ fn temporal(value: &Value) -> &Value {
 fn a_lasso_violation_writes_its_observed_counterexample() {
     let violation = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
     assert_eq!(violation.basis, SettlementBasis::ClosedScope);
-    let value = document(&violation);
+    let value = round_trips(&violation);
     assert_eq!(value["disposition"]["stage"], "evaluate");
     assert_eq!(value["disposition"]["category"], "violation");
     assert_eq!(value["disposition"]["truth"], false);
@@ -105,7 +135,7 @@ fn a_lasso_violation_writes_its_observed_counterexample() {
     );
     assert_eq!(record.basis(), "closed-scope");
 
-    let bounded = document(&report(finite(Unit::Bounded, "Bounded", &[0, 1, 2])));
+    let bounded = round_trips(&report(finite(Unit::Bounded, "Bounded", &[0, 1, 2])));
     assert_eq!(
         temporal(&bounded)["counterexample"]["interval"],
         json!({"lower": "0", "upper": "1"})
@@ -116,7 +146,6 @@ fn a_lasso_violation_writes_its_observed_counterexample() {
             .map(Vec::len),
         Some(3)
     );
-    read(&bounded).expect("the bounded violation reads");
 }
 
 /// FR-267-AC-14: each FR-330 report writes its row and reads back, and each
@@ -127,13 +156,12 @@ fn a_lasso_violation_writes_its_observed_counterexample() {
 fn each_temporal_report_writes_its_row_and_each_edit_refuses() {
     let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
     assert_eq!(pending.basis, SettlementBasis::Unsettled);
-    let pending = document(&pending);
+    let pending = round_trips(&pending);
     assert_eq!(temporal(&pending), &json!({"kind": "pending"}));
     assert_eq!(pending["disposition"]["category"], "pending");
     assert_eq!(pending["basis"], "unsettled");
     assert!(pending["disposition"].get("truth").is_none());
     assert!(pending["disposition"].get("outcome").is_none());
-    read(&pending).expect("pending reads");
     refuses(
         &edited(&pending, |value| value["basis"] = json!("unavailable")),
         "basis",
@@ -141,10 +169,9 @@ fn each_temporal_report_writes_its_row_and_each_edit_refuses() {
 
     let holds = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
     assert_eq!(holds.basis, SettlementBasis::ClosedScope);
-    let holds = document(&holds);
+    let holds = round_trips(&holds);
     assert_eq!(temporal(&holds), &json!({"kind": "holds"}));
     assert_eq!(holds["disposition"]["category"], "success");
-    read(&holds).expect("holds reads");
     refuses(
         &edited(&holds, |value| {
             value["disposition"]["temporal"]["kind"] = json!("held");
@@ -156,18 +183,17 @@ fn each_temporal_report_writes_its_row_and_each_edit_refuses() {
     starved.accounting = default_accounting(0);
     let starved = report(starved);
     assert_eq!(starved.basis, SettlementBasis::Unavailable);
-    let incomplete = document(&starved);
+    let incomplete = round_trips(&starved);
     assert_eq!(temporal(&incomplete), &json!({"kind": "incomplete"}));
     assert_eq!(incomplete["disposition"]["outcome"]["kind"], "incomplete");
     assert_eq!(
         incomplete["disposition"]["outcome"]["limit"], "work_units",
         "{incomplete}"
     );
-    read(&incomplete).expect("incomplete reads");
 
     let undefined = report(finite(Unit::Undefined, "Undefined", &[0, 1, 2]));
     assert_eq!(undefined.basis, SettlementBasis::ClosedScope);
-    let undefined = document(&undefined);
+    let undefined = round_trips(&undefined);
     assert_eq!(temporal(&undefined)["kind"], "undefined");
     assert_eq!(temporal(&undefined)["position"], 2);
     assert_eq!(
@@ -184,10 +210,14 @@ fn each_temporal_report_writes_its_row_and_each_edit_refuses() {
             .map(Vec::len),
         Some(3)
     );
-    read(&undefined).expect("undefined reads");
+    assert_eq!(
+        temporal(&undefined)["counterexample"]["kind"]["where"]["locus"]["formula_node"],
+        json!(1),
+        "the first undefined atom is the clause's `holds` node, under `always`"
+    );
 
     let fair = report(lasso(Unit::Infinite, "Fair", 0, &[0, 1, 2]));
-    let fair = document(&fair);
+    let fair = round_trips(&fair);
     assert_eq!(temporal(&fair)["kind"], "missing-fairness-premise");
     assert_eq!(temporal(&fair)["constraint"]["kind"], "weak");
     assert_eq!(temporal(&fair)["constraint"]["granularity"], "whole");
@@ -199,9 +229,8 @@ fn each_temporal_report_writes_its_row_and_each_edit_refuses() {
             "cause": "missing-fairness-premise",
         })
     );
-    read(&fair).expect("missing premise reads");
 
-    let empty_loop = document(&report(lasso(Unit::Infinite, "Reaches", 3, &[0, 1, 2])));
+    let empty_loop = round_trips(&report(lasso(Unit::Infinite, "Reaches", 3, &[0, 1, 2])));
     assert_eq!(
         temporal(&empty_loop),
         &json!({"kind": "trace-refused", "variant": "empty-loop"})
@@ -211,11 +240,6 @@ fn each_temporal_report_writes_its_row_and_each_edit_refuses() {
         json!({"kind": "refused", "code": "invalid_runtime_input", "cause": "invalid-value"})
     );
     assert!(empty_loop["disposition"].get("refusal").is_none());
-    let record = read(&empty_loop).expect("empty loop reads");
-    assert!(matches!(
-        record.temporal(),
-        Some(TemporalRecord::TraceRefused { variant, .. }) if variant == "empty-loop"
-    ));
     refuses(
         &edited(&empty_loop, |value| {
             value["disposition"]["temporal"]["variant"] = json!("empty-hoop");
@@ -228,6 +252,40 @@ fn each_temporal_report_writes_its_row_and_each_edit_refuses() {
                 json!({"code": "invalid_runtime_input", "cause": "invalid-value"});
         }),
         "disposition.refusal",
+    );
+
+    // FR-330-AC-3's empty `Finite` report.
+    let empty = report(finite(Unit::Infinite, "Reaches", &[]));
+    assert!(matches!(
+        empty.disposition,
+        ClauseDisposition::TemporalRefusal(crate::spine::TemporalTraceRefusal::EmptyTrace)
+    ));
+    let empty = round_trips(&empty);
+    assert_eq!(
+        temporal(&empty),
+        &json!({"kind": "trace-refused", "variant": "empty-trace"})
+    );
+    assert_eq!(
+        empty["disposition"]["outcome"],
+        json!({"kind": "refused", "code": "invalid_runtime_input", "cause": "invalid-value"})
+    );
+
+    // FR-109-AC-3's dangling-parent document is a stage `admit` refusal.
+    let dangling = document(
+        &run_clause(super::super::witness::parent_order_request(
+            "dangling-parent",
+            vec![super::super::frame::object("child", 2, Some("ghost"))],
+            true,
+        ))
+        .expect("a well-formed request always reports"),
+    );
+    assert_eq!(dangling["disposition"]["stage"], "admit");
+    read(&dangling).expect("the admit document reads");
+    refuses(
+        &edited(&dangling, |value| {
+            value["disposition"]["temporal"] = json!({"kind": "holds"});
+        }),
+        "disposition.temporal",
     );
 
     let violated = document(&report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1])));
@@ -300,6 +358,43 @@ fn temporal_only_outcomes_refuse_outside_their_rows() {
         }),
         "disposition.outcome.limit",
     );
+
+    // FR-109-AC-3's exhausted-work report is a stage `evaluate` incomplete.
+    let mut exhausted = super::super::witness::parent_order_request(
+        "healthy-parent",
+        vec![
+            super::super::frame::object("root", 1, None),
+            super::super::frame::object("child", 2, Some("root")),
+        ],
+        true,
+    );
+    exhausted.accounting = default_accounting(0);
+    let exhausted = document(&run_clause(exhausted).expect("a well-formed request always reports"));
+    assert_eq!(exhausted["disposition"]["stage"], "evaluate");
+    assert_eq!(exhausted["disposition"]["outcome"]["kind"], "incomplete");
+    read(&exhausted).expect("the exhausted document reads");
+    refuses(
+        &edited(&exhausted, |value| {
+            value["disposition"]["temporal"] = json!({"kind": "holds"});
+        }),
+        "disposition.outcome",
+    );
+    refuses(
+        &edited(&exhausted, |value| {
+            value["disposition"]["outcome"]["limit"] = json!("max_window_values");
+        }),
+        "disposition.outcome.limit",
+    );
+    // An undefined outcome outside a temporal row, as FR-109-AC-7's
+    // `precondition-false` report carries it.
+    refuses(
+        &edited(&exhausted, |value| {
+            value["disposition"]["category"] = json!("undefined");
+            value["disposition"]["outcome"] =
+                json!({"kind": "undefined", "reason": "insufficient-data"});
+        }),
+        "disposition.outcome.reason",
+    );
 }
 
 /// The `Window` clause over stamps 0, 2, 5 with position 1's `holds` atom
@@ -327,9 +422,9 @@ fn an_indeterminate_run_keeps_its_label_and_reason_in_machine_output() {
     let TemporalVerdict::Indeterminate { at, reason } = outcome(&run) else {
         panic!("an indeterminate verdict, got {:?}", run.disposition);
     };
-    assert_eq!(exit_code(&run), 11);
+    assert_eq!((*at, exit_code(&run)), (0, 11));
     assert_eq!(run.basis, SettlementBasis::Unavailable);
-    let value = document(&run);
+    let value = round_trips(&run);
     assert_eq!(value["disposition"]["category"], "indeterminate");
     assert_eq!(value["basis"], "unavailable");
     assert!(value["disposition"].get("truth").is_none());
@@ -413,44 +508,48 @@ fn finite_window_rows_round_trip_and_each_edit_refuses() {
         outcome(&pending),
         &TemporalVerdict::PendingWindow { at: 0, deadline: 5 }
     );
-    let pending = document(&pending);
+    let pending = round_trips(&pending);
     assert_eq!(
         temporal(&pending),
         &json!({"kind": "pending-window", "position": 0, "deadline": 5})
     );
     assert_eq!(pending["disposition"]["category"], "pending");
     assert_eq!(pending["basis"], "unsettled");
-    read(&pending).expect("pending-window reads");
     refuses(
         &edited(&pending, |value| value["basis"] = json!("unavailable")),
         "basis",
     );
 
-    let next_event = document(&with_disposition(ClauseDisposition::Temporal(
+    let next_event = round_trips(&with_disposition(ClauseDisposition::Temporal(
         TemporalVerdict::PendingNextEvent { at: 3 },
     )));
     assert_eq!(
         temporal(&next_event),
         &json!({"kind": "pending-next-event", "position": 3})
     );
-    read(&next_event).expect("pending-next-event reads");
 
-    let guard = quire_semantic_value::location::Location::root(
-        quire_semantic_value::location::Origin::Expression,
+    let guard = quire_semantic_value::location::Location::at(
+        quire_semantic_value::location::Origin::StateClause {
+            clause: "Window".to_owned(),
+            index: 0,
+        },
+        &[1, 0],
     );
-    let activation = document(&with_disposition(ClauseDisposition::Temporal(
+    let activation = round_trips(&with_disposition(ClauseDisposition::Temporal(
         TemporalVerdict::ActivationIncomplete { at: 1, guard },
     )));
     assert_eq!(temporal(&activation)["kind"], "activation-incomplete");
     assert_eq!(temporal(&activation)["position"], 1);
     assert_eq!(
-        temporal(&activation)["guard"]["origin"],
-        json!({"kind": "expression"})
+        temporal(&activation)["guard"],
+        json!({
+            "origin": {"kind": "state-clause", "clause": "Window", "index": 0},
+            "path": [1, 0],
+        })
     );
     assert_eq!(activation["disposition"]["category"], "incomplete");
-    read(&activation).expect("activation-incomplete reads");
 
-    let limited = document(&with_disposition(ClauseDisposition::Temporal(
+    let limited = round_trips(&with_disposition(ClauseDisposition::Temporal(
         TemporalVerdict::ProgressLimitReached(crate::spine::ProgressLimitReached {
             limit: "node count",
             value: 4,
@@ -466,20 +565,12 @@ fn finite_window_rows_round_trip_and_each_edit_refuses() {
             "setting": "progress.covered_positions",
         })
     );
-    read(&limited).expect("progress-limit-reached reads");
-
-    let window = document(&with_disposition(ClauseDisposition::Temporal(
-        TemporalVerdict::WindowLimitReached {
-            limit: "max_window_values",
-            value: 2,
-            setting: "monitor.max_window_values",
-        },
-    )));
-    assert_eq!(
-        window["disposition"]["outcome"],
-        json!({"kind": "incomplete", "limit": "max_window_values"})
+    refuses(
+        &edited(&limited, |value| {
+            value["disposition"]["temporal"]["setting"] = json!("progress.positions");
+        }),
+        "disposition.temporal.limit",
     );
-    read(&window).expect("window-limit-reached reads");
 
     let conflicting = TemporalIndeterminateReason::ConflictingValuation {
         position: 1,
@@ -498,7 +589,7 @@ fn finite_window_rows_round_trip_and_each_edit_refuses() {
         TemporalIndeterminateReason::MissingHistory,
         TemporalIndeterminateReason::StraddlesBound,
     ] {
-        let value = document(&with_disposition(ClauseDisposition::Temporal(
+        let value = round_trips(&with_disposition(ClauseDisposition::Temporal(
             TemporalVerdict::Indeterminate {
                 at: 0,
                 reason: reason.clone(),
@@ -550,7 +641,7 @@ fn a_progress_contradiction_round_trips_its_typed_dimensions() {
     let ClauseDisposition::ProgressContradiction(refusal) = &refused.disposition else {
         panic!("a contradiction, got {:?}", refused.disposition);
     };
-    let value = document(&refused);
+    let value = round_trips(&refused);
     assert_eq!(temporal(&value)["kind"], "progress-contradicted");
     assert_eq!(temporal(&value)["dimension"], "watermark");
     assert_eq!(
@@ -576,5 +667,177 @@ fn a_progress_contradiction_round_trips_its_typed_dimensions() {
             value["disposition"]["outcome"]["fields"]["asserted"] = json!("61");
         }),
         "disposition.outcome",
+    );
+}
+
+/// FR-267-AC-15: the `insufficient-data`, `window-limit-reached`,
+/// family-`undefined` and infinite-trace `violated` rows write and read back
+/// to equal verdicts; dropping a listed member refuses naming it.
+#[trace("TC-1160", "FR-267-AC-15")]
+#[test]
+fn insufficient_data_window_limit_and_family_undefined_rows_round_trip() {
+    // A wire vector: FR-330 refuses a window aggregate over a model subject
+    // at compile (`AggregateModelSubject`), so no clause run reaches it.
+    let insufficient = round_trips(&with_disposition(ClauseDisposition::Temporal(
+        TemporalVerdict::Undefined {
+            at: 0,
+            cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+                count: 1,
+                min_count: 5,
+            },
+        },
+    )));
+    assert_eq!(
+        temporal(&insufficient),
+        &json!({"kind": "insufficient-data", "position": 0, "count": 1, "min_count": 5})
+    );
+    assert_eq!(insufficient["disposition"]["category"], "undefined");
+    assert_eq!(insufficient["basis"], "unavailable");
+    assert!(insufficient["disposition"].get("truth").is_none());
+    assert_eq!(
+        insufficient["disposition"]["outcome"],
+        json!({"kind": "undefined", "reason": "insufficient-data"})
+    );
+    for member in ["count", "min_count"] {
+        refuses(
+            &edited(&insufficient, |value| {
+                value["disposition"]["temporal"]
+                    .as_object_mut()
+                    .expect("an object")
+                    .remove(member);
+            }),
+            member,
+        );
+    }
+
+    // A wire vector: a clause run has no window-limit input.
+    let window = round_trips(&with_disposition(ClauseDisposition::Temporal(
+        TemporalVerdict::WindowLimitReached {
+            limit: "max_window_values",
+            value: 2,
+            setting: "monitor.max_window_values",
+        },
+    )));
+    assert_eq!(
+        temporal(&window),
+        &json!({
+            "kind": "window-limit-reached",
+            "limit": "max_window_values",
+            "value": 2,
+            "setting": "monitor.max_window_values",
+        })
+    );
+    assert_eq!(window["disposition"]["category"], "incomplete");
+    assert_eq!(
+        window["disposition"]["outcome"],
+        json!({"kind": "incomplete", "limit": "max_window_values"})
+    );
+    for member in ["limit", "value", "setting"] {
+        refuses(
+            &edited(&window, |value| {
+                value["disposition"]["temporal"]
+                    .as_object_mut()
+                    .expect("an object")
+                    .remove(member);
+            }),
+            member,
+        );
+    }
+
+    // A wire vector: FR-330-AC-5's run holding the family cause
+    // `absent-key` (the `Counter` unit's one population holds every `over`
+    // object, so no `lookup` of it is absent).
+    let mut absent = report(finite(Unit::Undefined, "Undefined", &[0, 1, 2]));
+    let record = quire_semantic_value::catalog::UndefinedRecord {
+        reason: quire_semantic_value::catalog::UndefinedReason::AbsentKey,
+        fields: std::collections::BTreeMap::new(),
+    };
+    absent.disposition = ClauseDisposition::Temporal(TemporalVerdict::Undefined {
+        at: 2,
+        cause: crate::spine::TemporalUndefinedCause::Family(record.clone()),
+    });
+    let Some(crate::ObservedTemporalKind::UndefinedEvaluation { cause, .. }) = absent
+        .counterexample
+        .as_mut()
+        .map(|counterexample| &mut counterexample.kind)
+    else {
+        panic!("an undefined-evaluation counterexample");
+    };
+    *cause = qsl_eval::temporal::UndefinedCause::Family(record);
+    let absent = round_trips(&absent);
+    assert_eq!(
+        absent["disposition"]["outcome"],
+        json!({"kind": "undefined", "reason": "absent-key"})
+    );
+    assert_eq!(
+        temporal(&absent)["counterexample"]["kind"]["cause"],
+        "absent-key"
+    );
+    refuses(
+        &edited(&absent, |value| {
+            value["disposition"]["outcome"]["reason"] = json!("absent-value");
+            value["disposition"]["temporal"]["counterexample"]["kind"]["cause"] =
+                json!("absent-value");
+        }),
+        "disposition.outcome.reason",
+    );
+
+    // FR-328-AC-1: a bad prefix of an infinite-trace clause with no bounded
+    // operator.
+    let safety = report(finite(Unit::Safety, "Safety", &[0, 1, 2]));
+    assert_eq!(outcome(&safety), &TemporalVerdict::Violated { at: 0 });
+    let safety = round_trips(&safety);
+    assert_eq!(temporal(&safety)["position"], 0);
+    let counterexample = &temporal(&safety)["counterexample"];
+    assert_eq!(counterexample["prefix"].as_array().map(Vec::len), Some(3));
+    assert_eq!(counterexample["loop"], json!([]));
+    assert_eq!(counterexample["interval"], Value::Null);
+}
+
+/// FR-267 (QSL-1566 review): an `Undefined` raised by an undefined `on each`
+/// guard is written with the `guard` locus and reads back to an equal
+/// verdict; its envelope names no formula node.
+#[trace("TC-1160", "FR-267-AC-14")]
+#[test]
+fn an_undefined_on_each_guard_writes_its_guard_locus() {
+    let guarded = report(finite(Unit::GuardUndefined, "GuardUndefined", &[2, 0, 1]));
+    assert!(
+        matches!(
+            outcome(&guarded),
+            TemporalVerdict::Undefined {
+                at: 0,
+                cause: crate::spine::TemporalUndefinedCause::Kernel(_)
+            }
+        ),
+        "{:?}",
+        guarded.disposition
+    );
+    let value = round_trips(&guarded);
+    assert_eq!(temporal(&value)["kind"], "undefined");
+    let envelope = &temporal(&value)["counterexample"]["kind"];
+    assert_eq!(envelope["where"]["locus"], json!({"guard": "on-each"}));
+    assert_eq!(envelope["cause"], "division-by-zero");
+    assert_eq!(
+        temporal(&value)["counterexample"]["prefix"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    let record = read(&value).expect("the guard document reads");
+    let Some(TemporalRecord::Undefined { counterexample, .. }) = record.temporal() else {
+        panic!("an undefined row");
+    };
+    assert_eq!(
+        counterexample.undefined_locus(),
+        Some(&crate::spine::UndefinedLocusRead::Guard(
+            crate::spine::GuardRead::OnEach
+        ))
+    );
+    refuses(
+        &edited(&value, |value| {
+            value["disposition"]["temporal"]["counterexample"]["kind"]["where"]["locus"] =
+                json!({"guard": "on-each", "formula_node": 0});
+        }),
+        "disposition.temporal.counterexample.kind",
     );
 }

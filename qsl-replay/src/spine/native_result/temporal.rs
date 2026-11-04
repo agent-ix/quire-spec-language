@@ -16,10 +16,11 @@ use super::{
 use crate::model_check::counterexample::{ObservedTemporalCounterexample, ObservedTemporalKind};
 use crate::spine::{
     ContradictedDimension, ObservedPosition, ProgressClosure, ProgressCompleteness,
-    ProgressContradiction, ProgressRefusal, ProgressValue, TemporalIndeterminateReason,
-    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
-    TemporalWindowRefusal,
+    ProgressContradiction, ProgressLimitReached, ProgressRefusal, ProgressValue,
+    TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
 };
+use qsl_eval::temporal::ObservedLocus;
 
 /// The largest integer RFC 8785 serializes exactly (QSpec's `Count` bound).
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
@@ -29,6 +30,46 @@ const MAX_WINDOW_VALUES: &str = "max_window_values";
 
 /// The undefined reason of a window aggregate short of data (FR-414).
 const INSUFFICIENT_DATA: &str = "insufficient-data";
+
+/// The setting that raises `max_window_values`.
+const MAX_WINDOW_VALUES_SETTING: &str = "monitor.max_window_values";
+
+/// FR-502's covered-position limit and its setting.
+const COVERED_POSITIONS_LIMIT: &str = "node count";
+const COVERED_POSITIONS_SETTING: &str = "progress.covered_positions";
+
+/// The undefined cause an FR-100 `reason` names: a kernel reason, or a
+/// family reason with the empty payload (the outcome carries no `fields`).
+fn undefined_cause(reason: &str) -> Option<TemporalUndefinedCause> {
+    use quire_exact::Undefined;
+    use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
+    let kernel = [
+        Undefined::DivisionByZero,
+        Undefined::IeeeNotFinite,
+        Undefined::EmptyReduction,
+        Undefined::NoneValue,
+        Undefined::SumOutOfDomain,
+    ]
+    .into_iter()
+    .find(|undefined| crate::spine::kernel_undefined_reason(undefined.clone()) == reason)
+    .map(TemporalUndefinedCause::Kernel);
+    kernel.or_else(|| {
+        [
+            UndefinedReason::PreconditionFalse,
+            UndefinedReason::AbsentKey,
+            UndefinedReason::IncompleteClosure,
+            UndefinedReason::OnlyNotOne,
+        ]
+        .into_iter()
+        .find(|family| family.as_str() == reason)
+        .map(|reason| {
+            TemporalUndefinedCause::Family(UndefinedRecord {
+                reason,
+                fields: BTreeMap::new(),
+            })
+        })
+    })
+}
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -164,10 +205,18 @@ struct WhereWire {
     locus: LocusWire,
 }
 
+/// The undefined expression's locus: a `holds` atom by its formula node, the
+/// `on each` activation guard, or a capture's initializer by its name.
 #[derive(Serialize)]
-struct LocusWire {
-    formula_node: usize,
+#[serde(rename_all = "snake_case")]
+enum LocusWire {
+    FormulaNode(usize),
+    Guard(&'static str),
+    Capture(String),
 }
+
+/// The `guard` locus value: the clause's one `on each` guard.
+const ON_EACH: &str = "on-each";
 
 #[derive(Serialize)]
 struct StepWire {
@@ -230,8 +279,10 @@ fn counterexample_wire(
                 point: WhereWire {
                     position,
                     document: DocumentRefWire::from(&document.document),
-                    locus: LocusWire {
-                        formula_node: locus.index(),
+                    locus: match locus {
+                        ObservedLocus::Atom(atom) => LocusWire::FormulaNode(atom.index()),
+                        ObservedLocus::Activation => LocusWire::Guard(ON_EACH),
+                        ObservedLocus::Capture(name) => LocusWire::Capture(name.clone()),
                     },
                 },
                 cause,
@@ -832,6 +883,91 @@ impl TemporalRecord {
         })
     }
 
+    /// The typed verdict a verdict row restores, equal to the one written.
+    /// `None` for `progress-contradicted` and `trace-refused` (see
+    /// [`Self::contradiction`] and [`Self::trace_refusal`]) and for
+    /// `incomplete`, whose FR-100 outcome carries the limit kind only, not
+    /// the budget's counters. A family undefined cause restores with an
+    /// empty `fields`: the outcome carries its reason only.
+    pub fn verdict(&self) -> Option<TemporalVerdict> {
+        Some(match self {
+            Self::Holds {} => TemporalVerdict::Holds,
+            Self::Violated { position, .. } => TemporalVerdict::Violated { at: *position },
+            Self::Undefined {
+                position,
+                counterexample,
+            } => TemporalVerdict::Undefined {
+                at: *position,
+                cause: undefined_cause(counterexample.undefined_reason()?)?,
+            },
+            Self::InsufficientData {
+                position,
+                count,
+                min_count,
+            } => TemporalVerdict::Undefined {
+                at: *position,
+                cause: TemporalUndefinedCause::InsufficientData {
+                    count: *count,
+                    min_count: *min_count,
+                },
+            },
+            Self::Pending {} => TemporalVerdict::Pending,
+            Self::PendingWindow { position, deadline } => TemporalVerdict::PendingWindow {
+                at: *position,
+                deadline: *deadline,
+            },
+            Self::PendingNextEvent { position } => {
+                TemporalVerdict::PendingNextEvent { at: *position }
+            }
+            Self::Indeterminate { position, reason } => TemporalVerdict::Indeterminate {
+                at: *position,
+                reason: reason.typed(),
+            },
+            Self::MissingFairnessPremise { constraint } => {
+                TemporalVerdict::MissingFairnessPremise {
+                    constraint: constraint.typed(),
+                }
+            }
+            Self::ActivationIncomplete { position, guard } => {
+                TemporalVerdict::ActivationIncomplete {
+                    at: *position,
+                    guard: guard.typed(),
+                }
+            }
+            Self::WindowLimitReached { value, .. } => TemporalVerdict::WindowLimitReached {
+                limit: MAX_WINDOW_VALUES,
+                value: *value,
+                setting: MAX_WINDOW_VALUES_SETTING,
+            },
+            Self::ProgressLimitReached { value, .. } => {
+                TemporalVerdict::ProgressLimitReached(ProgressLimitReached {
+                    limit: COVERED_POSITIONS_LIMIT,
+                    value: *value,
+                    setting: COVERED_POSITIONS_SETTING,
+                })
+            }
+            Self::Incomplete {} | Self::ProgressContradicted { .. } | Self::TraceRefused { .. } => {
+                return None
+            }
+        })
+    }
+
+    /// The typed trace refusal a `trace-refused` record restores, equal to
+    /// the one written.
+    pub fn trace_refusal(&self) -> Option<TemporalTraceRefusal> {
+        let Self::TraceRefused {
+            variant,
+            expected,
+            found,
+            profile,
+            position,
+        } = self
+        else {
+            return None;
+        };
+        trace_refusal(variant, *expected, *found, profile.as_deref(), *position).ok()
+    }
+
     /// The row's `kind` spelling.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -868,6 +1004,51 @@ pub struct FairnessRead {
     pub granularity: FairnessGranularityRead,
     /// The resolved operation.
     pub operation: FairnessOperationRead,
+}
+
+impl FairnessRead {
+    /// The typed constraint this record restores.
+    fn typed(&self) -> quire_semantic_value::fairness::FairnessConstraint {
+        use quire_semantic_value::fairness::{
+            FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
+        };
+        FairnessConstraint::new(
+            match self.kind {
+                FairnessKindRead::Weak => FairnessKind::Weak,
+                FairnessKindRead::Strong => FairnessKind::Strong,
+            },
+            FairnessOperation::new(
+                self.operation.declaring_type.typed(),
+                self.operation.name.clone(),
+            ),
+            match self.granularity {
+                FairnessGranularityRead::Whole => FairnessGranularity::Whole,
+                FairnessGranularityRead::Each => FairnessGranularity::Each,
+            },
+        )
+    }
+}
+
+impl EffectiveIdRead {
+    /// The typed identity, built from its root owner down without recursion.
+    fn typed(&self) -> quire_exact::EffectiveId {
+        let key = |original: &DeclarationKeyRead| {
+            quire_exact::OriginalDeclarationKey::new(
+                original.package.clone(),
+                original.node.clone(),
+            )
+        };
+        let mut members = Vec::new();
+        let mut root = self;
+        while let Some(owner) = root.owner_effective_type.as_deref() {
+            members.push(&root.original);
+            root = owner;
+        }
+        members.iter().rev().fold(
+            quire_exact::EffectiveId::new(None, key(&root.original)),
+            |owner, original| quire_exact::EffectiveId::new(Some(owner), key(original)),
+        )
+    }
 }
 
 /// A fairness kind as read.
@@ -973,11 +1154,20 @@ impl CounterexampleRead {
         self.trace_position
     }
 
-    /// The formula node index of an undefined evaluation's first undefined
-    /// atom; `None` for a formula counterexample.
-    pub fn undefined_locus(&self) -> Option<usize> {
+    /// The locus of an undefined evaluation's first undefined expression;
+    /// `None` for a formula counterexample.
+    pub fn undefined_locus(&self) -> Option<&UndefinedLocusRead> {
         match &self.kind {
-            CounterexampleKindRead::Undefined(envelope) => Some(envelope.point.locus.formula_node),
+            CounterexampleKindRead::Undefined(envelope) => Some(&envelope.point.locus),
+            CounterexampleKindRead::Formula(_) => None,
+        }
+    }
+
+    /// The undefined-evaluation envelope's `cause`; `None` for a formula
+    /// counterexample.
+    fn undefined_reason(&self) -> Option<&str> {
+        match &self.kind {
+            CounterexampleKindRead::Undefined(envelope) => Some(&envelope.cause),
             CounterexampleKindRead::Formula(_) => None,
         }
     }
@@ -1023,13 +1213,27 @@ enum EnvelopeTag {
 struct WhereRead {
     position: u64,
     document: DocumentRefRead,
-    locus: LocusRead,
+    locus: UndefinedLocusRead,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LocusRead {
-    formula_node: usize,
+/// The undefined-evaluation envelope's `locus` as read: exactly one member.
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum UndefinedLocusRead {
+    /// A `holds` atom, by the checked clause's formula node index.
+    FormulaNode(usize),
+    /// The `when` condition of the clause's `on each` activation.
+    Guard(GuardRead),
+    /// A capture's initializer, by the capture's name.
+    Capture(String),
+}
+
+/// The `guard` locus value.
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+pub enum GuardRead {
+    /// The clause's one `on each` guard.
+    #[serde(rename = "on-each")]
+    OnEach,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1263,10 +1467,6 @@ struct Row {
     basis: Basis,
 }
 
-fn same_category(left: &Category, right: &Category) -> bool {
-    left.as_str() == right.as_str()
-}
-
 /// Check a disposition carrying `temporal` against its FR-267 row, and the
 /// document's basis and witness presence.
 pub(super) fn validate_temporal(
@@ -1375,6 +1575,12 @@ pub(super) fn validate_temporal(
             counterexample,
         } => {
             let reason = undefined(None)?;
+            if undefined_cause(reason).is_none() {
+                return Err(invalid(
+                    "disposition.outcome.reason",
+                    "unknown undefined reason",
+                ));
+            }
             validate_counterexample(counterexample, *position, Some(reason))?;
             Row {
                 category: Category::Violation,
@@ -1417,13 +1623,22 @@ pub(super) fn validate_temporal(
             incomplete(false)?;
             unavailable(Category::Incomplete)
         }
-        TemporalRecord::ActivationIncomplete { .. }
-        | TemporalRecord::ProgressLimitReached { .. } => {
+        TemporalRecord::ActivationIncomplete { .. } => {
+            no_outcome()?;
+            unavailable(Category::Incomplete)
+        }
+        TemporalRecord::ProgressLimitReached { limit, setting, .. } => {
+            if limit != COVERED_POSITIONS_LIMIT || setting != COVERED_POSITIONS_SETTING {
+                return Err(invalid(
+                    "disposition.temporal.limit",
+                    "progress limit names node count and progress.covered_positions",
+                ));
+            }
             no_outcome()?;
             unavailable(Category::Incomplete)
         }
         TemporalRecord::WindowLimitReached { limit, setting, .. } => {
-            if limit != MAX_WINDOW_VALUES || setting != "monitor.max_window_values" {
+            if limit != MAX_WINDOW_VALUES || setting != MAX_WINDOW_VALUES_SETTING {
                 return Err(invalid(
                     "disposition.temporal.limit",
                     "window limit names max_window_values and its setting",
@@ -1464,7 +1679,7 @@ pub(super) fn validate_temporal(
             unavailable(category)
         }
     };
-    if !same_category(&value.category, &row.category) {
+    if value.category != row.category {
         return Err(invalid(
             "disposition.category",
             "category disagrees with the temporal row",
@@ -1476,7 +1691,7 @@ pub(super) fn validate_temporal(
             "truth disagrees with the temporal row",
         ));
     }
-    if basis.as_str() != row.basis.as_str() {
+    if *basis != row.basis {
         return Err(invalid("basis", "basis disagrees with the temporal row"));
     }
     Ok(())
