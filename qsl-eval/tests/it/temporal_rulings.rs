@@ -43,6 +43,9 @@ fn asked(env: &Env, p: u64) -> EvidenceRequest {
     asked
 }
 
+/// An edit of one request member.
+type RequestEdit = Box<dyn Fn(&mut EvidenceRequest)>;
+
 const ORIGIN_CAPTURE: &str = "capture amount: Int[0, 9] = c.level; eventually[0, 2] holds(p)";
 
 #[trace("FR-524-AC-32", "TC-1319")]
@@ -866,7 +869,7 @@ fn every_evidence_member_changes_the_result_identity() {
     let reference = call(&env, &subject, &base)
         .expect("a result")
         .result_identity;
-    let edits: Vec<(&str, Box<dyn Fn(&mut EvidenceRequest)>)> = vec![
+    let edits: Vec<(&str, RequestEdit)> = vec![
         (
             "identity byte",
             Box::new(|r| {

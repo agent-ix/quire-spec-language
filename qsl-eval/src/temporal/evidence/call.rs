@@ -1324,7 +1324,7 @@ fn evaluate(
     let mut letters = EvidenceLetters {
         request,
         trace,
-        bound: &facts.subject.instance_bound,
+        bound: facts.subject.instance_bound,
         assessed: Some(trigger),
         evicted: None,
         holders: BTreeMap::new(),
