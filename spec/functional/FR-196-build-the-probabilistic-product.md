@@ -176,8 +176,8 @@ without it replays to several model states. Every other step has
 
 `ProductAction` is the following new closed semantic action type, owned with
 ProductKey in qsl-replay. The untimed build uses its first three members,
-`Identity`, `PostState` and `TerminalStutter`; the four delay and observation
-members exist in a timed product only (FR-204). The enum below is the
+`Identity`, `PostState` and `TerminalStutter`; the five delay, observation
+and race members exist in a timed product only (FR-204). The enum below is the
 `qsl-replay` form, whose `PostState` holds the canonical `ProductKey`; the
 builder's `ProductAction` holds the in-memory `ProbKey` in the same member. An edge's `action` is its operation projection;
 None alone SHALL NOT identify a delay or observation choice.
@@ -191,13 +191,15 @@ pub enum ProductAction {
     EnterIdleDelay,             // positive delay committing to TS-5 idle tail
     IdleDelay,                  // positive delay already in idle tail
     IdleObserve,                // clock-valued observation, no additional elapsed time
+    WorkloadResolve { identity: ScheduledIdentity, delay: u64 }, // workload race choice (FR-204)
 }
 ```
 
 Canonical semantic action bodies use exactly `["identity",schedule]`,
 `["post-state",product_key]`, `["terminal-stutter"]`, `["delay"]`,
-`["enter-idle-delay"]`, `["idle-delay"]` and `["idle-observe"]` respectively,
-where schedule uses the full existing schedule form below and product_key
+`["enter-idle-delay"]`, `["idle-delay"]`, `["idle-observe"]` and
+`["workload-resolve",schedule,delay]` respectively, where `delay` is the digital
+unit count as a canonical unsigned decimal string, and where schedule uses the full existing schedule form below and product_key
 is a parsed full canonical key, not a local index/string wrapper.
 Unknown/extra/missing members refuse. Action equality/order uses complete
 JCS UTF-8 bytes. These are explicit new semantic choices, not a claim that
@@ -214,6 +216,15 @@ Each delay has elapsed reward one digital unit (1/scale in the model unit);
 Observe has elapsed reward zero. All delay guards/invariants still rederive.
 Identity/PostState follow the actual discrete draw/reset relation and emit
 a letter only when the post-state is resolved, never at a pending intermediate.
+WorkloadResolve is enabled only in a timed product under a workload, in a
+state where a free-delay identity races (FR-204), advances the chosen `delay`
+digital units and is a distribution of total probability 1 over the race
+outcomes; it is never enabled in an every-scheduler product. A state whose
+racing identities all have free delays offers UnitDelay and one
+`WorkloadResolve{identity, delay: 0}` whose `identity` is the first enabled
+identity and whose mass splits over every enabled identity by the workload's
+weights; a state whose racing identities all have given delays labels each
+race edge `Identity(r)` with `r` its first racing identity.
 TerminalStutter retains its existing untimed profile meaning and is not a
 synonym for IdleObserve. FR-202 owns choice entries/path replay, FR-201 owns
 certificate policy entries, and FR-204 enumerates these actual digital actions.
@@ -320,7 +331,7 @@ a model operation/reset. Ordinary untimed model forms cannot be substituted
 for this tagged form. Contextual admission still rederives the checked
 claim and its constants; this is no global equality across unrelated requests.
 
-`monitor` is null only for Reach, ExpectedReward and LongRunFraction.
+`monitor` is null only for Reach, ExpectedReward, MeanTime and LongRunFraction.
 For bounded forms its closed alternatives are:
 
 | Event/measure | Canonical monitor |
@@ -738,7 +749,7 @@ rejection loci, with no model-only shortcut.
   canonical monitor and accumulator above, with its actual activation,
   count/reward, unique above-bound/censored amount and horizon/control;
   a weighted fraction SHALL retain both exact sums through completion.
-- For a `Reach`, `ExpectedReward` or `LongRunFraction` form, EN-5 SHALL use
+- For a `Reach`, `ExpectedReward`, `MeanTime` or `LongRunFraction` form, EN-5 SHALL use
   the MDP or DTMC itself as the product, with the predicates as state labels and
   rewards on edges.
 - When EN-5 attempts to read a model state and an atom, state predicate,

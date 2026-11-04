@@ -501,11 +501,11 @@ fn capture_of(declarations: &str, declared: &str, initial: &str) -> String {
     )
 }
 
-/// The capture types with no initializer QSL can write, named rather than
-/// dropped: `Decimal[...]` (S2 builds no `decimal(...)` value), `Text[...]` (a
-/// string literal is a `String`, refused at S3 as a type mismatch) and
-/// `Float64` (a float literal needs a floating-point profile the fixture
-/// does not select).
+/// The capture types whose initializer is refused where written, named rather
+/// than dropped: `Text[...]` (a string literal is a `String`, refused at S3 as
+/// a type mismatch) and `Float64` (a float literal needs a floating-point
+/// profile the fixture does not select). A `Decimal[...]` capture takes a
+/// member `decimal(c, s)` initializer (FR-091-AC-57).
 #[test]
 fn the_capture_types_without_an_initializer_refuse_where_written() {
     let declarations = format!("{}{TICK}", super::protocol_graph::CARRIED);
@@ -514,28 +514,7 @@ fn the_capture_types_without_an_initializer_refuse_where_written() {
         "Decimal[0, 10; 0, 2; nearest-even]",
         "decimal(100, 2)",
     );
-    let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
-        "program.native",
-        format!(
-            "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.model.complete/v1\";\n{PROFILES}\
-             model M = \"acme/orders\";\n{decimal}"
-        )
-        .as_bytes(),
-        qsl_cst::Limits::default(),
-    )
-    .expect("S1 admits the unit");
-    let refused = qsl_forms::build_unit(&parsed).expect_err("decimal(...) has no S2 value");
-    assert!(
-        matches!(
-            refused.cause,
-            qsl_forms::FormsCause::UnrepresentedConstruct {
-                production: qsl_cst::Production::ExactNumber
-            }
-        ),
-        "{refused:?}"
-    );
+    checked(&decimal, false).expect("a member decimal(...) capture initializer checks");
     let causes = |text: &str| -> Vec<CheckCause> {
         checked(text, false)
             .expect_err(text)

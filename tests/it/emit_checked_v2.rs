@@ -927,3 +927,81 @@ fn binding_only_the_postcondition_point_emits_and_reads_back() {
         ],
     );
 }
+
+/// FR-337-AC-15 through the command line: a `--clock-selections` entry that
+/// names a `temporal` clause by its authored name is joined to the parsed
+/// clause before S3, so a `duration` window written in the model's `s` and
+/// `ms` emits both bounds in the selected clock unit, `past[0 M::s, 300000
+/// M::ms]` as `0` and `300000` of `M::ms`.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn a_clock_selection_by_clause_name_converts_a_duration_window_to_the_clock_unit() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut document: Value =
+        serde_json::from_slice(crate::support::spine_model::DOCUMENT).expect("the fixture is JSON");
+    let origin = document["types"][0]["origin"].clone();
+    let time = "ix://acme/orders/dimension/Time";
+    let second = "ix://acme/orders/unit/s";
+    let millisecond = "ix://acme/orders/unit/ms";
+    document["dimensions"] = json!([{
+        "identity": time, "name": "Time", "base": true, "terms": [], "origin": origin,
+    }]);
+    document["units"] = json!([
+        {"identity": second, "name": "s", "dimension": time, "scale": "1", "offset": "0",
+         "origin": origin},
+        {"identity": millisecond, "name": "ms", "dimension": time, "target": second,
+         "scale": "1/1000", "offset": "0", "origin": origin},
+    ]);
+    let model = directory.path().join("model.semantic-ir.json");
+    std::fs::write(&model, serde_json::to_vec(&document).unwrap()).unwrap();
+    let source = directory.path().join("window.native");
+    std::fs::write(
+        &source,
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n\
+         model M = \"acme/orders\";\n\
+         record Sample { v: Int[0, 9]; }\n\
+         temporal Window using t over (e: Sample) clock \"ms\" on origin \
+         { always[0,3] (count over past[0 M::s, 300000 M::ms] >= 1) }\n",
+    )
+    .unwrap();
+    let clocks = directory.path().join("clocks.json");
+    std::fs::write(
+        &clocks,
+        json!({"Window": {"kind": "timestamped_event", "timestamp_unit": millisecond}}).to_string(),
+    )
+    .unwrap();
+
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
+    command.extend(args(&[&model]));
+    command.extend(strings(&["--clock-selections"]));
+    command.extend(args(&[&clocks, &source]));
+    let mut stdout = Vec::new();
+    run(&command, &mut stdout).unwrap_or_else(|error| panic!("the window emits: {error}"));
+
+    let wire: Value = serde_json::from_slice(&stdout).expect("the package is JSON");
+    let nodes = wire["semantic_graph"]["nodes"].as_array().expect("nodes");
+    let [aggregate] = nodes
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.temporal.aggregate")
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one aggregate node");
+    };
+    let members = aggregate["body"]["arguments"][0]["members"]
+        .as_array()
+        .expect("members");
+    for (name, value) in [("lower", "0"), ("upper", "300000")] {
+        let bound = &members
+            .iter()
+            .find(|member| member["name"] == name)
+            .unwrap_or_else(|| panic!("a binding {name}"))["value"];
+        assert_eq!(bound["value"], value, "{name}");
+        assert_eq!(
+            bound["type"]["path"],
+            json!(["scalar_type", "unit", millisecond]),
+            "{name}"
+        );
+    }
+}

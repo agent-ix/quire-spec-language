@@ -27,7 +27,7 @@ The case table is FR-518's; rows are referenced by number.
 | 8 | 8 | list `mutations/` and the manifest's cases; look for a case-count or identity-list export | each file named by one case and each case by one file; no such export |
 | 9 | 9 | **RETIRED (source-byte integrity removed).** | none |
 | 10 | 10 | **RETIRED (source-byte integrity removed).** | none |
-| 11 | 11 | submit a package whose temporal clause declares a name differing from the sidecar's, to a reader implementing IR-1278, then to `Selection::check` | admitted, then refused with `clause.name`; gated on IR-1278 |
+| 11 | 11 | submit a package whose `temporal_clause_names` row holds `Omega` where the sidecar declares `Alpha`, to the reader, then to `Selection::check`; then the package with the row's name `Alpha` | admitted, then refused with `clause.name`; the second admitted by both |
 | 12 | 12 | edit the sidecar's profile law revision against the admitted **R** and call `Selection::check` | refused with `definition.revision` |
 
 Tag the test `#[trace("FR-518-AC-1", ..., "FR-518-AC-12", "TC-1313")]`; rows 1 to 3 also carry FR-042-AC-7 and FR-042-AC-10.

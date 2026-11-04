@@ -76,7 +76,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::check::SourceScope;
 use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
-use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
+use super::refusal::{CheckCause, CheckRefusal, TemporalCause, TimeUnitCause};
 use super::state_clause::{populations_overlapping, PopulationDomain};
 use super::Scope;
 use crate::check::Capability;
@@ -103,6 +103,19 @@ pub struct TemporalSelection {
     pub profile: TemporalProfile,
     /// The span of the whole `profile` declaration.
     pub span: Span,
+}
+
+/// The time unit of the timestamped-event clock selected for one `temporal`
+/// clause, joined to the clause by its declaration span as the emitter joins
+/// a clock selection (FR-337 "Aggregate formula emission"). A `duration`
+/// window of that clause converts both bounds to this unit (QSpec FR-370).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClockUnitSelection {
+    /// The span of the whole clause declaration.
+    pub declaration_span: Span,
+    /// The selected clock's `timestamp_unit`: the last path segment of the
+    /// clock unit's `scalar_type`/`unit` node.
+    pub timestamp_unit: String,
 }
 
 /// A `temporal` clause as the assembler hands it to the check: its form and
@@ -145,6 +158,8 @@ pub(crate) struct TimedContext<'a> {
     pub(crate) units: &'a super::time_units::TimeUnits,
     pub(crate) time_sources: &'a [ModelTimeSource],
     pub(crate) rational_bits: u64,
+    /// The selected clock unit of each clause whose clock is known at S3.
+    pub(crate) clock_units: &'a [ClockUnitSelection],
 }
 
 /// The `TemporalTrace` family's `temporal` clause production (ADR-012
@@ -307,18 +322,25 @@ pub(crate) enum AggregateWindow {
         /// The farthest offset `b`.
         upper: u64,
     },
-    /// Durations, under the timestamped-event profile, both bounds converted
-    /// exactly to the lower bound's written time unit, which the emitter
-    /// requires to be the clause's clock unit (FR-337 "Aggregate formula
-    /// emission").
-    Duration {
-        /// The nearest age `a`.
-        lower: Rational,
-        /// The farthest age `b`.
-        upper: Rational,
-        /// The node of the time unit both bounds are expressed in.
-        unit: NodeKey,
-    },
+    /// Durations, under the timestamped-event profile.
+    Duration(Box<DurationWindow>),
+}
+
+/// A checked `duration` window: both bounds converted exactly to the
+/// clause's selected clock unit, or to the lower bound's written time unit
+/// when S3 was given no clock for the clause; the emitter requires the unit
+/// to be the clause's clock unit (FR-337 "Aggregate formula emission").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DurationWindow {
+    /// The nearest age `a`.
+    pub(crate) lower: Rational,
+    /// The farthest age `b`.
+    pub(crate) upper: Rational,
+    /// The node of the time unit both bounds are expressed in.
+    pub(crate) unit: NodeKey,
+    /// The unit's nominal dimension and unit nodes, its dependency closure:
+    /// a model-owned unit's nodes are written by the emitter.
+    pub(crate) nominal_nodes: Vec<TimeNominalNode>,
 }
 
 /// The checked term of one window aggregate atom, beside its typed value,
@@ -765,9 +787,24 @@ impl CheckedTemporalClause {
         self.aggregates
             .values()
             .filter_map(|aggregate| match &aggregate.window {
-                AggregateWindow::Duration { unit, .. } => Some(unit),
+                AggregateWindow::Duration(window) => Some(&window.unit),
                 AggregateWindow::Positions { .. } => None,
             })
+    }
+
+    /// The model-owned nominal nodes the clause's `duration` windows are
+    /// typed by, each window's dimension and unit closure in dependency
+    /// order. S3 does not lower them; the emitter writes them (FR-322
+    /// "Model-owned members").
+    pub fn duration_window_model_nodes(&self) -> impl Iterator<Item = &TimeNominalNode> {
+        self.aggregates
+            .values()
+            .filter_map(|aggregate| match &aggregate.window {
+                AggregateWindow::Duration(window) => Some(&window.nominal_nodes),
+                AggregateWindow::Positions { .. } => None,
+            })
+            .flatten()
+            .filter(|node| matches!(node.origin, TimeNominalOrigin::Model(_)))
     }
 
     /// How the clause activates (FR-325 "Outputs").
@@ -1128,8 +1165,10 @@ fn parameters(form: &TemporalClauseForm) -> Vec<&ParameterForm> {
     parameters
 }
 
-/// A timestamped-event aggregate bound converted exactly into the lower
-/// bound's time unit, with `s3.rational_bits` charged before conversion.
+/// A timestamped-event aggregate bound converted exactly into `target`, the
+/// selected clock unit (or, with no clock selected, the lower bound's time
+/// unit), with `s3.rational_bits` charged on the written magnitude and again
+/// on the converted value.
 fn aggregate_duration_bound(
     quantity: &qsl_forms::QuantityForm,
     target: &super::time_units::TimeScale,
@@ -1150,16 +1189,42 @@ fn aggregate_duration_bound(
             ),
         },
     )?;
-    declarations
+    let converted = declarations
         .timed
         .units
         .convert(&magnitude, &quantity.unit.name, target)
-        .map_err(|cause| {
-            refuse(TemporalCause::TimeQuantity {
-                cause: Box::new(cause),
-                span: quantity.unit.span,
-            })
-        })
+        .map_err(|cause| window_bound_refusal(cause, quantity.unit.span))?;
+    // The converted value is the emitted literal: the ceiling bounds it too.
+    let bits = converted
+        .numerator()
+        .magnitude_bits()
+        .max(converted.denominator().magnitude_bits());
+    if bits > ceiling {
+        return Err(located(
+            LimitExceeded::new(Setting::S3RationalBits, ceiling, u128::from(bits)),
+            declarations,
+            quantity.span,
+        ));
+    }
+    Ok(converted)
+}
+
+/// FR-194: a `duration` bound whose unit is no time unit, or a time unit
+/// that does not convert to the window's unit, is not a duration of the
+/// clause's clock and refuses `ill_typed`/`unit-mismatch` at the bound's
+/// unit; an unknown unit stays a missing name.
+fn window_bound_refusal(cause: TimeUnitCause, span: Span) -> StageFailure<CheckRefusal> {
+    match cause {
+        TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::OtherTimeDimension { .. } => {
+            refuse(TemporalCause::AggregateWindowKindMismatch { span })
+        }
+        TimeUnitCause::NoTimeDimension { .. }
+        | TimeUnitCause::UnknownUnit { .. }
+        | TimeUnitCause::AffineUnit { .. } => refuse(TemporalCause::TimeQuantity {
+            cause: Box::new(cause),
+            span,
+        }),
+    }
 }
 
 /// The region of `span` as a located stage limit.
@@ -1354,17 +1419,23 @@ fn check_clause(
                         else {
                             return Err(fault("aggregate-duration-window-bounds"));
                         };
-                        let target = declarations
+                        // QSpec FR-370: both bounds are quantities of the
+                        // clause's clock unit; with no clock selected yet,
+                        // of the lower bound's written unit.
+                        let units = declarations.timed.units;
+                        let clock = declarations
                             .timed
-                            .units
-                            .target(&lower.unit.name)
-                            .map_err(|cause| {
-                                refuse(TemporalCause::TimeQuantity {
-                                    cause: Box::new(cause),
-                                    span: lower.unit.span,
-                                })
-                            })?
-                            .ok_or_else(|| fault("aggregate-time-unit-scale-nonzero"))?;
+                            .clock_units
+                            .iter()
+                            .find(|selected| selected.declaration_span == declaration.span)
+                            .and_then(|selected| units.clock_target(&selected.timestamp_unit));
+                        let target = match clock {
+                            Some(target) => target,
+                            None => units
+                                .target(&lower.unit.name)
+                                .map_err(|cause| window_bound_refusal(cause, lower.unit.span))?
+                                .ok_or_else(|| fault("aggregate-time-unit-scale-nonzero"))?,
+                        };
                         let lower_value = aggregate_duration_bound(lower, &target, declarations)?;
                         let upper_value = aggregate_duration_bound(upper, &target, declarations)?;
                         if lower_value > upper_value {
@@ -1372,11 +1443,12 @@ fn check_clause(
                                 span: atom.term.window.span,
                             });
                         } else {
-                            window = Some(AggregateWindow::Duration {
+                            window = Some(AggregateWindow::Duration(Box::new(DurationWindow {
                                 lower: lower_value,
                                 upper: upper_value,
                                 unit: target.unit(),
-                            });
+                                nominal_nodes: target.nominal_nodes().to_vec(),
+                            })));
                         }
                     }
                 }
@@ -2177,6 +2249,7 @@ pub fn check_clauses(
             time_sources: &package.time_sources,
             rational_bits: quire_semantic_value::checking::CheckingLimits::default()
                 .rational_bits(),
+            clock_units: &package.clock_units,
         },
     };
     package

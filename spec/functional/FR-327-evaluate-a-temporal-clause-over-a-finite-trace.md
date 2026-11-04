@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-092
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-330
+    type: references
 ---
 # FR-327: Evaluate a temporal clause over a finite trace at S6a, with typed positions and metered work
 
@@ -102,7 +104,11 @@ and neither is a truth value.
   and at every activating position for activation `on each`. The outcome
   SHALL be `Completed(true)` when every activation evaluates true, and
   otherwise `Completed(false)` naming the first activation in position
-  order that evaluated false.
+  order that evaluated false. The named position is the activation's own,
+  not the position where an atom of its formula fails: an `Undefined` or a
+  refused condition names the position of its atom (below), and the position
+  where a deciding atom of a `Completed(false)` fails is the `decisive`
+  information's (FR-330).
 
 ### Undefined evaluation
 
