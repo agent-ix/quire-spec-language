@@ -1129,7 +1129,6 @@ pub fn replay_with_temporal_selections(
 /// `value_occurrences`) makes no call and settles `inconclusive`/`NoValue`
 /// carrying [`ReplayResult::pre_call_limit`]: zero replay charges, no
 /// `FunctionCall` charge point.
-#[deny(clippy::wildcard_enum_match_arm)]
 pub fn replay_with_cancel(
     wire: ReplayRequestWire,
     replay_limits: ReplayLimits,
@@ -1140,6 +1139,7 @@ pub fn replay_with_cancel(
 
 /// [`replay_with_cancel`] with explicit clock configurations for checked
 /// temporal clauses.
+#[deny(clippy::wildcard_enum_match_arm)]
 pub fn replay_with_cancel_and_temporal_selections(
     wire: ReplayRequestWire,
     temporal_selections: &[qsl_package::TemporalClockSelection],

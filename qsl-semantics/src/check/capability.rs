@@ -79,7 +79,7 @@ pub enum DeclarationFamily {
 }
 
 macro_rules! capability_kinds {
-    ($($(#[$doc:meta])* $variant:ident => $wire:literal, $family:literal, $applies:expr),+ $(,)?) => {
+    ($($(#[$doc:meta])* $variant:ident => $wire:literal, $family:literal),+ $(,)?) => {
         /// The canonical FR-290 capability-kind value (ADR-013 O-19).
         ///
         /// Two values are equal exactly when their FR-290 labels are byte-equal
@@ -143,17 +143,6 @@ macro_rules! capability_kinds {
                 }
             }
 
-            /// Whether this kind applies to a claim in `family` (FR-507).
-            ///
-            /// This table is independent of [`Self::fr290_family`]: for
-            /// example, a `temporal-satisfaction` claim can belong to either
-            /// `temporal-trace` or `relation-claim`.
-            pub fn applies_to_declaration(self, family: DeclarationFamily) -> bool {
-                match self {
-                    $(Capability::$variant => $applies.contains(&family),)+
-                }
-            }
-
             /// Reads a [`Capability`] from its exact FR-290 wire spelling.
             ///
             /// Matches by exact equality of the decoded bytes against one admitted
@@ -179,29 +168,60 @@ macro_rules! capability_kinds {
 
 capability_kinds! {
     /// `value-validity` (FR-290 family `value`).
-    ValueValidity => "value-validity", "value", &[DeclarationFamily::Value],
+    ValueValidity => "value-validity", "value",
     /// `operation-contract` (FR-290 family `state-model`).
-    OperationContract => "operation-contract", "state-model", &[DeclarationFamily::StateModel, DeclarationFamily::RelationClaim],
+    OperationContract => "operation-contract", "state-model",
     /// `finite-replay` (FR-290 family `finite-replay`).
-    FiniteReplay => "finite-replay", "finite-replay", &[DeclarationFamily::Protocol],
+    FiniteReplay => "finite-replay", "finite-replay",
     /// `temporal-satisfaction` (FR-290 family `temporal-trace`).
-    TemporalSatisfaction => "temporal-satisfaction", "temporal-trace", &[DeclarationFamily::TemporalTrace, DeclarationFamily::RelationClaim],
+    TemporalSatisfaction => "temporal-satisfaction", "temporal-trace",
     /// `global-conformance` (FR-290 family `protocol`).
-    GlobalConformance => "global-conformance", "protocol", &[DeclarationFamily::Protocol],
+    GlobalConformance => "global-conformance", "protocol",
     /// `monitorability` (FR-290 family `protocol`).
-    Monitorability => "monitorability", "protocol", &[DeclarationFamily::Protocol],
+    Monitorability => "monitorability", "protocol",
     /// `local-projection` (FR-290 family `protocol`).
-    LocalProjection => "local-projection", "protocol", &[DeclarationFamily::Protocol],
+    LocalProjection => "local-projection", "protocol",
     /// `refinement` (FR-290 family `protocol`).
-    Refinement => "refinement", "protocol", &[DeclarationFamily::Protocol],
+    Refinement => "refinement", "protocol",
     /// `realizability` (FR-290 family `protocol`).
-    Realizability => "realizability", "protocol", &[DeclarationFamily::Protocol],
+    Realizability => "realizability", "protocol",
     /// `composition` (FR-290 family `protocol`).
-    Composition => "composition", "protocol", &[DeclarationFamily::Protocol],
+    Composition => "composition", "protocol",
     /// `probabilistic-satisfaction` (FR-290 family `probabilistic`).
-    ProbabilisticSatisfaction => "probabilistic-satisfaction", "probabilistic", &[DeclarationFamily::Probabilistic],
+    ProbabilisticSatisfaction => "probabilistic-satisfaction", "probabilistic",
     /// `schedulability` (FR-290 family `real-time`).
-    Schedulability => "schedulability", "real-time", &[DeclarationFamily::RealTime],
+    Schedulability => "schedulability", "real-time",
+}
+
+impl Capability {
+    /// Whether this kind applies to a claim in `family` (FR-507).
+    ///
+    /// This table is independent of [`Self::fr290_family`]: for example, a
+    /// `temporal-satisfaction` claim can belong to either `temporal-trace` or
+    /// `relation-claim`. It is an S7 seam-probe location (ADR-012 §5.1): it
+    /// leaves the `#[cfg(seam_probe)]` variant unhandled, so a kind without an
+    /// applicability row cannot compile.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    pub fn applies_to_declaration(self, family: DeclarationFamily) -> bool {
+        use DeclarationFamily::{
+            Probabilistic, Protocol, RealTime, RelationClaim, StateModel, TemporalTrace, Value,
+        };
+        let families: &[DeclarationFamily] = match self {
+            Capability::ValueValidity => &[Value],
+            Capability::OperationContract => &[StateModel, RelationClaim],
+            Capability::TemporalSatisfaction => &[TemporalTrace, RelationClaim],
+            Capability::FiniteReplay
+            | Capability::GlobalConformance
+            | Capability::Monitorability
+            | Capability::LocalProjection
+            | Capability::Refinement
+            | Capability::Realizability
+            | Capability::Composition => &[Protocol],
+            Capability::ProbabilisticSatisfaction => &[Probabilistic],
+            Capability::Schedulability => &[RealTime],
+        };
+        families.contains(&family)
+    }
 }
 
 impl fmt::Display for Capability {
