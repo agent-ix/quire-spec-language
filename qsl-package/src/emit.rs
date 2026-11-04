@@ -271,15 +271,6 @@ pub enum EmitRefusal {
         /// The selected temporal profile identity.
         profile: &'static str,
     },
-    /// A selected temporal clock identity does not name a unique configured
-    /// declaration, or selections are not in structural NodeRef order.
-    #[error("temporal clock selection at {source_ref:?} bytes {span:?} does not identify a unique declaration in NodeRef order")]
-    InvalidTemporalClockReference {
-        /// The selected source document.
-        source_ref: qsl_foundation::source::provenance::RawSourceRef,
-        /// The selected declaration locus.
-        span: qsl_foundation::Span,
-    },
     /// A selected clock name or one of its exact configuration fields is
     /// empty, oversized, noncanonical or outside its declared range.
     #[error("temporal clock selection at {source_ref:?} bytes {span:?} has an invalid {field}")]
@@ -331,8 +322,7 @@ impl EmitRefusal {
             Self::MissingTemporalClockSelection { .. } => Code::MissingDeclaration,
             Self::SurplusTemporalClockSelection { .. }
             | Self::DuplicateTemporalClockSelection { .. }
-            | Self::TemporalClockProfileMismatch { .. }
-            | Self::InvalidTemporalClockReference { .. } => Code::InvalidPackage,
+            | Self::TemporalClockProfileMismatch { .. } => Code::InvalidPackage,
             Self::InvalidTemporalClockValue { .. } => Code::InvalidPackage,
             Self::Encoding { .. } => Code::OutputFailure,
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
@@ -390,8 +380,7 @@ impl EmitRefusal {
             Self::MissingTemporalClockSelection { .. } => Some("missing-selection"),
             Self::SurplusTemporalClockSelection { .. }
             | Self::DuplicateTemporalClockSelection { .. }
-            | Self::TemporalClockProfileMismatch { .. }
-            | Self::InvalidTemporalClockReference { .. } => Some("timed-node-reference"),
+            | Self::TemporalClockProfileMismatch { .. } => Some("timed-node-reference"),
             Self::InvalidTemporalClockValue { .. } => Some("invalid-value"),
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
             Self::MissingDispatchIdentityContext { .. } => None,
@@ -5948,7 +5937,6 @@ fn temporal_binding_rows(
     use qsl_semantics::check::TemporalProfile;
 
     let mut selected = BTreeMap::new();
-    let mut selection_order = Vec::with_capacity(selections.len());
     for selection in selections {
         let key = (
             selection.source.clone(),
@@ -5961,11 +5949,6 @@ fn temporal_binding_rows(
                 span: selection.declaration_span,
             });
         }
-        selection_order.push((
-            selection.source.clone(),
-            selection.declaration_span.start,
-            selection.declaration_span.end,
-        ));
     }
 
     let mut rows = Vec::new();
@@ -5980,7 +5963,6 @@ fn temporal_binding_rows(
             name: site.name.as_str().into(),
         });
     }
-    let mut matched_declarations = BTreeMap::new();
     let mut missing = Vec::new();
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
@@ -6027,7 +6009,6 @@ fn temporal_binding_rows(
             .get(&declaration_key)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        matched_declarations.insert(key, declaration.clone());
         rows.push(quire_contract_model::TemporalBinding {
             declaration,
             occurrence: temporal.claim().ordinal(),
@@ -6098,7 +6079,6 @@ fn temporal_binding_rows(
             .get(&wrapper)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        matched_declarations.insert(key, declaration.clone());
         rows.push(quire_contract_model::TemporalBinding {
             declaration,
             occurrence: occurrence.origin().ordinal(),
@@ -6158,7 +6138,6 @@ fn temporal_binding_rows(
                 });
             }
             validate_temporal_clock(&source, span, template.clock.as_str(), clock)?;
-            matched_declarations.insert(key, declaration.clone());
             for node in nodes.iter().filter(|node| node.node_id == declaration) {
                 for ordinal in node
                     .occurrences
@@ -6185,26 +6164,6 @@ fn temporal_binding_rows(
     }
     if let Some((source_ref, span)) = missing.into_iter().next() {
         return Err(EmitRefusal::MissingTemporalClockSelection { source_ref, span });
-    }
-    let mut previous = None;
-    for (source_ref, start, end) in selection_order {
-        let key = (source_ref.clone(), start, end);
-        let Some(declaration) = matched_declarations.get(&key) else {
-            return Err(EmitRefusal::InvalidTemporalClockReference {
-                source_ref,
-                span: qsl_foundation::Span { start, end },
-            });
-        };
-        if previous
-            .as_ref()
-            .is_some_and(|previous: &CheckedNodeId| previous > declaration)
-        {
-            return Err(EmitRefusal::InvalidTemporalClockReference {
-                source_ref,
-                span: qsl_foundation::Span { start, end },
-            });
-        }
-        previous = Some(declaration.clone());
     }
     rows.sort_by(|left, right| {
         (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
