@@ -1360,7 +1360,7 @@ fn evaluate(
                 other => Ok(Outcome::of(ActivationState::Active).with_non_value(
                     NonValueKind::Refused,
                     "temporal-refusal",
-                    Some(format!("{other:?}")),
+                    Some(other.to_string()),
                 )),
             };
         }

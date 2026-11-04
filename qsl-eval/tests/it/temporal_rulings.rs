@@ -1333,3 +1333,112 @@ fn a_clause_with_no_tick_reach_is_refused_before_anything_is_charged() {
     );
     assert!(meter.admitted_charges().is_empty());
 }
+
+fn exact_silent_request(env: &Env, p: u64) -> EvidenceRequest {
+    let mut asked = request(env, vec![position(0, &[(p, Valuation::False)])]);
+    asked.origins = vec![origin("o1", "a")];
+    asked.trigger = Some(id("o1"));
+    asked.decision_progress = Some(3);
+    asked.completeness = Some(qsl_eval::temporal::evidence::CompletenessRecord {
+        reference: qsl_eval::temporal::evidence::EvidenceRef::named("c"),
+        state: ProgressCompleteness::Complete { through: 3 },
+        facts: Vec::new(),
+    });
+    asked
+}
+
+/// The spec vector of FR-523-AC-21: a fixed-sample clause `on origin`,
+/// `eventually[0, 3] holds(p)`, one observed position 0 with `p` false,
+/// watermark 3 and `Complete { through: 3 }` over a closed scope.
+#[trace("FR-516-AC-27", "FR-523-AC-21", "TC-1311", "TC-1318")]
+#[test]
+fn the_spec_vector_of_silent_samples_measures_its_exact_usage() {
+    let fixed = fixed_env("on origin", "eventually[0, 3] holds(p)");
+    let p = fixed.atom("p");
+    let mut meter = unlimited();
+    let result = evaluate_temporal_evidence(
+        &fixed.subject(&[]),
+        &exact_silent_request(&fixed, p),
+        &mut meter,
+    )
+    .expect("a result");
+    assert_eq!(result.truth, Some(Truth::False));
+    let usage = result.usage;
+    assert_eq!(usage.get(EvidenceCounter::FormulaNodes), 2);
+    assert_eq!(usage.get(EvidenceCounter::Positions), 1);
+    assert_eq!(usage.get(EvidenceCounter::Valuations), 4);
+    assert_eq!(usage.get(EvidenceCounter::EvaluationSteps), 4);
+    assert_eq!(usage.get(EvidenceCounter::Visited), 7);
+    // The meter at `temporal.visit`: the four evaluated charges, six
+    // charges at the three silent samples (a scan, a node visit and a lookup
+    // each), and three materialization charges, one per silent sample, that
+    // `admit_progressed` makes before any position is evaluated.
+    assert_eq!(meter.admitted_charges().len(), 13);
+}
+
+#[trace("FR-516-AC-27", "TC-1311")]
+#[test]
+fn a_support_pair_at_a_silent_sample_names_no_observed_fact_and_is_skipped() {
+    // `always[0, 3] holds(p)` with `p` true at the one observation and false
+    // at the silent samples: the violation rests on silent samples alone.
+    let fixed = fixed_env("on origin", "always[0, 3] holds(p)");
+    let p = fixed.atom("p");
+    let mut asked = exact_silent_request(&fixed, p);
+    asked.positions = vec![position(0, &[(p, Valuation::True)])];
+    let result = call(&fixed, &fixed.subject(&[]), &asked).expect("a result, not a fault");
+    assert_eq!(result.truth, Some(Truth::False));
+    assert!(
+        result
+            .support
+            .iter()
+            .all(|support| support.observation.identity == "obs0"),
+        "{:?}",
+        result.support
+    );
+}
+
+#[trace("FR-516-AC-3", "TC-1311")]
+#[test]
+fn a_withdrawn_valuation_names_its_atom_and_position_in_one_exact_text() {
+    let (env, p) = each();
+    let mut positions: Vec<_> = (0..3)
+        .map(|i| position(i, &[(p, Valuation::True)]))
+        .collect();
+    positions[1].valuations.clear();
+    let mut gap = request(&env, positions);
+    gap.deliveries = vec![delivery("t1", "r", "payload", &["5"])];
+    gap.trigger = Some(id("t1"));
+    let result = call(&env, &env.subject(&[]), &gap).expect("a result");
+    let named = result.non_value.expect("a non-value");
+    assert_eq!(named.code, "fact-withdrawn");
+    assert_eq!(named.dimension.as_deref(), Some("valuation:1@1"));
+}
+
+#[trace("FR-516-AC-2", "TC-1311")]
+#[test]
+fn a_refusal_of_the_evaluation_after_charges_is_an_ok_active_refused_result() {
+    // Two observations of one stamp with no usable order, in a `since`.
+    let env = env("on origin", "holds(p) until[0, 1] holds(q)");
+    let (p, q) = (env.atom("p"), env.atom("q"));
+    let positions = vec![
+        position(0, &[(p, Valuation::True), (q, Valuation::False)]),
+        {
+            let mut tie = position(0, &[(p, Valuation::True), (q, Valuation::True)]);
+            tie.observation = qsl_eval::temporal::evidence::EvidenceRef::named("obs0b");
+            tie
+        },
+    ];
+    let mut asked = request(&env, positions);
+    asked.origins = vec![origin("o1", "a")];
+    asked.trigger = Some(id("o1"));
+    let result = call(&env, &env.subject(&[]), &asked).expect("an Ok result");
+    assert_eq!(result.activation, ActivationState::Active);
+    assert_eq!(result.truth, None);
+    let named = result.non_value.expect("a non-value");
+    assert_eq!(named.kind, NonValueKind::Refused);
+    assert_eq!(named.code, "temporal-refusal");
+    assert_eq!(
+        named.dimension.as_deref(),
+        Some("the positions of equal stamp at TemporalPosition(1) have no comparable order key")
+    );
+}
