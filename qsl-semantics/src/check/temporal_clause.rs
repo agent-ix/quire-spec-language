@@ -1158,8 +1158,10 @@ fn parameters(form: &TemporalClauseForm) -> Vec<&ParameterForm> {
     parameters
 }
 
-/// A timestamped-event aggregate bound converted exactly into the lower
-/// bound's time unit, with `s3.rational_bits` charged before conversion.
+/// A timestamped-event aggregate bound converted exactly into `target`, the
+/// selected clock unit (or, with no clock selected, the lower bound's time
+/// unit), with `s3.rational_bits` charged on the written magnitude and again
+/// on the converted value.
 fn aggregate_duration_bound(
     quantity: &qsl_forms::QuantityForm,
     target: &super::time_units::TimeScale,
@@ -1180,11 +1182,24 @@ fn aggregate_duration_bound(
             ),
         },
     )?;
-    declarations
+    let converted = declarations
         .timed
         .units
         .convert(&magnitude, &quantity.unit.name, target)
-        .map_err(|cause| window_bound_refusal(cause, quantity.unit.span))
+        .map_err(|cause| window_bound_refusal(cause, quantity.unit.span))?;
+    // The converted value is the emitted literal: the ceiling bounds it too.
+    let bits = converted
+        .numerator()
+        .magnitude_bits()
+        .max(converted.denominator().magnitude_bits());
+    if bits > ceiling {
+        return Err(located(
+            LimitExceeded::new(Setting::S3RationalBits, ceiling, u128::from(bits)),
+            declarations,
+            quantity.span,
+        ));
+    }
+    Ok(converted)
 }
 
 /// FR-194: a `duration` bound whose unit is no time unit, or a time unit

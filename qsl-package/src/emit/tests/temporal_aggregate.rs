@@ -390,21 +390,32 @@ fn a_duration_window_converts_both_bounds_to_the_selected_clock_unit() {
                 "{window} under {clock}: {name}"
             );
         }
-        let [unit_node] = nodes(&wire)
-            .iter()
-            .filter(|candidate| candidate["node_id"]["path"] == path)
-            .collect::<Vec<_>>()[..]
-        else {
-            panic!("{window}: one clock unit node");
-        };
-        assert_eq!(unit_node["semantic_form"], "unit");
-        assert_eq!(unit_node["owner"]["kind"], "model");
-        assert_eq!(unit_node["owner"]["node"], clock_unit);
-        assert_eq!(
-            unit_node["body"],
-            json!({"term": "aggregate", "members": []})
-        );
-        assert_eq!(unit_node["occurrences"][0]["role"], "generated");
+        // The clock unit's model-owned closure: the unit itself, its `Time`
+        // dimension and, for `ms`, the `s` it is defined over.
+        let time = "ix://example/config-version/dimension/Time";
+        let mut closure = vec![("unit", clock_unit.clone()), ("dimension", time.to_owned())];
+        if clock == "ms" {
+            closure.push(("unit", package_unit("s")));
+        }
+        for (form, identity) in closure {
+            let path = json!(["scalar_type", form, identity]);
+            let [written] = nodes(&wire)
+                .iter()
+                .filter(|candidate| candidate["node_id"]["path"] == path)
+                .collect::<Vec<_>>()[..]
+            else {
+                panic!("{window} under {clock}: one {form} node {identity}");
+            };
+            assert_eq!(written["semantic_form"], form, "{identity}");
+            assert_eq!(written["owner"]["kind"], "model", "{identity}");
+            assert_eq!(written["owner"]["node"], identity.as_str());
+            assert_eq!(
+                written["body"],
+                json!({"term": "aggregate", "members": []}),
+                "{identity}"
+            );
+            assert_eq!(written["occurrences"][0]["role"], "generated", "{identity}");
+        }
     }
 }
 
@@ -426,4 +437,18 @@ fn a_duration_bound_of_another_time_dimension_than_the_clock_refuses() {
     };
     assert_eq!(refusal.cause.code(), qsl_foundation::Code::IllTyped);
     assert_eq!(refusal.cause.cause(), Some("unit-mismatch"));
+    // At the lower bound's unit `s`.
+    let start = text.find("past[0 s").expect("the window") + "past[0 ".len();
+    let qsl_semantics::check::CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a temporal refusal: {refusal:?}");
+    };
+    assert_eq!(
+        **cause,
+        qsl_semantics::check::TemporalCause::AggregateWindowKindMismatch {
+            span: qsl_foundation::Span {
+                start,
+                end: start + 1
+            }
+        }
+    );
 }

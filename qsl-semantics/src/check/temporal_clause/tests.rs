@@ -541,16 +541,25 @@ fn aggregate_atoms_are_checked_and_admitted() {
     ));
     // FR-194: a bound of another dimension is no duration, a unit
     // mismatch at its unit, whichever bound it is.
-    for window in ["past[0 m, 1 m]", "past[0 s, 1 m]"] {
-        let refusal = package_refusal(&timestamped_source(&format!("count over {window} >= 1")));
+    // FR-194-AC-7: at the unit `m` of the first such bound.
+    for (window, unit_at) in [("past[0 m, 1 m]", 7), ("past[0 s, 1 m]", 12)] {
+        let text = timestamped_source(&format!("count over {window} >= 1"));
+        let refusal = package_refusal(&text);
         assert_eq!(
             (refusal.code(), refusal.tag()),
             (Code::IllTyped, "unit-mismatch"),
             "{window}"
         );
-        assert!(
-            matches!(refusal, TemporalCause::AggregateWindowKindMismatch { .. }),
-            "{window}: {refusal:?}"
+        let start = first(&text, window).start + unit_at;
+        assert_eq!(
+            refusal,
+            TemporalCause::AggregateWindowKindMismatch {
+                span: Span {
+                    start,
+                    end: start + 1
+                }
+            },
+            "{window}"
         );
     }
 
@@ -779,6 +788,35 @@ fn a_duration_window_lowers_to_quantities_of_its_unit() {
         Some(unit.clone()),
         "the threshold is in the value's unit"
     );
+}
+
+/// FR-337-AC-15: `s3.rational_bits` bounds a `duration` bound's converted
+/// value, the literal emitted, as well as its written magnitude: `past[0 ms,
+/// 255 s]` converts `255 s` (8 bits written) to `255000` of `ms`, 18 bits,
+/// so under a ceiling of 16 it refuses `LimitExceeded(S3RationalBits)` at
+/// `255 s`, and under a ceiling of 18 it checks.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn a_converted_duration_bound_past_the_rational_bits_ceiling_is_a_limit() {
+    let text = timestamped_source("count over past[0 ms, 255 s] >= 1");
+    let within = |bits| CheckingLimits::default().with_rational_bits(bits);
+    let refusals = assemble(&text)
+        .check(within(16))
+        .expect_err("the converted bound is past the ceiling");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a stage limit: {refusal:?}");
+    };
+    assert_eq!(limit.kind, crate::check::CheckingLimitKind::RationalBits);
+    assert_eq!((limit.limit, limit.actual), (16, 18));
+    let package = assemble(&text);
+    let expected = crate::check::region::region(&package.source, None, first(&text, "255 s"));
+    assert_eq!(limit.region, expected);
+    assemble(&text)
+        .check(within(18))
+        .unwrap_or_else(|refusals| panic!("within the ceiling: {refusals:?}"));
 }
 
 /// FR-337-AC-7: a guard whose divisor has no S3 law checks, the guard is
