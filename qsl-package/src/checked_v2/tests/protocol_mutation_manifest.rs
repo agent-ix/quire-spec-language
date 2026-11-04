@@ -282,7 +282,7 @@ fn pointer_of(location: &quire_contract_model::CheckedPackageRefusalLocation) ->
 
 /// A schema refusal: `malformed_wire`, no cause, the first error's path as the
 /// locus and no `document_pointer`, at the schema stage.
-fn check_wire_refusal(expect: &Value, path: &str) -> Result<(), String> {
+fn check_wire_refusal(expect: &Value, path: &str, all: &[String]) -> Result<(), String> {
     if expect["stage"] != "schema" || expect["code"] != "malformed_wire" {
         return Err(format!(
             "the schema refused first at {path}, but the row expects {} at stage {}",
@@ -293,7 +293,18 @@ fn check_wire_refusal(expect: &Value, path: &str) -> Result<(), String> {
         return Err("a wire refusal has no cause and no document_pointer".to_owned());
     }
     if expect["locus"].as_str() != Some(path) {
-        return Err(format!("wire locus {path:?}, expected {}", expect["locus"]));
+        let held = expect["locus"]
+            .as_str()
+            .is_some_and(|locus| all.iter().any(|error| error == locus));
+        let why = if held {
+            "the expected locus is a later schema error: this validator orders errors differently from the manifest's"
+        } else {
+            "the expected locus is not among this validator's schema errors"
+        };
+        return Err(format!(
+            "wire locus {path:?}, expected {} ({why})",
+            expect["locus"]
+        ));
     }
     Ok(())
 }
@@ -407,11 +418,16 @@ fn replay_row(
     // The published schema decides the wire first: a package it refuses is
     // reported `malformed_wire` at the first error's path and never reaches
     // the reader, whose later checks cover the shapes the schema admits.
-    let wire_error = schema
+    let wire_errors: Vec<String> = schema
         .validate(&edited)
         .err()
-        .and_then(|mut errors| errors.next())
-        .map(|error| error.instance_path.to_string());
+        .map(|errors| {
+            errors
+                .map(|error| error.instance_path.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let wire_error = wire_errors.first().cloned();
     let outcome = match &wire_error {
         Some(_) => None,
         None => {
@@ -439,7 +455,7 @@ fn replay_row(
         "refuse" => {
             executed.refuse += 1;
             match (&outcome, &wire_error) {
-                (None, Some(path)) => check_wire_refusal(expect, path),
+                (None, Some(path)) => check_wire_refusal(expect, path, &wire_errors),
                 (Some(outcome), _) => check_refusal(expect, outcome, &edited),
                 (None, None) => Err("neither the schema nor the reader answered".to_owned()),
             }
@@ -482,6 +498,12 @@ fn pending_is_executed(id: &str, layout_ids: &BTreeSet<&str>) -> bool {
 /// refusal does not satisfy a later semantic row), each `property` row's
 /// assertions hold over the read-back package; every class runs a nonzero
 /// number of rows and every row of both files is executed.
+///
+/// The wire locus of a schema-stage row is the first error of the published
+/// schema. The manifest fixed those loci with `jsonschema` 0.55.0 and this
+/// test validates with 0.17.1, so first-error order is validator specific: a
+/// mismatch says whether the expected locus is a later error (order differs)
+/// or no error at all (the validators disagree).
 #[trace("FR-383-AC-20", "TC-1063")]
 #[test]
 fn conformance_protocol_mutation_manifest_replays_through_i2() {
@@ -537,6 +559,15 @@ fn conformance_protocol_mutation_manifest_replays_through_i2() {
         total,
         manifest_rows.len() + layout_rows.len(),
         "every executable row is executed"
+    );
+    assert_eq!(
+        (executed.admit, executed.refuse, executed.property, total),
+        (25, 90, 4, 119),
+        "the executed set FR-383-AC-20 states"
+    );
+    assert_eq!(
+        pending_without_row, 0,
+        "every pending entry runs through its layout row"
     );
     assert!(
         defects.is_empty(),

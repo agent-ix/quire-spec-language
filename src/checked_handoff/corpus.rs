@@ -239,14 +239,12 @@ fn definition_index(v: &Value) -> Option<Made> {
     selection_mut(&mut w, "profile_selections")?
         .retain(|selection| selection.get("role") != Some(&json!("temporal_profile")));
     let node = nodes(v)?.iter().position(|node| {
-        node.get("semantic_form") == Some(&json!("compensation"))
-            || node
-                .pointer("/body/operation/laws")
-                .and_then(Value::as_array)
-                .is_some_and(|laws| {
-                    laws.iter()
-                        .any(|law| law.get("role") == Some(&json!("temporal_profile")))
-                })
+        node.get("node_tag") == Some(&json!("protocol"))
+            && matches!(
+                node.pointer("/body/operation/member/operator")
+                    .and_then(Value::as_str),
+                Some("await" | "compensate")
+            )
     })?;
     ok(
         w,
