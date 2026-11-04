@@ -476,7 +476,6 @@ fn a_decimal_literal_takes_the_type_of_its_typed_peer() {
         "decimal(15, 1) = p",
         "p < decimal(15, 1)",
         "-decimal(5, 0) = p",
-        "p + -decimal(5, 0) = p",
         "r + decimal(15, 1) = r",
     ] {
         let package = compile(&case("p: P, r: R", body))

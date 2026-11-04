@@ -2221,6 +2221,14 @@ enum AliasStep<'e> {
     OrElse(ExprRef<'e>, Option<usize>),
 }
 
+/// Whether `node` is a checked `decimal(c, s)` literal.
+fn is_decimal_literal(node: &Node) -> bool {
+    matches!(
+        node.kind,
+        NodeKind::Literal(CheckedLiteral(Value::Decimal(_)))
+    )
+}
+
 /// The largest written scale of a `decimal(c, s)` literal the checker keeps:
 /// the literal's wire spelling has exactly that many fractional digits.
 const MAX_LITERAL_SCALE: u32 = 65_535;
@@ -3459,6 +3467,7 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
+        let literal_operand = is_decimal_literal(&left) || is_decimal_literal(&right);
         let (left_box, right_box) = (self.push(left), self.push(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
             (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => {
@@ -3523,10 +3532,17 @@ impl<'a> Typer<'a> {
                     Some(ValueType::Decimal(target)) if target == left_decimal => target.clone(),
                     Some(ValueType::Decimal(_)) => return Err(mismatch(location)),
                     Some(_) => return Err(mismatch(location)),
-                    // No expected type: the operands share one decimal type
-                    // (a literal operand took its typed peer's), and the
-                    // operation is typed by it (FR-104-AC-13).
-                    None => left_decimal.clone(),
+                    // No expected type: a `decimal(c, s)` operand took its
+                    // typed peer's type, so the operands share one decimal
+                    // type and the operation is typed by it (FR-104-AC-13).
+                    // Typed operands alone supply no target.
+                    None if literal_operand => left_decimal.clone(),
+                    None => {
+                        return Err(CheckRefusal::ill_typed(
+                            location,
+                            IllTypedCause::AmbiguousLiteral,
+                        ))
+                    }
                 };
                 (
                     NodeKind::Decimal {
