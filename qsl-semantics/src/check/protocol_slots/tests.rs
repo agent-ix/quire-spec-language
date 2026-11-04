@@ -10,7 +10,7 @@ use quire_semantic_value::checking::CheckingLimits;
 
 use super::{CheckedLifetime, CheckedTerminalMember};
 use crate::check::protocol_clause::ProtocolNodeId;
-use crate::check::refusal::{ProtocolAnchorCause, SlotKind};
+use crate::check::refusal::{ProtocolAnchorCause, ProtocolReferenceCause, SlotKind};
 use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 
 mod fixture {
@@ -107,7 +107,13 @@ fn checks(text: &str) -> CheckedGraph {
         .protocol_refusals()
         .iter()
         .flat_map(|result| result.refusals.iter())
-        .filter(|refusal| !matches!(refusal.cause, CheckCause::ProtocolReference(_)))
+        .filter(|refusal| {
+            !matches!(
+                            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+            if matches!(**cause, ProtocolReferenceCause::NotEmitted { .. })
+                        )
+        })
         .collect();
     assert!(refusals.is_empty(), "{text}: {refusals:?}");
     graph

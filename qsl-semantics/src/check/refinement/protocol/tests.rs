@@ -536,6 +536,11 @@ fn the_rows_select_the_concrete_protocol_and_record_its_node() {
         (Code::MissingDeclaration, Some("missing-name"))
     );
     assert_eq!(unselected.at, "pp");
+    assert!(matches!(
+        &unselected.refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), crate::check::refusal::ProtocolAnchorCause::MissingProfile { alias, .. } if alias == "pp")
+    ));
 }
 
 /// A missing `join` or `finish` row refuses naming it, and a second row for

@@ -501,9 +501,10 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
         .into_iter()
         .filter(|refusal| {
             !matches!(
-                refusal.cause,
-                crate::check::CheckCause::ProtocolReference(_)
-            )
+                            &refusal.cause,
+            crate::check::CheckCause::ProtocolReference(cause)
+            if matches!(**cause, crate::check::refusal::ProtocolReferenceCause::NotEmitted { .. })
+                        )
         })
         .collect();
     // The unit selects no temporal profile (the original refusal, at the

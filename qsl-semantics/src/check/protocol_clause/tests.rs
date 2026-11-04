@@ -116,8 +116,13 @@ fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, Che
 /// profile, whose lowering is not their subject.
 fn check_refusals(declarations: &str) -> (String, Result<CheckedGraph, Vec<CheckRefusal>>) {
     let (text, assembled) = assemble(declarations);
-    let not_emission =
-        |refusal: &CheckRefusal| !matches!(refusal.cause, CheckCause::ProtocolReference(_));
+    let not_emission = |refusal: &CheckRefusal| {
+        !matches!(
+                    &refusal.cause,
+        CheckCause::ProtocolReference(cause)
+        if matches!(**cause, crate::check::refusal::ProtocolReferenceCause::NotEmitted { .. })
+                )
+    };
     let result = match assembled.check_with_protocol_results(CheckingLimits::default()) {
         Ok(graph) => {
             let refusals: Vec<CheckRefusal> = graph

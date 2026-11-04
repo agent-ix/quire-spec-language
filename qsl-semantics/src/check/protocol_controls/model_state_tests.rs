@@ -72,7 +72,13 @@ fn check_with_limits(
     };
     let checked: Vec<CheckRefusal> = refusals
         .into_iter()
-        .filter(|refusal| !matches!(refusal.cause, CheckCause::ProtocolReference(_)))
+        .filter(|refusal| {
+            !matches!(
+                            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+            if matches!(**cause, crate::check::refusal::ProtocolReferenceCause::NotEmitted { .. })
+                        )
+        })
         .collect();
     if !checked.is_empty() {
         return Err(checked);
