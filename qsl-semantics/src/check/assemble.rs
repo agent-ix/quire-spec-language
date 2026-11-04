@@ -3489,7 +3489,7 @@ impl PackageDeclarations {
             .iter()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
             .collect();
-        model_spellings.bind_first(&mut object_names);
+        model_spellings.bind_unique(&mut object_names);
         // A model composite or a variant type is a declared type name; `M::T`
         // is no source declaration of the unit.
         let model_composite_names: BTreeSet<String> = model_composites

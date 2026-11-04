@@ -11,13 +11,14 @@ use ix_trace_rs::trace;
 use qsl_forms::{build_unit, BinaryOperator, BinderQuery, Expression};
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, VariantTypeDeclaration,
+    AssemblyLimits, CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations,
+    VariantTypeDeclaration,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, ValueTypeRef};
-use qsl_semantics::model::intake::{admit_unit, package_input};
+use qsl_semantics::model::intake::{admit_unit, admit_units_with_cancel, package_input};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{CollectionKind, IllTypedCause, Presence, ValueType};
+use quire_exact::{Cancel, CollectionKind, IllTypedCause, Presence, ValueType};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::CompositeShape;
 use serde_json::Value;
@@ -414,12 +415,12 @@ fn the_keys_of_a_variant_type_do_not_depend_on_the_alias() {
     );
 }
 
-/// FR-480-AC-9 (QSL-1578): one unit selecting the FR-360 package as `Config`
+/// FR-480-AC-11 (QSL-1578): one unit selecting the FR-360 package as `Config`
 /// and as `Cfg` names its variant types and their cases, its record value
 /// type and its fields, its object type and its operations through either
 /// alias, and a value written through one alias is a value of the type the
 /// other alias names: one type environment entry per package declaration.
-#[trace("FR-480-AC-9")]
+#[trace("FR-480-AC-11")]
 #[test]
 fn a_second_alias_names_the_same_variant_record_and_object_types() {
     let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
@@ -503,6 +504,104 @@ fn a_second_alias_names_the_same_variant_record_and_object_types() {
     let (same, _) = signature("same");
     assert!(matches!(&same[0], ValueType::Reference(_)), "{same:?}");
     assert_eq!(same[0], same[1]);
+}
+
+/// FR-480-AC-11 (QSL-1578): unit `a` selects the FR-360 package as `Config`
+/// and unit `b` selects it as `Cfg`. Unit `b` names its variant type and
+/// case, its record value type and field, and its object type and operation
+/// through `Cfg`, each resolving to the declaration `Config` names: unit
+/// `b`'s `Cfg::Tier` value is an argument of unit `a`'s `Config::Tier`
+/// parameter, and each variant type is declared once.
+#[trace("FR-480-AC-11")]
+#[test]
+fn two_units_name_the_same_variant_record_and_object_types_through_their_own_aliases() {
+    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let packages = package_input([bytes.as_slice()]).unwrap();
+    let unit = |identity: &str, declarations: String| {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{declarations}\n"
+        );
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("test", identity),
+            "unit.native",
+            source.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the source unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = build_unit(&parsed).expect("S2 builds the source unit");
+        (parsed.source().reference().clone(), unit)
+    };
+    let package = fixture::PACKAGE;
+    let units = vec![
+        unit(
+            "a",
+            format!(
+                "model Config = {package:?};\n\
+                 function gold using v(t: Config::Tier): Boolean pure {{ t = Config::Tier::Gold }}"
+            ),
+        ),
+        unit(
+            "b",
+            format!(
+                "model Cfg = {package:?};\n\
+                 function read using v(s: Cfg::Settings): Cfg::Tier pure {{ s.tier }}\n\
+                 function golden using v(s: Cfg::Settings): Boolean pure {{ \
+                     gold(s.tier) or s.tier = Cfg::Tier::Standard }}\n\
+                 function same using v(a: Cfg::Account, b: Cfg::Account): Boolean pure {{ a = b }}\n\
+                 pre Promotes using v on Cfg::Account::promote {{ t = Cfg::Tier::Gold }}"
+            ),
+        ),
+    ];
+    let selections: Vec<_> = units
+        .iter()
+        .map(|(_, unit)| unit.selections().models.as_slice())
+        .collect();
+    let selected = admit_units_with_cancel(
+        &selections,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the one package admits under both units' aliases");
+    let declarations = PackageDeclarations::assemble_units(
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        units,
+        selected,
+        Vec::new(),
+        AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"));
+    let mut variant_types: Vec<_> = declarations
+        .variant_types
+        .iter()
+        .map(|declared| declared.name().to_owned())
+        .collect();
+    variant_types.sort();
+    assert_eq!(
+        variant_types,
+        ["Config::Grade", "Config::Level", "Config::Tier"],
+        "each variant type is declared once, under the first alias"
+    );
+    let tier = enum_of(&declarations, "Config", "Tier");
+    let checked = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("both units check: {refusals:?}"));
+    let callable = |name: &str| {
+        checked
+            .callable(name)
+            .unwrap_or_else(|| panic!("{name} is checked"))
+    };
+    assert_eq!(callable("gold").parameters[0].1, tier);
+    assert!(
+        matches!(&callable("read").parameters[0].1, ValueType::Composite(_)),
+        "Cfg::Settings is the package's record value type"
+    );
+    assert_eq!(*callable("read").result, tier);
+    let same = &callable("same").parameters;
+    assert!(matches!(&same[0].1, ValueType::Reference(_)), "{same:?}");
 }
 
 /// The checked graph of `declarations` over the FR-360 package, and the

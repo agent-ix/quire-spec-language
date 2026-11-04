@@ -586,9 +586,9 @@ fn selected_relationships_are_rooted_in_the_checked_graph() {
     assert_eq!(generated[0].2, &declaration);
 }
 
-/// FR-480-AC-9 (QSL-1578): a package selected under two aliases roots each
+/// FR-480-AC-10 (QSL-1578): a package selected under two aliases roots each
 /// selected relationship once, at its first alias's declaration site.
-#[trace("FR-480-AC-9", "FR-094-AC-9")]
+#[trace("FR-480-AC-10", "FR-094-AC-9")]
 #[test]
 fn repeated_aliases_root_each_relationship_once_at_the_first_alias() {
     let acme = admitted("1.0.0");

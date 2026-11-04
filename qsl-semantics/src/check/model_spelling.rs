@@ -11,13 +11,20 @@
 //! first alias `M`, its spelling `N::T` under each further alias `N` of the
 //! same package identity. A name table indexed by declared name gains each
 //! spelling as another key for the same entry.
+//!
+//! Model aliases are local to their unit, but the package's type names are
+//! one namespace. When two units bind one alias `N` to two identities, a
+//! spelling `N::T` can reach two declarations: the further-alias spelling of
+//! one package and another package's own `N::T`, or two packages' further
+//! aliases. Such a spelling is ambiguous in every unit and resolves to
+//! neither declaration.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// Each further-alias spelling of a package-owned type name, to the name it
-/// spells (the declared name under the package's first alias).
+/// Each further-alias spelling of a package-owned type name, to the names it
+/// spells (declared names under each package's first alias).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ModelSpellings(BTreeMap<String, String>);
+pub(crate) struct ModelSpellings(BTreeMap<String, BTreeSet<String>>);
 
 impl ModelSpellings {
     /// The spellings of `declared` names under each of `aliases`, where
@@ -40,31 +47,43 @@ impl ModelSpellings {
             for alias in aliases {
                 self.0
                     .entry(format!("{alias}::{member}"))
-                    .or_insert_with(|| name.to_owned());
+                    .or_default()
+                    .insert(name.to_owned());
             }
         }
     }
 
-    /// Each spelling and the declared name it spells, in spelling order.
+    /// Each spelling and a declared name it spells, in spelling order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.0
-            .iter()
-            .map(|(spelled, declared)| (spelled.as_str(), declared.as_str()))
+        self.0.iter().flat_map(|(spelled, declared)| {
+            declared
+                .iter()
+                .map(move |declared| (spelled.as_str(), declared.as_str()))
+        })
     }
 
     /// `table` with each spelling bound to its declared name's entry. A
-    /// spelling that already names an entry keeps it: the first binding of a
-    /// name wins, as it does for the declared names themselves.
-    pub(crate) fn bind_first<V: Clone>(&self, table: &mut BTreeMap<String, V>) {
-        for (spelled, declared) in self.iter() {
-            if let Some(value) = table.get(declared).cloned() {
-                table.entry(spelled.to_owned()).or_insert(value);
+    /// spelling that spells two declared names, or that the table already
+    /// binds, names two declarations: it binds neither, and its existing
+    /// entry is removed, so no unit resolves it to the other unit's
+    /// declaration.
+    pub(crate) fn bind_unique<V: Clone>(&self, table: &mut BTreeMap<String, V>) {
+        for (spelled, declared) in &self.0 {
+            let unique = match (declared.first(), declared.len()) {
+                (Some(declared), 1) if !table.contains_key(spelled) => declared,
+                _ => {
+                    table.remove(spelled);
+                    continue;
+                }
+            };
+            if let Some(value) = table.get(unique).cloned() {
+                table.insert(spelled.clone(), value);
             }
         }
     }
 
     /// `table` with each spelling also binding every candidate its declared
-    /// name binds. A spelling that already binds candidates keeps them and
+    /// names bind. A spelling that already binds candidates keeps them and
     /// gains these, so a name two declarations reach stays ambiguous.
     pub(crate) fn bind_all<V: Clone>(&self, table: &mut BTreeMap<String, Vec<V>>) {
         for (spelled, declared) in self.iter() {
@@ -110,17 +129,19 @@ mod tests {
         );
     }
 
+    /// A spelling another package already declares names two declarations:
+    /// a unique table drops it, and a candidate table holds both.
     #[test]
-    fn a_bound_spelling_keeps_its_first_entry_and_candidates_accumulate() {
+    fn a_spelling_a_table_already_binds_is_ambiguous() {
         let spellings = spellings();
-        let mut first = BTreeMap::from([
+        let mut unique = BTreeMap::from([
             ("Config::ConfigVersion".to_owned(), 1),
             ("History::ConfigVersion".to_owned(), 2),
         ]);
-        spellings.bind_first(&mut first);
-        assert_eq!(first["History::ConfigVersion"], 2);
-        assert_eq!(first["Audit::ConfigVersion"], 1);
-        assert!(!first.contains_key("Audit::VersionNumber"));
+        spellings.bind_unique(&mut unique);
+        assert!(!unique.contains_key("History::ConfigVersion"));
+        assert_eq!(unique["Audit::ConfigVersion"], 1);
+        assert!(!unique.contains_key("Audit::VersionNumber"));
 
         let mut all = BTreeMap::from([
             ("Config::ConfigVersion".to_owned(), vec![1]),
@@ -129,5 +150,22 @@ mod tests {
         spellings.bind_all(&mut all);
         assert_eq!(all["History::ConfigVersion"], [2, 1]);
         assert_eq!(all["Audit::ConfigVersion"], [1]);
+    }
+
+    /// Two packages whose further aliases share one spelling: the spelling
+    /// keeps both declared names, binds neither in a unique table and both
+    /// in a candidate table.
+    #[test]
+    fn one_spelling_of_two_packages_is_ambiguous() {
+        let mut spellings = ModelSpellings::default();
+        spellings.add("M", &["N"], ["M::T"]);
+        spellings.add("P", &["N"], ["P::T"]);
+        let mut unique = BTreeMap::from([("M::T".to_owned(), 1), ("P::T".to_owned(), 2)]);
+        spellings.bind_unique(&mut unique);
+        assert!(!unique.contains_key("N::T"));
+
+        let mut all = BTreeMap::from([("M::T".to_owned(), vec![1]), ("P::T".to_owned(), vec![2])]);
+        spellings.bind_all(&mut all);
+        assert_eq!(all["N::T"], [1, 2]);
     }
 }

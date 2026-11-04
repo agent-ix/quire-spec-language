@@ -2747,12 +2747,12 @@ fn a_models_own_alias_is_recorded_in_the_packages_alias_names() {
     );
 }
 
-/// FR-480-AC-9 (QSL-1578): with the package selected as `History` first and
+/// FR-480-AC-11 (QSL-1578): with the package selected as `History` first and
 /// as `Config` second, `Config::Sub` names the subtype the first alias
 /// declares. Its inherited fields and inherited operation resolve through the
 /// second alias, including the inherited `parent` reference to the
 /// supertype: one generalization over both spellings.
-#[trace("FR-480-AC-9")]
+#[trace("FR-480-AC-11")]
 #[test]
 fn inherited_members_resolve_through_a_second_alias() {
     let body = "invariant SubVersion using v on Config::Sub at current { \

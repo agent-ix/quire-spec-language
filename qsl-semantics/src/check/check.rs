@@ -1315,8 +1315,8 @@ impl Scope {
         spellings: &super::model_spelling::ModelSpellings,
     ) -> Self {
         spellings.bind_all(&mut self.index.types);
-        spellings.bind_first(&mut self.index.object_types);
-        spellings.bind_first(&mut self.index.variant_cases);
+        spellings.bind_unique(&mut self.index.object_types);
+        spellings.bind_unique(&mut self.index.variant_cases);
         self
     }
 
