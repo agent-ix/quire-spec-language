@@ -329,6 +329,11 @@ fn a_claims_content_is_independent_of_its_position_and_layout() {
     assert_ne!(forward[0], forward[1]);
     let tokens: Vec<&[u8]> = forward[0].tokens().take(2).collect();
     assert_eq!(tokens, [&b"probabilistic"[..], b"A"]);
+    // Contents order element by element, each spelling as bytes, a proper
+    // prefix first (`0.5` < `0.50`, `0.25` < `0.5`).
+    let at = |threshold: &str| claim_contents(&source(&a.replace("0.5", threshold))).remove(0);
+    assert!(at("0.5") < at("0.50"));
+    assert!(at("0.25") < at("0.5"));
     let changed = claim_contents(&source(&a.replace("0.5", "0.75")));
     assert_ne!(changed[0], forward[0]);
 }

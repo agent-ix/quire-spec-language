@@ -175,6 +175,18 @@ mod tests {
         };
 
         assert_eq!(actual, span);
+
+        // The plan path carries the selected claim's identity.
+        let key = qsl_foundation::source::provenance::OccurrenceKey::generated(
+            quire_exact::NodeKey::new("p", vec![quire_exact::PathSegment::Text("k".into())], 0)
+                .expect("a valid key"),
+        );
+        let ProductRefusal::TimedFormShape { claim, .. } =
+            plan_refusal(PlanFault::TimedFormShape { span }, Some(&key))
+        else {
+            panic!("a timed form shape refusal");
+        };
+        assert_eq!(claim, Some(key));
     }
 }
 

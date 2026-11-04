@@ -640,7 +640,7 @@ pub enum UnavailabilityCause {
     /// with a checked-package `{node, occurrence}` locus, and S3 holds only
     /// the interval's source span. The outcome wire therefore carries the
     /// cause kind alone and no settlement path produces it yet; the locus is
-    /// remaining work on QSL-580.
+    /// remaining work on QSL-1704.
     PunctualInterval {
         /// The punctual interval's span.
         span: qsl_foundation::Span,

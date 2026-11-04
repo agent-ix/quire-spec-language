@@ -287,10 +287,11 @@ impl Serialize for WireNode {
     }
 }
 
-/// A claim's checked-package `{declaration, occurrence}` on the wire.
+/// A claim's checked-package `{node, occurrence}` locus on the wire (QSpec
+/// FR-331's Locus); `node` is the claim's declaration `NodeRef`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WireLocus {
-    declaration: WireNode,
+    node: WireNode,
     occurrence: WireOccurrence,
 }
 
@@ -304,7 +305,7 @@ struct WireOccurrence {
 impl WireLocus {
     fn of(claim: &qsl_foundation::source::provenance::OccurrenceKey) -> Self {
         Self {
-            declaration: WireNode::of(claim.node()),
+            node: WireNode::of(claim.node()),
             occurrence: WireOccurrence {
                 role: claim.origin().role().as_str().to_owned(),
                 ordinal: claim.origin().ordinal(),

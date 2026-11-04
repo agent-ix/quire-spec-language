@@ -208,6 +208,9 @@ fn probabilistic_claim_identity_survives_reordering() {
         forward[0].1, forward[1].1,
         "equal names are distinct claims"
     );
+    // Ordinals rank written content ascending: `0.25` before `0.5`.
+    assert_eq!(forward[1].1["declaration"]["ordinal"], 0, "Stable@0.25");
+    assert_eq!(forward[0].1["declaration"]["ordinal"], 1, "Stable@0.5");
 
     // Renaming a claim changes its identity and no other claim's.
     let renamed = claims_package(&[

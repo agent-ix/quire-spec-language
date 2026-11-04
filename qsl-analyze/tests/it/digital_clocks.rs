@@ -252,24 +252,17 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
     assert!(claim.is_some());
     assert!(wire["cause"].get("where").is_none());
     assert_eq!(wire["cause"]["locus"]["occurrence"]["role"], "claim");
+    assert!(wire["cause"]["locus"].get("node").is_some());
 }
 
-/// FR-498-AC-3 (TC-1288 step 3): two claims with the same name whose
-/// `always` event has no digital reading each settle `timed-form-shape`
-/// carrying their own `{declaration, occurrence}`, not the other's.
-#[trace("FR-498-AC-3", "TC-1288")]
-#[test]
-fn timed_form_shape_names_the_selected_claim_among_equal_names() {
-    let claims = format!(
-        "{}{}",
-        deadline_claim("Same", "under every scheduler", ">= 0.99", "always"),
-        deadline_claim("Same", "under every scheduler", ">= 0.5", "always"),
-    );
-    let world = retx(GUARD, true, "", &claims);
+/// Two same-named claims in `claims`, each refused `timed-form-shape`: each
+/// cause carries its own claim's `{node, occurrence}` locus and no span.
+fn assert_each_shape_cause_names_its_claim(claims: &str) {
+    let world = retx(GUARD, true, "", claims);
     let checked = world.package.graph().probabilistic_model().claims();
     assert_eq!(checked.len(), 2);
     let simulation = world.request();
-    let mut wires = Vec::new();
+    let mut loci = Vec::new();
     for claim in checked {
         let refusal = build_product(
             ProductRequest {
@@ -282,7 +275,7 @@ fn timed_form_shape_names_the_selected_claim_among_equal_names() {
             },
             &Cancel::new(),
         )
-        .expect_err("an always event has no digital timed reading");
+        .expect_err("the form has no digital timed reading");
         let ProductRefusal::TimedFormShape { claim: located, .. } = &refusal else {
             panic!("a timed form shape refusal: {refusal:?}");
         };
@@ -301,9 +294,39 @@ fn timed_form_shape_names_the_selected_claim_among_equal_names() {
         assert_eq!(wire["cause"]["kind"], "timed-form-shape");
         assert!(wire["cause"].get("where").is_none(), "no span locus");
         assert_eq!(wire["cause"]["locus"]["occurrence"]["role"], "claim");
-        wires.push(wire["cause"]["locus"].clone());
+        assert!(wire["cause"]["locus"].get("node").is_some());
+        assert!(wire["cause"]["locus"].get("declaration").is_none());
+        loci.push(wire["cause"]["locus"].clone());
     }
-    assert_ne!(wires[0], wires[1], "each cause names its own claim");
+    assert_ne!(loci[0], loci[1], "each cause names its own claim");
+}
+
+/// FR-498-AC-3 (TC-1288 step 3): two claims with the same name whose
+/// `always` event has no digital reading each settle `timed-form-shape`
+/// carrying their own `{node, occurrence}` locus, not the other's.
+#[trace("FR-498-AC-3", "TC-1288")]
+#[test]
+fn timed_form_shape_names_the_selected_claim_among_equal_names() {
+    assert_each_shape_cause_names_its_claim(&format!(
+        "{}{}",
+        deadline_claim("Same", "under every scheduler", ">= 0.99", "always"),
+        deadline_claim("Same", "under every scheduler", ">= 0.5", "always"),
+    ));
+}
+
+/// FR-498-AC-3 (TC-1288 step 3): the same for two same-named elapsed-time
+/// claims.
+#[trace("FR-498-AC-3", "TC-1288")]
+#[test]
+fn timed_form_shape_names_the_selected_elapsed_claim_among_equal_names() {
+    let elapsed = |threshold: &str| {
+        format!(
+            "probabilistic Same using ev on M over (c: M::Call) under every scheduler on origin {{ \
+             quantile 0.5 of (elapsed from holds(not c.late) until holds(c.late) within 4 ms) \
+             <= {threshold} ms }}\n"
+        )
+    };
+    assert_each_shape_cause_names_its_claim(&format!("{}{}", elapsed("1"), elapsed("2")));
 }
 
 /// FR-204-AC-4: digital unbounded products have no monitor, but their actual
