@@ -333,7 +333,7 @@ fn compile_accepts_a_multi_unit_program_array() {
 
     let invalid_second = SPINE_HEADER.replacen("1-draft", "0-draft", 1)
         + "function gammaUnit using v(): Boolean pure { true }\n";
-    std::fs::write(directory.path().join("unit-b.native"), invalid_second).unwrap();
+    std::fs::write(directory.path().join("unit-b.native"), &invalid_second).unwrap();
     write_job(&[0, 1]);
     let invalid = compile(directory.path());
     let failure = refusal(&invalid, 20, "unknown_edition", "later unit edition");
@@ -985,7 +985,7 @@ fn refinement_internals_compile_matches_the_spine_composition() {
         )
         .unwrap();
     }
-    let mut job = json!({"format":"native-compile/1","request":{
+    let job = json!({"format":"native-compile/1","request":{
         "models":[
             {"format":"semantic-ir/2.0.0","source":{"file":"model-0.json",
                 "authority":"agent-ix","identity":refinement_cas::SPEC,"document":"Abstract","formal_revision":1}},
