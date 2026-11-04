@@ -3758,15 +3758,15 @@ fn verdicts_without_record_members_give_items_with_none() {
     assert!(item_json("V", &refuted_state).get("witness").is_none());
 }
 
-/// FR-283-AC-10, FR-330-AC-12, FR-286-AC-10 (TC-765 step 8, TC-770 step 9):
-/// a temporal violation carries `decisive` beside its counterexample. Over a
+/// FR-330-AC-12: a temporal violation carries `decisive` beside its
+/// counterexample. Over a
 /// three-position trace whose position-2 collection is 3, 0, 5, the `forall`
 /// violation names the `forall`'s occurrence key, element 0, index 1 and
 /// the value path to that element; an atom no quantifier decides gives
 /// element `false`, no quantifier, no index and the empty path at the
 /// observation's root. Neither carries a witness, a held run carries no
 /// `decisive`, and FR-267's written record holds none.
-#[trace("TC-765", "FR-283-AC-10", "FR-330-AC-12", "FR-286-AC-10")]
+#[trace("TC-840", "FR-330-AC-12")]
 #[test]
 fn a_temporal_violation_carries_its_decisive_information() {
     use crate::{ValuePathStep, ValuePathSubject};
@@ -3846,4 +3846,134 @@ fn a_temporal_violation_carries_its_decisive_information() {
     let written = crate::spine::write_clause_run_result(&forall).expect("the record writes");
     let written = String::from_utf8(written).expect("UTF-8");
     assert!(!written.contains("decisive\""), "{written}");
+}
+
+/// The decisive record of an atom no quantifier decides: element `false`,
+/// no quantifier, no index and the empty path at the root of the observation
+/// `identity`.
+fn assert_undecided(report: &ClauseRunReport, identity: &str) {
+    let decisive = report.decisive.as_ref().expect("a decisive record");
+    assert_eq!(decisive.quantifier, None);
+    assert_eq!(decisive.index, None);
+    assert!(matches!(
+        decisive.element,
+        quire_exact::Value::Boolean(false)
+    ));
+    assert_eq!(decisive.value_path.observation.identity, identity);
+    assert!(matches!(
+        decisive.value_path.subject,
+        crate::ValuePathSubject::Object(_)
+    ));
+    assert!(decisive.value_path.steps.is_empty());
+}
+
+/// FR-330-AC-12: `Bounded` over `Finite` 0, 1, 2 violates at position 0,
+/// where its atom no quantifier decides is false: `decisive` is undecided at
+/// the root of the position-0 observation. A pending run (`Reaches` over the
+/// same trace) and an `Undefined` run (FR-330-AC-5's clause) carry none.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn only_a_temporal_violation_carries_decisive_information() {
+    let bounded = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
+    assert_eq!(outcome(&bounded), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&bounded, "counter-0");
+
+    let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
+    assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
+    assert!(pending.decisive.is_none());
+
+    let undefined = report(finite(Unit::Undefined, "Undefined", &[0, 1, 2]));
+    assert!(matches!(
+        outcome(&undefined),
+        TemporalVerdict::Undefined { at: 2, .. }
+    ));
+    assert!(undefined.decisive.is_none());
+    assert!(item_json("Undefined", &undefined).get("decisive").is_none());
+}
+
+/// FR-330-AC-12: a lasso, a progressed and a timestamped violation each
+/// read the deciding atom at the observation of the violating position.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn every_trace_shape_reads_decisive_information_at_its_violating_observation() {
+    let looped = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
+    assert_eq!(outcome(&looped), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&looped, "counter-0");
+
+    let progressed = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &crate::spine::ProgressLedger::new(),
+    ));
+    assert_eq!(outcome(&progressed), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&progressed, "counter-0");
+
+    let timestamped = report(timestamped(&[0, 1], &[0, 0], 5, Some(5)));
+    assert_eq!(outcome(&timestamped), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&timestamped, "counter-0");
+}
+
+/// A lasso position past its prefix reads the observation it wraps to in
+/// the loop; an empty loop has none.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn a_lasso_position_wraps_into_its_loop() {
+    use crate::spine::clause::temporal::observation_slot;
+    let request = lasso(Unit::Infinite, "Reaches", 1, &[0, 1, 2]);
+    let ClauseRunSelection::Temporal { trace, .. } = &request.selection else {
+        panic!("a temporal selection");
+    };
+    let slots: Vec<_> = (0..6).map(|at| observation_slot(trace, at)).collect();
+    assert_eq!(
+        slots,
+        [Some(0), Some(1), Some(2), Some(1), Some(2), Some(1)]
+    );
+    let TraceInput::Lasso { prefix, .. } = trace else {
+        panic!("a lasso");
+    };
+    let empty = TraceInput::Lasso {
+        prefix: prefix.clone(),
+        repeat: Vec::new(),
+    };
+    assert_eq!(observation_slot(&empty, 0), Some(0));
+    assert_eq!(observation_slot(&empty, 1), None);
+}
+
+/// FR-330-AC-12: the deciding atom is the first that evaluates false. The
+/// search passes atoms that are not false and stops at the first that is
+/// false or fails: a failure there gives no record, never a later atom's.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn the_decisive_search_stops_at_the_first_false_or_failed_atom() {
+    use crate::spine::clause::temporal::first_false_atom;
+    use std::ops::ControlFlow;
+    let readings = |readings: Vec<ControlFlow<Option<u8>>>| {
+        let mut read = Vec::new();
+        let found = first_false_atom(readings.into_iter().enumerate(), |(atom, reading)| {
+            read.push(atom);
+            reading
+        });
+        (found, read)
+    };
+    assert_eq!(
+        readings(vec![
+            ControlFlow::Continue(()),
+            ControlFlow::Break(Some(1)),
+            ControlFlow::Break(Some(2)),
+        ]),
+        (Some(1), vec![0, 1])
+    );
+    assert_eq!(
+        readings(vec![
+            ControlFlow::Continue(()),
+            ControlFlow::Break(None),
+            ControlFlow::Break(Some(2)),
+        ]),
+        (None, vec![0, 1])
+    );
+    assert_eq!(
+        readings(vec![ControlFlow::Continue(()), ControlFlow::Continue(())]),
+        (None, vec![0, 1])
+    );
 }
