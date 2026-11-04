@@ -220,6 +220,49 @@ fn a_trace_of_the_wrong_shape_for_the_profile_is_refused_at_admit() {
     assert_eq!(lasso_for_reach.disposition.truth(), None);
 }
 
+/// Row 5, Timestamped part: `Window` listed at stamps 0, 5, 2 with `level` 0,
+/// 2, 1 is not refused; its canonical order (stamps 0, 2, 5) is trace A's, so
+/// the outcome, basis, support and premises are row 4a's whatever the listed
+/// order (FR-501 "Canonical order").
+#[trace("TC-144", "FR-052-AC-9", "FR-501-AC-19")]
+#[test]
+fn a_timestamped_listing_out_of_stamp_order_is_evaluated_in_canonical_order() {
+    let in_order = report(window_over(&[0, 1, 2], 5, Some(5)));
+    let listed = report(timestamped_with(
+        Unit::OwnerWindow,
+        &[0, 5, 2],
+        &[0, 2, 1],
+        5,
+        Some(5),
+    ));
+    assert_eq!(outcome(&listed), &TemporalVerdict::Holds);
+    assert_eq!(outcome(&listed), outcome(&in_order));
+    assert_eq!(window_report(&listed).basis, SettlementBasis::ClosedScope);
+    assert_eq!(window_report(&listed).support, support_of_position_two());
+    assert_eq!(
+        window_report(&listed).premises,
+        window_report(&in_order).premises
+    );
+
+    // The same observations listed in another order are the same evidence:
+    // the result, and its identity, do not depend on the listing.
+    let mut shuffled = window_over(&[0, 1, 2], 5, Some(5));
+    let ClauseRunSelection::Temporal { trace, .. } = &mut shuffled.selection else {
+        panic!("a temporal selection");
+    };
+    let TraceInput::Timestamped { observations, .. } = trace else {
+        panic!("a timestamped trace");
+    };
+    observations.swap(1, 2);
+    assert_eq!(
+        observations.iter().map(|o| o.stamp).collect::<Vec<_>>(),
+        [0, 5, 2]
+    );
+    let shuffled = report(shuffled);
+    assert_eq!(outcome(&shuffled), &TemporalVerdict::Holds);
+    assert_eq!(window_report(&shuffled), window_report(&in_order));
+}
+
 /// Row 6: `Reach` settled over A keeps its result when a sibling run of the
 /// same clause under a zero work budget stops `Incomplete` with no truth.
 #[trace("TC-144", "FR-052-AC-11")]

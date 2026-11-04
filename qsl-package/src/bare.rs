@@ -342,43 +342,7 @@ fn node_references(package: &CheckedPackageV2) -> Option<BTreeMap<NodeKey, Check
         .collect()
 }
 
-/// Why identity rows are no witness for a slot call (FR-531-AC-5).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum IdentityWitnessRefusal {
-    /// The bare package has no supply.
-    #[error("the bare package holds no identity rows")]
-    Missing,
-    /// The rows name no identity the package admits.
-    #[error("the identity rows name no admitted identity")]
-    Unknown,
-    /// The rows were produced for another package.
-    #[error("the identity rows belong to another package")]
-    Foreign,
-}
-
 impl ReadIdentityRows {
-    /// The identity witness these rows give `package`, joined by IR's
-    /// `SelectedExactIdentities` projection.
-    ///
-    /// # Errors
-    ///
-    /// [`IdentityWitnessRefusal::Foreign`] for rows of another package,
-    /// [`IdentityWitnessRefusal::Unknown`] for rows IR does not join.
-    pub fn selected(
-        &self,
-        package: &CheckedPackageV2,
-    ) -> Result<quire_contract_model::SelectedExactIdentities, IdentityWitnessRefusal> {
-        if self.package != package.name() {
-            return Err(IdentityWitnessRefusal::Foreign);
-        }
-        qsl_semantics::model::intake::selected_exact_identities_from_rows(
-            package,
-            &self.declarations,
-            &self.fields,
-        )
-        .map_err(|_| IdentityWitnessRefusal::Unknown)
-    }
-
     /// The package the rows were produced for.
     pub fn package_name(&self) -> &str {
         &self.package

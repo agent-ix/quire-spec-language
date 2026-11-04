@@ -211,6 +211,8 @@ fn only_the_latest_result_can_be_corrected_and_an_original_restarts_the_chain() 
 
 #[trace(
     "FR-052-AC-12",
+    "FR-053-AC-8",
+    "FR-053-AC-9",
     "FR-526-AC-9",
     "FR-526-AC-10",
     "FR-526-AC-11",

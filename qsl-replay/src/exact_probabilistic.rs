@@ -392,6 +392,7 @@ mod tests {
             (
                 UnavailabilityCause::TimedFormShape {
                     span: qsl_foundation::Span { start: 0, end: 1 },
+                    claim: None,
                 },
                 "timed-form-shape",
             ),

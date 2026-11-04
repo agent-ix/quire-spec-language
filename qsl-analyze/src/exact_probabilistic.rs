@@ -58,6 +58,7 @@ use qsl_eval::simulation::model::{NotMarkov, UndecidedSuccessor};
 use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{ExpansionStop, NotSimulated};
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 pub use qsl_replay::ExactProbLimits;
 use qsl_replay::ModelCheckLimit;
@@ -699,6 +700,9 @@ pub enum ProductRefusal {
     TimedFormShape {
         /// The source span of the unsupported form.
         span: Span,
+        /// The selected claim's checked-package identity (FR-498), when the
+        /// claim was checked in an assembled package.
+        claim: Option<OccurrenceKey>,
     },
     /// A strict clock constraint has no digital reading (FR-204 "Admission",
     /// ADR-028 TA-2): the first one in source order.

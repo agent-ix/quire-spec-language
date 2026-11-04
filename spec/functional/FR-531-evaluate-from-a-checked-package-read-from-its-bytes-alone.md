@@ -85,11 +85,17 @@ impl<'p> BarePackage<'p> {
 
 pub struct BareSupply<'p> {
     pub identities: &'p ReadIdentityRows,
+    pub equality: Option<&'p ReadEqualityRows>,
 }
 
 impl ReadIdentityRows {
     pub fn read(identities_json: &[u8], package: &CheckedPackageV2)
         -> Result<Self, IdentityFileRefusal>;
+}
+
+impl ReadEqualityRows {
+    pub fn read(equality_json: &[u8], package: &CheckedPackageV2)
+        -> Result<Self, EqualityFileRefusal>;
 }
 ```
 
@@ -103,6 +109,14 @@ impl ReadIdentityRows {
   `identities.json` of the handoff directory and the package (below), and by no
   other route. Only the protocol-slot call reads it (FR-533); the temporal
   evidence call reads nothing but the package (FR-532).
+- `ReadEqualityRows` is the equality counterpart: the producer's equality application
+  rows, equality fact rows and selected source-unit rows (IR's
+  `SelectedEqualityApplicationRow`, `SelectedEqualityFactRow` and
+  `SelectedSourceUnitRow`) paired with the package they were produced for. A consumer
+  obtains it with `ReadEqualityRows::read(bytes, package)` from the `equality.json` of
+  the handoff directory and by no other route. Only a protocol-slot call whose walk
+  holds an `==` or `!=` application reads it (FR-533 "Equality slots"); `equality` is
+  `None` for a supply without it.
 - The dependency closure is not a supply. `BarePackage` derives the admitted
   closure from the direct dependencies the reader retained in the package, which
   the consumer passed to `read_checked_package` as read evidence; a consumer
@@ -255,6 +269,279 @@ identity), naming the first row. A refusal returns no rows and charges nothing.
 quire-protocol's admission input list (its FR-043) names this file beside
 `checked-package.json`.
 
+### The equality file
+
+The directory FR-517 writes carries `equality.json`, written once beside
+`identities.json`, with its encoding rules: one JSON object, pretty-printed with
+two-space indent, members in the order below, closed (an unknown or repeated member
+is a refusal), UTF-8, ending in one newline, byte-identical for equal inputs. The
+rows are the producer's witness, issued at checking time (FR-533 "Equality slots");
+the writer builds each row from the in-process unit's rows, and joins every node and
+key member to the wire node id the emitted package spells that node with
+(`WireGraph::of_package_bytes` over the emitted bytes, as the inventory file does for
+its `node` member), because an in-process `CheckedNodeId` or `NodeKey` carries
+structural path segments and the wire form carries operand indices. A node the
+package does not name is the writer's `Error::Unnameable`.
+
+| Member | Content |
+| --- | --- |
+| `format` | the string `quire.checked-handoff.equality/1` |
+| `applications` | the unit's equality application rows in emitter order; each is `{ "application", "occurrence", "source_map_entry", "node_key", "location" }` in that member order |
+| `facts` | the unit's equality fact rows in emitter order; each is `{ "application", "checked_application", "occurrence", "source_map_entry", "structural_key", "structural_node", "owner", "value_type", "fact" }` in that member order |
+| `source_units` | the unit's selected source-unit rows in emitter order; each is `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "unit_id" }` in that member order |
+
+Leaf encodings. Each is a JSON value whose members appear in the order given, with
+no other member; a reader refuses an unknown or repeated member as `Malformed`.
+Integers are JSON integers (`u64` or `usize` values, never a float or a string);
+text is UTF-8 as written.
+
+- A **node id** (the package's `CheckedNodeId`, used for `application`,
+  `checked_application`, `structural_node`, and every `*_node` member) is the JSON
+  value `serde` gives that type, the form `checked-package.json` spells a graph
+  node's `node_id` with: `{ "package": <text>, "path": [ <segment>, ... ],
+  "ordinal": <integer> }`, a segment being text (a name) or `{ "node": <integer> }`
+  (a graph-local operand index). This is what "The identity file" above calls the
+  wire node id; the identity file uses the same value.
+- A **node reference** (a `NodeKey`: `node_key`, `structural_key`, `base`, `target`,
+  `source_declaration`, `declaration`, `member`, and a `node` member) is the node id
+  of the package node that key names, as "The identity file" states for a node
+  reference; `read` recovers the key from the package's wire graph.
+- An **occurrence** (`CheckedOccurrence`) is `{ "role": <role>, "ordinal":
+  <integer> }`, `<role>` one of `declaration`, `type`, `expression`, `anchor`,
+  `claim`, `generated`.
+- A **source map entry** (`CheckedSourceMapEntry`) is `{ "node_id": <node id>,
+  "role": <role>, "ordinal": <integer>, "regions": [ { "source": { "authority":
+  <text>, "identity": <text> }, "start": <integer>, "end": <integer> }, ... ] }`,
+  `regions` in the order the entry holds them and never empty.
+- An **owner** (`CheckedNodeOwner`) is `null` or a tagged object: `{ "kind":
+  "model_root", "identity": <text> }`, `{ "kind": "source", "authority": <text>,
+  "identity": <text> }` or `{ "kind": "model", "identity": <text>, "node": <text> }`.
+- A **location** (`quire_exact::Location`) is `{ "node": <node reference>,
+  "occurrence": { "role": <text>, "ordinal": <integer> } }`, `role` the text of the
+  location's origin role.
+- A **checked rational** (`CheckedRational`) is `{ "numerator": <text>,
+  "denominator": <text> }`, both canonical decimal integer strings: an optional `-`
+  for a negative numerator, no `+`, no leading zero, `0` for zero, and a positive
+  denominator.
+- A **unit id** is `{ "kind": "declared", "node": <node reference> }`, or in a
+  fact row `{ "kind": "compound", "terms": [ { "node": <node reference>,
+  "exponent": <canonical decimal integer string> }, ... ] }` with the terms in the
+  compound's own order. A `source_units` row takes the declared form only, as
+  "The identity file" does for `declared_unit`.
+- A **value type** (`quire_exact::ValueType`) is `null` or a tagged object `{
+  "kind": <tag> [, members] }` with the tag and members: `boolean`, `integer`,
+  `string`, `uuid`, `timestamp` (no member); `int` `{ "lower", "upper" }`;
+  `rational` `{ "numerator": <interval>, "denominator": <interval> }`; `decimal`
+  `{ "lower", "upper", "min_scale", "max_scale", "rounding" }`; `float` `{ "width",
+  "rounding" }`; `quantity` `{ "unit": <unit id> }`; `text` `{ "min", "max",
+  "profile" }`; `enum` `{ "ordered": <boolean>, "variants": [ { "owner": <node
+  reference>, "case": <text> }, ... ] }`; `option` `{ "element": <value type> }`;
+  `composite` `{ "node": <node reference> }`; `collection` `{ "collection": <kind>,
+  "element": <value type>, "bound": null | { "minimum", "maximum" } }`; `reference`
+  `{ "effective": <effective id> }`; `population` `{ "maximum": null | <integer> }`.
+  An *interval* is `{ "lower": <text>, "upper": <text> }` and `lower`, `upper` of
+  `int` and `decimal` are canonical decimal integer strings; `rounding` is one of
+  `exact`, `toward_zero`, `toward_positive`, `toward_negative`, `nearest_even`,
+  `nearest_away`; `width` one of `binary32`, `binary64`; `profile` one of
+  `unicode_scalars`, `nfc`, `nfd`, `nfkc`, `nfkd`, `binary_utf8`; `<kind>` one of
+  `sequence`, `set`, `bag`, `ordered_set`; an *effective id* is as "The identity
+  file" encodes it.
+- A **fact** is `{ "kind": <tag>, ... }` with the members of the same-named IR fact
+  in the order IR declares them: `operand_type` `{ "position", "role" }`; `unit` `{
+  "unit_id", "quantity_type": <node id>, "operand_position", "role" }`;
+  `dimension_declaration` `{ "unit_id", "operand_position", "role", "ordinal" }`;
+  `dimension_term` `{ "unit_id", "operand_position", "ordinal", "base": <node
+  reference>, "base_node": <node id>, "exponent": <text, as the row holds it> }`;
+  `conversion_edge` `{ "unit_id", "operand_position", "ordinal", "target": <node
+  reference>, "target_node": <node id>, "scale": <checked rational>, "offset":
+  <checked rational> }`; `text_plan_type` `{ "position", "role" }`; `enum_member` `{
+  "source_declaration": <node reference>, "source_declaration_node": <node id>,
+  "declaration": <node reference>, "declaration_node": <node id>, "member": <node
+  reference>, "member_node": <node id>, "case": <text>, "ordinal", "ordered":
+  <boolean> }`. A `role` of `operand_type`, `unit` and `text_plan_type` is `source`
+  or `conversion_target`; that of `dimension_declaration` is `unit_dimension`,
+  `conversion_dimension`, `compound_base` or `base_dimension`.
+
+Vector. A unit with one equality application `E` (package `p`, node path `["E"]`)
+and one source-unit row for the declared unit `U` writes this file, the rows built
+from `E` at occurrence `expression` 0 with one source region of source
+`{ "authority": "a", "identity": "s" }` bytes 4 to 9, the operand-type fact of
+position 0 role `source` with value type `string`, and `U` owned by source `a`/`s`
+at declaration `["U"]`. The bytes are exactly these lines, each ending in a line
+feed, written as `serde_json`'s pretty printer writes it (two spaces per level, every
+object and array member on its own line, an empty array as `[]`), with no trailing
+space. The source unit `U` of the vector is owned by source `a`/`s` at declaration
+`["U"]`:
+
+```
+{
+  "format": "quire.checked-handoff.equality/1",
+  "applications": [
+    {
+      "application": {
+        "package": "p",
+        "path": [
+          "E"
+        ],
+        "ordinal": 0
+      },
+      "occurrence": {
+        "role": "expression",
+        "ordinal": 0
+      },
+      "source_map_entry": {
+        "node_id": {
+          "package": "p",
+          "path": [
+            "E"
+          ],
+          "ordinal": 0
+        },
+        "role": "expression",
+        "ordinal": 0,
+        "regions": [
+          {
+            "source": {
+              "authority": "a",
+              "identity": "s"
+            },
+            "start": 4,
+            "end": 9
+          }
+        ]
+      },
+      "node_key": {
+        "package": "p",
+        "path": [
+          "E"
+        ],
+        "ordinal": 0
+      },
+      "location": {
+        "node": {
+          "package": "p",
+          "path": [
+            "E"
+          ],
+          "ordinal": 0
+        },
+        "occurrence": {
+          "role": "expression",
+          "ordinal": 0
+        }
+      }
+    }
+  ],
+  "facts": [
+    {
+      "application": {
+        "package": "p",
+        "path": [
+          "E"
+        ],
+        "ordinal": 0
+      },
+      "checked_application": {
+        "package": "p",
+        "path": [
+          "E"
+        ],
+        "ordinal": 0
+      },
+      "occurrence": {
+        "role": "expression",
+        "ordinal": 0
+      },
+      "source_map_entry": {
+        "node_id": {
+          "package": "p",
+          "path": [
+            "E"
+          ],
+          "ordinal": 0
+        },
+        "role": "expression",
+        "ordinal": 0,
+        "regions": [
+          {
+            "source": {
+              "authority": "a",
+              "identity": "s"
+            },
+            "start": 4,
+            "end": 9
+          }
+        ]
+      },
+      "structural_key": {
+        "package": "p",
+        "path": [
+          "E"
+        ],
+        "ordinal": 0
+      },
+      "structural_node": {
+        "package": "p",
+        "path": [
+          "E"
+        ],
+        "ordinal": 0
+      },
+      "owner": {
+        "kind": "source",
+        "authority": "a",
+        "identity": "s"
+      },
+      "value_type": {
+        "kind": "string"
+      },
+      "fact": {
+        "kind": "operand_type",
+        "position": 0,
+        "role": "source"
+      }
+    }
+  ],
+  "source_units": [
+    {
+      "structural_node": {
+        "package": "p",
+        "path": [
+          "U"
+        ],
+        "ordinal": 0
+      },
+      "source_authority": "a",
+      "source_identity": "s",
+      "qualified_declaration": [
+        "U"
+      ],
+      "unit_id": {
+        "kind": "declared",
+        "node": {
+          "package": "p",
+          "path": [
+            "U"
+          ],
+          "ordinal": 0
+        }
+      }
+    }
+  ]
+}
+```
+
+`ReadEqualityRows::read(bytes, package)` parses the file and joins every wire node id
+string to a node of the package; it derives no row from the package bytes, a display
+name or source text, and grants no authority beyond what IR's `admitted_equality`
+validates when a decision is read. `EqualityFileRefusal` is closed: `Malformed` (not
+JSON or not this shape, an unknown or repeated member or row member, an unknown fact
+tag, a non-integer number), `Format` (another `format` string, naming it) and
+`Unjoined` (a row whose node id string the package does not hold, or whose
+application is not an equality application of the package), naming the first row. A
+refusal returns no rows and charges nothing. quire-protocol's admission input list
+names this file beside `identities.json`.
+
 ### Refusals
 
 - A call SHALL refuse with FR-516's cause table (temporal) or FR-390's catalog
@@ -273,6 +560,15 @@ quire-protocol's admission input list (its FR-043) names this file beside
   above is evaluation-input admission before S6a, category
   unsupported, exit 21, `CallFailure::Admission` carrying the catalog pair
   `unknown_required_feature`/`unsupported-feature`, with nothing charged.
+- A slot call whose walk holds an `==` or `!=` application, over a supply with no
+  equality rows, refuses `ViewFailure::Unsupported` with `MissingEqualityWitness`;
+  with rows of another package, `ForeignEqualityWitness`; with rows that join to no
+  equality application of the package, `UnknownEqualityWitness`. Each is
+  evaluation-input admission like the identity-witness refusals above, at the
+  `Package` locus, which the bytes route reports as `CallAdmissionLocus::Package`
+  (FR-533 "Refusals and loci of the bare slot call"). A slot call whose walk holds no
+  equality application does not read the equality rows and is not refused for their
+  absence.
 - A package that carries no `temporal_bindings` rows, or none for a clause
   occurrence, is not refused: the clause's clock row is absent and the call returns
   the result FR-516 gives a withdrawn clock row (`activation = Unavailable`).
@@ -317,6 +613,10 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
 | FR-531-AC-10 | The charge log of each call over the bare package equals the charge log of the same call over the in-process route (FR-532-AC-1, FR-533-AC-1); `BarePackage::new`, `with_supply` and view creation take no `Meter` and a call that refuses at supply admission leaves a caller's meter byte-identical. | Test (TC-1331) |
 | FR-531-AC-11 | A search of FR-515 for the phrases `bytes-only` and `separate future capability` and of FR-515, FR-516 and FR-520 for the heading `Consumer entry` finds that FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |
+| FR-531-AC-14 | The handoff directory written for TC-1070 fixture E holds `equality.json` with `format` `quire.checked-handoff.equality/1`; `ReadEqualityRows::read` over it and the package gives a slot call on `Refund`'s retry relation (an integer `=` application) that evaluates to the in-process route's value and charge log; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files. | Test (TC-1331) |
+| FR-531-AC-15 | `ReadEqualityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with an unknown fact tag, one with another `format`, one with a row whose node id string the package does not hold and one whose application is not an equality application returns `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the tag, the format string or the first row, and returns no rows. | Test (TC-1331) |
+| FR-531-AC-16 | A slot call on TC-1070 fixture E's `Refund` retry relation refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows that join to no equality application of the package, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; `Refund`'s `trigger.guard`, whose walk holds no equality application, over the same supply evaluates. | Test (TC-1331) |
+| FR-531-AC-17 | The encoding of the rows of "The equality file" vector equals the vector's bytes exactly; `ReadEqualityRows::read` over those bytes and a package that holds the node `["E"]` and `["U"]` returns rows equal to the input rows; for a row of every fact tag, every value-type tag, every owner kind and a compound unit id in a fact row, writing then reading returns equal rows and a second write is byte-identical; a checked rational whose numerator is spelled `+1`, `01` or `-0`, or whose denominator is `0` or `-2`, returns `Malformed`; a compound unit id in a `source_units` row returns `Malformed`. | Test (TC-1331) |
 
 ## Dependencies
 
@@ -324,4 +624,13 @@ outcome map. Each carries a "Consumer entry" section that points here.
   its identity rows; the reader-view criteria it states are the ones the bare slot
   call rests on), FR-515, FR-516, FR-517, FR-520; Contract IR `read_checked_package`
   and `SelectedExactIdentities`; QSL-1377 (selected-model identity-row production).
-- **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533.
+- **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533. quire-protocol
+  FR-043's admission input list follows the two files.
+- **Wire forms the writer adds:** the equality file's leaf encodings are pinned in
+  "The equality file". `CheckedNodeId`, `CheckedOccurrence`, `CheckedSourceMapEntry`,
+  `CheckedNodeOwner` and `CheckedRational` have `serde` forms in Contract IR today and
+  the file uses them. `quire_exact::Location`, `ValueType` (with its interval,
+  decimal, float, text, enum and collection parts), `UnitId`, `NodeKey` and
+  `EffectiveId` have none; the QSL writer and `ReadEqualityRows::read` encode and
+  decode them by hand to the forms above, from those types' public accessors and
+  constructors, and no change to Contract IR or quire-exact is required for the file.

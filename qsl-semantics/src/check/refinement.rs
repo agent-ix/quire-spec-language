@@ -813,11 +813,12 @@ impl CheckedRefinement {
         if self.abstract_side != AbstractSide::Model {
             return Ok(());
         }
-        let model = |alias: &str| {
+        // The models the refinement's check selected, by alias and package.
+        let model = |alias: &str, selection: &DomainPackageRef| {
             declarations
                 .models
                 .iter()
-                .find(|model| model.alias() == Some(alias))
+                .find(|model| model.alias() == Some(alias) && model.selection() == selection)
                 .ok_or_else(|| {
                     InternalFault::new(
                         "check.refinement-class-catalog",
@@ -827,9 +828,9 @@ impl CheckedRefinement {
         };
         self.class_catalog = catalog::build(catalog::CatalogBuildInput {
             concrete_alias: &self.concrete_model,
-            concrete_model: model(&self.concrete_model)?,
+            concrete_model: model(&self.concrete_model, &self.concrete_model_selection)?,
             abstract_alias: &self.abstract_model,
-            abstract_model: model(&self.abstract_model)?,
+            abstract_model: model(&self.abstract_model, &self.abstract_model_selection)?,
             abstract_classes: None,
             declarations,
             protocols,
@@ -2320,11 +2321,12 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
             alias
         }
     };
+    // FR-480 "Selections and imports": each side is the model the
+    // refinement's own unit binds its alias to.
     let side = |alias: &'c qsl_forms::DeclaredName| {
         declarations
-            .models
-            .iter()
-            .find(|model| model.alias() == Some(alias.name.as_str()))
+            .scope
+            .declared_model(declarations.models, &form.name.name, &alias.name)
             .map(|model| Side {
                 alias: &alias.name,
                 model,
@@ -2358,7 +2360,11 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     }
     // QSpec FR-430: a timed concrete model refines an untimed abstract one;
     // a timed abstract model has no reading as a refinement's abstract side.
-    if env.timed_models.contains(&abstract_side.alias) {
+    if env
+        .time_sources
+        .iter()
+        .any(|source| source.times(abstract_side.model))
+    {
         findings.refuse(
             abstract_alias.span,
             RefinementCause::TimedAbstract {
@@ -2579,9 +2585,9 @@ pub(crate) struct RefinementEnv<'e> {
     /// Whether an abstract protocol header is intentionally deferred because
     /// another unit refusal stops the check before protocol clauses run.
     pub(crate) defer_abstract_protocol_resolution: bool,
-    /// The aliases of the unit's timed models: those a `time` declaration
-    /// names (QSpec FR-430).
-    pub(crate) timed_models: &'e [&'e str],
+    /// The unit's time sources: a model one of them times is timed (QSpec
+    /// FR-430).
+    pub(crate) time_sources: &'e [super::temporal_clause::ModelTimeSource],
     /// The unit's clock-reading declarations, whose calls read clocks
     /// (FR-230).
     pub(crate) clock_reading: &'e [super::assemble::ClockReadingDeclaration],

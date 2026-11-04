@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 checks every construct the protocol system runs, refuses malformed guards, choices, joins and cycles, and records binder readers and role regions.
 
-Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28 and FR-218-AC-29.
+Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28, FR-218-AC-29 and FR-218-AC-35.
 
 ## Test Procedure
 
@@ -32,6 +32,10 @@ Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28 and FR-218-AC-29.
    body and the `parallel` body.
 8. Check FR-218-AC-28's three `from` names, and FR-218-AC-29's two channels
    between a replicated role and a static role.
+9. Check FR-218-AC-35's `await` matching an `event` in `[2,5]`, matching a
+   `receive` and an `effect`, matching a `send` and an `attempt`, with `[5,1]` and `[0,*]`, in a unit selecting no
+   temporal profile, and anchored at a later attempt; then a `repeat` over one
+   attempt.
 
 Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
 
@@ -56,3 +60,11 @@ Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
   `ill_typed`/`type-mismatch`; the owners of each `send` and `receive` are the
   channel roles of FR-218-AC-29, and the `scope` region of `w` is the parent
   control of `S`, not `S`.
+- Step 9: the `event`, `receive` and `effect` matches each check and record `Wait` with clock `wall`, window
+  2 to 5 and the selected profile; the `send` and `attempt` matches each refuse
+  `unsupported_construct`/`declaration-form` at `Wait` naming the matched event,
+  the form and the selected profile; both windows refuse `ill_typed`/`type-mismatch` at the interval; the
+  unit with no temporal profile refuses `missing-selection` at `Wait` and `missing_declaration`/`missing-name`
+  at the undeclared alias; the later anchor refuses `invalid_package`/
+  `definition-cycle` naming `Wait` and `Later`; the `repeat` checks and holds a
+  back edge.

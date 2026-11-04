@@ -15,6 +15,7 @@ use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
 use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::ModelCheckLimit;
 use qsl_semantics::check::{CheckedPredicate, Workload};
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
@@ -75,7 +76,8 @@ pub fn build_product(
         }
         qsl_semantics::check::ProbScheduler::Every => (ProductKind::Mdp, None),
     };
-    let (plan, reads) = Plan::of(claim, limits.max_automaton_states).map_err(plan_refusal)?;
+    let (plan, reads) = Plan::of(claim, limits.max_automaton_states)
+        .map_err(|fault| plan_refusal(fault, claim.occurrence()))?;
     let bindings = match &claim.over {
         None => vec![(None, None)],
         Some(over) => {
@@ -134,10 +136,13 @@ fn fault(invariant: &'static str) -> ProductRefusal {
     ProductRefusal::Internal(InternalFault::new("exact-probabilistic", invariant))
 }
 
-fn plan_refusal(fault_: PlanFault) -> ProductRefusal {
+fn plan_refusal(fault_: PlanFault, claim: Option<&OccurrenceKey>) -> ProductRefusal {
     match fault_ {
         PlanFault::Automaton(error) => automaton_refusal(error),
-        PlanFault::TimedFormShape { span } => ProductRefusal::TimedFormShape { span },
+        PlanFault::TimedFormShape { span } => ProductRefusal::TimedFormShape {
+            span,
+            claim: claim.cloned(),
+        },
         PlanFault::Broken(invariant) => fault(invariant),
     }
 }
@@ -163,13 +168,25 @@ mod tests {
     #[test]
     fn timed_form_shape_preserves_its_span() {
         let span = qsl_foundation::Span { start: 12, end: 34 };
-        let ProductRefusal::TimedFormShape { span: actual } =
-            plan_refusal(PlanFault::TimedFormShape { span })
+        let ProductRefusal::TimedFormShape { span: actual, .. } =
+            plan_refusal(PlanFault::TimedFormShape { span }, None)
         else {
             panic!("a timed form shape refusal");
         };
 
         assert_eq!(actual, span);
+
+        // The plan path carries the selected claim's identity.
+        let key = qsl_foundation::source::provenance::OccurrenceKey::generated(
+            quire_exact::NodeKey::new("p", vec![quire_exact::PathSegment::Text("k".into())], 0)
+                .expect("a valid key"),
+        );
+        let ProductRefusal::TimedFormShape { claim, .. } =
+            plan_refusal(PlanFault::TimedFormShape { span }, Some(&key))
+        else {
+            panic!("a timed form shape refusal");
+        };
+        assert_eq!(claim, Some(key));
     }
 }
 
@@ -187,7 +204,7 @@ impl From<ProductRefusal> for Halt {
 
 impl From<PlanFault> for Halt {
     fn from(fault: PlanFault) -> Self {
-        Self::Refusal(plan_refusal(fault))
+        Self::Refusal(plan_refusal(fault, None))
     }
 }
 

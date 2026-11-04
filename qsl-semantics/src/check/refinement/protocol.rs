@@ -34,6 +34,7 @@ use crate::check::protocol_obligation::CheckedActivation;
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::state_clause::ClauseDeclarations;
 use crate::family::CheckContext;
+use crate::model::domain_package::DomainPackageRef;
 use crate::model::operation::OperationDeclaration;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::{Location, Origin};
@@ -692,8 +693,8 @@ impl ProtocolRefinement<'_> {
             checked.concrete_model.clone(),
         );
         let (Some(abstract_side), Some(concrete_side)) = (
-            side_of(models, &abstract_alias),
-            side_of(models, &concrete_alias),
+            side_of(models, &abstract_alias, &checked.abstract_model_selection),
+            side_of(models, &concrete_alias, &checked.concrete_model_selection),
         ) else {
             let mut findings = findings;
             findings.fault("the-models-of-a-refinement-are-admitted");
@@ -808,11 +809,16 @@ fn scheduler_fairness(protocol: &CheckedProtocol) -> Vec<RefinementFairness> {
     members
 }
 
-/// The model the unit gives `alias`, with that alias.
-fn side_of<'s>(models: &'s [AdmittedModel], alias: &'s str) -> Option<Side<'s>> {
+/// The model of `alias` on the package `selection` the refinement's check
+/// selected, with that alias.
+fn side_of<'s>(
+    models: &'s [AdmittedModel],
+    alias: &'s str,
+    selection: &DomainPackageRef,
+) -> Option<Side<'s>> {
     models
         .iter()
-        .find(|model| model.alias() == Some(alias))
+        .find(|model| model.alias() == Some(alias) && model.selection() == selection)
         .map(|model| Side { alias, model })
 }
 

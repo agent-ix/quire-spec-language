@@ -16,6 +16,7 @@ use qsl_foundation::Span;
 use quire_semantic_value::location::Location;
 
 use super::{CheckedHyperClause, TemporalCause};
+use crate::check::check::Scope;
 use crate::check::ir::{CheckedNode, Slot};
 use crate::check::profile::TemporalProfile;
 use crate::check::refusal::{CheckCause, CheckRefusal};
@@ -39,6 +40,7 @@ fn refusal(clause: &CheckedHyperClause, span: Span) -> CheckRefusal {
 pub(crate) fn unemitted(
     clause: &CheckedHyperClause,
     models: &[AdmittedModel],
+    scope: &Scope,
 ) -> Option<CheckRefusal> {
     // 1. A timed clause, at the clause.
     if clause.profile() == TemporalProfile::Timed {
@@ -63,10 +65,11 @@ pub(crate) fn unemitted(
     // 4. A constraint whose declaring node is a systems interface.
     for (constraint, span, alias) in constraints(clause) {
         let declaring = constraint.operation().declaring_type();
-        let interface = models
-            .iter()
-            .filter(|model| model.alias() == Some(alias))
-            .any(|model| model.is_systems_interface(declaring.clone()));
+        // The model the clause's own unit binds the alias to (FR-480
+        // "Selections and imports").
+        let interface = scope
+            .declared_model(models, clause.name(), alias)
+            .is_some_and(|model| model.is_systems_interface(declaring.clone()));
         if interface {
             return Some(refusal(clause, span));
         }

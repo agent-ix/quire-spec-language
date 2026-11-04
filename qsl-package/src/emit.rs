@@ -167,6 +167,14 @@ pub enum EmitRefusal {
     /// already-admitted base package.
     #[error("typed timed models do not match the admitted package's timed-node set")]
     TimedModelNodeSetMismatch,
+    /// A checked probabilistic claim has no emitted node or `claim`
+    /// occurrence to write its FR-322 row from (FR-498): lowering keys every
+    /// claim of an assembled package, so this is a broken invariant.
+    #[error("probabilistic claim `{claim}` has no emitted claim node and occurrence")]
+    UnkeyedProbabilisticClaim {
+        /// The claim's declared name (diagnostic text only).
+        claim: String,
+    },
     /// The timed nodes cannot be put in QSpec FR-322's declared order.
     #[error("timed aggregate order: {0}")]
     TimedOrder(#[source] timed_order::OrderFault),
@@ -349,7 +357,9 @@ impl EmitRefusal {
                 Code::UnsupportedConstruct
             }
             Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
-            Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
+            Self::TimedModelNodeSetMismatch
+            | Self::UnkeyedProbabilisticClaim { .. }
+            | Self::TimedOrder(_) => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
             | Self::RefinementSubjectNotEmitted => Code::RuntimeInvariant,
@@ -384,6 +394,7 @@ impl EmitRefusal {
             | Self::Abstraction(_)
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
+            | Self::UnkeyedProbabilisticClaim { .. }
             | Self::TimedOrder(_)
             | Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
@@ -3326,10 +3337,48 @@ fn checked_term_data(
     term_data.dispatch_tables = checked_dispatch_tables(graph, emitted_node_ids, source_map)?;
     term_data.protocol_locations =
         protocol_locations::checked_protocol_locations(graph, emitted_node_ids)?;
+    term_data.probabilistic_claims = checked_probabilistic_claims(graph, emitted_node_ids)?;
     Ok((!term_data.equality_decisions.is_empty()
         || !term_data.protocol_locations.is_empty()
-        || !term_data.dispatch_tables.is_empty())
+        || !term_data.dispatch_tables.is_empty()
+        || !term_data.probabilistic_claims.is_empty())
     .then_some(term_data))
+}
+
+/// FR-498: one `{declaration, occurrence}` row per checked probabilistic
+/// claim, naming the node and `claim` occurrence lowering keyed it at, in
+/// ascending structural `NodeRef` order, then occurrence order. Nothing is
+/// read from the claim's name, span or form.
+fn checked_probabilistic_claims(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<quire_contract_model::CheckedProbabilisticClaim>, EmitRefusal> {
+    let claims = graph.probabilistic_model().claims();
+    let mut rows = Vec::with_capacity(claims.len());
+    for claim in claims {
+        let unkeyed = || EmitRefusal::UnkeyedProbabilisticClaim {
+            claim: claim.name.clone(),
+        };
+        let occurrence = claim.occurrence().ok_or_else(unkeyed)?;
+        let declaration = emitted_node_ids
+            .get(occurrence.node())
+            .cloned()
+            .ok_or_else(unkeyed)?;
+        let occurrence = checked_occurrence(occurrence.origin()).ok_or_else(unkeyed)?;
+        rows.push(quire_contract_model::CheckedProbabilisticClaim {
+            declaration,
+            occurrence,
+        });
+    }
+    rows.sort_by(|left, right| {
+        left.declaration
+            .package
+            .cmp(&right.declaration.package)
+            .then_with(|| left.declaration.path.cmp(&right.declaration.path))
+            .then_with(|| left.declaration.ordinal.cmp(&right.declaration.ordinal))
+            .then_with(|| left.occurrence.cmp(&right.occurrence))
+    });
+    Ok(rows)
 }
 
 fn equality_enum_members(
@@ -4904,6 +4953,19 @@ fn literal_type(nodes: &[CheckedSemanticNodeV2], kind: &str) -> Option<CheckedNo
     nodes.iter().find_map(|node| visit(&node.body, kind))
 }
 
+/// The checked timed models `source` times. Two units may bind one model
+/// alias to two packages (FR-480 "Selections and imports"), so a time
+/// source names its models through the model node, never the alias.
+pub(crate) fn timed_models_of<'g>(
+    graph: &'g qsl_semantics::check::CheckedGraph,
+    source: &'g qsl_semantics::check::ModelTimeSource,
+) -> impl Iterator<Item = &'g qsl_semantics::check::TimedModel> {
+    graph
+        .timed_models()
+        .iter()
+        .filter(move |timed| timed.is_timed_by(source))
+}
+
 /// Emit a complete admitted package using typed timed models for its timed
 /// nodes. The base package supplies the already-checked non-timed graph,
 /// lock, source map, capability report and diagnostics; every timed node is
@@ -5562,10 +5624,7 @@ fn emit_package_inner(
                 qsl_semantics::check::builtin_integer_type_key(graph.package_name())
                     .map_err(encoding)?,
             );
-            model.clock_places = graph
-                .timed_models()
-                .iter()
-                .filter(|timed| timed.model() == source.model)
+            model.clock_places = timed_models_of(graph, source)
                 .flat_map(|timed| timed.place_nodes())
                 .map(|key| {
                     let id = node_id(ids, key);
@@ -5587,11 +5646,7 @@ fn emit_package_inner(
             // has one or more source occurrences); the root lists it once.
             let mut regions_of: BTreeMap<CheckedNodeId, Vec<(u64, u64)>> = BTreeMap::new();
             let mut declared = Vec::new();
-            for timed in graph
-                .timed_models()
-                .iter()
-                .filter(|timed| timed.model() == source.model)
-            {
+            for timed in timed_models_of(graph, source) {
                 for (at, urgency) in timed.urgency().iter().enumerate() {
                     let id = placeholder(&format!("urgency-{at}"))?;
                     let metadata = TimedNodeMetadata {
@@ -5686,10 +5741,8 @@ fn emit_package_inner(
             model.urgencies = urgencies;
             // QSpec FR-322 "Clause nodes": the guards, resets, invariants
             // and constraints S3 lowered, each located at its own source.
-            if let Some(clauses) = graph
-                .timed_models()
-                .iter()
-                .find(|timed| timed.model() == source.model)
+            if let Some(clauses) = timed_models_of(graph, source)
+                .next()
                 .and_then(qsl_semantics::check::TimedModel::clause_nodes)
             {
                 let places: Vec<CheckedNodeId> = model

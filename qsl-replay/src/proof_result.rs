@@ -580,6 +580,10 @@ pub enum UnavailabilityCause {
     TimedFormShape {
         /// The source span of the unsupported form.
         span: qsl_foundation::Span,
+        /// The selected claim's checked-package `{declaration, occurrence}`
+        /// (FR-498); `None` for a claim checked outside an assembled
+        /// package, which keeps the span as its locus.
+        claim: Option<qsl_foundation::source::provenance::OccurrenceKey>,
     },
     /// ADR-020 AX-5: a refinement with a hidden abstract field and a
     /// non-empty `F_A` has no liveness half to decide. Wire cause
@@ -636,7 +640,7 @@ pub enum UnavailabilityCause {
     /// with a checked-package `{node, occurrence}` locus, and S3 holds only
     /// the interval's source span. The outcome wire therefore carries the
     /// cause kind alone and no settlement path produces it yet; the locus is
-    /// remaining work on QSL-580.
+    /// remaining work on QSL-1704.
     PunctualInterval {
         /// The punctual interval's span.
         span: qsl_foundation::Span,

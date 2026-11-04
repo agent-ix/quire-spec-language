@@ -36,6 +36,7 @@ use qsl_forms::{
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::selection::DefinitionRef;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{
     Identifier, IllTypedCause, Integer, IntegerInterval, Meter, NodeKey, Quantity, Rational,
@@ -380,9 +381,24 @@ pub struct CheckedProbabilisticClaim {
     pub normal_form: ClaimNormalForm,
     /// The declaration's source order, as [`Reward`](super::Reward)'s.
     pub(super) declared: usize,
+    /// The claim's written content, which ranks claims sharing its name
+    /// (FR-498).
+    pub(crate) content: qsl_forms::SignificantContent,
+    /// The `claim` occurrence of the claim's `claim`/`probabilistic_claim`
+    /// node, set when a package is assembled (FR-498 "Outputs").
+    pub(crate) occurrence: Option<OccurrenceKey>,
 }
 
 impl CheckedProbabilisticClaim {
+    /// The claim's producer-owned checked-package identity: the `claim`
+    /// occurrence `[node, "claim", ordinal]` of its
+    /// `claim`/`probabilistic_claim` node, whose `node` is the declaration's
+    /// structural `NodeRef` (FR-498). `None` for a claim checked outside an
+    /// assembled package, whose causes keep their span locus.
+    pub fn occurrence(&self) -> Option<&OccurrenceKey> {
+        self.occurrence.as_ref()
+    }
+
     /// Whether only exact evidence decides the claim (ADR-028 XF-7): an
     /// unbounded reachability or expected-reward form, a claim `under every
     /// scheduler`, or a claim that states no confidence parameters
@@ -418,6 +434,12 @@ impl CheckedProbabilisticClaim {
             ClaimExtent::from_domains(domains),
         )
         .with_evidence(evidence)
+    }
+
+    /// The location of the whole claim declaration: its `claim`
+    /// occurrence's site.
+    pub(crate) fn declaration_location(&self) -> Location {
+        site_location(self.declared, Site::Declaration)
     }
 
     /// Whether the claim's form is one only exact evidence decides: an
@@ -729,6 +751,8 @@ impl Pass<'_, '_> {
             over,
             normal_form,
             declared: index,
+            content: form.content.clone(),
+            occurrence: None,
         })
     }
 
@@ -739,11 +763,12 @@ impl Pass<'_, '_> {
         let alias = form.subject.name.as_str();
         let claim = form.name.name.clone();
         let span = form.subject.span;
+        // The model the claim's own unit binds the alias to (FR-480
+        // "Selections and imports").
         match self
             .input
-            .models
-            .iter()
-            .find(|model| model.alias() == Some(alias))
+            .scope
+            .declared_model(self.input.models, &form.name.name, alias)
         {
             Some(model) => Ok(ModelSubjectRef {
                 alias: alias.to_owned(),
@@ -1111,9 +1136,7 @@ impl Pass<'_, '_> {
                 let reader = if timed.is_some() {
                     let Some(source) = self
                         .input
-                        .time_sources
-                        .iter()
-                        .find(|source| source.model == claim.subject.alias)
+                        .time_source(&claim.subject.alias, &claim.subject.package.identity)
                     else {
                         refusals.push(refusal(ProbabilisticCause::TimedEventProfile {
                             claim: claim.claim().to_owned(),
@@ -1425,9 +1448,7 @@ impl Pass<'_, '_> {
                 }
                 let source = self
                     .input
-                    .time_sources
-                    .iter()
-                    .find(|source| source.model == claim.subject.alias)
+                    .time_source(&claim.subject.alias, &claim.subject.package.identity)
                     .ok_or_else(|| {
                         temporal_refusal(TemporalCause::ModelTimeOnUntimedModel {
                             model: claim.subject.alias.clone(),
@@ -1813,7 +1834,7 @@ impl Pass<'_, '_> {
         };
         let mut fairness: Vec<Vec<u8>> = fairness
             .iter()
-            .map(|constraint| self.fairness_bytes(&claim.subject.alias, constraint))
+            .map(|constraint| self.fairness_bytes(claim.subject, constraint))
             .collect::<Result<_, _>>()?;
         fairness.sort();
         // The binder's name is not content: the predicates encode it as a
@@ -1883,7 +1904,7 @@ impl Pass<'_, '_> {
 
     fn fairness_bytes(
         &self,
-        alias: &str,
+        subject: &ModelSubjectRef,
         constraint: &FairnessConstraint,
     ) -> Result<Vec<u8>, CheckRefusal> {
         let operation = constraint.operation();
@@ -1891,7 +1912,10 @@ impl Pass<'_, '_> {
             .input
             .models
             .iter()
-            .filter(|model| model.alias() == Some(alias))
+            .filter(|model| {
+                model.alias() == Some(subject.alias.as_str())
+                    && *model.selection() == subject.package
+            })
             .find_map(|model| model.declaration_key(operation.declaring_type()))
             .ok_or_else(|| broken("fairness-operation-is-declared"))?;
         let kind: &[u8] = match constraint.kind() {

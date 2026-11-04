@@ -132,6 +132,26 @@ protocol system only ever runs a protocol whose meaning is fixed.
   `parallel` with `missing_declaration`/`missing-name` at the label.
 - S3 SHALL refuse a causal edge relation with a cycle with
   `invalid_package`/`definition-cycle`, naming the nodes on the cycle.
+- S3 SHALL check each `await` by QSpec FR-466 "Per-operator checks" 2 and 6
+  and FR-464 "Profiles and laws", which own the rule; this requirement states
+  what S3 records and refuses for it:
+  - An `await` matches a `receive`, an `effect` or an `event` control. S3 SHALL
+    refuse an `await` whose match is a `send` or an `attempt` with
+    `unsupported_construct`/`declaration-form` at the `await`, naming the
+    `await`, the matched event, the matched form (`send` or `attempt`) and the
+    selected protocol profile (QSpec FR-466 "Per-operator checks" 2).
+  - The `within` window is a closed interval with `lower <= upper`. S3 SHALL
+    refuse an inverted window or one with an open upper end with
+    `ill_typed`/`type-mismatch` at the interval, and SHALL record a checked
+    `await` with its clock, its window bounds and the temporal profile the
+    `using` alias selects.
+  - An `await` reads a clock role, so the unit SHALL select a temporal
+    profile. S3 SHALL refuse an `await` in a unit that selects none with
+    `missing_declaration`/`missing-selection` at the `await`, and SHALL
+    refuse a `using` alias that no profile of the header declares with
+    `missing_declaration`/`missing-name` at the alias.
+  - An `await` anchored (`after`) at a control that follows it closes a cycle
+    and is refused as any causal cycle is; a `repeat` back edge is not one.
 - A `repeat` SHALL have progress: every cycle in its body graph passes
   through a step node, with the body graph and step nodes as ADR-027 PS-6
   defines them: an event node, an `await`, a `parallel` (its `fork` and
@@ -593,6 +613,10 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-32 | In an outer repeat whose only body is a nested repeat with an event in its body, `repeat max 1 while a` has a feasible false valuation, so its skip edge makes the outer repeat refuse `unsupported_construct`/`declaration-form` at the outer repeat for missing progress. Replacing its guard with `a or not a or b or not b` makes false infeasible over the two independent visible atoms, so its skip edge is absent and the outer repeat checks from the nested repeat's entered-body progress. The infeasible case evaluates four valuations, charging each before evaluation; it checks at the measured exact `s3.work_units` limit and, at one unit less, stops at the nested repeat's span with `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, naming the bound, denied charge count and setting `s3.work_units`, with no enclosing progress refusal. A run raised through each FR-255 entry point checks. | Test (TC-1172) |
 | FR-218-AC-33 | A repeat owned by role `c` whose body contains `attempt Load by c as (loaded: Boolean)` checks with `visible (loaded)` and `while { not loaded }`; its first body pass is unconditional, each later guard reads the most recently completed body's binder, and at least one iteration completes. The same post-test repeat with `max 0` refuses `invalid_package`/`invalid-value` at the declaration. A repeat whose guard reads no body binder retains pre-test behavior, so `while { false }` skips its body. The same binder produced by a role in a nested body branch is readable only after that branch is in the repeat body's completed scope; a binder produced by a different role or by a sibling outside the body remains refused with `wrong_snapshot`/`wrong-observation` or `missing_declaration`/`missing-name`, respectively. | Test (TC-1268) |
 | FR-218-AC-34 | A bare literal or bare protocol capture in a `visible` list refuses at S3 with `ill_typed`/`operator-ineligible` at that entry; a bare eligible decision fact checks and is individually visible, and a composite expression containing a literal or capture checks without making its operands individually visible. No refused visible entry reaches S4. | Test |
+| FR-218-AC-35 | In a unit that selects a temporal profile, a protocol with an attempt `Start` followed by `await Wait after Start` with `within [2,5]`, matching an `event` control, checks, and its checked clause records one `await` named `Wait` with clock `wall`, window lower 2 and upper 5, and the selected temporal profile. The same `await` matching a `receive` (over a channel, of a `send`) and matching an `effect` (of an `attempt`) each checks and records the same `Wait`. The `await` matching a `send` `Out` refuses `unsupported_construct`/`declaration-form` at `Wait`, naming `Wait`, `Out`, form `send` and the selected protocol profile; matching an `attempt` `Try`, the same refusal naming `Try`, form `attempt` and the profile. With `within [5,1]` and with `within [0,*]` it refuses `ill_typed`/`type-mismatch` at the interval, retaining lower and the written upper. In a unit that selects no temporal profile it refuses two causes: `missing_declaration`/`missing-selection` at `Wait`, and `missing_declaration`/`missing-name` at the undeclared `using` alias. A sequence that holds `await Wait after Later` before the attempt `Later` refuses `invalid_package`/`definition-cycle`, the named nodes including `Wait` and `Later`, while a `repeat` over one attempt checks and its edges include the repeat back edge. | Test (TC-663) |
+| FR-218-AC-36 | A protocol is charged `s3.nodes` and `s3.work_units` only for its own controls. A protocol of three `check` controls spends the same `s3.nodes` and `s3.work_units` beside a neighbour of sixty `check` controls, declared before or after it, as beside no neighbour, and a package of `k` equal protocols spends exactly `k` times one protocol's spend for `k` of 2 and 8 protocols of twenty `check` controls each, so the spend of a package does not grow faster than linearly in its protocols. | Test (TC-1172) |
+| FR-218-AC-37 | A model type written in a temporal clause's binder, trigger or capture resolves to that model's own type: over a model whose scalar `Total` is the integer interval 0 to 1000 and whose scalar `Tally` is the interval 0 to 3, a clause `over (view: M::Node)` `on each (started: M::Node)` with `capture saved: M::Total` and `capture level: M::Tally` checks, and its captures are `saved` of `Int[0, 1000]` and `level` of `Int[0, 3]` in source order, its `over` binder and its trigger have the type of the model's object `Node`, and that type is not `Int[0, 1000]`. | Test (TC-1056) |
+| FR-218-AC-38 | A predicate, a temporal clause that calls it and a protocol that requires that clause and calls the predicate, written in three units of one package, check in every request order of the units. The protocol's requirement is bound to the clause's position among the package's temporal clauses, which is the clause's own position, 1, when another unit declares a clause that sorts before it. Without the clause's unit the same package refuses `missing_declaration`/`missing-name` at the name `Due` in `requires temporal Due;`. | Test (TC-1056) |
 
 ## Dependencies
 
