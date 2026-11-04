@@ -75,18 +75,22 @@ inconclusive, and exits 0. The machine-output record of a pending item SHALL
 carry the status `pending` and the ids of the pending clauses, so that a
 consumer can tell "no violation observed" from "all obligations discharged".
 
-### Interim mapping until Contract IR IR-1281
+### The catalog owns the label and the exit
 
-The shared semantic catalog's `Category` holds eight values and has neither
-`Indeterminate` nor `Pending`; Contract IR IR-1281 owns adding them. Until it
-lands, QSL maps a temporal outcome to its category label and exit locally. The
-interim mapping is one function from a temporal outcome to the pair of label and
-exit, and it gives `pending` and exit 0 to a pending outcome, `indeterminate` and
-exit 11 to an indeterminate one, and for every other temporal outcome the label
-and exit of the catalog category that outcome already has. The single-report run
-path and the multi-item ranking both read this function, and neither keeps a
-second table. When IR-1281 lands, the catalog's `Category` replaces the function
-and its exits equal the table above.
+`Category` is the shared semantic catalog's type
+(`quire_semantic_value::catalog::Category`), which holds exactly the ten values of
+the table, `Pending` and `Indeterminate` included. QSL reads the label (`as_str`)
+and the exit (`exit_code`) of every temporal and every other outcome from the
+catalog's `Category` and keeps no local mapping from an outcome to a label or an
+exit: a pending outcome has `Category::Pending` (label `pending`, exit 0) and not
+`Category::Inconclusive`, and an indeterminate outcome has
+`Category::Indeterminate` (label `indeterminate`, exit 11). The catalog's
+`trace_exit_code` equals its `exit_code` for every one of the ten categories, so a
+trace outcome and any other outcome of one category exit alike. The single-report
+run path and the multi-item ranking both read the catalog and neither keeps a
+table. The catalog's exits, in the order success, violation, undefined, refusal,
+unsupported, incomplete, pending, indeterminate, inconclusive, internal failure,
+are 0, 10, 10, 20, 21, 22, 0, 11, 22, 30, and they equal the table above.
 
 A multi-item outcome exits with the most severe code present, in the order
 30, 20, 21, 22, 10, 11, 0 (QSpec FR-301's order with 11 added below 10).
@@ -119,9 +123,10 @@ One exit code.
 - The exit function shall map each O-16 category to the code the table
   states.
 - The exit function shall map the category indeterminate to 11.
-- Until IR-1281 lands, the QSL entry shall derive the label and exit of a
-  temporal outcome from one local mapping, and the run path and the multi-item
-  ranking shall read that mapping and no other.
+- The QSL entry shall read the label and the exit of every outcome from the
+  catalog's `Category` and shall keep no local mapping, and the run path and the
+  multi-item ranking shall read the catalog and no other table.
+- The exit of a category shall equal its trace exit for every category.
 - The exit function shall map an inconclusive proof or `analyze` item to 22
   and the category pending to 0.
 - The machine-output record of a pending item shall carry the status `pending`
@@ -140,7 +145,7 @@ One exit code.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-285-AC-1 | For each of the ten table rows, the exit function returns the code the table states: an inconclusive `analyze` item with cause `CertificateRejected` exits 22, FR-283-AC-1's pending clause (category pending) exits 0, and FR-501-AC-4's `Indeterminate` clause exits 11. FR-281-AC-2's `refuted` terminal record reports its category as `Category::Violation`, which the same function maps to 10. | Test (TC-769) |
+| FR-285-AC-1 | For each of the ten table rows, the exit function returns the code the table states, and the catalog's `trace_exit_code` equals its `exit_code` for each of the ten: an inconclusive `analyze` item with cause `CertificateRejected` exits 22, FR-283-AC-1's pending clause (category pending) exits 0, and FR-501-AC-4's `Indeterminate` clause exits 11. FR-281-AC-2's `refuted` terminal record reports its category as `Category::Violation`, which the same function maps to 10. | Test (TC-769) |
 | FR-285-AC-2 | Multi-item outcomes with item codes {10, 22} exit 22; {0, 30, 20} exit 30; {21, 22} exit 21; {20, 21} exit 20; {0, 10} exit 10; {10, 11} exit 10; {11, 22} exit 22; {0, 11} exit 11; {0} exit 0. | Test (TC-769) |
 | FR-285-AC-3 | `StageFailure::Refused` with a profile-gated cause exits 21 and with an `ill_typed` cause exits 20; `StageFailure::Limit` and `StageFailure::Cancelled` exit 22; `StageFailure::Fault` exits 30; `CallFailure::Input`, `Cancelled` and `Fault` exit 20, 22 and 30. | Test (TC-769) |
 | FR-285-AC-4 | FR-100's outcome mapping renders FR-100-AC-10's `sum-out-of-domain` evaluation as `{"kind": "undefined", "reason": "sum-out-of-domain"}` and exits 10. | Test (TC-769) |
@@ -148,18 +153,19 @@ One exit code.
 | FR-285-AC-6 | `CallFailure::Unsupported` with cause `NotSupplied` and with cause `Untranslatable` each exit 21, and `CallFailure::Limit` naming `prepare.compile_work_units` exits 22. | Test (TC-769) |
 | FR-285-AC-7 | A finite-window clause run (FR-330) whose result is FR-501's `Indeterminate` reports category `indeterminate`, keeps that label and the reason in its machine output, and exits 11; it does not exit 10 or 0. | Test (TC-769) |
 | FR-285-AC-8 | A `StageFailure::Refused` carrying `protocol_results` [W `Emitted`, X `Refused` with an `ill_typed` cause] exits 20, one whose first `Refused` result has a profile-gated cause exits 21, and a `StageFailure::Limit` carrying [W `Emitted`, Z `Incomplete`] exits 22; removing the payload from each changes neither category nor exit. | Test (TC-769) |
-| FR-285-AC-9 | A clause pending when its supplied trace ends exits 0 with the category `pending`, not `inconclusive`; its machine-output record carries the status `pending` and the ids of the pending clauses, and a run whose clauses are all discharged carries no pending status and no pending ids. | Test (TC-769) |
+| FR-285-AC-9 | A clause pending when its supplied trace ends has `Category::Pending`, exits 0 with the label `pending`, not `Category::Inconclusive`; its machine-output record carries the status `pending` and the ids of the pending clauses, and a run whose clauses are all discharged carries no pending status and no pending ids. | Test (TC-769) |
 | FR-285-AC-10 | The label and exit that `run_clause` reports for a finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome equal the label and exit the multi-item ranking reads for the same outcome. | Test (TC-769) |
-| FR-285-AC-11 | With a catalog whose `Category` holds `Indeterminate` and `Pending` (IR-1281), the label and exit of a finite-window `Pending` and `Indeterminate` outcome are the catalog's, and QSL holds no local mapping. This is gated on IR-1281. | Test (TC-769) |
-| FR-285-AC-12 | Under the interim mapping a finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome has the label and exit `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22. | Test (TC-769) |
+| FR-285-AC-11 | The label and exit of a finite-window `Pending` and `Indeterminate` outcome equal the catalog's `Category::Pending.as_str()` and `exit_code()` (`pending`, 0) and `Category::Indeterminate.as_str()` and `exit_code()` (`indeterminate`, 11), and QSL holds no function from an outcome to a label or an exit other than the catalog's: a catalog whose `Pending` exit differs changes the reported exit. | Test (TC-769) |
+| FR-285-AC-12 | A finite-window `Pending`, `Indeterminate`, `Completed(true)`, `Completed(false)` and `Incomplete` outcome has the label and exit `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22. | Test (TC-769) |
 
 ## Dependencies
 
 - ADR-029 CB-4: the exit table, ruling RU-1.
 - ADR-013 O-16, T-4: the categories and the failure types.
 - ADR-011 §5: one total exit function.
-- Contract IR IR-1281: `Indeterminate` and `Pending` in the shared category
-  catalog; FR-285-AC-11.
+- The shared semantic catalog (`quire-semantic-value`): the ten-value `Category`
+  with `Pending` and `Indeterminate`, `exit_code` and `trace_exit_code`;
+  FR-285-AC-11.
 - [FR-027](FR-027-export-compiled-native-package.md), [FR-100](FR-100-run-a-named-function-through-the-spine.md): QSL `command`'s exit codes.
 - QSpec FR-301: the six exit codes and the severity order, with undefined at
   10 as the QSpec half in References aligns it.
