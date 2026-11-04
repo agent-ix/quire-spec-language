@@ -1017,6 +1017,7 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
         | NodeKind::ConvertDecimal(operand, _)
         | NodeKind::Flatten(operand)
         | NodeKind::Size(operand)
+        | NodeKind::DropFirst(operand)
         | NodeKind::Pre(operand) => vec![*operand],
         NodeKind::Let { value, body, .. } => vec![*value, *body],
         NodeKind::If {
@@ -1031,6 +1032,7 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
         | NodeKind::Decimal { left, right, .. }
         | NodeKind::Ieee(_, _, left, right)
         | NodeKind::Quantity(_, left, right)
+        | NodeKind::QuantityPower(left, right)
         | NodeKind::Order(_, _, left, right)
         | NodeKind::Equality(_, _, left, right)
         | NodeKind::IeeeNumericEquality(left, right)
@@ -1038,6 +1040,7 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
         | NodeKind::IeeeBitIdentical(left, right)
         | NodeKind::Connective(_, _, left, right)
         | NodeKind::Contains(left, right)
+        | NodeKind::RemoveOne(left, right)
         | NodeKind::Reaches {
             source: left,
             target: right,

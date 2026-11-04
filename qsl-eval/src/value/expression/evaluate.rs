@@ -2350,6 +2350,45 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 self.units.form(unit);
                 Value::Quantity(quantity)
             }
+            NodeKind::QuantityPower(_, _) => {
+                let (Value::Integer(exponent), Value::Quantity(base)) = (self.pop()?, self.pop()?)
+                else {
+                    return Err(invariant("quantity-power-operands-expected"));
+                };
+                let Some(unit_base) = self.units.resolve(&base) else {
+                    return Err(unresolved_unit());
+                };
+                let (outcome, unit) = evaluate_quantity_unit(
+                    QuantityOperation::Power(unit_base, &exponent),
+                    self.meter,
+                )
+                .map_err(|_| invariant("quantity-operation-rejected"))?;
+                let quantity = outcome_into_stop(outcome)?;
+                self.units.form(unit);
+                Value::Quantity(quantity)
+            }
+            NodeKind::DropFirst(_) => {
+                let source = self.pop_collection()?;
+                let outcome = quire_eval::collection::drop_first(&source, self.meter)
+                    .map_err(|_| invariant("collection-removal-rejected"))?;
+                let value = outcome_into_stop(outcome)?;
+                self.note_built(node, &value);
+                value
+            }
+            NodeKind::RemoveOne(_, _) => {
+                let probe = self.pop()?;
+                let source = self.pop_collection()?;
+                let outcome = quire_eval::collection::remove_one(
+                    &source,
+                    &probe,
+                    self.scope.types(),
+                    self.meter,
+                )
+                .map_err(|_| invariant("collection-removal-rejected"))?;
+                let value = outcome_into_stop(outcome)?;
+                self.note_built(node, &value);
+                value
+            }
             NodeKind::Order(operator, kind, _, _) => {
                 let right = self.pop()?;
                 let left = self.pop()?;
