@@ -195,7 +195,7 @@ fn children_of(envelope: &mut Value, position: usize) -> &mut Vec<Value> {
 }
 
 /// I2 retains each emitted protocol node and its occurrence records.
-#[trace("FR-383-AC-19", "TC-1063")]
+#[trace("FR-383-AC-19", "FR-493-AC-4", "TC-1063")]
 #[test]
 fn protocol_nodes_and_occurrences_survive_the_whole_i2_read() {
     let lowered = emitted(&flow(RUN));
@@ -1091,7 +1091,7 @@ fn a_choice_emits_its_owner_facts_and_sorted_cases_and_reads_back() {
 /// FR-218-AC-34 and FR-383-AC-6 (TC-1056): accepted visible entries, including
 /// a composite that reads a capture, are emitted as expression-node refs for
 /// both choice and repeat and admitted by IR's reader.
-#[trace("TC-1056", "FR-218-AC-34", "FR-383-AC-6")]
+#[trace("TC-1056", "FR-218-AC-34", "FR-383-AC-6", "FR-383-AC-11")]
 #[test]
 fn choice_and_repeat_visible_entries_reference_expression_nodes() {
     let source = deciding(&format!(

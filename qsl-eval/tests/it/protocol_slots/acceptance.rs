@@ -249,7 +249,7 @@ fn other_reference(
     )
 }
 
-fn ep_receipt(package: &CheckedPackage, refs: [&ObjectReference; 4]) -> Value {
+fn ep_receipt_and_bundle(package: &CheckedPackage, refs: [&ObjectReference; 4]) -> (Value, Value) {
     let types = package.graph().scope().types();
     let other = || Value::Reference(refs[0].clone());
     let sequence_type = CollectionType::new(
@@ -285,16 +285,21 @@ fn ep_receipt(package: &CheckedPackage, refs: [&ObjectReference; 4]) -> Value {
         .find(|ty| ty.name() == "M::Receipt")
         .unwrap()
         .key();
-    types
+    let receipt = types
         .record(
             receipt_key,
             vec![
                 ("total", FieldValue::Present(int(5))),
                 ("peer", FieldValue::Present(other())),
-                ("bundle", FieldValue::Present(bundle)),
+                ("bundle", FieldValue::Present(bundle.clone())),
             ],
         )
-        .unwrap()
+        .unwrap();
+    (receipt, bundle)
+}
+
+fn ep_receipt(package: &CheckedPackage, refs: [&ObjectReference; 4]) -> Value {
+    ep_receipt_and_bundle(package, refs).0
 }
 
 fn ep_observation<'a>(
@@ -2087,7 +2092,7 @@ fn crossed_template_sources_and_admission_precedence_name_the_exact_binder() {
 /// TC-1071 rows 17-19 and 22: reference admission precedes every charge;
 /// the same meter remains usable after each refused or incomplete admission.
 #[test]
-#[trace("TC-1071", "FR-390-AC-6")]
+#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-22")]
 fn reference_admission_refusals_leave_the_shared_meter_available() {
     let (package, view) = fixture_with_view();
     let (observation, reference) = observation(&package, &view);
@@ -2196,6 +2201,107 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
         meter, fresh,
         "only the final valid recovery call charges the shared meter"
     );
+}
+
+/// FR-390-AC-22: malformed slots and supplied-source defects take precedence
+/// over a failed observation result, and each refusal leaves the meter intact.
+#[test]
+#[trace("TC-1071", "FR-390-AC-22")]
+fn source_defects_precede_a_refused_observation_result() {
+    use quire_semantic_value::admission::AdmissionRecord;
+
+    let package = fixture();
+    let refused_record = AdmissionRecord {
+        catalog: CatalogCode::new("invalid_model_binding", "wrong-model-selection"),
+        fields: Default::default(),
+        path: Vec::new(),
+        kernel: None,
+    };
+    let refused = ObservationAdmission::Refused(refused_record);
+    let retry = slot(&package, "Refunds", "Refund", "retry.relation", None);
+    let locus = |name: &str| CallAdmissionLocus::Binder(binder(&package, "Refunds", name));
+    let mut duplicate = retry_supply(&package, 0);
+    duplicate.binders.push((
+        binder(&package, "Refunds", "earlier"),
+        SuppliedValue::Value(attempt(&package, 0)).into(),
+    ));
+    duplicate.observation = Some(&refused);
+
+    let mut unknown = retry_supply(&package, 0);
+    unknown.binders.push((
+        binder(&package, "Refunds", "forward"),
+        SuppliedValue::Value(receipt(&package, 5)).into(),
+    ));
+    unknown.observation = Some(&refused);
+
+    let mut missing = retry_supply(&package, 0);
+    missing
+        .binders
+        .retain(|(key, _)| *key != binder(&package, "Refunds", "target"));
+    missing.observation = Some(&refused);
+
+    let mut wrong_shape = retry_supply(&package, 0);
+    let target = binder(&package, "Refunds", "target");
+    wrong_shape
+        .binders
+        .iter_mut()
+        .find(|(key, _)| *key == target)
+        .expect("the target source is supplied")
+        .1 = SuppliedValue::Value(Value::Boolean(true)).into();
+    wrong_shape.observation = Some(&refused);
+
+    let malformed_slot = ProtocolSlot {
+        node: binder(&package, "Refunds", "target"),
+        member: "retry.relation".to_owned(),
+        index: None,
+    };
+    let empty = supply(&package, "Refunds", Vec::new(), Some(&refused));
+    let cases = [
+        (
+            retry.clone(),
+            duplicate,
+            CatalogCode::new("invalid_runtime_input", "duplicate-member"),
+            locus("earlier"),
+        ),
+        (
+            retry.clone(),
+            unknown,
+            CatalogCode::new("invalid_runtime_input", "unknown-member"),
+            locus("forward"),
+        ),
+        (
+            retry.clone(),
+            missing,
+            CatalogCode::new("invalid_runtime_input", "missing-member"),
+            locus("target"),
+        ),
+        (
+            retry,
+            wrong_shape,
+            CatalogCode::new("invalid_runtime_input", "wrong-value-kind"),
+            locus("target"),
+        ),
+        (
+            malformed_slot.clone(),
+            empty,
+            CatalogCode::new("invalid_model_binding", "malformed-declaration"),
+            CallAdmissionLocus::Node(malformed_slot.node),
+        ),
+    ];
+    for (selected, supplied, expected, expected_locus) in cases {
+        let mut meter = Meter::new(UNLIMITED);
+        let before = meter.clone();
+        let result = package.evaluate_protocol_slot(&selected, &supplied, &mut meter);
+        assert_eq!(meter, before, "a pre-observation refusal charges nothing");
+        let Err(CallFailure::Admission(failure)) = result else {
+            panic!("input defect precedes the refused observation: {result:?}");
+        };
+        let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+            panic!("the input defect remains a refusal: {failure:?}");
+        };
+        assert_eq!(record.record.catalog, expected);
+        assert_eq!(record.locus, expected_locus);
+    }
 }
 
 /// TC-1071 rows 23–25: the retained strict-reader view admits and evaluates
@@ -2730,9 +2836,11 @@ fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> Str
 /// boundary, repeated runs and unavailable supplies (binder and cause). The 11
 /// composed or literal roots have no reader projection yet: they are asserted
 /// as the typed unmet dependency, which leaves AC-11 and AC-15 open, so this
-/// test carries neither tag.
+/// test carries no FR-390-AC-11/15 tag. Its current cases also do not exercise
+/// AC-18's required recursively nested Option/Collection identities, so that
+/// criterion remains unclaimed here.
 #[test]
-#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-390-AC-18")]
+#[trace("TC-142", "TC-1073", "FR-049-AC-9")]
 fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unmet() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);
@@ -2757,7 +2865,7 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
         let reader_supply = supply(
             &package,
             spec.protocol,
-            values,
+            values.clone(),
             spec.observed.then_some(&reader_observation),
         );
         let label = format!("{} ({}.{})", spec.name, spec.owner, spec.member);
@@ -2944,11 +3052,15 @@ fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unme
 
 /// Selection refusals have the same locus on both views and leave their
 /// meters unchanged, including refusals only the view can make (an absent
-/// node, a node of another tag). This covers the refusal clause of AC-15 only,
-/// so it is tagged AC-4 alone.
+/// node, a node of another tag). The ignored AC-15 matrix reuses the assertion
+/// so its criterion trace includes the refusal path too.
 #[test]
 #[trace("TC-1071", "FR-390-AC-4")]
 fn selection_refusals_match_across_the_checked_and_reader_views() {
+    assert_selection_refusals_match_across_the_checked_and_reader_views();
+}
+
+fn assert_selection_refusals_match_across_the_checked_and_reader_views() {
     let package = fixture_from_source(&SOURCE.replace(
         "  run sequence Main {",
         "  terminal any;\n  run sequence Main {",
@@ -3043,6 +3155,377 @@ fn selection_refusals_match_across_the_checked_and_reader_views() {
     }
 }
 
+/// FR-390-AC-15: every TC-1070 protocol slot keeps the complete result and
+/// ordered charges when evaluated through the bytes the I2 reader admits.
+#[test]
+#[trace("TC-1070", "TC-1073", "FR-390-AC-15")]
+#[ignore = "gated on QSL-1625: reader NodeRead must evaluate every composed protocol-slot root"]
+fn reader_parity_matches_every_tc1070_slot_result_and_charge_log() {
+    let (package, model_view) = fixture_with_view();
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    // AC-15 includes refusal parity and unchanged meters for absent and
+    // malformed selected descriptors. The same assertion also has a focused
+    // AC-4 test, while this full matrix remains gated on QSL-1625.
+    assert_selection_refusals_match_across_the_checked_and_reader_views();
+    let (checked_observation, checked_reference) = observation(&package, &model_view);
+    let (reader_observation, reader_reference) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    assert_eq!(checked_reference, reader_reference);
+
+    let specs = parity_slots(&package);
+    for spec in &specs {
+        let selected = slot(&package, spec.protocol, spec.owner, spec.member, spec.index);
+        let values = (spec.values)(Some(&checked_reference));
+        let checked_supply = supply(
+            &package,
+            spec.protocol,
+            values.clone(),
+            spec.observed.then_some(&checked_observation),
+        );
+        let reader_supply = supply(
+            &package,
+            spec.protocol,
+            values.clone(),
+            spec.observed.then_some(&reader_observation),
+        );
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let checked = package
+            .evaluate_protocol_slot(&selected, &checked_supply, &mut checked_meter)
+            .unwrap_or_else(|failure| panic!("{}: checked view: {failure:?}", spec.name));
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let reader = reader_view
+            .evaluate_protocol_slot(&selected, &reader_supply, &mut reader_meter)
+            .unwrap_or_else(|failure| panic!("{}: reader view: {failure:?}", spec.name));
+        assert_eq!(
+            format!("{checked:?}"),
+            format!("{reader:?}"),
+            "{}: full outcome and ordered charge-bearing result",
+            spec.name
+        );
+        charges_and_usage_match(spec.name, &checked_meter, &reader_meter);
+
+        // AC-9: every independently charged counter has an exact boundary and
+        // a one-short refusal with the same completed/incomplete outcome.
+        let exact = limits_at(&checked_meter);
+        let mut exact_checked = Meter::new(exact);
+        let mut exact_reader = Meter::new(exact);
+        let exact_checked_result =
+            package.evaluate_protocol_slot(&selected, &checked_supply, &mut exact_checked);
+        let exact_reader_result =
+            reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut exact_reader);
+        assert_eq!(
+            without_location(&exact_checked_result),
+            without_location(&exact_reader_result),
+            "{}: exact AC-9 budget",
+            spec.name
+        );
+        for counter in LimitKind::ALL {
+            let used = checked_meter.consumed(counter);
+            if used == 0 {
+                continue;
+            }
+            let mut limits = exact;
+            set_limit(&mut limits, counter, used - 1);
+            let mut short_checked = Meter::new(limits);
+            let mut short_reader = Meter::new(limits);
+            let checked_short =
+                package.evaluate_protocol_slot(&selected, &checked_supply, &mut short_checked);
+            let reader_short =
+                reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut short_reader);
+            assert_eq!(
+                without_location(&checked_short),
+                without_location(&reader_short),
+                "{}: one short at {counter:?}",
+                spec.name
+            );
+            assert_incomplete(reader_short.unwrap(), counter);
+            assert_incomplete(checked_short.unwrap(), counter);
+            charges_and_usage_match(spec.name, &short_checked, &short_reader);
+        }
+
+        // Unavailable sources stop at the same binder with the same cause and
+        // the same ordered charges already made before the halt.
+        if !values.is_empty() {
+            let unavailable = ProtocolSupply {
+                binders: values
+                    .iter()
+                    .map(|(name, _)| {
+                        (
+                            binder(&package, spec.protocol, name),
+                            SuppliedValue::Unavailable(CatalogCode::new(
+                                "unavailable_observation",
+                                "missing-required-artifact",
+                            ))
+                            .into(),
+                        )
+                    })
+                    .collect(),
+                observation: None,
+            };
+            let mut unavailable_checked = Meter::new(UNLIMITED);
+            let mut unavailable_reader = Meter::new(UNLIMITED);
+            let checked_unavailable =
+                package.evaluate_protocol_slot(&selected, &unavailable, &mut unavailable_checked);
+            let reader_unavailable = reader_view.evaluate_protocol_slot(
+                &selected,
+                &unavailable,
+                &mut unavailable_reader,
+            );
+            assert_eq!(
+                without_location(&checked_unavailable),
+                without_location(&reader_unavailable),
+                "{}: unavailable supply parity",
+                spec.name
+            );
+            assert!(matches!(
+                checked_unavailable,
+                Ok(ProtocolSlotEvaluation::Unavailable { .. })
+            ));
+            charges_and_usage_match(spec.name, &unavailable_checked, &unavailable_reader);
+        }
+
+        // TC-1070's retry relation short-circuits after the first false
+        // comparison. Both views retain that result and its shorter log.
+        if spec.name == "retry relation" {
+            let mut short_values = values.clone();
+            let earlier = if spec.owner == "Refund" {
+                "earlier"
+            } else {
+                "partialEarlier"
+            };
+            let (_, value) = short_values
+                .iter_mut()
+                .find(|(name, _)| *name == earlier)
+                .expect("retry supplies the earlier Attempt");
+            *value = attempt(&package, 3);
+            let short_checked_supply = supply(&package, spec.protocol, short_values.clone(), None);
+            let short_reader_supply = supply(&package, spec.protocol, short_values, None);
+            let mut short_checked_meter = Meter::new(UNLIMITED);
+            let mut short_reader_meter = Meter::new(UNLIMITED);
+            let checked_short = package.evaluate_protocol_slot(
+                &selected,
+                &short_checked_supply,
+                &mut short_checked_meter,
+            );
+            let reader_short = reader_view.evaluate_protocol_slot(
+                &selected,
+                &short_reader_supply,
+                &mut short_reader_meter,
+            );
+            assert_eq!(
+                without_location(&checked_short),
+                without_location(&reader_short),
+                "{}: short-circuit result parity",
+                spec.name
+            );
+            assert!(
+                short_checked_meter.consumed(LimitKind::WorkUnits)
+                    < checked_meter.consumed(LimitKind::WorkUnits),
+                "the false first comparison skips the remaining relation"
+            );
+            charges_and_usage_match(spec.name, &short_checked_meter, &short_reader_meter);
+        }
+    }
+
+    // A refused observation cannot mask supplied-record defects; each
+    // checked/reader pair retains the exact refusal locus and leaves its meter
+    // unchanged. The reader assertions remain part of the QSL-1625 gate.
+    let refused_record = quire_semantic_value::admission::AdmissionRecord {
+        catalog: CatalogCode::new("invalid_model_binding", "wrong-model-selection"),
+        fields: Default::default(),
+        path: Vec::new(),
+        kernel: None,
+    };
+    let refused = ObservationAdmission::Refused(refused_record);
+    let retry = slot(&package, "Refunds", "Refund", "retry.relation", None);
+    let locus = |name: &str| CallAdmissionLocus::Binder(binder(&package, "Refunds", name));
+    let mut duplicate = retry_supply(&package, 0);
+    duplicate.binders.push((
+        binder(&package, "Refunds", "earlier"),
+        SuppliedValue::Value(attempt(&package, 0)).into(),
+    ));
+    duplicate.observation = Some(&refused);
+    let mut unknown = retry_supply(&package, 0);
+    unknown.binders.push((
+        binder(&package, "Refunds", "forward"),
+        SuppliedValue::Value(receipt(&package, 5)).into(),
+    ));
+    unknown.observation = Some(&refused);
+    let mut missing = retry_supply(&package, 0);
+    missing
+        .binders
+        .retain(|(key, _)| *key != binder(&package, "Refunds", "target"));
+    missing.observation = Some(&refused);
+    let mut wrong_shape = retry_supply(&package, 0);
+    let target = binder(&package, "Refunds", "target");
+    wrong_shape
+        .binders
+        .iter_mut()
+        .find(|(key, _)| *key == target)
+        .expect("the target source is supplied")
+        .1 = SuppliedValue::Value(Value::Boolean(true)).into();
+    wrong_shape.observation = Some(&refused);
+    for (supplied, expected, expected_locus) in [
+        (
+            duplicate,
+            CatalogCode::new("invalid_runtime_input", "duplicate-member"),
+            locus("earlier"),
+        ),
+        (
+            unknown,
+            CatalogCode::new("invalid_runtime_input", "unknown-member"),
+            locus("forward"),
+        ),
+        (
+            missing,
+            CatalogCode::new("invalid_runtime_input", "missing-member"),
+            locus("target"),
+        ),
+        (
+            wrong_shape,
+            CatalogCode::new("invalid_runtime_input", "wrong-value-kind"),
+            locus("target"),
+        ),
+    ] {
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let checked = package.evaluate_protocol_slot(&retry, &supplied, &mut checked_meter);
+        let reader = reader_view.evaluate_protocol_slot(&retry, &supplied, &mut reader_meter);
+        let (
+            Err(CallFailure::Admission(checked_failure)),
+            Err(CallFailure::Admission(reader_failure)),
+        ) = (&checked, &reader)
+        else {
+            panic!("supply defects refuse before observation inspection: {checked:?} / {reader:?}");
+        };
+        assert_eq!(checked_failure, reader_failure);
+        let CallAdmissionFailure::Refused(record) = reader_failure.as_ref() else {
+            panic!("supply defect is a refusal: {reader_failure:?}");
+        };
+        assert_eq!(record.record.catalog, expected);
+        assert_eq!(record.locus, expected_locus);
+        assert_eq!(checked_meter, Meter::new(UNLIMITED));
+        assert_eq!(reader_meter, Meter::new(UNLIMITED));
+    }
+
+    // AC-10: each compensation's five calls share one meter in both orders;
+    // the exact total completes, and one below it is incomplete at the last
+    // call that charges work.
+    for owner in ["Refund", "Partial"] {
+        let owner_specs: Vec<_> = specs
+            .iter()
+            .filter(|spec| {
+                spec.owner == owner
+                    && matches!(
+                        spec.name,
+                        "registration capture"
+                            | "activation capture"
+                            | "trigger guard"
+                            | "retry relation"
+                            | "recovery predicate"
+                    )
+            })
+            .collect();
+        assert_eq!(owner_specs.len(), 5, "{owner}: all AC-10 slots are covered");
+        let selections: Vec<_> = owner_specs
+            .iter()
+            .map(|spec| slot(&package, spec.protocol, spec.owner, spec.member, spec.index))
+            .collect();
+        let supplies = |observation| {
+            owner_specs
+                .iter()
+                .map(|spec| {
+                    supply(
+                        &package,
+                        spec.protocol,
+                        (spec.values)(Some(&checked_reference)),
+                        spec.observed.then_some(observation),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let checked_supplies = supplies(&checked_observation);
+        let reader_supplies = supplies(&reader_observation);
+        let run = |reader: bool, order: &[usize], limits: ScalarLimits| {
+            let mut meter = Meter::new(limits);
+            let results = order
+                .iter()
+                .map(|index| {
+                    if reader {
+                        reader_view.evaluate_protocol_slot(
+                            &selections[*index],
+                            &reader_supplies[*index],
+                            &mut meter,
+                        )
+                    } else {
+                        package.evaluate_protocol_slot(
+                            &selections[*index],
+                            &checked_supplies[*index],
+                            &mut meter,
+                        )
+                    }
+                })
+                .collect::<Vec<_>>();
+            (meter, results)
+        };
+        let forward: Vec<_> = (0..selections.len()).collect();
+        let reverse: Vec<_> = forward.iter().rev().copied().collect();
+        let (checked_meter, checked_results) = run(false, &forward, UNLIMITED);
+        let (reader_meter, reader_results) = run(true, &forward, UNLIMITED);
+        for (checked, reader) in checked_results.iter().zip(&reader_results) {
+            assert_eq!(without_location(checked), without_location(reader));
+        }
+        charges_and_usage_match(
+            &format!("{owner} shared AC-10 meter"),
+            &checked_meter,
+            &reader_meter,
+        );
+        let (reverse_meter, reverse_results) = run(true, &reverse, UNLIMITED);
+        for result in reverse_results {
+            completed(result.unwrap());
+        }
+        for counter in LimitKind::ALL {
+            assert_eq!(
+                reverse_meter.consumed(counter),
+                reader_meter.consumed(counter),
+                "{owner}: reverse AC-10 order preserves {counter:?} total"
+            );
+        }
+        let sum = reader_meter.consumed(LimitKind::WorkUnits);
+        let mut exact_limits = UNLIMITED;
+        set_limit(&mut exact_limits, LimitKind::WorkUnits, sum);
+        let (_, exact_results) = run(true, &forward, exact_limits);
+        for result in exact_results {
+            completed(result.unwrap());
+        }
+        let last_charging = forward
+            .iter()
+            .rposition(|index| {
+                let mut meter = Meter::new(UNLIMITED);
+                let _ = reader_view.evaluate_protocol_slot(
+                    &selections[*index],
+                    &reader_supplies[*index],
+                    &mut meter,
+                );
+                meter.consumed(LimitKind::WorkUnits) > 0
+            })
+            .expect("an AC-10 call charges work_units");
+        let mut one_short = UNLIMITED;
+        set_limit(&mut one_short, LimitKind::WorkUnits, sum - 1);
+        for reader in [false, true] {
+            let (_, results) = run(reader, &forward, one_short);
+            for (position, result) in results.into_iter().enumerate() {
+                if position < last_charging {
+                    completed(result.unwrap());
+                } else if position == last_charging {
+                    assert_incomplete(result.unwrap(), LimitKind::WorkUnits);
+                }
+            }
+        }
+    }
+}
+
 /// FR-390-AC-19: a bare `view.total` read and an explicit `deref(view).total`
 /// read keep their own in-process charge logs through emitted-package
 /// admission, including FR-107's explicit-dereference charge.
@@ -3108,6 +3591,391 @@ fn bare_and_explicit_dereference_reads_keep_their_charge_logs_through_the_reader
         model_logs[0], model_logs[1],
         "the explicit dereference keeps its extra charge"
     );
+}
+
+/// FR-390-AC-18: a reader-backed slot preserves the declared record identity
+/// and recursively nested optional and sequence references in TC-1070's E-P
+/// `Receipt` value.
+#[test]
+#[trace("TC-1070", "FR-390-AC-18")]
+#[ignore = "gated on QSL-1624: reader admission must retain nested Option/Collection type selections"]
+fn reader_backed_projection_preserves_nested_option_and_collection_value_types() {
+    let source = SOURCE.replace(
+        "capture target: M::Total = forward.total;",
+        "capture target: M::Total = forward.total;\n    \
+         capture nested: M::PeerBundle = forward.bundle;",
+    );
+    let model_bytes = serde_json::to_vec(&document_ep()).unwrap();
+    let (package, model_view) = fixture_from_document(&source, &model_bytes);
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let peer = other_reference(&model_view, "ghost");
+    let nested = other_reference(&model_view, "nested-1");
+    let optional = other_reference(&model_view, "option-1");
+    let sequence = other_reference(&model_view, "sequence-1");
+    let (receipt, expected_bundle) =
+        ep_receipt_and_bundle(&package, [&peer, &nested, &optional, &sequence]);
+    let references = vec![
+        ProtocolReferenceOccurrence {
+            path: vec![PathStep::Field("peer".into())],
+            population: population_node("otherSpare"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("nested".into()),
+            ],
+            population: population_node("otherNodes"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("optional".into()),
+                PathStep::OptionValue,
+            ],
+            population: population_node("otherSpare"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("sequence".into()),
+                PathStep::Index(0),
+            ],
+            population: population_node("otherNodes"),
+        },
+    ];
+    let observation = ep_observation(
+        &package,
+        &model_view,
+        Some((true, &["ghost", "option-1"])),
+        true,
+    );
+    let values = || {
+        ep_supply(
+            &package,
+            receipt.clone(),
+            references.clone(),
+            Some(&observation),
+        )
+    };
+    let selected = slot(
+        &package,
+        "Refunds",
+        "Refund",
+        "registration_captures",
+        Some(1),
+    );
+    let mut checked_meter = Meter::new(UNLIMITED);
+    let checked = package
+        .evaluate_protocol_slot(&selected, &values(), &mut checked_meter)
+        .expect("checked view evaluates the nested record capture");
+    let mut reader_meter = Meter::new(UNLIMITED);
+    let reader = reader_view
+        .evaluate_protocol_slot(&selected, &values(), &mut reader_meter)
+        .expect("reader view projects the nested record capture");
+    let expected = completed(checked);
+    let actual = completed(reader);
+    assert_value_eq!(expected, expected_bundle, "checked nested bundle");
+    assert_value_eq!(actual, expected_bundle, "reader nested bundle");
+    charges_and_usage_match(
+        "nested Option/Sequence Receipt",
+        &checked_meter,
+        &reader_meter,
+    );
+}
+
+/// FR-390-AC-24: native String, UUID and Timestamp equality keeps its exact
+/// result and charges when protocol slot evaluation crosses the I2 reader.
+#[test]
+#[trace("TC-1028", "FR-390-AC-24")]
+#[ignore = "gated on QSL-1625: reader NodeRead must evaluate computed protocol-slot roots"]
+fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charges() {
+    let source = SOURCE
+        .replace(
+            "profile P = \"quire.protocol.finite-global/v1\";",
+            "profile P = \"quire.protocol.finite-global/v1\";\n\
+             profile v = \"quire.value.complete/v1\";",
+        )
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\n\
+             record Native { label: String; id: UUID; stamp: Timestamp; }\n\
+             function sameString using v(a: String, b: String): Boolean pure { a = b }\n\
+             function sameUuid using v(a: UUID, b: UUID): Boolean pure { a = b }\n\
+             function sameTimestamp using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n\
+             function sameNative using v(a: Native, b: Native): Boolean pure { a.label = b.label and a.id = b.id and a.stamp = b.stamp }",
+        )
+        .replace(
+            "capture order: M::Total = view.total;",
+            "capture order: M::Total = view.total;\n\
+             capture stringEquality: Boolean = sameString(\"é\", \"é\");\n\
+             capture uuidEquality: Boolean = sameUuid(UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), UUID(\"00112233-4455-6677-8899-aabbccddeeff\"));\n\
+             capture timestampEquality: Boolean = sameTimestamp(Timestamp(5), Timestamp(5));\n\
+             capture nestedNativeEquality: Boolean = sameNative(Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });\n\
+             capture nestedNativeDifference: Boolean = sameNative(Native{ label: \"first\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) }, Native{ label: \"second\", id: UUID(\"00112233-4455-6677-8899-aabbccddeeff\"), stamp: Timestamp(5) });",
+        );
+    let (package, model_view) = fixture_from_source(&source);
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let (observation, _) = observation(&package, &model_view);
+    let (reader_observation, _) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    let expected = [false, true, true, true, false];
+    for (index, expected) in expected.into_iter().enumerate() {
+        let selected = slot(&package, "Refunds", "Refunds", "captures", Some(index + 1));
+        let checked_supplies = supply(&package, "Refunds", Vec::new(), Some(&observation));
+        let reader_supplies = supply(&package, "Refunds", Vec::new(), Some(&reader_observation));
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let checked = package
+            .evaluate_protocol_slot(&selected, &checked_supplies, &mut checked_meter)
+            .expect("checked view evaluates the native comparison");
+        assert_value_eq!(completed(checked), Value::Boolean(expected));
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let reader = reader_view
+            .evaluate_protocol_slot(&selected, &reader_supplies, &mut reader_meter)
+            .expect("reader view evaluates the native comparison");
+        assert_value_eq!(completed(reader), Value::Boolean(expected));
+        charges_and_usage_match("native scalar equality", &checked_meter, &reader_meter);
+    }
+}
+
+/// FR-390-AC-25: a reader-backed projection preserves two declared units of
+/// one dimension as distinct identities, including conversion to the selected
+/// target unit.
+#[test]
+#[trace("FR-390-AC-25")]
+#[ignore = "gated on QSL-1625: reader NodeRead must evaluate quantity protocol-slot roots"]
+fn reader_backed_projection_preserves_declared_and_compound_quantity_units() {
+    let source = SOURCE
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\n\
+             dimension Length;\n\
+             unit m : Length = rational(1, 1);\n\
+             unit cm : Length = rational(1, 100) * m;",
+        )
+        .replace(
+            "capture order: M::Total = view.total;",
+            "capture order: M::Total = view.total;\n\
+             capture metres: Quantity<m> = 1 m;\n\
+             capture centimetres: Quantity<cm> = 100 cm;\n\
+             capture convertedUnit: Boolean = convert<Quantity<m>>(100 cm) = 1 m;",
+        );
+    let (package, model_view) = fixture_from_source(&source);
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let (observation, _) = observation(&package, &model_view);
+    let (reader_observation, _) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    let mut declared_units = Vec::new();
+    for index in 1..=3 {
+        let selected = slot(&package, "Refunds", "Refunds", "captures", Some(index));
+        let checked_supplies = supply(&package, "Refunds", Vec::new(), Some(&observation));
+        let reader_supplies = supply(&package, "Refunds", Vec::new(), Some(&reader_observation));
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let checked = package
+            .evaluate_protocol_slot(&selected, &checked_supplies, &mut checked_meter)
+            .expect("checked view evaluates the quantity identity case");
+        let checked_value = completed(checked);
+        if index <= 2 {
+            let Value::Quantity(quantity) = &checked_value else {
+                panic!("declared quantity value: {checked_value:?}");
+            };
+            declared_units.push(quantity.unit().clone());
+        } else {
+            assert_value_eq!(checked_value, Value::Boolean(true));
+        }
+
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let reader = reader_view
+            .evaluate_protocol_slot(&selected, &reader_supplies, &mut reader_meter)
+            .expect("reader view evaluates the quantity identity case");
+        assert_value_eq!(completed(reader), checked_value);
+        charges_and_usage_match("quantity unit identity", &checked_meter, &reader_meter);
+    }
+    assert_ne!(declared_units[0], declared_units[1]);
+}
+
+/// FR-390-AC-25: a compound quantity identity is retained by equality and by
+/// the reader-backed protocol slot view.
+#[test]
+#[trace("FR-390-AC-25")]
+#[ignore = "gated on QSL-1626: compound UnitId must be held by the selected unit table"]
+fn reader_backed_projection_preserves_compound_quantity_identity() {
+    let source = SOURCE
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\n\
+             dimension Length;\n\
+             unit m : Length = rational(1, 1);",
+        )
+        .replace(
+            "capture order: M::Total = view.total;",
+            "capture order: M::Total = view.total;\n\
+             capture compoundUnit: Boolean = (1 m * 1 m) = (1 m * (1 m));",
+        );
+    let (package, model_view) = fixture_from_source(&source);
+    let selected = slot(&package, "Refunds", "Refunds", "captures", Some(1));
+    let view = package.evaluation_view();
+    let selected_term = view
+        .select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            selected.node.clone(),
+            selected.member.clone(),
+            selected.index,
+        ))
+        .expect("the checked view selects the compound equality");
+    let mut pending = vec![selected_term.checked_body().root()];
+    let mut compound_units = Vec::new();
+    while let Some(node) = pending.pop() {
+        if let ValueType::Quantity(unit) = node.value_type() {
+            if unit.domain() == quire_exact::UnitDomain::Compound {
+                compound_units.push(unit.clone());
+            }
+        }
+        pending.extend(node.children());
+    }
+    assert!(
+        compound_units.len() >= 2,
+        "both equality operands have compound quantity types"
+    );
+    assert!(compound_units.iter().all(|unit| unit == &compound_units[0]));
+    assert!(
+        compound_units[0]
+            .compound_terms()
+            .is_some_and(|terms| !terms.is_empty()),
+        "the held type identity has canonical compound terms"
+    );
+    let mut checked_meter = Meter::new(UNLIMITED);
+    let checked = package
+        .evaluate_protocol_slot(
+            &selected,
+            &supply(&package, "Refunds", Vec::new(), None),
+            &mut checked_meter,
+        )
+        .expect("checked view evaluates equality of separately constructed compound units");
+    assert_value_eq!(completed(checked), Value::Boolean(true));
+
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let (reader_observation, _) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    let reader = reader_view
+        .evaluate_protocol_slot(
+            &selected,
+            &supply(&package, "Refunds", Vec::new(), Some(&reader_observation)),
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("reader view evaluates equality of separately constructed compound units");
+    assert_value_eq!(completed(reader), Value::Boolean(true));
+}
+
+/// FR-390-AC-26: aliases to native scalars, Quantity and Union keep the target
+/// type's behavior through protocol slot reader admission.
+#[test]
+#[trace("FR-390-AC-26")]
+#[ignore = "gated on QSL-1625: reader NodeRead must evaluate aliased protocol-slot roots"]
+fn reader_backed_projection_preserves_alias_target_behavior() {
+    let source = SOURCE
+        .replace(
+            "profile P = \"quire.protocol.finite-global/v1\";",
+            "profile P = \"quire.protocol.finite-global/v1\";\n\
+             profile v = \"quire.value.complete/v1\";",
+        )
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\n\
+             dimension Length; unit m : Length = rational(1, 1);\n\
+             union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+             type Label = String; type Token = UUID; type Moment = Timestamp;\n\
+             type Distance = Quantity<m>; type Form = Shape;\n\
+             function labelIs using v(x: Label): Boolean pure { x = \"ok\" }\n\
+             function tokenIs using v(x: Token): Boolean pure { x = UUID(\"00112233-4455-6677-8899-aabbccddeeff\") }\n\
+             function momentIs using v(x: Moment): Boolean pure { x = Timestamp(5) }\n\
+             function distanceIs using v(x: Distance): Boolean pure { x = 1 m }\n\
+             function formIs using v(x: Form): Boolean pure { case x { Empty: true; Circle(r): false; Rect(w, h): false; } }\n\
+             ",
+        )
+        .replace(
+            "capture order: M::Total = view.total;",
+            "capture order: M::Total = view.total;\n\
+             capture labelAlias: Boolean = labelIs(\"ok\");\n\
+             capture tokenAlias: Boolean = tokenIs(UUID(\"00112233-4455-6677-8899-aabbccddeeff\"));\n\
+             capture momentAlias: Boolean = momentIs(Timestamp(5));\n\
+             capture distanceAlias: Boolean = distanceIs(1 m);\n\
+             capture formAlias: Boolean = formIs(Shape::Empty);",
+        );
+    let (package, model_view) = fixture_from_source(&source);
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let (observation, _) = observation(&package, &model_view);
+    let (reader_observation, _) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    for index in 1..=5 {
+        let selected = slot(&package, "Refunds", "Refunds", "captures", Some(index));
+        let checked_supplies = supply(&package, "Refunds", Vec::new(), Some(&observation));
+        let reader_supplies = supply(&package, "Refunds", Vec::new(), Some(&reader_observation));
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let checked = package
+            .evaluate_protocol_slot(&selected, &checked_supplies, &mut checked_meter)
+            .expect("checked view evaluates the aliased target type");
+        assert_value_eq!(completed(checked), Value::Boolean(true));
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let reader = reader_view
+            .evaluate_protocol_slot(&selected, &reader_supplies, &mut reader_meter)
+            .expect("reader view evaluates the aliased target type");
+        assert_value_eq!(completed(reader), Value::Boolean(true));
+        charges_and_usage_match("alias target behavior", &checked_meter, &reader_meter);
+    }
+}
+
+/// FR-390-AC-27: the reader projection retains exact Union/member identity and
+/// positional payload when a case selects each active constructor.
+#[test]
+#[trace("FR-390-AC-27")]
+#[ignore = "gated on QSL-1625: reader NodeRead must evaluate union case protocol-slot roots"]
+fn reader_backed_projection_preserves_union_identity_and_case_payload_order() {
+    let source = SOURCE
+        .replace(
+            "profile P = \"quire.protocol.finite-global/v1\";",
+            "profile P = \"quire.protocol.finite-global/v1\";\n\
+             profile v = \"quire.value.complete/v1\";",
+        )
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\n\
+             union Shape { Empty, Circle(Integer), Square(Integer), Rect(Integer, Integer) }\n\
+             function area using v(shape: Shape): Integer pure { case shape { Empty: 0; Circle(r): 100 + r; Square(s): 200 + s; Rect(w, h): w * h; } }",
+        )
+        .replace(
+            "capture order: M::Total = view.total;",
+            "capture order: M::Total = view.total;\n\
+             capture empty: Integer = area(Shape::Empty);\n\
+             capture circle: Integer = area(Shape::Circle(2));\n\
+             capture square: Integer = area(Shape::Square(2));\n\
+             capture rectangle: Integer = area(Shape::Rect(2, 3));",
+        );
+    let (package, model_view) = fixture_from_source(&source);
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let (observation, _) = observation(&package, &model_view);
+    let (reader_observation, _) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    for (index, expected) in [0, 102, 202, 6].into_iter().enumerate() {
+        let selected = slot(&package, "Refunds", "Refunds", "captures", Some(index + 1));
+        let checked_supplies = supply(&package, "Refunds", Vec::new(), Some(&observation));
+        let reader_supplies = supply(&package, "Refunds", Vec::new(), Some(&reader_observation));
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let checked = package
+            .evaluate_protocol_slot(&selected, &checked_supplies, &mut checked_meter)
+            .expect("checked view evaluates the selected Union arm");
+        assert_value_eq!(completed(checked), int(expected));
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let reader = reader_view
+            .evaluate_protocol_slot(&selected, &reader_supplies, &mut reader_meter)
+            .expect("reader view evaluates the selected Union arm");
+        assert_value_eq!(completed(reader), int(expected));
+        charges_and_usage_match("union arm payload", &checked_meter, &reader_meter);
+    }
 }
 
 /// TC-1073: one meter passed to the reader-backed (plain-data root) slots in
@@ -3418,7 +4286,13 @@ fn independent_universe_hex(universe: &quire_exact::UniverseId) -> String {
 /// TC-1071 row 20: an incomplete sole population is named before checking the
 /// supplied reference's membership, with no S6a charge.
 #[test]
-#[trace("TC-1071", "FR-390-AC-6", "FR-106-AC-62")]
+#[trace(
+    "TC-1071",
+    "FR-390-AC-6",
+    "FR-390-AC-20",
+    "FR-390-AC-21",
+    "FR-106-AC-62"
+)]
 fn incomplete_sole_population_is_returned_with_its_population_locus() {
     let (package, view) = fixture_with_view();
     let (observation, reference) = observation_with_objects(&package, &view, &["n5"], false);
@@ -3464,12 +4338,100 @@ fn incomplete_sole_population_is_returned_with_its_population_locus() {
     );
 }
 
+/// FR-390-AC-20: a successful immutable observation authority remains usable
+/// when an unrelated population is incomplete; completing that population
+/// does not change the call result or ordered charges.
+#[test]
+#[trace("TC-1071", "FR-390-AC-20")]
+fn unrelated_incomplete_population_does_not_change_a_successful_slot() {
+    let (package, view) = fixture_ep();
+    let peer = other_reference(&view, "ghost");
+    let nested = other_reference(&view, "nested-1");
+    let optional = other_reference(&view, "option-1");
+    let sequence = other_reference(&view, "sequence-1");
+    let receipt = ep_receipt(&package, [&peer, &nested, &optional, &sequence]);
+    let paths = vec![
+        (vec![PathStep::Field("peer".into())], "ghost"),
+        (
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("nested".into()),
+            ],
+            "nested-1",
+        ),
+        (
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("optional".into()),
+                PathStep::OptionValue,
+            ],
+            "option-1",
+        ),
+        (
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("sequence".into()),
+                PathStep::Index(0),
+            ],
+            "sequence-1",
+        ),
+    ];
+    let references: Vec<ProtocolReferenceOccurrence> = paths
+        .into_iter()
+        .map(|(path, _)| ProtocolReferenceOccurrence {
+            path,
+            population: population_node("otherSpare"),
+        })
+        .collect();
+    let keys = ["ghost", "nested-1", "option-1", "sequence-1"];
+    let unrelated_incomplete =
+        ep_observation_state(&package, Some((true, &keys)), false, None, None, &[]);
+    let all_complete = ep_observation_state(&package, Some((true, &keys)), true, None, None, &[]);
+    assert!(matches!(
+        &unrelated_incomplete,
+        ObservationAdmission::Admitted(_)
+    ));
+    assert!(matches!(&all_complete, ObservationAdmission::Admitted(_)));
+
+    let selected = slot(
+        &package,
+        "Refunds",
+        "Refund",
+        "registration_captures",
+        Some(0),
+    );
+    let evaluate =
+        |observation: &ObservationAdmission<qsl_package::AdmittedProtocolObservation<'_>>| {
+            let mut meter = Meter::new(UNLIMITED);
+            let result = package.evaluate_protocol_slot(
+                &selected,
+                &ep_supply(
+                    &package,
+                    receipt.clone(),
+                    references.clone(),
+                    Some(observation),
+                ),
+                &mut meter,
+            );
+            assert!(
+                matches!(result, Ok(ProtocolSlotEvaluation::Evaluated(_))),
+                "the selected capture evaluates: {result:?}"
+            );
+            (without_location(&result), meter.admitted_charges().to_vec())
+        };
+    assert_eq!(
+        evaluate(&unrelated_incomplete),
+        evaluate(&all_complete),
+        "only the unrelated population's completeness changes"
+    );
+}
+
 /// TC-1071 row 21 / FR-106 AC-63: the S4 admission arm preserves the original
 /// wrong-model record when the selected snapshot belongs to another model.
 #[test]
-#[trace("TC-1071", "FR-390-AC-6", "FR-106-AC-63")]
+#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-21", "FR-106-AC-63")]
 fn another_model_snapshot_returns_the_original_qsv_refusal() {
-    let package = fixture();
+    let (package, model_view) = fixture_with_view();
     let selected = DocumentRef {
         authority: "test".to_owned(),
         identity: "foreign".to_owned(),
@@ -3513,7 +4475,7 @@ fn another_model_snapshot_returns_the_original_qsv_refusal() {
         &selected,
         ObservationLimits::default(),
     );
-    let ObservationAdmission::Refused(record) = admission else {
+    let ObservationAdmission::Refused(record) = &admission else {
         panic!("expected the original wrong-model refusal: {admission:?}");
     };
     assert_eq!(
@@ -3523,4 +4485,61 @@ fn another_model_snapshot_returns_the_original_qsv_refusal() {
             "wrong-model-selection"
         )
     );
+    let expected = record.clone();
+    let (_, reference) = observation(&package, &model_view);
+    let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    let mut meter = Meter::new(UNLIMITED);
+    let before = meter.clone();
+    let result = package.evaluate_protocol_slot(
+        &capture,
+        &supply(
+            &package,
+            "Refunds",
+            vec![("view", Value::Reference(reference))],
+            Some(&admission),
+        ),
+        &mut meter,
+    );
+    assert_eq!(meter, before, "a refused observation charges nothing");
+    let Err(CallFailure::Admission(failure)) = result else {
+        panic!("the original observation refusal is returned: {result:?}");
+    };
+    let CallAdmissionFailure::Refused(returned) = failure.as_ref() else {
+        panic!("a refused observation remains refused: {failure:?}");
+    };
+    assert_eq!(
+        returned.record, expected,
+        "no foreign-reference replacement"
+    );
+}
+
+/// FR-390-AC-21: an observation fault remains the original internal fault
+/// when supplied to a protocol-slot call and charges no evaluation meter.
+#[test]
+#[trace("TC-1071", "FR-390-AC-21")]
+fn observation_fault_is_preserved_without_charging_the_meter() {
+    use quire_semantic_value::catalog::InternalFault;
+
+    let (package, model_view) = fixture_with_view();
+    let fault = InternalFault::new("test-observation", "broken-authority");
+    let observation_result = ObservationAdmission::Fault(fault.clone());
+    let (_, reference) = observation(&package, &model_view);
+    let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    let mut meter = Meter::new(UNLIMITED);
+    let before = meter.clone();
+    let result = package.evaluate_protocol_slot(
+        &capture,
+        &supply(
+            &package,
+            "Refunds",
+            vec![("view", Value::Reference(reference))],
+            Some(&observation_result),
+        ),
+        &mut meter,
+    );
+    assert_eq!(meter, before, "an observation fault charges nothing");
+    let Err(CallFailure::Fault(returned)) = result else {
+        panic!("the original observation fault is returned: {result:?}");
+    };
+    assert_eq!(returned, fault);
 }
