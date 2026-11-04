@@ -117,26 +117,57 @@ pub struct ReadIdentityRows {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum IdentityFileRefusal {
     /// Not JSON, not this shape, or an unknown or repeated member.
-    #[error("the identity file is malformed at `{member}`")]
+    #[error("the identity file is malformed at {member}")]
     Malformed {
-        /// The member the parse stopped at, or empty for the whole file.
-        member: String,
+        /// The member the parse stopped at.
+        member: IdentityMember,
     },
     /// Another `format` string.
     #[error("the identity file has format `{0}`")]
     Format(String),
     /// A row the package does not join.
-    #[error("the identity file row {index} of `{member}` is not a node of the package")]
+    #[error("the identity file row {index} of {member} is not a node of the package")]
     Unjoined {
         /// `declarations` or `fields`.
-        member: &'static str,
+        member: IdentityMember,
         /// The first row that does not join.
         index: usize,
     },
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+/// The member of an identity file a refusal names (FR-531 "The identity file").
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum IdentityMember {
+    /// The file as a whole: not JSON, or not an object.
+    #[error("the file")]
+    File,
+    /// The `format` member.
+    #[error("`format`")]
+    Format,
+    /// The `declarations` member.
+    #[error("`declarations`")]
+    Declarations,
+    /// The `fields` member.
+    #[error("`fields`")]
+    Fields,
+    /// A declaration row's `form`.
+    #[error("`form`")]
+    Form,
+    /// A declaration row's `exact_identity`.
+    #[error("`exact_identity`")]
+    ExactIdentity,
+    /// A field row's `member_id`.
+    #[error("`member_id`")]
+    MemberId,
+    /// A member the file does not define.
+    #[error("unknown member `{0}`")]
+    Unknown(String),
+    /// A member written twice.
+    #[error("repeated member `{0}`")]
+    Repeated(&'static str),
+}
+
+#[derive(Serialize)]
 struct File {
     format: String,
     declarations: Vec<DeclarationJson>,
@@ -207,6 +238,81 @@ struct UnitJson {
     node: CheckedNodeId,
 }
 
+struct TopVisitor<'a> {
+    problem: &'a std::cell::Cell<Option<IdentityMember>>,
+}
+
+impl TopVisitor<'_> {
+    fn fail<E: serde::de::Error>(&self, member: IdentityMember) -> E {
+        self.problem.set(Some(member));
+        E::custom("malformed identity file")
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
+    type Value = File;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("an identity file object")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<File, A::Error> {
+        let mut format: Option<String> = None;
+        let mut declarations: Option<Vec<DeclarationJson>> = None;
+        let mut fields: Option<Vec<FieldJson>> = None;
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "format" => {
+                    if format.is_some() {
+                        return Err(self.fail(IdentityMember::Repeated("format")));
+                    }
+                    format = Some(map.next_value().map_err(|error: A::Error| {
+                        self.problem.set(Some(IdentityMember::Format));
+                        error
+                    })?);
+                }
+                "declarations" => {
+                    if declarations.is_some() {
+                        return Err(self.fail(IdentityMember::Repeated("declarations")));
+                    }
+                    declarations = Some(map.next_value().map_err(|error: A::Error| {
+                        self.problem.set(Some(IdentityMember::Declarations));
+                        error
+                    })?);
+                }
+                "fields" => {
+                    if fields.is_some() {
+                        return Err(self.fail(IdentityMember::Repeated("fields")));
+                    }
+                    fields = Some(map.next_value().map_err(|error: A::Error| {
+                        self.problem.set(Some(IdentityMember::Fields));
+                        error
+                    })?);
+                }
+                other => return Err(self.fail(IdentityMember::Unknown(other.to_owned()))),
+            }
+        }
+        match (format, declarations, fields) {
+            (Some(format), Some(declarations), Some(fields)) => Ok(File {
+                format,
+                declarations,
+                fields,
+            }),
+            (None, _, _) => Err(self.fail(IdentityMember::Format)),
+            (_, None, _) => Err(self.fail(IdentityMember::Declarations)),
+            (_, _, None) => Err(self.fail(IdentityMember::Fields)),
+        }
+    }
+}
+
+fn parse_file(bytes: &[u8]) -> Result<File, IdentityMember> {
+    let problem = std::cell::Cell::new(None);
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    serde::Deserializer::deserialize_map(&mut deserializer, TopVisitor { problem: &problem })
+        .and_then(|file| deserializer.end().map(|()| file))
+        .map_err(|_| problem.take().unwrap_or(IdentityMember::File))
+}
+
 fn form_spelling(form: SelectedExactDeclarationForm) -> &'static str {
     match form {
         SelectedExactDeclarationForm::RecordValueType => "record_value_type",
@@ -269,25 +375,19 @@ impl ReadIdentityRows {
         identities_json: &[u8],
         package: &CheckedPackageV2,
     ) -> Result<Self, IdentityFileRefusal> {
-        let malformed = |member: &str| IdentityFileRefusal::Malformed {
-            member: member.to_owned(),
-        };
-        let file: File = serde_json::from_slice(identities_json).map_err(|error| {
-            let text = error.to_string();
-            let member = text.split('`').nth(1).unwrap_or("");
-            malformed(member)
-        })?;
+        let malformed = |member: IdentityMember| IdentityFileRefusal::Malformed { member };
+        let file = parse_file(identities_json).map_err(malformed)?;
         if file.format != IDENTITIES_FORMAT {
             return Err(IdentityFileRefusal::Format(file.format));
         }
-        let graph = wire_graph(package).map_err(|_| malformed(""))?;
+        let graph = wire_graph(package).map_err(|_| malformed(IdentityMember::File))?;
         let held: BTreeSet<&CheckedNodeId> = package
             .graph()
             .nodes
             .iter()
             .map(|node| &node.node_id)
             .collect();
-        let key = |id: &CheckedNodeId, member: &'static str, index: usize| {
+        let key = |id: &CheckedNodeId, member: IdentityMember, index: usize| {
             if held.contains(id) {
                 graph
                     .key(id)
@@ -299,45 +399,50 @@ impl ReadIdentityRows {
         let mut declarations = Vec::new();
         for (index, row) in file.declarations.iter().enumerate() {
             let unjoined = IdentityFileRefusal::Unjoined {
-                member: "declarations",
+                member: IdentityMember::Declarations,
                 index,
             };
             if !held.contains(&row.structural_node) {
                 return Err(unjoined);
             }
-            let form = form_of(&row.form).ok_or_else(|| malformed("form"))?;
+            let form = form_of(&row.form).ok_or_else(|| malformed(IdentityMember::Form))?;
             let identity = match (row.exact_identity.kind.as_str(), form) {
                 ("record", SelectedExactDeclarationForm::RecordValueType) => {
                     SelectedExactIdentity::Record(node_value(
                         &row.exact_identity.value,
                         &key,
-                        "declarations",
+                        IdentityMember::Declarations,
                         index,
                     )?)
                 }
-                ("union", SelectedExactDeclarationForm::Union) => SelectedExactIdentity::Union(
-                    node_value(&row.exact_identity.value, &key, "declarations", index)?,
-                ),
+                ("union", SelectedExactDeclarationForm::Union) => {
+                    SelectedExactIdentity::Union(node_value(
+                        &row.exact_identity.value,
+                        &key,
+                        IdentityMember::Declarations,
+                        index,
+                    )?)
+                }
                 ("object", SelectedExactDeclarationForm::ObjectType) => {
                     let effective: EffectiveJson =
                         serde_json::from_value(row.exact_identity.value.clone())
-                            .map_err(|_| malformed("exact_identity"))?;
+                            .map_err(|_| malformed(IdentityMember::ExactIdentity))?;
                     SelectedExactIdentity::Object(effective_id(&effective, &malformed)?)
                 }
                 ("declared_unit", SelectedExactDeclarationForm::DeclaredUnit) => {
                     let unit: UnitJson = serde_json::from_value(row.exact_identity.value.clone())
-                        .map_err(|_| malformed("exact_identity"))?;
+                        .map_err(|_| malformed(IdentityMember::ExactIdentity))?;
                     if unit.kind != "declared" {
-                        return Err(malformed("exact_identity"));
+                        return Err(malformed(IdentityMember::ExactIdentity));
                     }
                     SelectedExactIdentity::DeclaredUnit(UnitId::declared(key(
                         &unit.node,
-                        "declarations",
+                        IdentityMember::Declarations,
                         index,
                     )?))
                 }
                 ("record" | "union" | "object" | "declared_unit", _) => return Err(unjoined),
-                _ => return Err(malformed("exact_identity")),
+                _ => return Err(malformed(IdentityMember::ExactIdentity)),
             };
             declarations.push(SelectedExactDeclarationRow::new(
                 row.structural_node.clone(),
@@ -351,7 +456,7 @@ impl ReadIdentityRows {
         for (index, row) in file.fields.iter().enumerate() {
             if !held.contains(&row.record_node) {
                 return Err(IdentityFileRefusal::Unjoined {
-                    member: "fields",
+                    member: IdentityMember::Fields,
                     index,
                 });
             }
@@ -360,14 +465,16 @@ impl ReadIdentityRows {
                 &row.member_id.owner.node,
                 &row.member_id.owner.effective,
             ) {
-                ("node", Some(node), None) => MemberOwner::Node(key(node, "fields", index)?),
+                ("node", Some(node), None) => {
+                    MemberOwner::Node(key(node, IdentityMember::Fields, index)?)
+                }
                 ("effective", None, Some(effective)) => {
                     MemberOwner::Effective(effective_id(effective, &malformed)?)
                 }
-                _ => return Err(malformed("member_id")),
+                _ => return Err(malformed(IdentityMember::MemberId)),
             };
             let member_id = MemberId::new(owner, row.member_id.member.as_str())
-                .map_err(|_| malformed("member_id"))?;
+                .map_err(|_| malformed(IdentityMember::MemberId))?;
             fields.push(SelectedExactFieldRow::new(
                 row.record_node.clone(),
                 row.selected_document.as_str(),
@@ -406,15 +513,13 @@ impl ReadIdentityRows {
     /// [`IdentityFileRefusal::Malformed`] for a compound unit, which is no
     /// selected declaration, and for a key the package does not hold.
     pub fn to_bytes(&self, package: &CheckedPackageV2) -> Result<Vec<u8>, IdentityFileRefusal> {
-        let malformed = |member: &str| IdentityFileRefusal::Malformed {
-            member: member.to_owned(),
-        };
-        let references = node_references(package).ok_or_else(|| malformed(""))?;
+        let malformed = |member: IdentityMember| IdentityFileRefusal::Malformed { member };
+        let references = node_references(package).ok_or_else(|| malformed(IdentityMember::File))?;
         let reference = |key: &NodeKey| {
             references
                 .get(key)
                 .cloned()
-                .ok_or_else(|| malformed("exact_identity"))
+                .ok_or_else(|| malformed(IdentityMember::ExactIdentity))
         };
         let effective = |id: &EffectiveId| EffectiveJson {
             chain: id
@@ -431,27 +536,30 @@ impl ReadIdentityRows {
             let (kind, value) = match &row.exact_identity {
                 SelectedExactIdentity::Record(key) => (
                     "record",
-                    serde_json::to_value(reference(key)?).map_err(|_| malformed(""))?,
+                    serde_json::to_value(reference(key)?)
+                        .map_err(|_| malformed(IdentityMember::File))?,
                 ),
                 SelectedExactIdentity::Union(key) => (
                     "union",
-                    serde_json::to_value(reference(key)?).map_err(|_| malformed(""))?,
+                    serde_json::to_value(reference(key)?)
+                        .map_err(|_| malformed(IdentityMember::File))?,
                 ),
                 SelectedExactIdentity::Object(id) => (
                     "object",
-                    serde_json::to_value(effective(id)).map_err(|_| malformed(""))?,
+                    serde_json::to_value(effective(id))
+                        .map_err(|_| malformed(IdentityMember::File))?,
                 ),
                 SelectedExactIdentity::DeclaredUnit(unit) => {
                     let key = unit
                         .declared_key()
-                        .ok_or_else(|| malformed("exact_identity"))?;
+                        .ok_or_else(|| malformed(IdentityMember::ExactIdentity))?;
                     (
                         "declared_unit",
                         serde_json::to_value(UnitJson {
                             kind: "declared".to_owned(),
                             node: reference(key)?,
                         })
-                        .map_err(|_| malformed(""))?,
+                        .map_err(|_| malformed(IdentityMember::File))?,
                     )
                 }
             };
@@ -496,7 +604,8 @@ impl ReadIdentityRows {
             declarations,
             fields,
         };
-        let mut bytes = serde_json::to_vec_pretty(&file).map_err(|_| malformed(""))?;
+        let mut bytes =
+            serde_json::to_vec_pretty(&file).map_err(|_| malformed(IdentityMember::File))?;
         bytes.push(b'\n');
         Ok(bytes)
     }
@@ -504,23 +613,25 @@ impl ReadIdentityRows {
 
 fn node_value(
     value: &serde_json::Value,
-    key: &impl Fn(&CheckedNodeId, &'static str, usize) -> Result<NodeKey, IdentityFileRefusal>,
-    member: &'static str,
+    key: &impl Fn(&CheckedNodeId, IdentityMember, usize) -> Result<NodeKey, IdentityFileRefusal>,
+    member: IdentityMember,
     index: usize,
 ) -> Result<NodeKey, IdentityFileRefusal> {
     let id: CheckedNodeId =
         serde_json::from_value(value.clone()).map_err(|_| IdentityFileRefusal::Malformed {
-            member: "exact_identity".to_owned(),
+            member: IdentityMember::ExactIdentity,
         })?;
     key(&id, member, index)
 }
 
 fn effective_id(
     effective: &EffectiveJson,
-    malformed: &impl Fn(&str) -> IdentityFileRefusal,
+    malformed: &impl Fn(IdentityMember) -> IdentityFileRefusal,
 ) -> Result<EffectiveId, IdentityFileRefusal> {
     let mut chain = effective.chain.iter();
-    let first = chain.next().ok_or_else(|| malformed("chain"))?;
+    let first = chain
+        .next()
+        .ok_or_else(|| malformed(IdentityMember::ExactIdentity))?;
     let mut id = EffectiveId::new(
         None,
         OriginalDeclarationKey::new(&first.package, &first.node),

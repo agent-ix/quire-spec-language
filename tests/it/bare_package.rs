@@ -5,7 +5,7 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{ActivationState, EvidencePackage, Truth};
-use qsl_package::{BarePackage, IdentityFileRefusal, ReadIdentityRows};
+use qsl_package::{BarePackage, IdentityFileRefusal, IdentityMember, ReadIdentityRows};
 use quire_contract_model::CheckedPackageV2;
 use serde_json::{json, Value};
 
@@ -15,12 +15,63 @@ use super::temporal_package_route::{
 };
 use quire_spec_language::checked_handoff::{evidence, write, Corpus};
 
-/// The three routes' results of `ticks` positions over each of R's clocked
-/// clauses: equal, field for field, with equal charges.
-#[trace("FR-532-AC-1", "FR-516-AC-18", "FR-531-AC-10", "TC-1332", "TC-1331")]
+/// The requests of the matrix: one per truth outcome, activation state and
+/// `Incomplete` counter of FR-523, over `clause`.
+fn matrix(
+    package: &EvidencePackage<'_>,
+    clause: &quire_contract_model::CheckedNodeId,
+) -> Vec<(String, qsl_eval::temporal::evidence::EvidenceRequest)> {
+    use qsl_eval::temporal::evidence::{EvidenceCounter, TemporalEvidenceLimits};
+    use qsl_eval::temporal::Valuation;
+    let base = evidence_request(package, clause, None, 3);
+    let mut requests = vec![("true".to_owned(), base.clone())];
+    let mut falsified = base.clone();
+    for position in &mut falsified.positions {
+        for valuation in position.valuations.values_mut() {
+            *valuation = Valuation::False;
+        }
+    }
+    requests.push(("false".to_owned(), falsified));
+    let mut pending = base.clone();
+    pending.decision_progress = Some(0);
+    pending.decision_closure = Some(qsl_eval::temporal::ProgressClosure::Open);
+    pending.surrounding_progress = Some(0);
+    pending.surrounding_closure = Some(qsl_eval::temporal::ProgressClosure::Open);
+    pending.positions.truncate(1);
+    requests.push(("pending".to_owned(), pending));
+    let mut inactive = base.clone();
+    inactive.origins.clear();
+    inactive.trigger = None;
+    requests.push(("inactive".to_owned(), inactive));
+    let mut unavailable = base.clone();
+    unavailable.anchor = None;
+    requests.push(("unavailable".to_owned(), unavailable));
+    let usage = run(package, clause, &base)
+        .0
+        .expect("the base request evaluates")
+        .usage;
+    for (counter, value) in usage.entries() {
+        if value == 0 {
+            continue;
+        }
+        let mut limited = base.clone();
+        limited.limits =
+            TemporalEvidenceLimits::default().with_ceiling(counter, value.saturating_sub(1));
+        requests.push((format!("incomplete:{counter:?}"), limited));
+    }
+    let _ = EvidenceCounter::FormulaNodes;
+    requests
+}
+
+/// FR-532-AC-1 (TC-1332): over each of R's four clocked clauses of its three
+/// packages, the result of every request of the matrix (each truth outcome,
+/// activation state and `Incomplete` counter) is equal over the three routes,
+/// field by field, with the charge log and `result_identity`.
+#[trace("FR-532-AC-1", "FR-516-AC-18", "TC-1332")]
 #[test]
 fn the_bare_route_gives_the_results_and_charges_of_the_two_source_routes() {
-    let mut compared = 0;
+    let mut clauses = std::collections::BTreeSet::new();
+    let mut seen = std::collections::BTreeSet::new();
     for kind in KINDS {
         let built = recipe(kind);
         let read = built.read(&built.emission);
@@ -31,27 +82,40 @@ fn the_bare_route_gives_the_results_and_charges_of_the_two_source_routes() {
         assert_eq!(emitted.rows(), bytes.rows());
         for clause in clause_ids(&emitted) {
             let subject = emitted.subject(&clause, None).expect("reads");
-            if !matches!(subject.facts.name(), "Due" | "DueSample" | "DueTimestamp") {
+            let name = subject.facts.name().to_owned();
+            if !matches!(
+                name.as_str(),
+                "Due" | "DueLate" | "DueSample" | "DueTimestamp"
+            ) {
                 continue;
             }
-            for ticks in [1_u64, 3] {
-                let asked = evidence_request(&emitted, &clause, None, ticks);
+            clauses.insert(name);
+            for (what, asked) in matrix(&emitted, &clause) {
                 let (left, left_charges) = run(&emitted, &clause, &asked);
                 let (middle, middle_charges) = run(&back, &clause, &asked);
                 let (right, right_charges) = run(&bytes, &clause, &asked);
                 let (left, middle, right) = (
-                    left.expect("result"),
-                    middle.expect("result"),
-                    right.expect("result"),
+                    left.unwrap_or_else(|failure| panic!("{what}: {failure:?}")),
+                    middle.unwrap_or_else(|failure| panic!("{what}: {failure:?}")),
+                    right.unwrap_or_else(|failure| panic!("{what}: {failure:?}")),
                 );
-                assert_eq!(left.activation, ActivationState::Active);
-                assert_eq!(format!("{left:?}"), format!("{middle:?}"));
-                assert_eq!(format!("{left:?}"), format!("{right:?}"));
-                assert_eq!(left.result_identity, right.result_identity);
-                assert_eq!(left_charges, right_charges);
-                assert_eq!(middle_charges, right_charges);
-                assert!(!right_charges.is_empty());
-                compared += 1;
+                for other in [&middle, &right] {
+                    assert_eq!(left.activation, other.activation, "{what}");
+                    assert_eq!(left.truth, other.truth, "{what}");
+                    assert_eq!(left.settlement, other.settlement, "{what}");
+                    assert_eq!(left.non_value, other.non_value, "{what}");
+                    assert_eq!(left.incomplete, other.incomplete, "{what}");
+                    assert_eq!(left.support, other.support, "{what}");
+                    assert_eq!(left.usage, other.usage, "{what}");
+                    assert_eq!(left.result_identity, other.result_identity, "{what}");
+                    assert_eq!(format!("{left:?}"), format!("{other:?}"), "{what}");
+                }
+                assert_eq!(left_charges, middle_charges, "{what}");
+                assert_eq!(left_charges, right_charges, "{what}");
+                seen.insert(format!(
+                    "{what:.10}/{:?}/{:?}",
+                    right.activation, right.truth
+                ));
             }
             // The facts the evaluator reads are one value on every route.
             let one = emitted.subject(&clause, None).expect("reads");
@@ -62,7 +126,23 @@ fn the_bare_route_gives_the_results_and_charges_of_the_two_source_routes() {
             assert_eq!(one.instance_bound, three.instance_bound);
         }
     }
-    assert!(compared >= 6);
+    assert_eq!(clauses.len(), 4, "{clauses:?}");
+    for outcome in ["Some(True)", "Some(False)", "Some(Pending)"] {
+        assert!(
+            seen.iter().any(|row| row.ends_with(outcome)),
+            "{outcome}: {seen:?}"
+        );
+    }
+    for state in ["Active", "Inactive", "Unavailable"] {
+        assert!(
+            seen.iter().any(|row| row.contains(&format!("/{state}/"))),
+            "{state}: {seen:?}"
+        );
+    }
+    assert!(
+        seen.iter().any(|row| row.starts_with("incomplete")),
+        "{seen:?}"
+    );
 }
 
 /// FR-532-AC-5: the package component of a progress binding is
@@ -86,7 +166,7 @@ fn the_progress_binding_names_the_package_and_no_source_label() {
 }
 
 /// FR-532-AC-10, FR-532-AC-4: one shared `holds` node used twice is one atom.
-#[trace("FR-532-AC-10", "FR-532-AC-4", "TC-1332")]
+#[trace("FR-532-AC-10", "TC-1332")]
 #[test]
 fn a_shared_holds_node_is_one_atom_on_every_route() {
     let shared = event_clauses(
@@ -212,8 +292,9 @@ fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     assert_eq!(files["identities.json"], second["identities.json"]);
 }
 
-/// FR-531-AC-12, FR-531-AC-13: the identity file's refusals are closed and
-/// name what they found.
+/// FR-531-AC-12, FR-531-AC-13 (TC-1331): the identity file's refusals are
+/// closed and name what they found; a forged row that passes the joins is
+/// accepted.
 #[trace("FR-531-AC-12", "FR-531-AC-13", "TC-1331")]
 #[test]
 fn the_identity_file_refuses_what_it_cannot_join() {
@@ -222,31 +303,26 @@ fn the_identity_file_refuses_what_it_cannot_join() {
     let read = |value: &Value| {
         ReadIdentityRows::read(&serde_json::to_vec(value).expect("bytes"), &package)
     };
-    assert!(read(&good).is_ok());
+    let rows = read(&good).expect("the genuine file reads");
 
-    assert!(matches!(
+    let malformed = |member: IdentityMember| Err(IdentityFileRefusal::Malformed { member });
+    assert_eq!(
         ReadIdentityRows::read(b"not json", &package),
-        Err(IdentityFileRefusal::Malformed { .. })
-    ));
+        malformed(IdentityMember::File)
+    );
     let mut unknown = good.clone();
     unknown["extra"] = json!(1);
     assert_eq!(
         read(&unknown),
-        Err(IdentityFileRefusal::Malformed {
-            member: "extra".to_owned()
-        })
+        malformed(IdentityMember::Unknown("extra".to_owned()))
     );
     let repeated = String::from_utf8(files["identities.json"].clone())
         .expect("UTF-8")
-        .replacen(
-            "\"declarations\"",
-            "\"declarations\": [], \"declarations\"",
-            1,
-        );
-    assert!(matches!(
+        .replacen("\"fields\"", "\"fields\": [], \"fields\"", 1);
+    assert_eq!(
         ReadIdentityRows::read(repeated.as_bytes(), &package),
-        Err(IdentityFileRefusal::Malformed { .. })
-    ));
+        malformed(IdentityMember::Repeated("fields"))
+    );
     let mut format = good.clone();
     format["format"] = json!("quire.checked-handoff.identities/2");
     assert_eq!(
@@ -255,25 +331,83 @@ fn the_identity_file_refuses_what_it_cannot_join() {
             "quire.checked-handoff.identities/2".to_owned()
         ))
     );
+
     let declarations = good["declarations"].as_array().expect("rows");
     assert!(!declarations.is_empty(), "R selects declarations");
+    let unjoined = |index: usize| {
+        Err(IdentityFileRefusal::Unjoined {
+            member: IdentityMember::Declarations,
+            index,
+        })
+    };
     let mut absent = good.clone();
     absent["declarations"][0]["structural_node"]["package"] = json!("another-package");
-    assert_eq!(
-        read(&absent),
-        Err(IdentityFileRefusal::Unjoined {
-            member: "declarations",
-            index: 0
-        })
-    );
+    assert_eq!(read(&absent), unjoined(0));
+
+    // A form that does not match its identity.
+    let first = &declarations[0];
     let mut mismatched = good.clone();
-    let form = declarations[0]["form"].as_str().expect("form");
-    mismatched["declarations"][0]["form"] = json!(if form == "union" {
+    mismatched["declarations"][0]["form"] = json!(if first["form"] == "union" {
         "object_type"
     } else {
         "union"
     });
-    assert!(read(&mismatched).is_err());
+    assert_eq!(read(&mismatched), unjoined(0));
+
+    // A declared unit: another `kind` is malformed, an absent node and a
+    // mismatched identity kind are unjoined.
+    let unit_row = |value: Value, kind: &str| {
+        let mut row = first.clone();
+        row["form"] = json!("declared_unit");
+        row["exact_identity"] = json!({ "kind": kind, "value": value });
+        let mut file = good.clone();
+        file["declarations"] = json!([row]);
+        file
+    };
+    let node = first["structural_node"].clone();
+    assert!(read(&unit_row(
+        json!({"kind": "declared", "node": node}),
+        "declared_unit"
+    ))
+    .is_ok());
+    assert_eq!(
+        read(&unit_row(
+            json!({"kind": "compound", "node": node}),
+            "declared_unit"
+        )),
+        malformed(IdentityMember::ExactIdentity)
+    );
+    let mut gone = node.clone();
+    gone["package"] = json!("another-package");
+    assert_eq!(
+        read(&unit_row(
+            json!({"kind": "declared", "node": gone}),
+            "declared_unit"
+        )),
+        unjoined(0)
+    );
+    assert_eq!(read(&unit_row(node.clone(), "record")), unjoined(0));
+
+    // A forged row that passes the joins is accepted: `read` makes no claim
+    // of authority.
+    let at = declarations
+        .iter()
+        .position(|row| {
+            matches!(
+                row["exact_identity"]["kind"].as_str(),
+                Some("record" | "union")
+            )
+        })
+        .expect("R selects a record or union declaration");
+    let other = declarations
+        .iter()
+        .map(|row| &row["structural_node"])
+        .find(|other| **other != declarations[at]["structural_node"])
+        .expect("a second node of the package");
+    let mut forged = good.clone();
+    forged["declarations"][at]["exact_identity"]["value"] = other.clone();
+    let forged_rows = read(&forged).expect("a joining forgery is accepted");
+    assert_ne!(forged_rows, rows);
 }
 
 /// IR-1325 AC3: the bytes-only dependency closure (the slot call that
@@ -331,7 +465,7 @@ fn public_fns(text: &str, start: &str) -> Vec<String> {
 /// FR-531-AC-9 (TC-1331): every public method of `EvidencePackage` and every
 /// method of `CheckedPackageEvaluation` has a row in the capability
 /// inventory.
-#[trace("FR-531-AC-9", "TC-1331")]
+#[trace("TC-1331")]
 #[test]
 fn every_evaluation_method_has_an_inventory_row() {
     let spec = read_source(
@@ -407,7 +541,7 @@ fn no_bare_signature_names_the_source_side() {
 
 /// FR-532-AC-6 (TC-1332): `from_package` returns `AmbiguousName` and no other
 /// variant.
-#[trace("FR-532-AC-6", "TC-1332")]
+#[trace("TC-1332")]
 #[test]
 fn from_package_returns_only_the_ambiguous_name_mismatch() {
     let package = read_source("qsl-eval/src/temporal/evidence/package.rs");
@@ -524,4 +658,158 @@ fn a_node_that_is_no_temporal_clause_is_unresolved_over_the_bare_package() {
         assert!(meter.admitted_charges().is_empty());
     }
     assert!(run(&evaluation, &due, &asked).0.is_ok());
+}
+
+/// The `reason` a `clause-unreadable` refusal names.
+fn reason(failure: &quire_eval::CallFailure) -> String {
+    match failure {
+        quire_eval::CallFailure::Admission(failure) => match &**failure {
+            quire_eval::CallAdmissionFailure::Refused(record) => record
+                .record
+                .fields
+                .get("reason")
+                .cloned()
+                .expect("a reason"),
+            other => panic!("a refusal, not {other:?}"),
+        },
+        other => panic!("an admission refusal, not {other:?}"),
+    }
+}
+
+/// A unit whose one clause captures a record (`c` itself).
+fn record_capture() -> super::temporal_package_route::Built {
+    event_clauses(
+        "temporal Due using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { \
+         capture r: Config::ConfigVersion = c; always[0,2] holds(c.versionNumber >= 1) }",
+        &[("Due", "authority")],
+    )
+}
+
+/// FR-532-AC-12 (capture half, TC-1332): a record-typed capture is projected
+/// with the source unit's selected identity rows on the two source routes,
+/// and its type equals the in-process clause's; the bare route holds no
+/// identity rows and refuses `clause-unreadable` with reason `capture-type`.
+#[test]
+fn a_record_typed_capture_projects_with_the_source_identities() {
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("emission");
+    let back = EvidencePackage::from_read(&read).expect("read");
+    let [clause] = clause_ids(&emitted).try_into().expect("one clause");
+    let source = read
+        .source()
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|node| node.clause().name() == "Due")
+        .expect("Due");
+    let declared: Vec<_> = source
+        .clause()
+        .captures()
+        .map(|(name, ty)| (name.to_owned(), ty.clone()))
+        .collect();
+    assert_eq!(declared.len(), 1);
+    for package in [&emitted, &back] {
+        let subject = package
+            .subject(&clause, None)
+            .expect("the capture projects");
+        let held: Vec<_> = subject
+            .facts
+            .captures()
+            .map(|(name, ty)| (name.to_owned(), ty.clone()))
+            .collect();
+        assert_eq!(held, declared);
+    }
+    let bare = BarePackage::new(read.admitted());
+    let bytes = EvidencePackage::from_package(&bare).expect("bare");
+    let refused = bytes
+        .subject(&clause, None)
+        .err()
+        .expect("no identity rows");
+    assert_eq!(
+        super::temporal_package_route::cause(&refused),
+        "clause-unreadable"
+    );
+    assert_eq!(reason(&refused), "capture-type");
+}
+
+/// Rewrite the emitted bytes of `built` with `edit` and read them back.
+fn forged(
+    built: &super::temporal_package_route::Built,
+    edit: impl Fn(&mut serde_json::Value),
+) -> qsl_package::Emission {
+    let mut wire: serde_json::Value =
+        serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    edit(&mut wire);
+    built
+        .emission
+        .clone()
+        .with_package_bytes(serde_json::to_vec(&wire).expect("encodes"))
+}
+
+/// FR-532-AC-12 (name half) and FR-531-AC-6 (profile half): the reasons
+/// `clause-name` and the bare `not-finite-window-profile` need a package the
+/// reader admits with no `temporal_clause_names` row, or with an
+/// infinite-trace profile row. Contract IR refuses both, so the refusals are
+/// defensive and cannot be met by an admitted package: the reader's refusal
+/// is the observable behavior.
+#[test]
+fn the_reader_refuses_the_packages_that_would_meet_the_defensive_reasons() {
+    let built = event_clauses(
+        "temporal Due using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { \
+         always[0,2] holds(c.versionNumber >= 1) }",
+        &[("Due", "authority")],
+    );
+    let nameless = forged(&built, |wire| {
+        wire["temporal_clause_names"] = json!([]);
+    });
+    let refused = built.try_read(&nameless).err().expect("refused");
+    assert!(format!("{refused:?}").contains("/temporal_clause_names"));
+    let infinite = forged(&built, |wire| {
+        let text = wire.to_string().replace(
+            "quire.temporal.event-position.false-extension/v1",
+            "quire.temporal.infinite-trace/v1",
+        );
+        *wire = serde_json::from_str(&text).expect("JSON");
+    });
+    let refused = built.try_read(&infinite).err().expect("refused");
+    assert!(format!("{refused:?}").contains("TimedNodeReference"));
+}
+
+/// FR-532-AC-12 (capture half): with the identity rows of the unit in the
+/// supply, the bare route projects a record-typed capture to the type the
+/// in-process clause declares.
+#[test]
+fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route() {
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let graph = read.source().graph();
+    let rows = ReadIdentityRows::of_rows(
+        read.admitted(),
+        graph.selected_exact_declaration_rows().to_vec(),
+        graph.selected_exact_field_rows().to_vec(),
+    );
+    let bare = BarePackage::new(read.admitted())
+        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let package = EvidencePackage::from_package(&bare).expect("bare");
+    let [clause] = clause_ids(&package).try_into().expect("one clause");
+    let subject = package
+        .subject(&clause, None)
+        .expect("the capture projects");
+    let held: Vec<_> = subject
+        .facts
+        .captures()
+        .map(|(name, ty)| (name.to_owned(), ty.clone()))
+        .collect();
+    let source = graph
+        .temporal_clauses()
+        .iter()
+        .find(|node| node.clause().name() == "Due")
+        .expect("Due");
+    let declared: Vec<_> = source
+        .clause()
+        .captures()
+        .map(|(name, ty)| (name.to_owned(), ty.clone()))
+        .collect();
+    assert_eq!(held, declared);
 }

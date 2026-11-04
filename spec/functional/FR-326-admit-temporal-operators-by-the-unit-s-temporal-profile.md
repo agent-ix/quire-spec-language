@@ -27,6 +27,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-255
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-233
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-393
+    type: references
 ---
 # FR-326: Admit temporal operators by the unit's temporal profile and record the clause's requirement
 
@@ -100,6 +104,22 @@ for negotiation whether the claim is bounded.
 - When an interval has `a > b`, under every profile, the check SHALL refuse
   `ill_typed`/`type-mismatch` at the interval's span, the refusal
   `TemporalInterval`'s constructor gives.
+- Under `quire.temporal.timestamped-event.finite-window/v1`, each operator
+  interval SHALL be a step interval `[a,b]` of unsigned integer tick bounds,
+  closed at both ends, and the check SHALL admit no other shape.
+- Under that profile the check SHALL apply one rule to each interval, by its
+  form: a malformed interval (FR-393 syntax) is refused by the rule that
+  applies to every profile; a well-formed timed interval (FR-393), whether its
+  bound carries a unit, is rational, has an open end or has an unbounded upper
+  end (`[3 ms, *]`), SHALL be refused `ill_typed`/`type-mismatch` at the
+  interval's span, as FR-233 refuses a unit-bearing bound under a step count;
+  a step interval `[a,*]` SHALL be refused `unsupported_construct`/
+  `expression-form` at the interval's span as under every bounded profile.
+- The tick-interval rule SHALL NOT apply to the window of a window aggregate
+  atom (FR-194), which is a duration the check converts to the clock unit
+  (FR-337).
+- A checked clause of this profile SHALL hold only integral closed tick
+  intervals.
 - The check SHALL compute the horizon of a bounded-profile formula as the
   greatest reach of its intervals with checked arithmetic. When the sum
   exceeds `u64`, it SHALL refuse with `LimitExceeded`, limit kind work
@@ -141,9 +161,11 @@ for negotiation whether the claim is bounded.
 | FR-326-AC-3 | Under event-position false-extension, `eventually[0,18446744073709551615] eventually[0,1] holds(p)` refuses `stage_limit_exceeded` with limit kind work budget at the operator whose interval overflowed. | Test (TC-836) |
 | FR-326-AC-4 | A unit holding a temporal clause with no temporal profile selection refuses `unknown_profile`/`unsupported-selection` at the clause's span; one selecting both the event-position and the infinite-trace profiles refuses the same way, naming both. | Test (TC-836) |
 | FR-326-AC-5 | A bounded-profile clause over `over (c: Counter)` with no unbounded type has record (`temporal-satisfaction`, `Bounded`); the `[0,2]` interval's key under event-position differs from the `[0,2]` key under fixed-sample. | Test (TC-836) |
+| FR-326-AC-6 | Under the finite-window profile with the clock unit `ms`, `eventually[0,5] holds(p)` checks with the tick interval `[0,5]`; `eventually[0 ms, 5 ms] holds(p)`, `eventually[0 ms, 5 ms) holds(p)`, `eventually[0.5 ms, 5 ms] holds(p)` and `eventually(1 ms, 5 ms] holds(p)` are each refused `ill_typed`/`type-mismatch` at the interval's span; `eventually[3,*] holds(p)` is refused `unsupported_construct`/`expression-form`, and `eventually[3 ms, *] holds(p)` is refused `ill_typed`/`type-mismatch`; the aggregate window `count over past[0 ms, 300 ms] min_count 1 >= 1` checks. | Test (TC-836) |
 
 ## Dependencies
 
+- The finite-window interval rule removes the current acceptance of a closed integral timed interval as a tick interval (`checked_interval` in `src/temporal.rs`, `temporal_interval` in `qsl-semantics`, the `qsl-eval` timed arm); the code change that deletes that path is its own code ticket, to be filed after the spec ticket QSL-1611.
 - ADR-014 §2 (absent temporal interval), §3 TR-3 and TR-4, §4 (extent rule),
   §5 A-2 and A-3, as amended by ADR-018 IV-1.
 - [FR-110](FR-110-resolve-header-profile-selections-at-e3.md) (profile

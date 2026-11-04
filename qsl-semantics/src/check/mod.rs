@@ -148,6 +148,7 @@ mod task_set;
 mod temporal_clause;
 mod terminal;
 mod time_units;
+pub use time_units::is_clock_unit_node;
 mod timed_model;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
@@ -367,8 +368,8 @@ pub use assemble::{
 };
 pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
-    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
-    VariantCaseDeclaration, VariantTypeDeclaration,
+    DecimalLiteralLimits, DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations,
+    ResolvedSignatures, VariantCaseDeclaration, VariantTypeDeclaration,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use checked_dispatch::checked_dispatch_selected_operation;
@@ -475,10 +476,10 @@ pub use temporal_clause::check_clauses;
 pub use lowering::{collection_kind, CollectionShape, PlaceRow, PlaceStep};
 pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
-    CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
-    FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
-    TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeNominalNode,
-    TimeNominalOrigin, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
+    CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, ClockUnitSelection,
+    FormulaNode, FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim,
+    TemporalDeclaration, TemporalDeclarations, TemporalSelection, TemporalTraceFamily,
+    TimeNominalNode, TimeNominalOrigin, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
@@ -2171,6 +2172,7 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
+        .with_decimal_literal_limits(self.decimal_literal_limits)
         .with_known_populations(refinement::population_names(&self.models))
         .with_clock_reading(
             self.clock_reading
@@ -4068,6 +4070,7 @@ impl PackageDeclarations {
                 units: &time_units,
                 time_sources: &self.time_sources,
                 rational_bits: limits.rational_bits(),
+                clock_units: &self.clock_units,
             },
         };
         let mut checked_temporal = Vec::with_capacity(self.temporal_clauses.len());
@@ -4373,6 +4376,7 @@ impl PackageDeclarations {
                     units: &time_units,
                     time_sources: &self.time_sources,
                     rational_bits: limits.rational_bits(),
+                    clock_units: &self.clock_units,
                 },
             },
             models: &models,

@@ -44,7 +44,10 @@ mod protocol_selection;
 pub mod protocol_view;
 
 #[cfg(feature = "std")]
-pub use bare::{BarePackage, BareSupply, IdentityFileRefusal, ReadIdentityRows, IDENTITIES_FORMAT};
+pub use bare::{
+    BarePackage, BareSupply, IdentityFileRefusal, IdentityMember, ReadIdentityRows,
+    IDENTITIES_FORMAT,
+};
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};
@@ -92,7 +95,8 @@ pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 pub use quire_contract_model::{
     CheckedArtifactRef, CheckedIntervalEnd, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedOperationInterval, CheckedOperationRational, CheckedPackageV2,
-    CheckedSelection, ClockConfiguration, ClockExactNumber, TemporalBinding,
+    CheckedSelection, ClockConfiguration, ClockExactNumber, SelectedExactIdentities,
+    TemporalBinding,
 };
 
 // The FR-105-AC-6 fault-injection seam. Public only under

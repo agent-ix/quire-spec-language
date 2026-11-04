@@ -19,6 +19,7 @@ use super::causes::{
     HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
     ObjectFieldIllTyped, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
+use super::protocol_slot::charges::{BinderCharges, ChargeRouting, Owner, Owners};
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
@@ -476,6 +477,21 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     Ok(value)
 }
 
+/// The arguments a call popped, with whether each forwards the absent-key
+/// parameter and the binder each derives from.
+struct PoppedArguments {
+    values: Vec<Value>,
+    provenance: Vec<bool>,
+    owners: Vec<Owner>,
+}
+
+/// The binder of each root-frame source slot and the routing of one call's
+/// charge intervals onto them (FR-520-AC-11).
+struct BinderRouting {
+    slots: std::collections::BTreeMap<Slot, quire_exact::NodeKey>,
+    routing: ChargeRouting,
+}
+
 /// An unavailable binder read: the binder, the supplier's cause and the
 /// reading location (`None` for a reader-backed read).
 pub(crate) type UnavailableRead = (
@@ -553,6 +569,8 @@ struct DispatchGuard<N> {
     /// the whole expression's root and `precondition-false`'s
     /// `UndefinedRecord` reports the wrong locus.
     node: N,
+    /// The owner of each dispatched argument, receiver first.
+    owners: Vec<Owner>,
 }
 
 /// Which population an `allInstances`/`lookup` reads: the ambient post
@@ -582,6 +600,8 @@ struct Iteration<N> {
     sources: Vec<usize>,
     accumulator: Option<Value>,
     count: Integer,
+    /// The binder the source and every result so far derive from.
+    owner: Owner,
 }
 
 /// A `seq(i in low .. high: e)` in progress (FR-139).
@@ -593,6 +613,8 @@ struct SeqIteration<N> {
     high: Integer,
     awaiting: bool,
     results: Vec<Value>,
+    /// The binder the bounds and every result so far derive from.
+    owner: Owner,
 }
 
 /// The selection a recorded read evaluated (FR-107 "Read paths").
@@ -679,6 +701,11 @@ pub(crate) struct Machine<'a, 'm, N> {
     /// protocol-slot API can retain the exact read location. A reader-backed
     /// read has no location.
     unavailable_read: Option<UnavailableRead>,
+    /// FR-520-AC-11: the binder each root-frame source slot holds, and the
+    /// routing of this call's charge intervals onto those binders.
+    binder_routing: Option<BinderRouting>,
+    /// FR-520-AC-11: the binder each stack value and frame slot derives from.
+    owners: Option<Owners>,
     tasks: Vec<Task<'a, N>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
@@ -850,6 +877,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             frame_guard_provenance: Vec::new(),
             unavailable_slots: std::collections::BTreeMap::new(),
             unavailable_read: None,
+            binder_routing: None,
+            owners: None,
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
@@ -998,21 +1027,49 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 quire_semantic_value::catalog::CatalogCode,
             ),
         >,
-    ) -> Result<Result<Evaluation, UnavailableRead>, InternalFault> {
+        binder_slots: std::collections::BTreeMap<Slot, quire_exact::NodeKey>,
+    ) -> Result<(Result<Evaluation, UnavailableRead>, BinderCharges), InternalFault> {
         self.unavailable_slots = unavailable;
+        self.binder_routing = Some(BinderRouting {
+            slots: binder_slots,
+            routing: ChargeRouting::new(),
+        });
         let provenance = vec![false; frame.len()];
+        let mut source_owners = vec![Owner::None; frame.len()];
+        if let Some(binders) = self.binder_routing.as_ref() {
+            for slot in binders.slots.keys() {
+                if let Some(owner) = source_owners.get_mut(*slot) {
+                    *owner = Owner::Binder(*slot);
+                }
+            }
+        }
+        self.owners = Some(Owners::default());
         self.push_frame(frame, provenance);
+        if let Some(owners) = self.owners.as_mut() {
+            owners
+                .set_frame(source_owners)
+                .ok_or_else(|| InternalFault::new("FR-520", "protocol-root-frame-owners"))?;
+        }
         let driven = match reader_root {
             Some(read) => self.drive_reader_root(root, read),
             None => self.drive(root),
         };
-        match driven {
-            Ok(evaluation) => Ok(Ok(evaluation)),
+        let result = match driven {
+            Ok(evaluation) => Ok(evaluation),
             Err(fault) => match self.unavailable_read.take() {
-                Some(read) => Ok(Err(read)),
-                None => Err(fault),
+                Some(read) => Err(read),
+                None => return Err(fault),
             },
-        }
+        };
+        let mut routing = self
+            .binder_routing
+            .take()
+            .map(|binders| binders.routing)
+            .ok_or_else(|| InternalFault::new("FR-520", "protocol-slot-routing-present"))?;
+        routing.attribute(self.meter, None).ok_or_else(|| {
+            InternalFault::new("FR-520", "protocol-slot-meter-captures-charge-intervals")
+        })?;
+        Ok((result, routing.finish()))
     }
 
     /// FR-265: [`Self::run`] over a state clause's body, returning the
@@ -1043,12 +1100,28 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 *slot = true;
             }
         }
+        if let Some(owners) = self.owners.as_mut() {
+            owners.push_frame(Vec::new(), frame.len());
+        }
         self.frames.push(frame);
         self.frame_guard_provenance.push(provenance);
     }
 
-    fn push_frame(&mut self, frame: Vec<Option<Value>>, mut provenance: Vec<bool>) {
+    fn push_frame(&mut self, frame: Vec<Option<Value>>, provenance: Vec<bool>) {
+        self.push_frame_owned(frame, provenance, Vec::new());
+    }
+
+    /// Push a frame whose first slots derive from `owners`, one per argument.
+    fn push_frame_owned(
+        &mut self,
+        frame: Vec<Option<Value>>,
+        mut provenance: Vec<bool>,
+        owners: Vec<Owner>,
+    ) {
         provenance.resize(frame.len(), false);
+        if let Some(tracked) = self.owners.as_mut() {
+            tracked.push_frame(owners, frame.len());
+        }
         self.frames.push(frame);
         self.frame_guard_provenance.push(provenance);
     }
@@ -1106,7 +1179,12 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             | NodeKind::Dispatch { .. }
                     )
             );
-            if let Err(halt) = self.step(task) {
+            if let Some(owners) = self.owners.as_mut() {
+                owners.begin_step();
+            }
+            let stepped = self.step(task);
+            self.route_step_charges()?;
+            if let Err(halt) = stepped {
                 let located = self.imported.first().copied().unwrap_or(located);
                 // A reader-backed halt reports no location: it is never taken
                 // from the source CheckedBody (FR-390).
@@ -1297,6 +1375,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     }
 
     fn pop(&mut self) -> Result<Value, Halt> {
+        Ok(self.pop_owned()?.0)
+    }
+
+    /// [`Self::pop`] with the owner of the popped value.
+    fn pop_owned(&mut self) -> Result<(Value, Owner), Halt> {
         let value = self
             .values
             .pop()
@@ -1305,10 +1388,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .value_guard_provenance
             .pop()
             .ok_or_else(|| invariant("evaluation-provenance-stack-underflow"))?;
+        let owner = self.pop_owners(1)?.first().copied().unwrap_or(Owner::None);
         if provenance {
             return Err(self.absent_key_halt(&value)?);
         }
-        Ok(value)
+        Ok((value, owner))
     }
 
     /// Pop a value while preserving whether it forwards the absent-key
@@ -1322,6 +1406,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .value_guard_provenance
             .pop()
             .ok_or_else(|| invariant("evaluation-provenance-stack-underflow"))?;
+        self.pop_owners(1)?;
         Ok((value, provenance))
     }
 
@@ -1347,9 +1432,52 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     fn push_value(&mut self, value: Value, provenance: bool) {
         self.values.push(value);
         self.value_guard_provenance.push(provenance);
+        if let Some(owners) = self.owners.as_mut() {
+            owners.push_value();
+        }
     }
 
-    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
+    /// Pop the owners of the top `count` values; none when owners are untracked.
+    fn pop_owners(&mut self, count: usize) -> Result<Vec<Owner>, Halt> {
+        let Some(owners) = self.owners.as_mut() else {
+            return Ok(Vec::new());
+        };
+        owners
+            .take_values(count)
+            .ok_or_else(|| invariant("evaluation-owner-stack-underflow"))
+    }
+
+    fn pop_frame_owners(&mut self) -> Result<(), Halt> {
+        match self.owners.as_mut() {
+            Some(owners) => owners
+                .pop_frame()
+                .ok_or_else(|| invariant("evaluation-owner-frame-underflow")),
+            None => Ok(()),
+        }
+    }
+
+    /// The owner of the operands the running step has popped so far.
+    fn step_owner(&self) -> Owner {
+        self.owners.as_ref().map_or(Owner::None, Owners::step)
+    }
+
+    fn absorb_owner(&mut self, owner: Owner) {
+        if let Some(owners) = self.owners.as_mut() {
+            owners.absorb(owner);
+        }
+    }
+
+    fn set_slot_owner(&mut self, slot: Slot, owner: Owner) -> Result<(), Halt> {
+        match self.owners.as_mut() {
+            Some(owners) => owners
+                .set_slot(slot, owner)
+                .ok_or_else(|| invariant("evaluation-owner-frame-underflow")),
+            None => Ok(()),
+        }
+    }
+
+    /// [`Self::pop_many`] with the owner of each popped value.
+    fn pop_many_owned(&mut self, count: usize) -> Result<(Vec<Value>, Vec<Owner>), Halt> {
         let start = self
             .values
             .len()
@@ -1357,25 +1485,32 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
         let values = self.values.split_off(start);
         let provenance = self.value_guard_provenance.split_off(start);
+        let owners = self.pop_owners(count)?;
         if let Some(index) = provenance.iter().position(|provenance| *provenance) {
             let reference = values
                 .get(index)
                 .ok_or_else(|| invariant("forwarded-value-missing"))?;
             return Err(self.absent_key_halt(reference)?);
         }
-        Ok(values)
+        Ok((values, owners))
     }
 
-    fn pop_many_forwarded(&mut self, count: usize) -> Result<(Vec<Value>, Vec<bool>), Halt> {
+    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
+        Ok(self.pop_many_owned(count)?.0)
+    }
+
+    fn pop_many_forwarded(&mut self, count: usize) -> Result<PoppedArguments, Halt> {
         let start = self
             .values
             .len()
             .checked_sub(count)
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
-        Ok((
-            self.values.split_off(start),
-            self.value_guard_provenance.split_off(start),
-        ))
+        let owners = self.pop_owners(count)?;
+        Ok(PoppedArguments {
+            values: self.values.split_off(start),
+            provenance: self.value_guard_provenance.split_off(start),
+            owners,
+        })
     }
 
     fn pop_integer(&mut self) -> Result<Integer, Halt> {
@@ -1450,7 +1585,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
         *self.slot(slot)? = Some(value);
         *self.frame_provenance_slot(slot)? = provenance;
-        Ok(())
+        let owner = self.step_owner();
+        self.set_slot_owner(slot, owner)
     }
 
     fn slot_has_guard_provenance(&self, slot: Slot) -> Result<bool, Halt> {
@@ -1692,6 +1828,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 self.frame_guard_provenance
                     .pop()
                     .ok_or_else(|| invariant("evaluation-return-provenance-frame-missing"))?;
+                self.pop_frame_owners()?;
                 Ok(())
             }
             Task::DispatchGuard(guard) => {
@@ -1700,6 +1837,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     arguments,
                     failure,
                     node,
+                    owners,
                 } = *guard;
                 let holds = self.pop_boolean()?;
                 self.frames
@@ -1708,6 +1846,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 self.frame_guard_provenance
                     .pop()
                     .ok_or_else(|| invariant("evaluation-return-provenance-frame-missing"))?;
+                self.pop_frame_owners()?;
                 if !holds {
                     // ADR-013 O-16, FR-090-AC-11: a `StateModel` family-owned
                     // undefined result.
@@ -1718,11 +1857,16 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let callable = node
                     .callee(self.graph, body_function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                // The call is made over its arguments, so its charge belongs to
+                // the binder they derive from.
+                for owner in &owners {
+                    self.absorb_owner(*owner);
+                }
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let provenance = vec![false; frame.len()];
-                self.push_frame(frame, provenance);
+                self.push_frame_owned(frame, provenance, owners);
                 self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
@@ -1790,7 +1934,44 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
+    /// FR-520-AC-11: a read of the root frame's source `slot` registers its
+    /// binder as read.
+    fn route_binder_read(&mut self, slot: Slot) {
+        if self.frames.len() != 1 {
+            return;
+        }
+        if let Some(binders) = self.binder_routing.as_mut() {
+            if let Some(binder) = binders.slots.get(&slot) {
+                binders.routing.register(binder);
+            }
+        }
+    }
+
+    /// Drain the meter's interval onto the binder that owns the step just run.
+    fn route_step_charges(&mut self) -> Result<(), InternalFault> {
+        let owner = self.step_owner();
+        let Some(binders) = self.binder_routing.as_mut() else {
+            return Ok(());
+        };
+        let binder = match owner {
+            Owner::Binder(slot) => binders.slots.get(&slot),
+            Owner::None | Owner::Mixed => None,
+        };
+        binders
+            .routing
+            .attribute(self.meter, binder)
+            .ok_or_else(|| {
+                InternalFault::new("FR-520", "protocol-slot-meter-captures-charge-intervals")
+            })
+    }
+
     fn eval_local(&mut self, slot: Slot) -> Result<(), Halt> {
+        self.route_binder_read(slot);
+        let owner = self
+            .owners
+            .as_ref()
+            .map_or(Owner::None, |owners| owners.slot(slot));
+        self.absorb_owner(owner);
         if let Some((binder, cause)) = self.unavailable_slots.get(&slot) {
             return Err(Halt::Unavailable {
                 binder: binder.clone(),
@@ -2493,14 +2674,19 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let callable = node
                     .callee(self.graph, *function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
-                let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
+                let arguments_len = arguments.len();
+                let PoppedArguments {
+                    values: arguments,
+                    provenance,
+                    owners: argument_owners,
+                } = self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
                 frame_provenance.resize(frame.len(), false);
-                self.push_frame(frame, frame_provenance);
+                self.push_frame_owned(frame, frame_provenance, argument_owners);
                 // shared-grammar.md: "self, result and pre(...) are ...
                 // unavailable ... inside a reusable predicate" -- a callee's
                 // own body is never anchored by its caller's `pre(..)`, so
@@ -2535,14 +2721,19 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     }
                     return Err(invariant("evaluation-callable-unresolved"));
                 };
-                let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
+                let arguments_len = arguments.len();
+                let PoppedArguments {
+                    values: arguments,
+                    provenance,
+                    owners: argument_owners,
+                } = self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
                 frame_provenance.resize(frame.len(), false);
-                self.push_frame(frame, frame_provenance);
+                self.push_frame_owned(frame, frame_provenance, argument_owners);
                 let previous = self.enter(PackageContext {
                     scope: library.scope(),
                     graph: library,
@@ -2875,10 +3066,13 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 arguments,
                 ..
             } => {
-                let arguments = self.pop_many(arguments.len())?;
-                let Value::Reference(reference) = self.pop()? else {
+                let (arguments, argument_owners) = self.pop_many_owned(arguments.len())?;
+                let (Value::Reference(reference), receiver_owner) = self.pop_owned()? else {
                     return Err(invariant("dispatch-reference-value-expected"));
                 };
+                let mut full_owners = Vec::with_capacity(argument_owners.len() + 1);
+                full_owners.push(receiver_owner);
+                full_owners.extend(argument_owners);
                 let subtype = reference.object_type();
                 // The exact call site that produced this node (`check.rs`'s
                 // `dispatch_call`), never re-derived by searching
@@ -2917,7 +3111,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             full_arguments.clone().into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
-                        self.push_frame(frame, provenance);
+                        self.push_frame_owned(frame, provenance, full_owners.clone());
                         self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
                             body_function: candidate.body,
                             arguments: full_arguments,
@@ -2927,6 +3121,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                                 reference,
                             ),
                             node,
+                            owners: full_owners,
                         })));
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());
@@ -2940,7 +3135,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             full_arguments.into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
-                        self.push_frame(frame, provenance);
+                        self.push_frame_owned(frame, provenance, full_owners);
                         self.tasks.push(Task::ObserveApplication(node));
                         self.tasks.push(Task::Return);
                         self.tasks.push(Task::Eval(callable.body));
@@ -3262,6 +3457,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             high,
             awaiting: false,
             results: Vec::new(),
+            owner: self.step_owner(),
         }))
     }
 
@@ -3272,6 +3468,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         let NodeKind::Seq { slot, body, .. } = node.kind() else {
             return Err(invariant("seq-node-expected"));
         };
+        self.absorb_owner(iteration.owner);
         if iteration.awaiting {
             iteration.awaiting = false;
             let element = self.pop()?;
@@ -3288,6 +3485,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
         charge_visit(self.meter)?;
         *self.slot(*slot)? = Some(Value::Integer(iteration.next.clone()));
+        iteration.owner = self.step_owner();
+        self.set_slot_owner(*slot, iteration.owner)?;
         iteration.next = iteration.next.add(&Integer::one());
         iteration.awaiting = true;
         self.tasks.push(Task::IterateSeq(iteration));
@@ -3794,6 +3993,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             sources: Vec::new(),
             accumulator: identity,
             count: Integer::zero(),
+            owner: self.step_owner(),
         });
         if reduce {
             let first = iteration
@@ -3811,6 +4011,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
 
     fn iterate(&mut self, mut iteration: Box<Iteration<N>>) -> Result<(), Halt> {
         let node = iteration.node;
+        self.absorb_owner(iteration.owner);
         if iteration.awaiting {
             iteration.awaiting = false;
             let result = self.pop()?;
@@ -3927,6 +4128,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             } => {
                 self.note_element(node.at(*source), &iteration.source, *slot, position);
                 *self.slot(*slot)? = Some(element);
+                iteration.owner = self.step_owner();
+                self.set_slot_owner(*slot, iteration.owner)?;
                 body
             }
             NodeKind::Fold {
@@ -3945,6 +4148,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 }
                 *self.slot(*accumulator)? = Some(current);
                 *self.slot(*binder)? = Some(element);
+                iteration.owner = self.step_owner();
+                self.set_slot_owner(*accumulator, iteration.owner)?;
+                self.set_slot_owner(*binder, iteration.owner)?;
                 step
             }
             _ => return Err(invariant("iteration-node-invalid")),
