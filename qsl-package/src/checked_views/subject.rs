@@ -625,3 +625,13 @@ fn formula_reads<'p>(
     }
     Ok((uses, leaves))
 }
+
+/// The package's FR-449 activation map: each protocol clause with the
+/// temporal clause its `requirements` name, in the package's row order.
+pub fn activation_relation(package: &CheckedPackageV2) -> Vec<(CheckedNodeId, CheckedNodeId)> {
+    package
+        .protocol_activation_relation()
+        .into_iter()
+        .map(|row| (row.clause, row.required_temporal))
+        .collect()
+}

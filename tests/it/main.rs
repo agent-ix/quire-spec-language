@@ -127,6 +127,8 @@ mod source_inventory;
 mod source_map;
 mod spine_run;
 mod temporal_negotiation;
+#[cfg(feature = "checked-handoff")]
+mod temporal_package_route;
 mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;

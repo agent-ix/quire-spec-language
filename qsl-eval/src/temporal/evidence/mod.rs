@@ -19,6 +19,7 @@ mod counters;
 mod identity;
 mod ledger;
 mod limits;
+mod package;
 mod request;
 mod trigger;
 mod work;
@@ -42,6 +43,7 @@ pub use ledger::{
     SourceBinding,
 };
 pub use limits::{CounterKind, EvidenceCounter, EvidenceUsage, TemporalEvidenceLimits};
+pub use package::{instance_bound_indices, EmissionMismatch, EvidencePackage, PackageRows};
 pub use request::{
     ActivationRow, ActivationState, CompletenessRecord, EvidenceIncomplete, EvidencePosition,
     EvidenceRef, EvidenceRequest, EvidenceResult, EvidenceSubject, Indeterminate, NonValue,
@@ -51,4 +53,4 @@ pub use trigger::{
     CaptureFact, CapturedValue, EmptyIdentity, Evicted, ExecutionOrigin, Payload, Receipt,
     SemanticTriggerIdentity, TriggerDelivery, TriggerEvidence, TriggerRecord, TriggerScope,
 };
-pub use work::{ClauseWork, NodeReach, NodeShape, ReachFault};
+pub use work::{ClauseFormula, ClauseWork, NodeReach, NodeShape, ReachFault};

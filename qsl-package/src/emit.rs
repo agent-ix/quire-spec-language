@@ -869,6 +869,22 @@ impl Emission {
         &self.temporal_binding_rows
     }
 
+    /// The emission with `bytes` as its package: how a test presents a
+    /// package no emitter produces (FR-515-AC-20, FR-516-AC-32), such as twins
+    /// whose occurrence ordinals the emitter would not assign. Every other
+    /// member is the emission's own.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_package_bytes(mut self, bytes: Vec<u8>) -> Self {
+        let name = self.package.name().to_owned();
+        self.package =
+            match EmittedPackage::new(&name, |_| Ok::<_, std::convert::Infallible>(bytes)) {
+                Ok(package) => package,
+                Err(never) => match never {},
+            };
+        self
+    }
+
     /// The temporal clause references, `profile_selections` and
     /// `temporal_bindings` rows as written into [`Self::package`] (FR-337).
     pub fn temporal_rows(&self) -> &TemporalRows {
