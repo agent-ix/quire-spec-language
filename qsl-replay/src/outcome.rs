@@ -2700,9 +2700,14 @@ mod tests {
         assert_eq!(document["result"], Value::Null);
     }
 
-    /// The whole-outcome category is the most severe item's, and a monitor
-    /// clause pending at the end of the trace stays below a violation.
+    /// The whole-outcome category is the most severe item's under FR-285's
+    /// order. A monitor document whose only item is a `Category::Pending`
+    /// item is `Pending` with exit 0 (FR-285-AC-9); a pending item next to a
+    /// violation is a `Violation`; an indeterminate item ranks above pending
+    /// and below a violation. An `Inconclusive` proof item (exit 22) is a
+    /// different category and is not a pending clause.
     #[trace("TC-770", "FR-286-AC-3")]
+    #[trace("TC-769", "FR-285-AC-9")]
     #[test]
     fn the_document_category_is_the_most_severe_items() {
         let declined = TerminalValue::Declined {

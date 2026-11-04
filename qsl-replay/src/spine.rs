@@ -2344,6 +2344,8 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
                 quire_exact::QuantityCarrier::Integer { domain, rounding } => {
                     carrier_with_mode(&spell_int(domain), *rounding)
                 }
+                // A Rational[..] carrier names no mode (FR-497).
+                quire_exact::QuantityCarrier::Rational(domain) => spell_rational(domain),
             };
             format!("Quantity<{}, {carrier}>", unit_spelling(carried.unit()))
         }
@@ -2520,6 +2522,22 @@ mod tests {
             })),
             format!(
                 "Quantity<{}, Int[-2, 2; nearest-even]>",
+                super::unit_spelling(&unit)
+            )
+        );
+        // A Rational[..] carrier names no mode (FR-497).
+        let interval = |low: i64, high: i64| {
+            quire_exact::IntegerInterval::spanning(
+                quire_exact::Integer::from(low),
+                quire_exact::Integer::from(high),
+            )
+        };
+        let rational = quire_exact::RationalDomain::new(interval(-3, 7), interval(1, 12))
+            .expect("a positive denominator");
+        assert_eq!(
+            super::value_type_source(&carried(quire_exact::QuantityCarrier::Rational(rational))),
+            format!(
+                "Quantity<{}, Rational[-3, 7; 1, 12]>",
                 super::unit_spelling(&unit)
             )
         );

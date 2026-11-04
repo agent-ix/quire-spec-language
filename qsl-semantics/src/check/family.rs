@@ -4325,6 +4325,57 @@ mod locus_tests {
         assert!(wide.1 > small.1, "a wider carrier writes more bytes");
     }
 
+    /// A `Rational[..]` carrier is part of a carried quantity's identity
+    /// (FR-497, FR-505): each bound changes the encoding, and it differs
+    /// from an integer carrier of the same numerator range.
+    #[ix_trace_rs::trace("FR-497-AC-1", "TC-1287")]
+    #[test]
+    fn a_rational_carrier_is_encoded_with_its_numerator_and_denominator_bounds() {
+        let interval = |low: i64, high: i64| {
+            quire_exact::IntegerInterval::spanning(
+                quire_exact::Integer::from(low),
+                quire_exact::Integer::from(high),
+            )
+        };
+        let rational = |numerator: (i64, i64), denominator: (i64, i64)| {
+            ValueType::CarriedQuantity(std::sync::Arc::new(quire_exact::CarriedQuantityType::new(
+                metre(),
+                quire_exact::QuantityCarrier::Rational(
+                    quire_exact::RationalDomain::new(
+                        interval(numerator.0, numerator.1),
+                        interval(denominator.0, denominator.1),
+                    )
+                    .expect("a positive denominator"),
+                ),
+            )))
+        };
+        let base = measured(&rational((-3, 7), (1, 12)));
+        assert_eq!(base, measured(&rational((-3, 7), (1, 12))));
+        // Each bound is written: lengthening any one adds bytes.
+        for wider in [
+            rational((-300, 7), (1, 12)),
+            rational((-3, 700), (1, 12)),
+            rational((-3, 7), (10, 12)),
+            rational((-3, 7), (1, 1200)),
+        ] {
+            let wider = measured(&wider);
+            assert_eq!(wider.0, base.0, "the same fields are written");
+            assert!(wider.1 > base.1, "{wider:?} against {base:?}");
+        }
+        // Four bounds are written where an integer carrier writes two.
+        let integer = measured(&ValueType::CarriedQuantity(std::sync::Arc::new(
+            quire_exact::CarriedQuantityType::new(
+                metre(),
+                quire_exact::QuantityCarrier::Integer {
+                    domain: interval(-3, 7),
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            ),
+        )));
+        assert_ne!(base, integer);
+        assert!(base.0 > integer.0, "{base:?} against {integer:?}");
+    }
+
     /// A bounded quantity is its own type, not a `Quantity` (quire-exact
     /// FR-387): its tag is longer, and each bound adds its presence tag and
     /// magnitude. No QSL criterion governs the declaration-size figure of
