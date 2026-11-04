@@ -19,6 +19,7 @@ use super::causes::{
     HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
     ObjectFieldIllTyped, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
+use super::protocol_slot::charges::{BinderCharges, ChargeRouting};
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
@@ -476,6 +477,13 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     Ok(value)
 }
 
+/// The binder of each root-frame source slot and the routing of one call's
+/// charge intervals onto them (FR-520-AC-11).
+struct BinderRouting {
+    slots: std::collections::BTreeMap<Slot, quire_exact::NodeKey>,
+    routing: ChargeRouting,
+}
+
 /// An unavailable binder read: the binder, the supplier's cause and the
 /// reading location (`None` for a reader-backed read).
 pub(crate) type UnavailableRead = (
@@ -679,6 +687,9 @@ pub(crate) struct Machine<'a, 'm, N> {
     /// protocol-slot API can retain the exact read location. A reader-backed
     /// read has no location.
     unavailable_read: Option<UnavailableRead>,
+    /// FR-520-AC-11: the binder each root-frame source slot holds, and the
+    /// routing of this call's charge intervals onto those binders.
+    binder_routing: Option<BinderRouting>,
     tasks: Vec<Task<'a, N>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
@@ -850,6 +861,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             frame_guard_provenance: Vec::new(),
             unavailable_slots: std::collections::BTreeMap::new(),
             unavailable_read: None,
+            binder_routing: None,
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
@@ -998,21 +1010,34 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 quire_semantic_value::catalog::CatalogCode,
             ),
         >,
-    ) -> Result<Result<Evaluation, UnavailableRead>, InternalFault> {
+        binder_slots: std::collections::BTreeMap<Slot, quire_exact::NodeKey>,
+    ) -> Result<(Result<Evaluation, UnavailableRead>, BinderCharges), InternalFault> {
         self.unavailable_slots = unavailable;
+        self.binder_routing = Some(BinderRouting {
+            slots: binder_slots,
+            routing: ChargeRouting::new(),
+        });
         let provenance = vec![false; frame.len()];
         self.push_frame(frame, provenance);
         let driven = match reader_root {
             Some(read) => self.drive_reader_root(root, read),
             None => self.drive(root),
         };
-        match driven {
-            Ok(evaluation) => Ok(Ok(evaluation)),
+        let result = match driven {
+            Ok(evaluation) => Ok(evaluation),
             Err(fault) => match self.unavailable_read.take() {
-                Some(read) => Ok(Err(read)),
-                None => Err(fault),
+                Some(read) => Err(read),
+                None => return Err(fault),
             },
-        }
+        };
+        let charges = self
+            .binder_routing
+            .take()
+            .and_then(|binders| binders.routing.finish(self.meter))
+            .ok_or_else(|| {
+                InternalFault::new("FR-520", "protocol-slot-meter-captures-charge-intervals")
+            })?;
+        Ok((result, charges))
     }
 
     /// FR-265: [`Self::run`] over a state clause's body, returning the
@@ -1790,7 +1815,26 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
+    /// FR-520-AC-11: a read of the root frame's source `slot` makes its binder
+    /// the owner of the charges that follow.
+    fn route_binder_read(&mut self, slot: Slot) -> Result<(), Halt> {
+        if self.frames.len() != 1 {
+            return Ok(());
+        }
+        let Some(binders) = self.binder_routing.as_mut() else {
+            return Ok(());
+        };
+        let Some(binder) = binders.slots.get(&slot) else {
+            return Ok(());
+        };
+        binders
+            .routing
+            .read(self.meter, binder)
+            .ok_or_else(|| invariant("protocol-slot-meter-captures-charge-intervals"))
+    }
+
     fn eval_local(&mut self, slot: Slot) -> Result<(), Halt> {
+        self.route_binder_read(slot)?;
         if let Some((binder, cause)) = self.unavailable_slots.get(&slot) {
             return Err(Halt::Unavailable {
                 binder: binder.clone(),

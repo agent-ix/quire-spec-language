@@ -212,7 +212,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
             &mut meter,
         )
         .expect("the checked condition evaluates");
-    let ProtocolSlotEvaluation::Evaluated(evaluation) = evaluated else {
+    let ProtocolSlotEvaluation::Evaluated(evaluation, _) = evaluated else {
         panic!("literal condition did not read an unavailable binder: {evaluated:?}");
     };
     assert!(matches!(
@@ -464,7 +464,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
             &mut activation_meter,
         )
         .expect("the exact activation binder evaluates");
-    let ProtocolSlotEvaluation::Evaluated(evaluation) = admitted else {
+    let ProtocolSlotEvaluation::Evaluated(evaluation, _) = admitted else {
         panic!("the supplied activation value was unavailable: {admitted:?}");
     };
     assert!(matches!(
@@ -514,12 +514,15 @@ fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() 
         .expect("the decisive false prefix completes without reading opened");
     assert!(matches!(
         result,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                false
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    false
+                ))),
+                ..
+            },
+            _
+        )
     ));
 }
 
@@ -561,10 +564,13 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         )
         .expect("the registration capture initializer evaluates")
     {
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)),
-            ..
-        }) => value,
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)),
+                ..
+            },
+            _,
+        ) => value,
         other => panic!("the capture returns its frozen value: {other:?}"),
     };
     assert_eq!(
@@ -597,12 +603,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the trigger guard evaluates over its exact sources");
     assert!(matches!(
         trigger,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 
     let activation = package
@@ -624,12 +633,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the activation capture evaluates");
     assert!(matches!(
         activation,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 
     let retry = package
@@ -665,12 +677,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the retry relation evaluates from supplied attempt and capture values");
     assert!(matches!(
         retry,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 
     let recovery = package
@@ -699,12 +714,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the recovery predicate evaluates from its supplied capture");
     assert!(matches!(
         recovery,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 }
 
@@ -746,12 +764,15 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         .expect("the measured call completes");
     assert!(matches!(
         measured_result,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
     let used = measured.consumed(quire_exact::LimitKind::WorkUnits);
     assert!(used > 0, "the arithmetic expression consumed work");
@@ -764,12 +785,15 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         .expect("exact measured usage completes");
     assert!(matches!(
         exact_result,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
     assert_eq!(exact.consumed(quire_exact::LimitKind::WorkUnits), used);
 
@@ -784,7 +808,7 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
             outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(ref record)),
             ..
-        }) if record.limit_kind == quire_exact::LimitKind::WorkUnits
+        }, _) if record.limit_kind == quire_exact::LimitKind::WorkUnits
     ));
     assert_eq!(
         short.consumed(quire_exact::LimitKind::WorkUnits),
@@ -803,7 +827,7 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
             outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(ref record)),
             ..
-        }) if record.limit_kind == quire_exact::LimitKind::WorkUnits
+        }, _) if record.limit_kind == quire_exact::LimitKind::WorkUnits
     ));
     assert_eq!(zero.consumed(quire_exact::LimitKind::WorkUnits), 0);
 
@@ -813,12 +837,15 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         .expect("a fresh sufficient meter completes the same immutable call");
     assert!(matches!(
         retried,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
     assert_eq!(
         retry.consumed(quire_exact::LimitKind::WorkUnits),
@@ -935,7 +962,7 @@ fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge()
     let admitted = package
         .evaluate_protocol_slot(&own_slot, &empty, &mut meter)
         .expect("a caller-constructed slot selected from this package is admitted");
-    assert!(matches!(admitted, ProtocolSlotEvaluation::Evaluated(_)));
+    assert!(matches!(admitted, ProtocolSlotEvaluation::Evaluated(_, _)));
 }
 
 /// Fixture U of TC-1072: a protocol over the dispatch model's object type `A`
@@ -1055,7 +1082,7 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
                 &mut meter,
             )
             .expect("the capture slot evaluates");
-        let ProtocolSlotEvaluation::Evaluated(evaluation) = evaluated else {
+        let ProtocolSlotEvaluation::Evaluated(evaluation, _) = evaluated else {
             panic!("the view binder was supplied: {evaluated:?}");
         };
         evaluation.outcome

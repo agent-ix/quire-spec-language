@@ -28,7 +28,7 @@ Scope: FR-520-AC-1 to FR-520-AC-13. **R** is the package of FR-517.
 | 9 | 8 | `cargo tree` of qsl-eval and qsl-package evaluation path; run under a denied-syscall harness | no I/O dependency; completes |
 | 10 | 9 | each slot of both compensations, in-process and read back | equal results and charge logs |
 | 11 | 10 | search the root crate for a `state` module and for the four retired names in their `state::` form | none; the `evaluate_v2` of `src/temporal.rs` and the `ACCOUNTING_VERSION` of `src/linking/composed/binding_work.rs` remain |
-| 12 | 11 | a `Meter` with per-binder attribution and `accounting_version` (IR-1280); a slot call over three binders, one `Unavailable`; the same call twice | per-binder entries for the binders read, none for the unread one; entries combined with unattributed equal the total; equal logs; `accounting_version` present; gated on IR-1280 |
+| 12 | 11 | a slot call over three binders, one `Unavailable`; the same call twice | per-binder entries for the binders read, none for the unread one; entries combined with unattributed equal the total; equal logs; `accounting_version` present |
 | 13 | 12 | the `compile_fail` doctests of `ProtocolSlotEvaluation` and `Evaluation` for `as_bool` and `Into<bool>`, read by the tagged doctest-binding test | each block keeps its pinned error code and compiling control; neither compiles |
 | 14 | 13 | search the evaluation crates' sources for `unwrap_or(false)` over an evaluation result | none |
 

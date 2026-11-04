@@ -5,6 +5,7 @@
 //! `Refund` and `Partial` templates.
 
 use super::*;
+use qsl_eval::value::{BinderCharges, ChargeAmounts, BINDER_ACCOUNTING_VERSION};
 
 const COUNTERS: [LimitKind; 10] = [
     LimitKind::IntegerBits,
@@ -682,7 +683,187 @@ fn no_evaluation_result_is_coerced_with_unwrap_or_false() {
     );
 }
 
-// FR-520-AC-11 (per-binder charge accounting with `accounting_version`) has no
-// test here: it needs QSL's binder routing onto the quire-exact interval
-// accounting API, which is not built yet. Until it is, the matrix shows AC-11
-// uncovered rather than covered by a test that does not run.
+fn charges_of(result: &ProtocolSlotEvaluation) -> &BinderCharges {
+    match result {
+        ProtocolSlotEvaluation::Evaluated(_, charges)
+        | ProtocolSlotEvaluation::Unavailable { charges, .. } => charges,
+    }
+}
+
+fn amounts(charges: &ChargeAmounts) -> [u64; 10] {
+    COUNTERS.map(|kind| charges.amount(kind))
+}
+
+fn recovery_supply(package: &CheckedPackage, unavailable: Option<&str>) -> ProtocolSupply<'static> {
+    let binders = [
+        ("recovered", receipt(package, 5)),
+        ("target", int(5)),
+        ("activated", Value::Boolean(false)),
+    ]
+    .into_iter()
+    .map(|(name, value)| {
+        let supplied = if Some(name) == unavailable {
+            SuppliedValue::Unavailable(CatalogCode::new(
+                "unavailable_observation",
+                "missing-required-artifact",
+            ))
+        } else {
+            SuppliedValue::Value(value)
+        };
+        (binder(package, "Refunds", name), supplied.into())
+    })
+    .collect();
+    ProtocolSupply {
+        binders,
+        observation: None,
+    }
+}
+
+fn charge_log(
+    package: &CheckedPackage,
+    supply: &ProtocolSupply<'_>,
+) -> (ProtocolSlotEvaluation, [u64; 10]) {
+    let mut meter = Meter::new(UNLIMITED);
+    let result = package
+        .evaluate_protocol_slot(
+            &slot(package, "Refunds", "Refund", "recovery.predicate", None),
+            supply,
+            &mut meter,
+        )
+        .expect("the recovery slot evaluates");
+    (result, usage(&meter))
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_slot_call_logs_each_binder_it_read_with_the_accounting_version() {
+    let package = fixture();
+    let supply = recovery_supply(&package, Some("target"));
+    let (result, used) = charge_log(&package, &supply);
+    assert!(
+        matches!(result, ProtocolSlotEvaluation::Unavailable { .. }),
+        "{result:?}"
+    );
+    let charges = charges_of(&result);
+    assert_eq!(charges.accounting_version(), BINDER_ACCOUNTING_VERSION);
+    let read = |name: &str| charges.binder(&binder(&package, "Refunds", name));
+    assert!(read("recovered").is_some(), "the first read has an entry");
+    assert!(
+        read("target").is_some(),
+        "the unavailable binder was read and has an entry"
+    );
+    assert!(
+        read("activated").is_none(),
+        "the evaluation stopped before it read `activated`"
+    );
+    assert_eq!(charges.binders().count(), 2);
+    assert_eq!(amounts(&charges.total()), used);
+    let (again, _) = charge_log(&package, &supply);
+    assert_eq!(
+        charges_of(&again),
+        charges,
+        "equal supplies give equal logs"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn the_binder_entries_and_the_unattributed_entry_combine_to_the_meter_total() {
+    let package = fixture();
+    let supply = recovery_supply(&package, None);
+    let (result, used) = charge_log(&package, &supply);
+    let charges = charges_of(&result);
+    let by_name = |name: &str| {
+        amounts(
+            charges
+                .binder(&binder(&package, "Refunds", name))
+                .expect("every binder the expression reads has an entry"),
+        )
+    };
+    // [integer_bits, decimal_digits, scale_expansion, text_input_bytes,
+    //  text_scalars, normalized_scalars, unit_edges, value_occurrences,
+    //  work_units, result_units]
+    assert_eq!(by_name("recovered"), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(by_name("target"), [0, 0, 0, 0, 0, 0, 0, 1, 5, 1]);
+    assert_eq!(by_name("activated"), [0, 0, 0, 0, 0, 0, 0, 0, 2, 2]);
+    assert_eq!(amounts(charges.unattributed()), [0; 10]);
+    assert_eq!(
+        amounts(&charges.total()),
+        used,
+        "work and results sum, the eight high-water counters take the maximum"
+    );
+    assert!(used.iter().any(|amount| *amount > 0));
+    let (again, _) = charge_log(&package, &supply);
+    assert_eq!(
+        charges_of(&again),
+        charges,
+        "equal supplies give equal logs"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_high_water_counter_is_the_largest_binder_entry_not_the_sum() {
+    let package = fixture();
+    let mut meter = Meter::new(UNLIMITED);
+    let result = run(
+        &package,
+        "Refund",
+        "retry.relation",
+        None,
+        retry(&package, 0, 1),
+        &mut meter,
+    )
+    .expect("retry");
+    let charges = charges_of(&result);
+    assert!(charges.binders().count() > 1);
+    for kind in COUNTERS {
+        let entries = charges.binders().map(|(_, held)| held.amount(kind));
+        let expected = if kind.is_cumulative() {
+            entries.sum::<u64>()
+        } else {
+            entries.max().unwrap_or(0)
+        };
+        assert_eq!(charges.total().amount(kind), expected, "{kind:?}");
+        assert_eq!(
+            charges.total().amount(kind),
+            meter.consumed(kind),
+            "{kind:?}"
+        );
+    }
+    assert!(
+        COUNTERS
+            .iter()
+            .any(|kind| !kind.is_cumulative() && charges.total().amount(*kind) > 0),
+        "a high-water counter was charged"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_call_restores_the_meters_interval_capture_to_the_state_it_found() {
+    let package = fixture();
+    let supply = recovery_supply(&package, None);
+    let slot = slot(&package, "Refunds", "Refund", "recovery.predicate", None);
+    let mut off = Meter::new(UNLIMITED);
+    package
+        .evaluate_protocol_slot(&slot, &supply, &mut off)
+        .expect("evaluates");
+    assert!(
+        off.take_charge_accounting().is_none(),
+        "capture stays disabled for a caller that never enabled it"
+    );
+    let mut on = Meter::new(UNLIMITED);
+    on.enable_charge_accounting();
+    package
+        .evaluate_protocol_slot(&slot, &supply, &mut on)
+        .expect("evaluates");
+    let drained = on
+        .take_charge_accounting()
+        .expect("capture stays enabled for a caller that enabled it");
+    assert_eq!(
+        COUNTERS.map(|kind| drained.amount(kind)),
+        [0; 10],
+        "the call drained its own interval"
+    );
+}
