@@ -498,3 +498,89 @@ fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
         .collect::<Vec<_>>();
     assert_eq!(wire_group.len(), CHECKS + 5);
 }
+
+/// FR-383-AC-21: the I2 node limit is caller-controlled, and a deeply nested
+/// protocol containing 5,000 sequence children emits without a depth refusal.
+#[trace("FR-383-AC-21", "TC-1063")]
+#[test]
+fn large_protocol_controls_observe_i2_node_limit_and_emit_at_depth() {
+    use std::fmt::Write as _;
+
+    const NODE_LIMIT_CONTROLS: usize = 10_001;
+    const DEEP_CHILDREN: usize = 5_000;
+    let source_with = |control_count: usize, nested: bool| {
+        let mut text = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]).replace(
+            "profile v = \"quire.model.complete/v1\";\n",
+            &format!(
+                "profile v = \"quire.model.complete/v1\";\nprofile p = \"{PROTOCOL_PROFILE}\";\n"
+            ),
+        );
+        let opening = if nested {
+            "protocol Flow using p over (input: M::Gadget) on origin {\n\
+             role R on M::Gadget;\n\
+             run parallel Outer {\n\
+             branch nested repeat Loop by R visible () while { true } parallel Inner {\n\
+             branch many sequence Many {\n"
+        } else {
+            "protocol Flow using p over (input: M::Gadget) on origin {\n\
+             role R on M::Gadget;\n\
+             run sequence Main {\n"
+        };
+        text.push_str(opening);
+        for index in 0..control_count {
+            writeln!(text, "check Gate{index:05} using v {{ true }};")
+                .expect("writing to a String succeeds");
+        }
+        if nested {
+            text.push_str(
+                "}\nbranch other sequence Other { }\n} join all [many, other];\n\
+                 branch spare sequence Spare { }\n} join all [nested, spare];\n",
+            );
+        } else {
+            text.push_str("}\n");
+        }
+        text.push_str("finish End as (outcome: Boolean) { true };\n}\n");
+        text
+    };
+    let check_large = |text: &str| {
+        let limits = CheckingLimits::new(500_000)
+            .with_input_bytes(8_000_000)
+            .with_work_budget(2_000_000);
+        let (graph, model_digest) = checked_large_text(text, limits);
+        let emission = emit_checked(&CheckedPackage::link(graph)).expect("S4 emits the protocol");
+        assert!(emission.omitted.is_empty());
+        (emission, model_digest)
+    };
+
+    let bounded = source_with(NODE_LIMIT_CONTROLS, false);
+    let (emission, model_digest) = check_large(&bounded);
+    let mut evidence = read_evidence(&emission);
+    evidence
+        .insert_domain_package_document(model_digest.as_str(), SPINE_MODEL_DOCUMENT)
+        .expect("model evidence admitted");
+    let default_read = read_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::default().with_artifact_bytes(usize::MAX),
+        &evidence,
+    );
+    let Read::Limit(limit) = default_read else {
+        panic!("the default i2.nodes bound rejects 10,001 controls: {default_read:?}");
+    };
+    assert_eq!(
+        limit.kind(),
+        qsl_foundation::diagnostic::LimitKind::NodeCount
+    );
+    assert_eq!(limit.setting(), qsl_foundation::Setting::I2Nodes);
+    let raised = V2ReadLimits::default()
+        .with_artifact_bytes(usize::MAX)
+        .with_nodes(100_000);
+    let raised_read = read_v2(emission.package.bytes(), library(), raised, &evidence);
+    assert!(
+        matches!(raised_read, Read::Verified { .. }),
+        "{raised_read:?}"
+    );
+
+    let nested = source_with(DEEP_CHILDREN, true);
+    let (_, _) = check_large(&nested);
+}

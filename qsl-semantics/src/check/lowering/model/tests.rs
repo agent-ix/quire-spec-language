@@ -1360,6 +1360,91 @@ mod quantities {
         assert_eq!(target_node.semantic_form(), "carried_quantity");
     }
 
+    /// FR-497-AC-3 (TC-1287, `CQ-W09`/`CQ-W10`): a conversion into an exact
+    /// `Decimal[..]` carrier lowers to one `quantity.convert` whose
+    /// `result_type` is the carried node and whose mode is `exact`; the same
+    /// conversion into a `nearest-even` carrier carries `nearest-even`. Each
+    /// conversion's mode is its result node's `rounding` binding.
+    #[trace("FR-497-AC-3", "TC-1287")]
+    #[test]
+    fn a_decimal_carried_conversion_carries_its_result_node_rounding() {
+        use quire_exact::{CarriedQuantityType, DecimalType, QuantityCarrier, RoundingMode};
+
+        let carried = |rounding| {
+            ValueType::carried_quantity(CarriedQuantityType::new(
+                UnitId::declared(node_key(METRE)),
+                QuantityCarrier::Decimal(
+                    DecimalType::new(
+                        Integer::from(-100_i64),
+                        Integer::from(100_i64),
+                        2,
+                        2,
+                        rounding,
+                    )
+                    .expect("ordered bounds"),
+                ),
+            ))
+        };
+        for (rounding, spelling) in [
+            (RoundingMode::Exact, "exact"),
+            (RoundingMode::NearestEven, "nearest-even"),
+        ] {
+            let checked = check_declarations(PackageDeclarations {
+                types: TypeEnvironment::default().with_units(units()),
+                aliases: vec![
+                    ("Length".to_owned(), quantity(METRE)),
+                    ("DecimalLength".to_owned(), carried(rounding)),
+                ],
+                functions: vec![function(
+                    "to_decimal",
+                    &[("a", named("Length"))],
+                    named("DecimalLength"),
+                    Expression::convert(named("DecimalLength"), name("a")),
+                )],
+                ..PackageDeclarations::new(
+                    fixture_source(),
+                    "fixture",
+                    qsl_foundation::IdentityLimits::default(),
+                )
+            });
+            let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
+            assert_eq!(convert.len(), 1, "{spelling}: one conversion node");
+            let convert = preimage(convert[0]);
+            let operation = &convert["body"]["operation"];
+            assert_eq!(
+                operation["mode"],
+                json!({"kind": "rounding", "value": spelling}),
+                "{spelling}: the mode is the carrier's rounding"
+            );
+            assert_eq!(
+                convert["body"]["result_type"], convert["semantic_type"],
+                "{spelling}: the result type is the node's type"
+            );
+            assert_eq!(
+                operation["member"]["declaration"], convert["body"]["result_type"],
+                "{spelling}: the type argument names the result type"
+            );
+            let target = convert["body"]["result_type"]["digest"]
+                .as_str()
+                .expect("a result type key");
+            let target_node = checked
+                .semantic_graph()
+                .nodes()
+                .find(|node| node.key().to_string() == target)
+                .expect("the result carried type node");
+            assert_eq!(target_node.semantic_form(), "carried_quantity");
+            let target_preimage = preimage(target_node);
+            let rounding_binding = &target_preimage["body"]["members"][2];
+            assert_eq!(rounding_binding["name"], "rounding");
+            assert!(
+                rounding_binding
+                    .to_string()
+                    .contains(&format!("\"{spelling}\"")),
+                "{spelling}: the result node's rounding is the operation mode: {rounding_binding}"
+            );
+        }
+    }
+
     /// FR-497-AC-1 (TC-1287): the carried type's node identity retains its
     /// unit, carrier and rounding; structurally equal forms share a node.
     #[trace("FR-497-AC-1", "FR-505-AC-7", "TC-1287", "TC-1300")]
