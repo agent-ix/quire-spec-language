@@ -43,7 +43,6 @@ use crate::temporal::finite_window::{
 };
 use crate::temporal::ledger::{
     ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
-    DEFAULT_COVERED_POSITIONS,
 };
 use crate::temporal::letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters};
 use crate::temporal::outcome::TemporalRefusal;
@@ -82,6 +81,7 @@ struct ResolvedSubject<'p> {
     instance_bound: &'p BTreeSet<u64>,
     activation_map: &'p [super::request::ActivationRow],
     progress: crate::temporal::ledger::LedgerBinding,
+    progress_capacity: u64,
     occurrence: u64,
     occurrence_key: Vec<u8>,
 }
@@ -121,6 +121,7 @@ fn resolve<'p>(
             occurrence: chosen.occurrence.ordinal,
             ..subject.progress.clone()
         },
+        progress_capacity: subject.progress_capacity,
         occurrence: chosen.occurrence.ordinal,
         occurrence_key,
     })
@@ -136,6 +137,8 @@ struct Facts<'a> {
     result_identity: ResultIdentity,
     lineage: Option<u64>,
     progress_ledger: Option<crate::temporal::ledger::ProgressLedger>,
+    /// The covered-position limit the progress assertion reached, if any.
+    progress_stop: Option<crate::temporal::ledger::CoveredPositionsLimitReached>,
 }
 
 /// What a call concluded, before the common members are added.
@@ -267,7 +270,10 @@ fn admit<'a>(
         subject.occurrence_key.clone(),
         subject.occurrence,
     );
-    let progress_ledger = admit_progress(subject, request)?;
+    let (progress_ledger, progress_stop) = match admit_progress(subject, request)? {
+        ProgressAdmission::Ledger(ledger) => (ledger, None),
+        ProgressAdmission::Limit(limit) => (request.progress_ledger.clone(), Some(limit)),
+    };
     let identity = identity_of(subject, request, &authenticated, &obligation, meter)
         .map_err(|_| fault("identity-members-encode"))?;
     let (result_identity, input_identity) = (identity.result_identity(), identity.input_identity());
@@ -290,17 +296,26 @@ fn admit<'a>(
         result_identity,
         lineage,
         progress_ledger,
+        progress_stop,
     })
 }
 
 /// FR-502 as the call applies it: the contradiction is a refusal and the
 /// progress ledger the caller holds is then unchanged.
+/// What the call's progress assertion became (FR-502).
+enum ProgressAdmission {
+    /// The updated progress ledger, or none when the request holds none.
+    Ledger(Option<crate::temporal::ledger::ProgressLedger>),
+    /// The covered positions outgrew the system setting: an `Incomplete`.
+    Limit(crate::temporal::ledger::CoveredPositionsLimitReached),
+}
+
 fn admit_progress(
     subject: &ResolvedSubject<'_>,
     request: &EvidenceRequest,
-) -> Result<Option<crate::temporal::ledger::ProgressLedger>, CallFailure> {
+) -> Result<ProgressAdmission, CallFailure> {
     let Some(ledger) = &request.progress_ledger else {
-        return Ok(None);
+        return Ok(ProgressAdmission::Ledger(None));
     };
     let (Some(watermark), Some(scope), Some(execution), Some(record)) = (
         request.decision_progress,
@@ -309,7 +324,7 @@ fn admit_progress(
         request.completeness.as_ref(),
     ) else {
         // A fact is withdrawn: there is no assertion to retain.
-        return Ok(Some(ledger.clone()));
+        return Ok(ProgressAdmission::Ledger(Some(ledger.clone())));
     };
     let positions: Vec<ObservedPosition> = request
         .positions
@@ -325,29 +340,25 @@ fn admit_progress(
         scope,
         execution,
     };
-    ledger
-        .admit(
-            &subject.progress,
-            assertion,
-            &positions,
-            DEFAULT_COVERED_POSITIONS,
-        )
-        .map(Some)
-        .map_err(|refused| match refused {
-            crate::temporal::ledger::LedgerRefusal::Contradiction(contradiction) => refusal(
-                "progress-contradiction",
-                "progress_ledger",
-                &[(
-                    "contradicted_dimension",
-                    format!("{:?}", contradiction.dimension),
-                )],
-            ),
-            crate::temporal::ledger::LedgerRefusal::LimitReached(limit) => refusal(
-                "progress-ledger-limit",
-                "progress_ledger",
-                &[("setting", limit.setting.to_owned())],
-            ),
-        })
+    match ledger.admit(
+        &subject.progress,
+        assertion,
+        &positions,
+        subject.progress_capacity,
+    ) {
+        Ok(updated) => Ok(ProgressAdmission::Ledger(Some(updated))),
+        Err(crate::temporal::ledger::LedgerRefusal::Contradiction(contradiction)) => Err(refusal(
+            "progress-contradiction",
+            "progress_ledger",
+            &[(
+                "contradicted_dimension",
+                format!("{:?}", contradiction.dimension),
+            )],
+        )),
+        Err(crate::temporal::ledger::LedgerRefusal::LimitReached(limit)) => {
+            Ok(ProgressAdmission::Limit(limit))
+        }
+    }
 }
 
 /// FR-526: the lineage the request's relation gives, or its refusal. A sum
@@ -1141,6 +1152,11 @@ fn assess(
         }
         Some(_) | None => {}
     }
+    if let Some(limit) = facts.progress_stop {
+        return Ok(Outcome::stopped(EvidenceIncomplete::CoveredPositions(
+            limit,
+        )));
+    }
     let trace = match admit_trace(facts, &mut *meter)? {
         Ok(trace) => trace,
         Err(stopped) => return Ok(*stopped),
@@ -1609,5 +1625,103 @@ fn refusal_kind(refused: &TemporalRefusal) -> (&'static str, Vec<(String, String
             ),
         ),
         TemporalRefusal::Fault(_) => ("fault", Vec::new()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::refusal_kind;
+    use crate::temporal::outcome::TemporalRefusal;
+    use crate::temporal::position::{PositionRefusal, TemporalPosition};
+    use crate::temporal::window::WindowRefusal;
+    use qsl_semantics::check::TemporalProfile;
+
+    /// FR-516: every evaluation refusal has one stable kebab-case kind.
+    #[ix_trace_rs::trace("FR-516-AC-42", "TC-1311")]
+    #[test]
+    fn every_temporal_refusal_has_its_exact_kebab_case_kind() {
+        let at = TemporalPosition::new(1);
+        let profile = TemporalProfile::TimestampedEventFiniteWindow;
+        let cases = [
+            (TemporalRefusal::EmptyTrace, "empty-trace"),
+            (
+                TemporalRefusal::TupleArity {
+                    expected: 2,
+                    found: 1,
+                },
+                "tuple-arity",
+            ),
+            (
+                TemporalRefusal::AlignSkipNotLockstep,
+                "align-skip-not-lockstep",
+            ),
+            (
+                TemporalRefusal::NotProjectionAligned,
+                "not-projection-aligned",
+            ),
+            (TemporalRefusal::EmptyLoop, "empty-loop"),
+            (TemporalRefusal::TraceTooLong, "trace-too-long"),
+            (
+                TemporalRefusal::LassoUnderBoundedProfile { profile },
+                "lasso-under-bounded-profile",
+            ),
+            (
+                TemporalRefusal::ProfileNotEvaluated { profile },
+                "profile-not-evaluated",
+            ),
+            (
+                TemporalRefusal::TraceCarriesNoStamps { profile },
+                "trace-carries-no-stamps",
+            ),
+            (
+                TemporalRefusal::NotFiniteWindowProfile { profile },
+                "not-finite-window-profile",
+            ),
+            (
+                TemporalRefusal::UnorderedTie { position: at },
+                "unordered-tie",
+            ),
+            (
+                TemporalRefusal::NotTimedProfile { profile },
+                "not-timed-profile",
+            ),
+            (
+                TemporalRefusal::NonPositiveLoopDelay,
+                "non-positive-loop-delay",
+            ),
+            (
+                TemporalRefusal::LoopReentersBeforeLastStamp,
+                "loop-reenters-before-last-stamp",
+            ),
+            (
+                TemporalRefusal::NegativeStamp { position: at },
+                "negative-stamp",
+            ),
+            (
+                TemporalRefusal::DecreasingStamp { position: at },
+                "decreasing-stamp",
+            ),
+            (
+                TemporalRefusal::Position(PositionRefusal::Overflow),
+                "position-refusal",
+            ),
+            (
+                TemporalRefusal::Window(WindowRefusal::WindowKindMismatch),
+                "window-refusal",
+            ),
+        ];
+        assert_eq!(cases.len(), 18);
+        for (refused, expected) in &cases {
+            assert_eq!(refusal_kind(refused).0, *expected);
+        }
+        // The inner kinds of the two wrapping refusals.
+        assert_eq!(
+            refusal_kind(&TemporalRefusal::Position(PositionRefusal::Overflow)).1,
+            [("kind".to_owned(), "overflow".to_owned())]
+        );
+        assert_eq!(
+            refusal_kind(&TemporalRefusal::Window(WindowRefusal::TimestampsDecrease)).1,
+            [("kind".to_owned(), "timestamps-decrease".to_owned())]
+        );
     }
 }

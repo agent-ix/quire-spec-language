@@ -74,3 +74,16 @@ Round 1 is at head ea4694cb0 (origin/main d26c890ad and later merged; trial merg
 | FND-008 | still-open | temporal-refusal is no longer an Err after charges (it is an Ok Active result with a Refused non-value, which FR-516 'errors are for malformed input only' allows). The causes activation-list-mismatch, progress-inconsistent, progress-ledger-limit, clause-unreadable and the temporal-refusal result code are still absent from FR-516's refusal and non-value lists (grep of spec/functional finds none). One-line spec edit; also the temporal-refusal dimension is the Debug text of the refusal. |
 | FND-009 | fixed | relation predecessor is encoded from ResultIdentity::as_bytes and the ValueType Debug text is gone from the retained-instance member; every_evidence_member_changes_the_result_identity covers the new members. |
 | FND-010 | fixed | FR-524-AC-20 now asserts the retained payload, receipts, captured amount and count; FR-526-AC-3/14 assert the first ledger still holds r1 as its own latest at lineage 0; FR-516-AC-17 asserts the retained entry's watermark and completeness. The assertions read real values, though some still read a ledger the test itself holds. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | Residual assertion gaps in the round-2 tests, none of which a wrong implementation of the main path would pass. (a) FR-516-AC-42: settlement None is not asserted, nor the half with distinct order keys returning a truth; only unordered-tie is asserted, so a wrong string for any of the other 17 closed-set kinds (or a swapped detail pair) passes. (b) FR-516-AC-43: the cases 'valuation present gives no non_value' and 'decision closure and valuation both withdrawn gives decision_closure' are not asserted. (c) FR-516-AC-44: the silent-pair test uses assert!(all(..)), which also passes on an empty support; assert the count equals the observed pairs. (d) FR-523-AC-10: the test compares charge counts, not the log of the successful prefix with the full call's log. Fix: add the missing assertions; for (a) a unit test over refusal_kind for each variant. | qsl-eval/tests/it/temporal_rulings.rs:1400-1590 |
+
+### Dispositions, round 2 (head 2c9501b7c)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | still-open | Spec #2235 and #2232 now name temporal-refusal (closed set of 18 kebab-case dimensions, all matching the exhaustive refusal_kind match), activation-list-mismatch, progress-inconsistent and clause-unreadable. The cause progress-ledger-limit (call.rs:346) is still in no spec text. One-line addition to FR-516's refusal causes. |
+| FND-011 | fixed | Exact tests now assert the spec vectors: FR-523-AC-21 (formula_nodes 2, positions 1, valuations 4, steps 4, visited 7, meter 13), AC-24 (steps 4, positions 1, valuations 2, visited 5, meter 7), AC-10 (ceiling 9 stops with 9 admitted charges, steps 3, positions 1, valuations 0 so the tenth is the observed lookup). They match spec #2235 (8a68008c4); the PR leaves progressed.rs unchanged. |

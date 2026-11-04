@@ -150,6 +150,7 @@ impl Env {
                 clock: "stamp-clock".to_owned(),
                 profile: FINITE_WINDOW.to_owned(),
             },
+            progress_capacity: qsl_eval::temporal::DEFAULT_COVERED_POSITIONS,
         }
     }
 

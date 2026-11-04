@@ -311,6 +311,10 @@ pub enum EvidenceIncomplete {
         /// the instance.
         instance: Option<Box<[u8]>>,
     },
+    /// The covered positions of the progress ledger outgrew the system
+    /// setting `progress.covered_positions` (FR-502, FR-255): `limit` is the
+    /// limit kind `node count`.
+    CoveredPositions(crate::temporal::ledger::CoveredPositionsLimitReached),
     /// A valuation the activation required is in `evicted`.
     EvictedValuation {
         /// The instance the valuation is bound to, when it is.
@@ -425,4 +429,8 @@ pub struct EvidenceSubject<'p> {
     /// The binding progress is retained under (FR-502); the call sets its
     /// `occurrence` to the selected occurrence's ordinal.
     pub progress: LedgerBinding,
+    /// The system setting `progress.covered_positions` (FR-255): how many
+    /// positions the progress ledger may cover, the default being
+    /// `DEFAULT_COVERED_POSITIONS`.
+    pub progress_capacity: u64,
 }

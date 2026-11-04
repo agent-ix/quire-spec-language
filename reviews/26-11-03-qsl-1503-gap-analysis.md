@@ -59,3 +59,9 @@ Round 1 is at head ea4694cb0.
 | FND-008 | fixed | RenamedTwin test asserts the key is unchanged by a rename and the refused Watermark carries the retained value. |
 | FND-009 | fixed | trigger_evidence_and_capture_faults_reach_the_call covers Missing/Refused trigger evidence, the incomplete record and Null/evicted capture faults through the call. |
 | FND-010 | fixed | same test asserts the faulted instance evaluates no position (Unavailable, no truth) for Missing, Null and evicted captures. |
+
+### Dispositions, round 2 (head 2c9501b7c)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-007 | fixed | FR-524-AC-23's spec row now reads 'Test (TC-1267)' with 'FR-337-AC-8 owns this refusal and its test', and that test exists (qsl-package/src/emit/tests/temporal_clause.rs, trace TC-1267, FR-337-AC-8). FR-526-AC-13 now reads 'Inspection (checked_add in the lineage counter)', and the lineage test no longer claims it. quoin matrix still lists both ids as untagged/method-without-symbol; that is the tool reading the owner's tag, not a gap in this PR. |

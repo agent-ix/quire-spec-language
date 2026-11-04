@@ -1379,22 +1379,18 @@ fn the_spec_vector_of_silent_samples_measures_its_exact_usage() {
 #[trace("FR-516-AC-27", "FR-516-AC-44", "TC-1311")]
 #[test]
 fn a_support_pair_at_a_silent_sample_names_no_observed_fact_and_is_skipped() {
-    // `always[0, 3] holds(p)` with `p` true at the one observation and false
-    // at the silent samples: the violation rests on silent samples alone.
-    let fixed = fixed_env("on origin", "always[0, 3] holds(p)");
+    // `eventually[0, 3] holds(p)` false everywhere: flipping any one of the
+    // four atoms changes the verdict, so the decision support has four pairs,
+    // one at the observation and three at silent samples; only the first
+    // names an observed fact.
+    let fixed = fixed_env("on origin", "eventually[0, 3] holds(p)");
     let p = fixed.atom("p");
-    let mut asked = exact_silent_request(&fixed, p);
-    asked.positions = vec![position(0, &[(p, Valuation::True)])];
+    let asked = exact_silent_request(&fixed, p);
     let result = call(&fixed, &fixed.subject(&[]), &asked).expect("a result, not a fault");
     assert_eq!(result.truth, Some(Truth::False));
-    assert!(
-        result
-            .support
-            .iter()
-            .all(|support| support.observation.identity == "obs0"),
-        "{:?}",
-        result.support
-    );
+    assert_eq!(result.support.len(), 1);
+    assert_eq!(result.support[0].observation.identity, "obs0");
+    assert_eq!(result.support[0].atom, p);
 }
 
 #[trace("FR-516-AC-3", "FR-516-AC-43", "TC-1311")]
@@ -1432,7 +1428,7 @@ fn a_withdrawn_valuation_names_its_atom_and_position_in_one_exact_text() {
 #[test]
 fn a_refusal_of_the_evaluation_after_charges_is_an_ok_active_refused_result() {
     // Two observations of one stamp with no usable order.
-    let tied = |body: &str, reads_q: bool| {
+    let tied = |body: &str, reads_q: bool, keyed: bool| {
         let env = env("on origin", body);
         let p = env.atom("p");
         let q = if reads_q { env.atom("q") } else { p };
@@ -1452,27 +1448,51 @@ fn a_refusal_of_the_evaluation_after_charges_is_an_ok_active_refused_result() {
                 ],
             ),
             {
-                let mut tie = position(0, &[(p, Valuation::True), (q, Valuation::True)]);
+                // Keyed, the pair reads alike (one instant, no conflict).
+                let second = if keyed {
+                    Valuation::False
+                } else {
+                    Valuation::True
+                };
+                let mut tie = position(0, &[(p, Valuation::True), (q, second)]);
                 tie.observation = qsl_eval::temporal::evidence::EvidenceRef::named("obs0b");
                 tie
             },
         ];
         positions.truncate(2);
+        if keyed {
+            for (index, one) in positions.iter_mut().enumerate() {
+                one.order_key = Some(qsl_eval::temporal::OrderKey {
+                    authority: "seq".to_owned(),
+                    key: index as i64,
+                });
+            }
+        }
         let mut asked = request(&env, positions);
         asked.origins = vec![origin("o1", "a")];
         asked.trigger = Some(id("o1"));
         call(&env, &env.subject(&[]), &asked).expect("an Ok result")
     };
-    let result = tied("holds(p) until[0, 5] holds(q)", true);
+    let result = tied("holds(p) until[0, 5] holds(q)", true, false);
     assert_eq!(result.activation, ActivationState::Active);
     assert_eq!(result.truth, None);
+    assert_eq!(result.settlement, None);
     let named = result.non_value.expect("a non-value");
     assert_eq!(named.kind, NonValueKind::Refused);
     assert_eq!(named.code, "temporal-refusal");
     assert_eq!(named.dimension.as_deref(), Some("unordered-tie"));
     assert_eq!(named.detail, [("position".to_owned(), "1".to_owned())]);
     // The same tied pair under `eventually` has no order-sensitive operator.
-    assert!(tied("eventually[0, 1] holds(p)", false).truth.is_some());
+    assert!(tied("eventually[0, 1] holds(p)", false, false)
+        .truth
+        .is_some());
+    // Distinct order keys of one authority order the pair: a truth.
+    let ordered = tied("holds(p) until[0, 5] holds(q)", true, true);
+    assert!(ordered.truth.is_some());
+    assert!(
+        ordered.non_value.is_none()
+            || ordered.non_value.as_ref().map(|n| n.code) != Some("temporal-refusal")
+    );
 }
 
 fn silent_request(env: &Env, body_atom: u64) -> EvidenceRequest {
@@ -1503,23 +1523,76 @@ fn the_reach_of_the_clause_bounds_the_silent_samples_that_are_materialized() {
 fn a_meter_ceiling_of_nine_stops_at_the_tenth_charge_the_observed_lookup() {
     let fixed = fixed_env("on origin", "eventually[0, 3] holds(p)");
     let p = fixed.atom("p");
-    let mut tight = Meter::new(ScalarLimits {
-        work_units: 9,
-        ..SCALAR_LIMITS_UNLIMITED
-    });
-    let result =
-        evaluate_temporal_evidence(&fixed.subject(&[]), &silent_request(&fixed, p), &mut tight)
-            .expect("an Ok result");
+    let subject = fixed.subject(&[]);
+    let asked = silent_request(&fixed, p);
+    let mut full = unlimited();
+    evaluate_temporal_evidence(&subject, &asked, &mut full).expect("a result");
+    assert_eq!(full.admitted_charges().len(), 13);
+    let run = |work_units: u64| {
+        let mut meter = Meter::new(ScalarLimits {
+            work_units,
+            ..SCALAR_LIMITS_UNLIMITED
+        });
+        let result =
+            evaluate_temporal_evidence(&subject, &asked, &mut meter).expect("an Ok result");
+        (result, meter)
+    };
+    let (nine, nine_meter) = run(9);
     assert!(matches!(
-        result.incomplete,
+        nine.incomplete,
         Some(EvidenceIncomplete::Meter { .. })
     ));
-    assert_eq!(tight.admitted_charges().len(), 9);
+    // The charge log of the stopped call is the successful prefix of the
+    // full call's log, in order.
+    assert_eq!(nine_meter.admitted_charges(), &full.admitted_charges()[..9]);
     // Three materializations, the origin, `eventually` at 0, the scan at the
-    // observed position and the scans at the three silent samples came
-    // first; the tenth charge is the lookup at the observed position 0.
-    let usage = result.usage;
-    assert_eq!(usage.get(EvidenceCounter::EvaluationSteps), 3);
-    assert_eq!(usage.get(EvidenceCounter::Positions), 1);
-    assert_eq!(usage.get(EvidenceCounter::Valuations), 0);
+    // observed position and the scans at the three silent samples are the
+    // nine; the tenth is the lookup at the observed position 0.
+    assert_eq!(nine.usage.get(EvidenceCounter::EvaluationSteps), 3);
+    assert_eq!(nine.usage.get(EvidenceCounter::Positions), 1);
+    assert_eq!(nine.usage.get(EvidenceCounter::Valuations), 0);
+    let (ten, ten_meter) = run(10);
+    assert!(matches!(
+        ten.incomplete,
+        Some(EvidenceIncomplete::Meter { .. })
+    ));
+    assert_eq!(ten_meter.admitted_charges(), &full.admitted_charges()[..10]);
+    // The tenth charge spent `valuations` and `evaluation_steps`: a lookup
+    // at an observed position, not at a silent sample.
+    assert_eq!(ten.usage.get(EvidenceCounter::Valuations), 1);
+    assert_eq!(ten.usage.get(EvidenceCounter::EvaluationSteps), 4);
+}
+
+#[trace("FR-516-AC-38", "FR-502-AC-8", "TC-1311", "TC-1296")]
+#[test]
+fn the_covered_positions_limit_is_an_ok_incomplete_result_with_the_requests_ledgers() {
+    let (env, p) = each();
+    let mut subject = env.subject(&[]);
+    let mut asked = asked(&env, p);
+    asked.progress_ledger = Some(qsl_eval::temporal::ProgressLedger::new());
+    // The system setting is 2 positions; the request covers 3.
+    subject.progress_capacity = 2;
+    let mut meter = unlimited();
+    let result = evaluate_temporal_evidence(&subject, &asked, &mut meter).expect("an Ok result");
+    assert_eq!(result.activation, ActivationState::Unavailable);
+    assert_eq!(result.truth, None);
+    match result.incomplete {
+        Some(EvidenceIncomplete::CoveredPositions(limit)) => {
+            assert_eq!(limit.limit, "node count");
+            assert_eq!(limit.value, 2);
+            assert_eq!(limit.setting, "progress.covered_positions");
+        }
+        other => panic!("a covered-positions stop, not {other:?}"),
+    }
+    assert_eq!(result.progress_ledger, asked.progress_ledger);
+    assert_eq!(result.ledger, EvidenceLedger::new());
+    assert!(meter.admitted_charges().is_empty());
+    // Exactly at the setting the call completes and retains the positions.
+    subject.progress_capacity = 3;
+    let done = evaluate_temporal_evidence(&subject, &asked, &mut unlimited()).expect("a result");
+    assert_eq!(done.truth, Some(Truth::True));
+    assert_eq!(
+        done.progress_ledger.as_ref().map(|ledger| ledger.len()),
+        Some(1)
+    );
 }
