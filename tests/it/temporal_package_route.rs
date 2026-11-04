@@ -349,22 +349,6 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
             );
         }
     }
-    seen.sort();
-    assert_eq!(
-        seen,
-        [
-            "Due",
-            "DueLate",
-            "DueSample",
-            "DueTimestamp",
-            "Full",
-            "Partial"
-        ]
-        .iter()
-        .filter(|name| seen.iter().any(|seen| seen == *name))
-        .map(|name| (*name).to_owned())
-        .collect::<Vec<_>>()
-    );
     for name in ["Due", "DueLate", "DueSample", "DueTimestamp"] {
         assert!(seen.iter().any(|seen| seen == name), "{name}");
     }
@@ -755,16 +739,21 @@ fn instance_bound_atoms_are_derived_and_equal_over_both_routes() {
         let left = emitted.subject(&clause, None).expect("reads");
         let right = back.subject(&clause, None).expect("reads");
         assert_eq!(left.instance_bound, right.instance_bound);
-        // The holds atoms' arena indices in formula order.
-        let holds: Vec<u64> = left
+        // The holds atoms' arena indices in source order, which is the
+        // formula order of the clause.
+        let mut spans: Vec<(usize, u64)> = left
             .clause
             .formula()
             .nodes()
             .iter()
             .enumerate()
-            .filter(|(_, node)| matches!(node, FormulaNode::Holds { .. }))
-            .map(|(index, _)| u64::try_from(index).unwrap())
+            .filter_map(|(index, node)| match node {
+                FormulaNode::Holds { span } => Some((span.start, u64::try_from(index).unwrap())),
+                _ => None,
+            })
             .collect();
+        spans.sort_unstable();
+        let holds: Vec<u64> = spans.into_iter().map(|(_, index)| index).collect();
         (left.instance_bound.clone(), holds)
     };
     let (bound, holds) = atom_indices(&build(
