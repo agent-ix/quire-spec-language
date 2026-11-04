@@ -1266,9 +1266,12 @@ pub(crate) fn site_location(site: &str) -> quire_semantic_value::location::Locat
 /// FR-230's checked `TimedModel`, for one dense time source: the model's
 /// clocks and the guards, resets, time invariants and urgency that read
 /// them. The time source itself is the graph's
-/// [`ModelTimeSource`](super::ModelTimeSource) of the same model.
+/// [`ModelTimeSource`] of the same model.
 pub struct TimedModel {
     model: String,
+    /// The model node of the model's state object, its time source's
+    /// [`ModelTimeSource::model_node`].
+    model_node: NodeKey,
     clocks: Vec<ClockField>,
     /// The `Clock` parameters of the operations whose clauses the model
     /// reads, each with its range.
@@ -1296,6 +1299,7 @@ impl DebugWith for TimedModel {
     fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             model,
+            model_node,
             clocks,
             clock_parameters,
             dimensions,
@@ -1310,6 +1314,7 @@ impl DebugWith for TimedModel {
         } = self;
         f.debug_struct("TimedModel")
             .field("model", &model)
+            .field("model_node", &NodeKeyDebug(model_node, table))
             .field("clocks", &clocks)
             .field("clock_parameters", &clock_parameters)
             .field("dimensions", &dimensions)
@@ -1335,6 +1340,18 @@ impl TimedModel {
     /// The model alias.
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    /// The model node of the model's state object, which names the model's
+    /// package where its alias alone may not (FR-480 "Selections and
+    /// imports").
+    pub fn model_node(&self) -> &NodeKey {
+        &self.model_node
+    }
+
+    /// Whether `source` is this model's time source.
+    pub fn is_timed_by(&self, source: &ModelTimeSource) -> bool {
+        source.model == self.model && source.model_node == self.model_node
     }
 
     /// The clock fields, in ascending declaration-key order.
@@ -1657,6 +1674,7 @@ struct AlternativeDraft {
 
 struct ModelDraft {
     model: String,
+    model_node: NodeKey,
     clocks: Vec<ClockField>,
     clock_parameters: Vec<ClockParameterRange>,
     dimensions: Vec<(EffectiveId, Option<u64>)>,
@@ -4243,12 +4261,10 @@ fn prepare_models(
         }
     }
     let source_of = |model: &AdmittedModel| {
-        model.alias().and_then(|alias| {
-            inputs
-                .time_sources
-                .iter()
-                .find(|source| source.model == alias)
-        })
+        inputs
+            .time_sources
+            .iter()
+            .find(|source| source.times(model))
     };
     let clocks_of = |model| {
         let fields = clock_fields(model);
@@ -4341,7 +4357,9 @@ fn prepare_models(
                 let span = match form {
                     TimedDeclaration::TimeInvariant(form) => form.span,
                     TimedDeclaration::Urgent(form) => form.span,
-                    TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => form.span(),
+                    TimedDeclaration::TimeSource { .. } | TimedDeclaration::ClockType(_) => {
+                        form.span()
+                    }
                 };
                 return Err(timed(TemporalCause::AmbiguousTimedDeclaration { span }));
             }
@@ -4349,11 +4367,7 @@ fn prepare_models(
     }
     let mut models = Vec::new();
     for source in inputs.time_sources {
-        let Some(model) = inputs
-            .models
-            .iter()
-            .find(|model| model.alias() == Some(source.model.as_str()))
-        else {
+        let Some(model) = inputs.models.iter().find(|model| source.times(model)) else {
             continue;
         };
         let clocks = clocks_of(model);
@@ -4447,7 +4461,7 @@ fn prepare_models(
             let span = match form {
                 TimedDeclaration::TimeInvariant(form) => form.span,
                 TimedDeclaration::Urgent(form) => form.span,
-                TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => continue,
+                TimedDeclaration::TimeSource { .. } | TimedDeclaration::ClockType(_) => continue,
             };
             let state = || state_object(model, inputs.models, inputs.types, span);
             match form {
@@ -4469,7 +4483,7 @@ fn prepare_models(
                         &mut budget,
                     )?);
                 }
-                TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => {}
+                TimedDeclaration::TimeSource { .. } | TimedDeclaration::ClockType(_) => {}
             }
         }
         invariants.extend(clock_bounds(model, &clocks, inputs, source.span)?);
@@ -4487,6 +4501,7 @@ fn prepare_models(
             .collect();
         models.push(ModelDraft {
             model: source.model.clone(),
+            model_node: source.model_node.clone(),
             clocks: clocks.fields,
             clock_parameters: parameter_ranges,
             dimensions,
@@ -5038,6 +5053,7 @@ pub(crate) fn check(
         }
         models.push(TimedModel {
             model: draft.model,
+            model_node: draft.model_node,
             clocks: draft.clocks,
             clock_parameters: draft.clock_parameters,
             dimensions: draft.dimensions,

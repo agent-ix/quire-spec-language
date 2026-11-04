@@ -972,6 +972,53 @@ pub(super) fn admit_and_assemble_with_profiles(
     )
 }
 
+/// The source units `units`, each a source identity and its text after the
+/// `language` line, with their model selections admitted together over the
+/// package documents `documents` and assembled as one package.
+pub(super) fn assemble_units(units: &[(&str, &str)], documents: &[&[u8]]) -> PackageDeclarations {
+    use qsl_semantics::check::AssemblyLimits;
+    use qsl_semantics::model::intake::admit_units_with_cancel;
+    use quire_exact::Cancel;
+
+    let units: Vec<_> = units
+        .iter()
+        .map(|(identity, text)| {
+            let source = format!("language \"ix:native\" edition \"1-draft\";\n{text}\n");
+            let parsed = qsl_cst::parse(
+                qsl_foundation::SourceIdentity::new("test", *identity),
+                "unit.native",
+                source.as_bytes(),
+                qsl_cst::Limits::default(),
+            )
+            .expect("S1 reads the source unit");
+            assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+            let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the source unit");
+            (parsed.source().reference().clone(), unit)
+        })
+        .collect();
+    let packages = package_input(documents.iter().copied()).expect("every package admits");
+    let selections: Vec<_> = units
+        .iter()
+        .map(|(_, unit)| unit.selections().models.as_slice())
+        .collect();
+    let selected = admit_units_with_cancel(
+        &selections,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("each unit's model selection admits");
+    PackageDeclarations::assemble_units(
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        units,
+        selected,
+        Vec::new(),
+        AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("the units assemble: {refusal:?}"))
+}
+
 /// A domain-package operation `name(params): <returns>` with `frame`, on
 /// `ConfigVersion`, generalizing [`attempt_update`] to an arbitrary name and
 /// an optional result (`returns: None` omits the `returns` member, FR-103's

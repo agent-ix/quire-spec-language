@@ -673,3 +673,33 @@ fn unknown_package_dimensions_and_repeated_source_dimensions_refuse() {
     let (_, code, _) = refused("dimension Time;\n");
     assert_eq!(code, "ambiguous_declaration/ambiguous-name");
 }
+
+/// FR-480 "Selections and imports" (QSL-1638): a dimension equivalence's
+/// model aliases name the packages its own unit binds them to. Unit `a`,
+/// admitted first, binds `R` to `acme/clock`, which declares no unit `s`;
+/// unit `b` binds `R` to `acme/rpc`, so its `R::s` resolves and the
+/// equivalence relates `acme/rpc`'s `Time` to `acme/flow`'s.
+#[trace("FR-480")]
+#[test]
+fn an_equivalences_aliases_name_its_own_units_packages() {
+    let [(_, _, rpc), (_, _, flow), (_, _, clock)] = packages();
+    let a = "profile v = \"quire.model.complete/v1\";\nmodel R = \"acme/clock\";\n\
+             type Pad = Integer;";
+    let b = "profile v = \"quire.model.complete/v1\";\nmodel R = \"acme/rpc\";\n\
+             model F = \"acme/flow\";\n\
+             dimension R::Time ~ F::Time by 1 R::s = 1 F::s;";
+    let declarations = crate::model_operations::assemble_units(
+        &[("a", a), ("b", b)],
+        &[rpc.as_slice(), flow.as_slice(), clock.as_slice()],
+    );
+    let [equivalence] = declarations.dimension_equivalences.as_slice() else {
+        panic!("one equivalence: {:?}", declarations.dimension_equivalences);
+    };
+    let mut packages: Vec<&str> = equivalence
+        .dimensions
+        .iter()
+        .map(quire_exact::NodeKey::package)
+        .collect();
+    packages.sort_unstable();
+    assert_eq!(packages, ["acme/flow", "acme/rpc"]);
+}

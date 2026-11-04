@@ -1711,7 +1711,7 @@ impl PackageDeclarations {
                     .timed_forms
                     .iter()
                     .filter_map(|form| match form {
-                        TimedDeclaration::TimeSource(source) => Some(source.model.name.as_str()),
+                        TimedDeclaration::TimeSource { form, .. } => Some(form.model.name.as_str()),
                         TimedDeclaration::TimeInvariant(_)
                         | TimedDeclaration::Urgent(_)
                         | TimedDeclaration::ClockType(_) => None,
@@ -1729,9 +1729,21 @@ impl PackageDeclarations {
                 .iter()
                 .filter_map(|form| {
                     if admitted {
-                        if let TimedDeclaration::TimeSource(source) = form {
-                            if let Some(&first) = seen_time_sources.get(source.model.name.as_str())
-                            {
+                        if let TimedDeclaration::TimeSource {
+                            form: source,
+                            owner,
+                        } = form
+                        {
+                            // FR-480 "Selections and imports": the model the
+                            // time source's own unit binds its alias to.
+                            let alias = source.model.name.as_str();
+                            let timed = self.model_spellings.model(
+                                &self.models,
+                                self.source_owners.get(owner),
+                                alias,
+                            );
+                            let key = (alias, timed.map(|model| &model.selection().identity));
+                            if let Some(&first) = seen_time_sources.get(&key) {
                                 return Some(CheckRefusal {
                                     location: root(Origin::Expression),
                                     cause: CheckCause::Temporal(Box::new(
@@ -1743,12 +1755,8 @@ impl PackageDeclarations {
                                     )),
                                 });
                             }
-                            seen_time_sources.insert(source.model.name.as_str(), source.span);
-                            if let Some(model) = self
-                                .models
-                                .iter()
-                                .find(|model| model.alias() == Some(source.model.name.as_str()))
-                            {
+                            seen_time_sources.insert(key, source.span);
+                            if let Some(model) = timed {
                                 let model_nodes = model.object_type_model_node_keys();
                                 let [model_node] = model_nodes.as_slice() else {
                                     let cause = if model_nodes.is_empty() {
@@ -3277,12 +3285,6 @@ impl PackageDeclarations {
                 })),
             });
         }
-        // QSpec FR-430: the models a `time` declaration names are timed.
-        let timed_aliases: Vec<&str> = self
-            .time_sources
-            .iter()
-            .map(|source| source.model.as_str())
-            .collect();
         let mut refinement_slots: Vec<Option<CheckedRefinement>> = std::iter::repeat_with(|| None)
             .take(self.refinements.len())
             .collect();
@@ -3316,7 +3318,7 @@ impl PackageDeclarations {
                     lists: &internal_lists,
                     protocols: $views,
                     defer_abstract_protocol_resolution: $defer_abstract,
-                    timed_models: &timed_aliases,
+                    time_sources: &self.time_sources,
                     clock_reading: &self.clock_reading,
                 };
                 let (checked, used) = refinement::check_refinement(
@@ -3677,7 +3679,7 @@ impl PackageDeclarations {
                             refusals.extend(memory_refusals.into_iter().map(|(_, refusal)| refusal))
                         }
                     }
-                    match protocol_relationship::check(protocol, &models) {
+                    match protocol_relationship::check(protocol, &models, &scope) {
                         Ok(relationships) => checked.relationships = relationships,
                         Err(relationship_refusals) => refusals.extend(
                             relationship_refusals
@@ -4027,18 +4029,11 @@ impl PackageDeclarations {
         };
         for checked in &mut refinements {
             checked.package_name = Some(package_name.clone());
-            let abstract_model = models
-                .iter()
-                .find(|model| model.alias() == Some(checked.abstract_model()));
             // QSpec FR-375: the refinement's subjects are the selected model
-            // packages' `model_root` nodes.
-            checked.abstract_subject_node =
-                abstract_model.and_then(|model| root_of(model.selection()));
-            let concrete_model = models
-                .iter()
-                .find(|model| model.alias() == Some(checked.concrete_model()));
-            checked.concrete_subject_node =
-                concrete_model.and_then(|model| root_of(model.selection()));
+            // packages' `model_root` nodes, of the packages its own unit
+            // selects (FR-480 "Selections and imports").
+            checked.abstract_subject_node = root_of(checked.abstract_model_selection());
+            checked.concrete_subject_node = root_of(checked.concrete_model_selection());
         }
         if !independent_protocols && !protocol_check_refusals.is_empty() {
             return Err(refusals);
@@ -4400,7 +4395,7 @@ impl PackageDeclarations {
                     // FR-488: a clause over `behaviours` is emitted unless
                     // it is one of the constructs S4 refuses.
                     hyper_clause::CheckedHyper::Behaviours(checked) => {
-                        match hyper_clause::emission::unemitted(&checked, &models) {
+                        match hyper_clause::emission::unemitted(&checked, &models, &scope) {
                             Some(refusal) => refusals.push(refusal),
                             None => checked_hyper.push(*checked),
                         }
@@ -4944,9 +4939,8 @@ impl PackageDeclarations {
                     .zip(relation.execution_aliases())
                     .enumerate()
                     .filter_map(|(execution_index, ((_, operation), alias))| {
-                        let model = models
-                            .iter()
-                            .find(|model| model.alias() == Some(alias.as_str()))?;
+                        let model =
+                            scope.declared_model(&models, relation.name(), alias.as_str())?;
                         let declaring = model.effective_id(&operation.declaring)?;
                         let declaration = scope
                             .operation_declaration(declaring.clone(), operation.operation.as_str())?
@@ -5066,9 +5060,7 @@ impl PackageDeclarations {
                     return None;
                 };
                 let key = source.tick_operation_key.as_ref()?;
-                let model = models
-                    .iter()
-                    .find(|model| model.alias() == Some(source.model.as_str()))?;
+                let model = models.iter().find(|model| source.times(model))?;
                 let (declaring, name) = model.operation_anchor_declaration(key)?;
                 let operation = scope
                     .operation_declaration(declaring.clone(), &name)?
@@ -5118,7 +5110,7 @@ impl PackageDeclarations {
                 .time_sources
                 .iter()
                 .enumerate()
-                .find(|(_, source)| source.model == model.model())
+                .find(|(_, source)| model.is_timed_by(source))
             else {
                 continue;
             };
@@ -5350,9 +5342,7 @@ impl PackageDeclarations {
                 if !seen_aliases.insert(alias) {
                     continue;
                 }
-                let Some(model) = models
-                    .iter()
-                    .find(|model| model.alias() == Some(alias.as_str()))
+                let Some(model) = scope.declared_model(&models, relation.name(), alias.as_str())
                 else {
                     refusals.push(CheckRefusal {
                         location: hyper_clause::lowering::hyper_location(
@@ -5669,7 +5659,7 @@ impl PackageDeclarations {
             let Some(source) = self
                 .time_sources
                 .iter()
-                .position(|source| source.model == model.model())
+                .position(|source| model.is_timed_by(source))
             else {
                 continue;
             };
@@ -6424,8 +6414,13 @@ impl PackageDeclarations {
             // EN-6's item. EN-6's refinement product reads only a dense
             // concrete subject, so a `tick` refinement is not marked and
             // goes to the explicit-state engines.
+            let concrete = models.iter().find(|model| {
+                model.alias() == Some(checked.concrete_model())
+                    && model.selection() == checked.concrete_model_selection()
+            });
             let dense = self.time_sources.iter().any(|source| {
-                source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
+                concrete.is_some_and(|model| source.times(model))
+                    && source.source == TimeSourceKind::Dense
             });
             let wanted = checked.requirements(node);
             let record = claims::RequirementRecord::unguarded(

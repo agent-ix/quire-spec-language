@@ -24,7 +24,7 @@ use serde_json::json;
 
 use crate::model_operations::{
     admit_and_assemble_with_profiles, attempt_update_modifies_version_number,
-    config_unit_with_profiles, config_version_document,
+    config_unit_with_profiles, config_version_document, PACKAGE_IDENTITY,
 };
 
 /// A structural node key for a fixture, distinct per `tag`.
@@ -61,7 +61,15 @@ fn dense_ms() -> ModelTimeSource {
     ModelTimeSource {
         model: "Config".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 1 },
-        model_node: fixture_key(0),
+        // The model node of `Config`'s state object, which names the timed
+        // model's package.
+        model_node: qsl_semantics::model::key::object_type_node_key(
+            &quire_checked::key::DeclarationKey {
+                package: PACKAGE_IDENTITY.to_owned(),
+                node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
+            },
+        )
+        .expect("a model node key"),
         tick_operation_key: None,
         tick_operation_span: None,
         tick_operation_anchor: None,
