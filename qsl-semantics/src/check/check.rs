@@ -439,6 +439,9 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The S3 limits on the written scale of `decimal(c, s)` literals
+    /// (`s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`).
+    pub decimal_literal_limits: DecimalLiteralLimits,
     /// The package's admitted `div`/`rem` law, when one was selected.
     pub integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
@@ -725,6 +728,7 @@ impl PackageDeclarations {
             model_operations: Vec::new(),
             functions: Vec::new(),
             ieee_profile: None,
+            decimal_literal_limits: DecimalLiteralLimits::default(),
             integer_division: None,
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
@@ -913,9 +917,45 @@ impl ModelRecords {
     }
 }
 
+/// The S3 limits on the written scale of `decimal(c, s)` literals (FR-093
+/// "Decimal constructors"; FR-255).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecimalLiteralLimits {
+    /// `s3.decimal_literal_scale`: the largest written scale of one literal.
+    pub scale: u64,
+    /// `s3.decimal_literal_scale_total`: the largest total of the written
+    /// scales of the literals of one checked package.
+    pub total: u64,
+}
+
+impl Default for DecimalLiteralLimits {
+    fn default() -> Self {
+        Self {
+            scale: 65_535,
+            total: 1_048_576,
+        }
+    }
+}
+
+/// The running total of the written scales a check has counted, shared by
+/// every pass over one [`Scope`].
+#[derive(Debug, Default)]
+pub(crate) struct LiteralScaleTotal(std::sync::atomic::AtomicU64);
+
+impl Clone for LiteralScaleTotal {
+    fn clone(&self) -> Self {
+        Self(std::sync::atomic::AtomicU64::new(
+            self.0.load(std::sync::atomic::Ordering::Relaxed),
+        ))
+    }
+}
+
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone)]
 pub struct Scope {
+    /// The limits on decimal literal scale, and the total counted so far.
+    decimal_literal_limits: DecimalLiteralLimits,
+    decimal_literal_total: LiteralScaleTotal,
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
     /// Where a record value keeps the fields its ancestors name (FR-359).
@@ -1180,6 +1220,8 @@ impl Scope {
     ) -> Self {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
+            decimal_literal_limits: DecimalLiteralLimits::default(),
+            decimal_literal_total: LiteralScaleTotal::default(),
             types,
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),
@@ -1288,6 +1330,11 @@ impl Scope {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    pub(crate) fn with_decimal_literal_limits(mut self, limits: DecimalLiteralLimits) -> Self {
+        self.decimal_literal_limits = limits;
         self
     }
 
@@ -2303,12 +2350,6 @@ enum AliasStep<'e> {
     OrElse(ExprRef<'e>, Option<usize>),
 }
 
-/// The largest written scale of a `decimal(c, s)` literal the checker keeps:
-/// the literal's wire spelling has exactly that many fractional digits. No
-/// spec text states this bound yet; it is an interim limit that keeps a zero
-/// coefficient (a member at every scale) from spelling an unbounded string.
-const MAX_LITERAL_SCALE: u32 = 65_535;
-
 /// Whether an expression takes its type from its context.
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
@@ -3082,10 +3123,43 @@ impl<'a> Typer<'a> {
             Some(ValueType::Decimal(domain)) => domain,
             Some(_) => return Err(mismatch(location)),
         };
-        // A zero coefficient is a member whatever its written scale, and the
-        // literal keeps that scale as written, so its spelling is bounded.
-        if scale > MAX_LITERAL_SCALE {
-            return Err(mismatch(location));
+        // The literal scale limits come before membership: a zero coefficient
+        // is a member whatever its written scale, and the literal keeps that
+        // scale as written, so its wire spelling is bounded (FR-093 steps 2
+        // and 3).
+        let limits = self.scope.decimal_literal_limits;
+        let written = u64::from(scale);
+        let exhausted = |kind, limit: u64, actual: u64| {
+            refuse(
+                location,
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                    stage: CheckingStage::Typing,
+                    kind,
+                    limit,
+                    actual: u128::from(actual),
+                    region: None,
+                })),
+            )
+        };
+        if written > limits.scale {
+            return Err(exhausted(
+                CheckingLimitKind::DecimalLiteralScale,
+                limits.scale,
+                written,
+            ));
+        }
+        let total = self
+            .scope
+            .decimal_literal_total
+            .0
+            .fetch_add(written, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(written);
+        if total > limits.total {
+            return Err(exhausted(
+                CheckingLimitKind::DecimalLiteralScaleTotal,
+                limits.total,
+                total,
+            ));
         }
         let value = Decimal::new(coefficient.clone(), scale);
         if !domain.contains(&value) {

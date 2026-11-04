@@ -2405,6 +2405,12 @@ pub enum CheckingLimitKind {
     /// The bit length of an exact value's rational numerator or denominator
     /// (`qsl_foundation::diagnostic::LimitKind::RationalBits`).
     RationalBits,
+    /// The written scale of one `decimal(c, s)` literal
+    /// (`s3.decimal_literal_scale`, a work-budget limit).
+    DecimalLiteralScale,
+    /// The total written scale of the `decimal(c, s)` literals of one checked
+    /// package (`s3.decimal_literal_scale_total`, a work-budget limit).
+    DecimalLiteralScaleTotal,
 }
 
 impl CheckingLimitKind {
@@ -2416,6 +2422,8 @@ impl CheckingLimitKind {
             Self::InputBytes => Setting::S3InputBytes,
             Self::WorkBudget => Setting::S3WorkUnits,
             Self::RationalBits => Setting::S3RationalBits,
+            Self::DecimalLiteralScale => Setting::S3DecimalLiteralScale,
+            Self::DecimalLiteralScaleTotal => Setting::S3DecimalLiteralScaleTotal,
         }
     }
 }
@@ -2433,6 +2441,8 @@ impl TryFrom<Setting> for CheckingLimitKind {
             Setting::S3InputBytes => Ok(Self::InputBytes),
             Setting::S3WorkUnits => Ok(Self::WorkBudget),
             Setting::S3RationalBits => Ok(Self::RationalBits),
+            Setting::S3DecimalLiteralScale => Ok(Self::DecimalLiteralScale),
+            Setting::S3DecimalLiteralScaleTotal => Ok(Self::DecimalLiteralScaleTotal),
             Setting::S1InputBytes
             | Setting::S1Tokens
             | Setting::S1Nodes
@@ -3512,6 +3522,11 @@ mod tests {
             (CheckingLimitKind::InputBytes, "input-bytes-exceeded"),
             (CheckingLimitKind::WorkBudget, "work-budget-exceeded"),
             (CheckingLimitKind::RationalBits, "rational-bits-exceeded"),
+            (CheckingLimitKind::DecimalLiteralScale, "work-budget-exceeded"),
+            (
+                CheckingLimitKind::DecimalLiteralScaleTotal,
+                "work-budget-exceeded",
+            ),
         ];
         for (kind, cause) in cases {
             let refused = CheckCause::ResourceExhausted(Box::new(StageLimitCause {
@@ -3542,6 +3557,10 @@ mod tests {
                 Setting::S3InputBytes => Ok(CheckingLimitKind::InputBytes),
                 Setting::S3WorkUnits => Ok(CheckingLimitKind::WorkBudget),
                 Setting::S3RationalBits => Ok(CheckingLimitKind::RationalBits),
+                Setting::S3DecimalLiteralScale => Ok(CheckingLimitKind::DecimalLiteralScale),
+                Setting::S3DecimalLiteralScaleTotal => {
+                    Ok(CheckingLimitKind::DecimalLiteralScaleTotal)
+                }
                 other => Err(other),
             };
             assert_eq!(CheckingLimitKind::try_from(setting), expected, "{setting}");

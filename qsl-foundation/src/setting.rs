@@ -69,6 +69,8 @@ settings! {
     S3WorkUnits => "s3.work_units", "S3", WorkBudget;
     S3RationalBits => "s3.rational_bits", "S3", RationalBits;
     S3DecimalScale => "s3.decimal_scale", "S3 assembly", WorkBudget;
+    S3DecimalLiteralScale => "s3.decimal_literal_scale", "S3", WorkBudget;
+    S3DecimalLiteralScaleTotal => "s3.decimal_literal_scale_total", "S3", WorkBudget;
     EnvironmentAncestorSteps => "environment.ancestor_steps", "S3 type-environment admission", EdgeCount;
     EnvironmentWorkUnits => "environment.work_units", "S3 type-environment admission", WorkBudget;
     ModelDeclarationRecords => "model.declaration_records", "model normalization", NodeCount;
