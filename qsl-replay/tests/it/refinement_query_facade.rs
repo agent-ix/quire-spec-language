@@ -163,6 +163,73 @@ fn a_population_universe_is_keyed_by_declared_name() {
     );
 }
 
+// A zero-row refinement needs models with no operation classes. Merely
+// deleting rows from CasRefinesCounter correctly fails QSL MissingRow.
+fn with_zero_step_request(body: impl FnOnce(&RefinementQueryRequest<'_>)) {
+    let world = World::new(&cas_refines_counter());
+    let mut documents = packages(Variant::CAS);
+    for bytes in documents.values_mut() {
+        let mut document: serde_json::Value =
+            serde_json::from_slice(bytes).expect("fixture document");
+        for declaration in document["types"].as_array_mut().expect("selected types") {
+            if let Some(operations) = declaration.get_mut("operations") {
+                operations
+                    .as_array_mut()
+                    .expect("operation declarations")
+                    .clear();
+            }
+        }
+        *bytes = serde_json::to_vec(&document).expect("operation-free fixture document");
+    }
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model Spec = \"{SPEC}\";\n\
+         model Impl = \"{CAS}\";\n\
+         refinement CasRefinesCounter using inf abstract Spec concrete Impl {{\n\
+         population Spec::counters from Impl::counters;\n\
+         object Spec::Counter from Impl::Counter {{ value = self.value; }}\n\
+         }}\n"
+    );
+    let compiled = acquire_checked_closure(
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "zero-step-refinement"),
+            package_name: "zero-step".to_owned(),
+            path: "zero.native",
+            bytes: text.as_bytes(),
+        },
+        documents.values().map(Vec::as_slice),
+        &DependencyInput::default(),
+        StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("operation-free models admit a genuine zero-row refinement");
+    let subject = |model: &str, initial| {
+        RefinementQuerySubject::new(
+            &documents,
+            world.snapshot_provision(),
+            vec![initial],
+            vec![RefinementUniverse::for_population(
+                model,
+                "counters",
+                world.object_keys().to_vec(),
+            )],
+            1_000_000,
+            UNLIMITED,
+        )
+    };
+    let request = RefinementQueryRequest::new(
+        compiled.handle(),
+        compiled
+            .handle()
+            .refinement_node_key(REFINEMENT)
+            .expect("zero-row refinement key"),
+        subject(CAS, world.concrete_initial()),
+        subject(SPEC, world.abstract_initial()),
+    );
+    body(&request);
+}
+
 // These are authored adapter framing controls, not CG solver-run evidence.
 type HandoffPart = (Option<u64>, Vec<u8>, Vec<u8>);
 
@@ -250,12 +317,7 @@ fn public_handoff_preserves_selected_rows_and_delegates_the_native_checker() {
             Ok(SmtProofCheck::Verified)
         );
     });
-    let zero = cas_refines_counter()
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("step "))
-        .collect::<Vec<_>>()
-        .join("\n");
-    with_request(&zero, |request, _| {
+    with_zero_step_request(|request| {
         assert_eq!(request.step_count().expect("zero selected rows"), 0);
         let parts = public_parts(request);
         let certificate = request
