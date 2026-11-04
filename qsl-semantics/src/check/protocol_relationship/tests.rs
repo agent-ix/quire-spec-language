@@ -182,7 +182,7 @@ fn reference(graph: &CheckedGraph, name: &str) -> ValueType {
 /// kind, the actual kind and the export's key; two relationships `Pipe`
 /// refuse `ambiguous_declaration`/`ambiguous-name` at both, and a channel
 /// and a relationship of one name check (FR-218-AC-10's last case).
-#[trace("TC-1056")]
+#[trace("TC-1056", "FR-218-AC-10")]
 #[test]
 fn a_relationship_binds_its_model_relationship() {
     let graph = checks(&pipeline("relationship Pipe = M::pipe;", ""));

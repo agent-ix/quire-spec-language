@@ -411,6 +411,41 @@ mod tests {
             .collect()
     }
 
+    /// FR-362-AC-1 (TC-1026): the producer returns one `CheckedUnit` holding
+    /// the graph, the type report and the source's single `RawSourceRef`,
+    /// which keeps the `authority` and `identity` labels the source was read
+    /// under; the graph names that same reference as its only source, and the
+    /// type report's spans lie in that source's own text.
+    #[trace("FR-362-AC-1", "TC-1026")]
+    #[test]
+    fn a_checked_unit_holds_the_graph_the_report_and_the_sources_one_reference() {
+        let text = format!("{HEADER}{GUARDED}\n");
+        let parsed = parse_text(&native("unit:main"), &text, SpineLimits::default());
+        let checked = run_check(&parsed, SpineLimits::default());
+        let unit = checked.as_ref().expect("the fixture checks").value();
+
+        let reference = unit.source().reference();
+        assert_eq!(reference.authority(), "test");
+        assert_eq!(reference.identity(), "unit:main");
+        assert_eq!(reference, parsed.source().reference());
+
+        let graph = unit.package().graph();
+        assert_eq!(graph.source(), reference, "the graph's source");
+        assert_eq!(graph.sources(), vec![reference], "the graph's only source");
+
+        let report = unit.type_report();
+        assert_eq!(report.requirements().len(), 2, "both guarded occurrences");
+        assert_eq!(report.obligations().len(), 2, "one obligation per claim");
+        let guarded_start = text.find(GUARDED).expect("the function is in the text");
+        for pending in report.obligations() {
+            let span = pending.span();
+            assert!(
+                guarded_start <= span.start && span.start < span.end && span.end <= text.len(),
+                "the obligation lies in the parsed text: {span:?}"
+            );
+        }
+    }
+
     /// FR-362-AC-4, FR-514-AC-3 (TC-1026, TC-1309 row 6): a checked unit's
     /// inventory is `Complete` and holds one row per requirement record then
     /// one per pending obligation of its own type report.

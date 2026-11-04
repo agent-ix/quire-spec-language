@@ -1201,6 +1201,42 @@ mod tests {
             .any(|(package, flags)| *package == "qsl-forms" && flags.contains("seam_probe_forms")));
     }
 
+    /// FR-507-AC-6 (TC-1302): a `Capability` variant with no applicable-family
+    /// entry does not compile under `--cfg seam_probe`. The probe variant
+    /// `Capability::__SeamProbe` has no row in `applies_to_declaration`, so
+    /// the `qsl-semantics` probe build fails with `E0004` at exactly that
+    /// function, while the same package builds clean with no probe cfg.
+    #[ix_trace_rs::trace("TC-1302", "FR-507-AC-6")]
+    #[test]
+    fn a_capability_variant_with_no_applicable_family_entry_does_not_compile() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask sits in the workspace root");
+        let (normal_succeeded, normal_locations, normal_stderr) =
+            build_and_collect_e0004(workspace_root, "qsl-semantics", "")
+                .expect("the normal build runs");
+        assert!(
+            normal_succeeded,
+            "the normal build compiles: {normal_stderr}"
+        );
+        assert!(normal_locations.is_empty(), "{normal_locations:?}");
+
+        let (probe_succeeded, probe_locations, _) =
+            build_and_collect_e0004(workspace_root, "qsl-semantics", "--cfg seam_probe")
+                .expect("the probe build runs");
+        assert!(
+            !probe_succeeded,
+            "the probe variant has no applicability row"
+        );
+        assert!(
+            probe_locations.contains(&SeamLocation {
+                file: "qsl-semantics/src/check/capability.rs".to_owned(),
+                item: "Capability::applies_to_declaration".to_owned(),
+            }),
+            "{probe_locations:?}"
+        );
+    }
+
     /// F14: the checked-in key is the enclosing item, not a line number --
     /// resolving a line elsewhere inside the same function's body (not just
     /// its `match` keyword's own line) must still name that function.
