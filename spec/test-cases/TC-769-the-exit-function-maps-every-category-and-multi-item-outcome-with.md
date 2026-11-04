@@ -16,7 +16,7 @@ Scope: FR-285-AC-1 to FR-285-AC-12.
 
 ## Test Procedure
 
-1. Map each of the ten table rows: success, violation, undefined, refusal, unsupported, incomplete, an inconclusive `analyze` item with cause `CertificateRejected`, FR-283-AC-1's pending clause, FR-501-AC-4's `Indeterminate` clause, and internal failure; then map the category of FR-281-AC-2's `refuted` terminal record.
+1. Map each of the ten table rows: success, violation, undefined, refusal, unsupported, incomplete, an inconclusive `analyze` item with cause `CertificateRejected`, FR-283-AC-1's pending clause, FR-501-AC-4's `Indeterminate` clause, and internal-failure; then map the category of FR-281-AC-2's `refuted` terminal record.
 2. Map the item-code sets {10, 22}, {0, 30, 20}, {21, 22}, {20, 21}, {0, 10}, {10, 11}, {11, 22}, {0, 11} and {0}.
 3. Map `StageFailure::Refused` with a profile-gated cause and with `ill_typed`, `StageFailure::Limit`, `StageFailure::Cancelled`, `StageFailure::Fault`, and `CallFailure::Input`, `Cancelled` and `Fault`.
 4. Render FR-100-AC-10's `sum-out-of-domain` evaluation through FR-100's outcome mapping.

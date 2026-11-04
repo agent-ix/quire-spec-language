@@ -44,7 +44,7 @@ binary.
 | inconclusive: a proof or `analyze` item | 22 |
 | pending: a supplied-trace clause still pending when the trace ends | 0 |
 | indeterminate: a finite-window clause (FR-501) whose window is closed and whose evidence stays unresolved | 11 |
-| internal failure (including tool failure) | 30 |
+| internal-failure (including tool failure) | 30 |
 
 The category undefined belongs to non-proof evaluation items: an `execute`
 or `run` outcome (FR-100, FR-279) and a clause run (FR-109). Such an item
@@ -89,7 +89,7 @@ exit: a pending outcome has `Category::Pending` (label `pending`, exit 0) and no
 trace outcome and any other outcome of one category exit alike. The single-report
 run path and the multi-item ranking both read the catalog and neither keeps a
 table. The catalog's exits, in the order success, violation, undefined, refusal,
-unsupported, incomplete, pending, indeterminate, inconclusive, internal failure,
+unsupported, incomplete, pending, indeterminate, inconclusive, internal-failure,
 are 0, 10, 10, 20, 21, 22, 0, 11, 22, 30, and they equal the table above.
 
 A multi-item outcome exits with the most severe code present, in the order
@@ -104,8 +104,8 @@ multi-item rule above.
 `StageFailure` maps to a category as follows: `Refused` takes the category of
 its cause, so a profile-gated construct is unsupported (21) and any other
 refusal is refusal (20); `Limit` and `Cancelled` are incomplete (22); `Fault`
-is internal failure (30). `CallFailure::Input` is refusal, `Cancelled` is
-incomplete and `Fault` is internal failure; `CallFailure::Unsupported`
+is internal-failure (30). `CallFailure::Input` is refusal, `Cancelled` is
+incomplete and `Fault` is internal-failure; `CallFailure::Unsupported`
 (FR-294, FR-296) is unsupported and `CallFailure::Limit` is incomplete.
 
 ## Inputs
