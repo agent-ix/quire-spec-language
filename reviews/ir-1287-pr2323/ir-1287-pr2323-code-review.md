@@ -59,3 +59,7 @@ The parser compares the header count with the retained selected rows before slot
 ### Method selection
 
 Code review includes the Rust lane. Gap analysis includes the requested intent-to-test check. Base, EARS, integrity and scope-boundary cover the changed normative interface. Object/dependency analyses are not applicable because no new spec object artifact or relationship edge is introduced. No additional reviewer or heavy build was used.
+
+## Supplemental fix verification
+
+PASS. Inspected the private reserve_payload helper and its test-only, thread-local capacity-overflow seam. It exercises the actual fallible Vec reservation and normal typed ResourceExhausted assembly path; it does not manufacture a successful certificate or replace proof checking. Partially copied base/query/proof buffers remain private local values and drop on failure. The healthy production path still calls try_reserve_exact for the same requested bytes. The duplicate-Base input preserves the required record count and all existing controls. No new findings; no Cargo run by the reviewer.

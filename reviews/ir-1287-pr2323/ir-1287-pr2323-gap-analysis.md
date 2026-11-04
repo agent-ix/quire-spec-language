@@ -19,7 +19,7 @@ The six added criteria compute tagged, but two named adverse behaviors lack exec
 
 ## Verdict
 
-CONDITIONAL
+PASS after disposition round 1. Original findings remain below with their fixed outcomes recorded separately.
 
 ## Findings
 
@@ -60,3 +60,14 @@ The parser compares the header count with the retained selected rows before slot
 ### Method selection
 
 Code review includes the Rust lane. Gap analysis includes the requested intent-to-test check. Base, EARS, integrity and scope-boundary cover the changed normative interface. Object/dependency analyses are not applicable because no new spec object artifact or relationship edge is introduced. No additional reviewer or heavy build was used.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The added selected-count-preserving case replaces Step 3 with the original Base and asserts Shape. Both existing duplicate-Step controls remain unchanged. |
+| FND-002 | fixed | A private thread-local one-shot invokes real Vec::try_reserve capacity failure from the normal payload reservation helper. The test exercises failure before copying, after one payload and after the base plus a step query, observes ResourceExhausted with no certificate, consumes the one-shot and verifies the next assembly preserves all bytes. |
+
+### Disposition verification
+
+The native capacity-overflow call cannot request an actual huge allocation. All partially copied payloads remain local Vec owners and drop on the Result error path, so no prefix certificate is published. Production without cfg(test) continues using the same fallible exact reservation; no public fault API, global allocator replacement, cap, proof rewriting or checker change was introduced. No new findings. Reviewer ran no Cargo; the final aggregate gate remains with the lead.
