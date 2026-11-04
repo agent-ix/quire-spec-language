@@ -875,9 +875,9 @@ fn refinement_unit(imports_library: bool) -> String {
         ""
     };
     let function = if imports_library {
-        "function entry using v(): Boolean pure { g::geometryFn() }\n"
+        "function entry using v(): Boolean pure { g::geometryFn(0) }\n"
     } else {
-        "function geometryFn using v(): Boolean pure { true }\n"
+        "function geometryFn using v(x: Int[0, 9]): Boolean pure { true }\n"
     };
     format!(
         "{SPINE_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
