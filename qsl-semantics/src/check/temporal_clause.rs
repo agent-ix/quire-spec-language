@@ -73,6 +73,7 @@ use quire_semantic_value::fairness::{
 };
 use quire_semantic_value::location::{Location, Origin};
 
+use super::check::SourceScope;
 use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
@@ -1115,14 +1116,17 @@ fn check_clause(
     // before an earlier capture's ill-typed initializer; both are single
     // refusals with their own code, and AC-8's vectors hold.
     for (position, parameter) in parameters(form).into_iter().enumerate() {
-        let resolved = super::type_form::resolve_form(declarations.scope, &parameter.value_type)
-            .map_err(|error| {
-                refuse(TemporalCause::ParameterType {
-                    parameter: parameter.name.name.clone(),
-                    fault: error.fault,
-                    span: error.span,
-                })
-            })?;
+        let resolved = super::type_form::resolve_form(
+            &declarations.scope.for_declaration(&form.name.name),
+            &parameter.value_type,
+        )
+        .map_err(|error| {
+            refuse(TemporalCause::ParameterType {
+                parameter: parameter.name.name.clone(),
+                fault: error.fault,
+                span: error.span,
+            })
+        })?;
         // FR-337 "`on each` activation at S3": the activation is checked
         // before the captures, its binder typed as the `over` parameter is
         // and named otherwise.
@@ -1457,7 +1461,11 @@ fn checked_fairness(
             refusals.push(TemporalCause::FairnessUnderBoundedProfile { span: written.span });
             continue;
         }
-        let operation = match resolve_fairness_operation(written, declarations.scope, over) {
+        let operation = match resolve_fairness_operation(
+            written,
+            declarations.scope.for_declaration(&form.name.name),
+            over,
+        ) {
             Ok(operation) => operation,
             Err(TemporalCause::UnresolvedFairnessOperation { name, span }) => {
                 match resolve_protocol_target(&name, declarations.protocols) {
@@ -1613,7 +1621,7 @@ fn checked_granularity(written: &FairnessConstraintForm) -> FairnessGranularity 
 /// same-named operations of different types stay distinct.
 fn resolve_fairness_operation(
     written: &FairnessConstraintForm,
-    scope: &Scope,
+    scope: SourceScope<'_>,
     over: Option<&ValueType>,
 ) -> Result<FairnessOperation, TemporalCause> {
     let name = &written.operation;
@@ -1632,7 +1640,11 @@ fn resolve_fairness_operation(
         span: name.span,
     };
     let object = object.ok_or_else(unresolved)?;
-    match scope.operations().resolve(scope.types(), object, operation) {
+    match scope
+        .scope
+        .operations()
+        .resolve(scope.scope.types(), object, operation)
+    {
         OperationLookup::Declared {
             declaring,
             operation,

@@ -169,7 +169,7 @@ fn reference(graph: &CheckedGraph, name: &str) -> ValueType {
     ValueType::Reference(
         graph
             .scope()
-            .object_type_named(name)
+            .object_type_named(None, name)
             .unwrap_or_else(|| panic!("the object type {name}")),
     )
 }

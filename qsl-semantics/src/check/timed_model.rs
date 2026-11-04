@@ -35,6 +35,7 @@ use qsl_forms::{
     BinaryOperator, ExprId, ExprNode, ExpressionForm, QuantityForm, StateClauseKind,
     TimeInvariantForm, TypeFormHead, UrgentForm, UrgentTarget,
 };
+use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::Span;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, NodeKey, Rational, ValueType};
@@ -1623,6 +1624,9 @@ enum UrgencyDraft {
     When {
         name: String,
         span: Span,
+        /// The declaring source unit, whose model aliases the predicate's
+        /// type names resolve through (FR-480).
+        source_owner: Option<RawSourceRef>,
         alternatives: Vec<AlternativeDraft>,
     },
     Operation {
@@ -1635,6 +1639,9 @@ enum UrgencyDraft {
 
 struct InvariantDraft {
     name: String,
+    /// The declaring source unit, whose model aliases the predicate's type
+    /// names resolve through (FR-480); `None` for a package `max` bound.
+    source_owner: Option<RawSourceRef>,
     alternatives: Vec<AlternativeDraft>,
     bounds: Vec<ClockConstraint>,
     binders: Vec<ElementBinding>,
@@ -1744,6 +1751,8 @@ pub(crate) struct Inputs<'a> {
     pub(crate) types: &'a TypeEnvironment,
     pub(crate) time_sources: &'a [ModelTimeSource],
     pub(crate) timed_forms: &'a [TimedDeclaration],
+    /// Each declaration's source unit, by declared name (FR-480).
+    pub(crate) source_owners: &'a BTreeMap<String, RawSourceRef>,
     /// The unit's clock-reading declarations (FR-230 "Clock-reading
     /// declarations").
     pub(crate) clock_reading: &'a [super::assemble::ClockReadingDeclaration],
@@ -3950,6 +3959,7 @@ fn time_invariant(
     }
     Ok(InvariantDraft {
         name: form.name.name.clone(),
+        source_owner: None,
         alternatives,
         bounds,
         binders,
@@ -4096,6 +4106,7 @@ fn clock_bounds(
                 .map_err(|_| timed(TemporalCause::TimeInvariantShape { span }))?;
             drafts.push(InvariantDraft {
                 name: bound.key.node.clone(),
+                source_owner: None,
                 // A bound reads a guarded place only where it is live.
                 alternatives: vec![AlternativeDraft {
                     presences: Vec::new(),
@@ -4117,6 +4128,7 @@ fn clock_bounds(
 
 fn urgency(
     form: &UrgentForm,
+    source_owner: Option<RawSourceRef>,
     model: &AdmittedModel,
     clocks: &Clocks<'_>,
     state: impl FnOnce() -> Result<(EffectiveId, Option<PopulationDomain>), TemporalCause>,
@@ -4129,6 +4141,7 @@ fn urgency(
             Ok(UrgencyDraft::When {
                 name: form.name.name.clone(),
                 span: form.span,
+                source_owner,
                 alternatives: state_alternatives(predicate, clocks, &context, population, budget)?,
             })
         }
@@ -4427,17 +4440,15 @@ fn prepare_models(
             match form {
                 TimedDeclaration::TimeInvariant(form) => {
                     let (context, population) = state().map_err(timed)?;
-                    invariants.push(time_invariant(
-                        form,
-                        &clocks,
-                        &context,
-                        population,
-                        &mut budget,
-                    )?);
+                    let mut invariant =
+                        time_invariant(form, &clocks, &context, population, &mut budget)?;
+                    invariant.source_owner = inputs.source_owners.get(&form.name.name).cloned();
+                    invariants.push(invariant);
                 }
                 TimedDeclaration::Urgent(form) => {
                     urgency_drafts.push(urgency(
                         form,
+                        inputs.source_owners.get(&form.name.name).cloned(),
                         model,
                         &clocks,
                         state,
@@ -4573,17 +4584,26 @@ fn typed_in(
 /// `alternative` with its data predicate typed as a state predicate.
 fn typed_alternative(
     alternative: AlternativeDraft,
+    source_owner: Option<&RawSourceRef>,
     checking: &Checking<'_, '_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
-    typed_alternative_in(alternative, checking, checking.declarations, cx, nodes_used)
+    typed_alternative_in(
+        alternative,
+        source_owner,
+        checking,
+        checking.declarations,
+        cx,
+        nodes_used,
+    )
 }
 
 /// [`typed_alternative`] against `declarations`, whose location roots the
 /// typed predicate's nodes.
 fn typed_alternative_in(
     alternative: AlternativeDraft,
+    source_owner: Option<&RawSourceRef>,
     checking: &Checking<'_, '_>,
     declarations: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
@@ -4592,6 +4612,7 @@ fn typed_alternative_in(
     let (predicate, used) = typed_in(
         &state_view(
             &alternative.predicate,
+            source_owner,
             checking.complete_value,
             checking.presence_places,
         ),
@@ -4608,11 +4629,12 @@ fn typed_alternative_in(
 
 fn state_view<'v>(
     draft: &'v PredicateDraft,
+    source_owner: Option<&'v RawSourceRef>,
     complete_value: bool,
     presence_places: &'v [PresencePlace],
 ) -> ClauseView<'v> {
     ClauseView {
-        source_owner: None,
+        source_owner,
         kind: StateClauseKind::Invariant,
         complete_value,
         context: Some(draft.context.clone()),
@@ -4666,7 +4688,7 @@ fn check_part(
         None => None,
         Some(form) => {
             let view = ClauseView {
-                source_owner: None,
+                source_owner: clause.source_owner.as_ref(),
                 kind: StateClauseKind::Precondition,
                 complete_value: super::state_clause::is_complete_value(&clause.selection),
                 context: Some(clause.context.clone()),
@@ -4788,7 +4810,13 @@ pub(crate) fn check(
                     .alternatives
                     .into_iter()
                     .map(|alternative| {
-                        typed_alternative(alternative, checking, cx, &mut nodes_used)
+                        typed_alternative(
+                            alternative,
+                            invariant.source_owner.as_ref(),
+                            checking,
+                            cx,
+                            &mut nodes_used,
+                        )
                     })
                     .collect::<Result<Vec<_>, CheckRefusal>>()?
             } else {
@@ -4803,6 +4831,7 @@ pub(crate) fn check(
                     };
                     typed.push(typed_alternative_in(
                         alternative,
+                        invariant.source_owner.as_ref(),
                         checking,
                         &declarations,
                         cx,
@@ -4832,6 +4861,7 @@ pub(crate) fn check(
                 UrgencyDraft::When {
                     name,
                     span,
+                    source_owner,
                     alternatives,
                 } => {
                     let Some(context) = alternatives
@@ -4854,6 +4884,7 @@ pub(crate) fn check(
                         };
                         typed.push(typed_alternative_in(
                             alternative,
+                            source_owner.as_ref(),
                             checking,
                             &declarations,
                             cx,
@@ -4937,7 +4968,10 @@ pub(crate) fn check(
                                     element_type(checking, &written.context, &path, reset.span)?;
                                 let binders = [(name.clone(), element)];
                                 let view = ClauseView {
-                                    source_owner: None,
+                                    source_owner: checking
+                                        .state_clauses
+                                        .get(written.index)
+                                        .and_then(|clause| clause.source_owner.as_ref()),
                                     kind: StateClauseKind::Precondition,
                                     complete_value: checking.complete_value,
                                     context: Some(written.context.clone()),
