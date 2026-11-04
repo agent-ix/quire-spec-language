@@ -2739,7 +2739,10 @@ mod tests {
         };
         let monitored = OutcomeDocument::settled(Operation::Monitor, None, pending());
         assert_eq!(monitored.category(), Category::Inconclusive);
-        assert_eq!(monitored.category().trace_exit_code(), 0);
+        assert_eq!(
+            monitored.category().trace_exit_code(),
+            Category::Inconclusive.exit_code()
+        );
         let violated = OutcomeDocument::settled(
             Operation::Monitor,
             None,
@@ -2748,7 +2751,9 @@ mod tests {
                 .chain([record(1, TerminalValue::Refuted)])
                 .collect(),
         );
-        assert_eq!(violated.category(), Category::Violation);
+        // An `Inconclusive` item ranks above a violation under 30, 20, 21, 22,
+        // 10, 11, 0; only a `Category::Pending` item sits at 0 (FR-285-AC-9).
+        assert_eq!(violated.category(), Category::Inconclusive);
         assert_eq!(
             OutcomeDocument::settled(Operation::Prove, None, pending()).category(),
             Category::Inconclusive

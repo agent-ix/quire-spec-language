@@ -4350,23 +4350,29 @@ mod locus_tests {
         };
         let base = measured(&rational((-3, 7), (1, 12)));
         assert_eq!(base, measured(&rational((-3, 7), (1, 12))));
-        for different in [
-            rational((-2, 7), (1, 12)),
-            rational((-3, 6), (1, 12)),
-            rational((-3, 7), (2, 12)),
-            rational((-3, 7), (1, 11)),
+        // Each bound is written: lengthening any one adds bytes.
+        for wider in [
+            rational((-300, 7), (1, 12)),
+            rational((-3, 700), (1, 12)),
+            rational((-3, 7), (10, 12)),
+            rational((-3, 7), (1, 1200)),
         ] {
-            assert_ne!(base, measured(&different));
+            let wider = measured(&wider);
+            assert_eq!(wider.0, base.0, "the same fields are written");
+            assert!(wider.1 > base.1, "{wider:?} against {base:?}");
         }
-        let integer =
-            ValueType::CarriedQuantity(std::sync::Arc::new(quire_exact::CarriedQuantityType::new(
+        // Four bounds are written where an integer carrier writes two.
+        let integer = measured(&ValueType::CarriedQuantity(std::sync::Arc::new(
+            quire_exact::CarriedQuantityType::new(
                 metre(),
                 quire_exact::QuantityCarrier::Integer {
                     domain: interval(-3, 7),
                     rounding: quire_exact::RoundingMode::Exact,
                 },
-            )));
-        assert_ne!(base, measured(&integer));
+            ),
+        )));
+        assert_ne!(base, integer);
+        assert!(base.0 > integer.0, "{base:?} against {integer:?}");
     }
 
     /// A bounded quantity is its own type, not a `Quantity` (quire-exact

@@ -1484,13 +1484,11 @@ mod quantities {
             3,
             "one range node per distinct bound set"
         );
-        let rounding = graph
-            .nodes()
-            .find(|node| {
-                node.semantic_form() == "text_literal" || node.semantic_form() == "literal"
-            })
-            .map(preimage);
-        assert!(rounding.is_some_and(|literal| literal.to_string().contains("exact")));
+        assert!(
+            members[2].to_string().contains("exact"),
+            "a rational carrier's rounding is exact: {}",
+            members[2]
+        );
     }
 
     /// FR-497-AC-3 (TC-1287): converting to a `Rational[..]` carrier carries
