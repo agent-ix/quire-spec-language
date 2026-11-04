@@ -10,7 +10,10 @@ use qsl_package::AdmittedProtocolObservation;
 use quire_semantic_value::admission::{ObservationAdmission, PathStep};
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
+pub(crate) mod charges;
 pub(crate) mod resolve;
+
+pub use charges::{BinderCharges, ChargeAmounts, BINDER_ACCOUNTING_VERSION};
 
 /// Caller-constructible selector for one expression member of an emitted
 /// protocol node (FR-390). The fields intentionally stay public; admission
@@ -118,8 +121,9 @@ pub struct ProtocolSupply<'a> {
 /// ```
 #[derive(Debug)]
 pub enum ProtocolSlotEvaluation {
-    /// The shared S6a evaluator's result.
-    Evaluated(Evaluation),
+    /// The shared S6a evaluator's result and the call's per-binder charge log
+    /// (FR-520-AC-11).
+    Evaluated(Evaluation, BinderCharges),
     /// A supplied binder was unavailable and the expression read it.
     Unavailable {
         /// The binder that was unavailable.
@@ -130,6 +134,9 @@ pub enum ProtocolSlotEvaluation {
         /// for a reader-backed view, whose admitted wire carries no leaf
         /// location yet and which never takes one from the source package.
         location: Option<Location>,
+        /// The call's per-binder charge log up to the unavailable read,
+        /// which registers the unavailable binder (FR-520-AC-11).
+        charges: BinderCharges,
     },
 }
 

@@ -45,8 +45,9 @@ pub use closure::{PackageClosure, PackageTask};
 pub use evaluate::refusal_record;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use protocol_slot::{
-    ProtocolReferenceOccurrence, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSuppliedValue,
-    ProtocolSupply, SuppliedValue,
+    BinderCharges, ChargeAmounts, ProtocolReferenceOccurrence, ProtocolSlot,
+    ProtocolSlotEvaluation, ProtocolSuppliedValue, ProtocolSupply, SuppliedValue,
+    BINDER_ACCOUNTING_VERSION,
 };
 pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
@@ -850,6 +851,12 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// FR-390: select and evaluate one checked expression stored on a V2
     /// protocol node, admitting only the expression's exact binder sources
     /// before the shared S6a evaluator runs.
+    ///
+    /// The result carries the call's per-binder charge log (FR-520-AC-11). The
+    /// call owns `meter`'s interval capture while it runs: an interval the
+    /// caller had open at entry is drained without being added to the log, so
+    /// the log is the call's own total, and capture is left enabled or
+    /// disabled as the caller left it.
     fn evaluate_protocol_slot(
         &self,
         slot: &ProtocolSlot,
@@ -1121,6 +1128,9 @@ impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
 /// ```
 pub trait AdmittedEvaluationViewEvaluation: admitted_view_sealed::Sealed {
     /// Evaluate one protocol slot selected through this exact admitted view.
+    ///
+    /// The meter's interval capture is owned by the call as in
+    /// [`CheckedPackageEvaluation::evaluate_protocol_slot`].
     fn evaluate_protocol_slot(
         &self,
         slot: &ProtocolSlot,
@@ -1653,6 +1663,10 @@ impl CheckedPackageEvaluation for CheckedPackage {
         }
         let mut frame = vec![None; selected.frame_len()];
         let mut unavailable = std::collections::BTreeMap::new();
+        let binder_slots = sources
+            .iter()
+            .map(|(index, _, binder)| (*index, binder.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>();
         for (index, source, key) in sources {
             let Some((_, supplied)) = supply
                 .binders
@@ -1958,23 +1972,32 @@ impl CheckedPackageEvaluation for CheckedPackage {
         } else {
             None
         };
-        let result = Machine::with_pre(
+        // The call owns the meter's interval capture while it runs: a caller
+        // interval open before the call is drained, and capture returns to
+        // the state the caller left it in.
+        let caller_capture = meter.take_charge_accounting().is_some();
+        meter.enable_charge_accounting();
+        let run = Machine::with_pre(
             self.graph().scope(),
             self.graph(),
             current,
             None,
             Some(&std::collections::BTreeMap::new()),
-            meter,
+            &mut *meter,
             self.graph().dispatch_tables(),
         )
-        .run_protocol_frame(body.root(), reader_root, frame, unavailable)
-        .map_err(CallFailure::Fault)?;
+        .run_protocol_frame(body.root(), reader_root, frame, unavailable, binder_slots);
+        if !caller_capture {
+            meter.disable_charge_accounting();
+        }
+        let (result, charges) = run.map_err(CallFailure::Fault)?;
         match result {
-            Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation)),
+            Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation, charges)),
             Err((binder, cause, location)) => Ok(ProtocolSlotEvaluation::Unavailable {
                 binder,
                 cause,
                 location,
+                charges,
             }),
         }
     }
