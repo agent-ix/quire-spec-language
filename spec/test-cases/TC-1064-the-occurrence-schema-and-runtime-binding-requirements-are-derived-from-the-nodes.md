@@ -15,7 +15,7 @@ control entries with their owners and repeat dimensions and the compensation
 entries, that the binding requirements are a function of the operators, that
 neither is carried by any node or fabricates an instance, and that the
 derivation is the same from the in-process package and from the read-back
-package. Scope: FR-384-AC-1 to FR-384-AC-8.
+package. Scope: FR-384-AC-1 to FR-384-AC-9.
 
 Catches an owner invented for a `sequence`, an `Exhaustion` dimension missing
 for the exhausted arm, a `repeat` with no maximum given a fabricated bound,
@@ -39,6 +39,7 @@ Fixture **W** is TC-1061's.
 | 8 | **W** | each record names its subject node key and the clause key as scope, with no authority or contract member |
 | 9 | **W**; **W** with an `internal` member bound into a role node's body arguments; **W** with an `internal` member added to the role node itself | no node holds a requirement, schema entry, instance or ordinal; the I2 reader refuses the body member with `malformed_wire` and the node-level member with `unknown_member` |
 | 10 | **W** with a second template `Partial` for `Applied` | two compensation entries, and two sets of `compensation`, `compensation-attempt` and `compensation-effect` requirements, each naming its own template key |
+| 11 | **W**, in process and read back through the I2 reader | each role slot holds its selected model type node: `Fulfillment` holds `Shipment`, `Orders` holds `OrderView`, `Payments` holds `Payment`; each is an emitted `object_type` node |
 
 ## Expected Results
 

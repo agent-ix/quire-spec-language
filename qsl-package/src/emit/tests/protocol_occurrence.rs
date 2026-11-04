@@ -200,7 +200,7 @@ fn object_type(name: &str) -> quire_exact::NodeKey {
 /// QSL-1579: each role slot carries the selected model type node it is `on`,
 /// equally in process and after the package IR's read, and that node is an
 /// emitted `object_type` node of the selected package.
-#[trace("FR-384-AC-1", "TC-1064")]
+#[trace("FR-384-AC-9", "TC-1064")]
 #[test]
 fn role_slots_carry_their_selected_model_type_through_read_back() {
     let lowered = lower_with(document(), PROFILES_W, W);
