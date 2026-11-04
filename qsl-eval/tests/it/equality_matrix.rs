@@ -3466,6 +3466,7 @@ fn x04_compound_results_feed_further_quantity_operations() {
 
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-6")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-13")]
 #[test]
 fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
     let package = expression_package(TypeEnvironment::default(), true);

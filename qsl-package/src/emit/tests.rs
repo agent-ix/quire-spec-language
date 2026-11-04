@@ -3546,9 +3546,10 @@ fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> S
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
          model Config = \"example/config-version\";\n\
          {declarations}\n\
-         protocol Flow using p over (input: Boolean) on origin {{\n\
+         protocol Flow using p over (input: Config::ConfigVersion) on origin {{\n\
          role R on Config::ConfigVersion;\n\
          run sequence Main {{\n\
          attempt Update by R on {operation} contracts [{contracts}] \
@@ -3873,7 +3874,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
             "missing_declaration",
         ),
         (
-            "over (input: Boolean)",
+            "over (input: Config::ConfigVersion)",
             "over (input: Nope::Input)",
             "missing_declaration",
         ),

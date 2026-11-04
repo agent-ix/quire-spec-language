@@ -948,6 +948,7 @@ fn interval_bounds(source: &Source, cst: &LosslessCst) -> Vec<CompleteDiagnostic
         let timed = match node.production() {
             Production::Interval => false,
             Production::TimedInterval => true,
+            Production::DeliveryInterval => false,
             _ => continue,
         };
         // `open lower , upper close`, trivia excluded.
