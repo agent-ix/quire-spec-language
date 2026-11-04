@@ -353,6 +353,126 @@ fn recursive_predicate_cycles_without_measures_refuse_on_the_spine() {
     );
 }
 
+/// TC-1308 row 8: the cycles of row 7, each predicate with a QSpec FR-146
+/// integer measure that decreases on every recursive edge, admit and emit.
+#[trace("TC-1308", "FR-046-AC-2", "FR-513-AC-4")]
+#[test]
+fn recursive_predicate_cycles_with_decreasing_measures_admit_on_the_spine() {
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "predicate R using v(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then R(x - 1) else true }\n",
+        "predicate A using v(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then B(x - 1) else true }\n",
+        "predicate B using v(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then A(x - 1) else false }\n",
+    );
+    crate::support::front_end::emitted(
+        SourceIdentity::new("agent-ix", "test:tc-1308-measured-recursion"),
+        "measured-predicates.native",
+        unit.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+    )
+    .expect("measured self and mutual predicate recursion admits");
+
+    // A measure that does not decrease on the edge still refuses: the
+    // measure is checked, not merely accepted.
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "predicate R using v(x: Int[0, 9]): Boolean decreases(x) { R(x) }\n",
+    );
+    let refusal = crate::support::front_end::emitted(
+        SourceIdentity::new("agent-ix", "test:tc-1308-undecreasing-measure"),
+        "undecreasing-predicate.native",
+        unit.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+    )
+    .expect_err("a measure that does not decrease refuses");
+    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("an undecreasing measure refuses at check, got {refusal:?}");
+    };
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            qsl_semantics::check::CheckCause::UnprovedDecrease {
+                obligation: qsl_semantics::check::MeasureObligation::Decrease,
+                ..
+            }
+        )),
+        "the undecreasing edge carries the decrease obligation: {refusals:?}"
+    );
+}
+
+/// TC-1308 row 10: `D`'s divisor guarded by the QSpec FR-146 rational
+/// nonzero fact `x != rational(0, 1)` admits, as do its callers.
+#[trace("TC-1308", "FR-046-AC-2", "FR-513-AC-4")]
+#[test]
+fn guarded_predicate_division_admits_on_the_spine() {
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "predicate D using v(x: Rational[-10, 10; 1, 5]): Boolean { x != rational(0, 1) and rational(10, 1) / x > rational(1, 1) }\n",
+        "function Caller using v(x: Rational[-10, 10; 1, 5]): Boolean pure { D(x) }\n",
+        "function Dependent using v(x: Rational[-10, 10; 1, 5]): Boolean pure { Caller(x) }\n",
+    );
+    crate::support::front_end::emitted(
+        SourceIdentity::new("agent-ix", "test:tc-1308-guarded-division"),
+        "guarded-division.native",
+        unit.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+    )
+    .expect("the guarded divisor carries its nonzero fact");
+
+    // Only `x != rational(0, 1)` on its true outcome (or `x = rational(0, 1)`
+    // on its false one) is a nonzero fact; any other comparison proves none.
+    for (identity, body) in [
+        (
+            "test:tc-1308-equal-zero-guard",
+            "x = rational(0, 1) and rational(10, 1) / x > rational(1, 1)",
+        ),
+        (
+            "test:tc-1308-nonzero-literal-guard",
+            "x != rational(1, 1) and rational(10, 1) / x > rational(1, 1)",
+        ),
+    ] {
+        let unit = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\";\n\
+             predicate D using v(x: Rational[-10, 10; 1, 5]): Boolean {{ {body} }}\n"
+        );
+        let refusal = crate::support::front_end::emitted(
+            SourceIdentity::new("agent-ix", identity),
+            "guarded-division.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+        )
+        .expect_err("a guard that proves no nonzero fact refuses");
+        assert!(
+            refusal.causes().iter().any(|cause| {
+                cause.code.as_str() == "undefined_expression"
+                    && cause.cause == Some("unproved-nonzero")
+            }),
+            "{body}: {refusal:?}"
+        );
+    }
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "predicate D using v(x: Rational[-10, 10; 1, 5]): Boolean { if x = rational(0, 1) then false else rational(10, 1) / x > rational(1, 1) }\n",
+    );
+    crate::support::front_end::emitted(
+        SourceIdentity::new("agent-ix", "test:tc-1308-equal-zero-else"),
+        "guarded-division.native",
+        unit.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+    )
+    .expect("the false outcome of `x = rational(0, 1)` is a nonzero fact");
+}
+
 /// TC-1308 row 9/10: predicate call type errors and a partial divisor retain
 /// their typed check refusal through the complete spine, including a
 /// possibly-zero rational divisor.

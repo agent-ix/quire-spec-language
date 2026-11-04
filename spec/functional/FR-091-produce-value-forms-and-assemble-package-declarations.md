@@ -241,9 +241,11 @@ the unit's edition. It carries no semantic identity (FR-067-AC-2).
   declaration kind `Predicate`. Every other `FunctionDeclaration` has kind
   `Function`. It carries the declared name; the `using` field; each
   parameter's name and type form, in order; a result type form with head
-  `Boolean` and the span of the `Boolean` token; no measure, because the
-  `Predicate` production has no `decreases` clause; and the body
-  expression, which the expression mapping below builds from the
+  `Boolean` and the span of the `Boolean` token; the `decreases` measure
+  expression when one is written (`predicate name using V(p: T, ...):
+  Boolean [decreases(m)] { body }`, the measure of QSpec FR-146 that a
+  recursive predicate needs exactly as a recursive function does); and the
+  body expression, which the expression mapping below builds from the
   predicate's block exactly as it builds a function body.
 - **Dimension form.** It carries the declared name and its span, and its
   terms, in source order, when `=` is written. Each term carries the

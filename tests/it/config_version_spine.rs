@@ -1063,6 +1063,66 @@ fn tc_469_boundary_locus_survives_result_two_round_trip() {
     }
 }
 
+/// TC-1308 row 16 (FR-513-AC-7, FR-046-AC-8): the run report names the
+/// stage whose evidence produced each result. A spine check refusal is
+/// `compile` evidence with a refusal and no outcome; an executed replay is
+/// `evaluate` evidence with its outcome and truth. The strict reader refuses a
+/// document that relabels an executed result as `compile` evidence, and one
+/// that turns a `compile` refusal into a result no replay produced.
+#[trace("TC-1308", "FR-513-AC-7", "FR-046-AC-8")]
+#[test]
+fn run_report_separates_check_evidence_from_replay_evidence() {
+    let directory = tempfile::tempdir().unwrap();
+    let document = |case: Case| -> Value {
+        let report = run_case(&directory.path().join(case.id()), case);
+        let bytes = qsl_replay::spine::write_clause_run_result(&report).unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    };
+    let replayed = document(Case::Healthy);
+    assert_eq!(replayed["disposition"]["stage"], "evaluate");
+    assert_eq!(replayed["disposition"]["category"], "success");
+    assert_eq!(replayed["disposition"]["truth"], true);
+    assert!(replayed["disposition"].get("refusal").is_none());
+    let checked = document(Case::MissingModel);
+    assert_eq!(checked["disposition"]["stage"], "compile");
+    assert_eq!(checked["disposition"]["category"], "refusal");
+    assert!(checked["disposition"].get("truth").is_none());
+    assert!(checked["disposition"].get("outcome").is_none());
+
+    let read = |value: &Value| {
+        qsl_replay::spine::read_native_run_result(&serde_json::to_vec(value).unwrap()).map(drop)
+    };
+    read(&replayed).expect("the executed replay document reads");
+    read(&checked).expect("the check refusal document reads");
+
+    let mut relabelled = replayed.clone();
+    relabelled["disposition"]["stage"] = json!("compile");
+    assert!(
+        matches!(
+            read(&relabelled),
+            Err(qsl_replay::spine::NativeRunReadError::Invalid {
+                member: "disposition.refusal",
+                ..
+            })
+        ),
+        "a compile stage cannot carry an executed result"
+    );
+
+    let mut promoted = checked.clone();
+    let disposition = promoted["disposition"].as_object_mut().unwrap();
+    disposition.remove("refusal");
+    disposition.insert("category".to_owned(), json!("success"));
+    disposition.insert("truth".to_owned(), json!(true));
+    disposition.insert(
+        "outcome".to_owned(),
+        replayed["disposition"]["outcome"].clone(),
+    );
+    assert!(
+        read(&promoted).is_err(),
+        "a check pass cannot stand for an unexecuted replay"
+    );
+}
+
 /// FR-108-AC-4 (TC-469 step 4): generating the corpus twice gives identical
 /// files (bidirectionally: same file sets, not just every file in the first
 /// generation present in the second -- SR-768 FND-003), running every one of
