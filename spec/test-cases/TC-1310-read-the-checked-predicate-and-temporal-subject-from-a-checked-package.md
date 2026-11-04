@@ -12,7 +12,7 @@ relationships:
 
 Verify the two checked-package views that succeed the retired
 `checked_predicate` and `temporal_subject` modules. Scope: FR-515-AC-1 to
-FR-515-AC-17. **R** is the package FR-517 emits from the ported IT-001 recipe.
+FR-515-AC-20. **R** is the package FR-517 emits from the ported IT-001 recipe.
 
 ## Test Procedure
 
