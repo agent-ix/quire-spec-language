@@ -30,6 +30,8 @@ holds(c.value = 2)`, infinite-trace), and snapshots with `c.value` 0, 1, 2.
 4. Run `Reaches` over `Lasso` loop 0, 1, 2 with a work budget of zero; run
    every request of steps 1 to 3 twice.
 
+5. Read the `decisive` of step 1's violation, of the `forall` clause over `items` 3, 0, 5, and of a pending, a successful and an `Undefined` report.
+
 Tag the tests `#[trace("TC-840", "FR-330-AC-n")]`.
 
 ## Expected Results
@@ -42,3 +44,4 @@ Tag the tests `#[trace("TC-840", "FR-330-AC-n")]`.
   `invalid_runtime_input`/`wrong-role-mapping`; `evaluate` `refusal`
   `invalid_runtime_input`/`invalid-value`.
 - Step 4: `incomplete`, exit 22; equal reports on each repeat.
+- Step 5: step 1's `decisive` has no quantifier or index, element `false` and the root value path; the `forall` clause's has the `forall` occurrence key, element 0, index 1 and the value path to `items`; the pending, successful and `Undefined` reports carry none.

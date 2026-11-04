@@ -204,7 +204,7 @@ The outcome document's bytes.
   "Monitor documents from clause runs" member table lists for its verdict and
   no other, reading `counterexample` from `ClauseRunReport::counterexample`
   (FR-330 Outputs; the same record FR-267 writes in its `temporal` member).
-- `OutcomeItem::from_clause_run` shall write `decisive`, a sibling of `counterexample`, from `ClauseRunReport::decisive` on a temporal `Violated` item, and no `decisive` on any other item.
+- `OutcomeItem::from_clause_run` shall write `decisive`, a sibling of `counterexample`, from `ClauseRunReport::decisive` (FR-330 Outputs) on a temporal `Violated` item, and no `decisive` on any other item.
 - `OutcomeItem::from_clause_run` shall write `witness` exactly when
   `ClauseRunReport::witness` (`Option<SeparatingWitnessRecord>`, FR-266)
   holds a record, and shall write none otherwise.

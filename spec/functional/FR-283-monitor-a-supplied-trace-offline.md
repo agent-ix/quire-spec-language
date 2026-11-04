@@ -185,7 +185,7 @@ in the place of `holds`, under ADR-014 A-4:
   path FR-107's clause evaluator retains for the deciding atom: the first
   `holds` atom, in clause-node order, that evaluates false at `position` for the
   failing activation, evaluated over the observation at `position`; the clause
-  run report carries them as a member (`ClauseRunReport::decisive`). When that
+  run report carries them as `ClauseRunReport::decisive` (FR-330 Outputs defines the member and its presence rule). When that
   atom's evaluation is decided by no collection quantifier, `quantifier` and
   `index` are absent, `element` is the atom's value `false`, and `value_path` is
   the empty path at the observation's root. The `counterexample` stays QSpec
