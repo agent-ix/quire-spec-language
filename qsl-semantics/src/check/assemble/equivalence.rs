@@ -18,9 +18,11 @@ use quire_exact::{Integer, NodeKey, PathSegment, Rational};
 use super::units::{Assembled, Provisional};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits};
 use crate::check::lowering::AdmittedModel;
+use crate::check::model_spelling::ModelSpellings;
 use crate::check::node_key::{NodeTag, SourceOwner};
 use crate::check::time_units::{package_unit_scale, scalar_type_key};
 use crate::value::unit::DimensionEquivalencePreimage;
+use qsl_foundation::source::provenance::RawSourceRef;
 use quire_checked::key::DeclarationKey;
 
 /// Why a dimension equivalence was refused past name resolution (QSpec
@@ -339,21 +341,26 @@ impl SourceView<'_> {
 struct Scope<'a> {
     source: SourceView<'a>,
     models: &'a [AdmittedModel],
+    /// Each unit's model aliases bound to their packages.
+    spellings: &'a ModelSpellings,
+    /// The source unit of each declaration admitted from another unit.
+    units: &'a BTreeMap<String, RawSourceRef>,
 }
 
 impl Scope<'_> {
-    fn model(&self, alias: &str) -> Option<&AdmittedModel> {
-        self.models
-            .iter()
-            .find(|model| model.alias() == Some(alias))
+    /// The model the unit declaring `form` binds `alias` to (FR-480
+    /// "Selections and imports").
+    fn model(&self, at: usize, alias: &str) -> Option<&AdmittedModel> {
+        self.spellings
+            .model(self.models, self.units.get(&source_owner_key(at)), alias)
     }
 
     #[ix_trace_rs::string_edge]
-    fn dimension(&self, name: &NameForm) -> Option<Dimension> {
+    fn dimension(&self, at: usize, name: &NameForm) -> Option<Dimension> {
         let Some((alias, rest)) = name.name.split_once("::") else {
             return self.source.dimension(&name.name);
         };
-        let model = self.model(alias)?;
+        let model = self.model(at, alias)?;
         let dimension = model.dimensions.iter().find(|d| d.name == rest)?;
         let (key, map, _) = super::units::package_dimension(model, dimension, &mut Vec::new())?;
         Some(Dimension {
@@ -366,11 +373,11 @@ impl Scope<'_> {
     }
 
     #[ix_trace_rs::string_edge]
-    fn unit(&self, name: &str) -> Option<Unit> {
+    fn unit(&self, at: usize, name: &str) -> Option<Unit> {
         let Some((alias, rest)) = name.split_once("::") else {
             return self.source.unit(name);
         };
-        let model = self.model(alias)?;
+        let model = self.model(at, alias)?;
         let unit = model.units.iter().find(|unit| unit.name == rest)?;
         Some(Unit {
             name: name.to_owned(),
@@ -383,6 +390,8 @@ impl Scope<'_> {
 
 /// A declaration past steps 1 and 2.
 struct Resolved<'f> {
+    /// The declaration's position among the package's equivalences.
+    at: usize,
     form: &'f DimensionEquivalenceForm,
     dimensions: [Dimension; 2],
     units: [Unit; 2],
@@ -482,11 +491,8 @@ pub(super) enum Phase {
 
 /// Stable declaration key used to retain the source owner of an
 /// equivalence form while admitted units are combined.
-pub(super) fn source_owner_key(form: &DimensionEquivalenceForm) -> String {
-    format!(
-        "@dimension-equivalence:{}:{}",
-        form.dimensions[0].name, form.dimensions[1].name
-    )
+pub(super) fn source_owner_key(at: usize) -> String {
+    format!("dimension_equivalence:{at}")
 }
 
 /// Who owns the equivalences being decided: the unit's own owner, the
@@ -496,6 +502,10 @@ pub(super) fn source_owner_key(form: &DimensionEquivalenceForm) -> String {
 pub(super) struct Ownership<'a> {
     pub(super) owner: &'a SourceOwner,
     pub(super) source_owners: &'a BTreeMap<String, SourceOwner>,
+    /// The source unit of each declaration admitted from another unit,
+    /// which reads its model aliases through `spellings`.
+    pub(super) units: &'a BTreeMap<String, RawSourceRef>,
+    pub(super) spellings: &'a ModelSpellings,
     pub(super) package_name: &'a str,
 }
 
@@ -513,17 +523,24 @@ pub(super) fn assemble(
     let Ownership {
         owner,
         source_owners,
+        units,
+        spellings,
         package_name,
     } = ownership;
-    let scope = Scope { source, models };
+    let scope = Scope {
+        source,
+        models,
+        spellings,
+        units,
+    };
     let mut errors = Vec::new();
     // Steps 1 and 2, in source order.
     let mut base = Vec::new();
     let mut derived = Vec::new();
-    'forms: for form in forms {
+    'forms: for (at, form) in forms.iter().enumerate() {
         let mut dimensions = Vec::with_capacity(2);
         for name in &form.dimensions {
-            match scope.dimension(name) {
+            match scope.dimension(at, name) {
                 Some(dimension) => dimensions.push(dimension),
                 None => {
                     errors.push(error(
@@ -538,7 +555,7 @@ pub(super) fn assemble(
         }
         let mut units = Vec::with_capacity(2);
         for term in &form.ratio {
-            match scope.unit(&term.unit.name) {
+            match scope.unit(at, &term.unit.name) {
                 Some(unit) => units.push(unit),
                 None => {
                     errors.push(error(
@@ -568,6 +585,7 @@ pub(super) fn assemble(
             continue;
         }
         let resolved = Resolved {
+            at,
             form,
             dimensions,
             units,
@@ -705,7 +723,7 @@ pub(super) fn assemble(
         };
         let [first, second] = resolved.emitted_keys().ok_or_else(non_canonical)?;
         let source_owner = source_owners
-            .get(&source_owner_key(resolved.form))
+            .get(&source_owner_key(resolved.at))
             .unwrap_or(owner);
         let node_owner = source_owner.node_owner(package_name);
         let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)

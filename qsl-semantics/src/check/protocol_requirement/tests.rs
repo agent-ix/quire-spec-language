@@ -345,3 +345,230 @@ fn an_emitted_requirement_keeps_its_temporal_clause_position() {
     let (_, refusals) = protocol_refusals(&unit);
     assert!(refusals.is_empty(), "{refusals:?}");
 }
+
+/// QSL-1679 (the spine successor of the composed binding report's three
+/// family path): one package holds a predicate, a temporal clause that calls
+/// it and captures a value, and a protocol that requires the clause and
+/// calls the predicate from its events and `check`. The package checks in one
+/// pass with no refusal but the protocol's pending emission, and the
+/// result holds the clause with its capture and the protocol bound to that
+/// clause's position, the clause and the protocol each binding a parameter
+/// named `view`.
+#[trace("TC-1056", "FR-218-AC-16")]
+#[test]
+fn one_package_checks_three_families_and_binds_the_requirement() {
+    let unit = "predicate Positive using v (amount: M::Total): Boolean { amount >= 0 }\n\
+        temporal Earlier using t over (view: M::Node) clock \"orders\" on origin \
+        { always holds(Positive(view.total)) }\n\
+        temporal Due using t over (view: M::Node) clock \"orders\" \
+        on each (started: M::Node) when (Positive(started.total)) \
+        { capture saved: M::Total = started.total; \
+        always holds(Positive(view.total) and saved >= 0) }\n\
+        protocol Flow using p over (view: M::Node) on origin {\n\
+        role Service on M::Node;\n\
+        requires temporal Due;\n\
+        run sequence Main {\n\
+        event Happened by Service as (happened: M::Receipt) { Positive(happened.total) };\n\
+        check HealthyNow using v { Positive(1) };\n\
+        }\n\
+        finish Closed as (closed: M::Receipt) { Positive(closed.total) };\n\
+        }\n";
+    let one_temporal = HEADER.replace("profile e = \"quire.temporal.timed/v1\";\n", "");
+    let (_, assembled) = assemble_under(&one_temporal, unit);
+    let refusals = assembled
+        .check(CheckingLimits::default())
+        .err()
+        .unwrap_or_default();
+    assert!(
+        refusals
+            .iter()
+            .all(|refusal| matches!(&refusal.cause, CheckCause::ProtocolReference(_))),
+        "{refusals:?}"
+    );
+    let (_, assembled) = assemble_under(&one_temporal, unit);
+    let graph = assembled
+        .check_with_protocol_results(CheckingLimits::default())
+        .expect("every declaration of the three families checks");
+    let [earlier, clause] = graph.temporal_clauses() else {
+        panic!("two temporal clauses");
+    };
+    assert_eq!(earlier.clause().name(), "Earlier");
+    assert_eq!(clause.clause().name(), "Due");
+    assert_eq!(clause.captures.len(), 1);
+    let flow = graph.protocol("Flow").expect("the protocol checks");
+    let [due] = flow.requirements.as_slice() else {
+        panic!("one requirement, got {:?}", flow.requirements);
+    };
+    assert_eq!(due.temporal, 1, "Due follows Earlier");
+}
+
+/// QSL-1679 (the spine successor of the composed report's `exports()`
+/// occurrences with model-type targets): a model type written in a clause
+/// binder, trigger and capture resolves to that model's own type. The
+/// scalar `M::Total` is the integer interval `0..1000` and `M::Node` is a
+/// reference to the model object, and a binder written `M::Tally` resolves
+/// to the scalar `0..3`, so a wrong target changes a value asserted here.
+#[trace("TC-1056", "FR-218-AC-37")]
+#[test]
+fn a_model_type_in_a_clause_binder_resolves_to_the_models_own_type() {
+    use quire_exact::{Integer, IntegerInterval, ValueType};
+
+    let interval = |lower: i64, upper: i64| {
+        ValueType::Int(
+            IntegerInterval::new(Integer::from(lower), Integer::from(upper))
+                .expect("a non-empty interval"),
+        )
+    };
+    let unit = "temporal Due using t over (view: M::Node) clock \"orders\" \
+        on each (started: M::Node) \
+        { capture saved: M::Total = started.total; \
+        capture level: M::Tally = started.tally; \
+        always holds(saved >= 0) }\n";
+    let one_temporal = HEADER.replace("profile e = \"quire.temporal.timed/v1\";\n", "");
+    let (_, assembled) = assemble_under(&one_temporal, unit);
+    let graph = assembled
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the clause checks: {refusals:?}"));
+    let [node] = graph.temporal_clauses() else {
+        panic!("one temporal clause");
+    };
+    let clause = node.clause();
+    let captures: Vec<_> = clause.captures().collect();
+    assert_eq!(
+        captures,
+        vec![("saved", &interval(0, 1000)), ("level", &interval(0, 3))]
+    );
+    let (_, over) = clause.over();
+    let (_, trigger) = clause.trigger().expect("an `on each` clause has a trigger");
+    let node = ValueType::Reference(
+        graph
+            .scope()
+            .object_type_named(None, "M::Node")
+            .expect("the model's object type Node"),
+    );
+    assert_eq!(over, &node);
+    assert_eq!(trigger, &node);
+    assert_ne!(over, &interval(0, 1000));
+}
+
+/// QSL-1679 (the cross-unit successor of the composed report's three family
+/// binding): the predicate, the temporal clause that calls it and the
+/// protocol that requires that clause and calls the predicate are written in
+/// three units of one aggregate package. The package checks whatever the
+/// request order, the protocol's requirement binds the clause declared in
+/// the other unit, and without the clause's unit the same requirement is
+/// refused.
+#[trace("TC-1056", "FR-218-AC-38")]
+#[test]
+fn three_units_bind_a_predicate_a_clause_and_a_protocol_across_units() {
+    use crate::check::assemble::AssemblyLimits;
+    use quire_exact::Cancel;
+
+    let header = |profiles: &str| {
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n{profiles}model M = \"example/protocol-obligations\";\n"
+        )
+    };
+    let predicate = format!(
+        "{}predicate Positive using v (amount: M::Total): Boolean {{ amount >= 0 }}\n",
+        header("profile v = \"quire.value.complete/v1\";\n")
+    );
+    let earlier = format!(
+        "{}temporal Earlier using t over (view: M::Node) clock \"orders\" on origin \
+         {{ always holds(Positive(view.total)) }}\n",
+        header("profile t = \"quire.temporal.infinite-trace/v1\";\n")
+    );
+    let clause = format!(
+        "{}temporal Due using t over (view: M::Node) clock \"orders\" \
+         on each (started: M::Node) when (Positive(started.total)) \
+         {{ capture saved: M::Total = started.total; \
+         always holds(Positive(view.total) and saved >= 0) }}\n",
+        header("profile t = \"quire.temporal.infinite-trace/v1\";\n")
+    );
+    let protocol = format!(
+        "{}protocol Flow using p over (view: M::Node) on origin {{\n\
+         role Service on M::Node;\n\
+         requires temporal Due;\n\
+         run sequence Main {{\n\
+         event Happened by Service as (happened: M::Receipt) {{ Positive(happened.total) }};\n\
+         }}\n\
+         finish Closed as (closed: M::Receipt) {{ Positive(closed.total) }};\n\
+         }}\n",
+        header("profile p = \"quire.protocol.finite-global/v1\";\n")
+    );
+    let parsed = |identity: &str, text: &str| {
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("repo", identity),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
+        (
+            parsed.source().reference().clone(),
+            build_unit(&parsed).expect("S2 builds the unit"),
+        )
+    };
+    let assemble = |texts: &[(&str, &str)]| {
+        PackageDeclarations::assemble_units(
+            "example/protocol-obligations".to_owned(),
+            texts
+                .iter()
+                .map(|(identity, text)| parsed(identity, text))
+                .collect(),
+            vec![obligation_model()],
+            Vec::new(),
+            AssemblyLimits::default(),
+            &Cancel::new(),
+        )
+        .unwrap_or_else(|refusal| panic!("the units assemble: {refusal:?}"))
+    };
+
+    // Units sort by identity: `Earlier`, in `a1`, precedes `Due`, in `b`.
+    for order in [[0, 1, 2, 3], [3, 2, 1, 0], [2, 3, 0, 1]] {
+        let all = [
+            ("a", &predicate),
+            ("a1", &earlier),
+            ("b", &clause),
+            ("c", &protocol),
+        ];
+        let texts: Vec<_> = order
+            .iter()
+            .map(|&i| (all[i].0, all[i].1.as_str()))
+            .collect();
+        let graph = assemble(&texts)
+            .check_with_protocol_results(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{order:?}: the package checks: {refusals:?}"));
+        let [first, node] = graph.temporal_clauses() else {
+            panic!("{order:?}: two temporal clauses");
+        };
+        assert_eq!(first.clause().name(), "Earlier");
+        assert_eq!(node.clause().name(), "Due");
+        assert_eq!(node.clause().captures().len(), 1);
+        let flow = graph.protocol("Flow").expect("the protocol checks");
+        let [due] = flow.requirements.as_slice() else {
+            panic!("{order:?}: one requirement, got {:?}", flow.requirements);
+        };
+        assert_eq!(due.temporal, 1, "{order:?}: Due follows Earlier");
+    }
+
+    let refusals = assemble(&[("a", &predicate), ("a1", &earlier), ("c", &protocol)])
+        .check(CheckingLimits::default())
+        .expect_err("the requirement names a clause no unit declares");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(
+        (refusal.cause.code().as_str(), refusal.cause.cause()),
+        ("missing_declaration", Some("missing-name"))
+    );
+    let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+        panic!("a protocol anchor refusal, got {refusal:?}");
+    };
+    assert!(
+        matches!(cause.as_ref(), ProtocolAnchorCause::MissingRequirement { name, .. }
+            if name == "Due"),
+        "{cause:?}"
+    );
+}

@@ -100,7 +100,7 @@ fn attempt_reference_in(unit: &str) -> (usize, String) {
 }
 
 fn protocol_attempt() -> &'static str {
-    "protocol AttemptUpdate using p over (input: Boolean) on origin {\n\
+    "protocol AttemptUpdate using p over (input: Config::ConfigVersion) on origin {\n\
      role R on Config::ConfigVersion;\n\
      run sequence Main {\n\
      attempt Update by R on Config::ConfigVersion::attemptUpdate contracts [] as (tried: Boolean) { true };\n\
@@ -203,6 +203,12 @@ fn frame_occurrence_region_is_the_first_naming_clauses_operation_reference() {
 #[test]
 fn frame_occurrence_region_is_the_first_naming_clause_or_attempt_in_source_order() {
     let (base, packages) = config_version_unit_and_packages();
+    // The protocol's `using p` names a protocol profile (FR-113): declare it.
+    let base = base.replacen(
+        "model Config",
+        "profile p = \"quire.protocol.finite-global/v1\";\nmodel Config",
+        1,
+    );
     let attempt = protocol_attempt();
 
     let attempt_first = base.replacen(

@@ -76,7 +76,8 @@ and the tickets named below own each PORT.
    end, which the composed lane imports) and after `formal_source` is kept and
    `qsl_inventory` is moved (QSL-1508, QSL-1509).
 6. QSL-499 lands last, in the change that removes the last importer of
-   `native_model` (ADR-016 §9).
+   `native_model` (ADR-016 §9), and only after QSL-1682 (the FR-015-AC-5
+   `link_native` port) is green.
 7. QSL-316 and the epic QSL-67 close when their last child lands.
 
 ## Behavior
@@ -167,6 +168,7 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 | Bounded exact-rational scalar sites, consistent bounds across sites (FR-041-AC-2) | FR-505-AC-1..10; TC-1300 (exact Rational admission, shared ranged type identity, sites and refusal order) | COVERED by the bounded Rational spine model |
 | `/1` versus `/2` profile-bearing identity (FR-041-AC-6) and the `native-state-model/1,2` strings | none; FR-110 is header selection | RETIRE (planner decision 5: the identity strings die with the retired carrier); no successor claimed |
 | Roles, entries, nodes, depth, artifact-byte limits and their refusals (FR-041-AC-7, FR-015) | FR-506-AC-1..8; TC-1301 (named declaration-record, sequence, intake-byte and node limits; depth is explicitly not a limit) | COVERED for resources with the same named spine counter; native artifact-byte admission has no retained spine artifact and is deleted with the carrier |
+| FR-015-AC-5 (TC-044) `link_native` dereference fields and operation roles | FR-104-AC-1, AC-3; FR-513 row FR-015-AC-5 | COVERED by the spine S3 check of state clauses, with a CHANGED CODE: an absent declared field after `deref` refuses `ill_typed`/`type-mismatch` instead of `missing_declaration` (the spine types the field read; the refusal still exists, not a sunset); `link_native` is deleted with native_model |
 | FR-015-AC-1 to AC-4, AC-6 (TC-040 to TC-045), `link_native` conflicts | FR-506-AC-1..8 / TC-1301 cover retained model-intake and normalization resource limits; profile/role link conflicts have no spine consumer after native_model retirement | PORT only for no equivalent same-resource spine limit; delete carrier-only link conflicts with native_model |
 | Function exclusion, integer overflow semantics gate, sequence ceiling 10_000 | FR-506-AC-2, AC-3, AC-7, AC-8 / TC-1301 preserve the sequence ceiling and caller-set boundaries; native-model function exclusion and integer-overflow gate have no spine successor | COVERED for sequence maximum; delete carrier-only function and integer-overflow gate with native_model |
 
@@ -213,4 +215,6 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 - [FR-493](FR-493-retire-the-native-package-runtime-front-end-and-protocol-artifact-surfaces.md)
   states the deletion rule; [FR-500](FR-500-map-each-fr-042-criterion-to-its-checked-package-successor.md)
   maps FR-042 criteria to successors.
-- ADR-011 §7.3 and ADR-016 §9; tickets QSL-1501 to QSL-1511.
+- ADR-011 §7.3 and ADR-016 §9; tickets QSL-1501 to QSL-1511. The FR-015-AC-5
+  row (`link_native` dereference-field and operation-role resolution) is
+  covered by the spine port delivered under QSL-1682.

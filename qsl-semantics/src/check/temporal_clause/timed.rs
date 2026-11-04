@@ -35,6 +35,7 @@ use super::{
     in_safety_fragment, is_temporal_node, located, Activation, CheckedFormula, CheckedInterval,
     FormulaNode, TemporalDeclarations, UnaryTemporal,
 };
+use crate::check::lowering::AdmittedModel;
 use crate::check::probabilistic::{exact_value, ExactFault};
 use crate::check::refusal::{CheckRefusal, TemporalCause};
 use crate::check::time_units::TimeScale;
@@ -123,6 +124,19 @@ impl DebugWith for ModelTimeSource {
             .field("time_dimension", &NodeKeyDebug(time_dimension, table))
             .field("nominal_nodes", &With(nominal_nodes, table))
             .finish()
+    }
+}
+
+impl ModelTimeSource {
+    /// Whether this is the time source of `model`: the model of its alias
+    /// whose state object is its model node. Two units may bind one alias to
+    /// two packages (FR-480 "Selections and imports"), so the alias alone
+    /// does not name the model.
+    pub(crate) fn times(&self, model: &AdmittedModel) -> bool {
+        model.alias() == Some(self.model.as_str())
+            && model
+                .object_type_model_node_keys()
+                .contains(&self.model_node)
     }
 }
 
@@ -290,7 +304,7 @@ fn model_of<'a>(
         .timed
         .time_sources
         .iter()
-        .find(|source| source.model == name);
+        .find(|source| source.times(model));
     Some((name, source))
 }
 

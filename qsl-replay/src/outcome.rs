@@ -287,6 +287,33 @@ impl Serialize for WireNode {
     }
 }
 
+/// A claim's checked-package `{node, occurrence}` locus on the wire (QSpec
+/// FR-331's Locus); `node` is the claim's declaration `NodeRef`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WireLocus {
+    node: WireNode,
+    occurrence: WireOccurrence,
+}
+
+/// A node occurrence's `{role, ordinal}`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct WireOccurrence {
+    role: String,
+    ordinal: u64,
+}
+
+impl WireLocus {
+    fn of(claim: &qsl_foundation::source::provenance::OccurrenceKey) -> Self {
+        Self {
+            node: WireNode::of(claim.node()),
+            occurrence: WireOccurrence {
+                role: claim.origin().role().as_str().to_owned(),
+                ordinal: claim.origin().ordinal(),
+            },
+        }
+    }
+}
+
 /// The typed cause an item's terminal record carries: its FR-331 spelling in
 /// `kind`, and the members that spelling names.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -295,6 +322,10 @@ pub struct ItemCause {
     kind: Option<&'static str>,
     #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
     at: Option<String>,
+    /// A `timed-form-shape` cause's claim: its checked-package
+    /// `{declaration, occurrence}` (FR-498).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    locus: Option<WireLocus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cause: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -533,6 +564,7 @@ impl ItemCause {
         Self {
             kind: Some(kind),
             at: None,
+            locus: None,
             cause: None,
             code: None,
             parity: None,
@@ -873,9 +905,10 @@ impl OutcomeItem {
                     UnavailabilityCause::ZeroDelayCycle { states } => {
                         item.states = Some(ItemCauseStates::Cycle(states.clone()));
                     }
-                    UnavailabilityCause::TimedFormShape { span } => {
-                        item.at = Some(format!("{}..{}", span.start, span.end));
-                    }
+                    UnavailabilityCause::TimedFormShape { span, claim } => match claim {
+                        Some(claim) => item.locus = Some(WireLocus::of(claim)),
+                        None => item.at = Some(format!("{}..{}", span.start, span.end)),
+                    },
                     UnavailabilityCause::ValueCheck { reason, .. } => {
                         item.refusal = Some(reason.as_str());
                     }
@@ -1960,6 +1993,7 @@ mod tests {
             BackendId::new("qsl-en-5"),
             UnavailabilityCause::TimedFormShape {
                 span: qsl_foundation::Span { start: 20, end: 32 },
+                claim: None,
             },
         );
         let wire = serde_json::to_value(OutcomeItem::from_terminal(&timed_form))

@@ -2222,3 +2222,152 @@ fn a_bare_string_kind_refuses_at_the_kind_member_through_the_package_read() {
         "{members:?}"
     );
 }
+
+/// A package `package_identity` whose object type `Sys` has the part
+/// `SysPump`, a `Pump`, with the out Port `PumpOut` of interface `Flow`.
+fn port_document(package_identity: &str) -> Vec<u8> {
+    let flow = format!("ix://{package_identity}/Flow");
+    let sys = format!("ix://{package_identity}/Sys");
+    let pump = format!("ix://{package_identity}/Pump");
+    let sys_pump = format!("ix://{package_identity}/SysPump");
+    let pump_out = format!("ix://{package_identity}/PumpOut");
+    let kind = |name: &str| serde_json::json!({"module": package_identity, "name": name});
+    let object = serde_json::json!({"supertypes": [], "fields": [], "operations": []});
+    wire_envelope(
+        package_identity,
+        serde_json::json!([
+            wire_construct(
+                package_identity,
+                "object_type",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            ),
+            wire_construct(
+                package_identity,
+                "interface",
+                meaning::SYSTEMS_INTERFACE,
+                serde_json::json!({
+                    "featureOrder": "required",
+                    "fields": "optional",
+                    "operations": "optional",
+                    "supertypes": "optional",
+                }),
+            ),
+            wire_construct(
+                package_identity,
+                "part",
+                meaning::SYSTEMS_PART,
+                serde_json::json!({
+                    "declaredType": "required",
+                    "fields": "forbidden",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+            wire_construct(
+                package_identity,
+                "port",
+                meaning::SYSTEMS_PORT,
+                serde_json::json!({
+                    "direction": "required",
+                    "fields": "forbidden",
+                    "interfaceType": "required",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+        ]),
+        serde_json::json!([
+            wire_type(
+                &flow,
+                kind("interface"),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [wire_field(&format!("{flow}/rate"), "rate", &sys)],
+                    "operations": [],
+                    "featureOrder": [format!("{flow}/rate")],
+                }),
+            ),
+            wire_type(&sys, kind("object_type"), object.clone()),
+            wire_type(&pump, kind("object_type"), object),
+            wire_type(
+                &sys_pump,
+                kind("part"),
+                serde_json::json!({
+                    "owner": sys,
+                    "declaredType": pump,
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+            wire_type(
+                &pump_out,
+                kind("port"),
+                serde_json::json!({
+                    "owner": sys_pump,
+                    "interfaceType": flow,
+                    "direction": "out",
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+        ]),
+    )
+    .to_string()
+    .into_bytes()
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): units `a` and `b` bind `N`
+/// to two packages that both declare the Port `PumpOut`, and each unit's
+/// protocol has `role r on N::PumpOut`. Each role is the Port of its own
+/// unit's package, with that package's selection, whichever is admitted
+/// first.
+#[trace("FR-480")]
+#[test]
+fn a_port_role_on_a_shared_alias_is_its_own_units_packages_port() {
+    const A: &str = "test/plant-a";
+    const B: &str = "test/plant-b";
+    let units: Vec<(&str, String)> = [("a", A, "Pa"), ("b", B, "Pb")]
+        .into_iter()
+        .map(|(identity, package, protocol)| {
+            (
+                identity,
+                format!(
+                    "profile s = \"quire.model.complete/v1\";\n\
+                     profile p = \"quire.protocol.finite-global/v1\";\n\
+                     model N = {package:?};\n\
+                     protocol {protocol} using p over (c: N::Sys) on origin {{\n\
+                     role r on N::PumpOut;\n\
+                     run sequence Main {{ }}\n\
+                     finish Done as (d: Boolean) {{ true }};\n\
+                     }}"
+                ),
+            )
+        })
+        .collect();
+    let units: Vec<(&str, &str)> = units
+        .iter()
+        .map(|(identity, text)| (*identity, text.as_str()))
+        .collect();
+    let (a, b) = (port_document(A), port_document(B));
+    let checked = crate::model_operations::assemble_units(&units, &[a.as_slice(), b.as_slice()])
+        .with_unwritten_protocols()
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("both protocols check: {refusals:?}"));
+    for (protocol, package) in [("Pa", A), ("Pb", B)] {
+        let checked = checked
+            .protocols()
+            .iter()
+            .find(|checked| checked.name == protocol)
+            .unwrap_or_else(|| panic!("{protocol} is checked"));
+        let [role] = checked.roles.as_slice() else {
+            panic!("{protocol} has one role: {:?}", checked.roles);
+        };
+        assert_eq!(
+            role.model_member,
+            Some(key(package, &format!("ix://{package}/PumpOut"))),
+            "{protocol}"
+        );
+        assert_eq!(role.model_selection.as_deref(), Some(package), "{protocol}");
+    }
+}

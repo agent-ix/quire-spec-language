@@ -1430,6 +1430,19 @@ impl Scope {
         self.source_owners.get(name)
     }
 
+    /// The model of `models` that the unit declaring the top-level
+    /// declaration `name` reads its model alias `alias` as (FR-480
+    /// "Selections and imports").
+    pub(crate) fn declared_model<'m>(
+        &self,
+        models: &'m [super::lowering::AdmittedModel],
+        name: &str,
+        alias: &str,
+    ) -> Option<&'m super::lowering::AdmittedModel> {
+        self.model_spellings
+            .model(models, self.source_of(name), alias)
+    }
+
     /// This scope as the unit declaring the top-level declaration `name`
     /// reads its type names.
     pub(crate) fn for_declaration(&self, name: &str) -> SourceScope<'_> {
@@ -4558,6 +4571,35 @@ impl<'a> Typer<'a> {
                 }
                 Ok(node(
                     NodeKind::IeeeToRational(self.push(operand), domain.clone()),
+                    target.clone(),
+                    location,
+                ))
+            }
+            // FR-397 "Conversion into a float": a float of the target's width
+            // whose mode differs is the operand retyped. The mode is part of
+            // the type; no node is built, nothing is charged.
+            (ValueType::Float(source), ValueType::Float(to)) if source.width() == to.width() => {
+                let mut retyped = operand;
+                retyped.value_type = target.clone();
+                Ok(retyped)
+            }
+            // A cross-width float, or an `Integer`, `Int[..]`, `Rational[..]`
+            // or `Decimal[..]`, converts through the owned IEEE operation.
+            (
+                ValueType::Float(_)
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_),
+                ValueType::Float(_),
+            ) => {
+                if self.scope.ieee_profile.is_none() {
+                    return Err(refuse(location, CheckCause::IeeeProfileNotAdmitted));
+                }
+                let converted =
+                    EqualityOperand::converted(operand.value_type.clone(), target.clone());
+                Ok(node(
+                    NodeKind::ConvertScalar(converted, self.push(operand)),
                     target.clone(),
                     location,
                 ))
