@@ -332,7 +332,7 @@ fn timed_predicates_refuse_named_populations_without_restricting_state_clauses()
     let graph = check(&rpc_document(&["x"]), &body)
         .expect("self-only timed predicates and a population-reading precondition remain admitted");
     let model = timed(&graph);
-    assert_eq!(model.invariants().len(), 1);
+    assert_eq!(model.invariants().len(), 3);
     assert_eq!(model.urgency().len(), 1);
 }
 
