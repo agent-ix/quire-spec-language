@@ -66,8 +66,20 @@ pub(crate) fn refused(
     member: &str,
     fields: &[(&str, String)],
 ) {
+    refused_on(&env.subject(&[]), asked, cause, member, fields);
+}
+
+/// [`refused`] over an explicit subject (for example one with another
+/// activation map).
+pub(crate) fn refused_on(
+    subject: &qsl_eval::temporal::evidence::EvidenceSubject<'_>,
+    asked: &EvidenceRequest,
+    cause: &str,
+    member: &str,
+    fields: &[(&str, String)],
+) {
     let mut meter = unlimited();
-    let result = evaluate_temporal_evidence(&env.subject(&[]), asked, &mut meter);
+    let result = evaluate_temporal_evidence(subject, asked, &mut meter);
     let Err(CallFailure::Admission(failure)) = result else {
         panic!(
             "an admission refusal `{cause}`, not {:?}",
@@ -269,10 +281,11 @@ fn no_other_field_substitutes_for_the_identity() {
     // anchor, its guard and its captures, and raises no fault.
     let mut other_anchor = arrival(IDA, "r2", "p", "9");
     other_anchor.anchor = "obs1".to_owned();
-    if let Some(qsl_eval::temporal::evidence::CaptureFact::Value { anchor, .. }) =
-        other_anchor.captures.first_mut()
-    {
-        *anchor = "obs1".to_owned();
+    match other_anchor.captures.first_mut() {
+        Some(qsl_eval::temporal::evidence::CaptureFact::Value { anchor, .. }) => {
+            *anchor = "obs1".to_owned();
+        }
+        other => panic!("the fixture delivers a captured value, not {other:?}"),
     }
     let mut guard_false = arrival(IDA, "r2", "p", "9");
     guard_false.guard = Some(false);

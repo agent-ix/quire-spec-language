@@ -18,7 +18,7 @@ use qsl_eval::temporal::evidence::{
 use qsl_eval::temporal::Valuation;
 use quire_eval::CallFailure;
 
-use crate::checked_route_trigger::refused;
+use crate::checked_route_trigger::{refused, refused_on};
 use crate::temporal_activation::{
     capture_named, delivery, env, id, node, origin, position, request, unlimited, Env, EACH,
 };
@@ -95,7 +95,6 @@ fn a_correction_derives_truth_from_its_own_evidence_and_leaves_the_corrected_res
     let r1 = run(&env, &over(&env, p, Valuation::True)).expect("a result");
     // The leaf at position 0 is false; the formula is true.
     assert_eq!(r1.truth, Some(Truth::True));
-    let r1_before = (r1.truth, r1.settlement, r1.support.clone(), r1.lineage);
 
     let r2 = run(&env, &correcting(&env, p, Valuation::False, &r1)).expect("a result");
     assert_eq!(r2.truth, Some(Truth::False));
@@ -114,10 +113,17 @@ fn a_correction_derives_truth_from_its_own_evidence_and_leaves_the_corrected_res
         r2.settlement,
         Some(qsl_eval::temporal::evidence::Settlement::ClosedScope)
     );
-    // The corrected result is as it was.
+    // The corrected result is as it was: running its request again gives
+    // the same result, and the new ledger still holds `r2` as the latest of
+    // the chain, with `r1`'s ledger an unchanged earlier value.
+    let again = run(&env, &over(&env, p, Valuation::True)).expect("a result");
+    assert_eq!(again.result_identity, r1.result_identity);
+    assert_eq!((again.truth, again.settlement), (r1.truth, r1.settlement));
     assert_eq!(
-        (r1.truth, r1.settlement, r1.support.clone(), r1.lineage),
-        r1_before
+        r1.ledger
+            .result(&env.obligation(), Some(&id("O1")))
+            .map(|entry| entry.result_identity().clone()),
+        Some(r1.result_identity.clone())
     );
     let held = r2
         .ledger
@@ -176,10 +182,13 @@ fn a_missing_map_row_or_capture_is_a_typed_outcome_with_no_truth() {
         clause: node("Else"),
     }];
     subject.activation_map = &elsewhere;
-    let mut meter = unlimited();
-    let mismatch = evaluate_temporal_evidence(&subject, &asked, &mut meter);
-    assert!(matches!(mismatch, Err(CallFailure::Admission(_))));
-    assert!(meter.admitted_charges().is_empty());
+    refused_on(
+        &subject,
+        &asked,
+        "activation-mapping-mismatch",
+        "control",
+        &[],
+    );
 
     // The capture-bearing clause of fixture R: one capture fact fewer.
     let each = self::env(
