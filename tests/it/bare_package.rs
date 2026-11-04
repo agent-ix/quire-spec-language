@@ -4,10 +4,10 @@
 //! `EvidencePackage::from_package`, against the two routes that hold a source.
 
 use ix_trace_rs::trace;
-use qsl_eval::temporal::evidence::{EvidencePackage, Truth};
-use qsl_package::BarePackage;
+use qsl_eval::temporal::evidence::{ActivationState, EvidencePackage, Truth};
+use qsl_package::{BarePackage, IdentityFileRefusal, IdentityMember, ReadIdentityRows};
 use quire_contract_model::CheckedPackageV2;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use super::checked_handoff::{admitted, request, tree, KINDS};
 use super::temporal_package_route::{
@@ -248,6 +248,166 @@ fn directory(
         &evidence(&asked).expect("evidence"),
     );
     (holder, files, package)
+}
+
+/// FR-531-AC-1, FR-531-AC-3, FR-531-AC-8: the package read from the handoff
+/// directory gives a `BarePackage` and a temporal call that returns a result;
+/// `identities.json` is the format's file, written deterministically.
+#[trace("FR-531-AC-8", "FR-517-AC-1", "TC-1331")]
+#[test]
+fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
+    let (_holder, files, package) = directory("event_position");
+    let bare = BarePackage::new(&package);
+    let evaluation = EvidencePackage::from_package(&bare).expect("bare");
+    let due = clause_ids(&evaluation)
+        .into_iter()
+        .find(|clause| {
+            evaluation
+                .subject(clause, None)
+                .is_ok_and(|subject| subject.facts.name() == "Due")
+        })
+        .expect("Due");
+    let asked = evidence_request(&evaluation, &due, None, 3);
+    let (result, charges) = run(&evaluation, &due, &asked);
+    let result = result.expect("a result from the bytes alone");
+    assert_eq!(result.activation, ActivationState::Active);
+    assert_eq!(result.truth, Some(Truth::True));
+    assert!(!charges.is_empty());
+
+    let file: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
+    assert_eq!(file["format"], "quire.checked-handoff.identities/1");
+    assert!(files["identities.json"].ends_with(b"}\n"));
+    let rows = ReadIdentityRows::read(&files["identities.json"], &package).expect("reads");
+    assert_eq!(rows.package_name(), package.name());
+    assert_eq!(
+        file["declarations"].as_array().map(Vec::len),
+        Some(rows.declarations().len())
+    );
+    assert_eq!(
+        rows.to_bytes(&package).expect("encodes"),
+        files["identities.json"],
+        "the file is the encoding of the rows it holds"
+    );
+    let (_again, second, _) = directory("event_position");
+    assert_eq!(files["identities.json"], second["identities.json"]);
+}
+
+/// FR-531-AC-12, FR-531-AC-13 (TC-1331): the identity file's refusals are
+/// closed and name what they found; a forged row that passes the joins is
+/// accepted.
+#[trace("FR-531-AC-12", "FR-531-AC-13", "TC-1331")]
+#[test]
+fn the_identity_file_refuses_what_it_cannot_join() {
+    let (_holder, files, package) = directory("event_position");
+    let good: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
+    let read = |value: &Value| {
+        ReadIdentityRows::read(&serde_json::to_vec(value).expect("bytes"), &package)
+    };
+    let rows = read(&good).expect("the genuine file reads");
+
+    let malformed = |member: IdentityMember| Err(IdentityFileRefusal::Malformed { member });
+    assert_eq!(
+        ReadIdentityRows::read(b"not json", &package),
+        malformed(IdentityMember::File)
+    );
+    let mut unknown = good.clone();
+    unknown["extra"] = json!(1);
+    assert_eq!(
+        read(&unknown),
+        malformed(IdentityMember::Unknown("extra".to_owned()))
+    );
+    let repeated = String::from_utf8(files["identities.json"].clone())
+        .expect("UTF-8")
+        .replacen("\"fields\"", "\"fields\": [], \"fields\"", 1);
+    assert_eq!(
+        ReadIdentityRows::read(repeated.as_bytes(), &package),
+        malformed(IdentityMember::Repeated("fields"))
+    );
+    let mut format = good.clone();
+    format["format"] = json!("quire.checked-handoff.identities/2");
+    assert_eq!(
+        read(&format),
+        Err(IdentityFileRefusal::Format(
+            "quire.checked-handoff.identities/2".to_owned()
+        ))
+    );
+
+    let declarations = good["declarations"].as_array().expect("rows");
+    assert!(!declarations.is_empty(), "R selects declarations");
+    let unjoined = |index: usize| {
+        Err(IdentityFileRefusal::Unjoined {
+            member: IdentityMember::Declarations,
+            index,
+        })
+    };
+    let mut absent = good.clone();
+    absent["declarations"][0]["structural_node"]["package"] = json!("another-package");
+    assert_eq!(read(&absent), unjoined(0));
+
+    // A form that does not match its identity.
+    let first = &declarations[0];
+    let mut mismatched = good.clone();
+    mismatched["declarations"][0]["form"] = json!(if first["form"] == "union" {
+        "object_type"
+    } else {
+        "union"
+    });
+    assert_eq!(read(&mismatched), unjoined(0));
+
+    // A declared unit: another `kind` is malformed, an absent node and a
+    // mismatched identity kind are unjoined.
+    let unit_row = |value: Value, kind: &str| {
+        let mut row = first.clone();
+        row["form"] = json!("declared_unit");
+        row["exact_identity"] = json!({ "kind": kind, "value": value });
+        let mut file = good.clone();
+        file["declarations"] = json!([row]);
+        file
+    };
+    let node = first["structural_node"].clone();
+    assert!(read(&unit_row(
+        json!({"kind": "declared", "node": node}),
+        "declared_unit"
+    ))
+    .is_ok());
+    assert_eq!(
+        read(&unit_row(
+            json!({"kind": "compound", "node": node}),
+            "declared_unit"
+        )),
+        malformed(IdentityMember::ExactIdentity)
+    );
+    let mut gone = node.clone();
+    gone["package"] = json!("another-package");
+    assert_eq!(
+        read(&unit_row(
+            json!({"kind": "declared", "node": gone}),
+            "declared_unit"
+        )),
+        unjoined(0)
+    );
+    assert_eq!(read(&unit_row(node.clone(), "record")), unjoined(0));
+
+    // A forged row that passes the joins is accepted: `read` makes no claim
+    // of authority.
+    let at = declarations
+        .iter()
+        .position(|row| {
+            matches!(
+                row["exact_identity"]["kind"].as_str(),
+                Some("record" | "union")
+            )
+        })
+        .expect("R selects a record or union declaration");
+    let other = declarations
+        .iter()
+        .map(|row| &row["structural_node"])
+        .find(|other| **other != declarations[at]["structural_node"])
+        .expect("a second node of the package");
+    let mut forged = good.clone();
+    forged["declarations"][at]["exact_identity"]["value"] = other.clone();
+    let forged_rows = read(&forged).expect("a joining forgery is accepted");
+    assert_ne!(forged_rows, rows);
 }
 
 /// IR-1325 AC3: the bytes-only dependency closure (the slot call that
@@ -625,6 +785,44 @@ fn the_reader_refuses_the_packages_that_would_meet_the_defensive_reasons() {
     });
     let refused = built.try_read(&infinite).err().expect("refused");
     assert!(format!("{refused:?}").contains("TimedNodeReference"));
+}
+
+/// FR-532-AC-12 (capture half): with the identity rows of the unit in the
+/// supply, the bare route projects a record-typed capture to the type the
+/// in-process clause declares.
+#[test]
+fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route() {
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let graph = read.source().graph();
+    let rows = ReadIdentityRows::of_rows(
+        read.admitted(),
+        graph.selected_exact_declaration_rows().to_vec(),
+        graph.selected_exact_field_rows().to_vec(),
+    );
+    let bare = BarePackage::new(read.admitted())
+        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let package = EvidencePackage::from_package(&bare).expect("bare");
+    let [clause] = clause_ids(&package).try_into().expect("one clause");
+    let subject = package
+        .subject(&clause, None)
+        .expect("the capture projects");
+    let held: Vec<_> = subject
+        .facts
+        .captures()
+        .map(|(name, ty)| (name.to_owned(), ty.clone()))
+        .collect();
+    let source = graph
+        .temporal_clauses()
+        .iter()
+        .find(|node| node.clause().name() == "Due")
+        .expect("Due");
+    let declared: Vec<_> = source
+        .clause()
+        .captures()
+        .map(|(name, ty)| (name.to_owned(), ty.clone()))
+        .collect();
+    assert_eq!(held, declared);
 }
 
 const LEAF: &str = "language \"ix:native\" edition \"1-draft\";\n\

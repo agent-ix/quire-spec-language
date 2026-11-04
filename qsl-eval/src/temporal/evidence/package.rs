@@ -234,8 +234,10 @@ impl<'p> EvidencePackage<'p> {
     }
 
     /// The package constructed from a package read from its bytes alone
-    /// (FR-531, FR-532). It takes no supply and holds no source, so no
-    /// clause is cross-checked: the package is evaluated as admitted.
+    /// (FR-531, FR-532). It holds no source, so no clause is cross-checked:
+    /// the package is evaluated as admitted. The temporal call reads nothing
+    /// but the package; the supply's identity rows, when the consumer gave
+    /// them, only let a record-typed capture project its type.
     ///
     /// # Errors
     ///
@@ -243,7 +245,19 @@ impl<'p> EvidencePackage<'p> {
     /// rows pair to one `{ declaration, occurrence }`.
     pub fn from_package(bare: &'p BarePackage<'p>) -> Result<Self, PackageMismatch> {
         let rows = PackageRows::of_package(bare.package())?;
-        Ok(Self::with_rows(bare.package(), None, rows))
+        let mut package = Self::with_rows(bare.package(), None, rows);
+        // A declaration-bearing capture type needs the selected identity
+        // rows; the supply's rows serve where the consumer gave them.
+        if let Some(supply) = bare.supply() {
+            if let Ok(identities) = SelectedExactIdentities::from_stage_rows(
+                bare.package(),
+                supply.identities.declarations().to_vec(),
+                supply.identities.fields().to_vec(),
+            ) {
+                package.identities = identities;
+            }
+        }
+        Ok(package)
     }
 
     fn with_rows(
