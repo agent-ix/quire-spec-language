@@ -572,7 +572,8 @@ fn a_receive_sequenced_before_its_send_is_a_definition_cycle() {
 }
 
 /// FR-383-AC-20, TC-1063 row 8e: a binding missing from a control, and two
-/// of its arguments swapped, are each `malformed_wire` at the body.
+/// of its arguments swapped, are each `malformed_wire` at the control node (the layout refusal's
+/// locus is the node, QSpec STD-650).
 #[trace("FR-383-AC-20", "TC-1063")]
 #[test]
 fn a_missing_or_swapped_control_binding_is_malformed_wire() {
@@ -593,13 +594,13 @@ fn a_missing_or_swapped_control_binding_is_malformed_wire() {
         read_protocol_over(&attempt, domain_document()),
         CheckedPackageRefusalCode::MalformedWire,
         None,
-        &format!("/semantic_graph/nodes/{at}/body"),
+        &format!("/semantic_graph/nodes/{at}"),
     );
 
     let lowered = emitted(&flow(RUN));
     let wire = &lowered.wire;
     let placed = position(wire, run_control(wire, "Placed"));
-    let expected = format!("/semantic_graph/nodes/{placed}/body");
+    let expected = format!("/semantic_graph/nodes/{placed}");
     let swapped = modified(&lowered, |envelope| {
         envelope["semantic_graph"]["nodes"][placed]["body"]["arguments"]
             .as_array_mut()

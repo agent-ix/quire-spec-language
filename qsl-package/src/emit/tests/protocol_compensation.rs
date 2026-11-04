@@ -101,8 +101,9 @@ fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>
     Ok((emission, wire, read))
 }
 
-/// TC-1063 row 8i: a compensation retains its temporal-profile requirement
-/// even when no temporal clause is present.
+/// FR-383-AC-20, TC-1063 row 8i: a compensation retains its temporal-profile
+/// requirement even when no temporal clause is present; the package without
+/// the selection is `missing_declaration`/`missing-selection`.
 #[trace("FR-383-AC-20", "TC-1063")]
 #[test]
 fn a_compensation_without_a_selected_temporal_profile_is_refused_by_i2() {
@@ -132,11 +133,15 @@ fn a_compensation_without_a_selected_temporal_profile_is_refused_by_i2() {
     };
     assert_eq!(
         refusal.code,
-        quire_contract_model::CheckedPackageRefusalCode::InvalidPackage
+        quire_contract_model::CheckedPackageRefusalCode::MissingDeclaration
+    );
+    assert_eq!(
+        refusal.cause,
+        Some(quire_contract_model::CheckedPackageRefusalCause::MissingSelection)
     );
     assert_eq!(
         refusal.loci[0].path.as_ref().map(|path| path.as_str()),
-        Some("/temporal_bindings/0/clock/kind")
+        Some("/semantic_graph/nodes/1")
     );
 }
 

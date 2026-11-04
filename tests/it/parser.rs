@@ -62,6 +62,7 @@ fn precedence_and_associativity() {
 }
 
 #[trace("TC-012", "FR-002-AC-2")]
+#[trace("TC-113", "FR-035-AC-7")]
 #[test]
 fn complete_compound_words_do_not_change_historical_tokenization() {
     let parsed = unit("toward-zero = 0");

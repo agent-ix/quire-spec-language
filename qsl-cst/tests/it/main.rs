@@ -15,6 +15,7 @@ mod model_source;
 mod nesting_levels;
 mod probabilistic;
 mod protocol_memory_refinement;
+mod reserved_declaration_names;
 mod selection;
 mod taskset;
 mod terminal_declaration;

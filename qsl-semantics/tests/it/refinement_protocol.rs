@@ -111,6 +111,11 @@ impl Found {
     }
 }
 
+/// The protocol profile `p` every protocol here uses, and the timed temporal
+/// profile `tm` that `await` and `compensate` clocks select.
+const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
+                        profile tm = \"quire.temporal.timed/v1\";\n";
+
 const UNBUILT: RefinementSupport = RefinementSupport {
     protocol_abstract_side: false,
     refinement_internal_list: false,
@@ -124,7 +129,7 @@ fn check_over(
 ) -> Result<CheckedGraph, Vec<Found>> {
     let (spec, cas) = counters();
     let models: [(&str, &str, &[u8]); 2] = [(alias, SPEC, &spec), ("Impl", CAS, &cas)];
-    let (text, declarations) = assemble("", &models, body);
+    let (text, declarations) = assemble(PROFILES, &models, body);
     let mut declarations =
         declarations.unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
     if let Some(internals) = internals {
@@ -1039,7 +1044,7 @@ fn rich() -> String {
     "protocol Rich using p over (c: Spec::Counter) on each (trg0: Boolean) {\n\
      role w on Spec::Counter;\n\
      compensate Undo for Main::Applied as (failure: Boolean) by w \
-     on Spec::Counter::inc using v clock \"ticks\" {\n\
+     on Spec::Counter::inc using tm clock \"ticks\" {\n\
      activate first (trigger: Boolean) when { true } { }\n\
      within [0,10]; attempts 2 of Spec::Try;\n\
      retry (current_attempt: Spec::Try, prior: Spec::Try) { true };\n\
@@ -1048,7 +1053,7 @@ fn rich() -> String {
      attempt Tried by w on Spec::Counter::inc contracts [] as (tried: Boolean) { true };\n\
      effect Applied of Tried as (applied: Boolean) { true };\n\
      commit Committed by w as (committed: Boolean) { true };\n\
-     await Wait after Tried using e clock \"wall\" within [0,1] \
+     await Wait after Tried using tm clock \"wall\" within [0,1] \
      match event Seen by w as (seen: Boolean) { true }; \
      then sequence Then { } timeout sequence Late { }\n\
      }\n\
