@@ -457,7 +457,9 @@ pub struct ParsedUnitSource {
 #[derive(Clone, Debug)]
 pub struct AdmittedUnitList {
     units: Vec<ParsedUnitSource>,
-    input_order: Vec<ParsedUnitSource>,
+    /// Indices into `units` in the caller's order, without another copy of
+    /// each parsed source unit.
+    input_order: Vec<usize>,
 }
 
 impl AdmittedUnitList {
@@ -621,16 +623,25 @@ pub fn admit_parsed_unit_list(
             }
         }
     }
-    let input_order = units.clone();
-    let mut paired: Vec<_> = requests.into_iter().zip(units.drain(..)).collect();
-    paired.sort_by(|(left, _), (right, _)| {
+    let mut paired: Vec<_> = requests
+        .into_iter()
+        .zip(units.drain(..))
+        .enumerate()
+        .collect();
+    paired.sort_by(|(_, left, _), (_, right, _)| {
         left.authority
             .as_bytes()
             .cmp(right.authority.as_bytes())
             .then_with(|| left.identity.as_bytes().cmp(right.identity.as_bytes()))
     });
+    let mut input_order = vec![0; paired.len()];
+    let mut canonical_units = Vec::with_capacity(paired.len());
+    for (canonical_index, (input_index, _, unit)) in paired.into_iter().enumerate() {
+        input_order[input_index] = canonical_index;
+        canonical_units.push(unit);
+    }
     Ok(AdmittedUnitList {
-        units: paired.into_iter().map(|(_, unit)| unit).collect(),
+        units: canonical_units,
         input_order,
     })
 }
@@ -2888,7 +2899,17 @@ impl Frame {
         models: SelectedModels,
         refinement_internals: Option<serde_json::Value>,
     ) -> Self {
-        let source_units = admitted.input_order.clone();
+        let source_units = admitted
+            .input_order
+            .iter()
+            .map(|&index| {
+                admitted
+                    .units
+                    .get(index)
+                    .expect("input order indexes the admitted units")
+                    .clone()
+            })
+            .collect();
         let unit = ParsedUnit::combine(admitted.units.iter().map(|source| source.unit.clone()));
         let imports = unit.selections().imports.len();
         let canonical_primary = admitted
