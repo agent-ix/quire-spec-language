@@ -76,7 +76,6 @@ use qsl_forms::{
 use qsl_foundation::source::provenance::RawSourceRef;
 use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
-use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::EnumShape;
@@ -85,6 +84,7 @@ use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
+use quire_exact::{Decimal, DecimalType};
 use quire_exact::{NodeKey, VariantId};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::absence::AbsenceMode;
@@ -439,6 +439,9 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The S3 limits on the written scale of `decimal(c, s)` literals
+    /// (`s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`).
+    pub decimal_literal_limits: DecimalLiteralLimits,
     /// The package's admitted `div`/`rem` law, when one was selected.
     pub integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
@@ -589,6 +592,10 @@ pub struct PackageDeclarations {
     /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
     /// name, "internal": [class, ...]}` objects. `None` is the empty list.
     pub refinement_internals: Option<serde_json::Value>,
+    /// FR-337 "Aggregate formula emission": the selected timestamped-event
+    /// clock unit of each clause whose clock the caller already knows, so a
+    /// `duration` window converts both bounds to it (QSpec FR-370).
+    pub clock_units: Vec<super::temporal_clause::ClockUnitSelection>,
     /// FR-135: the refinement features this build has built. A build
     /// capability, not a request parameter; only a test replaces it.
     pub refinement_support: super::RefinementSupport,
@@ -652,6 +659,17 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_refinement_internals(mut self, value: serde_json::Value) -> Self {
         self.refinement_internals = Some(value);
+        self
+    }
+
+    /// These declarations with the selected timestamped-event clock unit of
+    /// each clause `units` names (FR-337 "Aggregate formula emission").
+    #[must_use]
+    pub fn with_clock_units(
+        mut self,
+        units: Vec<super::temporal_clause::ClockUnitSelection>,
+    ) -> Self {
+        self.clock_units = units;
         self
     }
 
@@ -725,6 +743,7 @@ impl PackageDeclarations {
             model_operations: Vec::new(),
             functions: Vec::new(),
             ieee_profile: None,
+            decimal_literal_limits: DecimalLiteralLimits::default(),
             integer_division: None,
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
@@ -763,6 +782,7 @@ impl PackageDeclarations {
             hybrids: Vec::new(),
             hybrid_claims: Vec::new(),
             refinement_internals: None,
+            clock_units: Vec::new(),
             refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,
             emit_unwritten_protocols: false,
@@ -913,9 +933,32 @@ impl ModelRecords {
     }
 }
 
+/// The S3 limits on the written scale of `decimal(c, s)` literals (FR-093
+/// "Decimal constructors"; FR-255).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecimalLiteralLimits {
+    /// `s3.decimal_literal_scale`: the largest written scale of one literal.
+    pub scale: u64,
+    /// `s3.decimal_literal_scale_total`: the largest total of the written
+    /// scales of the literals of one checked package.
+    pub total: u64,
+}
+
+impl Default for DecimalLiteralLimits {
+    fn default() -> Self {
+        Self {
+            scale: 65_535,
+            total: 1_048_576,
+        }
+    }
+}
+
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone)]
 pub struct Scope {
+    /// The limits on decimal literal scale, and the total counted so far.
+    decimal_literal_limits: DecimalLiteralLimits,
+    decimal_literal_total: qsl_foundation::tally::Tally,
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
     /// Where a record value keeps the fields its ancestors name (FR-359).
@@ -1200,6 +1243,8 @@ impl Scope {
     ) -> Self {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
+            decimal_literal_limits: DecimalLiteralLimits::default(),
+            decimal_literal_total: qsl_foundation::tally::Tally::default(),
             types,
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),
@@ -1307,6 +1352,11 @@ impl Scope {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    pub(crate) fn with_decimal_literal_limits(mut self, limits: DecimalLiteralLimits) -> Self {
+        self.decimal_literal_limits = limits;
         self
     }
 
@@ -2327,10 +2377,14 @@ fn contextual(expression: ExprRef<'_>) -> bool {
         | ExprNode::Float32(_)
         | ExprNode::Float64(_)
         | ExprNode::Rational(..)
+        | ExprNode::DecimalValue { .. }
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
         ExprNode::Call { name, .. } if name.name == "Text" => true,
-        ExprNode::Negate(operand) => matches!(expression.at(*operand).node(), ExprNode::Integer(_)),
+        ExprNode::Negate(operand) => matches!(
+            expression.at(*operand).node(),
+            ExprNode::Integer(_) | ExprNode::DecimalValue { .. }
+        ),
         ExprNode::Binary {
             operator: BinaryOperator::Divide,
             ..
@@ -3065,6 +3119,74 @@ impl<'a> Typer<'a> {
         ))
     }
 
+    /// `decimal(c, s)`: the decimal of coefficient `c` and scale `s` as
+    /// written, typed by its unique expected `Decimal[..]` type (FR-104-AC-13,
+    /// FR-104-AC-16). With no expected type it is ambiguous; where no decimal
+    /// is expected it is a type mismatch. A literal that is not a member of
+    /// that type by value (QSpec FR-140: membership scale `max(s, smin)`,
+    /// membership coefficient the exact integer at that scale) is a type
+    /// mismatch at check time, before any charge (QSpec FR-140-AC-8).
+    fn decimal_literal(
+        &self,
+        coefficient: &Integer,
+        scale: u32,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let domain = match hint {
+            None => {
+                return Err(CheckRefusal::ill_typed(
+                    location,
+                    IllTypedCause::AmbiguousLiteral,
+                ))
+            }
+            Some(ValueType::Decimal(domain)) => domain,
+            Some(_) => return Err(mismatch(location)),
+        };
+        // The literal scale limits come before membership: a zero coefficient
+        // is a member whatever its written scale, and the literal keeps that
+        // scale as written, so its wire spelling is bounded (FR-093 steps 2
+        // and 3).
+        let limits = self.scope.decimal_literal_limits;
+        let written = u64::from(scale);
+        let exhausted = |kind, limit: u64, actual: u64| {
+            refuse(
+                location,
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                    stage: CheckingStage::Typing,
+                    kind,
+                    limit,
+                    actual: u128::from(actual),
+                    region: None,
+                })),
+            )
+        };
+        if written > limits.scale {
+            return Err(exhausted(
+                CheckingLimitKind::DecimalLiteralScale,
+                limits.scale,
+                written,
+            ));
+        }
+        let total = self.scope.decimal_literal_total.add(written);
+        if total > limits.total {
+            return Err(exhausted(
+                CheckingLimitKind::DecimalLiteralScaleTotal,
+                limits.total,
+                total,
+            ));
+        }
+        let value = Decimal::new(coefficient.clone(), scale);
+        if !domain.contains(&value) {
+            return Err(mismatch(location));
+        }
+        Ok(node(
+            NodeKind::Literal(CheckedLiteral(Value::Decimal(value))),
+            ValueType::Decimal(domain.clone()),
+            location,
+        ))
+    }
+
     /// `protocol <target>` (FR-218): the unit's protocol declaration the
     /// written name resolves to, once, in the unit's own scope. The
     /// reference is typed `Boolean`, the semantic type every protocol node
@@ -3602,12 +3724,11 @@ impl<'a> Typer<'a> {
                     Some(ValueType::Decimal(target)) if target == left_decimal => target.clone(),
                     Some(ValueType::Decimal(_)) => return Err(mismatch(location)),
                     Some(_) => return Err(mismatch(location)),
-                    None => {
-                        return Err(CheckRefusal::ill_typed(
-                            location,
-                            IllTypedCause::AmbiguousLiteral,
-                        ))
-                    }
+                    // No expected type: decimal operands and result share one
+                    // named type (QSpec FR-140-AC-7), so `+`, `-`, `*` and `/`
+                    // are typed by their operands' type wherever they are
+                    // written (FR-104). A literal operand took its peer's type.
+                    None => left_decimal.clone(),
                 };
                 (
                     NodeKind::Decimal {

@@ -287,6 +287,89 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
     );
 }
 
+/// FR-230-AC-58 / TC-1334: S3 has no ambient named-population scope for a
+/// time invariant or `urgent when`, while ordinary state-clause population
+/// scope and self-only timed predicates remain available. Each population
+/// form FR-230 names is refused: a quantifier domain, `allInstances`,
+/// `lookup` and `count`/`sum`.
+#[trace("TC-1334", "FR-230-AC-58")]
+#[test]
+fn timed_predicates_refuse_named_populations_without_restricting_state_clauses() {
+    for predicate in [
+        "time invariant HasCalls when { forall(c in Config::calls : true) } { self.x <= 1 ms }\n",
+        "urgent CallsExist when { exists(c in Config::calls : true) };\n",
+        "time invariant AllCalls when { \
+         exists(c in allInstances<Config::Call>(Config::calls) : true) } { self.x <= 1 ms }\n",
+        "urgent Known when { present(lookup<Config::Call>(Config::calls, self) absent empty) };\n",
+        "time invariant Counted when { \
+         count<Config::VersionNumber>(c in Config::calls : true) > 0 } { self.x <= 1 ms }\n",
+        "urgent Summed when { sum<Config::VersionNumber>(c in Config::calls : c.n) > 0 };\n",
+    ] {
+        let body = format!("{}{}", rpc("time Config dense unit ms;"), predicate);
+        let (cause, text) = refused(&rpc_document(&["x"]), &body);
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (
+                Code::UnsupportedConstruct,
+                "not-yet-implemented",
+                "Config::calls"
+            ),
+            "the population reference is refused and no TimedModel is produced"
+        );
+        let TemporalCause::TimedPredicate { cause, .. } = cause else {
+            panic!("the named population refusal belongs to the timed predicate: {cause:?}");
+        };
+        assert!(
+            matches!(
+                &*cause,
+                CheckCause::PopulationFormNotChecked {
+                    what: "timed predicate population scope"
+                }
+            ),
+            "the refusal identifies the missing timed-predicate scope: {cause:?}"
+        );
+    }
+
+    // Two population references: the first, in source order, is reported.
+    let first = "exists(c in Config::calls : true)";
+    let body = format!(
+        "{}time invariant Two when {{ {first} and \
+         present(lookup<Config::Call>(Config::calls, self) absent empty) }} {{ self.x <= 1 ms }}\n",
+        rpc("time Config dense unit ms;"),
+    );
+    let document = rpc_document(&["x"]);
+    let refusals = check(&document, &body).expect_err("the named population is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal expected: {refusals:?}");
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a timed refusal expected: {refusal:?}");
+    };
+    let (text, _) = config_unit_with_profiles(&document, TEMPORAL, &body);
+    let expected = text.find(first).expect("the first quantifier") + "exists(c in ".len();
+    assert_eq!(
+        (
+            cause.span().start,
+            &text[cause.span().start..cause.span().end]
+        ),
+        (expected, "Config::calls"),
+        "the first population reference is reported, not the last"
+    );
+
+    let body = format!(
+        "{}{}{}",
+        rpc("time Config dense unit ms;"),
+        "time invariant SelfOnly when { self.inflight } { self.x <= 3 ms }\n\
+         urgent SelfUrgent when { self.waiting };\n",
+        "pre UsesCalls using v on Config::Call::reply { forall(c in Config::calls : true) }\n"
+    );
+    let graph = check(&rpc_document(&["x"]), &body)
+        .expect("self-only timed predicates and a population-reading precondition remain admitted");
+    let model = timed(&graph);
+    assert_eq!(model.invariants().len(), 3);
+    assert_eq!(model.urgency().len(), 1);
+}
+
 /// Part of FR-230-AC-1 (TC-685): under `time dense unit s`, `reply`'s bound
 /// `1 ms` converts to `1/1000`. Not covered: the `s` unit's package identity
 /// differing from `ms`'s, which S4 emits.

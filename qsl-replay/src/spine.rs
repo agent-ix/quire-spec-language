@@ -489,7 +489,9 @@ impl CompileRefusal {
                 Setting::S3Nodes
                 | Setting::S3InputBytes
                 | Setting::S3WorkUnits
-                | Setting::S3RationalBits => SpineStage::Check,
+                | Setting::S3RationalBits
+                | Setting::S3DecimalLiteralScale
+                | Setting::S3DecimalLiteralScaleTotal => SpineStage::Check,
                 Setting::S3DecimalScale
                 | Setting::EnvironmentAncestorSteps
                 | Setting::EnvironmentWorkUnits

@@ -1114,6 +1114,7 @@ fn leaf_checked_term(
                 LiteralValue::Integer(value) => ("integer", json!(value.to_string())),
                 LiteralValue::Count(value) => ("integer", json!(value)),
                 LiteralValue::Rational(value) => ("rational", json!(spelled(value))),
+                LiteralValue::Decimal(value) => ("decimal", json!(value)),
                 LiteralValue::Float32Bits(value) => ("float32_bits", json!(format!("{value:08x}"))),
                 LiteralValue::Float64Bits(value) => {
                     ("float64_bits", json!(format!("{value:016x}")))

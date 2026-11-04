@@ -12,8 +12,10 @@ pub(super) enum Terminal {
     Exact(&'static str),
     Literal(&'static str),
     Identifier,
-    /// An identifier that may use one explicitly allowed reserved spelling.
-    IdentifierAllowReserved(&'static str),
+    /// A function or predicate name, or its `using` profile alias: an
+    /// identifier, or the one explicitly allowed reserved spelling, that the
+    /// recognizer has not classed as unsupported (FR-035-AC-7).
+    CallableName(Option<&'static str>),
     MemberName,
     Text,
     TextValue(&'static str),
@@ -105,8 +107,8 @@ fn literal(value: &'static str) -> Rule {
 fn ident() -> Rule {
     Rule::Terminal(Terminal::Identifier)
 }
-fn ident_allow_reserved(spelling: &'static str) -> Rule {
-    Rule::Terminal(Terminal::IdentifierAllowReserved(spelling))
+fn callable_name(allowed: Option<&'static str>) -> Rule {
+    Rule::Terminal(Terminal::CallableName(allowed))
 }
 fn member() -> Rule {
     Rule::Terminal(Terminal::MemberName)
@@ -602,8 +604,8 @@ fn source_and_types(g: &mut Grammar) {
         P::FunctionDeclaration,
         s(vec![
             x("function"),
-            ident_allow_reserved("Text"),
-            opt(s(vec![x("using"), ident()])),
+            callable_name(Some("Text")),
+            opt(s(vec![x("using"), callable_name(None)])),
             parameters(),
             x(":"),
             r(P::TypeReference),
@@ -616,8 +618,8 @@ fn source_and_types(g: &mut Grammar) {
         P::Predicate,
         s(vec![
             x("predicate"),
-            ident(),
-            opt(s(vec![x("using"), ident()])),
+            callable_name(None),
+            opt(s(vec![x("using"), callable_name(None)])),
             parameters(),
             x(":"),
             x("Boolean"),

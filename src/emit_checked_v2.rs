@@ -447,10 +447,11 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
     let admitted = spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check_with_execution_points(
+    let checked = spine::check_with_temporal_selections_and_execution_points(
         &parsed,
         package.as_str().to_owned(),
         &points,
+        &clause_clock_selections(&parsed, &request.temporal_selections),
         &admitted,
         &dependencies,
         limits,
@@ -478,6 +479,30 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
         checked,
         emitted,
     })
+}
+
+/// Join each named clock selection to the parsed `temporal` clause of that
+/// name, so S3 converts the clause's `duration` windows to its clock unit
+/// (FR-337 "Aggregate formula emission"). A name no clause declares joins
+/// nothing here; [`clock_selections`] refuses it after the check.
+fn clause_clock_selections(
+    parsed: &spine::ParsedUnitSource,
+    selections: &[ClockSelection],
+) -> Vec<qsl_package::TemporalClockSelection> {
+    selections
+        .iter()
+        .filter_map(|selection| {
+            let form = parsed.unit().forms().iter().find(|form| {
+                matches!(form.form(), qsl_forms::DeclarationForm::Temporal(_))
+                    && form.declared_name() == Some(selection.clause.as_str())
+            })?;
+            Some(qsl_package::TemporalClockSelection {
+                source: parsed.source().reference().clone(),
+                declaration_span: form.span(),
+                clock: selection.clock.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Join each named clock selection to the checked temporal clause or

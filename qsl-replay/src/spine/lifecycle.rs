@@ -2904,6 +2904,26 @@ fn temporal_selections_for_source(
         .collect()
 }
 
+/// The timestamped-event clock unit of each selection, for S3's `duration`
+/// window conversion (FR-337 "Aggregate formula emission").
+fn clock_units(
+    selections: &[qsl_package::TemporalClockSelection],
+) -> Vec<qsl_semantics::check::ClockUnitSelection> {
+    selections
+        .iter()
+        .filter_map(|selection| match &selection.clock {
+            quire_contract_model::ClockConfiguration::TimestampedEvent { timestamp_unit } => {
+                Some(qsl_semantics::check::ClockUnitSelection {
+                    declaration_span: selection.declaration_span,
+                    timestamp_unit: timestamp_unit.to_string(),
+                })
+            }
+            quire_contract_model::ClockConfiguration::EventPosition { .. }
+            | quire_contract_model::ClockConfiguration::FixedSample { .. } => None,
+        })
+        .collect()
+}
+
 /// One unit through all four operations, over a handle nobody cancels: the
 /// compile the spine's unit tests use to build their fixtures. Production
 /// callers compose the operations themselves.
@@ -3417,6 +3437,10 @@ impl<'a> Resolution<'a> {
         if let Some(value) = frame.refinement_internals.clone() {
             declarations = declarations.with_refinement_internals(value);
         }
+        // FR-337 "Aggregate formula emission": a clause's `duration` windows
+        // convert to its selected timestamped-event clock unit at S3.
+        declarations =
+            declarations.with_clock_units(clock_units(&self.temporal_selections_for(&frame.raw)));
         // FR-302: link the dispatch table of each family a dispatched call's
         // member name may name, under the caller's model normalization
         // limits, before `check` types the calls against them. A family
