@@ -12,7 +12,8 @@ use qsl_eval::temporal::ProgressLedger;
 use serde_json::Value;
 
 use super::temporal_package_route::{
-    cause, clause_ids, edited, event_clauses, recipe, request, run, twins, unlimited,
+    cause, clause_ids, edited, event_clauses, recipe, request, run, same_named_clauses, twins,
+    unlimited,
 };
 
 const ONLY: &str = "temporal Only using t over (c: Config::ConfigVersion) clock \"model-steps\" \
@@ -33,19 +34,33 @@ fn only(body: &str) -> String {
 /// `clause-unreadable` at the first call that reaches the clause, with an empty
 /// charge log and the caller's ledgers unchanged; the unaltered clause is
 /// evaluated; and the `EvidencePackage` built by `from_read` over the same
-/// bytes is evaluated, because it compares no in-process clause. A change of
-/// operand edge alone cannot differ: the pre-order of operations and the
-/// arities fix the edges.
+/// bytes, paired with the same in-process source graph, is refused the same
+/// way. The operand-edge run points a connective's operand at another node;
+/// the written operations then differ at that position, since the pre-order
+/// of operations and the arities fix the edges.
 #[trace("FR-515-AC-24", "FR-516-AC-39", "FR-516-AC-46", "TC-1310", "TC-1311")]
 #[test]
 fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
     // The checked clause reads `eventually[0,1]`; the package is the
     // emission of a unit whose clause differs in one operation or one interval.
-    for (what, body) in [
-        ("an operation", "always[0,1] holds(c.versionNumber <= 1)"),
-        ("an interval", "eventually[0,2] holds(c.versionNumber <= 1)"),
+    for (what, source, body) in [
+        (
+            "an operation",
+            ONLY.to_owned(),
+            only("always[0,1] holds(c.versionNumber <= 1)"),
+        ),
+        (
+            "an interval",
+            ONLY.to_owned(),
+            only("eventually[0,2] holds(c.versionNumber <= 1)"),
+        ),
+        (
+            "an operand edge",
+            only("eventually[0,1] (holds(c.versionNumber <= 1) and holds(c.versionNumber >= 0))"),
+            only("eventually[0,1] (holds(c.versionNumber <= 1) and true)"),
+        ),
     ] {
-        let built = event_clauses(ONLY, &[("Only", "only-authority")]);
+        let built = event_clauses(&source, &[("Only", "only-authority")]);
         let read = built.read(&built.emission);
         let unaltered =
             EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
@@ -59,7 +74,7 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
         asked.progress_ledger = Some(ProgressLedger::new());
         let ledgers = format!("{:?}", (&asked.ledger, &asked.progress_ledger));
 
-        let other = event_clauses(&only(body), &[("Only", "only-authority")]);
+        let other = event_clauses(&body, &[("Only", "only-authority")]);
         let changed = built.with_emission_of(other);
         let read = changed.read(&changed.emission);
         let emitted = EvidencePackage::from_emission(&changed.emission, &read).expect("rows");
@@ -78,10 +93,21 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
             "{what}"
         );
 
+        // The read-back package is paired with the same in-process source
+        // graph, so the same bytes are refused the same way.
         let back = EvidencePackage::from_read(&read).expect("the read-back package");
-        assert!(
-            run(&back, &clause, &asked).0.is_ok(),
-            "{what}: the read-back package holds no in-process clause to compare"
+        let mut meter = unlimited();
+        let refused = back.evaluate_temporal_evidence(&clause, &asked, &mut meter);
+        assert_eq!(
+            cause(&refused.expect_err("a differing formula")),
+            "clause-unreadable",
+            "{what}: read back"
+        );
+        assert!(meter.admitted_charges().is_empty(), "{what}: read back");
+        assert_eq!(
+            format!("{:?}", (&asked.ledger, &asked.progress_ledger)),
+            ledgers,
+            "{what}: read back"
         );
     }
 }
@@ -165,15 +191,18 @@ fn the_call_measures_the_package_listing_and_not_the_checked_arena() {
     );
 }
 
-/// A clause reference whose position carries another clause's name, or names
-/// no clause, is no emission of the package; two name rows that pair to one
-/// clause cannot be paired by name.
-#[trace("FR-515-AC-21", "TC-1310")]
+const FIRST_SECOND: &str = "temporal First using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { eventually[0,1] holds(c.versionNumber <= 1) }\n\
+     temporal Second using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { eventually[0,2] holds(c.versionNumber <= 2) }";
+
+/// FR-515-AC-25 (TC-1310 row 26): over an `Emission` whose clause reference at
+/// a position points at a clause carrying another name than the name row (or
+/// at no clause), `from_emission` returns `PackageMismatch::ClauseRow` at
+/// construction and no call is made.
+#[trace("FR-515-AC-25", "TC-1310")]
 #[test]
-fn a_clause_that_cannot_be_paired_by_name_is_refused_at_construction() {
+fn a_clause_reference_at_another_clause_is_refused_at_construction() {
     let built = event_clauses(
-        "temporal First using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { eventually[0,1] holds(c.versionNumber <= 1) }\n\
-         temporal Second using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { eventually[0,2] holds(c.versionNumber <= 2) }",
+        FIRST_SECOND,
         &[("First", "first-authority"), ("Second", "second-authority")],
     );
     let read = built.read(&built.emission);
@@ -206,6 +235,22 @@ fn a_clause_that_cannot_be_paired_by_name_is_refused_at_construction() {
             "{what}"
         );
     }
+}
+
+/// FR-515-AC-26 (TC-1310 row 27): over a read package with two clauses of one
+/// name, and over one with two name rows pairing to one clause, `from_read`
+/// returns `PackageMismatch::AmbiguousName`; `from_emission` over the
+/// two-clauses-of-one-name package pairs by `clause` position and constructs.
+#[trace("FR-515-AC-26", "TC-1310")]
+#[test]
+fn an_ambiguous_name_is_refused_by_the_read_route_only() {
+    let same = same_named_clauses();
+    let read = same.read(&same.emission);
+    assert!(matches!(
+        EvidencePackage::from_read(&read),
+        Err(PackageMismatch::AmbiguousName)
+    ));
+    assert!(EvidencePackage::from_emission(&same.emission, &read).is_ok());
 
     let renamed = edited(twins(), |wire| {
         for row in wire["temporal_clause_names"].as_array_mut().unwrap() {
@@ -216,5 +261,47 @@ fn a_clause_that_cannot_be_paired_by_name_is_refused_at_construction() {
     assert!(matches!(
         EvidencePackage::from_read(&read),
         Err(PackageMismatch::AmbiguousName)
+    ));
+}
+
+/// FR-515-AC-27 (TC-1310 row 28): over an `Emission` whose `profile_selections`
+/// do not match the package, `from_emission` returns
+/// `PackageMismatch::ProfileSelections`.
+#[trace("FR-515-AC-27", "TC-1310")]
+#[test]
+fn profile_selections_that_are_not_the_packages_are_refused() {
+    let built = event_clauses(ONLY, &[("Only", "only-authority")]);
+    let read = built.read(&built.emission);
+    let mut selections = built.emission.temporal_rows().profile_selections().to_vec();
+    selections.pop();
+    let wrong = built
+        .emission
+        .clone()
+        .with_temporal_profile_selections(selections);
+    assert!(matches!(
+        EvidencePackage::from_emission(&wrong, &read),
+        Err(PackageMismatch::ProfileSelections)
+    ));
+}
+
+/// FR-515-AC-28 (TC-1310 row 29): over an `Emission` whose `temporal_bindings`
+/// rows do not match the package, `from_emission` returns
+/// `PackageMismatch::Bindings`.
+#[trace("FR-515-AC-28", "TC-1310")]
+#[test]
+fn bindings_that_are_not_the_packages_are_refused() {
+    let built = event_clauses(ONLY, &[("Only", "only-authority")]);
+    let read = built.read(&built.emission);
+    let mut bindings = built.emission.temporal_rows().bindings().to_vec();
+    bindings[0].clock_name = "another-clock".into();
+    let wrong = built.emission.clone().with_temporal_bindings(bindings);
+    assert!(matches!(
+        EvidencePackage::from_emission(&wrong, &read),
+        Err(PackageMismatch::Bindings)
+    ));
+    let none = built.emission.clone().with_temporal_bindings(Vec::new());
+    assert!(matches!(
+        EvidencePackage::from_emission(&none, &read),
+        Err(PackageMismatch::Bindings)
     ));
 }

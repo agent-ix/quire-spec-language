@@ -810,3 +810,53 @@ pub(super) fn edited(built: Built, edit: impl FnOnce(&mut Value)) -> Built {
         ..built
     }
 }
+
+/// Two clauses of one name, `Same`, with their own formulas and clocks. The
+/// checker admits them, so the clock selections are joined by position.
+pub(super) fn same_named_clauses() -> Built {
+    let packages = qsl_semantics::model::intake::package_input([
+        crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
+    ])
+    .expect("the ConfigVersion model");
+    let clause = |bound: u8| {
+        format!(
+            "temporal Same using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {{ eventually[0,{bound}] holds(c.versionNumber <= {bound}) }}\n"
+        )
+    };
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
+         model Config = \"example/config-version\";\n{}{}",
+        clause(1),
+        clause(2)
+    );
+    let unit = crate::support::front_end::checked(
+        SourceIdentity::new("local", "source:same"),
+        "same.native",
+        source.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+    )
+    .expect("the checker admits two clauses of one name");
+    let selections: Vec<TemporalClockSelection> = unit
+        .package()
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .enumerate()
+        .map(|(index, node)| TemporalClockSelection {
+            source: unit.source().reference().clone(),
+            declaration_span: node.clause().span(),
+            clock: ClockConfiguration::EventPosition {
+                sequence_authority: format!("authority-{index}").into(),
+            },
+        })
+        .collect();
+    let emission = qsl_package::emit_checked_with_temporal_selections(unit.package(), &selections)
+        .expect("the package emits");
+    Built {
+        unit,
+        emission,
+        packages,
+    }
+}

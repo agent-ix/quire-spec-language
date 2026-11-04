@@ -911,6 +911,30 @@ impl Emission {
         self
     }
 
+    /// The emission with `profile_selections` as its profile selection rows,
+    /// as [`Self::with_temporal_clause_refs`] presents other references.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_temporal_profile_selections(
+        mut self,
+        profile_selections: Vec<quire_contract_model::CheckedSelection>,
+    ) -> Self {
+        self.temporal_rows.profile_selections = profile_selections;
+        self
+    }
+
+    /// The emission with `bindings` as its `temporal_bindings` rows, as
+    /// [`Self::with_temporal_clause_refs`] presents other references.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_temporal_bindings(
+        mut self,
+        bindings: Vec<quire_contract_model::TemporalBinding>,
+    ) -> Self {
+        self.temporal_rows.bindings = bindings;
+        self
+    }
+
     /// The temporal clause references, `profile_selections` and
     /// `temporal_bindings` rows as written into [`Self::package`] (FR-337).
     pub fn temporal_rows(&self) -> &TemporalRows {

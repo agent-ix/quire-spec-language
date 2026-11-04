@@ -50,3 +50,24 @@ Mutation probes, each applied to a scratch edit of the clone and reverted (root 
 ## Verdict
 
 Not mergeable until FND-001 is resolved (code cross-check, or the spec restated and the claim in the module docs removed). FND-002 and FND-003 can be fixed in the same round. The key-based pairing of clock rows and occurrences is correct and tested: pairing by position or by declaration alone fails the twin tests, and the twin package is admitted by the locked reader. The carry of the new TemporalRows through carry_rows after #2257 re-keys declarations of clauses and bindings, destructures each row without a rest pattern, and is covered by the extended retained_rows tests; a missed carry would fail closed with EmissionMismatch.
+
+
+## Dispositions
+
+Round 1, fix head 5fa074aee (main 0bc21d1df including spec #2272). Mutations re-run by the reviewer on the trial tree; gates re-run (fmt, check, clippy default and --no-default-features, arch-lint qualified-core and api-surface, qsl-replay 19 known names, qsl-package lib 6 failed all from the known 7, qsl-eval 182/1056/43 all green, root it plain 878 and --all-features 924, 0 failures).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | EvidencePackage::from_emission now compares the package's formula_graph with the in-process formula by a pre-order walk (operation, interval, operand positions, length) and refuses clause-unreadable (formula-differs) with an empty charge log and unchanged ledgers (AC-24/AC-46 test). Mutations: cross-check disabled, interval ignored, operation ignored, of_graph replaced by of_checked: each killed. Operand-edge comparison ignored: survives, an equivalent mutant (pre-order plus arities fix the edges). The read-back route is not covered by this fix: see FND-004. |
+| FND-002 | fixed | of_read refuses AmbiguousName when two graph clauses carry a name or two name rows pair to one clause; from_emission refuses ClauseRow when the clause at found.clause carries another name or the position is beyond the graph. Mutations removing either check are killed by a_clause_that_cannot_be_paired_by_name_is_refused_at_construction. |
+| FND-003 | fixed | A test now asserts the subject's clause name and progress.occurrence per selected twin occurrence. Mutations dropping the selector in subject() and zeroing the progress occurrence are both killed by the twin test. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | EvidencePackage::from_read evaluates the in-memory clause of the source graph (read.source().graph().temporal_clauses()), which is not derived from the package bytes. Truth, the activation and the instance-bound index mapping all come from that clause; the bytes' formula_graph measures work and reads the atom mask only. Reproduced in a scratch test: over bytes whose clause is always[0,1] and a source whose clause is eventually[0,1], from_read yields a subject whose package formula_graph root is quire.op.temporal.always while the evaluated clause root is Unary Eventually, and the call is evaluated without refusal. FR-515 (#2272) and AC-24 say from_read holds no in-memory clause and builds its formula from formula_graph() alone; the code contradicts that, and the AC-24 test passes its last assertion only because the evaluated clause comes from the source. Recommendation: either apply the same_formula comparison on the read route too (the source clause is available through read.source()), refusing clause-unreadable on a difference, and restate AC-24 so the last clause refuses; or evaluate from the package's graph alone, which needs an evaluator over formula_graph and is a larger change; the spec lane must choose, and the code and spec must say the same. | qsl-eval/src/temporal/evidence/package.rs:323-345 |
+
+## Verdict (disposition pass 1)
+
+Not mergeable: FND-004 (high) is open.

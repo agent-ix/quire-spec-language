@@ -1164,6 +1164,15 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::CarriesMismatch { channel, .. } => format!(
                     "{message}: the binder's type is not the type channel `{channel}` carries"
                 ),
+                ProtocolAnchorCause::ChannelDeliveryRange {
+                    channel,
+                    lower,
+                    upper,
+                    ..
+                } => format!(
+                    "{message}: channel `{channel}` delivers between {lower} and {upper}, \
+                     the lower count above the upper"
+                ),
                 ProtocolAnchorCause::CausalCycle { nodes, .. } => format!(
                     "{message}: the causal edges form a cycle through {}",
                     nodes.join(", ")

@@ -40,3 +40,26 @@ Coder's seven issues, judged against the merged text:
 ## Verdict
 
 Findings are spec gaps (FND-001 to FND-004, for the spec lane) and one test gap (FND-005); none shows a wrong evaluation result. Combined with SR-2263001 FND-001 (high) the PR is not mergeable as is.
+
+
+## Dispositions
+
+Round 1, fix head 5fa074aee against merged spec #2272 (0bc21d1df).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-515-AC-22 now has capture-binder atoms only (indices 0 and 3: capture, and capture with over()) and FR-515 states a holds atom cannot read the trigger binder; the trigger-binder branch is deleted from instance_bound_atoms. Index and capture-name mutations are killed. |
+| FND-002 | fixed | FR-516-AC-37 no longer asserts anything for a timestamped-event clause; the table cause text agrees. The fixed-sample and event-position cases are tested. |
+| FND-003 | fixed | The table lists clause-root-unresolved; FR-516-AC-45 states the cause name only; a_clause_the_package_does_not_hold_is_unresolved tests an absent id and a protocol clause id with an empty charge log and unchanged ledgers. |
+| FND-004 | fixed | Spec text names EvidencePackage throughout; no CheckedPackageEvaluation remains in spec/. |
+| FND-005 | fixed | The AC-41 loop has activation-mapping-mismatch and asserts ledger snapshots for every row; removing the mismatch refusal fails both the loop and control_must_map_to_the_clause. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The construction errors PackageMismatch (ClauseRow, AmbiguousName, ProfileSelections, Bindings) and from_read returning a Result are in no requirement: FR-515 and FR-516 name no construction refusal other than an empty trigger identity, and no cause is named for them (the causes are those of the call). ProfileSelections and Bindings are exercised by no test. State the construction refusals in FR-515 (with an AC for each) or drop the variants that no AC owns. | spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md:195 |
+
+## Verdict (disposition pass 1)
+
+Spec findings are all resolved. FND-006 is low. The PR stays not mergeable until SR-2263001 FND-004 is resolved.
