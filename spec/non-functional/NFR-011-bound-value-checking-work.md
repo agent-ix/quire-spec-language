@@ -34,7 +34,7 @@ declaration and charges no work. The ceilings are inclusive unsigned counts supp
 caller. The values below are the default ceilings a caller gets when it
 configures none. A caller may set each ceiling independently, above or below
 its default, through its setting (`s3.nodes`, `s3.input_bytes`,
-`s3.work_units`, `s3.rational_bits`, `s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`;
+`s3.work_units`, `s3.rational_bits`, `s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`, the last two carried in the assembly limits and copied onto the package declarations rather than held in `CheckingLimits`;
 [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md)),
 and the ceiling is used as given. Every checking walk runs over an explicit
 heap stack whose growth these ceilings charge, so an expression's or a
