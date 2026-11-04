@@ -62,8 +62,8 @@ FR-121-AC-32 to FR-121-AC-36.
 4. Compile TC-444 step 7's unit importing `test/units` through `call_site`
    selecting `q`, once with a `DependencyInput` supplying `test/units` and
    once with none. From the first answer alone, key a `ReplayRequestWire`
-   carrying `test/units` as its `dependencies` entry (its `package_id` and
-   `q`'s one parameter), and call `replay` with the input `x = 3`.
+   carrying `test/units` as its `dependencies` entry (its identity and one
+   source, no `package_id`, with `q`'s one parameter), and call `replay` with the input `x = 3`.
 5. Compile the step 3 unit through `call_site` selecting
    `Nope::ConfigVersion::attemptUpdate`, `Config::Nope::attemptUpdate` and
    `Config::ConfigVersion::nope`.

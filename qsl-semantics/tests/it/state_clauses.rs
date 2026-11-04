@@ -298,6 +298,38 @@ fn dereference_fields_and_operation_roles_resolve_on_the_checked_route() {
     }
 }
 
+/// TC-044 / FR-015-AC-5, CHANGED CODE: an absent declared field after `deref`
+/// is a typing failure (`ill_typed`/`type-mismatch`) located at the field
+/// read, not a declaration lookup (`missing_declaration`).
+#[trace("TC-044", "FR-015-AC-5")]
+#[test]
+fn an_absent_field_after_deref_refuses_ill_typed_at_the_field_read() {
+    let document = config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let body = "invariant M using v on Config::ConfigVersion at current { \
+        present(self.parent) implies deref(value(self.parent)).missing <= 1 }\n";
+    let refusals = check_refusals(&document, body).expect_err("the absent field refuses");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(refusal.cause.code(), Code::IllTyped);
+    assert_eq!(refusal.cause.cause(), Some("type-mismatch"));
+    assert_eq!(
+        refusal.location,
+        Location::at(
+            Origin::StateClause {
+                clause: "M".to_owned(),
+                index: 0,
+            },
+            &[1, 0],
+        ),
+    );
+}
+
 /// V1-TYPE-024: a subtype source and base-type target traverse an inherited
 /// edge without erasing either operand's checked reference identity.
 #[test]
