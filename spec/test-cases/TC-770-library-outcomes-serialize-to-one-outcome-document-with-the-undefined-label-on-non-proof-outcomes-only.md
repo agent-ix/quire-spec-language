@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-286
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: verifies
 ---
 # TC-770: Library outcomes serialize to one outcome document, with the undefined label on non-proof outcomes only
 
@@ -12,7 +14,7 @@ relationships:
 
 Verify the outcome document's members, its determinism, the `execute` result member, and where the label `undefined` may appear. The CLI half (`quire --format json` writes this document unchanged) is the driver repository's test (FR-286 Overlap).
 
-Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 and FR-286-AC-9.
+Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 and FR-286-AC-9, and the monitor half of FR-285-AC-9.
 
 ## Test Procedure
 

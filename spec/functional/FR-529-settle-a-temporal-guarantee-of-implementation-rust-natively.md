@@ -19,6 +19,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-353
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-350
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-380
+    type: depends_on
 ---
 # FR-529: Settle a temporal guarantee of implementation Rust from checked correspondence and progress premises
 
@@ -79,11 +83,15 @@ QSL reuses the existing records and builds only what is missing:
 | FR-529-AC-2 | A Rust step that violates the abstraction relation, and a chain with only valid per-step contracts and no progress premise, each leave a liveness item not `proved` with QSpec FR-488's cause. | Test (TC-1329) |
 | FR-529-AC-3 | An infinite internal-step behaviour, a stutter step with no decreasing measure and a fairness premise stronger than the environment's each settle `inconclusive`/`transfer-not-preserving`. | Test (TC-1329) |
 | FR-529-AC-4 | A missing backend, premise or binding and an exhausted bound settle with four distinct results and extents; sibling items with resolved premises settle unchanged. | Test (TC-1329) |
-| FR-529-AC-5 | Compile, read-back and admission keep source correspondence, refuse a forged or mismatched premise identity, and a result that only references another is not accepted as evidence; no finite trace settles a liveness item `proved`. | Test (TC-1329) |
+| FR-529-AC-5 | Compile and read-back of an implementation-guarantee item keep the authored source correspondence of every premise it names. | Test (TC-1329) |
+| FR-529-AC-6 | Admission refuses a premise whose identity names no settled result, or whose subject or relation revision differs from the item's, as `invalid_runtime_input`/`invalid-value` naming the member. | Test (TC-1329) |
+| FR-529-AC-7 | A premise result that only references another result is read, and the reference alone is not accepted as evidence of validity. | Test (TC-1329) |
+| FR-529-AC-8 | A finite implementation trace over which the clause holds does not settle a liveness item `proved`. | Test (TC-1329) |
 
 ## Dependencies
 
-- QSpec FR-488: the requirement this settles; QSpec FR-353, FR-350, FR-354 and
+- QSpec FR-488 (QSpec PR 616, merged first; until it lands the requirement and
+  TC-982 do not exist): the requirement this settles; QSpec FR-353, FR-350, FR-354 and
   FR-380.
 - [FR-304](FR-304-check-an-authored-abstraction-relation.md),
   [FR-306](FR-306-carry-the-abstraction-relation-in-the-checked-package.md),

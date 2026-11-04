@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-380
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-177
+    type: depends_on
 ---
 # FR-530: Carry and check liveness dependencies and fairness premises in native composition
 
@@ -70,13 +72,17 @@ outcome of QSpec FR-489's settlement table.
 | --- | --- | --- |
 | FR-530-AC-1 | A request identifies the component subjects, the selected rule, the environmental assumptions, the relied-on peer guarantees, the liveness dependencies and the fairness premises as separate lists, and compile and read-back preserve each list and its source correspondence. | Test (TC-1330) |
 | FR-530-AC-2 | The result records which proved guarantee discharges each required premise; a mismatched subject, a weaker guarantee and a guarantee of another kind cannot discharge it. | Test (TC-1330) |
-| FR-530-AC-3 | A two-component fixture composes under a supported checked rule; a mutually dependent progress pair does not self-justify; a supported cycle needs the rule's independently justified premises. | Test (TC-1330) |
-| FR-530-AC-4 | Missing premise, trusted assumption, unsupported rule, failed check and resource exhaustion remain distinct with their trust basis and extent, and a referenced result alone is not accepted as evidence. | Test (TC-1330) |
-| FR-530-AC-5 | Compile, read-back, negotiation and result tests reject a forged or mismatched premise while unrelated supported claims continue. | Test (TC-1330) |
+| FR-530-AC-3 | A two-component fixture composes under a supported checked rule. | Test (TC-1330) |
+| FR-530-AC-4 | A mutually dependent progress pair does not self-justify. | Test (TC-1330) |
+| FR-530-AC-5 | A supported liveness cycle is accepted only with the rule's independently justified premises recorded. | Test (TC-1330) |
+| FR-530-AC-6 | A missing premise, a trusted assumption, an unsupported rule, a failed check and resource exhaustion remain distinct outcomes with their trust basis and extent. | Test (TC-1330) |
+| FR-530-AC-7 | A result that only references another result is not accepted as evidence of validity. | Test (TC-1330) |
+| FR-530-AC-8 | Compile, read-back and negotiation reject a forged or mismatched premise and keep settling the request's unrelated supported claims. | Test (TC-1330) |
 
 ## Dependencies
 
-- QSpec FR-489, FR-348, FR-176, FR-177 and FR-380.
+- QSpec FR-489 (QSpec PR 616, merged first; until it lands the requirement and
+  TC-983 do not exist), FR-348, FR-176, FR-177 and FR-380.
 - This requirement adds no parallel evidence store and no theorem import.
 
 ## References

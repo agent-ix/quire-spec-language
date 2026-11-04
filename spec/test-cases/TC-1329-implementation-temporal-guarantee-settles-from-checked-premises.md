@@ -20,7 +20,7 @@ not copied) through compile, read-back, admission and settlement over real
 native packages. Seed the transition, divergence and fairness mutations
 independently, one per run, over the positive chain. Assert each result's
 label, cause, extent, trust basis and source correspondence, and that sibling
-items settle unchanged. Tag the tests `#[trace("TC-1329", "<AC id>")]`.
+items settle unchanged. Cover FR-529-AC-1 to FR-529-AC-8. Tag the tests `#[trace("TC-1329", "<AC id>")]`.
 
 ## Expected Results
 

@@ -43,10 +43,14 @@ the same document (QSpec FR-300-AC-3). The document's members are:
 - `category`: the ADR-013 O-16 category of the whole outcome, as the one
   `Category` type (FR-285); each item's category is the same type.
 - `items`: for `prove`, `analyze` and `monitor`, one entry per requested item
-  with its terminal record and its category. The member is always present;
+  with its category. The member is always present;
   it is an empty array for every other operation and for an outcome with no
-  items. Each item carries its QSpec FR-331 terminal record with its label
-  and cause in FR-331's wire spelling (its wire-spelling table): for example
+  items. Each item that has a terminal record, every proof result, carries its
+  QSpec FR-331 terminal record with its label
+  and cause in FR-331's wire spelling (its wire-spelling table); a `monitor` item built from a clause run that did
+  not settle (pending or indeterminate) carries the clause-run record, with the
+  `clause` member, and no FR-331 terminal record (see "Monitor documents from
+  clause runs"): for example
   `undefined-evaluation{where, cause}` and `replay-parity`. The scalar-parity
   cause `ScalarAgrees` (FR-357) is spelled `scalar-agrees` and carries its kind
   only: the claim identity and outcome stay on the typed `ScalarAgreement`. A proof item (`prove`,
@@ -54,8 +58,10 @@ the same document (QSpec FR-300-AC-3). The document's members are:
   evaluation is `refuted` with cause `undefined-evaluation{where, cause}`,
   category violation (FR-281). A `monitor` clause whose evaluation over the
   trace is undefined is a violation with that cause (FR-283). The label
-  `undefined` appears only on a non-proof evaluation outcome, such as an
-  `execute` outcome (FR-285).
+  `undefined` belongs to the category undefined and to no other category: it
+  appears on a non-proof evaluation outcome, such as an `execute` outcome, and
+  on a `monitor` item for FR-283's `InsufficientData` (category undefined,
+  reason `insufficient-data`), and on no item of any other category (FR-285).
 - `diagnostics`: each with its typed cause, catalog code, `Locus` (ADR-013
   T-5, FR-095) and message.
 - `artifacts`: always an empty array `[]`. No operation writes an artifact
@@ -101,8 +107,9 @@ builds one item from one FR-109 / FR-330 clause run, and
 `OutcomeDocument::from_clause_runs(last_stage, runs)` builds the document
 with operation `monitor` through `OutcomeDocument::settled`, one item per
 selected clause in request order. `qsl-inspect` and the driver read the
-document and build no item of their own. No other code path builds an item for
-a clause run.
+document and build no item of their own. The `monitor` operation's records
+(FR-283) are rendered into items through this producer, and no other code path
+builds an item for a clause run.
 
 Each item takes its category from `ClauseRunReport::category()` (the catalog's
 `Category`, FR-285) and from nowhere else, and its `result` label from that
@@ -155,8 +162,9 @@ The outcome document's bytes.
 - The same outcome value shall serialize to the same bytes every time.
 - The `category` member shall be the outcome's O-16 category, from which
   FR-285 derives the exit code.
-- The serialization shall write the label `undefined` on no `prove`,
-  `analyze` or `monitor` item.
+- The serialization shall write the label `undefined` on an item exactly when
+  the item's category is undefined, so on no `prove` or `analyze` item and on
+  a `monitor` item only for FR-283's `InsufficientData`.
 - The serialization shall write each item's label and cause in QSpec
   FR-331's wire spelling.
 - The serialization shall write `last_stage` `null` for a cancelled outcome

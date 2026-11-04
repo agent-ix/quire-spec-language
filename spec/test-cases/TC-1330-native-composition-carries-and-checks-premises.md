@@ -19,8 +19,9 @@ Run QSpec TC-983's six cases through compile, read-back, negotiation and result
 checking over real native `Producer` and `Consumer` packages. Add adversarial
 identity, assumption and fairness cases: a swapped component identity, an
 assumption relabelled as a guarantee and a fairness kind strengthened by one
-step. Record in the test output which behaviour is existing coverage (TL-9
-algorithm, FR-348 negotiation, FR-380 transfer) and which is newly delivered.
+step. The TL-9 algorithm, FR-348 negotiation and FR-380 transfer are exercised
+unchanged, so the mutual-dependency and weaker-guarantee cases must fail against a
+composition that treats a referenced result as proof. Cover FR-530-AC-1 to FR-530-AC-8.
 Tag the tests `#[trace("TC-1330", "<AC id>")]`.
 
 ## Expected Results
