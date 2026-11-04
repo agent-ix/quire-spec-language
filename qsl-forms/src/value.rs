@@ -1429,6 +1429,7 @@ impl<'c> Mapping<'c> {
             | Production::PopulationBinding
             | Production::FrameBinding
             | Production::ParameterBinding
+            | Production::DeliveryInterval
             | Production::AggregateAtom
             | Production::AggregateTerm
             | Production::AggregateKind
@@ -2133,6 +2134,7 @@ impl<'c> Mapping<'c> {
             | Production::PopulationBinding
             | Production::FrameBinding
             | Production::ParameterBinding
+            | Production::DeliveryInterval
             | Production::AggregateAtom
             | Production::AggregateTerm
             | Production::AggregateKind
