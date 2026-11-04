@@ -29,6 +29,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-146
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-142
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-145
+    type: depends_on
 ---
 # FR-093: Lower checked Value expressions to FR-322 nodes with catalogued operations
 
@@ -224,6 +228,52 @@ divided by three, and is dimensionless as well. The division lowers by the
 `Quantity(operator)` row to one `binary` `quire.op.quantity.div` node whose
 arguments are `[ref(l), ref(r)]`, `r` the literal's node, and whose
 `result_type` is the node of the quotient's compound unit (FR-094).
+
+**Integer power.** `check` SHALL admit `e ^ n` (FR-091 "Integer power
+spelling") over a quantity operand `e` of a non-affine unit and an exponent
+`n` written as a signed integer literal (QSpec FR-142 "integer power",
+FR-142-AC-6; TC-187 U12, U13, U21). The exponent is a literal because the
+result unit depends on it. The result's dimension is the operand's normalized
+base-dimension map with every exponent multiplied by `n`, zero exponents
+removed, and its unit is the compound unit over the canonical root units with
+those exponents (FR-094), the dimensionless unit when `n` is `0`. Each
+exponent is an exact integer, whatever its size. The checked value is the
+operand's value taken in its canonical root, as a product takes it, raised to
+`n`: `x ^ 0` is exactly one for every `x`, zero included, and a zero base under
+a negative exponent is undefined. So `2 m ^ 2 = 2 m * 2 m` is true, `d ^ 1`
+over `d: Quantity<ms>` has the compound unit `s` to the power 1 and the value
+of `d` in seconds, and `d ^ -1` has the unit `s` to the power -1. The power
+lowers by the `QuantityPower` row to one `binary` `quire.op.quantity.pow` node
+whose arguments are `[ref(e), ref(n)]`, `n` the `value`/`literal` node of the
+exponent (`value_kind` `integer`, typed by the `Integer` scalar node), whose
+`result_type` is the node of the result's compound unit, and which carries no
+law, mode, member or leaves.
+
+- A negative exponent divides by the base, so it carries the nonzero
+  obligation of a quantity divisor on `e` (QSpec FR-146): only a base that is
+  a quantity literal of nonzero reduced magnitude discharges it (FR-094).
+  Otherwise, a zero-magnitude literal base included, `check` SHALL refuse the
+  power `undefined_expression`/`unproved-nonzero` at the `^`. An exponent of
+  zero or above carries no obligation. Under `CheckMode::Kernel` (FR-495) the
+  checker records no nonzero obligation for a power, and a zero base under a
+  negative exponent evaluates to `Undefined::DivisionByZero`
+  (`division-by-zero`) at the charge QSpec states (TC-187 U21).
+- If `e` is a quantity of an affine unit, then `check` SHALL refuse the power
+  `ill_typed`/`operator-ineligible` at the `^`, before any charge and emitting
+  no node (QSpec FR-142 allows no arithmetic on an affine unit). If `e` is a
+  carried quantity `Quantity<u, C>`, `check` SHALL refuse it
+  `ill_typed`/`type-mismatch` at the expression (QSpec FR-142-AC-27, FR-497).
+  If `e` is not a quantity, `check` SHALL refuse it `ill_typed`/`type-mismatch`
+  at the operand: QSpec defines integer power over quantities only.
+- The evaluator SHALL evaluate a `quire.op.quantity.pow` node through the
+  owned quantity core's integer power (`quire_semantic_value`'s
+  `QuantityOperation::Power`) with the call's meter, and keeps no QSL copy of
+  it. Its charges are therefore QSpec FR-142's unit schedule of
+  `quire.value.accounting/v1`, in that order: the operand identity reads, the
+  undefined condition, the rational events, whose `integer_bits` amount is
+  `abs(n)` times the operand's retained parts and is charged before the power
+  is computed (U13), then the target domain and result retention. A denied
+  charge ends the node `incomplete` with that charge's record and no value.
 
 A divisor that is not itself a quantity literal is never proved nonzero: a
 parameter, a `let` name, a call, a conversion, or a product or quotient of
@@ -437,6 +487,7 @@ to `x`'s node.
 | `DecimalNegate` | `unary` | `quire.op.decimal.negate` | | `[ref(e)]` |
 | `Quantity(operator)` | `binary` | `quire.op.quantity.add`, `.sub`, `.mul`, `.div` | | `[ref(l), ref(r)]` |
 | `QuantityNegate` | `unary` | `quire.op.quantity.negate` | | `[ref(e)]` |
+| `QuantityPower` (`e ^ n`) | `binary` | `quire.op.quantity.pow` | | `[ref(e), ref(n)]`, `n` the exponent's `Integer` literal node |
 | `Ieee(operator)` of width `w` | `binary` | `quire.op.ieee.float32.*` or `quire.op.ieee.float64.*` | law `ieee_profile`; mode `rounding` = the operand types' mode | `[ref(l), ref(r)]` |
 | The checked fused multiply-add `fma(a, b, c)` of width `w` (FR-397) | `call` | `quire.op.ieee.float32.fma` or `quire.op.ieee.float64.fma` | law `ieee_profile`; mode `rounding` = the operand types' mode | `[ref(a), ref(b), ref(c)]` |
 | `IeeeSquareRoot(m, e)` | `call` | `quire.op.ieee.float32.sqrt` or `quire.op.ieee.float64.sqrt` | law `ieee_profile`; mode `rounding` = `m` | `[ref(e)]` |
@@ -466,12 +517,48 @@ to `x`'s node.
 | `Fold{identity: None}` (`reduce<A>`) | `collection` | `quire.op.collection.reduce` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: aggregate{binding{name: x, value: ref(step)}}}]` |
 | `Size` | `collection` | `quire.op.collection.size` | member `type_argument` of `T(node)` | `[ref(c)]` |
 | `Contains` | `collection` | `quire.op.collection.contains` | leaves `inner:0` | `[ref(c), ref(v)]` |
+| `DropFirst` (`dropFirst(c)`) over a sequence or an ordered set | `collection` | `quire.op.collection.sequence.drop_first` or `quire.op.collection.ordered_set.drop_first`, by `c`'s kind | | `[ref(c)]` |
+| `RemoveOne` (`removeOne(c, v)`) | `collection` | `quire.op.collection.remove_one` | leaves `inner:0`, as `Contains` lists them | `[ref(c), ref(v)]` |
 | `Attribute{reference, name}` (`deref(r).f`) | `deref`, then `query` | the node `quire.op.model.deref` over `[ref(r)]`, whose `result_type` is the model node of `r`'s object type `T`, and over it `quire.op.record.project` | the projection's member `field{declaration: T's model node, name: f}` | the projection's `[ref(deref node)]` |
 | `Navigate{reference, relationship, role}` (`r.name` over a relationship end, FR-363) | `query` | `quire.op.model.navigate` | member `relationship_end{declaration: the relationship's model node, name: role}`; `result_type` is the type node of the checked `Reference<U>`, `Option<Reference<U>>`, `Set<Reference<U>>[l,u]` or `Bag<Reference<U>>[l,u]` | `[ref(r)]`, with no `deref` node |
 | `AllInstances` | `query` | `quire.op.model.all_instances` | member `type_argument` of the queried type's model node | `[ref(p)]`, `p` a population parameter or, for a named population `M::P`, the population reference of FR-391 |
 | `Lookup{absence}` | `query` | `quire.op.model.lookup` | mode `absence` = the authored mode; member `type_argument` of the queried type's model node | `[ref(p), ref(r)]`, `p` as for `AllInstances` |
 | `Dispatch{receiver, arguments}` | `call` | `quire.op.model.dispatch_call` | member `operation{declaration: the model node of the receiver's static object type, name: member}` | `[ref(receiver), ref(a0), ...]` |
 | `Pre` | `pre` | `quire.op.state.pre` | | `[ref(e)]` |
+
+**One-occurrence collection forms.** `dropFirst(c)` and `removeOne(c, v)`
+shrink a collection by exactly one occurrence (QSpec FR-145, FR-322-AC-117).
+QSL types, lowers and evaluates them as QSpec states, with no QSL rule of its
+own:
+
+- `check` SHALL type `dropFirst(c)` over a `Sequence<T>[a, b]` or an
+  `OrderedSet<T>[a, b]` as the same kind `K<T>[max(a-1,0), max(b-1,0)]`, an
+  unbounded `b` staying unbounded, and SHALL refuse it over a `Set` or a `Bag`
+  as `ill_typed`/`operator-ineligible` at the call, since neither has a first
+  occurrence.
+- `check` SHALL type `removeOne(c, v)` over any collection kind `K<T>[a, b]`
+  as `K<T>[max(a-1,0), b]`. Its `v` is typed as the second operand of
+  `contains` is: the element type `T` exactly, or a record conforming to a
+  record `T`. Any other `v` SHALL be refused `ill_typed`/`type-mismatch` at
+  `v`.
+- An operand `c` that is not a collection SHALL be refused
+  `ill_typed`/`type-mismatch` at `c`. A call with another argument count is
+  refused by S1, whose production fixes the arity, as
+  `invalid_syntax`/`unexpected-token`.
+- Each lowers by its row above. The `result_type` is the node of the derived
+  type, and a `drop_first` node carries no law, mode, member or leaves.
+- The evaluator SHALL evaluate each node through the owned evaluation
+  kernel's one-occurrence operation, with the call's meter, and keeps no QSL
+  copy. `dropFirst` drops the first occurrence in order and is the empty
+  collection for an empty `c`. `removeOne` drops exactly one occurrence equal
+  to `v` under QSpec FR-144's membership relation (bit identity for a float
+  leaf), the same relation `contains` uses: the first equal occurrence of a
+  sequence, the equal member of a set or ordered set, and one multiplicity of
+  a bag's equal member. It returns `c` unchanged when no member is equal. The
+  charges are QSpec FR-145's: for `dropFirst`, the formation of the survivors
+  only; for `removeOne`, the `contains(c, v)` scan up to and including the
+  first equal member (over all members when none is equal), without that
+  scan's scalar retain, then the formation of the result.
 
 **Present options.** A checked `OptionSome(e)` SHALL lower as the
 `value`/`option_value` form QSpec FR-322 defines. It SHALL NOT lower as an
@@ -958,6 +1045,8 @@ fix the leaf spelling.
 | FR-093-AC-49 | Quantity negation (QSL-1389; QSpec TC-187 U39, FR-142-AC-25). With FR-091-AC-44's units, `dimension Length;`, `unit m : Length = rational(1, 1);`, `dimension Temperature;`, `unit kelvin : Temperature = rational(1, 1);` and `unit degC : Temperature = rational(1, 1) * kelvin + decimal(27315, 2);`, each of these checks, lowers and evaluates: `function a using v(): Quantity<m> pure { -(2 m) }` to `-2 m` and `function b using v(): Quantity<m> pure { -(2 m) + 1 m }` to `-1 m` (dimension `Length`); `function c using v(): Quantity<ms> pure { -(3 ms) }` and `function c2 using v(): Quantity<ms> pure { -3 ms }` to `-3 ms` in `ms`, the same two nodes; `function z using v(): Quantity<m> pure { -(0 m) }` to `0 m`; `function q using v(): Boolean pure { -(-(3 ms)) = 3 ms }` to `true` through two nested negate nodes; `function r using v(d: Quantity<ms>): Boolean pure { d = -3 ms }` with a `quire.op.quantity.eq` over `d` and the negate node of the `3 ms` literal; and the compound `function v2 using v(): Boolean pure { -(3 m / 1 s) = -(3 m / 1 s) }` to `true`, each negate node having `result_type` the quotient's compound-unit node (terms `m` to the power 1 and `s` to the power -1) and no law, mode, member or leaves. Every non-affine row lowers to `quire.op.quantity.negate` and traverses no unit edge, and IR's v2 reader admits each package. `function n using v(t: Quantity<degC>): Quantity<degC> pure { -t }` and `function n2 using v(): Quantity<degC> pure { -(5 degC) }` each refuse `ill_typed`/`operator-ineligible` at the negation with no charge and no node; `function k using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / -3 ms = e }` refuses `undefined_expression`/`unproved-nonzero` at the division; `function b2 using v(b: Boolean): Boolean pure { -b }` refuses `ill_typed`/`type-mismatch` at the operand. | Test (TC-1285) |
 | FR-093-AC-50 | `function t1 using v(): Text[0, 8; nfc] pure { Text("e\u0301") }` lowers the body to one `value`/`literal` node whose `semantic_type` and body `type` are the `Text[0, 8; nfc]` type node, with `value_kind` `text` and `value` `"\u00e9"` as JSON; `Text("\u00e9")` in the same slot lowers to the same node. In `function e3 using v(x: Text[0, 8; nfc]): Boolean pure { x = Text("\u00e9") }` the comparison is one text equality with law `text_profile` and mode `text_profile` `nfc` (FR-093-AC-6) and arguments `[ref(x's node), ref(the literal's node)]`. | Test (TC-1052) |
 | FR-093-AC-51 | Fused multiply-add (STD-646; FR-397-AC-15). Over a unit that declares `x: Float64[nearest-even]`, `y: Float64[nearest-even]` and `z: Float64[nearest-even]` parameters and a `w: Float32[nearest-even]` parameter, `quire::value::ieee::fma(x, y, z)` lowers to one node with `operator` `call` as a generic application call (there is no dedicated fma node kind, and the node does not take the `quire.op.function.call` identity or a function-node argument), `operation.identity` `quire.op.ieee.float64.fma`, law `ieee_profile`, mode `rounding` `nearest-even`, `result_type` the `Float64[nearest-even]` node and exactly the three arguments `[ref(x), ref(y), ref(z)]` in call order; the same over `Float32[nearest-even]` gives `quire.op.ieee.float32.fma` and a `Float32` result. `fma(x, y)` and `fma(x, y, z, x)` refuse `ill_typed`/`type-mismatch` at the call, and `fma(x, y, w)` refuses `ill_typed`/`type-mismatch` at the argument `w`, each emitting no node (FR-397-AC-16). | Test (TC-415) |
+| FR-093-AC-58 | Quantity integer power (QSL-1656; QSpec TC-187 U12, U13 and U21, FR-142-AC-6). With FR-091-AC-44's units, `dimension Length;`, `unit m : Length = rational(1, 1);`, `dimension Area = Length ^ 2;`, `unit m2 : Area = rational(1, 1);`, `dimension Temperature;`, `unit kelvin : Temperature = rational(1, 1);` and `unit degC : Temperature = rational(1, 1) * kelvin + decimal(27315, 2);`, each of these checks, lowers and evaluates: `function w1 using v(): Boolean pure { 2 m ^ 2 = 2 m * 2 m }` to `true`, its power one `quire.op.quantity.pow` node with arguments `[ref(L), ref(N)]`, `L` the `2 m` literal node and `N` the `Integer` literal node of value `"2"`, whose `result_type` is the one compound-unit node (`m` to the power 2) the product also has, with no law, mode, member or leaves (U12's square); `function w2 using v(): Boolean pure { convert<Quantity<m2>>(3 m ^ 2) = 9 m2 }` to `true`; `function w3 using v(d: Quantity<ms>): Boolean pure { d ^ 0 = 1 m / 1 m }` to `true` for `d` = `0 ms` and for `d` = `5 ms`, the power's `result_type` the dimensionless compound-unit node; `function w4 using v(): Boolean pure { 0 m ^ 0 = 1 m / 1 m }` to `true` (U21); `function w5 using v(d: Quantity<ms>): Boolean pure { d ^ 1 = convert<Quantity<s>>(d) * (1 s / 1 s) }` to `true` for `d` = `1500 ms`, the power's unit being `s` to the power 1; `function w6 using v(): Boolean pure { 2 m ^ -1 = (1 m / 2 m) / 1 m }` to `true`, the literal base `2 m` discharging the nonzero obligation; and `function w7 using v(): Boolean pure { -1 m ^ 2 = -(1 m * 1 m) }` to `true`, the power binding tighter than the prefix `-`. `function w8 using v(): Boolean pure { 2 m ^ 18446744073709551616 = 2 m ^ 18446744073709551616 }` checks, the exponent an exact integer above `u64::MAX`, and evaluated with U13's tuple as the meter's remaining budget at the first power node it is `incomplete { limit_kind: integer_bits, limit: 64, consumed: 2, next_charge: 36893488147419103232, charge_point: unit.rational-arithmetic }` before the power is computed. IR's v2 reader admits each package. `function r1 using v(d: Quantity<m>): Boolean pure { d ^ -1 = d ^ -1 }` and `function r2 using v(): Boolean pure { 0 m ^ -1 = 0 m ^ -1 }` each refuse `undefined_expression`/`unproved-nonzero` at the first `^` under `CheckMode::Linked`; under `CheckMode::Kernel` `r2` checks and its first power evaluates to `Undefined::DivisionByZero` (`division-by-zero`) after one `unit.identity-read` with U21's `L(1,0,0,1,1,0)` as the remaining budget, and is `incomplete { limit_kind: work_units, limit: 0, consumed: 0, next_charge: 1, charge_point: unit.identity-read }` with `L(1,0,0,1,0,0)`. `function r3 using v(t: Quantity<degC>): Boolean pure { t ^ 2 = t ^ 2 }` refuses `ill_typed`/`operator-ineligible` at the first `^` with no charge and no node; `function r4 using v(i: Int[0, 9]): Boolean pure { i ^ 2 = i }` refuses `ill_typed`/`type-mismatch` at `i`; `function r5 using v(c: Quantity<m, Int[0, 9]>): Boolean pure { c ^ 2 = c ^ 2 }` refuses `ill_typed`/`type-mismatch` at the first power. The bodies `d ^ k`, `d ^ (2)`, `d ^ 2 ^ 3` and `d ^ rational(1, 2)` over `d: Quantity<m>` and `k: Integer` refuse `invalid_syntax`/`unexpected-token` at the token after the first `^` that is not a signed integer literal (at the second `^` for `d ^ 2 ^ 3`), before S2. | Test (TC-1334) |
+| FR-093-AC-59 | One-occurrence collection forms (QSL-1488; QSpec FR-145-AC-10 and AC-11, TC-190). Each of these checks, lowers and evaluates: `function f1 using v(s: Sequence<Integer>[0, 9]): Sequence<Integer>[0, 8] pure { dropFirst(s) }`, one `quire.op.collection.sequence.drop_first` node over `[ref(s)]` whose `result_type` is the `Sequence<Integer>[0, 8]` node, with no law, mode, member or leaves, giving `sequence[1, 3]` for `sequence[3, 1, 3]` and `sequence[]` for `sequence[]`; `function f2 using v(o: OrderedSet<Integer>[1, 5]): OrderedSet<Integer>[0, 4] pure { dropFirst(o) }`, one `quire.op.collection.ordered_set.drop_first` node, giving `orderedSet[7]` for `orderedSet[2, 7]`; `function g1 using v(s: Sequence<Integer>[0, 9]): Sequence<Integer>[0, 9] pure { removeOne(s, 3) }`, one `quire.op.collection.remove_one` node over `[ref(s), ref(L)]`, `L` the literal `3`, with no leaves, giving `sequence[1, 3]` for `sequence[3, 1, 3]` and `sequence[1]` for `sequence[1]`; the same body over `Bag<Integer>[0, 9]` giving `bag[2, 5]` for `bag[2, 2, 5]` with `removeOne(b, 2)`, over `Set<Integer>[0, 9]` giving `set[5]` for `set[2, 5]`, and over `OrderedSet<Integer>[0, 9]` giving `orderedSet[5, 7]` for `orderedSet[5, 2, 7]`; `removeOne(t, x)` over `t: Bag<Text[0, 8; nfc]>[0, 9]` and `x: Text[0, 8; nfc]`, whose node lists the empty-path leaf with the `nfc` law and mode as `contains` lists it; and `removeOne(u, q)` over `u: Set<Float64[nearest-even]>[0, 9]` and `q: Float64[nearest-even]`, whose node lists the empty-path float leaf with the law `ieee_profile` and mode `null`, giving `set[]` for `u` = `set[0x7ff8000000000000]` and `q` of the same bits, and `u` unchanged for `u` = `set[0x0000000000000000]` and `q` = `0x8000000000000000` (bit identity). IR's v2 reader admits each package. The meter's charge log of `dropFirst(sequence[1, 2, 3])` holds only the formation of the two survivors, with no visit and no membership comparison, and that of `removeOne(sequence[1, 2, 3], 2)` holds the `contains` scan charges of the members `1` and `2` with no scalar retain, then the formation of the two survivors. `dropFirst(t)` over `t: Set<Integer>[0, 9]` and over `t: Bag<Integer>[0, 9]` refuse `ill_typed`/`operator-ineligible` at the call and build no node; `removeOne(s, true)` over `s: Sequence<Integer>[0, 9]` refuses `ill_typed`/`type-mismatch` at `true`; `dropFirst(i)` over `i: Int[0, 9]` refuses `ill_typed`/`type-mismatch` at `i`; `dropFirst(s, s)` and `removeOne(s)` refuse `invalid_syntax`/`unexpected-token`. | Test (TC-1335) |
 
 ## Dependencies
 
