@@ -877,6 +877,11 @@ impl<'a> Definedness<'a> {
             (is_binder(left) && is_member(right)) || (is_binder(right) && is_member(left))
         };
         let element = collection.element();
+        // `holds_float` sees a float behind an option, collection or map but
+        // not inside a record or tuple field (that needs the type table). A
+        // record element with a float field is therefore not caught here; this
+        // gate depends on `check_equality_in` refusing such an operand as
+        // operator-ineligible before a `!=` over it reaches this point.
         let exact = !holds_float(element);
         let body = filter.at(*body);
         let removal = match body.kind() {

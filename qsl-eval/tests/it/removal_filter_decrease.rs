@@ -101,6 +101,8 @@ fn drop(kind: &str, literal: &str, guard: &str, argument: &str) -> String {
 /// kind and every admitted predicate shape, then its refusals. The
 /// `not bitIdentical(x, e)` clause over a float element type is not here:
 /// the kernel refuses a float collection element (IR-1320).
+// IR-1320 tracks the `not bitIdentical(x, e)` float clause of FR-146-AC-15;
+// the tag stays in full and that clause is untested until IR-1320 lands.
 #[trace("QSpec-TC-191", "QSpec-FR-146-AC-15")]
 #[test]
 fn a_removal_filter_under_a_membership_fact_decreases_a_cardinality_measure() {
