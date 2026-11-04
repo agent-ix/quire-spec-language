@@ -35,7 +35,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 15 | 15 | `control` naming the protocol clause whose FR-449 row names the call's clause | evaluated |
 | 16 | 16 | `control` naming a protocol clause with no FR-449 row; one whose row names another clause | `activation-mapping-missing`; `activation-mapping-mismatch`, each `Err(CallFailure::Admission)` |
 | 17 | 17 | a `progress_ledger` holding W 100: a request at W 60; a request with `Complete { through: 60 }` after `Complete { through: 100 }` | each refused as FR-502-AC-1 and AC-2, empty charge log, progress ledger unchanged |
-| 18 | 18 | **R**'s three clauses: the result over the package from the `Emission` vs over the read-back package; then one clock row, one `CheckedNodeId` or one instance-bound atom replaced on one side | equal fields, canonical bytes, charge log and `result_identity`; the replaced side differs |
+| 18 | 18 | **R**'s four clauses over its three packages: the result over the package from the `Emission` vs over the read-back package; then one clock row, one `CheckedNodeId` or one instance-bound atom replaced on one side | equal fields, canonical bytes, charge log and `result_identity`; the replaced side differs |
 | 19 | 19 | `deliveries` present and a `trigger` that no delivery or ledger entry holds | `trigger-unknown`, `Err(CallFailure::Admission)` |
 | 20 | 20 | `deliveries` present and `trigger` `None` | `trigger-required` |
 | 21 | 21 | `trigger` naming a delivery with a false guard | no truth; FR-524's disposition |

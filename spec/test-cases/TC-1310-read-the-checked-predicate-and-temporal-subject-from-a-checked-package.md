@@ -35,7 +35,7 @@ FR-515-AC-24. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 15 | 15 | a clause named by no protocol `requirements` entry; a clause named by one | empty; the protocol clause's node id |
 | 16 | 16 | `checked_predicate` of an activation guard | `source_span` is an entry of the guard node |
 | 17 | 17 | `checked_predicate` of a `ClauseLeaf` that is neither a `holds` operand nor the guard | `source_span` inside the formula root's source regions |
-| 18 | 18 | the `EvidencePackage` from the `Emission` vs the read-back package, each of **R**'s three clauses; the rows held vs the `Emission`'s | equal `profile()`, `clock()`, `occurrences()`; rows byte-equal |
+| 18 | 18 | the `EvidencePackage` from the `Emission` vs the read-back package, each of **R**'s four clauses over its three packages; the rows held vs the `Emission`'s | equal `profile()`, `clock()`, `occurrences()`; rows byte-equal |
 | 19 | 19 | a unit authored over the `config-version` model with two temporal clauses of different nodes and clock rows | each node's `clock()` is its own row, in both packages |
 | 20 | 20 | a constructed V2 twin package (node `occurrences` 7 then 3, lock rows ascending 3 then 7, different clock configurations) read back through the reader; no `Emission` | `clock_of` returns the row keyed by each ordinal; `clock()` `None`; a position pairing fails |
 | 21 | 21 | each `TemporalClauseRef` vs the read-back `temporal_clause_names` row; the `EvidencePackage`'s ids vs the read-back package's | equal ids; no id derivation in the API |
