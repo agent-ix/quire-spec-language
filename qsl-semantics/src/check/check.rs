@@ -937,25 +937,12 @@ impl Default for DecimalLiteralLimits {
     }
 }
 
-/// The running total of the written scales a check has counted, shared by
-/// every pass over one [`Scope`].
-#[derive(Debug, Default)]
-pub(crate) struct LiteralScaleTotal(std::sync::atomic::AtomicU64);
-
-impl Clone for LiteralScaleTotal {
-    fn clone(&self) -> Self {
-        Self(std::sync::atomic::AtomicU64::new(
-            self.0.load(std::sync::atomic::Ordering::Relaxed),
-        ))
-    }
-}
-
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone)]
 pub struct Scope {
     /// The limits on decimal literal scale, and the total counted so far.
     decimal_literal_limits: DecimalLiteralLimits,
-    decimal_literal_total: LiteralScaleTotal,
+    decimal_literal_total: qsl_foundation::tally::Tally,
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
     /// Where a record value keeps the fields its ancestors name (FR-359).
@@ -1221,7 +1208,7 @@ impl Scope {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
             decimal_literal_limits: DecimalLiteralLimits::default(),
-            decimal_literal_total: LiteralScaleTotal::default(),
+            decimal_literal_total: qsl_foundation::tally::Tally::default(),
             types,
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),
@@ -3148,12 +3135,7 @@ impl<'a> Typer<'a> {
                 written,
             ));
         }
-        let total = self
-            .scope
-            .decimal_literal_total
-            .0
-            .fetch_add(written, std::sync::atomic::Ordering::Relaxed)
-            .saturating_add(written);
+        let total = self.scope.decimal_literal_total.add(written);
         if total > limits.total {
             return Err(exhausted(
                 CheckingLimitKind::DecimalLiteralScaleTotal,
