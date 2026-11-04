@@ -358,6 +358,163 @@ fn a_progressed_binding_that_asserts_another_profile_or_clock_is_refused() {
     assert_eq!(clock.usage.temporal_visits, 0);
 }
 
+/// The `mismatched_dimension`, `asserted` and `expected` fields of a refused
+/// progressed binding, after checking it was refused at admit before any
+/// position was visited.
+fn binding_mismatch(refused: &ClauseRunReport) -> (String, String, Option<String>) {
+    assert_admit_invalid_value(refused);
+    assert_eq!(refused.usage.temporal_visits, 0);
+    assert_eq!(refused.usage.admission_consumed.objects, 0);
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &refused.disposition else {
+        panic!(
+            "expected an admission refusal, got {:?}",
+            refused.disposition
+        );
+    };
+    let field = |name: &str| record.fields.get(name).cloned();
+    (
+        field("mismatched_dimension").expect("a mismatched dimension"),
+        field("asserted").expect("the asserted value"),
+        field("expected"),
+    )
+}
+
+fn integer(decimal: &str) -> qsl_package::ClockExactNumber {
+    qsl_package::ClockExactNumber::Integer {
+        decimal: decimal.into(),
+    }
+}
+
+/// The fixed-sample parameters of `Unit::FixedEventually`'s row with
+/// `edit` applied.
+fn fixed_sample(
+    edit: impl FnOnce(
+        &mut qsl_package::ClockExactNumber,
+        &mut qsl_package::ClockExactNumber,
+        &mut Box<str>,
+    ),
+) -> qsl_package::ClockConfiguration {
+    let (mut epoch, mut period, mut unit) = (integer("0"), integer("1"), Box::from("sample"));
+    edit(&mut epoch, &mut period, &mut unit);
+    qsl_package::ClockConfiguration::FixedSample {
+        epoch,
+        period,
+        unit,
+    }
+}
+
+/// FR-522 "Authentication" over a progressed trace: the clock parameters
+/// compare with the declaration's `temporal_bindings` row, member by member,
+/// in the order `ClockParameters`, `Epoch`, `SamplePeriod`, `ClockUnit` for a
+/// fixed-sample clause and `SequenceAuthority` for an event-position one, and
+/// a clock name that differs with a parameter is reported as `Clock`.
+#[trace("TC-1317", "FR-522-AC-3")]
+#[trace("TC-1317", "FR-522-AC-4")]
+#[trace("TC-1317", "FR-522-AC-5")]
+#[trace("TC-1317", "FR-522-AC-6")]
+#[trace("TC-1317", "FR-522-AC-8")]
+#[test]
+fn a_progressed_binding_is_authenticated_against_the_clock_row() {
+    let fixed = Progressed::new(Unit::FixedEventually, &[0], 3, complete(3));
+    let with_parameters = |progressed: &Progressed, parameters| {
+        report(
+            progressed.request_with(|binding| crate::spine::TraceBinding {
+                parameters,
+                ..binding
+            }),
+        )
+    };
+    let owned = |value: &str| value.to_owned();
+
+    assert_eq!(
+        binding_mismatch(&with_parameters(
+            &fixed,
+            qsl_package::ClockConfiguration::EventPosition {
+                sequence_authority: "counter-event-sequence".into(),
+            },
+        )),
+        (
+            owned("ClockParameters"),
+            owned("event_position"),
+            Some(owned("fixed_sample"))
+        )
+    );
+    assert_eq!(
+        binding_mismatch(&with_parameters(
+            &fixed,
+            fixed_sample(|epoch, _, _| *epoch = integer("7")),
+        )),
+        (owned("Epoch"), owned("7"), Some(owned("0")))
+    );
+    assert_eq!(
+        binding_mismatch(&with_parameters(
+            &fixed,
+            fixed_sample(|_, period, _| {
+                *period = qsl_package::ClockExactNumber::Rational {
+                    numerator: "1".into(),
+                    denominator: "10".into(),
+                };
+            }),
+        )),
+        (owned("SamplePeriod"), owned("1/10"), Some(owned("1")))
+    );
+    assert_eq!(
+        binding_mismatch(&with_parameters(
+            &fixed,
+            fixed_sample(|_, _, unit| *unit = "ms".into()),
+        )),
+        (owned("ClockUnit"), owned("ms"), Some(owned("sample")))
+    );
+    // AC-5: epoch and unit both differ; the epoch comes first.
+    assert_eq!(
+        binding_mismatch(&with_parameters(
+            &fixed,
+            fixed_sample(|epoch, _, unit| {
+                *epoch = integer("7");
+                *unit = "ms".into();
+            }),
+        )),
+        (owned("Epoch"), owned("7"), Some(owned("0")))
+    );
+
+    let event = Progressed::new(Unit::EventEventually, &[0], 0, complete(0));
+    assert_eq!(
+        binding_mismatch(&with_parameters(
+            &event,
+            qsl_package::ClockConfiguration::EventPosition {
+                sequence_authority: "another-sequence".into(),
+            },
+        )),
+        (
+            owned("SequenceAuthority"),
+            owned("another-sequence"),
+            Some(owned("counter-event-sequence"))
+        )
+    );
+
+    // AC-8: a clock name and a parameter that both differ report `Clock`.
+    assert_eq!(
+        binding_mismatch(&report(fixed.request_with(|binding| {
+            crate::spine::TraceBinding {
+                clock_name: "ms".to_owned(),
+                parameters: fixed_sample(|epoch, _, _| *epoch = integer("7")),
+                ..binding
+            }
+        }))),
+        (owned("Clock"), owned("ms"), Some(owned("samples")))
+    );
+
+    // The agreeing bindings run.
+    assert!(!matches!(
+        fixed.run().disposition,
+        ClauseDisposition::Admit(_)
+    ));
+    assert!(!matches!(
+        event.run().disposition,
+        ClauseDisposition::Admit(_)
+    ));
+}
+
 /// TC-1299 rows 16 and 17: the ledger covers these shapes. A fixed-sample
 /// watermark that regresses is refused as a contradiction; an event-position
 /// watermark that advances is retained and settles nothing.

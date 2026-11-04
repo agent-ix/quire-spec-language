@@ -390,41 +390,52 @@ pub(super) struct TemporalRun<'a> {
     pub(super) over: &'a OverObject,
     /// The caller's ledger, when it carries one.
     pub(super) ledger: Option<&'a ProgressLedger>,
+    /// The compiled package's `temporal_bindings` rows, keyed by clause
+    /// identity (FR-522 "Authentication").
+    pub(super) clock_rows: &'a qsl_package::TemporalBindingRows,
 }
 
 /// FR-522 "Authentication": the refusal of a `TraceBinding` that is absent or
-/// that asserts another profile or clock binding name than the clause's, at
-/// stage `admit`, `invalid_runtime_input`/`invalid-value` with
-/// `mismatched_dimension` and the asserted and expected values. The dimensions
-/// are tested in the order `Profile`, `Clock`.
-///
-/// The clock parameters (`ClockParameters` and the member dimensions) compare
-/// against the `temporal_bindings` row of the declaration, which the replay
-/// side of the checked package does not expose; they are not compared here.
+/// that differs from the clause's selection, at stage `admit`,
+/// `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` and the
+/// asserted and expected values. The dimensions are tested in the order
+/// `Profile`, `Clock`, `ClockParameters`, then the member dimensions; the
+/// clock and its parameters compare with `row`, the `temporal_bindings` row of
+/// the clause's declaration and claim occurrence. A clause with no row refuses
+/// any binding with `Clock` and no `expected` value.
 fn binding_refusal(
     binding: Option<&TraceBinding>,
     clause: &qsl_semantics::check::CheckedTemporalClause,
+    row: Option<&qsl_package::TemporalBinding>,
 ) -> Option<ClauseDisposition> {
     let Some(binding) = binding else {
         return Some(refused("invalid-value", BTreeMap::new()));
     };
-    let differ = |dimension: &'static str, asserted: &str, expected: &str| {
-        Some(refused(
-            "invalid-value",
-            BTreeMap::from([
-                ("mismatched_dimension", dimension.to_owned()),
-                ("asserted", asserted.to_owned()),
-                ("expected", expected.to_owned()),
-            ]),
-        ))
+    let differ = |dimension: &'static str, asserted: &str, expected: Option<&str>| {
+        let mut fields = BTreeMap::from([
+            ("mismatched_dimension", dimension.to_owned()),
+            ("asserted", asserted.to_owned()),
+        ]);
+        if let Some(expected) = expected {
+            fields.insert("expected", expected.to_owned());
+        }
+        Some(refused("invalid-value", fields))
     };
     if binding.profile != clause.profile().identity() {
-        return differ("Profile", &binding.profile, clause.profile().identity());
+        return differ(
+            "Profile",
+            &binding.profile,
+            Some(clause.profile().identity()),
+        );
     }
-    if binding.clock_name != clause.clock() {
-        return differ("Clock", &binding.clock_name, clause.clock());
-    }
-    None
+    let mismatch =
+        qsl_eval::temporal::evidence::clock_mismatch(&binding.clock_name, &binding.parameters, row)
+            .err()?;
+    differ(
+        mismatch.dimension.name(),
+        &mismatch.asserted,
+        mismatch.expected.as_deref(),
+    )
 }
 
 fn refused(cause: &'static str, fields: BTreeMap<&'static str, String>) -> ClauseDisposition {
@@ -443,7 +454,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         trace,
         over,
         ledger,
-        ..
+        clock_rows,
     } = *request;
     // A trace is evidence for that trace only: it settles no item and
     // derives no witness (FR-332).
@@ -476,6 +487,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         });
     };
     let clause = node.clause();
+    let row = clock_rows.get(&node.identity(), node.claim().ordinal());
 
     let trace_matches_profile = match trace {
         TraceInput::Progressed { .. } => matches!(
@@ -498,7 +510,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     if let TraceInput::Progressed { binding, .. } = trace {
         // FR-522: the same authentication precedes every position of a
         // progressed trace (FR-330-AC-11).
-        if let Some(refusal) = binding_refusal(Some(binding), clause) {
+        if let Some(refusal) = binding_refusal(Some(binding), clause, row) {
             return early(refusal);
         }
     }
@@ -512,7 +524,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         // FR-522: the trace's binding is authenticated before any position is
         // visited, any stamp or completeness is checked or the meter is
         // charged (FR-330-AC-11).
-        if let Some(refusal) = binding_refusal(window.binding.as_ref(), clause) {
+        if let Some(refusal) = binding_refusal(window.binding.as_ref(), clause, row) {
             return early(refusal);
         }
         if observations.is_empty() {
