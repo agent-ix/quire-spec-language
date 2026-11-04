@@ -206,6 +206,11 @@ pub struct RoleSlot {
     pub key: NodeKey,
     /// The role node's declaration path, one entry for each segment.
     pub path: Vec<String>,
+    /// The selected model type node the role is `on` or `each` (QSpec
+    /// FR-465 "Role" `model`). A role on a systems Port refers to the Port's
+    /// owning object type here; the Port's own identity is not on the
+    /// checked-package wire yet (QSL-1579).
+    pub model: NodeKey,
     /// Static, or replicated with population, maximum and lifetime.
     pub replication: RoleReplication,
 }
@@ -829,6 +834,7 @@ fn derive(nodes: &[Raw]) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
             roles.push(RoleSlot {
                 key: role.key.clone(),
                 path: role.path.clone(),
+                model: role.reference("model")?.clone(),
                 replication,
             });
         }

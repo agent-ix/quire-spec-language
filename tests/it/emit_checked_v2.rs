@@ -51,7 +51,7 @@ fn spine_model_source(directory: &Path) -> PathBuf {
 }
 
 /// IR's strict read of `bytes`, supplied `documents` as domain evidence.
-fn read_back(bytes: &[u8], documents: &[&[u8]]) -> CheckedPackageV2 {
+pub(crate) fn read_back(bytes: &[u8], documents: &[&[u8]]) -> CheckedPackageV2 {
     let wire: Value = serde_json::from_slice(bytes).expect("the output is JSON");
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
     let mut evidence = CheckedPackageEvidence::new();

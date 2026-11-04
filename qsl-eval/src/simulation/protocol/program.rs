@@ -460,7 +460,7 @@ fn replicated_roles(
                     lifetime: match &checked.lifetime {
                         CheckedLifetime::Workflow => Lifetime::Workflow,
                         CheckedLifetime::Scope(_) => Lifetime::Scope,
-                        CheckedLifetime::Until(predicate) => Lifetime::Until(predicate),
+                        CheckedLifetime::Until { predicate, .. } => Lifetime::Until(predicate),
                     },
                     owns: protocol
                         .owners

@@ -586,7 +586,7 @@ impl ProtocolClasses {
                 let role = checked.roles.get(replicated.role)?;
                 Some((
                     role.name.clone(),
-                    matches!(replicated.lifetime, CheckedLifetime::Until(_)),
+                    matches!(replicated.lifetime, CheckedLifetime::Until { .. }),
                 ))
             })
             .collect();

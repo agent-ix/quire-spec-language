@@ -1698,7 +1698,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         match self.program.terminal {
             CheckedTerminalMember::None => Ok(TerminalClass::Deadlocked),
             CheckedTerminalMember::Any => Ok(TerminalClass::Intended),
-            CheckedTerminalMember::When(predicate) => {
+            CheckedTerminalMember::When { predicate, .. } => {
                 let mut frame = vec![None; self.program.slots.len()];
                 if let Some(first) = frame.first_mut() {
                     *first = Some(self.over.clone());

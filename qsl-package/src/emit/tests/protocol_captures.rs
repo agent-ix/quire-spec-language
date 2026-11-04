@@ -698,3 +698,48 @@ fn a_capture_reading_model_state_through_over_is_admitted() {
     let over = &clause_argument(clause(wire), "over")["target"];
     assert!(reads(wire, target(wire, initializer), over));
 }
+
+/// FR-093, FR-464 "Binders": a binder written inside a replicated role's
+/// `until` predicate, the `terminal when` predicate, a control's constraint
+/// and the `finish` constraint is lowered as the `parameter` its own source
+/// names, at the level after the binders readable there, not under another
+/// binder's name.
+#[test]
+fn a_binder_in_until_terminal_control_and_finish_bodies_is_named_by_its_source() {
+    let lowered = lower_with(
+        model(),
+        PROFILES,
+        "protocol Flow using p over (input: M::Order) on origin {\n\
+         role Buyer on M::Order;\n\
+         role Agent each M::Person from people max 3 \
+         lifetime until(let life = Agent in life = Agent);\n\
+         terminal when { let term = input in term = input };\n\
+         run sequence Main { event Done by Buyer as (done: Boolean) \
+         { let ctl = done in ctl }; }\n\
+         finish End as (outcome: Boolean) { let fin = outcome in fin };\n\
+         }\n",
+    );
+    let wire = &lowered.wire;
+    let named = |name: &str| -> Vec<String> {
+        nodes(wire)
+            .iter()
+            .filter(|node| {
+                node["semantic_form"] == "parameter"
+                    && node["body"]["members"][0]["value"]["value"] == name
+            })
+            .map(|node| {
+                node["body"]["members"][1]["value"]["value"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect()
+    };
+    // `until` reads `input` and `Agent`; `terminal when` reads `input`; the
+    // event constraint reads `input` and `done`; `finish` reads `input`,
+    // `done` and `outcome`.
+    assert_eq!(named("life"), ["2"]);
+    assert_eq!(named("term"), ["1"]);
+    assert_eq!(named("ctl"), ["2"]);
+    assert_eq!(named("fin"), ["3"]);
+}

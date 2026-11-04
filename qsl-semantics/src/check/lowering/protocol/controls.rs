@@ -34,7 +34,8 @@ use quire_exact::{Integer, NodeKey};
 
 use super::super::{fault, Binder, Binders, Lowering, NodeRef};
 use super::{
-    empty_group, identifier, member, protocol_location, sorted, ProtocolInput, ProtocolSite,
+    checked_slot_names, empty_group, identifier, member, protocol_location, sorted, ProtocolInput,
+    ProtocolSite,
 };
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedBody;
@@ -44,6 +45,7 @@ use crate::check::node_key::{
 };
 use crate::check::protocol_clause::{CheckedControl, CheckedControlTree, ProtocolNodeId};
 use crate::check::protocol_obligation::CheckedCommit;
+use crate::check::protocol_slots::CheckedNodeBody;
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::value::member::Member;
 
@@ -115,8 +117,8 @@ struct Controls<'a, 'p> {
     /// The control each `receive` and `effect` is anchored at, and the
     /// control or compensation template each `await` is anchored at.
     anchored: BTreeMap<ProtocolNodeId, ProtocolNodeId>,
-    /// The checked body of each control that has one.
-    bodies: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
+    /// The checked body of each control that has one, with its slot names.
+    bodies: BTreeMap<ProtocolNodeId, &'a CheckedNodeBody>,
     /// The name each slot was bound under.
     slot_names: Vec<String>,
 }
@@ -147,11 +149,7 @@ impl Lowering<'_> {
                 .collect(),
             own: BTreeMap::new(),
             anchored: BTreeMap::new(),
-            bodies: slots
-                .bodies
-                .iter()
-                .map(|body| (body.node, &body.body))
-                .collect(),
+            bodies: slots.bodies.iter().map(|body| (body.node, body)).collect(),
             slot_names: slots
                 .binders
                 .iter()
@@ -941,8 +939,9 @@ impl Lowering<'_> {
         if own {
             scope.push(controls.own.get(&node).cloned().ok_or_else(unchecked)?);
         }
-        let mut binders = Binders::new(&controls.slot_names, &scope);
-        self.expression(body.root(), &mut binders)
+        let slot_names = checked_slot_names(&body.slot_names, &controls.slot_names, location)?;
+        let mut binders = Binders::new(slot_names, &scope);
+        self.expression(body.body.root(), &mut binders)
     }
 }
 

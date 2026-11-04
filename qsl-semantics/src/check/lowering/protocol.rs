@@ -49,10 +49,11 @@ use crate::check::node_key::{
 use crate::check::protocol_clause::{CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_controls::{CheckedChannel, CheckedOrdering};
 use crate::check::protocol_obligation::{
-    CaptureOwner, CaptureStage, CheckedActivation, CheckedCommit, CheckedCompensation,
+    CaptureOwner, CaptureStage, CheckedActivation, CheckedCapture, CheckedCommit,
+    CheckedCompensation,
 };
 use crate::check::protocol_slots::{
-    CheckedLifetime, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
+    CheckedLifetime, CheckedNodeBody, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
 };
 use crate::check::refinement::{
     KeyedCatalogClass, KeyedClassCatalog, KeyedMemoryClass, MemoryStepKind, RefinementCatalogClass,
@@ -252,7 +253,7 @@ impl ProtocolInput<'_> {
             unemitted.push(ProtocolConstruct::RepeatStepsThroughRepeat);
         }
         if matches!(form.activation, ActivationForm::Each { .. })
-            && matches!(&slots.terminal, CheckedTerminalMember::When(body) if body.reads_local(0))
+            && matches!(&slots.terminal, CheckedTerminalMember::When { predicate, .. } if predicate.reads_local(0))
         {
             unemitted.push(ProtocolConstruct::TerminalReadsOverUnderEach);
         }
@@ -324,15 +325,14 @@ impl ProtocolInput<'_> {
             .any(|control| control.kind == ProtocolNodeKind::Attempt)
     }
 
-    /// The checked body of the `finish` constraint.
-    fn finish_body(&self) -> Option<&crate::check::ir::CheckedBody> {
+    /// The checked `finish` constraint and its slot names.
+    fn finish_body(&self) -> Option<&CheckedNodeBody> {
         let (finish, _) = self.checked.finish.as_ref()?;
         self.checked
             .slots
             .bodies
             .iter()
             .find(|body| body.node == *finish)
-            .map(|body| &body.body)
     }
 
     /// The root of every expression tree the protocol's slots hold: its
@@ -358,8 +358,8 @@ impl ProtocolInput<'_> {
         {
             roots.push(guard.root());
         }
-        if let CheckedTerminalMember::When(body) = &self.checked.slots.terminal {
-            roots.push(body.root());
+        if let CheckedTerminalMember::When { predicate, .. } = &self.checked.slots.terminal {
+            roots.push(predicate.root());
         }
         let slots = &self.checked.slots;
         roots.extend(slots.bodies.iter().map(|body| body.body.root()));
@@ -1165,7 +1165,9 @@ impl Lowering<'_> {
         trigger: Option<Binder>,
     ) -> Result<Option<LeafTerm>, CheckRefusal> {
         let CheckedActivation::OnEach {
-            guard: Some(guard), ..
+            guard: Some(guard),
+            guard_slot_names,
+            ..
         } = &protocol.checked.obligations.activation
         else {
             return Ok(None);
@@ -1173,13 +1175,14 @@ impl Lowering<'_> {
         let unchecked = || fault(&protocol.location(), KeyFault::UncheckedProtocolFact);
         let trigger = trigger.ok_or_else(unchecked)?;
         let slots = &protocol.checked.slots;
-        let slot_names: Vec<String> = [slots.binders.get(1), slots.binders.first()]
+        let stage: Vec<String> = [slots.binders.get(1), slots.binders.first()]
             .into_iter()
             .map(|binder| binder.map(|binder| binder.name.clone()))
             .collect::<Option<_>>()
             .ok_or_else(unchecked)?;
+        let slot_names = checked_slot_names(guard_slot_names, &stage, &protocol.location())?;
         let scope = [Binder { slot: 0, ..trigger }, Binder { slot: 1, ..over }];
-        let mut binders = Binders::new(&slot_names, &scope);
+        let mut binders = Binders::new(slot_names, &scope);
         self.expression(guard.root(), &mut binders).map(Some)
     }
 
@@ -1196,7 +1199,7 @@ impl Lowering<'_> {
     ) -> Result<TupleTerm, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
         let slots = &protocol.checked.slots;
-        let slot_names: Vec<String> = slots
+        let declared_names: Vec<String> = slots
             .binders
             .iter()
             .map(|binder| binder.name.clone())
@@ -1220,7 +1223,11 @@ impl Lowering<'_> {
                 .get(slot)
                 .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
             let binder = self.protocol_binder(declared, slot, slot, &location)?;
-            let mut binders = Binders::new(&slot_names, readable);
+            let stage = declared_names
+                .get(..slot)
+                .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
+            let slot_names = checked_slot_names(&capture.slot_names, stage, &location)?;
+            let mut binders = Binders::new(slot_names, readable);
             let initializer = self.expression(capture.initializer.root(), &mut binders)?;
             readable.push(binder.clone());
             records.push(TupleMember::Group(GroupTerm::new(vec![
@@ -1330,9 +1337,12 @@ impl Lowering<'_> {
             CheckedLifetime::Scope(_) => {
                 members.push(member("lifetime", self.text_literal("scope", location)?));
             }
-            CheckedLifetime::Until(body) => {
+            CheckedLifetime::Until {
+                predicate,
+                slot_names: checked_names,
+            } => {
                 members.push(member("lifetime", self.text_literal("until", location)?));
-                let mut slot_names: Vec<String> = protocol
+                let mut stage: Vec<String> = protocol
                     .checked
                     .slots
                     .binders
@@ -1340,15 +1350,19 @@ impl Lowering<'_> {
                     .take(readable.len())
                     .map(|binder| binder.name.clone())
                     .collect();
-                slot_names.push(role.name.clone());
+                stage.push(role.name.clone());
+                let slot_names = checked_slot_names(checked_names, &stage, location)?;
                 let mut scope = readable.to_vec();
                 scope.push(Binder {
                     slot: readable.len(),
                     parameter: parameter.into(),
                     semantic_type: semantic_type.into(),
                 });
-                let mut binders = Binders::new(&slot_names, &scope);
-                members.push(member("until", self.expression(body.root(), &mut binders)?));
+                let mut binders = Binders::new(slot_names, &scope);
+                members.push(member(
+                    "until",
+                    self.expression(predicate.root(), &mut binders)?,
+                ));
             }
         }
         Ok(BindingValue::Group(GroupTerm::new(members)))
@@ -1513,23 +1527,15 @@ impl Lowering<'_> {
             let mut entries =
                 self.compensation_entries(protocol, checked, CaptureStage::Registration, position)?;
             entries.push((capture.name.clone(), capture.declared_type.clone()));
-            let scope = self.compensation_scope(
+            let (initializer, binder) = self.capture_initializer(
+                capture,
                 &entries,
                 &binder_levels,
                 &mut binder_parameters,
                 &location,
             )?;
-            let initializer = self.expression(
-                capture.initializer.root(),
-                &mut Binders::new(&scope.0, &scope.1),
-            )?;
             registration.push(TupleMember::Group(GroupTerm::new(vec![
-                member(
-                    "binder",
-                    LeafTerm::reference_node(
-                        scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
-                    ),
-                ),
+                member("binder", LeafTerm::reference_node(binder)),
                 member("initializer", initializer),
             ])));
         }
@@ -1552,7 +1558,10 @@ impl Lowering<'_> {
         )?;
         let guard = self.expression(
             checked.guard.root(),
-            &mut Binders::new(&trigger_scope.0, &trigger_scope.1),
+            &mut Binders::new(
+                checked_slot_names(&checked.guard_slot_names, &trigger_scope.0, &location)?,
+                &trigger_scope.1,
+            ),
         )?;
         args.push(MemberTerm::binding(
             "trigger",
@@ -1578,29 +1587,20 @@ impl Lowering<'_> {
                 checked.trigger.value_type.clone(),
             )];
             entries.extend(self.protocol_input_entries(protocol));
-            entries.extend(self.protocol_input_entries(protocol));
             entries.extend(self.protocol_capture_entries(protocol));
             entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
             entries
                 .extend(self.capture_entries(protocol, &checked.activation_captures[..position])?);
             entries.push((capture.name.clone(), capture.declared_type.clone()));
-            let scope = self.compensation_scope(
+            let (initializer, binder) = self.capture_initializer(
+                capture,
                 &entries,
                 &binder_levels,
                 &mut binder_parameters,
                 &location,
             )?;
-            let initializer = self.expression(
-                capture.initializer.root(),
-                &mut Binders::new(&scope.0, &scope.1),
-            )?;
             activation.push(TupleMember::Group(GroupTerm::new(vec![
-                member(
-                    "binder",
-                    LeafTerm::reference_node(
-                        scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
-                    ),
-                ),
+                member("binder", LeafTerm::reference_node(binder)),
                 member("initializer", initializer),
             ])));
         }
@@ -1654,7 +1654,10 @@ impl Lowering<'_> {
         )?;
         let relation = self.expression(
             checked.retry.relation.root(),
-            &mut Binders::new(&retry_scope.0, &retry_scope.1),
+            &mut Binders::new(
+                checked_slot_names(&checked.retry.slot_names, &retry_scope.0, &location)?,
+                &retry_scope.1,
+            ),
         )?;
         args.push(MemberTerm::binding(
             "retry",
@@ -1695,7 +1698,10 @@ impl Lowering<'_> {
         )?;
         let predicate = self.expression(
             checked.recover.predicate.root(),
-            &mut Binders::new(&recovery_scope.0, &recovery_scope.1),
+            &mut Binders::new(
+                checked_slot_names(&checked.recover.slot_names, &recovery_scope.0, &location)?,
+                &recovery_scope.1,
+            ),
         )?;
         args.push(MemberTerm::binding(
             "recovery",
@@ -1725,6 +1731,29 @@ impl Lowering<'_> {
             ),
         )?;
         Ok(key)
+    }
+
+    /// The initializer of the compensation capture `capture` and the
+    /// parameter node of its binder, the last of `entries`. The initializer
+    /// reads every binder of `entries` before the capture's own.
+    fn capture_initializer(
+        &mut self,
+        capture: &CheckedCapture,
+        entries: &[(String, ValueType)],
+        levels: &BTreeMap<String, usize>,
+        parameters: &mut BTreeMap<String, (NodeRef, NodeRef)>,
+        location: &Location,
+    ) -> Result<(LeafTerm, NodeRef), CheckRefusal> {
+        let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
+        let (names, mut scope) = self.compensation_scope(entries, levels, parameters, location)?;
+        let binder = scope.pop().ok_or_else(unchecked)?;
+        let (_, readable) = names.split_last().ok_or_else(unchecked)?;
+        let slot_names = checked_slot_names(&capture.slot_names, readable, location)?;
+        let initializer = self.expression(
+            capture.initializer.root(),
+            &mut Binders::new(slot_names, &scope),
+        )?;
+        Ok((initializer, binder.parameter))
     }
 
     fn compensation_scope(
@@ -2045,15 +2074,16 @@ impl Lowering<'_> {
         let binder = self.protocol_binder(closing, slot, readable.len(), &location)?;
         let mut scope = readable.to_vec();
         scope.push(binder.clone());
-        let slot_names: Vec<String> = checked
+        let stage: Vec<String> = checked
             .slots
             .binders
             .iter()
             .map(|binder| binder.name.clone())
             .collect();
-        let mut binders = Binders::new(&slot_names, &scope);
         let body = protocol.finish_body().ok_or_else(unchecked)?;
-        let constraint = self.expression(body.root(), &mut binders)?;
+        let slot_names = checked_slot_names(&body.slot_names, &stage, &location)?;
+        let mut binders = Binders::new(slot_names, &scope);
+        let constraint = self.expression(body.body.root(), &mut binders)?;
         let declaration = vec![
             identifier(name, &location)?,
             identifier("finish", &location)?,
@@ -2096,23 +2126,27 @@ impl Lowering<'_> {
         let (mode, condition) = match &protocol.checked.slots.terminal {
             CheckedTerminalMember::None => return Ok(None),
             CheckedTerminalMember::Any => ("any", None),
-            CheckedTerminalMember::When(body) => ("when", Some(body)),
+            CheckedTerminalMember::When {
+                predicate,
+                slot_names,
+            } => ("when", Some((predicate, slot_names))),
         };
         let condition = match condition {
             None => MemberTerm::binding("condition", empty_group()),
-            Some(body) => {
+            Some((body, checked_names)) => {
                 let scope: Vec<Binder> = match trigger {
                     None => readable.to_vec(),
                     Some(_) => readable.iter().take(1).cloned().collect(),
                 };
-                let slot_names: Vec<String> = protocol
+                let stage: Vec<String> = protocol
                     .checked
                     .slots
                     .binders
                     .iter()
                     .map(|binder| binder.name.clone())
                     .collect();
-                let mut binders = Binders::new(&slot_names, &scope);
+                let slot_names = checked_slot_names(checked_names, &stage, &location)?;
+                let mut binders = Binders::new(slot_names, &scope);
                 let term = self.expression(body.root(), &mut binders)?;
                 MemberTerm::binding(
                     "condition",
@@ -2443,6 +2477,23 @@ pub(super) enum ProtocolKey {
     /// The profile is selected and the protocol names this construct, the
     /// first of those whose node is not written yet.
     NotEmitted(ProtocolConstruct),
+}
+
+/// The name each slot of a checked obligation body is bound under:
+/// `checked`, the names its checker bound, once `stage`, the names the
+/// lowering binds in slot order, is found to be its prefix. The body's own
+/// binders (a query, `let` or aggregate binder) follow them, so lowering keys
+/// each binder's parameter node by its source name (FR-093).
+fn checked_slot_names<'n>(
+    checked: &'n [String],
+    stage: &[String],
+    location: &Location,
+) -> Result<&'n [String], CheckRefusal> {
+    if checked.starts_with(stage) {
+        Ok(checked)
+    } else {
+        Err(fault(location, KeyFault::UncheckedProtocolFact))
+    }
 }
 
 #[cfg(test)]
