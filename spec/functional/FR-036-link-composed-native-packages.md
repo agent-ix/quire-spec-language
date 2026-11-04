@@ -100,12 +100,22 @@ The linker SHALL validate each selected definition's identity, revision, bytes a
 
 If a definition is missing, conflicting or incompatible, then the linker SHALL refuse every dependent declaration with the failed selection retained.
 
-The selected `quire.observation.binding/v1` definition SHALL retain its exact
-transitive closure, including the registered `quire.protocol.finite-global/v1`
-dependency. Completing that closure does not make the observation-binding
-profile admissible at a use site that requires a protocol profile. A package
-cannot report the closure complete while omitting the protocol definition that
-the selected definition requires.
+For spine compilation, `qsl_replay::spine::check` SHALL retain a typed
+per-use profile outcome in its checked result. The outcome SHALL distinguish
+the selected profile identity, required use-site kind, definition-closure
+status and any typed closure cause; closure completion SHALL remain distinct
+from use-site admission.
+
+When a protocol use selects `quire.observation.binding/v1`, the spine checker SHALL retain its exact definition closure, including the registered
+`quire.protocol.finite-global/v1` dependency and that definition's transitive
+requirements. The spine checker SHALL separately report `WrongProfileKind`
+for this protocol use because observation binding is not a protocol profile.
+
+When the required protocol definition is omitted, conflicting or incompatible,
+the spine checker SHALL retain the corresponding typed closure cause in the
+per-use outcome and mark the protocol declaration refused or incomplete. The
+spine checker SHALL NOT report a complete checked package while this closure
+failure remains.
 
 The linker SHALL resolve native references by required declaration kind, exact owner/type and lexical scope.
 

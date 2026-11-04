@@ -152,7 +152,7 @@ no such variant and are retained. The composed AST holds 19 protocol types.
 | `ObservationBinding` closure requires `Protocol` | FR-036-AC-8, TC-114 row 7 | PORT QSL-1507 |
 | Composed proof discharge for a protocol (`correspondence.rs:226`, `proofs/engine/roots.rs`) | FR-040-AC-11, TC-119 row 11 | PORT QSL-1507 |
 | FR-048-AC-4 observed guards | FR-513-AC-12, TC-1308 row 22; legacy FR-218 | PARTIAL QSL-1507 until a passing tagged spine test exists |
-| FR-048-AC-9 independent compile/intake | FR-513-AC-13, TC-1308 row 23; legacy FR-383 | PARTIAL QSL-1507 until a passing tagged spine test exists |
+| FR-048-AC-9 independent compile/intake | FR-513-AC-13, TC-1308 row 23 (`tests/it/checked_handoff.rs::protocol_package_is_independently_admitted_and_identity_mutations_refuse`) | COVERED by the tagged spine successor |
 | FR-048-AC-8 authenticated timed `/2` | `emit_checked_with_temporal_selections` | PARTIAL (QSL-1414) |
 
 ## QSL-499: `src/native_model`

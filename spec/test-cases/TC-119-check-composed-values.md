@@ -108,13 +108,15 @@ representation, runtime prerequisites or assertions are still unavailable.
     expected types, identities, proof results and atomic refusals. Attempt to
     pass composed typed-only or partial output into historical checked/package
     execution boundaries; no label change or empty diagnostic list admits it.
-11. Bind a protocol declaration containing a Boolean `check` value root to its
-    exact formal source, authored clause and handler execution point. Require the
-    protocol declaration's proof to be `Discharged`, retain the actual proof goal
-    and causes, and verify that the value-proof result does not admit or execute
-    the protocol. Repeat with the source omitted or duplicated, the declaration
-    mapping absent or foreign, and a wrong execution point; require the typed
-    correspondence failure and no discharged proof.
+11. Through `qsl_replay::spine::parse`, `select` and `check`, bind a protocol
+    declaration containing a Boolean `check` value root to its exact formal
+    source, authored clause and handler execution point. Inspect the per-
+    declaration typed protocol-proof result: require `Discharged`, retained
+    actual proof goals, no causes and exact correspondence; verify that the
+    proof result does not admit or execute the protocol. Repeat with the formal
+    source omitted, duplicated or substituted, the declaration mapping absent
+    or foreign, and a wrong execution point; require a typed correspondence
+    failure or unfinished result and no discharged proof.
 
 ## Expected Results
 
