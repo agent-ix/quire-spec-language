@@ -2368,6 +2368,9 @@ pub(crate) struct ItemRecord {
     pub counterexample: Option<serde_json::Value>,
     /// The report's QSpec FR-351 separating witness, when it holds one.
     pub witness: Option<serde_json::Value>,
+    /// FR-283's `decisive` of a temporal violation, a sibling of
+    /// `counterexample`.
+    pub decisive: Option<serde_json::Value>,
     /// The values an insufficient-data window held.
     pub count: Option<u64>,
     /// The window's `min_count`.
@@ -2389,6 +2392,14 @@ pub(crate) fn item_record(report: &ClauseRunReport) -> Result<ItemRecord, Native
                 .as_ref()
                 .map(|witness| {
                     RecordWire::of(witness).and_then(|wire| Ok(serde_json::to_value(wire)?))
+                })
+                .transpose()?,
+            decisive: report
+                .decisive
+                .as_ref()
+                .map(|decisive| {
+                    crate::result::DecisiveWire::of(decisive)
+                        .and_then(|wire| Ok(serde_json::to_value(wire)?))
                 })
                 .transpose()?,
             ..ItemRecord::default()

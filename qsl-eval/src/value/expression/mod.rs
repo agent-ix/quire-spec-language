@@ -883,6 +883,24 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// FR-330 Outputs, FR-283 `decisive`: [`Self::evaluate_holds`] with
+    /// FR-107's witness channel kept: the result carries, beside the
+    /// evaluation, each decision and each quantifier stop report on the
+    /// condition's own level ([`ClauseEvaluation`]). `over` is the object the
+    /// clause's `over` parameter is bound to, and `observation` the identity
+    /// of the observation `objects` admitted, which roots every value path.
+    ///
+    /// A node that is no `holds` atom of `clause` is an `Err` fault.
+    fn evaluate_holds_traced(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: &quire_exact::ObjectReference,
+        objects: &ObjectEnvironment,
+        observation: ObservationIdentity,
+        meter: &mut Meter,
+    ) -> Result<ClauseEvaluation, CallFailure>;
+
     /// FR-125-AC-18, FR-330: evaluate the `when` guard of the `on each`
     /// activation of the temporal clause `clause` over `objects`, the
     /// observation at one position, with the `over` parameter and the trigger
@@ -1984,6 +2002,49 @@ impl CheckedPackageEvaluation for CheckedPackage {
         )
         .run(condition, slots, vec![over])
         .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_holds_traced(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: &quire_exact::ObjectReference,
+        objects: &ObjectEnvironment,
+        observation: ObservationIdentity,
+        meter: &mut Meter,
+    ) -> Result<ClauseEvaluation, CallFailure> {
+        let (condition, slots) = clause.condition(atom).ok_or_else(|| {
+            CallFailure::Fault(
+                InternalFault::new("S6a", "holds-atom-resolved-by-clause")
+                    .with_named(vec![("node", atom.index().to_string())]),
+            )
+        })?;
+        // `over` is slot 0 and the condition's receiver: a value read from
+        // it is rooted at its declared object identity (FR-107 "The
+        // receiver path").
+        let subject = s6a::separation::ValuePathSubject::Object(over.clone());
+        let mut trail = s6a::separation::Trail::new(observation.clone(), None);
+        trail.receiver = Some(over.clone());
+        trail.bindings.push(Some(subject.clone()));
+        let (evaluation, trail) = Machine::new(
+            self.graph().scope(),
+            self.graph(),
+            objects,
+            meter,
+            self.graph().dispatch_tables(),
+        )
+        .with_trail(trail)
+        .run_traced(condition, slots, vec![Value::Reference(over.clone())])
+        .map_err(CallFailure::Fault)?;
+        Ok(ClauseEvaluation::new(
+            evaluation,
+            trail,
+            Some(RuntimeValuePath {
+                observation,
+                subject,
+                steps: Vec::new(),
+            }),
+        ))
     }
 
     fn evaluate_guard(

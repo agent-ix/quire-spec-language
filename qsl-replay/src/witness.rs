@@ -576,6 +576,7 @@ pub use state_clause::StateClauseCounterexample;
 // FR-265: the one derivation of a state clause's settlement basis and
 // separating witness, which the clause run and the replay share.
 mod derivation;
+pub(crate) use derivation::decisive_stop;
 pub(crate) use derivation::derive_separating_witness;
 #[cfg(test)]
 pub(crate) use derivation::Derived;
