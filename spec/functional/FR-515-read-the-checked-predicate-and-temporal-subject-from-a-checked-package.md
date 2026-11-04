@@ -19,6 +19,10 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-513
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-531
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-532
+    type: references
 ---
 # FR-515: Read the checked predicate and the temporal subject from a checked package
 
@@ -225,8 +229,11 @@ starts from an emission.
   `EvidencePackage::from_read(&AdmittedPackageRead)` reaches it through the name
   row pairing. On any difference the first call that reaches the clause refuses
   `clause-unreadable` (FR-516), with an empty charge log and the caller's
-  ledgers unchanged. An evaluator over `formula_graph()` alone with no source
-  graph is not part of this requirement; it is a separate future capability.
+  ledgers unchanged. These two routes hold a source and so have a clause to
+  compare. The evaluator over `formula_graph()` alone with no source graph is in
+  scope: `EvidencePackage::from_package` over a bare package (FR-531, FR-532)
+  evaluates the package as admitted and makes no comparison, because it has no
+  source clause to differ from.
   A cycle among the `operands` edges and an operand
   position that names no entry are detected on those edges (FR-516
   `clause-unreadable`).
@@ -241,10 +248,22 @@ starts from an emission.
   the evaluator's atom indices is by formula order: the `k`-th entry of
   `predicate_leaves()` (one per `holds` atom in formula pre-order) is the `k`-th
   `holds` node in the clause's formula, whose index is the atom index the
-  evaluator reads valuations by. `EvidenceSubject.instance_bound` is the set of
+  evaluator reads valuations by; FR-532 "Atom index" states that index as the
+  position of the `holds` entry in `formula_graph()` pre-order on every route. `EvidenceSubject.instance_bound` is the set of
   those indices computed from the view in both routes, and no caller supplies it.
   When `predicate_leaves()` and the formula's `holds` nodes differ in count, the
   clause is unreadable (FR-516 `clause-unreadable`).
+
+### Consumer entry
+
+A consumer that holds only the `CheckedPackageV2` the reader returned, with no
+`Emission`, no `AdmittedPackageRead` and no source `CheckedPackage`, builds the
+evaluation package with `EvidencePackage::from_package` over a `BarePackage`
+(FR-531). It gets the same rows, views, clause ids and evaluator formula as the
+two in-process constructors, and the same `EvidenceResult` from the same request
+(FR-532). quire-protocol FR-046 consumes the evidence types through that entry.
+The views of this requirement are already functions of the package alone, and
+need no `BarePackage`.
 
 ## Acceptance Criteria
 

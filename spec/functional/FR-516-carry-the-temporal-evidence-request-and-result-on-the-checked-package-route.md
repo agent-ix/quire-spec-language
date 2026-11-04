@@ -35,6 +35,10 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-499
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-531
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-532
+    type: references
 ---
 # FR-516: Carry the temporal evidence request and result on the checked-package route
 
@@ -146,7 +150,7 @@ caller's ledgers unchanged. No other cause exists.
 | `progress-contradiction` | the progress assertion contradicts the progress ledger's retained watermark, completeness or closure (FR-502; names `contradicted_dimension`) |
 | `progress-inconsistent` | the request's positions and its progress assertion contradict each other as FR-504 "Consistency" states: under the event-position or the fixed-sample profile a fixed-sample watermark or a `Complete { through }` below the last position's coordinate; it applies to fixed-sample and event-position progress assertions only, because a timestamped-event clause takes completeness assertions (FR-501, FR-504) |
 | `clause-root-unresolved` | the clause node id is absent from the package or names a node that is not a temporal clause; the call refuses with `CallFailure::Admission` carrying the cause name `clause-root-unresolved`, which is FR-337's lookup result reused; FR-337 states no catalog code, so the call carries the cause name only |
-| `clause-unreadable` | the clause's formula, built from the subject view's `formula_graph()` entries and `operands` edges (FR-515), cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an `operands` position that names no entry or a cycle, a `predicate_leaves()` count that differs from the formula's `holds` count, or a clause whose formula differs from the source clause it is paired with in the admitted read's source (FR-515) (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523) |
+| `clause-unreadable` | the clause's formula, built from the subject view's `formula_graph()` entries and `operands` edges (FR-515), cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an `operands` position that names no entry or a cycle, a `predicate_leaves()` count that differs from the formula's `holds` count, or, on a route that holds a source, a clause whose formula differs from the source clause it is paired with in the admitted read's source (FR-515) (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523) |
 
 A progress ledger whose covered positions would exceed its capacity is not a
 refusal: the call returns an `Incomplete(LimitReached{limit: node count, value,
@@ -309,6 +313,19 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 - **Contract ids.** The four contract strings have no producer after this
   requirement; quire-protocol's producer-contract registry rows for them end with
   QSL-1549, not before (FR-521 row 4).
+
+### Consumer entry
+
+`evaluate_temporal_evidence` is also the call of the package built by
+`EvidencePackage::from_package` over a `BarePackage` (FR-531), the entry for a
+consumer that holds only a `CheckedPackageV2`. It reads the clause's activation,
+profile, clock, formula and the package identity of its progress binding from the
+package's own nodes and rows, spells an atom by its position in `formula_graph()`
+pre-order, adds no cause and no refusal dimension, and returns for one package and
+one request the same result and charges as the two routes that start from source
+(FR-532). Its reasons for `clause-unreadable` add `profile-unknown` (FR-531). The
+`Emission`-constructed and read-back packages keep the cross-check against their
+source; the bare package has none.
 
 ## Acceptance Criteria
 
