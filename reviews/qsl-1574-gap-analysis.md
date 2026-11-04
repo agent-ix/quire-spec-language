@@ -44,3 +44,9 @@ Round 1 against fix head 53a92d0f9e41cded134760a474f9a3d9d2cb10be; gates as in S
 | FND-001 | fixed | pending_and_indeterminate_outcomes_read_the_catalog_label_and_exit is tagged TC-769 and FR-285-AC-11 and asserts category, label, exit and trace exit for a pending and an indeterminate run and the ten-category table. Mutation in a scratch copy (TemporalVerdict::category returns Inconclusive for the pending verdicts and Undefined for Indeterminate) fails it plus four sibling temporal tests. The step-10 greps give zero production hits. |
 | FND-002 | fixed | origin/main FR-285 (QSL-1574 spec, #2238) now reads the shared ten-category catalog, states AC-11 without the IR-1281 gate, and TC-769 step 10 requires the greps. |
 | FND-003 | fixed | t07b adds a flag-only case: same key, identical member list (DONE, READY), ordered true against false, asserted equal key and equal members, and compare_enum refuses DistinctEnumDeclarations for every operator. The earlier variant is relabelled "different ordering flag and order". |
+
+Round 2 against fix head ee2cf1d6ecf79b3953f75daa54e3112ce8825387 (origin/main 3e7eccfff already merged in, so the trial merge is the head itself). Rows below are this round's; each finding's latest row is current.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | deferred: the monitor-document half is tracked as QSL-1622 and FR-285's Delivery line correction is pending with the lead | The run_clause half is fixed: an_infinite_trace_clause_reads_a_finite_prefix_as_pending_and_a_lasso_exactly is now also tagged TC-769 and FR-285-AC-9 and asserts Category::Pending and exit 0. No production code builds a monitor OutcomeDocument or a Pending or Indeterminate OutcomeItem; that producer is QSL-1622. |
