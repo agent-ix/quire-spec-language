@@ -398,12 +398,13 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
     assert_eq!(refusal.cause(), Some("timed-node-reference"));
 }
 
-/// FR-050-AC-2 / TC-1308: the emitter rejects temporal selections that do
-/// not follow the structural declaration identity order.
+/// FR-050-AC-2 / TC-1308: the emitter canonicalizes temporal binding rows by
+/// structural declaration identity even when caller selections arrive in a
+/// different order.
 #[trace("TC-1308", "FR-050-AC-2", "FR-513-AC-9")]
 #[test]
-fn temporal_clock_selections_must_follow_node_reference_order() {
-    use crate::emit::{EmitRefusal, TemporalClockSelection};
+fn temporal_clock_bindings_follow_node_reference_order() {
+    use crate::emit::TemporalClockSelection;
 
     let source = unit(
         EVENT,
@@ -436,17 +437,19 @@ fn temporal_clock_selections_must_follow_node_reference_order() {
         .rev()
         .map(|(_, selection)| selection)
         .collect();
-    let out_of_order_span = reversed[1].declaration_span;
     let package = CheckedPackage::link(graph);
-    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &reversed)
-        .expect_err("selection order is part of the emitter contract");
-    assert!(matches!(
-        &refusal,
-        EmitRefusal::InvalidTemporalClockReference { span, .. }
-            if *span == out_of_order_span
-    ));
-    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
-    assert_eq!(refusal.cause(), Some("timed-node-reference"));
+    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &reversed)
+        .expect("selection order is independent of emitted binding order");
+    let wire = wire(&emission);
+    let bytes = emission.package.bytes();
+    let read = read_v2(bytes, library(), V2ReadLimits::default(), &evidence(&wire));
+    let Read::Verified { admitted, .. } = read else {
+        panic!("the canonical binding order is admitted: {read:?}");
+    };
+    let bindings = admitted.temporal_bindings().expect("event-position rows");
+    assert!(bindings.windows(2).all(|pair| {
+        (&pair[0].declaration, pair[0].occurrence) <= (&pair[1].declaration, pair[1].occurrence)
+    }));
 }
 
 /// FR-050-AC-3 / TC-1308: the producer refuses malformed or out-of-range

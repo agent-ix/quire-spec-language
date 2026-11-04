@@ -308,7 +308,7 @@ No output holds a truth value.
 | FR-524-AC-20 | With a ledger holding `t1`, a later call that delivers `t1` with a different payload returns the contradiction refusal, and the ledger is unchanged. | Test (TC-1319) |
 | FR-524-AC-21 | With a ledger holding `t1` and a retained capture of `t1` in `evicted`, the call reports an `ActivationFault` naming the capture with `Missing` and recomputes nothing. | Test (TC-1319) |
 | FR-524-AC-22 | A later delivery or observation that carries a changed amount or reference leaves the retained capture environment byte-identical, and the type exposes no mutator of it. | Test (TC-1319) |
-| FR-524-AC-23 | A capture initializer that reads a capture written after it is refused at S3 and no clause node is emitted. | Test (TC-1319) |
+| FR-524-AC-23 | A capture initializer that reads a capture written after it is refused at S3 and no clause node is emitted; FR-337-AC-8 owns this refusal and its test. | Test (TC-1267) |
 | FR-524-AC-24 | An evicted required valuation returns `Incomplete` naming the evicted subject with no truth. | Test (TC-1319) |
 | FR-524-AC-25 | The same trace as AC-24 with the valuation present evaluates the whole interval. | Test (TC-1319) |
 | FR-524-AC-26 | A call with two deliveries and one capture each charges `evaluation_steps` 2 for the deliveries, 2 for the captures, `instances` 2 and `captures` 2 for the activation. | Test (TC-1319) |

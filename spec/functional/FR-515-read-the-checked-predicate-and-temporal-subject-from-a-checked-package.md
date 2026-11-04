@@ -104,7 +104,7 @@ evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of 
 | `clock()` | `clock() -> Option<&TemporalBinding>` | the `temporal_bindings()` row for this declaration's occurrence when the node has one occurrence; `None` when the lock selects no clock configuration and `None` for a node with several occurrences, whose rows `clock_of(&ClauseOccurrence)` returns by the key `{ declaration, role, ordinal }` |
 | `activation()` | `activation() -> Activation` | `Origin`, or `Each { trigger: CheckedNodeId, guard: Option<CheckedNodeId> }` from the clause's activation argument |
 | `captures()` | `captures() -> &[CheckedNodeId]` | the clause's captures argument, in source order |
-| `operators()`, `required_history()` | `formula() -> Vec<OperatorUse>`, each `{ operation: &str, interval: Option<Interval> }` in formula pre-order | the `quire.op.temporal.*` applications and their `temporal_interval` members (FR-337); the history span is derived by FR-043, not carried |
+| `operators()`, `required_history()` | `formula() -> Vec<OperatorUse>`, each `{ operation: &str, interval: Option<Interval> }` in formula pre-order; and `formula_graph() -> Vec<FormulaNodeUse>`, each `{ operation: &str, interval: Option<Interval>, operands: &[usize] }` in formula pre-order, `operands` being the positions in that list of the node's operand entries | `formula()` lists the `quire.op.temporal.*` applications and their `temporal_interval` members (FR-337) only; `formula_graph()` lists every formula node the clause reads: the temporal applications, the `holds` applications, the connectives and the constants, a `holds` atom, a constant and a leaf having no operands; the history span is derived by FR-043, not carried |
 | `predicate_leaves()` | `predicate_leaves() -> &[CheckedNodeId]` | the Boolean operand node of every `holds` atom in formula pre-order, one entry per atom. The activation guard is a separate node of the clause's activation argument; equal terms share one node (FR-337), so a guard equal to a `holds` operand is that same node and is among the entries |
 | `history_boundary()` | none | a property of an evaluation input (FR-516), not of the package |
 | `values()`, `bindings()`, `type_indices()`, `temporal_nodes()` | none | the checked graph is the closed table; a caller resolves a node id with `CheckedPackageV2::term` |
@@ -166,15 +166,53 @@ only when one is written.
 
 ### The in-process package
 
-The in-memory checked package that QSL's I2 write holds before the lock is
-emitted answers both views with the facts the read-back package answers them
-with. It carries, at construction, each clause's `profile_selections` row and one
-`TemporalBinding` row per clause occurrence, and a clause occurrence pairs with
-its row by the row's key `{ declaration, role, ordinal }`, never by position, so
-the pairing needs no emitted lock. Two clauses with different nodes never read
-each other's rows. A view over the
-in-memory package therefore equals the view over the package read back from its
-bytes.
+The in-process evaluation package is the `CheckedPackageEvaluation` that QSL
+constructs from an `Emission` (FR-337), and the read-back one is constructed from
+the emitted bytes through the reader. Both answer both views, and every view of
+the first equals the view of the second. The pre-emission `CheckedPackage` of the
+checker carries no clock rows and no profile selections, because the clock
+configuration is an input to emission (FR-050), so it is not a package this
+requirement reads; evaluation starts from an emission.
+
+- **Rows at construction.** `CheckedPackageEvaluation::from_emission` takes the
+  `profile_selections` rows and the `temporal_bindings` rows (one per clause
+  occurrence) from the `Emission` exactly as the emitter wrote them, and holds
+  them from construction. It recomputes none of them and takes no clock from any
+  other argument, so no call can read a clock the lock does not hold.
+- **Ids.** `from_emission` also takes the `TemporalClauseRef` values of the
+  `Emission` (FR-337): the `CheckedNodeId` of each clause occurrence is the id the
+  emitted bytes assign, so a caller holding the `Emission` names a clause by the
+  same `CheckedNodeId` a caller holding the read-back package names it by.
+  `CheckedNodeId` stays hash-assigned during emission, and no caller derives one.
+  This choice keeps the in-process and the read-back route identical, because the
+  in-process route uses the emitter's own values and no second derivation exists.
+- **Clause and row by key.** A `CheckedNodeId` plus an occurrence `{ role, ordinal }`
+  selects the clause occurrence, and its clock row by the key `{ declaration, role,
+  ordinal }`, never by position among the node's occurrences or rows. The
+  in-process route pairs a `TemporalClauseRef` to the in-memory clause by its
+  `clause` position and the read-back route pairs a `temporal_clause_names` row to
+  its clause by `{ declaration, occurrence }`, and the two pair the same clause.
+  Two clauses with different nodes never read each other's rows.
+- **One evaluator formula.** The evaluator's formula is built from the subject
+  view's `formula_graph()` entries and their `operands` edges by one construction that
+  both routes share, and from no other data, so the evaluation package built from
+  an `Emission` and the one built from the emitted bytes give the evaluator the
+  same formula by construction. A cycle among the `operands` edges and an operand
+  position that names no entry are detected on those edges (FR-516
+  `clause-unreadable`).
+- **Instance-bound atoms are derived.** The trigger binder of a clause is the
+  `trigger` node of `activation()` (`Each`), and its capture binders are
+  `captures()`; the `over()` binder is neither. The instance-bound atoms of a clause
+  are the `holds` atoms whose operand `binders()` (checked predicate view) include
+  the trigger binder or a capture binder; an atom that reads only the `over()`
+  binder, a constant or no binder is not instance-bound, and the activation guard
+  is not a `holds` atom and has no atom index. The mapping to the evaluator's atom indices is by formula
+  order: the `k`-th entry of `predicate_leaves()` (one per `holds` atom in formula
+  pre-order) is the `k`-th `holds` node in the clause's formula, whose index is the
+  atom index the evaluator reads valuations by. `EvidenceSubject.instance_bound`
+  is the set of those indices computed from the view in both routes, and no caller
+  supplies it. When `predicate_leaves()` and the formula's `holds` nodes differ in
+  count, the clause is unreadable (FR-516 `clause-unreadable`).
 
 ## Acceptance Criteria
 
@@ -197,9 +235,12 @@ bytes.
 | FR-515-AC-15 | `requirements()` of a temporal clause that no protocol `requirements` entry names is empty, and of a clause that a protocol's `requirements` entry names holds that protocol clause's node id. | Test (TC-1310) |
 | FR-515-AC-16 | `checked_predicate` of an activation guard returns a view whose `source_span` is one of the source map entries of the guard node. | Test (TC-1310) |
 | FR-515-AC-17 | `checked_predicate` of a `ClauseLeaf` returns a view whose `source_span` is the entry of the leaf node whose regions lie inside the source regions of the clause's formula root node. | Test (TC-1310) |
-| FR-515-AC-18 | Over the in-memory package of the I2 write before emit, `temporal_subject` returns the `profile()` and `clock()` equal to those of the package read back from the emitted bytes, for each of **R**'s clauses. | Test (TC-1310) |
-| FR-515-AC-19 | In a package with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row, in the in-memory and the read-back package alike. | Test (TC-1310) |
-| FR-515-AC-20 | Over a constructed package of twins of one node, built in memory and read back, whose node `occurrences` array order is ordinal 7 then ordinal 3 while the lock's clock rows ascend as ordinal 3 then ordinal 7, with different clock configurations (QSL's emitter cannot produce this order, which is why the package is constructed), `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3 and `clock_of` of ordinal 7 returns the row keyed ordinal 7, `clock()` is `None`, and the same holds for the in-memory and the read-back package; a pairing by position fails this criterion. | Test (TC-1310) |
+| FR-515-AC-18 | Over **R**'s clauses, `temporal_subject` over the `CheckedPackageEvaluation` constructed from the `Emission` returns `profile()`, `clock()` and `occurrences()` equal to those over the package read back from the emitted bytes, and the `profile_selections` and `temporal_bindings` rows it holds equal the `Emission`'s rows byte for byte. | Test (TC-1310) |
+| FR-515-AC-19 | In a package with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row, in the evaluation package constructed from the `Emission` and in the read-back package alike. | Test (TC-1310) |
+| FR-515-AC-20 | Over a constructed V2 package of twins of one node, whose node `occurrences` array order is ordinal 7 then ordinal 3 while the lock's clock rows ascend as ordinal 3 then ordinal 7, with different clock configurations, read back through the reader (QSL's emitter cannot produce this order, so the package is constructed and no `Emission` or in-process counterpart exists for it), `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3, `clock_of` of ordinal 7 returns the row keyed ordinal 7, and `clock()` is `None`; a pairing by position fails this criterion. | Test (TC-1310) |
+| FR-515-AC-21 | For each `TemporalClauseRef` of an `Emission`, the `CheckedNodeId` equals the `declaration` of the `temporal_clause_names` row read back at the same occurrence, and the `CheckedNodeId` of a clause in the evaluation package constructed from the `Emission` equals the one in the read-back package; a derivation of ids outside the emitter does not exist in the API. | Test (TC-1310) |
+| FR-515-AC-22 | For a clause with a guard that reads the trigger binder and four `holds` atoms in formula order at indices 0 to 3, one reading a capture (index 0), one reading only `over()` (index 1), one reading neither (index 2), and one reading the trigger binder and a capture (index 3), the derived instance-bound set is exactly `{0, 3}`, the guard has no index, and the set equals the one the read-back package gives; swapping the formula order of the first and the second atom gives `{1, 3}`; a caller-supplied set is not accepted. | Test (TC-1310) |
+| FR-515-AC-23 | For each clause of **R** and the clause of AC-22, the evaluator's formula built from the evaluation package constructed from the `Emission` equals, node for node with operations, intervals and operand edges, the formula built from the read-back package; `formula_graph()` of AC-3's clause lists the `always` entry with one operand position that names the `holds` entry, while `formula()` of that clause lists the `always` and `holds` applications exactly as AC-3 states; and a view whose `operands` hold a cycle or an out-of-range position makes the clause unreadable (FR-516). | Test (TC-1310) |
 
 ## Dependencies
 
@@ -207,5 +248,6 @@ bytes.
   QSL-1270 (digest removal), `quire_contract_model::CheckedPackageV2`; IR-1278
   (the clause name, gates FR-515-AC-14); QSpec FR-322 (the per-occurrence clock
   rows FR-515-AC-13 and AC-20 read).
+- **Delivery:** FR-515-AC-18 to AC-23 and FR-516-AC-18, AC-29 and AC-30 are delivered by QSL-1608, which builds the `Emission`-constructed package and the shared formula construction.
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/result/record.rs`
   (QSL-1549).
