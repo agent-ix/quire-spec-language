@@ -23,6 +23,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-505
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-531
+    type: references
 ---
 # FR-517: Write a checked-package handoff directory from source, in process
 
@@ -87,6 +89,7 @@ A new directory containing exactly:
 | `models/<n>.json` | each domain package document, exact bytes, in selection order |
 | `inventory.json` | `qsl_replay::qsl_inventory` over the unit, with the selected formal identity (FR-514); written once QSL-1512 provides `qsl_inventory` over the spine unit (FR-517-AC-11) |
 | `selection.json` | the selection sidecar, `quire.checked-handoff.selection/1` |
+| `identities.json` | the identity file, `quire.checked-handoff.identities/1`: the selected model identity rows of the in-process unit (FR-390), in the encoding FR-531 "The identity file" states, read by a bytes-only consumer with the package to evaluate a protocol slot (FR-531) |
 | `mutations/manifest.json`, `mutations/<case>.json` | present only for `corpus = Standard` (FR-518) |
 
 The sidecar holds, per temporal clause: the clause `NodeId`, declared name, the

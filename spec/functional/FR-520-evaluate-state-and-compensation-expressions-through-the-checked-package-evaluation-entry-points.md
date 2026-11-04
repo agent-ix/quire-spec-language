@@ -21,6 +21,10 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-500
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-531
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-533
+    type: references
 ---
 # FR-520: Evaluate state and compensation expressions through the checked-package evaluation entry points
 
@@ -89,6 +93,18 @@ A `CheckedPackageEvaluation` over the package read with
 | FR-023-AC-1 to AC-5 (attempt and effect distinctness) | engine | none |
 | FR-024-AC-1 to AC-6 (recovery only by the authored relation) | QSL for each relation | AC-5 and AC-6 below |
 | FR-003-AC-6, AC-7 (missing authority leaves no success; no I/O) | engine plus QSL | AC-6 and AC-8 below |
+
+### Consumer entry
+
+quire-protocol holds a `CheckedPackageV2` and no source package. It evaluates the
+slots of this requirement through `BarePackage` (FR-531): `evaluate_protocol_slot`
+over the package's own nodes, with the identity rows of the handoff directory and
+the closure of admitted dependencies as its supply. The outcome map, the tc_003
+division and every criterion below hold for that entry as for the in-process
+package, and FR-533 states the equivalence of the two with their charge logs.
+`call` and `evaluate` are not part of the bare entry (FR-531 capability
+inventory); the slot call is the consumer's entry for functions and predicates of
+the protocol.
 
 ## Acceptance Criteria
 

@@ -19,6 +19,10 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-513
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-531
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-532
+    type: references
 ---
 # FR-515: Read the checked predicate and the temporal subject from a checked package
 
@@ -104,7 +108,7 @@ evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of 
 | `clock()` | `clock() -> Option<&TemporalBinding>` | the `temporal_bindings()` row for this declaration's occurrence when the node has one occurrence; `None` when the lock selects no clock configuration and `None` for a node with several occurrences, whose rows `clock_of(&ClauseOccurrence)` returns by the key `{ declaration, role, ordinal }` |
 | `activation()` | `activation() -> Activation` | `Origin`, or `Each { trigger: CheckedNodeId, guard: Option<CheckedNodeId> }` from the clause's activation argument |
 | `captures()` | `captures() -> &[CheckedNodeId]` | the clause's captures argument, in source order |
-| `operators()`, `required_history()` | `formula() -> Vec<OperatorUse>`, each `{ operation: &str, interval: Option<Interval> }` in formula pre-order; and `formula_graph() -> Vec<FormulaNodeUse>`, each `{ operation: &str, interval: Option<Interval>, operands: &[usize] }` in formula pre-order, `operands` being the positions in that list of the node's operand entries | `formula()` lists the `quire.op.temporal.*` applications and their `temporal_interval` members (FR-337) only; `formula_graph()` lists every formula node the clause reads: the temporal applications, the `holds` applications, the connectives and the constants, a `holds` atom, a constant and a leaf having no operands; the history span is derived by FR-043, not carried |
+| `operators()`, `required_history()` | `formula() -> Vec<OperatorUse>`, each `{ operation: &str, interval: Option<Interval> }` in formula pre-order; and `formula_graph() -> Vec<FormulaNodeUse>`, each `{ node: &CheckedNodeId, operation: &str, interval: Option<Interval>, aggregate: Option<AggregateUse>, operands: &[usize] }`, `node` being the formula node's id (equal terms share one node, FR-337) and `aggregate` the window aggregate argument of a `quire.op.temporal.aggregate` entry (`{ kind, filter, window, min_count, expression: &CheckedNodeId, comparison, threshold }`, FR-337-AC-15), absent for every other entry in formula pre-order, `operands` being the positions in that list of the node's operand entries | `formula()` lists the `quire.op.temporal.*` applications and their `temporal_interval` members (FR-337) only; `formula_graph()` lists every formula node the clause reads: the temporal applications, the `holds` applications, the connectives and the constants, a `holds` atom, a constant and a leaf having no operands; the history span is derived by FR-043, not carried |
 | `predicate_leaves()` | `predicate_leaves() -> &[CheckedNodeId]` | the Boolean operand node of every `holds` atom in formula pre-order, one entry per atom. The activation guard is a separate node of the clause's activation argument; equal terms share one node (FR-337), so a guard equal to a `holds` operand is that same node and is among the entries |
 | `history_boundary()` | none | a property of an evaluation input (FR-516), not of the package |
 | `values()`, `bindings()`, `type_indices()`, `temporal_nodes()` | none | the checked graph is the closed table; a caller resolves a node id with `CheckedPackageV2::term` |
@@ -225,8 +229,11 @@ starts from an emission.
   `EvidencePackage::from_read(&AdmittedPackageRead)` reaches it through the name
   row pairing. On any difference the first call that reaches the clause refuses
   `clause-unreadable` (FR-516), with an empty charge log and the caller's
-  ledgers unchanged. An evaluator over `formula_graph()` alone with no source
-  graph is not part of this requirement; it is a separate future capability.
+  ledgers unchanged. These two routes hold a source and so have a clause to
+  compare. The evaluator over `formula_graph()` alone with no source graph is in
+  scope: `EvidencePackage::from_package` over a bare package (FR-531, FR-532)
+  evaluates the package as admitted and makes no comparison, because it has no
+  source clause to differ from.
   A cycle among the `operands` edges and an operand
   position that names no entry are detected on those edges (FR-516
   `clause-unreadable`).
@@ -239,12 +246,26 @@ starts from an emission.
   `over()` binder, a constant or no binder is not instance-bound, and the
   activation guard is not a `holds` atom and has no atom index. The mapping to
   the evaluator's atom indices is by formula order: the `k`-th entry of
-  `predicate_leaves()` (one per `holds` atom in formula pre-order) is the `k`-th
-  `holds` node in the clause's formula, whose index is the atom index the
-  evaluator reads valuations by. `EvidenceSubject.instance_bound` is the set of
-  those indices computed from the view in both routes, and no caller supplies it.
+  `predicate_leaves()` (one per `holds` use in formula pre-order) is the `k`-th
+  `holds` use of the clause's formula. The atom index is numbered over the
+  distinct atoms only (the `holds` nodes and the window aggregate nodes), 0 to
+  n-1, a node shared by two parents being one atom numbered at its first use in
+  pre-order (FR-532 "Atom index").
+  `EvidenceSubject.instance_bound` is the set of those indices computed from the
+  view on every route, and no caller supplies it.
   When `predicate_leaves()` and the formula's `holds` nodes differ in count, the
   clause is unreadable (FR-516 `clause-unreadable`).
+
+### Consumer entry
+
+A consumer that holds only the `CheckedPackageV2` the reader returned, with no
+`Emission`, no `AdmittedPackageRead` and no source `CheckedPackage`, builds the
+evaluation package with `EvidencePackage::from_package` over a `BarePackage`
+(FR-531). It gets the same rows, views, clause ids and evaluator formula as the
+two in-process constructors, and the same `EvidenceResult` from the same request
+(FR-532). quire-protocol FR-046 consumes the evidence types through that entry.
+The views of this requirement are already functions of the package alone, and
+need no `BarePackage`.
 
 ## Acceptance Criteria
 
@@ -271,7 +292,7 @@ starts from an emission.
 | FR-515-AC-19 | In a unit the test authors over the `config-version` model (`examples/config-version`), whose temporal clauses (capture, `on each` activation, guard) the test writes, since the example holds none, with two temporal clauses of different nodes and different clock rows, each node's `clock()` is its own occurrence's row, in the evaluation package constructed from the `Emission` and in the read-back package alike. | Test (TC-1310) |
 | FR-515-AC-20 | Over a constructed V2 package of twins of one node, whose node `occurrences` array order is ordinal 7 then ordinal 3 while the lock's clock rows ascend as ordinal 3 then ordinal 7, with different clock configurations, read back through the reader (QSL's emitter cannot produce this order, so the package is constructed and no `Emission` or in-process counterpart exists for it), `clock_of` of the occurrence with ordinal 3 returns the row keyed ordinal 3, `clock_of` of ordinal 7 returns the row keyed ordinal 7, and `clock()` is `None`; a pairing by position fails this criterion. | Test (TC-1310) |
 | FR-515-AC-21 | For each `TemporalClauseRef` of an `Emission`, the `CheckedNodeId` equals the `declaration` of the `temporal_clause_names` row read back at the same occurrence, and the `CheckedNodeId` of a clause in the evaluation package constructed from the `Emission` equals the one in the read-back package; a derivation of ids outside the emitter does not exist in the API. | Test (TC-1310) |
-| FR-515-AC-22 | In a unit the test authors over the `config-version` model (`examples/config-version`), whose temporal clauses (capture, `on each` activation, guard) the test writes, since the example holds none, for a clause with a guard that reads the trigger binder and four `holds` atoms in formula order at indices 0 to 3, one reading a capture binder (index 0), one reading only `over()` (index 1), one reading no binder (index 2) and one reading a capture binder and `over()` (index 3), the derived instance-bound set is exactly `{0, 3}`, the guard has no index, and the set equals the one the read-back package gives; swapping the formula order of the first and the second atom gives `{1, 3}`; a caller-supplied set is not accepted. | Test (TC-1310) |
+| FR-515-AC-22 | In a unit the test authors over the `config-version` model (`examples/config-version`), whose temporal clauses (capture, `on each` activation, guard) the test writes, since the example holds none, for a clause with a guard that reads the trigger binder and four distinct `holds` atoms in formula order at atom indices 0 to 3 (FR-532 "Atom index"), one reading a capture binder (index 0), one reading only `over()` (index 1), one reading no binder (index 2) and one reading a capture binder and `over()` (index 3), the derived instance-bound set is exactly `{0, 3}`, the guard has no index, and the set equals the one the read-back package gives; swapping the formula order of the first and the second atom gives `{1, 3}`; a caller-supplied set is not accepted. | Test (TC-1310) |
 | FR-515-AC-23 | For each clause of **R** and the authored clause of AC-22, the evaluator's formula built from the evaluation package constructed from the `Emission` equals, node for node with operations, intervals and operand edges, the formula built from the read-back package; `formula_graph()` of AC-3's clause lists the `always` entry with one operand position that names the `holds` entry, while `formula()` of that clause lists the `always` and `holds` applications exactly as AC-3 states; and a view whose `operands` hold a cycle or an out-of-range position makes the clause unreadable (FR-516). | Test (TC-1310) |
 | FR-515-AC-24 | In a unit the test authors over the `config-version` model (`examples/config-version`), whose temporal clauses (capture, `on each` activation, guard) the test writes since the example holds none, the test writes the package through an emitter fixture that mutates one written operation, one interval or one operand edge (each in its own run), so the written package differs from the source clause, and passes the result to the read. The `EvidencePackage` built by `from_emission` and the one built by `from_read` each refuse `clause-unreadable` at the first call that reaches the clause, with an empty charge log; the unmutated package is evaluated on each route. | Test (TC-1310) |
 | FR-515-AC-25 | Over an `Emission` whose clause reference at a position points at a clause carrying another name than the name row, `from_emission` returns `PackageMismatch::ClauseRow` at construction and no call is made or charged. | Test (TC-1310) |
