@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::vault_world::{with_body, Build, World, SECURE};
 
 const CLAIM: &str = "probabilistic Reach using inf on V under every scheduler on origin \
-                     { probability >= 0 [ eventually holds(false) ] }";
+                     { probability >= 0.5 [ eventually holds(false) ] }";
 
 #[trace("TC-636", "FR-201-AC-1")]
 #[test]
@@ -27,7 +27,7 @@ fn exact_checker_reconstructs_bounded_graph_from_checked_model_system() {
     let world = World::build(
         &["v"],
         false,
-        &with_body("", "", "always holds(v.l = v.l)"),
+        &with_body("", "", "always holds(true)"),
         &build,
     );
     let mut subject = world.subject();
