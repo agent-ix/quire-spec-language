@@ -2611,6 +2611,7 @@ fn timestamped_mixed_authorities_have_one_canonical_order() {
 /// dimension, before any position is visited.
 #[trace("TC-1295", "FR-330-AC-9")]
 #[trace("TC-1317", "FR-330-AC-11")]
+#[trace("TC-1317", "FR-522-AC-6")]
 #[test]
 fn timestamped_binding_is_required_and_authenticated() {
     let refusal = |request: ClauseRunRequest| {
@@ -2650,6 +2651,39 @@ fn timestamped_binding_is_required_and_authenticated() {
     assert_eq!(
         profile.get("mismatched_dimension").map(String::as_str),
         Some("Profile")
+    );
+    // FR-522-AC-6: a timestamp unit other than the `temporal_bindings` row's
+    // is refused with `TimestampUnit`, naming both units.
+    let unit = refusal(timestamped_changed(base(), |trace| {
+        trace.window.binding.as_mut().unwrap().parameters =
+            qsl_package::ClockConfiguration::TimestampedEvent {
+                timestamp_unit: "us".into(),
+            };
+    }));
+    assert_eq!(
+        unit.get("mismatched_dimension").map(String::as_str),
+        Some("TimestampUnit")
+    );
+    assert_eq!(unit.get("asserted").map(String::as_str), Some("us"));
+    assert_eq!(unit.get("expected").map(String::as_str), Some("ms"));
+    // FR-522-AC-3: another configuration alternative is `ClockParameters`.
+    let alternative = refusal(timestamped_changed(base(), |trace| {
+        trace.window.binding.as_mut().unwrap().parameters =
+            qsl_package::ClockConfiguration::EventPosition {
+                sequence_authority: "ms".into(),
+            };
+    }));
+    assert_eq!(
+        alternative.get("mismatched_dimension").map(String::as_str),
+        Some("ClockParameters")
+    );
+    assert_eq!(
+        alternative.get("asserted").map(String::as_str),
+        Some("event_position")
+    );
+    assert_eq!(
+        alternative.get("expected").map(String::as_str),
+        Some("timestamped_event")
     );
     // An agreeing binding runs.
     assert_eq!(outcome(&report(base())), &TemporalVerdict::Holds);
