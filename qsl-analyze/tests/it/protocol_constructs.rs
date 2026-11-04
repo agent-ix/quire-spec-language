@@ -1188,6 +1188,38 @@ fn a_nested_repeat_counter_restarts_on_each_entry() {
     assert_eq!(projections(&reached), expected);
 }
 
+/// FR-218-AC-33 / TC-1268: a guard reading a binder from its repeat body
+/// executes one body pass first; a false binder exits, while a true binder
+/// permits the second pass up to the declared maximum.
+#[trace("TC-1268", "FR-218-AC-33", "QSpec-FR-228-AC-2")]
+#[test]
+fn a_post_test_repeat_reads_the_latest_body_binder() {
+    let unit = case_without_protocol_profile_selection(
+        "",
+        "sequence Main { repeat Poll by w visible (ready) max 2 while { ready } \
+         sequence Body { event Ready by w as (ready: Boolean) { true }; } \
+         exhausted sequence Done { } }",
+    );
+    let subject = unit.subject("P");
+    let protocol = subject
+        .model
+        .simulation
+        .package
+        .graph()
+        .protocol("P")
+        .expect("the protocol");
+    assert!(protocol.slots.repeats[0].post_test);
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let expected: BTreeSet<Vec<String>> = [
+        vec!["Ready".to_owned(), "Done".to_owned()],
+        vec!["Ready".to_owned(), "Ready".to_owned(), "Done".to_owned()],
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(projections(&reached), expected);
+}
+
 /// The package emitter still reports its separate nested-repeat wire gap.
 /// This does not replace TC-651's direct in-memory runtime coverage above.
 #[test]
