@@ -163,7 +163,8 @@ FR-520-AC-11 states.
   slots, which is unmet parity, not a scope reduction.
 - **Contract IR:** IR-1324 (the wire projector carries recursive record types and
   Option and Collection members; owner luna:IR:codex2) is the unmet-parity
-  dependency of FR-533-AC-7. A public read access to the direct dependencies a
-  `CheckedPackageV2` retains from its read evidence is a further Contract IR
-  dependency of the bare route over a package that has dependencies (FR-531).
+  dependency of FR-533-AC-7. IR-1325 (a public read-only accessor on
+  `CheckedPackageV2` for the direct dependencies it retains from its read evidence;
+  owner luna:IR:codex2) is a further Contract IR dependency of the bare route over a
+  package that has dependencies (FR-531).
 - **Downstream:** quire-protocol FR-045.
