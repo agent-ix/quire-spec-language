@@ -364,7 +364,7 @@ pub use assemble::{
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
     TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
-pub use capability::{Capability, UnknownCapabilityLabel};
+pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
     DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
     VariantCaseDeclaration, VariantTypeDeclaration,

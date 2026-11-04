@@ -20,7 +20,9 @@ use qsl_replay::{ModelCheckItem, ModelCheckLimits, ProtocolCertificateRequest, S
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::request::{DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem};
 use qsl_route::Mode;
-use qsl_semantics::check::{Capability, HyperForm, TerminalKeys, TerminalMismatch};
+use qsl_semantics::check::{
+    Capability, DeclarationFamily, HyperForm, TerminalKeys, TerminalMismatch,
+};
 use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::CatalogCode;
@@ -55,7 +57,13 @@ pub fn hyper_form_item(item: &RequirementItem, form: &HyperForm) -> Option<Analy
     else {
         return None;
     };
-    (*reason == settled_reason).then(|| AnalyzeItem::unadapted(item.index(), item.kind()))
+    (*reason == settled_reason).then(|| {
+        AnalyzeItem::unadapted(
+            item.index(),
+            item.kind(),
+            Some(DeclarationFamily::TemporalTrace),
+        )
+    })
 }
 
 /// `runtime_invariant`/`established-invariant-broken`: the diagnostic of a
@@ -110,6 +118,7 @@ fn run_model_item(index: RequestIndex, item: ModelItem<'_>) -> AnalyzeItem<'_> {
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
+        Some(DeclarationFamily::TemporalTrace),
         Mode::Bounded,
         en1::BACKEND_ID,
         move |cancel| {
@@ -176,9 +185,16 @@ pub fn protocol_item<'a>(
 
 /// [`protocol_item`] with no check of what `item` runs.
 fn run_protocol_item(index: RequestIndex, item: ProtocolItem<'_>) -> AnalyzeItem<'_> {
+    let family = match &item.request.item {
+        ModelCheckItem::Clause { .. } => DeclarationFamily::Protocol,
+        ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => {
+            DeclarationFamily::TemporalTrace
+        }
+    };
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
+        Some(family),
         Mode::Bounded,
         en1::BACKEND_ID,
         move |cancel| {
@@ -212,6 +228,7 @@ pub fn statistical_item<'a>(
     AnalyzeItem::new(
         index,
         Capability::ProbabilisticSatisfaction,
+        Some(DeclarationFamily::Probabilistic),
         Mode::Bounded,
         en4::BACKEND_ID,
         move |cancel| {
@@ -278,6 +295,7 @@ fn run_zone_item<'a, S: Clone + Eq + 'a>(
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
+        Some(DeclarationFamily::TemporalTrace),
         Mode::Bounded,
         en6::BACKEND_ID,
         move |cancel| {
@@ -705,6 +723,7 @@ pub fn timed_refinement_item<'a, S: Clone + Eq + 'a>(
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
+        Some(DeclarationFamily::RelationClaim),
         Mode::Bounded,
         en6::BACKEND_ID,
         move |cancel| {

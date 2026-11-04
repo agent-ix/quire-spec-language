@@ -33,7 +33,7 @@ use qsl_replay::{
     TerminalValue, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_route::{Mode, ProviderOrigin};
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, DeclarationFamily};
 use quire_exact::{Cancel, CancelCause, Undefined};
 use quire_semantic_value::catalog::Category;
 
@@ -119,7 +119,11 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     let records = analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         vec![
-            AnalyzeItem::unadapted(index(0), Capability::Monitorability),
+            AnalyzeItem::unadapted(
+                index(0),
+                Capability::Monitorability,
+                Some(DeclarationFamily::Protocol),
+            ),
             derived_deadlock(broken.model_item()),
             model_item(
                 index(2),

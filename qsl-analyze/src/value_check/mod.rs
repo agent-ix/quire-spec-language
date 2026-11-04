@@ -30,7 +30,7 @@ use qsl_replay::value_check::{
 };
 use qsl_replay::{Cancel, DeclineCode, ProofRefusalCause, Value, ValueCheckUnsupported};
 use qsl_route::Mode;
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, DeclarationFamily};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 use crate::analyze::{AnalyzeItem, EngineReport, Refusal};
@@ -456,6 +456,7 @@ pub fn value_item<'a>(
     AnalyzeItem::new_with_engine(
         index,
         Capability::ValueValidity,
+        Some(DeclarationFamily::Value),
         Mode::Bounded,
         manifest::BACKEND_ID,
         move |cancel, engine| {
