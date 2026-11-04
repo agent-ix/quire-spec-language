@@ -241,17 +241,27 @@ impl CatalogCoded for ObjectFieldIllTyped {
 
 /// FR-391 "Evaluation": a clause or a `holds` atom names a population the
 /// observation's snapshot does not list `complete`. FR-106 requires every
-/// population a clause names, so the read stops `incomplete_population`/
-/// `incomplete-scope` naming it, whichever path admitted the snapshot.
+/// population a clause names, so the read stops naming it, whichever path
+/// admitted the snapshot: `incomplete_population`/`missing-required-artifact`
+/// when the snapshot has no row for it and `incomplete_population`/
+/// `incomplete-scope` when its row is not `complete` (FR-106 check 7; QSpec
+/// FR-153-AC-14).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct NamedPopulationIncomplete {
     /// The population's declaration identity.
     pub(crate) population: String,
+    /// Whether the snapshot lists a row for the population at all.
+    pub(crate) listed: bool,
 }
 
 impl CatalogCoded for NamedPopulationIncomplete {
     fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("incomplete_population", "incomplete-scope")
+        let cause = if self.listed {
+            "incomplete-scope"
+        } else {
+            "missing-required-artifact"
+        };
+        CatalogCode::new("incomplete_population", cause)
     }
 
     fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {

@@ -3147,18 +3147,21 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// The objects the snapshot of `node`'s observation lists for
     /// `population` (FR-391 "Evaluation"): a population that snapshot does
-    /// not list `complete` stops `incomplete_population`/`incomplete-scope`,
-    /// whichever path admitted it.
+    /// not list `complete` stops `incomplete_population`, with
+    /// `missing-required-artifact` for no row and `incomplete-scope` for a
+    /// row not `complete`, whichever path admitted it.
     fn named_members(
         &self,
         node: CheckedNode<'a>,
         population: &DeclarationKey,
     ) -> Result<&'a [ObjectReference], Halt> {
         let objects = self.objects_for(node)?;
-        if !objects.population_complete(&population.node) {
+        let listed = objects.population_completeness().get(&population.node);
+        if listed != Some(&true) {
             return Err(Halt::Family(FamilyResult::Refused(Box::new(
                 NamedPopulationIncomplete {
                     population: population.node.clone(),
+                    listed: listed.is_some(),
                 },
             ))));
         }
