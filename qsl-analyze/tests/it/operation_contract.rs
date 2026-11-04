@@ -10,7 +10,9 @@
 use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
-use qsl_analyze::analyze::{analyze_items, contract_item, AnalyzeRecord, Engines, Settlement};
+use qsl_analyze::analyze::{
+    analyze_items, contract_item, AnalyzeItem, AnalyzeRecord, Engines, Settlement,
+};
 use qsl_analyze::contract_check::{manifest, ContractRequest};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_forms::StateClauseKind;
@@ -23,6 +25,7 @@ use qsl_replay::{
     Certification, IncompleteCause, InconclusiveCause, ModelCheckLimit, OccurrenceKey, ProofBasis,
     ReportedInconclusiveCause, TerminalValue, UnavailabilityCause,
 };
+use qsl_semantics::check::{Capability, DeclarationFamily};
 use quire_exact::{Cancel, Origin, Role};
 
 use crate::counter::UNLIMITED;
@@ -79,6 +82,56 @@ fn assert_proved(record: &AnalyzeRecord) {
     };
     assert_eq!(*basis, ProofBasis::Exhaustive);
     assert_eq!(*certification, Certification::Uncertified);
+}
+
+#[trace("TC-1302", "FR-507-AC-2")]
+#[test]
+fn an_inapplicable_request_does_not_change_the_state_clause_record() {
+    let world = world("invariant Stable using v on Config::ConfigVersion at current { self.versionNumber <= 3 }\n", 0);
+    let claim = clause(&world, "Stable");
+    let baseline = run(&world, &claim, None);
+
+    let request = select_contract(&world.package, &claim).map(|selected| ContractRequest {
+        package: &world.package,
+        claim: selected,
+        subject: world.subject(&["a"], UNLIMITED).simulation,
+        abstract_subject: None,
+        max_cases: None,
+    });
+    let records = analyze_items(
+        &Engines::qsl().expect("the linked engines register"),
+        vec![
+            contract_item(RequestIndex::new(0), request),
+            AnalyzeItem::unadapted(
+                RequestIndex::new(1),
+                Capability::FiniteReplay,
+                Some(DeclarationFamily::StateModel),
+            ),
+        ],
+        &Cancel::new(),
+    );
+
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].request_index, RequestIndex::new(0));
+    assert_eq!(
+        records[0].terminal(),
+        baseline.terminal(),
+        "the valid state-clause record is unchanged when an inapplicable item is added"
+    );
+    assert_eq!(records[1].request_index, RequestIndex::new(1));
+    let Settlement::Disposed(disposed) = &records[1].settlement else {
+        panic!("finite-replay on a state claim is inapplicable");
+    };
+    assert_eq!(
+        disposed
+            .diagnostic
+            .as_ref()
+            .map(|diagnostic| diagnostic.code),
+        Some(quire_semantic_value::catalog::CatalogCode::new(
+            "invalid_capability",
+            "inapplicable-kind"
+        ))
+    );
 }
 
 fn refuted(record: &AnalyzeRecord) -> &qsl_replay::contract_check::ContractCounterexample {

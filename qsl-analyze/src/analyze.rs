@@ -1334,6 +1334,123 @@ mod tests {
         assert_eq!(calls.get(), 1);
     }
 
+    #[trace("TC-1302", "FR-507-AC-3")]
+    #[test]
+    fn protocol_kinds_apply_only_to_protocol_claims() {
+        let protocol_kinds = [
+            Capability::FiniteReplay,
+            Capability::GlobalConformance,
+            Capability::Monitorability,
+            Capability::LocalProjection,
+            Capability::Refinement,
+            Capability::Realizability,
+            Capability::Composition,
+        ];
+        let families = [
+            DeclarationFamily::Protocol,
+            DeclarationFamily::StateModel,
+            DeclarationFamily::Value,
+            DeclarationFamily::TemporalTrace,
+        ];
+        let calls = std::cell::Cell::new(0);
+        let mut request_index = 0;
+        let items = protocol_kinds
+            .into_iter()
+            .flat_map(|kind| families.map(move |family| (kind, family)))
+            .map(|(kind, family)| {
+                let index = RequestIndex::new(request_index);
+                request_index += 1;
+                AnalyzeItem::new(index, kind, Some(family), Mode::Bounded, "test-all", |_| {
+                    calls.set(calls.get() + 1);
+                    EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                        "runtime_invariant",
+                        "established-invariant-broken",
+                    )))
+                })
+            })
+            .collect();
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+
+        let records = analyze_items(&engines, items, &Cancel::new());
+
+        assert_eq!(records.len(), 7 * 4);
+        assert_eq!(calls.get(), 7);
+        for record in &records {
+            let Settlement::Disposed(disposed) = &record.settlement else {
+                continue;
+            };
+            assert_eq!(disposed.kind, DispositionKind::InvalidRequest);
+            assert_eq!(
+                disposed
+                    .diagnostic
+                    .as_ref()
+                    .map(|diagnostic| diagnostic.code),
+                Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
+            );
+        }
+    }
+
+    #[trace("TC-1302", "FR-507-AC-4")]
+    #[test]
+    fn probabilistic_and_schedulability_kinds_apply_only_to_their_claim_families() {
+        let cases = [
+            (
+                Capability::ProbabilisticSatisfaction,
+                DeclarationFamily::Probabilistic,
+            ),
+            (
+                Capability::ProbabilisticSatisfaction,
+                DeclarationFamily::StateModel,
+            ),
+            (Capability::Schedulability, DeclarationFamily::RealTime),
+            (Capability::Schedulability, DeclarationFamily::StateModel),
+        ];
+        let calls = std::cell::Cell::new(0);
+        let items = cases
+            .into_iter()
+            .enumerate()
+            .map(|(position, (kind, family))| {
+                AnalyzeItem::new(
+                    RequestIndex::new(position),
+                    kind,
+                    Some(family),
+                    Mode::Bounded,
+                    "test-all",
+                    |_| {
+                        calls.set(calls.get() + 1);
+                        EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                            "runtime_invariant",
+                            "established-invariant-broken",
+                        )))
+                    },
+                )
+            })
+            .collect();
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+
+        let records = analyze_items(&engines, items, &Cancel::new());
+
+        assert_eq!(records.len(), cases.len());
+        assert_eq!(calls.get(), 2);
+        assert!(matches!(&records[0].settlement, Settlement::Terminal(_)));
+        assert!(matches!(&records[2].settlement, Settlement::Terminal(_)));
+        for index in [1, 3] {
+            let Settlement::Disposed(disposed) = &records[index].settlement else {
+                panic!("a state-model claim rejects this capability kind");
+            };
+            assert_eq!(disposed.kind, DispositionKind::InvalidRequest);
+            assert_eq!(
+                disposed
+                    .diagnostic
+                    .as_ref()
+                    .map(|diagnostic| diagnostic.code),
+                Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
+            );
+        }
+    }
+
     #[trace("TC-1302", "FR-507-AC-9")]
     #[test]
     fn an_unresolved_claim_family_is_inapplicable_for_every_kind() {
