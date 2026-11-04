@@ -157,8 +157,11 @@ pub use refinement::{
 mod native_result;
 pub use native_result::{
     read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
-    CallOriginRead, ClauseRunRecord, CommandErrorRecord, NativeRunOutcome, NativeRunReadError,
-    NativeRunResult, NativeRunResultError, PositionRead, RefusalLocusRead, SourceRefRead, SpanRead,
+    CallOriginRead, ClauseRunRecord, ClosureRead, CommandErrorRecord, CounterexampleRead,
+    DimensionRead, EffectiveIdRead, FairnessGranularityRead, FairnessKindRead,
+    FairnessOperationRead, FairnessRead, GuardRead, IndeterminateReasonRead, NativeRunOutcome,
+    NativeRunReadError, NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead,
+    RefusalLocusRead, SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
 };
 pub mod query_proof;
 mod request;

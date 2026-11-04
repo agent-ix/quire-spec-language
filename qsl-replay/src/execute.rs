@@ -1080,7 +1080,12 @@ fn replay_observed_temporal(
             payload.kind.clone(),
             payload.trace_position,
             outcome,
-            evaluation.undefined.map(|(locus, _, _)| locus),
+            // FR-331-AC-9: an observed packet names an undefined atom only.
+            evaluation.undefined.and_then(|first| match first.locus {
+                qsl_eval::temporal::ObservedLocus::Atom(atom) => Some(atom),
+                qsl_eval::temporal::ObservedLocus::Activation
+                | qsl_eval::temporal::ObservedLocus::Capture(_) => None,
+            }),
             consumed(&meter),
         ),
     ))
