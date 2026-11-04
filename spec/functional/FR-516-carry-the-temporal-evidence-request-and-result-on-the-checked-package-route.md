@@ -122,7 +122,7 @@ capture fact (FR-524), an occurrence selector that is absent for a node with sev
 progress contradiction (FR-502), a `trigger-required` or `trigger-unknown`
 refusal, a control that does not map to the clause (below) and each relation
 refusal (FR-526). Each refusal names a `cause`, and this requirement defines the cause names,
-which the call reports with the catalog code its owning requirement states. The
+which the call reports with the catalog code its owning requirement states. Construction refusals (`PackageMismatch`) are FR-515's and are not call causes. The
 causes of the table below are owned here, `clause-root-unresolved` (FR-337's cause, reused) included. The causes of refusals that another
 requirement owns are named here and cross-referenced by that requirement's catalog
 code and field: `binding-mismatch` for FR-522's `invalid_runtime_input`/`invalid-value`
@@ -146,7 +146,7 @@ caller's ledgers unchanged. No other cause exists.
 | `progress-contradiction` | the progress assertion contradicts the progress ledger's retained watermark, completeness or closure (FR-502; names `contradicted_dimension`) |
 | `progress-inconsistent` | the request's positions and its progress assertion contradict each other as FR-504 "Consistency" states: under the event-position or the fixed-sample profile a fixed-sample watermark or a `Complete { through }` below the last position's coordinate; it applies to fixed-sample and event-position progress assertions only, because a timestamped-event clause takes completeness assertions (FR-501, FR-504) |
 | `clause-root-unresolved` | the clause node id is absent from the package or names a node that is not a temporal clause; the call refuses with `CallFailure::Admission` carrying the cause name `clause-root-unresolved`, which is FR-337's lookup result reused; FR-337 states no catalog code, so the call carries the cause name only |
-| `clause-unreadable` | the clause's formula, built from the subject view's `formula_graph()` entries and `operands` edges (FR-515), cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an `operands` position that names no entry or a cycle, a `predicate_leaves()` count that differs from the formula's `holds` count, or an in-memory clause of an `EvidencePackage` built by `from_emission` whose formula differs from the package's `formula_graph()` (FR-515) (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523) |
+| `clause-unreadable` | the clause's formula, built from the subject view's `formula_graph()` entries and `operands` edges (FR-515), cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an `operands` position that names no entry or a cycle, a `predicate_leaves()` count that differs from the formula's `holds` count, or a clause whose formula differs from the in-memory clause (`from_emission`) or the admitted read's source graph (`from_read`) it is paired with (FR-515) (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523) |
 
 A progress ledger whose covered positions would exceed its capacity is not a
 refusal: the call returns an `Incomplete(LimitReached{limit: node count, value,
@@ -359,7 +359,7 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-43 | With a decisive witness whose support valuation at position 1 of atom 0 is absent from the request, the result's `non_value` is `Missing` with code `fact-withdrawn` and dimension `valuation:0@1`, and the result with the valuation present has no `non_value`; with a valuation of atom 1 at position 2, read by the evaluator and not in the decision support, absent from the request, the dimension is `valuation:1@2`; with the decision closure and the valuation both withdrawn the dimension is `decision_closure`. | Test (TC-1311) |
 | FR-516-AC-44 | Over a fixed-sample clause whose support includes a pair at a silent sample, the result's `support` holds an entry for each support pair at an observed position and none for the pair at the silent sample, and the count equals the observed pairs. | Test (TC-1311) |
 | FR-516-AC-45 | A call over a `CheckedNodeId` absent from the package, and over the id of a `protocol_clause` node, each returns `Err(CallFailure::Admission)` with cause `clause-root-unresolved` and an empty charge log, and the caller's ledgers are unchanged. | Test (TC-1311) |
-| FR-516-AC-46 | Over the `EvidencePackage` of FR-515-AC-24 whose in-memory clause differs from `formula_graph()`, the first `evaluate_temporal_evidence` call that reaches the clause returns `Err(CallFailure::Admission)` with cause `clause-unreadable`, an empty charge log and the caller's ledgers unchanged. | Test (TC-1311) |
+| FR-516-AC-46 | Over an `EvidencePackage` of FR-515-AC-24 (`from_emission`) or FR-515-AC-29 (`from_read`) whose paired clause differs from `formula_graph()`, the first `evaluate_temporal_evidence` call that reaches the clause returns `Err(CallFailure::Admission)` with cause `clause-unreadable`, an empty charge log and the caller's ledgers unchanged. | Test (TC-1311) |
 
 ## Dependencies
 

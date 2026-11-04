@@ -177,6 +177,15 @@ rows and no profile selections, because the clock configuration is an input to
 emission (FR-050), so it is not a package this requirement reads; evaluation
 starts from an emission.
 
+- **Construction refusals.** `EvidencePackage::from_emission` and
+  `EvidencePackage::from_read` refuse a package whose parts disagree with a typed
+  `PackageMismatch`, returned at construction, which is not a `CallFailure` and
+  charges nothing: `ClauseRow` when the clause at a clause reference's position
+  carries another name than the name row, `AmbiguousName` when two clauses carry
+  one name or two name rows pair to one clause, `ProfileSelections` when the
+  `Emission`'s `profile_selections` do not match the package, and `Bindings`
+  when the `Emission`'s `temporal_bindings` rows do not match the package.
+
 - **Rows at construction.** `EvidencePackage::from_emission` takes the
   `profile_selections` rows and the `temporal_bindings` rows (one per clause
   occurrence) from the `Emission` exactly as the emitter wrote them, and holds
@@ -200,14 +209,17 @@ starts from an emission.
   view's `formula_graph()` entries and their `operands` edges by one construction that
   both routes share, and from no other data, so the `EvidencePackage` built from
   an `Emission` and the one built from the emitted bytes give the evaluator the
-  same formula. `EvidencePackage::from_emission(&Emission, &AdmittedPackageRead)` holds the
-  `Emission`'s in-memory clauses, and when it constructs the evaluation subject
-  of a clause it compares that clause's in-memory formula with the formula built
-  from `formula_graph()`: a difference in an operation, an interval or an operand
-  edge makes the first call that reaches the clause refuse `clause-unreadable`
-  (FR-516). A package built by `from_read(&AdmittedPackageRead)` holds no
-  in-memory clause, so the comparison does not apply to it and its formula is
-  built from `formula_graph()` alone.
+  same formula. The cross-check applies to both routes, so truth
+  evaluation runs only on a clause proven equal to the package's graph.
+  `EvidencePackage::from_emission(&Emission, &AdmittedPackageRead)` compares the
+  package's `formula_graph()` with the `Emission`'s in-memory clause.
+  `EvidencePackage::from_read(&AdmittedPackageRead)` pairs the package with the
+  admitted read's checked source graph (`AdmittedPackageRead::source()`) and
+  applies the same pre-order comparison of operations, intervals and operand
+  edges. On any difference the first call that reaches the clause refuses
+  `clause-unreadable` (FR-516), with an empty charge log and the caller's
+  ledgers unchanged. An evaluator over `formula_graph()` alone with no source
+  graph is not part of this requirement; it is a separate future capability.
   A cycle among the `operands` edges and an operand
   position that names no entry are detected on those edges (FR-516
   `clause-unreadable`).
@@ -254,7 +266,12 @@ starts from an emission.
 | FR-515-AC-21 | For each `TemporalClauseRef` of an `Emission`, the `CheckedNodeId` equals the `declaration` of the `temporal_clause_names` row read back at the same occurrence, and the `CheckedNodeId` of a clause in the evaluation package constructed from the `Emission` equals the one in the read-back package; a derivation of ids outside the emitter does not exist in the API. | Test (TC-1310) |
 | FR-515-AC-22 | In a unit the test authors over the `config-version` model (`examples/config-version`), whose temporal clauses (capture, `on each` activation, guard) the test writes, since the example holds none, for a clause with a guard that reads the trigger binder and four `holds` atoms in formula order at indices 0 to 3, one reading a capture binder (index 0), one reading only `over()` (index 1), one reading no binder (index 2) and one reading a capture binder and `over()` (index 3), the derived instance-bound set is exactly `{0, 3}`, the guard has no index, and the set equals the one the read-back package gives; swapping the formula order of the first and the second atom gives `{1, 3}`; a caller-supplied set is not accepted. | Test (TC-1310) |
 | FR-515-AC-23 | For each clause of **R** and the authored clause of AC-22, the evaluator's formula built from the evaluation package constructed from the `Emission` equals, node for node with operations, intervals and operand edges, the formula built from the read-back package; `formula_graph()` of AC-3's clause lists the `always` entry with one operand position that names the `holds` entry, while `formula()` of that clause lists the `always` and `holds` applications exactly as AC-3 states; and a view whose `operands` hold a cycle or an out-of-range position makes the clause unreadable (FR-516). | Test (TC-1310) |
-| FR-515-AC-24 | In a unit the test authors over the `config-version` model (`examples/config-version`), whose temporal clauses (capture, `on each` activation, guard) the test writes, since the example holds none, an `EvidencePackage` built by `from_emission` from an `Emission` whose in-memory clause formula differs from the package's `formula_graph()` in one operation, one interval or one operand edge (each in its own run) refuses `clause-unreadable` at the first call that reaches the clause; the unaltered clause is evaluated; and the `EvidencePackage` built by `from_read` over the same bytes is evaluated, because it holds no in-memory clause. | Test (TC-1310) |
+| FR-515-AC-24 | In a unit the test authors over the `config-version` model (`examples/config-version`), whose temporal clauses (capture, `on each` activation, guard) the test writes, since the example holds none, an `EvidencePackage` built by `from_emission` from an `Emission` whose in-memory clause differs from the package's `formula_graph()` in one operation, one interval or one operand edge (each in its own run) refuses `clause-unreadable` at the first call that reaches the clause; the unaltered clause is evaluated. | Test (TC-1310) |
+| FR-515-AC-25 | Over an `Emission` and a package where the clause at a clause reference's position carries another name than the name row, `from_emission` and `from_read` each return `PackageMismatch::ClauseRow` at construction and no call is made or charged. | Test (TC-1310) |
+| FR-515-AC-26 | Over a package with two clauses of one name, and over one with two name rows pairing to one clause, construction returns `PackageMismatch::AmbiguousName` in each. | Test (TC-1310) |
+| FR-515-AC-27 | Over an `Emission` whose `profile_selections` do not match the package, `from_emission` returns `PackageMismatch::ProfileSelections`. | Test (TC-1310) |
+| FR-515-AC-28 | Over an `Emission` whose `temporal_bindings` rows do not match the package, `from_emission` returns `PackageMismatch::Bindings`. | Test (TC-1310) |
+| FR-515-AC-29 | In the same unit, an `EvidencePackage` built by `from_read` whose package bytes hold `always[0,1] holds(p)` while the admitted read's source graph holds `eventually[0,1] holds(p)` refuses `clause-unreadable` at the first call that reaches the clause, with an empty charge log; with equal source and package graphs the clause is evaluated. | Test (TC-1310) |
 
 ## Dependencies
 
@@ -262,6 +279,6 @@ starts from an emission.
   QSL-1270 (digest removal), `quire_contract_model::CheckedPackageV2`; IR-1278
   (the clause name, gates FR-515-AC-14); QSpec FR-322 (the per-occurrence clock
   rows FR-515-AC-13 and AC-20 read).
-- **Delivery:** FR-515-AC-18 to AC-24 and FR-516-AC-18, AC-29 and AC-30 are delivered by QSL-1608, which builds the `Emission`-constructed package and the shared formula construction.
+- **Delivery:** FR-515-AC-18 to AC-29 and FR-516-AC-18, AC-29 and AC-30 are delivered by QSL-1608, which builds the `Emission`-constructed package and the shared formula construction.
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/result/record.rs`
   (QSL-1549).
