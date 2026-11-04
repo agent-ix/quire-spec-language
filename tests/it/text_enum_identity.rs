@@ -504,7 +504,7 @@ fn t07b_same_key_declarations_with_different_members_or_order_are_distinct() {
             fixture_declaration(["Example", "Status"], true, &["DONE", "READY"]),
         ),
         (
-            "different ordering flag",
+            "different ordering flag and order",
             fixture_declaration(["Example", "Status"], false, &["DONE", "READY"]),
         ),
     ];
@@ -522,6 +522,30 @@ fn t07b_same_key_declarations_with_different_members_or_order_are_distinct() {
             );
             assert!(meter.admitted_charges().is_empty(), "{label}");
         }
+    }
+    // Only the ordering flag differs: the member list and its order are
+    // identical (sorted, so valid for both flags).
+    let sorted_ordered = fixture_declaration(["Example", "Status"], true, &["DONE", "READY"]);
+    let sorted_unordered = fixture_declaration(["Example", "Status"], false, &["DONE", "READY"]);
+    assert_eq!(sorted_ordered.key(), sorted_unordered.key());
+    assert_eq!(
+        sorted_ordered.declaration().members(),
+        sorted_unordered.declaration().members()
+    );
+    for operator in ComparisonOperator::ALL {
+        let mut meter = Meter::new(UNLIMITED);
+        assert_eq!(
+            compare_enum(
+                operator,
+                &member(&sorted_ordered, "READY"),
+                &member(&sorted_unordered, "READY"),
+                &mut meter
+            ),
+            Err(IllTyped {
+                cause: IllTypedCause::DistinctEnumDeclarations
+            }),
+            "flag only: {operator:?}"
+        );
     }
     let again = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
     assert_eq!(base.key(), again.key());

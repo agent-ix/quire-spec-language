@@ -335,10 +335,8 @@ impl ClauseDisposition {
     /// `Incomplete` is incomplete and a `Fault` an internal failure. The
     /// run's exit code is this category's
     /// [`Category::exit_code`](quire_semantic_value::catalog::Category::exit_code)
-    /// (FR-285), except for a finite-window `Temporal` verdict: the shared
-    /// catalog has no `pending` or `indeterminate` (IR-1281), so for those
-    /// this value is not the verdict's FR-285 category or exit; read
-    /// [`Self::category_label`] and [`Self::exit_code`].
+    /// (FR-285); a finite-window `Temporal` verdict is `Pending` or
+    /// `Indeterminate` where the catalog says so.
     pub fn category(&self) -> quire_semantic_value::catalog::Category {
         use quire_semantic_value::catalog::Category;
         match self {
@@ -356,7 +354,7 @@ impl ClauseDisposition {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
-            Self::Temporal(outcome) => outcome.shared_category(),
+            Self::Temporal(outcome) => outcome.category(),
             // The refusal's own catalog code decides: a malformed trace is a
             // refusal, a profile the evaluator does not read is unsupported.
             Self::TemporalRefusal(refusal) => {
@@ -388,30 +386,21 @@ impl ClauseDisposition {
         }
     }
 
-    /// The category label for callers that need the complete QSL temporal
-    /// outcome set, including `pending` and `indeterminate`.
+    /// The category label: the catalog's spelling of [`Self::category`].
     pub fn category_label(&self) -> &'static str {
-        match self {
-            Self::Temporal(outcome) => outcome.category_label(),
-            _ => self.category().as_str(),
-        }
+        self.category().as_str()
     }
 
-    /// FR-285's exit code, preserving finite-window temporal outcomes that
-    /// the shared category enum cannot distinguish.
+    /// FR-285's exit code: the catalog's exit of [`Self::category`].
     pub fn exit_code(&self) -> u8 {
-        if let Self::Temporal(outcome) = self {
-            outcome.exit_code()
-        } else {
-            self.category().trace_exit_code()
-        }
+        self.category().exit_code()
     }
 }
 
 /// The FR-285 multi-item ranking of temporal outcomes: the label and exit of
 /// the most severe one under the order 30, 20, 21, 22, 10, 11, 0, each read
-/// from [`TemporalVerdict::label_and_exit`], the mapping the single-report run
-/// path reads; `None` for no outcome.
+/// from the catalog [`Category`](quire_semantic_value::catalog::Category) of
+/// [`TemporalVerdict::category`]; `None` for no outcome.
 pub fn temporal_batch_outcome<'a>(
     outcomes: impl IntoIterator<Item = &'a TemporalVerdict>,
 ) -> Option<(&'static str, u8)> {
@@ -426,7 +415,10 @@ pub fn temporal_batch_outcome<'a>(
     };
     outcomes
         .into_iter()
-        .map(TemporalVerdict::label_and_exit)
+        .map(|verdict| {
+            let category = verdict.category();
+            (category.as_str(), category.exit_code())
+        })
         .max_by_key(|(_, exit)| severity(*exit))
 }
 
@@ -515,78 +507,29 @@ pub enum TemporalVerdict {
 }
 
 impl TemporalVerdict {
-    /// FR-285's category of this verdict, as the temporal run path names it:
-    /// the one mapping that [`Self::category`], [`Self::category_label`] and
-    /// [`Self::exit_code`] all read.
-    fn temporal_category(&self) -> TemporalCategory {
+    /// The catalog category of this verdict (FR-285): `pending` and
+    /// `indeterminate` are the catalog's own. The label and exit are the
+    /// category's, and QSL keeps no table of them.
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
         use quire_semantic_value::catalog::Category;
         match self {
-            Self::Holds => TemporalCategory::Shared(Category::Success),
+            Self::Holds => Category::Success,
             Self::Undefined {
                 cause: TemporalUndefinedCause::InsufficientData { .. },
                 ..
-            } => TemporalCategory::Shared(Category::Undefined),
-            Self::Violated { .. } | Self::Undefined { .. } => {
-                TemporalCategory::Shared(Category::Violation)
-            }
+            } => Category::Undefined,
+            Self::Violated { .. } | Self::Undefined { .. } => Category::Violation,
             Self::Pending | Self::PendingWindow { .. } | Self::PendingNextEvent { .. } => {
-                TemporalCategory::Pending
+                Category::Pending
             }
-            Self::Indeterminate { .. } => TemporalCategory::Indeterminate,
-            Self::MissingFairnessPremise { .. } => TemporalCategory::Shared(Category::Unsupported),
+            Self::Indeterminate { .. } => Category::Indeterminate,
+            Self::MissingFairnessPremise { .. } => Category::Unsupported,
             Self::Incomplete(_)
             | Self::ActivationIncomplete { .. }
             | Self::WindowLimitReached { .. }
-            | Self::ProgressLimitReached(_) => TemporalCategory::Shared(Category::Incomplete),
+            | Self::ProgressLimitReached(_) => Category::Incomplete,
         }
     }
-
-    /// The shared catalog's category of this verdict, for the spine's own
-    /// stage and acceptance decisions. It is NOT the verdict's FR-285
-    /// category or exit: the catalog has no `pending` and no `indeterminate`
-    /// (IR-1281), so a pending result reads `inconclusive` and an
-    /// indeterminate one `undefined`, whose exit (10) FR-285-AC-7 forbids.
-    /// The authoritative label and exit are [`Self::label_and_exit`].
-    pub(crate) fn shared_category(&self) -> quire_semantic_value::catalog::Category {
-        use quire_semantic_value::catalog::Category;
-        match self.temporal_category() {
-            TemporalCategory::Shared(category) => category,
-            TemporalCategory::Pending => Category::Inconclusive,
-            TemporalCategory::Indeterminate => Category::Undefined,
-        }
-    }
-
-    /// FR-285's category label and exit for this verdict, including `pending`
-    /// (exit 0) and `indeterminate` (exit 11): the one interim mapping
-    /// (FR-285 "Interim mapping until Contract IR IR-1281") that the
-    /// single-report run path and the multi-item ranking both read.
-    pub fn label_and_exit(&self) -> (&'static str, u8) {
-        match self.temporal_category() {
-            TemporalCategory::Shared(category) => (category.as_str(), category.trace_exit_code()),
-            TemporalCategory::Pending => ("pending", 0),
-            TemporalCategory::Indeterminate => ("indeterminate", 11),
-        }
-    }
-
-    /// FR-285's category spelling, including `pending` and `indeterminate`.
-    pub fn category_label(&self) -> &'static str {
-        self.label_and_exit().0
-    }
-
-    /// FR-285's process exit: 0 for pending, 11 for indeterminate and the
-    /// shared category's exit otherwise (a supplied-trace clause still
-    /// pending exits 0).
-    pub fn exit_code(&self) -> u8 {
-        self.label_and_exit().1
-    }
-}
-
-/// FR-285's categories of a temporal verdict: the shared catalog's, and the
-/// two it lacks (IR-1281).
-enum TemporalCategory {
-    Shared(quire_semantic_value::catalog::Category),
-    Pending,
-    Indeterminate,
 }
 
 /// Why closed finite-window evidence cannot determine a Boolean result.

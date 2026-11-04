@@ -964,7 +964,7 @@ mod foundation_tests {
     use ix_trace_rs::trace;
     use quire_semantic_value::catalog::{CatalogCode, Category, InternalFault};
 
-    /// FR-285-AC-1 (TC-769 step 1): each of the nine table rows maps to its
+    /// FR-285-AC-1 (TC-769 step 1): each of the ten table rows maps to its
     /// code, with undefined folding to 10 beside violation, an inconclusive
     /// proof or `analyze` item at 22 and a supplied-trace clause pending at
     /// the trace's end at 0.

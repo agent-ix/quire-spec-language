@@ -1203,18 +1203,15 @@ impl OutcomeDocument {
 
     /// A document of `operation` over its requested `items`, in request
     /// order. Its category is the most severe item's under ADR-029 CB-4
-    /// (FR-285's order 30, 20, 21, 22, 10, 0), the first such item's on a
-    /// tie, and `success` with no items. A `monitor` clause still pending
-    /// when the trace ends takes the trace row.
+    /// (FR-285's order 30, 20, 21, 22, 10, 11, 0), the first such item's on a
+    /// tie, and `success` with no items. A clause still pending when the
+    /// trace ends has the category `pending`, whose catalog exit is 0.
     pub fn settled(
         operation: Operation,
         last_stage: Option<OutcomeStage>,
         items: Vec<OutcomeItem>,
     ) -> Self {
-        let code = |item: &OutcomeItem| match operation {
-            Operation::Monitor => item.category.trace_exit_code(),
-            _ => item.category.exit_code(),
-        };
+        let code = |item: &OutcomeItem| item.category.exit_code();
         let category = Category::most_severe(items.iter().map(code))
             .and_then(|worst| items.iter().find(|item| code(item) == worst))
             .map_or(Category::Success, |item| item.category);
@@ -2729,17 +2726,16 @@ mod tests {
             ],
         );
         assert_eq!(mixed.category(), Category::Refusal);
+        // A clause pending at the end of the trace is the catalog's `pending`
+        // (exit 0), a category of its own and not `inconclusive` (FR-285-AC-9).
         let pending = || {
-            vec![record(
-                0,
-                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
-                    Code::StaleDependency,
-                )),
-            )]
+            let mut item = record(0, TerminalValue::Refuted);
+            item.category = Category::Pending;
+            vec![item]
         };
         let monitored = OutcomeDocument::settled(Operation::Monitor, None, pending());
-        assert_eq!(monitored.category(), Category::Inconclusive);
-        assert_eq!(monitored.category().trace_exit_code(), 0);
+        assert_eq!(monitored.category(), Category::Pending);
+        assert_eq!(monitored.category().exit_code(), 0);
         let violated = OutcomeDocument::settled(
             Operation::Monitor,
             None,
@@ -2749,9 +2745,27 @@ mod tests {
                 .collect(),
         );
         assert_eq!(violated.category(), Category::Violation);
+        let inconclusive = vec![record(
+            0,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency)),
+        )];
         assert_eq!(
-            OutcomeDocument::settled(Operation::Prove, None, pending()).category(),
+            OutcomeDocument::settled(Operation::Prove, None, inconclusive).category(),
             Category::Inconclusive
+        );
+        // An indeterminate item exits 11: above a pending one, below a violation.
+        let mut indeterminate = record(2, TerminalValue::Refuted);
+        indeterminate.category = Category::Indeterminate;
+        let ranked = |items: Vec<OutcomeItem>| {
+            OutcomeDocument::settled(Operation::Monitor, None, items).category()
+        };
+        assert_eq!(
+            ranked(vec![pending().remove(0), indeterminate.clone()]),
+            Category::Indeterminate
+        );
+        assert_eq!(
+            ranked(vec![indeterminate, record(1, TerminalValue::Refuted)]),
+            Category::Violation
         );
         assert_eq!(
             OutcomeDocument::settled(Operation::Prove, None, Vec::new()).category(),
