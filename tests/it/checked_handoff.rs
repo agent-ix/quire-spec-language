@@ -518,7 +518,7 @@ fn the_extreme_rationals_are_package_values() {
 }
 
 /// FR-517-AC-5: two writes of equal requests give byte-identical trees.
-#[trace("FR-517-AC-5", "FR-042-AC-15", "FR-048-AC-10", "TC-1312", "TC-135")]
+#[trace("FR-517-AC-5", "FR-042-AC-15", "TC-1312")]
 #[test]
 fn equal_requests_write_identical_trees() {
     for kind in KINDS {
