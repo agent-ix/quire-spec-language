@@ -23,8 +23,8 @@ pub enum ReachFault {
     /// profile admits; a temporal evidence call reads a bounded profile.
     #[error("an operator has no finite upper bound")]
     Unbounded,
-    /// An operator carries a timed interval, which counts time and not
-    /// ticks of a trace clock.
+    /// An operator carries a timed interval that is not closed and integral,
+    /// which counts time and not ticks of a trace clock.
     #[error("an operator carries a timed interval")]
     Timed,
     /// An operand names no node, or the formula contains a cycle.
@@ -191,7 +191,25 @@ fn shape(node: &FormulaNode) -> Result<NodeShape, ReachFault> {
     };
     let upper = match interval {
         None => return Err(ReachFault::Unbounded),
-        Some(CheckedInterval::Timed(_)) => return Err(ReachFault::Timed),
+        // A finite-window clause measures ticks of its clock unit, both ends
+        // inclusive (FR-501): closed, integral bounds are a tick count (the predicate of the planner's
+        // `Window::of`).
+        // Any other timed interval counts rational time and has no tick
+        // reach.
+        Some(CheckedInterval::Timed(timed)) => {
+            if !timed.lower_closed()
+                || !timed.upper_closed()
+                || !timed.lower().is_integer()
+                || !timed.upper().is_integer()
+            {
+                return Err(ReachFault::Timed);
+            }
+            timed
+                .upper()
+                .numerator()
+                .to_u64()
+                .ok_or(ReachFault::Overflow)?
+        }
         Some(CheckedInterval::Steps(steps)) => match steps.upper() {
             TemporalUpper::Finite(upper) => upper,
             TemporalUpper::Open => return Err(ReachFault::Unbounded),

@@ -47,6 +47,18 @@ pub enum IdentityMember {
     ProgressLedger,
     /// The relation of an evidence result (FR-526).
     Relation,
+    /// The ordered deliveries of an evidence request (FR-524).
+    Deliveries,
+    /// The ordered origins of an evidence request (FR-524).
+    Origins,
+    /// The identity of the position the instance activates at.
+    Anchor,
+    /// The retained records the request reports as evicted.
+    Evicted,
+    /// The correspondence, every member of its `EvidenceRef`.
+    Correspondence,
+    /// The occurrence of the clause's declaration the call assesses.
+    Occurrence,
 }
 
 impl IdentityMember {
@@ -63,7 +75,13 @@ impl IdentityMember {
             | Self::Progress
             | Self::Ceilings
             | Self::MeterCeiling
-            | Self::Trigger => true,
+            | Self::Trigger
+            | Self::Deliveries
+            | Self::Origins
+            | Self::Anchor
+            | Self::Evicted
+            | Self::Correspondence
+            | Self::Occurrence => true,
             Self::RetainedInstances | Self::ProgressLedger | Self::Relation => false,
         }
     }
@@ -81,6 +99,12 @@ impl IdentityMember {
             Self::RetainedInstances => 9,
             Self::ProgressLedger => 10,
             Self::Relation => 11,
+            Self::Deliveries => 12,
+            Self::Origins => 13,
+            Self::Anchor => 14,
+            Self::Evicted => 15,
+            Self::Correspondence => 16,
+            Self::Occurrence => 17,
         }
     }
 }
@@ -147,6 +171,13 @@ impl MemberEncoder {
 /// change of any bound member gives a distinct one (FR-522).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ResultIdentity(Box<[u8]>);
+
+impl ResultIdentity {
+    /// The identity's bytes, the encoding of its members.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 /// The identity over the evidence members only (FR-522).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

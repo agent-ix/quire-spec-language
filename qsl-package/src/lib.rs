@@ -86,8 +86,8 @@ pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 
 #[cfg(feature = "std")]
 pub use quire_contract_model::{
-    CheckedArtifactRef, CheckedNodeId, CheckedSelection, ClockConfiguration, ClockExactNumber,
-    TemporalBinding,
+    CheckedArtifactRef, CheckedNodeId, CheckedOccurrence, CheckedOccurrenceRole, CheckedSelection,
+    ClockConfiguration, ClockExactNumber, TemporalBinding,
 };
 
 // The FR-105-AC-6 fault-injection seam. Public only under
