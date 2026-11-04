@@ -18,7 +18,8 @@ and each member's display string, and a predicate as the `forms`
 This catches an S2 production that sorts an unordered enum's members (the
 assembler sorts them for the preimage, S2 keeps source order), drops a
 display string or its span, or builds a predicate with no result type form
-or with a measure.
+or with a measure it was not written with, or drops a
+written `decreases` measure.
 
 Scope: FR-091-AC-25, FR-091-AC-26.
 
@@ -34,6 +35,8 @@ alias is `v`.
 3. Run S1 and S2 on a unit declaring
    `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }`.
 4. Run S1 and S2 on a unit declaring
+   `predicate Even using v(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then Even(x - 1) else true }`.
+5. Run S1 and S2 on a unit declaring
    `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }`.
 
 Tag the tests `#[trace("FR-091-AC-25", "TC-480")]` and
@@ -52,6 +55,8 @@ Tag the tests `#[trace("FR-091-AC-25", "TC-480")]` and
   with a type form of head `Int` and bounds spelled `0` and `9`; a result
   type form of head `Boolean` with the span of the `Boolean` token; no
   measure; body `Binary{Greater, Name("x"), Integer(0)}`.
-- Step 4 gives a `FunctionDeclaration` of kind `Function`.
+- Step 4 gives one `FunctionDeclaration` of kind `Predicate` whose
+  measure is `Name("x")`.
+- Step 5 gives a `FunctionDeclaration` of kind `Function`.
 
 A display string is carried as spelled, quotes included.
