@@ -372,6 +372,69 @@ fn a_named_population_is_read_from_the_snapshot_of_the_clause_s_observation() {
     assert_eq!(record.fields["queried_type"], ident("Other"));
 }
 
+/// FR-046-AC-6 (TC-128): a quantified query over a named population gives no
+/// successful total when the population's completeness is missing or false,
+/// when its row is absent, when `self` names a member the snapshot does not
+/// list, or when `self` is not supplied; each is a typed admission failure
+/// before evaluation, never an empty domain. The independently supplied
+/// complete snapshot evaluates to the total of exactly its listed members.
+#[trace("TC-128", "FR-046-AC-6")]
+#[test]
+fn an_incomplete_or_missing_population_gives_no_total_and_a_complete_one_does() {
+    let mut unit = Unit::new(false, SIZE);
+    let counters = [("a", 0), ("b", 1), ("c", 1)];
+    let complete = unit.snapshot("complete", "pre", &counters, true);
+    let open = unit.snapshot("open", "pre", &counters, false);
+    let rowless = unit.listed(
+        "rowless",
+        "pre",
+        &Listing {
+            counters: &counters,
+            complete: None,
+            others_complete: Some(true),
+            link: false,
+        },
+    );
+    let short = unit.snapshot("short", "pre", &counters[..2], true);
+
+    // The complete counterpart decides over exactly its three members.
+    let total = unit
+        .pre_call("Size", &complete, ("counters", "a"))
+        .expect("the complete snapshot admits");
+    assert!(unit.holds("Size", &total), "size is 3 over a, b and c");
+    // A complete snapshot with one member fewer is a different total, not a
+    // reconstruction of the missing member.
+    let fewer = unit
+        .pre_call("Size", &short, ("counters", "a"))
+        .expect("the shorter complete snapshot admits");
+    assert!(!unit.holds("Size", &fewer), "size is 2 over a and b");
+
+    // Completeness false, and no row at all, never become an empty domain.
+    assert_incomplete(unit.pre_call("Size", &open, ("counters", "a")));
+    let Err(AdmissionFailure::Incomplete(record)) =
+        unit.pre_call("Size", &rowless, ("counters", "a"))
+    else {
+        panic!("a snapshot without the population row is incomplete");
+    };
+    assert_eq!(record.catalog.code(), "incomplete_population");
+
+    // A self object the complete snapshot does not list, and a missing self.
+    let unknown = unit.pre_call("Size", &complete, ("counters", "zz"));
+    assert!(
+        matches!(unknown, Err(ref failure) if !matches!(failure, AdmissionFailure::Incomplete(_))),
+        "an unlisted member is refused, not admitted: {unknown:?}"
+    );
+    let missing = unit.admit(
+        "Size",
+        ClauseSelectionInput::PreCall {
+            snapshot: complete.clone(),
+            self_object: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+    assert!(missing.is_err(), "no self object admits no evaluation");
+}
+
 /// The symbolic footprint of `operation` on `object_type` in `unit`.
 fn footprint(
     unit: &Unit,
