@@ -50,11 +50,12 @@ mod subject;
 pub use lifecycle::{
     admit_parsed_unit_list, check, check_units, check_units_with_refinement_internals,
     check_with_execution_points, check_with_execution_points_and_refinement_internals,
-    check_with_refinement_internals, check_with_temporal_selections_and_execution_points, package,
-    package_with_temporal_selections, parse, preflight_unit_list, refusal_or_fault, select,
-    select_units, AdmittedModels, AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure,
-    ObligationState, PackageLimits, ParseRequest, ParsedUnitSource, PendingObligation,
-    TypeDeclaration, TypeReport, TypeRequirement,
+    check_with_profile_catalog, check_with_refinement_internals,
+    check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
+    parse, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
+    AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
+    ParseRequest, ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
+    ProtocolCheckSite, TypeDeclaration, TypeReport, TypeRequirement,
 };
 pub(crate) use lifecycle::{
     check_for_continuation, check_units_with_options, parse_for_continuation, ContinuationInputs,
@@ -116,6 +117,60 @@ pub enum ProtocolResult {
     },
 }
 
+/// The kind of a source-level profile use retained by profile-aware spine
+/// checking.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProfileUseKind {
+    /// `protocol P using alias` requires a protocol profile.
+    Protocol,
+}
+
+/// Independent site admission result for a selected profile.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProfileUseAdmission {
+    /// The selected identity has the protocol profile role and identity.
+    Admitted,
+    /// The selected profile exists but does not satisfy the use-site kind.
+    WrongProfileKind,
+    /// A selected identity did not resolve to a complete registered closure.
+    ClosureRefused,
+    /// The authored alias has no selected profile identity.
+    MissingSelection,
+}
+
+/// Typed status of one profile definition's dependency closure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProfileClosureStatus {
+    /// The registered profile and every transitive dependency resolved.
+    Complete(qsl_semantics::library::profile_closure::ProfileClosure),
+    /// The registry could not supply the selected profile closure.
+    Refused(qsl_semantics::library::profile_closure::ProfileClosureRefusal),
+    /// The use-site alias was not selected in the source header.
+    NotSelected,
+}
+
+/// One typed protocol profile use, including closure and separate site
+/// admission outcomes. Closure success never implies site admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileUseResult {
+    /// Exact source owner of this use site.
+    pub source: qsl_foundation::source::provenance::RawSourceRef,
+    /// The containing protocol declaration.
+    pub protocol: String,
+    /// The source-selected profile alias.
+    pub alias: String,
+    /// Selected profile identity, when the header supplied one.
+    pub selected: Option<String>,
+    /// Required semantic use-site kind.
+    pub required_kind: ProfileUseKind,
+    /// Exact source region of the `using` alias.
+    pub region: qsl_foundation::Span,
+    /// Dependency closure status, independent of use-site kind.
+    pub closure: ProfileClosureStatus,
+    /// Whether the selected identity admits at this site.
+    pub admission: ProfileUseAdmission,
+}
+
 #[cfg(test)]
 pub(crate) use lifecycle::composed_declaration;
 #[cfg(test)]
@@ -155,6 +210,7 @@ pub use refinement::{
     RefinementClass, RefusalCause, RunClassification,
 };
 mod native_result;
+mod protocol_proof;
 pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{
     read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
@@ -163,6 +219,10 @@ pub use native_result::{
     FairnessOperationRead, FairnessRead, GuardRead, IndeterminateReasonRead, NativeRunOutcome,
     NativeRunReadError, NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead,
     RefusalLocusRead, SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
+};
+pub use protocol_proof::{
+    ProtocolProofCause, ProtocolProofCorrespondence, ProtocolProofDisposition,
+    ProtocolProofRequest, ProtocolProofResult,
 };
 pub mod query_proof;
 mod request;
