@@ -42,3 +42,20 @@ The author's deviations are sound. The call takes `EvidenceSubject` because the 
 ## Verdict
 
 The spec rows named in the ticket are implemented, and 20 of the 24 FR-516 criteria and all of FR-524 and FR-526 except the deferred AC-23 are tagged and mostly value-asserting. The gaps are in tests, not in behavior: FR-516-AC-5 and AC-14 are neither tagged nor named by the author, two FR-523 tags overclaim (FND-003, FND-004), and the charge vector that would pin FR-516-AC-8 is absent. The PR is not mergeable until FND-001 to FND-006 are closed in this PR; FND-007 to FND-010 are low. No ticketed behavior is narrowed.
+
+## Dispositions
+
+Round 1 is at head ea4694cb0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | each_axis_is_echoed_as_supplied test varies four axes, then the decision closure alone, and asserts the other fields and truth stay and the settlement changes. |
+| FND-002 | fixed | a_sibling_clause_keeps_its_result_after_a_counter_stop stops one clause on positions=0 and evaluates a sibling on the same meter with truth True. |
+| FND-003 | fixed | an_origin_clause_over_three_positions test asserts formula_nodes 2, instances 1, positions 3, valuations 3, captures 0, evaluation_steps 8, visited 8, history_span 5 and 8 meter charges, as FR-523-AC-3 states. |
+| FND-004 | fixed | a_shared_meter_one_unit_short test uses ceiling usage+1, asserts the first result equals the unmetered one, the second is a Meter stop naming t2, and the fresh-meter replay equals the first. The silent-sample clause variant of AC-14 is not exercised. |
+| FND-005 | fixed | the AC-3 test asserts the origin plus seven charges (8 meter units) and the silent test asserts the silent-sample rule; the exact FR-523-AC-21 vector is FND-011 of SR-2224001. |
+| FND-006 | fixed | a_conflicting_completeness_revision test refuses Complete{through:40} after 100 with progress-contradiction, an empty charge log, and asserts the retained watermark and completeness. |
+| FND-007 | still-open | FR-516-AC-1 and FR-526-AC-17 are now tagged and pass the matrix. FR-526-AC-13 is still method-without-symbol and FR-524-AC-23 is still untagged: its spec row still reads 'Test (TC-1319)' and was not re-pointed at FR-337-AC-8 (TC-1267) as promised. Re-point the row or tag it. |
+| FND-008 | fixed | RenamedTwin test asserts the key is unchanged by a rename and the refused Watermark carries the retained value. |
+| FND-009 | fixed | trigger_evidence_and_capture_faults_reach_the_call covers Missing/Refused trigger evidence, the incomplete record and Null/evicted capture faults through the call. |
+| FND-010 | fixed | same test asserts the faulted instance evaluates no position (Unavailable, no truth) for Missing, Null and evicted captures. |
