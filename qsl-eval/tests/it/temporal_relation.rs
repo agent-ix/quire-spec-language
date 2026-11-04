@@ -157,7 +157,14 @@ fn invalidating_derives_its_truth_from_its_own_inputs_like_superseding() {
     assert_ne!(invalidating.result_identity, superseding.result_identity);
 }
 
-#[trace("FR-526-AC-6", "FR-526-AC-7", "FR-516-AC-13", "TC-1321", "TC-1311")]
+#[trace(
+    "FR-052-AC-12",
+    "FR-526-AC-6",
+    "FR-526-AC-7",
+    "FR-516-AC-13",
+    "TC-1321",
+    "TC-1311"
+)]
 #[test]
 fn a_relation_that_changes_nothing_or_has_no_ledger_is_refused_uncharged() {
     let (env, p) = setup();
@@ -174,7 +181,7 @@ fn a_relation_that_changes_nothing_or_has_no_ledger_is_refused_uncharged() {
     expect_refusal(run(&env, &bare), "no-ledger");
 }
 
-#[trace("FR-526-AC-8", "FR-526-AC-15", "TC-1321")]
+#[trace("FR-052-AC-12", "FR-526-AC-8", "FR-526-AC-15", "TC-1321")]
 #[test]
 fn only_the_latest_result_can_be_corrected_and_an_original_restarts_the_chain() {
     let (env, p) = setup();
@@ -201,7 +208,13 @@ fn only_the_latest_result_can_be_corrected_and_an_original_restarts_the_chain() 
     assert_eq!(entry.result_identity(), &restarted.result_identity);
 }
 
-#[trace("FR-526-AC-9", "FR-526-AC-10", "FR-526-AC-11", "TC-1321")]
+#[trace(
+    "FR-052-AC-12",
+    "FR-526-AC-9",
+    "FR-526-AC-10",
+    "FR-526-AC-11",
+    "TC-1321"
+)]
 #[test]
 fn another_obligation_trigger_or_correspondence_is_not_the_predecessors() {
     let (env, p) = setup();
