@@ -616,10 +616,12 @@ fn digital_clocks_of(key: &qsl_analyze::exact_probabilistic::ProbKey) -> (Vec<u6
 }
 
 /// FR-204-AC-3 and AC-5 (TC-639, TC-642): a given delay and a free one race as
-/// the scheduler's choices. Every `WorkloadResolve` choice is a distribution
-/// of mass one on its own, so the minimum and maximum stay the free delay's
-/// `99/100` and `9999/10000`, and a deadline of 0 where the capped deadline
-/// clock makes every choice's targets coincide still solves.
+/// the scheduler's choices. `tick`'s given 3 ms lies outside its window while
+/// `send` waits, so each `FreeDelays` row is the empty given vector with
+/// probability 1 and each row choice is a distribution of mass one on its
+/// own; the minimum and maximum stay the free delay's `99/100` and
+/// `9999/10000`, and a deadline of 0 where the capped deadline clock makes
+/// every choice's targets coincide still solves.
 #[trace("TC-639", "FR-204-AC-3")]
 #[trace("TC-642", "FR-204-AC-5")]
 #[test]
@@ -643,12 +645,23 @@ fn mixed_given_and_free_races_keep_each_choice_a_distribution() {
         let mut mass: std::collections::BTreeMap<(usize, String), Rational> =
             std::collections::BTreeMap::new();
         for edge in &built.edges {
-            if let ProductAction::WorkloadResolve { delay, .. } = &edge.choice {
+            assert!(
+                !matches!(edge.choice, ProductAction::WorkloadResolve { .. }),
+                "{name}: a race with a given delay offers no WorkloadResolve"
+            );
+            if let ProductAction::FreeDelays(rows) = &edge.choice {
+                let [row] = rows.as_slice() else {
+                    panic!("{name}: a row-choice edge names one row: {rows:?}");
+                };
                 let total = mass
                     .entry((edge.from.index(), format!("{:?}", edge.choice)))
                     .or_insert_with(|| ratio(0, 1));
                 *total = total.add(&edge.probability);
-                assert!(*delay >= 1, "a resolve of the send waits for its guard");
+                assert!(row.given.is_empty(), "{name}: `tick` does not race");
+                assert!(
+                    row.free.iter().all(|(_, delay)| *delay >= 1),
+                    "a free delay of the send waits for its guard"
+                );
             }
         }
         assert!(!mass.is_empty(), "{name}: the free delays are choices");

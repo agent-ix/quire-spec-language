@@ -11,8 +11,10 @@
 //! Over every scheduler the scheduler chooses each delay and each scheduled
 //! identity. Under a workload, a `discrete` delay distribution turns the race
 //! of ADR-026 SD-3 into one probabilistic edge per outcome; a delay no
-//! distribution gives stays the scheduler's choice between a unit delay and
-//! the workload's resolution of the identity.
+//! distribution gives stays the scheduler's choice: between a unit delay and
+//! the workload's resolution of the identity where every racing delay is
+//! free, and as the post-draw `FreeDelays` action where given and free delays
+//! race together (FR-204).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
@@ -38,9 +40,9 @@ use quire_exact::{
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    DeadlineKind, DeadlinePhase, ExactProbLimits, MonitorState, MonitorVerdict, PathStep, Pending,
-    ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind,
-    ProductRefusal, ProductStop, UndefinedPath, UndefinedRead,
+    DeadlineKind, DeadlinePhase, ExactProbLimits, FreeDelayRow, MonitorState, MonitorVerdict,
+    PathStep, Pending, ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction,
+    ProductKind, ProductRefusal, ProductStop, UndefinedPath, UndefinedRead,
 };
 
 /// Build the digital product of a claim over a timed subject (FR-204).
@@ -115,9 +117,9 @@ pub(super) fn build<'s, 'a>(
     builder.run()
 }
 
-/// The scheduler's choice to let the workload resolve the identity after
-/// `delay` units (ADR-028 TA-1): one function, so the spec's ruling on the
-/// action's shape is a one-place change.
+/// At a state whose racing identities all have free delays, the scheduler's
+/// choice to let the workload resolve the identity after `delay` units
+/// (ADR-028 TA-1, FR-204).
 fn resolve_choice(
     representative: Option<&ScheduledIdentity>,
     taken: &Enabled,
@@ -536,6 +538,44 @@ struct Window {
 impl Window {
     fn contains(&self, delay: u64, reached: u64) -> bool {
         self.delays.contains(&delay.min(reached)) && (delay <= reached || self.forever)
+    }
+}
+
+/// Every index vector below `radices`, in ascending lexicographic order (the
+/// last index fastest): one empty vector for no radix, none when a radix is
+/// zero.
+struct Odometer {
+    radices: Vec<usize>,
+    next: Option<Vec<usize>>,
+}
+
+impl Odometer {
+    fn new(radices: impl IntoIterator<Item = usize>) -> Self {
+        let radices: Vec<usize> = radices.into_iter().collect();
+        let next = (!radices.contains(&0)).then(|| vec![0; radices.len()]);
+        Self { radices, next }
+    }
+}
+
+impl Iterator for Odometer {
+    type Item = Vec<usize>;
+
+    fn next(&mut self) -> Option<Vec<usize>> {
+        let current = self.next.take()?;
+        let mut following = current.clone();
+        let mut advanced = false;
+        for (digit, radix) in following.iter_mut().zip(&self.radices).rev() {
+            *digit += 1;
+            if *digit < *radix {
+                advanced = true;
+                break;
+            }
+            *digit = 0;
+        }
+        if advanced {
+            self.next = Some(following);
+        }
+        Some(current)
     }
 }
 
@@ -1543,10 +1583,10 @@ impl<'c> Builder<'_, '_, 'c> {
             self.decisions = true;
             return Ok(planned);
         }
-        let mut outcomes: Vec<(u64, Vec<usize>, Rational)> = Vec::new();
-        if racers.is_empty() {
-            outcomes.push((u64::MAX, Vec::new(), one()));
+        if free {
+            return self.free_delays_moves(at, workload, &trajectory, racers, &windows);
         }
+        let mut outcomes: Vec<(u64, Vec<usize>, Rational)> = Vec::new();
         let mut draw = vec![0_usize; racers.len()];
         while !racers.is_empty() {
             let mut probability = one();
@@ -1589,59 +1629,127 @@ impl<'c> Builder<'_, '_, 'c> {
             .map(|(window, _)| window.identity.clone())
             .collect();
         let mut planned: Vec<Planned> = Vec::new();
-        if !free {
-            let representative = representative.ok_or_else(|| fault("a-race-has-a-racer"))?;
-            for (delay, tied, probability) in &outcomes {
-                let identities: Vec<ScheduledIdentity> =
-                    tied.iter().map(|racer| ids[*racer].clone()).collect();
+        let representative = representative.ok_or_else(|| fault("a-race-has-a-racer"))?;
+        for (delay, tied, probability) in &outcomes {
+            let identities: Vec<ScheduledIdentity> =
+                tied.iter().map(|racer| ids[*racer].clone()).collect();
+            self.race_edges(
+                at,
+                workload,
+                &trajectory,
+                (*delay, identities, probability.clone()),
+                &representative,
+                Edges {
+                    planned: &mut planned,
+                    scope: 0,
+                },
+            )?;
+        }
+        Ok(planned)
+    }
+
+    /// FR-204: given and free delays race together. The scheduler chooses
+    /// every free racing identity's delay after the given delays are drawn
+    /// (ADR-026 SD-3), as the `FreeDelays` action. The product builds its row
+    /// choices only (FR-196): per drawn given vector `g`, in ascending numeric
+    /// order, and per assignment of a delay in its window to every free
+    /// identity, in ascending numeric order, the race of `g` with that
+    /// assignment, its edges carrying `P(g)` times the outcome's mass.
+    fn free_delays_moves(
+        &mut self,
+        at: usize,
+        workload: &Workload,
+        trajectory: &Trajectory,
+        racers: Vec<(&Window, Vec<(u64, Rational)>)>,
+        windows: &[Window],
+    ) -> Step<Vec<Planned>> {
+        let mut given = racers
+            .into_iter()
+            .map(|(window, mut support)| {
+                support.sort_by_key(|(delay, _)| *delay);
+                Ok((
+                    self.schedule_key(&window.identity)?,
+                    &window.identity,
+                    support,
+                ))
+            })
+            .collect::<Step<Vec<_>>>()?;
+        given.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut free = windows
+            .iter()
+            .filter(|window| window.given.is_none())
+            .map(|window| {
+                let delays: Vec<u64> = window.delays.iter().copied().collect();
+                Ok((
+                    self.schedule_key(&window.identity)?,
+                    &window.identity,
+                    delays,
+                ))
+            })
+            .collect::<Step<Vec<_>>>()?;
+        free.sort_by(|left, right| left.0.cmp(&right.0));
+        let representative = free
+            .first()
+            .map(|(_, identity, _)| (*identity).clone())
+            .ok_or_else(|| fault("a-free-delay-races"))?;
+        let mut planned: Vec<Planned> = Vec::new();
+        for draw in Odometer::new(given.iter().map(|(_, _, support)| support.len())) {
+            let mut probability = one();
+            let mut drawn = Vec::with_capacity(given.len());
+            for ((_, identity, support), index) in given.iter().zip(&draw) {
+                let (delay, share) = support
+                    .get(*index)
+                    .ok_or_else(|| fault("odometer-index-in-support"))?;
+                probability = probability.mul(share);
+                drawn.push(((*identity).clone(), *delay));
+            }
+            for assignment in Odometer::new(free.iter().map(|(_, _, delays)| delays.len())) {
+                let chosen: Vec<(ScheduledIdentity, u64)> = free
+                    .iter()
+                    .zip(&assignment)
+                    .map(|((_, identity, delays), index)| {
+                        let delay = delays
+                            .get(*index)
+                            .ok_or_else(|| fault("odometer-index-in-window"))?;
+                        Ok(((*identity).clone(), *delay))
+                    })
+                    .collect::<Step<_>>()?;
+                let least = drawn
+                    .iter()
+                    .chain(&chosen)
+                    .map(|(_, delay)| *delay)
+                    .min()
+                    .ok_or_else(|| fault("a-race-has-a-racer"))?;
+                let tied: Vec<ScheduledIdentity> = drawn
+                    .iter()
+                    .chain(&chosen)
+                    .filter(|(_, delay)| *delay == least)
+                    .map(|(identity, _)| identity.clone())
+                    .collect();
+                let first = planned.len();
                 self.race_edges(
                     at,
                     workload,
-                    &trajectory,
-                    (*delay, identities, probability.clone()),
+                    trajectory,
+                    (least, tied, probability.clone()),
                     &representative,
                     Edges {
                         planned: &mut planned,
-                        scope: 0,
+                        scope: first,
                     },
                 )?;
-            }
-            return Ok(planned);
-        }
-        // Given and free delays race together: the scheduler picks a free
-        // identity and its delay; the least delay wins (ADR-026 SD-3).
-        for window in windows.iter().filter(|window| window.given.is_none()) {
-            for &delay in &window.delays {
-                let first = planned.len();
-                for (least, tied, probability) in &outcomes {
-                    let mut identities: Vec<ScheduledIdentity> =
-                        tied.iter().map(|racer| ids[*racer].clone()).collect();
-                    let winning = if delay < *least {
-                        identities = vec![window.identity.clone()];
-                        delay
-                    } else if delay == *least {
-                        identities.push(window.identity.clone());
-                        delay
-                    } else {
-                        *least
-                    };
-                    self.race_edges(
-                        at,
-                        workload,
-                        &trajectory,
-                        (winning, identities, probability.clone()),
-                        &window.identity,
-                        Edges {
-                            planned: &mut planned,
-                            scope: first,
-                        },
-                    )?;
-                }
+                let choice = ProductAction::FreeDelays(vec![FreeDelayRow {
+                    given: drawn.clone(),
+                    free: chosen,
+                }]);
                 for edge in &mut planned[first..] {
-                    edge.choice = ProductAction::WorkloadResolve {
-                        identity: window.identity.clone(),
-                        delay,
-                    };
+                    edge.choice = choice.clone();
+                }
+                if self.edges.len().saturating_add(planned.len()) > self.max_transitions {
+                    return Err(Self::stopped(
+                        ModelCheckLimit::ExactProbMaxTransitions,
+                        self.max_transitions,
+                    ));
                 }
             }
         }
@@ -1650,6 +1758,13 @@ impl<'c> Builder<'_, '_, 'c> {
             self.time_locked.push(at);
         }
         Ok(planned)
+    }
+
+    /// FR-187's canonical order key of `identity`.
+    fn schedule_key(&self, identity: &ScheduledIdentity) -> Step<Vec<u8>> {
+        self.system
+            .scheduled_identity_key(identity)
+            .map_err(|_| fault("schedule-key-encodes").into())
     }
 
     /// The edges of one race outcome: `(delay, tied identities, probability)`.
