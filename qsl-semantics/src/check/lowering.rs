@@ -4026,6 +4026,10 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
+            NodeKind::QuantityPower(base, exponent) => (
+                Keyed::Application(Operator::Binary, plain("quire.op.quantity.pow")),
+                Operands::Two(base, exponent),
+            ),
             NodeKind::Ieee(operator, rounding, left, right) => {
                 let ValueType::Float(float) = node.at(*left).value_type() else {
                     return Err(fault(node.location(), KeyFault::UntypedIeeeOperand));
@@ -4681,6 +4685,44 @@ impl<'a> Lowering<'a> {
                         Operation {
                             leaves,
                             ..plain("quire.op.collection.contains")
+                        },
+                    ),
+                    Operands::Two(collection, item),
+                )
+            }
+            NodeKind::DropFirst(source) => {
+                let ValueType::Collection(collection_type) = node.at(*source).value_type() else {
+                    return Err(fault(node.location(), KeyFault::UnorderedFirstOccurrence));
+                };
+                let identity = match collection_type.kind() {
+                    CollectionKind::Sequence => "quire.op.collection.sequence.drop_first",
+                    CollectionKind::OrderedSet => "quire.op.collection.ordered_set.drop_first",
+                    CollectionKind::Set | CollectionKind::Bag => {
+                        return Err(fault(node.location(), KeyFault::UnorderedFirstOccurrence))
+                    }
+                };
+                (
+                    Keyed::Application(Operator::Collection, plain(identity)),
+                    Operands::One(source),
+                )
+            }
+            NodeKind::RemoveOne(collection, item) => {
+                let leaves = if let ValueType::Collection(collection_type) =
+                    node.at(*collection).value_type()
+                {
+                    self.leaves(
+                        LeafSource::Compared(collection_type.element()),
+                        node.location(),
+                    )?
+                } else {
+                    Vec::new()
+                };
+                (
+                    Keyed::Application(
+                        Operator::Collection,
+                        Operation {
+                            leaves,
+                            ..plain("quire.op.collection.remove_one")
                         },
                     ),
                     Operands::Two(collection, item),
