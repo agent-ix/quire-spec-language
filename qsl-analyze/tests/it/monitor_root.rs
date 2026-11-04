@@ -376,3 +376,290 @@ fn a_function_named_like_a_generated_type_writes_no_plan_root() {
     let refusal = root_of(&unit, "C", &target()).unwrap_err();
     assert!(matches!(refusal, PlanRootRefusal::Write(_)), "{refusal:?}");
 }
+
+/// The unit with `bump` and `twice` helpers called by the clause's atom
+/// (`bump` adding `step`) and an `isGate` helper called by the activation
+/// guard (comparing with `gate`). The entries call the generated helpers
+/// that call these.
+fn helper_unit(step: i64, gate: i64) -> String {
+    let helpers = format!(
+        "function bump using v(x: Int[0, 1000]): Integer pure {{ x + {step} }}\n\
+         function twice using v(x: Int[0, 1000]): Integer pure {{ bump(x) + bump(x) }}\n\
+         function isGate using v(x: Int[0, 1000]): Boolean pure {{ x = {gate} }}\n"
+    );
+    unit_source(
+        "always holds(twice(c.versionNumber) = 5)",
+        &helpers,
+        true,
+        "on each (q: M::ConfigVersion) when (isGate(q.versionNumber))",
+    )
+}
+
+/// The node ids a wire value names through `target` references.
+fn targets(value: &serde_json::Value, out: &mut Vec<serde_json::Value>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(target) = map.get("target") {
+                out.push(target.clone());
+            }
+            map.values().for_each(|child| targets(child, out));
+        }
+        serde_json::Value::Array(items) => items.iter().for_each(|child| targets(child, out)),
+        _ => {}
+    }
+}
+
+/// The call closure the root's key must end with, computed from the wire
+/// independently of the writer: the graph position of the body root of every
+/// declared function the four entries and the clause reach, ascending by the
+/// functions' node ids, one per function.
+fn expected_closure(wire: &serde_json::Value) -> Vec<u64> {
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let by_id = |id: &serde_json::Value| nodes.iter().find(|n| &n["node_id"] == id).unwrap();
+    let plan = nodes
+        .iter()
+        .find(|n| n["semantic_form"] == "monitor_plan")
+        .unwrap();
+    let members = plan["body"]["members"].as_array().unwrap();
+    let member =
+        |name: &str| members.iter().find(|m| m["name"] == name).unwrap()["value"]["target"].clone();
+    let mut pending: Vec<serde_json::Value> =
+        ["clause", "init", "on_event", "on_watermark", "on_gap"]
+            .iter()
+            .map(|name| member(name))
+            .collect();
+    let mut seen: Vec<serde_json::Value> = Vec::new();
+    let mut called: Vec<(CheckedNodeId, serde_json::Value)> = Vec::new();
+    while let Some(id) = pending.pop() {
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id.clone());
+        let node = by_id(&id);
+        if node["node_tag"] == "function" && node.get("declaration").is_some() {
+            let body = node["body"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["name"] == "body")
+                .unwrap()["value"]["target"]
+                .clone();
+            called.push((serde_json::from_value(id.clone()).unwrap(), body));
+        }
+        targets(&node["body"], &mut pending);
+    }
+    called.sort_by(|a, b| a.0.cmp(&b.0));
+    called
+        .iter()
+        .map(|(_, body)| nodes.iter().position(|n| &n["node_id"] == body).unwrap() as u64)
+        .collect()
+}
+
+/// The positions the root's key path ends with, after the activation
+/// capacity text.
+fn closure_tail(wire: &serde_json::Value) -> Vec<u64> {
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let plan = nodes
+        .iter()
+        .find(|n| n["semantic_form"] == "monitor_plan")
+        .unwrap();
+    let path = plan["node_id"]["path"].as_array().unwrap();
+    let capacity = path
+        .iter()
+        .position(|segment| segment == "8")
+        .expect("the activation capacity text ends the premises");
+    path[capacity + 1..]
+        .iter()
+        .map(|segment| segment["node"].as_u64().expect("an index segment"))
+        .collect()
+}
+
+/// QSpec FR-487-AC-13 (the plan-root key half of FR-251-AC-38; the `PlanId`
+/// half is not asserted here): two plans that differ only in the body of a
+/// declared helper have different root keys, whether the helper is called by
+/// an atom (directly or through another helper) or by the activation guard;
+/// the entries' keys and the helpers' own declaration-path ids are unchanged,
+/// the helpers stay declared, an equal helper body gives an equal root key,
+/// and the key's tail is exactly the body roots of the called helpers, once
+/// each, ascending by helper node id.
+#[trace("TC-1081", "FR-487-AC-13")]
+#[test]
+fn the_root_key_covers_the_bodies_of_called_helpers() {
+    let one = root_of(&helper_unit(1, 2), "C", &target()).expect("base");
+    let again = root_of(&helper_unit(1, 2), "C", &target()).expect("base again");
+    let atom = root_of(&helper_unit(2, 2), "C", &target()).expect("atom helper body");
+    let guard = root_of(&helper_unit(1, 3), "C", &target()).expect("guard helper body");
+    let [a, a2, b, c] = [&one, &again, &atom, &guard].map(admitted);
+    let (ka, ka2, kb, kc) = (keys(&a), keys(&a2), keys(&b), keys(&c));
+    assert_eq!(ka, ka2, "an equal helper body gives an equal root key");
+    assert_ne!(
+        ka.root, kb.root,
+        "a swapped atom helper body changes the root key"
+    );
+    assert_ne!(
+        ka.root, kc.root,
+        "a swapped guard helper body changes the root key"
+    );
+    assert_eq!(
+        ka.entries, kb.entries,
+        "the entries' own keys are unchanged"
+    );
+    assert_eq!(
+        ka.entries, kc.entries,
+        "the entries' own keys are unchanged"
+    );
+
+    let wire = [&one, &atom, &guard].map(json);
+    let declared = |wire: &serde_json::Value, name: &str| -> serde_json::Value {
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let found: Vec<&serde_json::Value> = nodes
+            .iter()
+            .filter(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+            .collect();
+        assert_eq!(found.len(), 1, "{name} stays one declared node");
+        assert_eq!(found[0]["node_tag"], "function");
+        found[0]["node_id"].clone()
+    };
+    for name in ["bump", "twice", "isGate"] {
+        for other in &wire[1..] {
+            assert_eq!(declared(&wire[0], name), declared(other, name), "{name}");
+        }
+    }
+    for wire in &wire {
+        let expected = expected_closure(wire);
+        let tail = closure_tail(wire);
+        assert_eq!(
+            tail, expected,
+            "the call closure, ascending, one per helper"
+        );
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let root_of_helper = |name: &str| {
+            let helper = nodes
+                .iter()
+                .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+                .unwrap();
+            let body = helper["body"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["name"] == "body")
+                .unwrap();
+            nodes
+                .iter()
+                .position(|n| n["node_id"] == body["value"]["target"])
+                .unwrap() as u64
+        };
+        for name in ["bump", "twice", "isGate"] {
+            assert!(
+                tail.contains(&root_of_helper(name)),
+                "{name} is in the closure"
+            );
+        }
+        // An entry calls generated helpers that are declared functions; they
+        // are in the closure too, so the closure is longer than the three
+        // authored helpers.
+        assert!(tail.len() > 3, "{}", tail.len());
+    }
+    // The order is pinned: a reversed or duplicated tail differs.
+    let tail = closure_tail(&wire[0]);
+    let mut reversed = tail.clone();
+    reversed.reverse();
+    assert_ne!(
+        tail, reversed,
+        "the tail is not palindromic, so order is observable"
+    );
+    let mut doubled = tail.clone();
+    doubled.push(tail[0]);
+    assert_ne!(
+        doubled,
+        expected_closure(&wire[0]),
+        "a duplicated entry is not the closure"
+    );
+}
+
+/// FR-251-AC-42: the plan root's emission retains every witness row of the
+/// acquisition it was written from, so a consumer never rebuilds them: the
+/// selected model declaration and field rows equal the unit's own
+/// acquisition, every retained row names a node of the emitted package, and
+/// IR's join accepts the exact rows against the package read back.
+#[trace("TC-1081", "FR-251-AC-42")]
+#[test]
+fn the_plan_root_retains_the_acquisitions_witness_rows() {
+    let unit = authored(ROOT_SHAPES[0]);
+    let root = root_of(&unit, "C", &target()).expect("the plan root");
+    let emission = &root.emission;
+
+    let domain = Domain::config_version();
+    let packages =
+        qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
+    let source = SourceIdentity::new("agent-ix", "monitor-root");
+    let cancel = Cancel::new();
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: unit.as_bytes(),
+        },
+        SpineLimits::default().source,
+        &cancel,
+    )
+    .map_err(|_| "parses")
+    .expect("the stage succeeds")
+    .into_value();
+    let selected =
+        qsl_replay::spine::select(&parsed, &packages, SpineLimits::default().model, &cancel)
+            .map_err(|_| "selects")
+            .expect("the stage succeeds")
+            .into_value();
+    let acquisition = qsl_replay::spine::check(
+        &parsed,
+        "fixture".to_owned(),
+        &selected,
+        &qsl_replay::spine::DependencyInput::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .map_err(|_| "checks")
+    .expect("the stage succeeds")
+    .into_value();
+    let graph = acquisition.package().graph();
+    assert!(!graph.selected_exact_declaration_rows().is_empty());
+    assert_eq!(
+        emission.selected_exact_declaration_rows(),
+        graph.selected_exact_declaration_rows()
+    );
+    assert_eq!(
+        emission.selected_exact_field_rows(),
+        graph.selected_exact_field_rows()
+    );
+    assert!(!emission.selected_source_unit_rows().is_empty());
+    assert!(!emission.equality_producer_identity_rows().is_empty());
+    assert!(!emission.equality_fact_witness_rows().is_empty());
+
+    let package = admitted(&root);
+    let wire = json(&root);
+    let ids: Vec<&serde_json::Value> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| &node["node_id"])
+        .collect();
+    let known = |id: &CheckedNodeId| ids.contains(&&serde_json::to_value(id).unwrap());
+    for row in emission.selected_source_unit_rows() {
+        assert!(known(&row.structural_node), "{row:?}");
+    }
+    for row in emission.equality_producer_identity_rows() {
+        assert!(known(row.checked_node()), "{row:?}");
+        assert!(known(&row.source_map_entry().node_id), "{row:?}");
+    }
+    for row in emission.equality_fact_witness_rows() {
+        assert!(known(row.checked_application()), "{row:?}");
+        assert!(known(row.structural_node()), "{row:?}");
+    }
+    quire_contract_model::SelectedExactIdentities::from_stage_rows(
+        &package,
+        emission.selected_exact_declaration_rows().iter().cloned(),
+        emission.selected_exact_field_rows().iter().cloned(),
+    )
+    .expect("IR joins the retained exact rows to the plan-root package");
+}

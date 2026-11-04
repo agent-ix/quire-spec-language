@@ -704,6 +704,7 @@ fn a_capture_reading_model_state_through_over_is_admitted() {
 /// and the `finish` constraint is lowered as the `parameter` its own source
 /// names, at the level after the binders readable there, not under another
 /// binder's name.
+#[trace("FR-383-AC-11", "TC-1062")]
 #[test]
 fn a_binder_in_until_terminal_control_and_finish_bodies_is_named_by_its_source() {
     let lowered = lower_with(

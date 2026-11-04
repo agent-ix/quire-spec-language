@@ -695,7 +695,7 @@ fn an_unknown_or_non_clause_node_refuses_without_a_partial_result() {
     // cycle through a `protocol_reference` carrier.
     let carrier_source = "function both using v(a: Boolean, b: Boolean): Boolean pure \
          { a and b and protocol Flow }\n\
-         protocol Flow using v over (input: M::Order) on origin {\n\
+         protocol Flow using p over (input: M::Order) on origin {\n\
          role Buyer on M::Order;\n\
          run parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
          join predicate(both) [a, b];\n\

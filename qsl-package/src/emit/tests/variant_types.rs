@@ -26,7 +26,7 @@ function tierOf using v(s: M::Settings): M::Tier pure { s.tier }\n\
 post PromoteKeeps using v on M::Account::promote { result = t }\n";
 
 /// [`TIER_UNIT`] and a function over `Odd`.
-const UNIT: &str = "\
+pub(super) const UNIT: &str = "\
 function pick using v(t: M::Tier): M::Tier pure { t }\n\
 function isGold using v(t: M::Tier): Boolean pure { t = M::Tier::Gold }\n\
 function notGold using v(t: M::Tier): Boolean pure { t != M::Tier::Gold }\n\
@@ -38,6 +38,11 @@ struct Emitted {
     emission: Emission,
     wire: Value,
     evidence: CheckedPackageEvidence,
+}
+
+/// The emission of `unit_body` over the `Tier` and `Odd` model enums.
+pub(super) fn emitted_enums(unit_body: &str) -> Emission {
+    emit_unit(unit_body).emission
 }
 
 fn emit_unit(unit_body: &str) -> Emitted {
