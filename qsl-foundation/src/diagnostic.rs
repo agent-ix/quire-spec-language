@@ -964,11 +964,12 @@ mod foundation_tests {
     use ix_trace_rs::trace;
     use quire_semantic_value::catalog::{CatalogCode, Category, InternalFault};
 
-    /// FR-285-AC-1 (TC-769 step 1): each of the nine table rows maps to its
-    /// code, with undefined folding to 10 beside violation, an inconclusive
-    /// proof or `analyze` item at 22 and a supplied-trace clause pending at
-    /// the trace's end at 0.
-    #[trace("TC-769", "FR-285-AC-1")]
+    /// FR-285-AC-1, AC-9 and AC-11 (TC-769 step 1): each table row maps to
+    /// its code, with undefined folding to 10 beside violation, an
+    /// inconclusive proof or `analyze` item at 22, a supplied-trace clause
+    /// pending at the trace's end (`Category::Pending`) at 0 and a
+    /// finite-window `Category::Indeterminate` at 11.
+    #[trace("TC-769", "FR-285-AC-1", "FR-285-AC-9", "FR-285-AC-11")]
     #[test]
     fn tc_769_exit_function_maps_every_table_row() {
         let rows = [
@@ -980,17 +981,17 @@ mod foundation_tests {
             Category::Incomplete.exit_code(),
             Category::Inconclusive.exit_code(),
             Category::Inconclusive.trace_exit_code(),
+            Category::Pending.exit_code(),
+            Category::Indeterminate.exit_code(),
             Category::InternalFailure.exit_code(),
         ];
-        assert_eq!(rows, [0, 10, 10, 20, 21, 22, 22, 0, 30]);
+        assert_eq!(rows, [0, 10, 10, 20, 21, 22, 22, 22, 0, 11, 30]);
         for category in Category::ALL {
-            if category != Category::Inconclusive {
-                assert_eq!(
-                    category.trace_exit_code(),
-                    category.exit_code(),
-                    "{category}"
-                );
-            }
+            assert_eq!(
+                category.trace_exit_code(),
+                category.exit_code(),
+                "{category}"
+            );
         }
     }
 
@@ -1135,7 +1136,7 @@ mod foundation_tests {
     }
 
     #[test]
-    fn category_has_exactly_the_adr_013_o16_eight_values() {
+    fn category_has_exactly_the_adr_013_o16_ten_values() {
         let spellings: Vec<&str> = Category::ALL
             .iter()
             .map(|category| category.as_str())
@@ -1149,12 +1150,14 @@ mod foundation_tests {
                 "refusal",
                 "unsupported",
                 "incomplete",
+                "pending",
+                "indeterminate",
                 "inconclusive",
                 "internal-failure",
             ]
         );
-        // Every match over `Category` in this crate must be exhaustive; a
-        // ninth variant added here without a corresponding compile error
+        // Every match over `Category` in this crate must be exhaustive; an
+        // eleventh variant added here without a corresponding compile error
         // elsewhere would mean some consumer grew a `_` arm.
         for category in Category::ALL {
             match category {
@@ -1164,6 +1167,8 @@ mod foundation_tests {
                 | Category::Refusal
                 | Category::Unsupported
                 | Category::Incomplete
+                | Category::Pending
+                | Category::Indeterminate
                 | Category::Inconclusive
                 | Category::InternalFailure => {}
             }
