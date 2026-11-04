@@ -226,6 +226,20 @@ ceilings from the same inputs is byte-equal to a call that never stopped
   closure contradiction in the request's progress assertion are refused as FR-502
   states, as `Err(CallFailure::Admission)` with an empty charge log and the
   contradicted dimension in the failure; the progress ledger is unchanged.
+- **Refused evaluation.** A refusal of the evaluation itself after the call has
+  begun charging (for example two positions of one stamp with no usable order,
+  FR-501) is a result of a call that ran, not a refusal before any charge: the call
+  returns `Ok` with `activation = Active`, `truth = None`, `settlement = None` and
+  a `non_value` of kind `Refused`, code `temporal-refusal` and dimension the
+  `Debug` text of the evaluation's refusal (its variant name followed by its
+  fields, `UnorderedTie` for that example). An internal fault is not this result.
+- **Withdrawn facts.** For a result that has a truth, the first withdrawn fact in
+  this order yields the `Missing` non-value with code `fact-withdrawn`: the decision
+  closure (dimension `decision_closure`), the completeness record (dimension
+  `completeness`), then the first support valuation the request does not carry
+  (dimension `valuation:<atom>@<pos>`, the atom index and the position the
+  evaluator read). A support pair at a silent sample (FR-504) names no observed
+  fact and is skipped: the result's `support` holds no entry for it.
 - **Independent facts.** Each of the four axes, the trigger scope, the
   completeness record, the anchor, the clock row and the execution disposition is
   returned as its own field; an absent fact yields a non-value, never a default
@@ -286,7 +300,7 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | --- | --- | --- |
 | FR-516-AC-1 | A compile-fail test that sets `truth`, `settlement`, `support` or `instance` on `EvidenceRequest` fails to compile, and the type has no member holding a QSL document or a QSL-computed digest. | Test (TC-1311) |
 | FR-516-AC-2 | Over **R**'s event-position clause with a closed complete trigger scope and no delivery, the result has `activation = Inactive`, `truth = None` and `non_value.kind = Inactive`; with an open trigger scope `Unknown` and `ActivationUnknown`; with one admitted delivery `Active` and a truth; with a delivery whose capture is missing `Unavailable` and a `Missing` non-value naming the capture; with the anchor withdrawn (absent or naming no observed position) `Unavailable`; a request naming a clause the package does not hold returns `Err(CallFailure::Admission)` with an empty charge log and no result. | Test (TC-1311) |
-| FR-516-AC-3 | With one fact withdrawn from an otherwise Active request (decision closure, completeness record, a support fact), the result truth, settlement and support are the FR-043 values of the remaining evidence, the result carries a `Missing` non-value for the withdrawn fact, and no field defaults to false, closed, settled or complete. | Test (TC-1311) |
+| FR-516-AC-3 | With one fact withdrawn from an otherwise Active request (decision closure, completeness record, a support fact), the result truth, settlement and support are the FR-043 values of the remaining evidence, the result carries a `Missing` non-value with code `fact-withdrawn` and the dimension the Withdrawn facts rule states for the withdrawn fact, and no field defaults to false, closed, settled or complete. | Test (TC-1311) |
 | FR-516-AC-4 | Two requests that differ only in one byte of the trigger identity give two different `result_identity` values, and an empty identity is refused at construction. | Test (TC-1311) |
 | FR-516-AC-5 | The decision and surrounding progress and closure axes, the trigger scope and the completeness record are each echoed in the result exactly as supplied, and changing one of them changes only its field and the derived truth where FR-043 says it does. | Test (TC-1311) |
 | FR-516-AC-6 | A superseding result carries its direct predecessor's `result_identity` and `lineage + 1`, and the predecessor result is unchanged. | Test (TC-1311) |
@@ -310,7 +324,7 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-24 | A request with a closed complete trigger scope, no delivery, `trigger` `None` and an `anchor` naming no observed position returns `Unavailable`, not `Inactive`. | Test (TC-1311) |
 | FR-516-AC-25 | A call stopped by a counter ceiling, by the meter, by the `lineage` ceiling, by an evicted required valuation, by `formula_nodes`, by `history_span` (including a tick sum that does not fit) and by the progress-ledger capacity `progress.covered_positions` each returns `Ok` with `activation = Unavailable`, `truth = None` and `incomplete` naming the stop (`history_span` for the tick sum, `progress.covered_positions` for the capacity), and none returns `Err` or an unset activation. A request whose anchor names no observed position returns `Ok` with `activation = Unavailable`, a `Missing` non-value naming the anchor and `incomplete = None`. | Test (TC-1311) |
 | FR-516-AC-26 | A finite-window verdict `PendingNextEvent` and a verdict `Pending` each return `truth = Pending`. | Test (TC-1311) |
-| FR-516-AC-27 | Over the clause of FR-523-AC-21 through `evaluate_temporal_evidence`, `usage` reports `evaluation_steps` 4, `positions` 1, `valuations` 4, the meter's `temporal.visit` usage is 10, and `usage` reports exactly thirteen counters. | Test (TC-1311) |
+| FR-516-AC-27 | Over the clause of FR-523-AC-21 through `evaluate_temporal_evidence`, `usage` reports `evaluation_steps` 4, `positions` 1, `valuations` 4, the meter's `temporal.visit` usage is 13 (including 3 materialization charges, one per silent sample), and `usage` reports exactly thirteen counters. | Test (TC-1311) |
 | FR-516-AC-28 | A request with a guard-`None` delivery and a healthy delivery lists both in `instances` (the first `Unavailable` with a guard fault), assessing the healthy one by `trigger`, and a request with a surplus capture fact returns `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
 | FR-516-AC-29 | Over the `CheckedPackageEvaluation` constructed from the `Emission`, the clause's profile selection and `TemporalBinding` row equal the rows of the package read back from its bytes, and `evaluate_temporal_evidence` over it authenticates the clause's own `binding`. | Test (TC-1311) |
 | FR-516-AC-30 | In a package with two temporal clauses of different formulas and different clock rows, each clause's `CheckedNodeId` pairs with its own row: a `binding` asserting the other clause's row is refused with cause `binding-mismatch` and the dimension FR-522 names, over the package constructed from the `Emission` and the read-back package alike. | Test (TC-1311) |
@@ -325,6 +339,9 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-39 | A clause whose formula holds an operator without a finite upper bound, one holding a timed interval, one whose view `operands` hold a cycle or an out-of-range position, and one whose `predicate_leaves()` count differs from its `holds` count each return cause `clause-unreadable` with an empty charge log; a readable clause of the same shape with a finite bound, a closed interval, acyclic in-range operands and equal counts returns a result; and a clause whose tick sum overflows `u64` returns the `history_span` `Incomplete` result and not this cause. | Test (TC-1311) |
 | FR-516-AC-40 | A request whose `control` names a protocol clause with no FR-449 row returns cause `activation-mapping-missing`, one whose row names another temporal clause returns `activation-mapping-mismatch`, and one whose row names the call's clause is evaluated, each refusal with an empty charge log (FR-516-AC-16). The cause `surplus-capture` is covered by FR-524-AC-33. | Test (TC-1311) |
 | FR-516-AC-41 | For each cause of the table above, the request that meets its condition returns `Err(CallFailure::Admission)` with that cause, an empty charge log and the request's `ledger` and `progress_ledger` unchanged, and the request that differs from it only in not meeting the condition returns `Ok`; every refusal the tests of TC-1311, TC-1317, TC-1319 and TC-1321 provoke carries a cause of the table or one of the cross-referenced causes. | Test (TC-1311) |
+| FR-516-AC-42 | Over **R**'s timestamped-event clause with two positions of one stamp, both participating in an order-sensitive operator and carrying no order keys, the call returns `Ok` (not `Err`) with `activation = Active`, `truth = None`, `settlement = None`, and a `non_value` of kind `Refused`, code `temporal-refusal` and a dimension that begins `UnorderedTie`; the same trace with distinct order keys of one authority returns a truth. | Test (TC-1311) |
+| FR-516-AC-43 | With a supported decisive witness whose support valuation at position 1 of atom 0 is absent from the request, the result's `non_value` is `Missing` with code `fact-withdrawn` and dimension `valuation:0@1`, and the result with the valuation present has no `non_value`; with the decision closure and the valuation both withdrawn the dimension is `decision_closure`. | Test (TC-1311) |
+| FR-516-AC-44 | Over a fixed-sample clause whose support includes a pair at a silent sample, the result's `support` holds an entry for each support pair at an observed position and none for the pair at the silent sample, and the count equals the observed pairs. | Test (TC-1311) |
 
 ## Dependencies
 

@@ -38,7 +38,7 @@ Verify FR-524-AC-1 to FR-524-AC-39. The vectors are the FR-044 cases and TC-123 
 | 20 | 20 | a ledger holding `t1`; `t1` delivered with a different payload | contradiction; ledger unchanged |
 | 21 | 21 | a ledger holding `t1`; a retained capture of `t1` in `evicted` | `ActivationFault` naming the capture, `Missing`; nothing recomputed |
 | 22 | 22 | a later delivery or observation with a changed amount or reference | environment byte-identical; no mutator |
-| 23 | 23 | an initializer reading a later capture | refused at S3; no clause node |
+| 23 | 23 | an initializer reading a later capture | refused at S3; no clause node; verified by TC-1267 (FR-337-AC-8), not by a TC-1319 test |
 | 24 | 24 | an evicted required valuation | `Incomplete` naming the subject, no truth |
 | 25 | 25 | the same trace with the valuation present | whole interval evaluated |
 | 26 | 26 | two deliveries, one capture each | `evaluation_steps` 2 for deliveries and 2 for captures; `instances` 2; `captures` 2 |
