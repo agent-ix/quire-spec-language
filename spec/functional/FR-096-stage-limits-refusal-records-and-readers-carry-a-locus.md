@@ -188,7 +188,7 @@ meter wherever it is read and keeps `resource_exhausted`
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a maximum fixed by the language is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (node count, declaration
-input bytes and work, NFR-011) are therefore stage
+input bytes and work, decimal literal scale and its total, NFR-011) are therefore stage
 limits. S1's syntax budgets (`SyntaxLimit`, FR-035) report
 `stage_limit_exceeded` with their kind's cause, the token budget as
 `token-count-exceeded`; S1 names its position by its diagnostic's region.
@@ -206,6 +206,7 @@ Each producer's locus is the position at which its charge failed:
 | --- | --- | --- |
 | S3, a family `check`, for a declaration as a whole | the declaration's preimage input bytes and work charge | `Locus::Region` over that declaration's span |
 | S3, `Typer` and lowering, under `CheckingLimits` | the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `quire_semantic_value::location::ExpressionLocation`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
+| S3, `Typer`, under `CheckingLimits` | the written scale of one `decimal(c, s)` literal (`s3.decimal_literal_scale`) and the running total over the checked unit's literals (`s3.decimal_literal_scale_total`), both limit kind work budget (FR-093 "Decimal constructors") | `Locus::Region` over the literal whose scale failed the charge, resolved from its `quire_semantic_value::location::ExpressionLocation` |
 | S3, a `choice`'s partition proof (FR-218), under `CheckingLimits` | the shared work meter, one unit per valuation, charged after the declaration's precheck and before its lowering | `Locus::Region` over the `choice`'s span |
 | S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `quire_semantic_value::location::ExpressionLocation` |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the RFC 6901 pointer IR reports for the value at which the charge failed |

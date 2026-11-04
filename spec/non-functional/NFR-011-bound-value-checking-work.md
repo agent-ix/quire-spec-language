@@ -34,7 +34,7 @@ declaration and charges no work. The ceilings are inclusive unsigned counts supp
 caller. The values below are the default ceilings a caller gets when it
 configures none. A caller may set each ceiling independently, above or below
 its default, through its setting (`s3.nodes`, `s3.input_bytes`,
-`s3.work_units`, `s3.rational_bits`;
+`s3.work_units`, `s3.rational_bits`, `s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`;
 [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md)),
 and the ceiling is used as given. Every checking walk runs over an explicit
 heap stack whose growth these ceilings charge, so an expression's or a
@@ -52,6 +52,7 @@ domain bound (NFR-001).
 | Checking node ceiling | At most the selected ceiling (default 100000 units) per checked package | 100000 units by default | negative-abuse-testing |
 | Declaration preimage bytes | At most the selected ceiling (default 16777216 bytes) per declaration | 16777216 bytes by default | negative-abuse-testing |
 | Checking work | At most the selected ceiling (default 16777216 work units) per checked package | 16777216 units by default | negative-abuse-testing |
+| Decimal literal scale | At most the selected ceiling (default 65535 digits) in the written scale of one `decimal(c, s)` literal, and at most the selected total (default 1048576 digits) over the literals of one checked unit (FR-093 "Decimal constructors") | 65535 digits per literal and 1048576 per unit by default | negative-abuse-testing |
 | Rational bits | At most the selected ceiling (default 65536 bits) in any exact value as written, and in a distribution's running weight sum | 65536 bits by default | negative-abuse-testing |
 
 ## Counter definitions
@@ -78,6 +79,7 @@ domain bound (NFR-001).
 
 ## Default derivation
 
+- **Decimal literal scale, 65535, and total, 1048576.** A literal's wire spelling has exactly its written scale in fractional digits, and a zero coefficient is a member at every scale, so one literal can spell as many digits as its scale. 65535 is a few times the 19729 digits of the rational-bits default and bounds one literal at 64 KiB. The total, sixteen times that, bounds what a unit's literals spell together at 1 MiB, the size of the default source-byte ceiling, because distinct scales are distinct nodes and the node ceiling alone would allow gigabytes of spelling.
 - **Rational bits, 65536.** FR-185's rational-bits ceiling: a value of
   2^65536 has a 19729-digit decimal expansion, ample for any written
   exact value, and bounds the reduction and the weight sum's growth.
