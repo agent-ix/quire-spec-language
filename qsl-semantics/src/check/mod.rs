@@ -148,6 +148,7 @@ mod task_set;
 mod temporal_clause;
 mod terminal;
 mod time_units;
+pub use time_units::is_clock_unit_node;
 mod timed_model;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
@@ -367,8 +368,8 @@ pub use assemble::{
 };
 pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
-    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
-    VariantCaseDeclaration, VariantTypeDeclaration,
+    DecimalLiteralLimits, DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations,
+    ResolvedSignatures, VariantCaseDeclaration, VariantTypeDeclaration,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use checked_dispatch::checked_dispatch_selected_operation;
@@ -475,10 +476,10 @@ pub use temporal_clause::check_clauses;
 pub use lowering::{collection_kind, CollectionShape, PlaceRow, PlaceStep};
 pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
-    CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
-    FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
-    TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeNominalNode,
-    TimeNominalOrigin, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
+    CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, ClockUnitSelection,
+    FormulaNode, FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim,
+    TemporalDeclaration, TemporalDeclarations, TemporalSelection, TemporalTraceFamily,
+    TimeNominalNode, TimeNominalOrigin, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
@@ -1711,7 +1712,7 @@ impl PackageDeclarations {
                     .timed_forms
                     .iter()
                     .filter_map(|form| match form {
-                        TimedDeclaration::TimeSource(source) => Some(source.model.name.as_str()),
+                        TimedDeclaration::TimeSource { form, .. } => Some(form.model.name.as_str()),
                         TimedDeclaration::TimeInvariant(_)
                         | TimedDeclaration::Urgent(_)
                         | TimedDeclaration::ClockType(_) => None,
@@ -1729,9 +1730,25 @@ impl PackageDeclarations {
                 .iter()
                 .filter_map(|form| {
                     if admitted {
-                        if let TimedDeclaration::TimeSource(source) = form {
-                            if let Some(&first) = seen_time_sources.get(source.model.name.as_str())
-                            {
+                        if let TimedDeclaration::TimeSource {
+                            form: source,
+                            owner,
+                        } = form
+                        {
+                            // FR-480 "Selections and imports": the model the
+                            // time source's own unit binds its alias to.
+                            let alias = source.model.name.as_str();
+                            let timed = self.model_spellings.model(
+                                &self.models,
+                                self.source_owners.get(owner),
+                                alias,
+                            );
+                            // FR-230: at most one `time` member per state model, so
+                            // two aliases of one package are one key; an alias
+                            // that did not resolve keys by its spelling.
+                            let identity = timed.map(|model| &model.selection().identity);
+                            let key = (identity, if identity.is_some() { "" } else { alias });
+                            if let Some(&first) = seen_time_sources.get(&key) {
                                 return Some(CheckRefusal {
                                     location: root(Origin::Expression),
                                     cause: CheckCause::Temporal(Box::new(
@@ -1743,12 +1760,8 @@ impl PackageDeclarations {
                                     )),
                                 });
                             }
-                            seen_time_sources.insert(source.model.name.as_str(), source.span);
-                            if let Some(model) = self
-                                .models
-                                .iter()
-                                .find(|model| model.alias() == Some(source.model.name.as_str()))
-                            {
+                            seen_time_sources.insert(key, source.span);
+                            if let Some(model) = timed {
                                 let model_nodes = model.object_type_model_node_keys();
                                 let [model_node] = model_nodes.as_slice() else {
                                     let cause = if model_nodes.is_empty() {
@@ -1993,6 +2006,7 @@ impl PackageDeclarations {
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
                     source_owners: &self.source_owners,
+                    spellings: &self.model_spellings,
                     clock_reading: &self.clock_reading,
                     operation_bodies: &self.operation_bodies,
                     units: &units,
@@ -2170,6 +2184,7 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
+        .with_decimal_literal_limits(self.decimal_literal_limits)
         .with_known_populations(refinement::population_names(&self.models))
         .with_clock_reading(
             self.clock_reading
@@ -2179,17 +2194,10 @@ impl PackageDeclarations {
         )
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
-        .with_model_selections(
-            self.models
-                .iter()
-                .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
-                .collect(),
-        )
         .with_model_ports(
             self.models
                 .iter()
                 .flat_map(AdmittedModel::port_roles)
-                .map(|(alias, artifact, key, owner)| ((alias, artifact), (key, owner)))
                 .collect(),
         )
         .with_declared_units(&self.units)
@@ -3130,6 +3138,7 @@ impl PackageDeclarations {
             if matches!(terminal.kind, terminal::TerminalClauseKind::Any)
                 && !models.iter().any(|model| {
                     model.alias() == Some(terminal.model.as_str())
+                        && model.selection().identity == terminal.package
                         && model.terminal_object().is_some()
                 })
             {
@@ -3282,12 +3291,6 @@ impl PackageDeclarations {
                 })),
             });
         }
-        // QSpec FR-430: the models a `time` declaration names are timed.
-        let timed_aliases: Vec<&str> = self
-            .time_sources
-            .iter()
-            .map(|source| source.model.as_str())
-            .collect();
         let mut refinement_slots: Vec<Option<CheckedRefinement>> = std::iter::repeat_with(|| None)
             .take(self.refinements.len())
             .collect();
@@ -3321,7 +3324,7 @@ impl PackageDeclarations {
                     lists: &internal_lists,
                     protocols: $views,
                     defer_abstract_protocol_resolution: $defer_abstract,
-                    timed_models: &timed_aliases,
+                    time_sources: &self.time_sources,
                     clock_reading: &self.clock_reading,
                 };
                 let (checked, used) = refinement::check_refinement(
@@ -3682,7 +3685,7 @@ impl PackageDeclarations {
                             refusals.extend(memory_refusals.into_iter().map(|(_, refusal)| refusal))
                         }
                     }
-                    match protocol_relationship::check(protocol, &models) {
+                    match protocol_relationship::check(protocol, &models, &scope) {
                         Ok(relationships) => checked.relationships = relationships,
                         Err(relationship_refusals) => refusals.extend(
                             relationship_refusals
@@ -4032,18 +4035,11 @@ impl PackageDeclarations {
         };
         for checked in &mut refinements {
             checked.package_name = Some(package_name.clone());
-            let abstract_model = models
-                .iter()
-                .find(|model| model.alias() == Some(checked.abstract_model()));
             // QSpec FR-375: the refinement's subjects are the selected model
-            // packages' `model_root` nodes.
-            checked.abstract_subject_node =
-                abstract_model.and_then(|model| root_of(model.selection()));
-            let concrete_model = models
-                .iter()
-                .find(|model| model.alias() == Some(checked.concrete_model()));
-            checked.concrete_subject_node =
-                concrete_model.and_then(|model| root_of(model.selection()));
+            // packages' `model_root` nodes, of the packages its own unit
+            // selects (FR-480 "Selections and imports").
+            checked.abstract_subject_node = root_of(checked.abstract_model_selection());
+            checked.concrete_subject_node = root_of(checked.concrete_model_selection());
         }
         if !independent_protocols && !protocol_check_refusals.is_empty() {
             return Err(refusals);
@@ -4051,10 +4047,7 @@ impl PackageDeclarations {
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
-        // `over` parameter, now that every function signature is known. A
-        // clause S4 does not emit (a protocol fairness target, the timed
-        // profile) is refused rather than compiled and silently missing from
-        // the package (`temporal_clause::not_emitted`).
+        // `over` parameter, now that every function signature is known.
         let time_units = time_units::TimeUnits::new(
             &self.units,
             &self.nominal_spans,
@@ -4076,6 +4069,7 @@ impl PackageDeclarations {
                 units: &time_units,
                 time_sources: &self.time_sources,
                 rational_bits: limits.rational_bits(),
+                clock_units: &self.clock_units,
             },
         };
         let mut checked_temporal = Vec::with_capacity(self.temporal_clauses.len());
@@ -4092,14 +4086,13 @@ impl PackageDeclarations {
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
             let body_refused = match &outcome {
-                Ok(staged) => !temporal_clause::is_emitted(staged.value()),
                 Err(StageFailure::Refused(refusal)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
                 Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
-                Err(_) => false,
+                Ok(_) | Err(_) => false,
             };
             if body_refused {
                 let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
@@ -4135,48 +4128,6 @@ impl PackageDeclarations {
                 }
             }
             match outcome {
-                Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
-                    let checked = staged.into_value();
-                    if checked.has_aggregate {
-                        let location =
-                            lowering::temporal_location(index, lowering::TemporalSite::Claim);
-                        let condition_declarations = state_clause::ClauseDeclarations {
-                            scope: &scope,
-                            signatures: &signatures,
-                            dispatch_tables: &dispatch_tables,
-                            models: &models,
-                            checking_limits: limits,
-                            location: &location,
-                            nodes_used,
-                            cancel: Some(cancel),
-                            staged: None,
-                        };
-                        let mut condition_cx = crate::family::CheckContext::new(
-                            &condition_declarations,
-                            contract_limits,
-                            &mut contract_meter,
-                            &mut contract_diagnostics,
-                            &mut contract_scopes,
-                        );
-                        match temporal_clause::condition::check_conditions(
-                            index,
-                            &clause.form,
-                            &checked,
-                            &condition_declarations,
-                            &mut condition_cx.reborrow(&scope),
-                        ) {
-                            Ok((_, used)) => nodes_used = used,
-                            Err(refusal) => {
-                                refusals.push(refusal);
-                                if cancel.tripped().is_some() {
-                                    return Err(refusals);
-                                }
-                                continue;
-                            }
-                        }
-                    }
-                    refusals.push(temporal_clause::not_emitted(&checked));
-                }
                 Ok(staged) => {
                     let checked = staged.into_value();
                     let location =
@@ -4424,6 +4375,7 @@ impl PackageDeclarations {
                     units: &time_units,
                     time_sources: &self.time_sources,
                     rational_bits: limits.rational_bits(),
+                    clock_units: &self.clock_units,
                 },
             },
             models: &models,
@@ -4451,7 +4403,7 @@ impl PackageDeclarations {
                     // FR-488: a clause over `behaviours` is emitted unless
                     // it is one of the constructs S4 refuses.
                     hyper_clause::CheckedHyper::Behaviours(checked) => {
-                        match hyper_clause::emission::unemitted(&checked, &models) {
+                        match hyper_clause::emission::unemitted(&checked, &models, &scope) {
                             Some(refusal) => refusals.push(refusal),
                             None => checked_hyper.push(*checked),
                         }
@@ -4995,9 +4947,8 @@ impl PackageDeclarations {
                     .zip(relation.execution_aliases())
                     .enumerate()
                     .filter_map(|(execution_index, ((_, operation), alias))| {
-                        let model = models
-                            .iter()
-                            .find(|model| model.alias() == Some(alias.as_str()))?;
+                        let model =
+                            scope.declared_model(&models, relation.name(), alias.as_str())?;
                         let declaring = model.effective_id(&operation.declaring)?;
                         let declaration = scope
                             .operation_declaration(declaring.clone(), operation.operation.as_str())?
@@ -5117,9 +5068,7 @@ impl PackageDeclarations {
                     return None;
                 };
                 let key = source.tick_operation_key.as_ref()?;
-                let model = models
-                    .iter()
-                    .find(|model| model.alias() == Some(source.model.as_str()))?;
+                let model = models.iter().find(|model| source.times(model))?;
                 let (declaring, name) = model.operation_anchor_declaration(key)?;
                 let operation = scope
                     .operation_declaration(declaring.clone(), &name)?
@@ -5169,7 +5118,7 @@ impl PackageDeclarations {
                 .time_sources
                 .iter()
                 .enumerate()
-                .find(|(_, source)| source.model == model.model())
+                .find(|(_, source)| model.is_timed_by(source))
             else {
                 continue;
             };
@@ -5401,9 +5350,7 @@ impl PackageDeclarations {
                 if !seen_aliases.insert(alias) {
                     continue;
                 }
-                let Some(model) = models
-                    .iter()
-                    .find(|model| model.alias() == Some(alias.as_str()))
+                let Some(model) = scope.declared_model(&models, relation.name(), alias.as_str())
                 else {
                     refusals.push(CheckRefusal {
                         location: hyper_clause::lowering::hyper_location(
@@ -5632,6 +5579,15 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-498: each checked probabilistic claim's node.
+        let lowered_probabilistic =
+            match lowering.probabilistic_claims(probabilistic_model.claims()) {
+                Ok(keys) => Some(keys),
+                Err(refusal) => {
+                    refusals.push(refusal);
+                    None
+                }
+            };
         // FR-447, QSpec FR-481: each checked hybrid model, then each claim
         // over one, after every function their terms may call.
         let mut lowered_hybrids = Vec::with_capacity(checked_hybrid_models.len());
@@ -5679,6 +5635,7 @@ impl PackageDeclarations {
             match lowering.terminal(&lowering::TerminalInput {
                 index,
                 model: &declaration.model,
+                package: &declaration.package,
                 declaration: &checked.declaration,
             }) {
                 Ok(key) => lowered_terminals.push((index, declaration.model.clone(), key)),
@@ -5719,7 +5676,7 @@ impl PackageDeclarations {
             let Some(source) = self
                 .time_sources
                 .iter()
-                .position(|source| source.model == model.model())
+                .position(|source| model.is_timed_by(source))
             else {
                 continue;
             };
@@ -6115,6 +6072,7 @@ impl PackageDeclarations {
         if lowered_state_graph.len() != checked_state_graph_claims.len() {
             return Err(unlowered());
         }
+        let lowered_probabilistic = lowered_probabilistic.ok_or_else(unlowered)?;
         // FR-488 "Outputs": each hyper clause carries its `claim`
         // occurrence, the `clause` of FR-315's `HyperProductIdentity`.
         // The sites no declared form spans (slots, conjunct slots, skipped
@@ -6262,6 +6220,25 @@ impl PackageDeclarations {
             state_graph_nodes.push(
                 checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)),
             );
+        }
+        // FR-498 "Outputs": each probabilistic claim carries its node's one
+        // `claim` occurrence.
+        let mut probabilistic_model = probabilistic_model;
+        for (claim, key) in probabilistic_model
+            .claims_mut()
+            .iter_mut()
+            .zip(lowered_probabilistic)
+        {
+            let location = claim.declaration_location();
+            let origin = occurrences
+                .first_origin(&key, family::OccurrenceRole::Claim, |at| *at == location)
+                .ok_or_else(|| {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                })?;
+            claim.occurrence = Some(OccurrenceKey::new(claims::wire(key), origin));
         }
         let named_scope = NamedScope::of(&models, &scope);
         let lowered_temporal = lowered_temporal
@@ -6474,8 +6451,13 @@ impl PackageDeclarations {
             // EN-6's item. EN-6's refinement product reads only a dense
             // concrete subject, so a `tick` refinement is not marked and
             // goes to the explicit-state engines.
+            let concrete = models.iter().find(|model| {
+                model.alias() == Some(checked.concrete_model())
+                    && model.selection() == checked.concrete_model_selection()
+            });
             let dense = self.time_sources.iter().any(|source| {
-                source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
+                concrete.is_some_and(|model| source.times(model))
+                    && source.source == TimeSourceKind::Dense
             });
             let wanted = checked.requirements(node);
             let record = claims::RequirementRecord::unguarded(

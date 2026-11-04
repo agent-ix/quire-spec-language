@@ -44,6 +44,7 @@ mod child_composite;
 mod clock_places;
 mod control_node;
 mod converted_equality;
+mod decimal_constructors;
 mod deep_bodies;
 mod envelope_adoption;
 mod golden;
@@ -83,6 +84,7 @@ mod source_map_debug;
 mod state_graph_claim;
 mod state_transition;
 mod step_relation;
+mod temporal_aggregate;
 mod temporal_clause;
 mod temporal_package_route;
 mod terminal;
@@ -1650,6 +1652,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnknownOccurrenceRole { .. }) => Seen::UnknownOccurrenceRole,
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
             Err(EmitRefusal::TimedModelNodeSetMismatch) => Seen::TimedModelNodeSetMismatch,
+            Err(EmitRefusal::UnkeyedProbabilisticClaim { .. }) => {
+                panic!("lowering keys every probabilistic claim")
+            }
             Err(EmitRefusal::TimedModelWriterInvariant(_)) => Seen::TimedModelWriterInvariant,
             Err(EmitRefusal::MonitorPlanInvariant(_)) => Seen::MonitorPlanInvariant,
             Err(EmitRefusal::MonitorPlanAmbiguous { .. }) => Seen::MonitorPlanAmbiguous,

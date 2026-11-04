@@ -72,7 +72,14 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   durations under the timestamped-event profile. A duration window under
   event-position, or a position window under timestamped-event, SHALL be
   refused `ill_typed`/`unit-mismatch` at the first bound whose kind the
-  profile does not take. A window with `a > b` SHALL be refused
+  profile does not take. A `duration` bound whose unit is a declared unit of
+  another dimension, or a time unit that does not convert to the window's
+  unit (the selected clock unit, FR-337), is no duration and SHALL be
+  refused `ill_typed`/`unit-mismatch` at the bound's unit. A bound whose
+  unit names no declared unit stays a missing name
+  (`missing_declaration`/`missing-name`, QSpec FR-142), and a bound in an
+  affine time unit stays `ill_typed`/`type-mismatch`; neither is a unit
+  mismatch. A window with `a > b` SHALL be refused
   `invalid_package`/`invalid-value` at the window `past[a, b]`.
 - `quantile q` SHALL have an exact rational `0 < q < 1`; another `q` SHALL be
   refused `invalid_package`/`invalid-value` at the literal `q`. A `min`,
@@ -91,6 +98,20 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   threshold in another unit converts exactly by QSpec FR-142, and another
   dimension SHALL be refused `ill_typed`/`unit-mismatch` at the threshold
   (QSpec FR-414-AC-4).
+- The value expression of a `sum`, `min`, `max` or `quantile` term SHALL be
+  of family `integer`, `rational` or `quantity`, and the threshold of the
+  aggregate's result family, `integer` for `count`, `rational` for
+  `fraction` (an integer literal standing for the rational of its value),
+  otherwise the value's family (QSpec FR-370 "Window aggregate atom"); S3
+  SHALL refuse a value or threshold of another family
+  `ill_typed`/`type-mismatch` at it. A quantity threshold against a quantity
+  value is of the value's family; one of another dimension, or in a unit
+  that does not convert exactly to the value's, SHALL be refused
+  `ill_typed`/`unit-mismatch` at the threshold, as the item above states.
+  An exact fraction `n/d` of two integer literals written as the threshold
+  SHALL be checked as the rational literal `rational(n, d)`, as the
+  quantile level `q` is, so `fraction holds(P) over past[0, 3] >= 1/2`
+  binds the rational threshold `1/2`.
 - An aggregate atom (the aggregate term with its comparison and threshold)
   with several of these faults SHALL report each, in source order.
 - When a bound of `past[a, b]` has the wrong kind, S3 SHALL report that
@@ -174,7 +195,7 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
 | FR-194-AC-4 | S3 refuses an aggregate term in a claim over a model subject, `past[0, 300 s]` under event-position, `quantile 1`, `min_count 0` on a `max` term, and a threshold of length against a time value. AC-1's clause has the same horizon with and without its aggregate atom; its tl-mltl input is the derived Boolean signal; a holding result is `tested` with evidence `Observed`. | Test (TC-629) |
 | FR-194-AC-5 | Over event-position `x` values `2, 1, 0, 4` at positions 0 to 3, `sum of 6 / e.x over past[0, 3] <= 20` has the clause result `Undefined(UndefinedEvaluation{where: position 2, cause: division-by-zero})` in the O-16 category violation, `where` being the first position at which the atom is undefined (the window at position 2 is the first to hold `x` 0). At position 3 the atom reads `Undefined` with cause `division-by-zero`, not the sum `10.5` of the other three positions and not a holding result. The guarded `sum of 6 / e.x where holds(e.x != 0) over past[0, 3] <= 20` stays defined at position 3: the sum is `10.5` and the atom is true. At position 3, `count where holds(6 / e.x > e.one) over past[0, 3] >= 1` reads `Undefined` with `division-by-zero` for the undefined filter, and `fraction holds(6 / e.x > e.one) over past[0, 3] >= 1/2` for the undefined predicate. At position 3, the unguarded sum with `min_count 5` reads `Undefined` with `division-by-zero`, not `InsufficientData`, and the guarded sum with `min_count 5` reads `Undefined` with `InsufficientData{count: 3, min_count: 5}`, which is O-16 `undefined` and never `UndefinedEvaluation`. `past[2, 3]` at position 3 holds positions 0 and 1 only, with no zero: `sum of 6 / e.x over past[2, 3] <= 20` is `9` and true, `count` is `2`, and `fraction holds(6 / e.x > e.one)` is `1`. | Test (TC-629) |
 | FR-194-AC-6 | Over `x` values `1, 0, 2, 3` at positions 0 to 3, `sum of 6 / e.x over past[0, 3]` has the clause result `UndefinedEvaluation{where: position 1, cause: division-by-zero}`. Its atom at position 3 reads `Undefined` with `division-by-zero` and charges 2 visit units, positions 0 and 1, because the evaluator visits oldest first and stops at position 1; the clause-level visit charge (window-visit units only, excluding the clause's node-visit and letter-read units) over positions 0 and 1 is 3 units (1 at position 0, 2 at position 1). With `max_window_values` 2 the atom at position 3 is the same, not `Incomplete`, because the third admitted value, at position 2, is not reached. The 2-unit charge shows the oldest-first order, since a newest-first visit charges 3 units. A filter that rejects 10 of 20 positions charges 20 visit units, not 10. | Test (TC-629) |
-| FR-194-AC-7 | Each refusal at its locus: `count over past[0, 9]` in a claim over a model subject, `unsupported_construct`/`expression-form` at the `count` term; `past[0, 300 s]` under event-position, `ill_typed`/`unit-mismatch` at `300 s`; `past[0, 9]` under timestamped-event, `ill_typed`/`unit-mismatch` at `0`; `past[5, 2]`, `invalid_package`/`invalid-value` at `past[5, 2]`; `quantile 1`, `quantile 0` and `quantile 3/2`, `invalid_package`/`invalid-value` at the `q` literal; `max of e.v over past[0, 9] min_count 0 <= 1`, `invalid_package`/`invalid-value` at `0`; a threshold `5 m` against a time value, `ill_typed`/`unit-mismatch` at `5 m`. A term with `quantile 1` and `min_count 0` reports both refusals, the quantile's first. | Test (TC-629) |
+| FR-194-AC-7 | Each refusal at its locus: `count over past[0, 9]` in a claim over a model subject, `unsupported_construct`/`expression-form` at the `count` term; `past[0, 300 s]` under event-position, `ill_typed`/`unit-mismatch` at `300 s`; `past[0, 9]` under timestamped-event, `ill_typed`/`unit-mismatch` at `0`; under timestamped-event with a `Length` unit `m`, `past[0 m, 1 m]`, `ill_typed`/`unit-mismatch` at the first `m`, and `past[0 s, 1 m]`, `ill_typed`/`unit-mismatch` at `m`; a source `Time` unit `s` under a clock selected in a model package's `Time` (another owner, no admitted equivalence), `past[0 s, 1 s]`, `ill_typed`/`unit-mismatch` at the first `s`; `past[5, 2]`, `invalid_package`/`invalid-value` at `past[5, 2]`; `quantile 1`, `quantile 0` and `quantile 3/2`, `invalid_package`/`invalid-value` at the `q` literal; `max of e.v over past[0, 9] min_count 0 <= 1`, `invalid_package`/`invalid-value` at `0`; a threshold `5 m` against a time value, `ill_typed`/`unit-mismatch` at `5 m`. A term with `quantile 1` and `min_count 0` reports both refusals, the quantile's first. | Test (TC-629) |
 | FR-194-AC-8 | Under event-position, `count over past[5, 2 s] >= 1` reports exactly one refusal, `ill_typed`/`unit-mismatch` at `2 s`, and no `invalid-value`. Under event-position, `quantile 1 of e.latency over past[0, 9] <= 5 m` against a time value reports `invalid_package`/`invalid-value` at `1` and then `ill_typed`/`unit-mismatch` at `5 m`. In a claim over a model subject, `count over past[0, 300 s] >= 1` reports only `unsupported_construct`/`expression-form` at the `count` term, and `quantile 1 of x.v over past[5, 2] <= 1` reports `expression-form` at the term and then `invalid-value` at `1`, with no `a > b` refusal. | Test (TC-629) |
 | FR-194-AC-9 | Under event-position, `count over past[0, 9] >= 1` and `count over past[0, 9] min_count 1 >= 1` check to equal `AggregateTerm`s with `min_count` 1, and two clauses `always[0,0] (…)` over them emit one node id; at position 0 of a one-event trace each atom is `true`. Over `x` values `1, 2` at positions 0 and 1, `count where holds(e.x > 5) over past[0, 9] >= 1`, written without `min_count`, reads `Undefined(InsufficientData{count: 0, min_count: 1})` at position 1; `count over past[0, 9] min_count 2 >= 1` reads `Undefined(InsufficientData{count: 1, min_count: 2})` at position 0 and `true` at position 1. | Test (TC-629) |
 | FR-194-AC-10 | Under event-position over `x` values `1, 2` at positions 0 and 1, at position 1: `count where holds(e.x > 5) over past[0, 9] min_count 0 <= 2` is `true` (count 0), `count where holds(e.x > 5) over past[0, 9] min_count 0 >= 1` is `false`, and `sum of e.x where holds(e.x > 5) over past[0, 9] min_count 0 = 0` is `true`, none of them `InsufficientData`; the same `count` without `min_count` reads `Undefined(InsufficientData{count: 0, min_count: 1})`. `min`, `max`, `fraction holds(e.x > 1)` and `quantile 1/2` of `e.x` each with `min_count 0` refuse `invalid_package`/`invalid-value` at `0`. | Test (TC-629) |

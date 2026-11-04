@@ -2675,10 +2675,17 @@ fn protocol_check_outcome(
         }
     }
     if first_failure.is_none() && !graph.unit_refusals().is_empty() {
-        first_failure = Some(CompileRefusal::Check {
-            refusals: graph.unit_refusals().to_vec(),
-            region: None,
+        // FR-096: a unit-level refusal is located like any other check
+        // refusal, by the span its cause carries or by its `location`.
+        let regions = graph.memoized_regions();
+        let refusals = graph.unit_refusals().to_vec();
+        let region = refusals.first().and_then(|refusal| match &refusal.cause {
+            CheckCause::LayerEquality {
+                span: Some(span), ..
+            } => region(parsed.source().reference(), *span),
+            _ => regions(&refusal.location),
         });
+        first_failure = Some(CompileRefusal::Check { refusals, region });
     }
     if first_failure.is_none() {
         first_failure = protocol_failure_from_parsed(parsed);
@@ -2901,6 +2908,26 @@ fn temporal_selections_for_source(
         .iter()
         .filter(|selection| selection.source == *source)
         .cloned()
+        .collect()
+}
+
+/// The timestamped-event clock unit of each selection, for S3's `duration`
+/// window conversion (FR-337 "Aggregate formula emission").
+fn clock_units(
+    selections: &[qsl_package::TemporalClockSelection],
+) -> Vec<qsl_semantics::check::ClockUnitSelection> {
+    selections
+        .iter()
+        .filter_map(|selection| match &selection.clock {
+            quire_contract_model::ClockConfiguration::TimestampedEvent { timestamp_unit } => {
+                Some(qsl_semantics::check::ClockUnitSelection {
+                    declaration_span: selection.declaration_span,
+                    timestamp_unit: timestamp_unit.to_string(),
+                })
+            }
+            quire_contract_model::ClockConfiguration::EventPosition { .. }
+            | quire_contract_model::ClockConfiguration::FixedSample { .. } => None,
+        })
         .collect()
 }
 
@@ -3417,6 +3444,10 @@ impl<'a> Resolution<'a> {
         if let Some(value) = frame.refinement_internals.clone() {
             declarations = declarations.with_refinement_internals(value);
         }
+        // FR-337 "Aggregate formula emission": a clause's `duration` windows
+        // convert to its selected timestamped-event clock unit at S3.
+        declarations =
+            declarations.with_clock_units(clock_units(&self.temporal_selections_for(&frame.raw)));
         // FR-302: link the dispatch table of each family a dispatched call's
         // member name may name, under the caller's model normalization
         // limits, before `check` types the calls against them. A family

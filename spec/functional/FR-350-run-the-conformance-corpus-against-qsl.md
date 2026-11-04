@@ -136,10 +136,37 @@ The adapter is needed independently of any one request member: FR-350-AC-10
 requires every in-scope `replay` vector to run, and `xtask` decodes no
 `replay-request` file without it.
 
-**Open question, not decided (relates to FR-350-AC-12).** QSpec FR-336's
-top-level mapping lists a `package` member of `ReplayRequestWire`, but the
-published `$defs.ReplayRequest` has 13 properties and no `package`. Which of
-the two the adapter follows for the proved package's `sources` is unresolved.
+The published `$defs.ReplayRequest` (the conformance-corpus `schema.json`) has
+14 required properties and is authoritative for the corpus encoding. Its
+`package` is the whole checked-package v2 document (`$ref
+urn:quire:checked-package:v2`), and its `dependencies` is a separate top-level
+array of `DependencyEntry` objects `{identity, sources}` with no other member.
+The adapter reads the request from those members and FR-071 stays unchanged:
+
+- the package's name, `package.name`, is the proved package's name in the
+  request;
+- the package's source references are `package.lock.sources` (`DefinitionRef`
+  items) and its optional internals are `package.lock.refinement_internals`;
+- each `dependencies` entry becomes a dependency entry with its `identity` and
+  `sources`;
+- `package.contract_version` must be the constant `quire.checked-package/v2`
+  the checked-package schema fixes, and is stored nowhere in the request.
+
+A `replay-request` file without `package`, whose `package` is not a
+checked-package document, or whose `contract_version` is another value, is a
+`corpus-decode` `tool-failure`. QSpec FR-336's mapping rows for `package` and
+`dependencies` and FR-323's `package.checked_package`, `package.sources` and
+`package.dependencies` members name members the schema does not have (a
+`checked_package` member of the dependency entry among them); the schema is
+followed. A dependency entry is `{identity, sources}` (FR-071): it has no
+`package_id` member, so the request is constructible from the corpus and the
+recompile identifies the dependency package by identity (FR-098). QSpec
+FR-323's `package_id` member of a dependency entry is the QSpec owner's
+prose conflict, reported there.
+The decoder refuses, as the consumer of QSpec FR-336-AC-8, a
+`bytes_path` that is absent, not listed as `kind: bytes` in the vector, absolute
+or parent-traversing, and a `stage_limits` key that names no FR-255 setting,
+each before the request is constructed.
 
 ### Settlement
 
@@ -233,6 +260,9 @@ consumer type. A class with no such vector contributes none.
 | FR-350-AC-13 | The adapter maps `object_environment` to the closed `{authority, identity}` identity and refuses a file whose `object_environment` identity carries any other member. | Test (TC-1325) |
 | FR-350-AC-14 | A `replay-request` file that does not match `$defs.ReplayRequest` (an unknown member, a missing required member such as a `sources` entry's `identity`, a wrong JSON kind) is that vector's `tool-failure` with cause `corpus-decode` naming the JSON pointer of the defect, and not a QSL refusal. | Test (TC-1325) |
 | FR-350-AC-15 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement. | Test (TC-1325), retired |
+| FR-350-AC-16 | A `replay-request` file whose `package` is the checked-package document named `orders` with `contract_version` `quire.checked-package/v2`, whose `lock.sources` holds the one `{authority, identity}` entry `("repo", "orders.qsl")`, and whose `dependencies` holds `{identity: "lib/money", sources: [("repo", "money.qsl")]}`, decodes to a request with package name `orders`, that one source and one dependency entry with `identity` `lib/money` and its one source, and no version member; the same file with `package` removed, with `package` set to the string `"orders"`, with `contract_version` set to `quire.checked-package/v1`, and with the dependency entry holding an extra `checked_package` member is each a `tool-failure` with cause `corpus-decode` and pointer `/package`, `/package`, `/package/contract_version` and `/dependencies/0` respectively. | Test (TC-1325) |
+| FR-350-AC-17 | A `byte_provision` row whose `bytes_path` is `missing.bin` (absent from the vector directory), `unlisted.bin` (present but not listed as `kind: bytes`), `/etc/hostname` (absolute) or `../x.bin` (parent-traversing) is a `tool-failure` with cause `corpus-decode` and pointer `/byte_provision/0/bytes_path`, and no request is constructed; a listed `kind: bytes` path is read as raw bytes. | Test (TC-1325) |
+| FR-350-AC-18 | A `stage_limits` map holding the key `depth` (no FR-255 setting of that name) is a `tool-failure` with cause `corpus-decode` and pointer `/stage_limits/depth`; the key `s1.input_bytes` with the value `"1024"` decodes to the entry `("s1.input_bytes", 1024)`. | Test (TC-1325) |
 
 ## Dependencies
 

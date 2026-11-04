@@ -176,7 +176,7 @@ fn money(package: &CheckedPackage, amount: i64) -> Value {
 
 #[test]
 #[trace("TC-1071", "FR-390-AC-3", "FR-390-AC-4", "FR-390-AC-5", "FR-049-AC-6")]
-#[trace("TC-1072", "FR-390-AC-7")]
+#[trace("TC-1072", "FR-390-AC-7", "FR-049-AC-6")]
 fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     let package = package();
     let keys = package
@@ -212,7 +212,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
             &mut meter,
         )
         .expect("the checked condition evaluates");
-    let ProtocolSlotEvaluation::Evaluated(evaluation) = evaluated else {
+    let ProtocolSlotEvaluation::Evaluated(evaluation, _) = evaluated else {
         panic!("literal condition did not read an unavailable binder: {evaluated:?}");
     };
     assert!(matches!(
@@ -464,7 +464,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
             &mut activation_meter,
         )
         .expect("the exact activation binder evaluates");
-    let ProtocolSlotEvaluation::Evaluated(evaluation) = admitted else {
+    let ProtocolSlotEvaluation::Evaluated(evaluation, _) = admitted else {
         panic!("the supplied activation value was unavailable: {admitted:?}");
     };
     assert!(matches!(
@@ -514,12 +514,15 @@ fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() 
         .expect("the decisive false prefix completes without reading opened");
     assert!(matches!(
         result,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                false
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    false
+                ))),
+                ..
+            },
+            _
+        )
     ));
 }
 
@@ -561,10 +564,13 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         )
         .expect("the registration capture initializer evaluates")
     {
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)),
-            ..
-        }) => value,
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)),
+                ..
+            },
+            _,
+        ) => value,
         other => panic!("the capture returns its frozen value: {other:?}"),
     };
     assert_eq!(
@@ -597,12 +603,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the trigger guard evaluates over its exact sources");
     assert!(matches!(
         trigger,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 
     let activation = package
@@ -624,12 +633,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the activation capture evaluates");
     assert!(matches!(
         activation,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 
     let retry = package
@@ -665,12 +677,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the retry relation evaluates from supplied attempt and capture values");
     assert!(matches!(
         retry,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 
     let recovery = package
@@ -699,12 +714,15 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
         .expect("the recovery predicate evaluates from its supplied capture");
     assert!(matches!(
         recovery,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
 }
 
@@ -746,12 +764,15 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         .expect("the measured call completes");
     assert!(matches!(
         measured_result,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
     let used = measured.consumed(quire_exact::LimitKind::WorkUnits);
     assert!(used > 0, "the arithmetic expression consumed work");
@@ -764,12 +785,15 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         .expect("exact measured usage completes");
     assert!(matches!(
         exact_result,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
     assert_eq!(exact.consumed(quire_exact::LimitKind::WorkUnits), used);
 
@@ -784,7 +808,7 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
             outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(ref record)),
             ..
-        }) if record.limit_kind == quire_exact::LimitKind::WorkUnits
+        }, _) if record.limit_kind == quire_exact::LimitKind::WorkUnits
     ));
     assert_eq!(
         short.consumed(quire_exact::LimitKind::WorkUnits),
@@ -803,7 +827,7 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
             outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(ref record)),
             ..
-        }) if record.limit_kind == quire_exact::LimitKind::WorkUnits
+        }, _) if record.limit_kind == quire_exact::LimitKind::WorkUnits
     ));
     assert_eq!(zero.consumed(quire_exact::LimitKind::WorkUnits), 0);
 
@@ -813,12 +837,15 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         .expect("a fresh sufficient meter completes the same immutable call");
     assert!(matches!(
         retried,
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
-                true
-            ))),
-            ..
-        })
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                    true
+                ))),
+                ..
+            },
+            _
+        )
     ));
     assert_eq!(
         retry.consumed(quire_exact::LimitKind::WorkUnits),
@@ -935,7 +962,7 @@ fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge()
     let admitted = package
         .evaluate_protocol_slot(&own_slot, &empty, &mut meter)
         .expect("a caller-constructed slot selected from this package is admitted");
-    assert!(matches!(admitted, ProtocolSlotEvaluation::Evaluated(_)));
+    assert!(matches!(admitted, ProtocolSlotEvaluation::Evaluated(_, _)));
 }
 
 /// Fixture U of TC-1072: a protocol over the dispatch model's object type `A`
@@ -956,6 +983,100 @@ fn gated_package(precondition: bool) -> CheckedPackage {
     package
 }
 
+/// The `gate` capture slot of [`gated_package`] evaluated over the present
+/// object, with the dispatched `ready()` call's precondition as given.
+fn evaluate_gate(precondition: bool) -> ProtocolSlotEvaluation {
+    let package = gated_package(precondition);
+    let keys = package
+        .graph()
+        .protocol_node_keys("Refunds")
+        .expect("the protocol's emitted identity map");
+    let view = keys
+        .binders
+        .iter()
+        .find(|binder| binder.name == "view")
+        .expect("the protocol binds view")
+        .node
+        .clone();
+    let model_view = crate::state_model_family::view();
+    let (_, present, _) = crate::state_model_family::objects(package.graph(), &model_view);
+    let selected = qsl_semantics::model::observation::DocumentRef {
+        authority: "test".to_owned(),
+        identity: "now".to_owned(),
+    };
+    let snapshot = serde_json::json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": selected.authority.clone(),
+            "identity": selected.identity.clone(),
+            },
+        "observation": "current",
+        "model": {"identity": "test/orders", "version": "1.0.0", "digest": "set at admission"},
+        "populations": [{
+            "population": "ix://test/orders/pop",
+            "complete": true,
+            "objects": [{
+                "key": "present",
+                "type": "ix://test/orders/A",
+                "fields": {
+                    "flag": {"boolean": true},
+                    "next": {"reference": {"population": "ix://test/orders/pop", "key": "present"}},
+                },
+            }],
+        }],
+    });
+    let model_bytes = crate::state_model_family::model_document();
+    let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()])
+        .expect("the source model remains an FR-106 package input");
+    let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
+        .into_iter()
+        .collect();
+    let observation = package.evaluation_view().admit_protocol_observation(
+        &package.graph().model_selections()[0],
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    );
+    let slot = ProtocolSlot {
+        node: keys.clause.clone().expect("protocol clause key"),
+        member: "captures".to_owned(),
+        index: Some(1),
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    package
+        .evaluate_protocol_slot(
+            &slot,
+            &ProtocolSupply {
+                binders: vec![(
+                    view,
+                    qsl_eval::value::ProtocolSuppliedValue {
+                        value: SuppliedValue::Value(Value::Reference(present)),
+                        references: vec![qsl_eval::value::ProtocolReferenceOccurrence {
+                            path: Vec::new(),
+                            population: quire_exact::NodeKey::new(
+                                "test/orders",
+                                vec![
+                                    quire_exact::PathSegment::Text("relation".to_owned()),
+                                    quire_exact::PathSegment::Text("population".to_owned()),
+                                    quire_exact::PathSegment::Text(
+                                        "ix://test/orders/pop".to_owned(),
+                                    ),
+                                ],
+                                0,
+                            )
+                            .unwrap(),
+                        }],
+                    },
+                )],
+                observation: Some(&observation),
+            },
+            &mut meter,
+        )
+        .expect("the capture slot evaluates")
+}
+
 /// TC-1072 rows 7 and 8 / FR-390-AC-8: a capture initializer whose
 /// dispatched call has a false precondition gives the capture slot an
 /// `Undefined` result with reason `precondition-false` naming the operation
@@ -966,97 +1087,8 @@ fn gated_package(precondition: bool) -> CheckedPackage {
 #[test]
 fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes() {
     let capture_gate = |precondition: bool| {
-        let package = gated_package(precondition);
-        let keys = package
-            .graph()
-            .protocol_node_keys("Refunds")
-            .expect("the protocol's emitted identity map");
-        let view = keys
-            .binders
-            .iter()
-            .find(|binder| binder.name == "view")
-            .expect("the protocol binds view")
-            .node
-            .clone();
-        let model_view = crate::state_model_family::view();
-        let (_, present, _) = crate::state_model_family::objects(package.graph(), &model_view);
-        let selected = qsl_semantics::model::observation::DocumentRef {
-            authority: "test".to_owned(),
-            identity: "now".to_owned(),
-        };
-        let snapshot = serde_json::json!({
-            "format": "quire.state.snapshot/v1",
-            "identity": {
-                "authority": selected.authority.clone(),
-                "identity": selected.identity.clone(),
-                },
-            "observation": "current",
-            "model": {"identity": "test/orders", "version": "1.0.0", "digest": "set at admission"},
-            "populations": [{
-                "population": "ix://test/orders/pop",
-                "complete": true,
-                "objects": [{
-                    "key": "present",
-                    "type": "ix://test/orders/A",
-                    "fields": {
-                        "flag": {"boolean": true},
-                        "next": {"reference": {"population": "ix://test/orders/pop", "key": "present"}},
-                    },
-                }],
-            }],
-        });
-        let model_bytes = crate::state_model_family::model_document();
-        let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()])
-            .expect("the source model remains an FR-106 package input");
-        let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
-            .into_iter()
-            .collect();
-        let observation = package.evaluation_view().admit_protocol_observation(
-            &package.graph().model_selections()[0],
-            &packages,
-            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
-            &snapshots,
-            &selected,
-            qsl_semantics::model::observation::ObservationLimits::default(),
-        );
-        let slot = ProtocolSlot {
-            node: keys.clause.clone().expect("protocol clause key"),
-            member: "captures".to_owned(),
-            index: Some(1),
-        };
-        let mut meter = Meter::new(UNLIMITED);
-        let evaluated = package
-            .evaluate_protocol_slot(
-                &slot,
-                &ProtocolSupply {
-                    binders: vec![(
-                        view,
-                        qsl_eval::value::ProtocolSuppliedValue {
-                            value: SuppliedValue::Value(Value::Reference(present)),
-                            references: vec![qsl_eval::value::ProtocolReferenceOccurrence {
-                                path: Vec::new(),
-                                population: quire_exact::NodeKey::new(
-                                    "test/orders",
-                                    vec![
-                                        quire_exact::PathSegment::Text("relation".to_owned()),
-                                        quire_exact::PathSegment::Text("population".to_owned()),
-                                        quire_exact::PathSegment::Text(
-                                            "ix://test/orders/pop".to_owned(),
-                                        ),
-                                    ],
-                                    0,
-                                )
-                                .unwrap(),
-                            }],
-                        },
-                    )],
-                    observation: Some(&observation),
-                },
-                &mut meter,
-            )
-            .expect("the capture slot evaluates");
-        let ProtocolSlotEvaluation::Evaluated(evaluation) = evaluated else {
-            panic!("the view binder was supplied: {evaluated:?}");
+        let ProtocolSlotEvaluation::Evaluated(evaluation, _) = evaluate_gate(precondition) else {
+            panic!("the view binder was supplied");
         };
         evaluation.outcome
     };
@@ -1077,4 +1109,49 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
     else {
         panic!("a true precondition completes the capture");
     };
+}
+
+/// A dispatched call's receiver and every charge of its body belong to the
+/// binder the receiver is, in both the precondition and the body frame
+/// (FR-520-AC-11).
+#[trace("TC-1072", "FR-520-AC-11", "TC-1315")]
+#[test]
+fn a_dispatched_call_charges_its_body_to_the_binder_of_its_receiver() {
+    let evaluated = evaluate_gate(true);
+    let ProtocolSlotEvaluation::Evaluated(_, charges) = &evaluated else {
+        panic!("the view binder was supplied: {evaluated:?}");
+    };
+    let package = gated_package(true);
+    let keys = package
+        .graph()
+        .protocol_node_keys("Refunds")
+        .expect("the protocol's emitted identity map");
+    let view = keys
+        .binders
+        .iter()
+        .find(|binder| binder.name == "view")
+        .expect("the protocol binds view")
+        .node
+        .clone();
+    let counters = [
+        quire_exact::LimitKind::IntegerBits,
+        quire_exact::LimitKind::DecimalDigits,
+        quire_exact::LimitKind::ScaleExpansion,
+        quire_exact::LimitKind::TextInputBytes,
+        quire_exact::LimitKind::TextScalars,
+        quire_exact::LimitKind::NormalizedScalars,
+        quire_exact::LimitKind::UnitEdges,
+        quire_exact::LimitKind::ValueOccurrences,
+        quire_exact::LimitKind::WorkUnits,
+        quire_exact::LimitKind::ResultUnits,
+    ];
+    let of = |amounts: &qsl_eval::value::ChargeAmounts| counters.map(|kind| amounts.amount(kind));
+    assert_eq!(
+        of(charges.unattributed()),
+        [0; 10],
+        "every charge of the dispatch is made over the receiver"
+    );
+    let entry = of(charges.binder(&view).expect("the receiver binder was read"));
+    assert_eq!(entry, of(&charges.total()));
+    assert!(entry.iter().any(|amount| *amount > 0), "{entry:?}");
 }

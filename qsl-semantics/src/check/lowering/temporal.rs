@@ -24,21 +24,23 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::{Identifier, NodeKey, ValueType};
+use quire_checked::node::{CheckedLiteral, NodeKind};
+use quire_exact::{Identifier, Integer, NodeKey, Rational, Value, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{fault, require_admitted, Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
-    Binding, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm, NodeTag, Operation,
-    OperationLaw, Operator,
+    Binding, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm,
+    NodeTag, Operation, OperationLaw, Operator,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
-use crate::check::temporal_clause::condition::TypedConditions;
+use crate::check::temporal_clause::condition::{family, Family, TypedCondition, TypedConditions};
 use crate::check::temporal_clause::{
-    BinaryTemporal, CheckedFairnessMember, CheckedFormula, CheckedInterval, CheckedTemporalClause,
-    FormulaNode, FormulaNodeId, UnaryTemporal,
+    AggregateKind, AggregateWindow, BinaryTemporal, CheckedAggregate, CheckedFairnessMember,
+    CheckedFormula, CheckedInterval, CheckedTemporalClause, DurationWindow, FormulaNode,
+    FormulaNodeId, TimeNominalOrigin, UnaryTemporal,
 };
 use crate::value::member::{FairnessTarget, Member, TimedMember};
 
@@ -67,6 +69,34 @@ pub(crate) enum TemporalSite {
     Condition(usize),
     /// The written fairness constraint at this index: its span.
     Fairness(usize),
+    /// One expression of the window aggregate atom at this formula arena
+    /// index: its expression tree.
+    Aggregate(usize, AggregatePart),
+}
+
+/// One written expression of a window aggregate atom.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AggregatePart {
+    /// The `of` value expression.
+    Value,
+    /// The `where holds(...)` filter.
+    Filter,
+    /// The `fraction holds(P)` predicate.
+    Predicate,
+    /// The threshold.
+    Threshold,
+}
+
+impl AggregatePart {
+    /// The part's site spelling.
+    const fn spelling(self) -> &'static str {
+        match self {
+            Self::Value => "value",
+            Self::Filter => "filter",
+            Self::Predicate => "predicate",
+            Self::Threshold => "threshold",
+        }
+    }
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of the temporal clause at
@@ -83,6 +113,9 @@ pub(crate) fn temporal_site(clause: usize, site: TemporalSite) -> String {
         TemporalSite::Node(node) => format!("temporal {clause} node {node}"),
         TemporalSite::Condition(node) => format!("temporal {clause} holds {node}"),
         TemporalSite::Fairness(index) => format!("temporal {clause} fair {index}"),
+        TemporalSite::Aggregate(node, part) => {
+            format!("temporal {clause} aggregate {node} {}", part.spelling())
+        }
     }
 }
 
@@ -113,9 +146,32 @@ pub(super) struct FormulaCondition<'c> {
     pub(super) slot_names: &'c [String],
 }
 
+/// `typed` as the formula reads it.
+fn condition(typed: &TypedCondition) -> FormulaCondition<'_> {
+    FormulaCondition {
+        root: typed.body.root(),
+        slot_names: &typed.slot_names,
+    }
+}
+
+/// A window aggregate atom's checked term and its typed expressions
+/// (FR-337-AC-15).
+pub(super) struct FormulaAggregate<'c> {
+    /// The checked term: kind, window, `min_count` and comparison.
+    pub(super) term: &'c CheckedAggregate,
+    /// The `of` value expression.
+    pub(super) value: Option<FormulaCondition<'c>>,
+    /// The `where holds(...)` filter.
+    pub(super) filter: Option<FormulaCondition<'c>>,
+    /// The `fraction holds(P)` predicate.
+    pub(super) predicate: Option<FormulaCondition<'c>>,
+    /// The converted threshold.
+    pub(super) threshold: FormulaCondition<'c>,
+}
+
 /// A temporal formula to key (FR-337, FR-488 "The body"): the formula, the
 /// site each node is located at, and the typed condition of each `holds`
-/// atom by its arena index.
+/// atom and the term of each window aggregate atom by its arena index.
 pub(super) struct FormulaInput<'a, 'c> {
     /// The checked formula.
     pub(super) formula: &'a CheckedFormula,
@@ -123,6 +179,8 @@ pub(super) struct FormulaInput<'a, 'c> {
     pub(super) node_site: &'a dyn Fn(usize) -> Location,
     /// Each `holds` atom's condition, by arena index.
     pub(super) conditions: &'a BTreeMap<usize, FormulaCondition<'c>>,
+    /// Each window aggregate atom, by arena index.
+    pub(super) aggregates: &'a BTreeMap<usize, FormulaAggregate<'c>>,
     /// Where a fault of the formula as a whole is located.
     pub(super) root_site: &'a Location,
     /// Whether the clause's intervals count ticks of its clock unit (the
@@ -229,11 +287,31 @@ impl Lowering<'_> {
                 )
             })
             .collect();
+        let mut aggregates: BTreeMap<usize, FormulaAggregate<'_>> = BTreeMap::new();
+        for (index, typed) in &input.conditions.aggregates {
+            let term = clause.aggregates().get(index).ok_or_else(|| {
+                stage_fault(
+                    &temporal_location(input.index, TemporalSite::Node(*index)),
+                    "aggregate-term-checked",
+                )
+            })?;
+            aggregates.insert(
+                *index,
+                FormulaAggregate {
+                    term,
+                    value: typed.value.as_ref().map(condition),
+                    filter: typed.filter.as_ref().map(condition),
+                    predicate: typed.predicate.as_ref().map(condition),
+                    threshold: condition(&typed.threshold),
+                },
+            );
+        }
         let formula = self.temporal_formula(
             &FormulaInput {
                 formula: clause.formula(),
                 node_site: &|node| temporal_location(input.index, TemporalSite::Node(node)),
                 conditions: &conditions,
+                aggregates: &aggregates,
                 root_site: &claim,
                 tick_intervals: clause.profile()
                     == crate::check::TemporalProfile::TimestampedEventFiniteWindow,
@@ -442,7 +520,15 @@ impl Lowering<'_> {
                     )
                 }
                 FormulaNode::Aggregate { .. } => {
-                    return Err(stage_fault(&location, "aggregate-not-emitted"));
+                    let aggregate = input
+                        .aggregates
+                        .get(&index)
+                        .ok_or_else(|| stage_fault(&location, "aggregate-term-typed"))?;
+                    (
+                        "quire.op.temporal.aggregate",
+                        None,
+                        vec![self.aggregate_argument(aggregate, scope, &location)?],
+                    )
                 }
                 FormulaNode::Not(only) => ("quire.op.temporal.not", None, vec![operand(*only)?]),
                 FormulaNode::And(left, right) => (
@@ -511,6 +597,165 @@ impl Lowering<'_> {
             .cloned()
             .flatten()
             .ok_or_else(|| stage_fault(input.root_site, "formula-root-keyed"))
+    }
+
+    /// FR-337-AC-15, QSpec FR-370 "Window aggregate atom": the one argument
+    /// of a `quire.op.temporal.aggregate` application, an aggregate of the
+    /// bindings `kind`, `q` (a `quantile` only), `predicate` (a `fraction`
+    /// only), `value` (a `sum`, `min`, `max` or `quantile` only), `filter`
+    /// (when written), `window_kind`, `lower`, `upper`, `min_count`,
+    /// `comparison` and `threshold`, in that order. Each expression is lowered
+    /// in the clause's binder scope and bound as a reference to its node; a
+    /// literal threshold is bound as a literal of the aggregate's result
+    /// family.
+    fn aggregate_argument(
+        &mut self,
+        aggregate: &FormulaAggregate<'_>,
+        scope: &[Binder],
+        location: &Location,
+    ) -> Result<MemberTerm, CheckRefusal> {
+        let term = aggregate.term;
+        let mut members = vec![("kind", self.text_literal(term.kind.spelling(), location)?)];
+        if let AggregateKind::Quantile(level) = &term.kind {
+            members.push(("q", self.rational_literal(level, location)?));
+        }
+        if let Some(predicate) = &aggregate.predicate {
+            members.push(("predicate", self.condition_term(predicate, scope)?));
+        }
+        if let Some(value) = &aggregate.value {
+            members.push(("value", self.condition_term(value, scope)?));
+        }
+        if let Some(filter) = &aggregate.filter {
+            members.push(("filter", self.condition_term(filter, scope)?));
+        }
+        let (window_kind, lower, upper) = match &term.window {
+            AggregateWindow::Positions { lower, upper } => (
+                "positions",
+                self.integer_literal(Integer::from(*lower), location)?,
+                self.integer_literal(Integer::from(*upper), location)?,
+            ),
+            AggregateWindow::Duration(window) => {
+                let DurationWindow {
+                    lower,
+                    upper,
+                    unit,
+                    nominal_nodes,
+                } = &**window;
+                // A source unit is a node of the unit graph lowering holds;
+                // a model-owned unit and its closure are written by the
+                // emitter (FR-322 "Model-owned members").
+                let model_owned = nominal_nodes.iter().any(|node| {
+                    node.key == *unit && matches!(node.origin, TimeNominalOrigin::Model(_))
+                });
+                if !model_owned {
+                    self.unit_nodes(unit.clone(), location)?;
+                }
+                (
+                    "duration",
+                    LeafTerm::literal(unit.clone(), LiteralValue::Quantity(lower.clone())),
+                    LeafTerm::literal(unit.clone(), LiteralValue::Quantity(upper.clone())),
+                )
+            }
+        };
+        members.push(("window_kind", self.text_literal(window_kind, location)?));
+        members.push(("lower", lower));
+        members.push(("upper", upper));
+        members.push((
+            "min_count",
+            self.integer_literal(Integer::from(term.min_count), location)?,
+        ));
+        members.push((
+            "comparison",
+            self.text_literal(comparison_spelling(term.comparison), location)?,
+        ));
+        let threshold = match self.threshold_literal(aggregate, location)? {
+            Some(literal) => literal,
+            None => self.condition_term(&aggregate.threshold, scope)?,
+        };
+        members.push(("threshold", threshold));
+        Ok(MemberTerm::Group(GroupTerm::new(
+            members
+                .into_iter()
+                .map(|(name, value)| GroupMember::Binding(Binding::new(name, value)))
+                .collect(),
+        )))
+    }
+
+    /// A threshold written as a literal, as a literal of the aggregate's
+    /// result family (QSpec FR-370): `integer` for `count`, `rational` for
+    /// `fraction`, otherwise the value's family, an integer literal written
+    /// as the rational of its value where a rational is required. `None` for
+    /// a threshold that is not a literal, bound as a reference to its node.
+    fn threshold_literal(
+        &mut self,
+        aggregate: &FormulaAggregate<'_>,
+        location: &Location,
+    ) -> Result<Option<LeafTerm>, CheckRefusal> {
+        let root = aggregate.threshold.root;
+        let NodeKind::Literal(CheckedLiteral(literal)) = root.kind() else {
+            return Ok(None);
+        };
+        let rational = match &aggregate.term.kind {
+            AggregateKind::Count => false,
+            AggregateKind::Fraction => true,
+            AggregateKind::Sum
+            | AggregateKind::Min
+            | AggregateKind::Max
+            | AggregateKind::Quantile(_) => aggregate
+                .value
+                .as_ref()
+                .is_some_and(|value| family(value.root.value_type()) == Some(Family::Rational)),
+        };
+        let term = match literal {
+            Value::Integer(value) if rational => {
+                self.rational_literal(&Rational::from_integer(value.clone()), location)?
+            }
+            Value::Integer(value) => self.integer_literal(value.clone(), location)?,
+            Value::Rational(value) => self.rational_literal(value, location)?,
+            Value::Quantity(quantity) => {
+                let unit = match root.value_type() {
+                    ValueType::Quantity(unit) => self.quantity_type(unit.clone(), location)?,
+                    _ => return Ok(None),
+                };
+                LeafTerm::literal(unit, LiteralValue::Quantity(quantity.magnitude().clone()))
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(term))
+    }
+
+    /// `condition` lowered in the clause's binder scope `scope`.
+    fn condition_term(
+        &mut self,
+        condition: &FormulaCondition<'_>,
+        scope: &[Binder],
+    ) -> Result<LeafTerm, CheckRefusal> {
+        let mut binders = Binders::new(condition.slot_names, scope);
+        self.expression(condition.root, &mut binders)
+    }
+
+    /// An exact rational literal typed at the builtin `Rational` node.
+    fn rational_literal(
+        &mut self,
+        value: &Rational,
+        location: &Location,
+    ) -> Result<LeafTerm, CheckRefusal> {
+        let rational = self.scalar("rational", location)?;
+        Ok(LeafTerm::literal(
+            rational,
+            LiteralValue::Rational(value.clone()),
+        ))
+    }
+}
+
+/// An aggregate comparison's FR-337-AC-15 wire spelling.
+const fn comparison_spelling(comparison: qsl_forms::AggregateComparison) -> &'static str {
+    match comparison {
+        qsl_forms::AggregateComparison::Less => "<",
+        qsl_forms::AggregateComparison::LessEqual => "<=",
+        qsl_forms::AggregateComparison::Equal => "=",
+        qsl_forms::AggregateComparison::GreaterEqual => ">=",
+        qsl_forms::AggregateComparison::Greater => ">",
     }
 }
 

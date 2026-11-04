@@ -31,7 +31,7 @@ FR-515-AC-28. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 11 | 11 | a guard equal to a `holds` operand (one node); `checked_predicate` of it | `ActivationGuard`; the node present in `predicate_leaves()` once per reading `holds` atom |
 | 12 | 12 | a leaf the clause reads whose source map entry is removed | `LeafHasNoSource`; no partial view |
 | 13 | 13 | two structurally equal clauses under a clock-configured profile | one node, two occurrences, one clock row per occurrence, admitted |
-| 14 | 14 | a reader that implements IR-1278; `name()` | the declared name, equal to the sidecar's; gated on IR-1278 |
+| 14 | 14 | FR-337-AC-16's package (`Alpha`, `Beta` sharing one node) and a package with the one-occurrence clause `Gamma`; `name_of`, `name()` and the predicate views' `name()` | `Alpha` and `Beta` by ordinal, `name()` `None` and `name_of` of ordinal 7 `None`; `Some("Gamma")` throughout, each equal to the sidecar row's name |
 | 15 | 15 | a clause named by no protocol `requirements` entry; a clause named by one | empty; the protocol clause's node id |
 | 16 | 16 | `checked_predicate` of an activation guard | `source_span` is an entry of the guard node |
 | 17 | 17 | `checked_predicate` of a `ClauseLeaf` that is neither a `holds` operand nor the guard | `source_span` inside the formula root's source regions |

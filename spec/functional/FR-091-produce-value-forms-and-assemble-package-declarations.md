@@ -321,6 +321,7 @@ The `Value` production maps each CST expression construct to one
 | integer `div`, `rem`, `mod` | `Binary{IntegerDiv, IntegerRem, IntegerMod}` respectively, left-associative at product precedence |
 | `not e` | `Not` |
 | unary `-e` | `Negate` |
+| `e ^ n`, `n` a signed integer literal | `Power{base, exponent}`, the exponent the signed integer `n` as a `quire_exact::Integer` ("Integer power spelling") |
 | `e.f` | `Field` |
 | `present(e)`, `value(e)` | `Present`, `Value` |
 | `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")`, `Timestamp(n)`, `Bytes("...")`, `JsonObject("...")` and `Text("...")` are such calls, and check resolves them ("Native scalar literals") |
@@ -333,6 +334,8 @@ The `Value` production maps each CST expression construct to one
 | `count<N>(x in c: p)`, `sum<N>(x in c: e)` | `Count`, `Sum` |
 | `size(e)` | `Size` |
 | `contains(c, v)` | `Contains` |
+| `dropFirst(c)` | `DropFirst` |
+| `removeOne(c, v)` | `RemoveOne`, with `c` then `v` |
 | `convert<T>(e)` | `Convert`, with `T` carried as a type form |
 | `deref(e)` | `Deref` |
 | `pre(e)` | `Pre` |
@@ -378,6 +381,30 @@ span. These constructs are `null` outside a record field value, `none`,
 `reaches(..)`. S2 returns no form for any declaration of that unit.
 `reaches(..)` is a `StateModel` construct (model-graph reachability), and
 its variant is `StateModel`'s to add (ADR-012 §4.3).
+
+### Integer power spelling
+
+A value expression writes a quantity's integer power as `e ^ n`. S1 parses it
+by QSpec's own complete-V1 `power` production, which takes the place of
+`postfix` in `unary`:
+
+```ebnf
+unary = ('not' | '-'), unary | power ;
+power = postfix, [ '^', signed-int ] ;
+```
+
+The exponent is the `signed-int` token form that a dimension term already
+uses (`dimension-term = qualified-name, [ '^', signed-int ]`), so it is an
+integer literal with an optional `-` and no other expression. A quantity
+literal `n u` is a primary, so `2 m ^ 2` is `(2 m) ^ 2` and `-1 m ^ 2` is
+`-((1 m) ^ 2)`. `^` takes one exponent and does not chain: in `d ^ 2 ^ 3` the
+second `^` is `invalid_syntax`/`unexpected-token`, and an exponent that is a
+name, a parenthesized expression or a constructor (`d ^ k`, `d ^ (2)`,
+`d ^ rational(1, 2)`) is `invalid_syntax`/`unexpected-token` at that token,
+before S2. The exponent's integer is exact, within the integer-literal range
+("Integer bounds and literals up to i128"). S2 maps `e ^ n` to
+`Power{base, exponent}` with the span of the whole power, and check owns its
+typing, lowering and evaluation (FR-093 "Integer power"). See FR-091-OQ-15.
 
 ### S2 depth
 
@@ -588,6 +615,28 @@ rules, order and causes and none of its own:
   `dimension N = L / L;`, is the dimensionless dimension, and the assembler
   admits it. Its units form `N`'s own graph under rows 1 to 6, and its empty
   map creates no base-dimension obligation.
+
+**Topology error fields.** A topology error is a typed record, not a list of
+names. It carries the code and cause, the span of the declaration it is
+located at (or, for a package node, its `model_root` locus and FCD identity),
+and these retained fields as values. A unit or dimension is its declared
+name, with its FCD identity for a package node. A scale and an offset are the
+reduced rationals of the unit's own form, and a target name is as written:
+
+| Rule | Retained fields |
+| --- | --- |
+| Step (-1), unknown term | the dimension that owns the term, and the term's name as written |
+| Step (-1), dimension cycle or self-term | the term edges `dimension -> term` of the cycle, in order from the cycle's dimension declared first |
+| Step (0), base-dimension rule | the base dimension, and the first local unit in source order whose dimension carries it with a nonzero exponent |
+| Row 1 | the unit, and its scale (zero) |
+| Row 2 | the unit, and its target name as written |
+| Row 3 | the unit, its target, the unit's dimension node and the target's dimension node |
+| Row 4 | the dimension, and every targetless unit in source order (a package root first when the dimension is a package node) |
+| Row 5 | the root, its scale and its offset |
+| Row 6 | the cycle's edges `unit -> target`, in order from the cycle's least unit by source position; when the dimension has several cycles, the one that contains the least unit |
+
+No field is recovered by looking the name up again, and a rendered message is
+not the record.
 
 With no error, the assembler builds each normalized declaration, owner and
 `qualified_declaration` as for an enum:
@@ -1179,6 +1228,8 @@ every checker of the language.
 | FR-091-AC-68 | For the Q11–Q13 dimension-equivalence sources, each admitted equivalence key is a QSpec FR-322 structural node id for the required `package_name`; it is stable under equivalent ratio spelling and source-owner unit-label changes with the package name fixed. `dimension Length ~ Distance by 1 km = 1 dist;`, its reversed form, and `by 1 dist = 1000 m` represent one normalized pair with `dimension_node_ids` in ascending structural-key order and the ratio stated for the first node; the ratios of the former Q12 and Q13 sources are respectively `1000/1` and `1/200`. Adding an equivalence leaves the `Length`, `Distance` and `Speed = Length / Time` declaration keys and `Speed`'s terms unchanged. For the three package pairs over `acme/rpc`, `acme/flow` and `acme/clock` `Time`, each equivalence retains the two package dimension node ids in ascending structural-key order and the normalized `root_scale` for the first node: `1/1` for rpc/flow, `1000/1` for rpc/clock and `1000/1` for flow/clock; each admitted equivalence has its declaration span in `nominal_spans`. | Test (TC-483) |
 | FR-091-AC-69 | S2 builds, for the bodies `Text("abc")` and `Text("e\u0301")`, a `Call` of the name `Text` with one `Expression::String` argument each and no new expression kind, and check resolves each to the explicit Text constructor of the position's `Text[..]` type. `Text(x)` over a `String` parameter, `Text(5)`, `Text()` and `Text("a", "b")` refuse `ill_typed`/`type-mismatch` at the argument (at the call for the last two); `Text("\ud800")` refuses `invalid_syntax`/`invalid-escape`; a unit that also declares `function Text using v(): Boolean pure { true }` makes `Text("abc")` refuse `ambiguous_declaration`/`ambiguous-name` as for `UUID`; and `Text("abc")` at a `Text[0, 2; nfc]` slot refuses `ill_typed`/`type-mismatch` with the cause `TextLiteralOutsideBounds` naming `abc`, `0`, `2`, `nfc`, the retained length `3` and the call's span. | Test (TC-1052) |
 | FR-091-AC-70 | `Text("é")` and `Text("\u00e9")` at one `Text[..]` slot check to values that hold the same payload bytes `c3 a9` and compare equal to each other and to the runtime payload bytes `c3 a9`, whichever side the literal is on (QSpec FR-141, TC-186 T06b); each carries its own quoted spelling, `"é"` and `"\u00e9"`, as source-literal provenance, and two literals written with one spelling carry equal provenance, under a scalar profile and a normalizing one and for the escapes `\u000a` and `\n`, `\/` and `/`, and a surrogate pair and the raw scalar. `Expression::String` holds the quoted spelling beside the decoded text, and two spellings of one text build equal forms (equality is the decoded text's), lower to one literal node and are one data literal where a guard deduplicates its literals. | Test (TC-1052, QSpec TC-186) |
+| FR-091-AC-71 | Topology error fields (QSL-1601; QSpec FR-142-AC-15 to AC-17, TC-187 U06, U11a to U11f, U11n, U11o, U11p, U11w, U11x and U11z3). Each refusal of FR-091-AC-35, AC-46 and AC-47 carries the fields of the "Topology error fields" table as values: row 1's `z` with its scale `0`; row 2's `u` with the target name `ghost`; row 3's `s`, its target `r` and the dimension nodes `T` (of `s`) and `L` (of `r`); row 4's `L` with `r` and `q` in source order; row 5's root `r` with scale `2` and offset `0`; and row 6's edges `y -> x`, `x -> y`. `dimension L; dimension D = L * K; unit m : L = rational(1, 1);` refuses `missing_declaration`/`missing-name` at `D` carrying the owning dimension `D` and the term `K` (U11p); `dimension A = B * K; dimension B = A;` refuses the same carrying `A` and `K`, before the cycle (U11w); `dimension L; unit m : L = rational(1, 1); dimension E = D; dimension D = L * K;` refuses at `D` carrying `D` and `K`, not at `E`, and the same unit with `unit e : E = rational(0, 1);` added refuses row 1, `invalid_package`/`invalid-value`, at `e` carrying scale `0`, because `E`'s turn comes first and its unit rows run (U11x); `dimension A = B; dimension B = A ^ 2; unit a : A = rational(1, 1);` refuses `invalid_package`/`definition-cycle` at `A` carrying the edges `A -> B`, `B -> A` (U11n); `dimension L; dimension D = D * L; unit m : L = rational(1, 1);` refuses `definition-cycle` at `D` carrying `D -> D` (U11o); `dimension E = A; unit e : E = rational(0, 1); dimension A = B; dimension B = A;` refuses row 1 at `e` carrying scale `0`, and without `unit e` refuses `definition-cycle` at `A` carrying `A -> B`, `B -> A` (U11z3). The base-dimension refusals of FR-091-AC-55 (U11y, U11z1) carry `L`'s FCD identity and `m2`. | Test (TC-483) |
+| FR-091-AC-72 | Package dimension and package unit forms (QSL-1602; QSpec FR-142-AC-18, AC-19, AC-20). With `model M = "acme/rpc"`, where `acme/rpc` declares base dimension `Rate` with root unit `us`, and a unit of compilation declaring `dimension Time; unit s : Time = rational(1, 1);`: `unit tick : M::Rate = rational(1, 2) * M::us;` resolves its `:` name to the package dimension `Rate` (FCD identity `ix://acme/rpc/dimension/Rate`) and its target to the package unit `us`, is checked at `M::Rate`'s turn with `us` as an admitted member, and admits `tick` with scale `1/2` to `us`; `function k1 using v(d: Quantity<tick>): Boolean pure { convert<Quantity<M::us>>(d) = 1 M::us }` checks and is `true` for `d` = `2 tick`, and `unit tock : M::Rate = rational(3, 1) * tick;` chains through `tick` to `us` with composed scale `3/2`. Each of the following refused units is assembled in its own unit of compilation beside the base declarations above (`model M`, `dimension Time;`, `unit s`), without `tick` or `tock`, and reports its one refusal: `unit bad : M::Rate = rational(1, 2) * s;` refuses row 3, `invalid_package`/`incompatible-definition`, carrying `bad`, `s`, the dimension node `M::Rate` and the source `Time`; `unit r2 : M::Rate = rational(1, 1);` refuses row 4 at `M::Rate` carrying `us` and `r2`; `unit z : M::Rate = rational(0, 1) * M::us;` refuses row 1 at `z` carrying scale `0`; and `unit g : M::Rate = rational(1, 2) * M::ghost;` refuses row 2 carrying `g` and the target name `M::ghost`. | Test (TC-483) |
 
 ## Dependencies
 
@@ -1256,6 +1307,7 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, and terms sort by key. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (d) Units are named as types through `Quantity<u>` (QSpec FR-142). Parts of (a) and (c) of this ruling are replaced by FR-091-OQ-13. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (d) the complete-V1 `type-ref` names a quantity type as `Quantity<u>` over a unit (QSpec FR-142-AC-11), and reading any other type name as a unit would invent syntax meaning. A quantity-typed operation parameter is therefore the `Quantity<u>` annotation (FR-185). | QSpec changes or withdraws `Quantity<u>` (FR-142). |
 | FR-091-OQ-13 | Unit-graph topology (lead default, 2026-10-22, not an owner answer). A derived dimension that cancels to no terms is the dimensionless dimension, admitted. The dimension and unit topology, including dimension term resolution, dimension and unit cycles, and package dimensions and units as imported nodes, takes QSpec FR-142's rules, order and causes. | QSpec FR-142 fixes the topology rules, their first-defect order and their causes, and admits `N = L / L` (FR-142-AC-15 to AC-19); following it gives every checker of the language one refusal for one unit graph. | QSpec changes FR-142's topology rules or causes. |
 | FR-091-OQ-14 | Dimension equivalence in the assembler (lead default, 2026-10-23, not an owner answer; Peter may veto). The assembler decides every `dimension A ~ B by x U = y V;` by QSpec FR-142's seven steps inside the topology check, in the two phases FR-142 fixes, and treats a pair that step 1 refuses as decided in the first phase. An equivalence form is no node of the turn list, so a package dimension that only an equivalence names takes its turn with the unreached package dimensions. A unit whose target chain a row 1, 2, 3 or 6 defect breaks fixes no scale, so the equivalence naming it is decided up to step 4 and the unit's dimension reports the defect at its turn. `UnitGraph::admit` holds the equivalence nodes (with their `root_scale`) and derives the classes and the class-root edges; no dimension key or `terms` list changes. | FR-142 fixes the steps and the phases but states neither where a step-1 refusal of a non-base pair falls, whether an equivalence reaches a package dimension for the turn walk, nor how a ratio is read through a defective chain; these three readings give one refusal per unit graph and change no admitted result. | QSpec states any point differently. |
+| FR-091-OQ-15 | Quantity integer power spelling (lead default, 2026-11-04, not an owner answer; Peter may veto). The value-level spelling is `e ^ n` with `n` a `signed-int` literal (Integer power spelling); `^` binds tighter than the prefix `-` and does not chain. | QSpec FR-142 defines integer power of a quantity (FR-142-AC-6, TC-187 U12, U13, U21), the checked-package schema names `quire.op.quantity.pow`, and the owned quantity core writes it `a ^ n`, and QSpec's shared grammar now gives the same value-level production, with the same binding and no chaining (QSpec FR-142, FR-322-AC-383; QSL-1664), so QSL takes QSpec's production. A literal exponent is what lets the checker form the result's compound unit. QSL as producer is narrower than the QSpec reader in one respect, which is conformant: an exponent literal outside i128 refuses `IntegerOutsideI128` ("Integer bounds and literals up to i128"), while QSpec admits any magnitude; every QSpec vector, 2^64 included, fits. | QSpec's production changes from this one. |
 
 ## Open Questions
 

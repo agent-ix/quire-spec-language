@@ -167,6 +167,14 @@ pub enum EmitRefusal {
     /// already-admitted base package.
     #[error("typed timed models do not match the admitted package's timed-node set")]
     TimedModelNodeSetMismatch,
+    /// A checked probabilistic claim has no emitted node or `claim`
+    /// occurrence to write its FR-322 row from (FR-498): lowering keys every
+    /// claim of an assembled package, so this is a broken invariant.
+    #[error("probabilistic claim `{claim}` has no emitted claim node and occurrence")]
+    UnkeyedProbabilisticClaim {
+        /// The claim's declared name (diagnostic text only).
+        claim: String,
+    },
     /// The timed nodes cannot be put in QSpec FR-322's declared order.
     #[error("timed aggregate order: {0}")]
     TimedOrder(#[source] timed_order::OrderFault),
@@ -349,7 +357,9 @@ impl EmitRefusal {
                 Code::UnsupportedConstruct
             }
             Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
-            Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
+            Self::TimedModelNodeSetMismatch
+            | Self::UnkeyedProbabilisticClaim { .. }
+            | Self::TimedOrder(_) => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
             | Self::RefinementSubjectNotEmitted => Code::RuntimeInvariant,
@@ -384,6 +394,7 @@ impl EmitRefusal {
             | Self::Abstraction(_)
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
+            | Self::UnkeyedProbabilisticClaim { .. }
             | Self::TimedOrder(_)
             | Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
@@ -1708,6 +1719,7 @@ fn literal_value(value: &LiteralValue) -> (LiteralKind, serde_json::Value) {
         LiteralValue::Integer(value) => (LiteralKind::Integer, json!(value.to_string())),
         LiteralValue::Count(value) => (LiteralKind::Integer, json!(value)),
         LiteralValue::Rational(value) => (LiteralKind::Rational, json!(rational(value))),
+        LiteralValue::Decimal(value) => (LiteralKind::Decimal, json!(value)),
         LiteralValue::Float32Bits(value) => {
             (LiteralKind::Float32Bits, json!(format!("{value:08x}")))
         }
@@ -2820,6 +2832,39 @@ fn equality_fact_witness_rows(
                             },
                             None,
                         )?;
+                        // A unit of a base dimension carries that dimension
+                        // as its canonical base-dimension term. The IR
+                        // equality reader joins this separately from the
+                        // authored UnitDimension declaration row.
+                        if dimension.role
+                            == qsl_semantics::check::EqualityDimensionRole::UnitDimension
+                            && matches!(
+                                &unit,
+                                quire_semantic_value::quantity::QuantityUnit::Declared(_)
+                            )
+                            && graph_nodes
+                                .get(&dimension.node)
+                                .and_then(|node| node.nominal_payload())
+                                .and_then(|payload| match payload {
+                                    NominalPayload::Dimension(dimension) => {
+                                        Some(dimension.terms().is_empty())
+                                    }
+                                    _ => None,
+                                })
+                                == Some(true)
+                        {
+                            add(
+                                &dimension.node,
+                                EqualityFactWitness::DimensionDeclaration {
+                                    unit_id: unit_fact.unit_id.clone(),
+                                    operand_position,
+                                    role:
+                                        qsl_semantics::check::EqualityDimensionRole::BaseDimension,
+                                    ordinal: 0,
+                                },
+                                None,
+                            )?;
+                        }
                     }
                     for term in &unit_fact.dimension_terms {
                         let exact_term = graph_nodes
@@ -3292,10 +3337,48 @@ fn checked_term_data(
     term_data.dispatch_tables = checked_dispatch_tables(graph, emitted_node_ids, source_map)?;
     term_data.protocol_locations =
         protocol_locations::checked_protocol_locations(graph, emitted_node_ids)?;
+    term_data.probabilistic_claims = checked_probabilistic_claims(graph, emitted_node_ids)?;
     Ok((!term_data.equality_decisions.is_empty()
         || !term_data.protocol_locations.is_empty()
-        || !term_data.dispatch_tables.is_empty())
+        || !term_data.dispatch_tables.is_empty()
+        || !term_data.probabilistic_claims.is_empty())
     .then_some(term_data))
+}
+
+/// FR-498: one `{declaration, occurrence}` row per checked probabilistic
+/// claim, naming the node and `claim` occurrence lowering keyed it at, in
+/// ascending structural `NodeRef` order, then occurrence order. Nothing is
+/// read from the claim's name, span or form.
+fn checked_probabilistic_claims(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<quire_contract_model::CheckedProbabilisticClaim>, EmitRefusal> {
+    let claims = graph.probabilistic_model().claims();
+    let mut rows = Vec::with_capacity(claims.len());
+    for claim in claims {
+        let unkeyed = || EmitRefusal::UnkeyedProbabilisticClaim {
+            claim: claim.name.clone(),
+        };
+        let occurrence = claim.occurrence().ok_or_else(unkeyed)?;
+        let declaration = emitted_node_ids
+            .get(occurrence.node())
+            .cloned()
+            .ok_or_else(unkeyed)?;
+        let occurrence = checked_occurrence(occurrence.origin()).ok_or_else(unkeyed)?;
+        rows.push(quire_contract_model::CheckedProbabilisticClaim {
+            declaration,
+            occurrence,
+        });
+    }
+    rows.sort_by(|left, right| {
+        left.declaration
+            .package
+            .cmp(&right.declaration.package)
+            .then_with(|| left.declaration.path.cmp(&right.declaration.path))
+            .then_with(|| left.declaration.ordinal.cmp(&right.declaration.ordinal))
+            .then_with(|| left.occurrence.cmp(&right.occurrence))
+    });
+    Ok(rows)
 }
 
 fn equality_enum_members(
@@ -4870,6 +4953,19 @@ fn literal_type(nodes: &[CheckedSemanticNodeV2], kind: &str) -> Option<CheckedNo
     nodes.iter().find_map(|node| visit(&node.body, kind))
 }
 
+/// The checked timed models `source` times. Two units may bind one model
+/// alias to two packages (FR-480 "Selections and imports"), so a time
+/// source names its models through the model node, never the alias.
+pub(crate) fn timed_models_of<'g>(
+    graph: &'g qsl_semantics::check::CheckedGraph,
+    source: &'g qsl_semantics::check::ModelTimeSource,
+) -> impl Iterator<Item = &'g qsl_semantics::check::TimedModel> {
+    graph
+        .timed_models()
+        .iter()
+        .filter(move |timed| timed.is_timed_by(source))
+}
+
 /// Emit a complete admitted package using typed timed models for its timed
 /// nodes. The base package supplies the already-checked non-timed graph,
 /// lock, source map, capability report and diagnostics; every timed node is
@@ -5314,7 +5410,18 @@ fn emit_package_inner(
         });
     }
     let candidates = candidates_of(ids, graph, abstraction.as_ref())?;
-    let model_roots: HashSet<NodeKey> = graph.model_roots().map(|(_, key)| key).collect();
+    // Nodes the emitter writes beside the graph's own: each model root, and
+    // each model-owned time unit node a `duration` window is typed by.
+    let external: HashSet<NodeKey> = graph
+        .model_roots()
+        .map(|(_, key)| key)
+        .chain(graph.temporal_clauses().iter().flat_map(|temporal| {
+            temporal
+                .clause()
+                .duration_window_model_nodes()
+                .map(|nominal| nominal.key.clone())
+        }))
+        .collect();
     let selected_models: BTreeSet<&str> = graph
         .model_roots()
         .map(|(selection, _)| selection.identity.as_str())
@@ -5324,7 +5431,7 @@ fn emit_package_inner(
         &candidates,
         graph.source(),
         decodes,
-        &model_roots,
+        &external,
         &selected_models,
     );
     let omitted_keys = omitted
@@ -5517,10 +5624,7 @@ fn emit_package_inner(
                 qsl_semantics::check::builtin_integer_type_key(graph.package_name())
                     .map_err(encoding)?,
             );
-            model.clock_places = graph
-                .timed_models()
-                .iter()
-                .filter(|timed| timed.model() == source.model)
+            model.clock_places = timed_models_of(graph, source)
                 .flat_map(|timed| timed.place_nodes())
                 .map(|key| {
                     let id = node_id(ids, key);
@@ -5542,11 +5646,7 @@ fn emit_package_inner(
             // has one or more source occurrences); the root lists it once.
             let mut regions_of: BTreeMap<CheckedNodeId, Vec<(u64, u64)>> = BTreeMap::new();
             let mut declared = Vec::new();
-            for timed in graph
-                .timed_models()
-                .iter()
-                .filter(|timed| timed.model() == source.model)
-            {
+            for timed in timed_models_of(graph, source) {
                 for (at, urgency) in timed.urgency().iter().enumerate() {
                     let id = placeholder(&format!("urgency-{at}"))?;
                     let metadata = TimedNodeMetadata {
@@ -5641,10 +5741,8 @@ fn emit_package_inner(
             model.urgencies = urgencies;
             // QSpec FR-322 "Clause nodes": the guards, resets, invariants
             // and constraints S3 lowered, each located at its own source.
-            if let Some(clauses) = graph
-                .timed_models()
-                .iter()
-                .find(|timed| timed.model() == source.model)
+            if let Some(clauses) = timed_models_of(graph, source)
+                .next()
                 .and_then(qsl_semantics::check::TimedModel::clause_nodes)
             {
                 let places: Vec<CheckedNodeId> = model
@@ -5674,112 +5772,14 @@ fn emit_package_inner(
                 model.literal_types.integer = Some(integer_type);
             }
             for nominal in &source.nominal_nodes {
-                let id = node_id(ids, &nominal.key);
-                if nodes.iter().any(|node| node.node_id == id) {
-                    continue;
-                }
-                let declaration = nominal.declaration().map(|segments| CheckedDeclaration {
-                    qualified_name: segments
-                        .iter()
-                        .map(|segment| segment.as_str().into())
-                        .collect(),
-                });
-                let (owner, source_owned) = match &nominal.origin {
-                    TimeNominalOrigin::Source { owner, .. } => (
-                        CheckedNodeOwner::Source {
-                            authority: owner.authority.as_str().into(),
-                            identity: owner.identity.as_str().into(),
-                        },
-                        true,
-                    ),
-                    TimeNominalOrigin::Model(subject) => (
-                        CheckedNodeOwner::Model {
-                            identity: subject.identity.as_str().into(),
-                            node: subject.node.as_str().into(),
-                        },
-                        false,
-                    ),
-                };
-                let body = if source_owned {
-                    match (nominal.form.as_str(), nominal.nominal_payload()) {
-                        ("dimension", Some(payload @ NominalPayload::Dimension(_)))
-                        | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
-                            nominal_term(ids, &nominal.key, payload)?
-                        }
-                        _ => {
-                            return Err(EmitRefusal::TimedModelWriterInvariant(
-                                "a source-owned timed nominal must carry its typed body",
-                            ));
-                        }
-                    }
-                } else {
-                    CheckedTerm::Aggregate {
-                        members: Vec::new(),
-                    }
-                };
-                let semantic_type = if nominal.form == "unit" {
-                    nominal
-                        .dependencies
-                        .first()
-                        .map(|key| node_id(ids, key))
-                        .ok_or(EmitRefusal::TimedModelWriterInvariant(
-                            "a unit node must name its dimension",
-                        ))?
-                } else {
-                    id.clone()
-                };
-                // A model-owned node carries no declaration, so it is
-                // `generated` (like a `model_root`); every node has at
-                // least one occurrence.
-                let occurrence = CheckedOccurrence {
-                    role: if source_owned {
-                        CheckedOccurrenceRole::Declaration
-                    } else {
-                        CheckedOccurrenceRole::Generated
-                    },
-                    ordinal: 0,
-                };
-                // FR-322: a source nominal's occurrence is located at its
-                // own declaration; a model-owned node has no source form,
-                // so its `generated` occurrence takes the timed source's
-                // region.
-                let region = match nominal.name_span() {
-                    Some(span) => SourceRegion::new(
-                        graph.source().clone(),
-                        span.start as u64,
-                        span.end as u64,
-                    )
-                    .map_err(encoding)?,
-                    None => source_region.clone(),
-                };
-                source_map.push(CheckedSourceMapEntry {
-                    node_id: id.clone(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                    regions: vec![CheckedSourceRegion {
-                        source: source_artifact(graph.source()),
-                        start: region.start(),
-                        end: region.end(),
-                    }],
-                });
-                nodes.push(CheckedSemanticNodeV2 {
-                    owner_model: None,
-                    node_id: id.clone(),
-                    schema_version: GRAPH_V2.into(),
-                    node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
-                    semantic_form: nominal.form.as_str().into(),
-                    semantic_type,
-                    dependencies: nominal
-                        .dependencies
-                        .iter()
-                        .map(|key| node_id(ids, key))
-                        .collect(),
-                    occurrences: vec![occurrence],
-                    recursion_group: None,
-                    declaration,
-                    owner: Some(owner),
-                    body,
-                });
+                write_time_nominal(
+                    ids,
+                    graph,
+                    nominal,
+                    &source_region,
+                    &mut nodes,
+                    &mut source_map,
+                )?;
             }
             for node in model
                 .write_nodes()
@@ -5825,6 +5825,24 @@ fn emit_package_inner(
         }
         #[cfg(test)]
         TIMED_GRAPH.with(|held| *held.borrow_mut() = Some((nodes.clone(), source_map.clone())));
+    }
+    // QSpec FR-370: a `duration` window typed by a model-owned time unit
+    // names that unit's nodes, which S3 does not lower; each is written once,
+    // located at the clause that names it.
+    for temporal in graph.temporal_clauses() {
+        let mut model_nodes = temporal.clause().duration_window_model_nodes().peekable();
+        if model_nodes.peek().is_none() {
+            continue;
+        }
+        let location = graph
+            .occurrence(temporal.identity(), temporal.claim())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let region = graph
+            .region(location)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        for nominal in model_nodes {
+            write_time_nominal(ids, graph, nominal, &region, &mut nodes, &mut source_map)?;
+        }
     }
     append_model_roots(
         ids,
@@ -6219,6 +6237,123 @@ fn temporal_clock_invalid_field(
     }
 }
 
+/// Write the nominal dimension or unit node `nominal` a timed construct
+/// names, unless the graph already holds it: a source node located at its
+/// declaration, a model-owned node with an empty body, no declaration and a
+/// `generated` occurrence at `generated` (FR-322 "Model-owned members").
+fn write_time_nominal(
+    ids: &StructuralIds,
+    graph: &CheckedGraph,
+    nominal: &qsl_semantics::check::TimeNominalNode,
+    generated: &SourceRegion,
+    nodes: &mut Vec<CheckedSemanticNodeV2>,
+    source_map: &mut Vec<CheckedSourceMapEntry>,
+) -> Result<(), EmitRefusal> {
+    let id = node_id(ids, &nominal.key);
+    if nodes.iter().any(|node| node.node_id == id) {
+        return Ok(());
+    }
+    let declaration = nominal.declaration().map(|segments| CheckedDeclaration {
+        qualified_name: segments
+            .iter()
+            .map(|segment| segment.as_str().into())
+            .collect(),
+    });
+    let (owner, source_owned) = match &nominal.origin {
+        TimeNominalOrigin::Source { owner, .. } => (
+            CheckedNodeOwner::Source {
+                authority: owner.authority.as_str().into(),
+                identity: owner.identity.as_str().into(),
+            },
+            true,
+        ),
+        TimeNominalOrigin::Model(subject) => (
+            CheckedNodeOwner::Model {
+                identity: subject.identity.as_str().into(),
+                node: subject.node.as_str().into(),
+            },
+            false,
+        ),
+    };
+    let body = if source_owned {
+        match (nominal.form.as_str(), nominal.nominal_payload()) {
+            ("dimension", Some(payload @ NominalPayload::Dimension(_)))
+            | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
+                nominal_term(ids, &nominal.key, payload)?
+            }
+            _ => {
+                return Err(EmitRefusal::TimedModelWriterInvariant(
+                    "a source-owned timed nominal must carry its typed body",
+                ));
+            }
+        }
+    } else {
+        CheckedTerm::Aggregate {
+            members: Vec::new(),
+        }
+    };
+    let semantic_type = if nominal.form == "unit" {
+        nominal
+            .dependencies
+            .first()
+            .map(|key| node_id(ids, key))
+            .ok_or(EmitRefusal::TimedModelWriterInvariant(
+                "a unit node must name its dimension",
+            ))?
+    } else {
+        id.clone()
+    };
+    // A model-owned node carries no declaration, so it is
+    // `generated` (like a `model_root`); every node has at
+    // least one occurrence.
+    let occurrence = CheckedOccurrence {
+        role: if source_owned {
+            CheckedOccurrenceRole::Declaration
+        } else {
+            CheckedOccurrenceRole::Generated
+        },
+        ordinal: 0,
+    };
+    // FR-322: a source nominal's occurrence is located at its
+    // own declaration; a model-owned node has no source form,
+    // so its `generated` occurrence takes `generated`, the
+    // region of the construct that names it.
+    let region = match nominal.name_span() {
+        Some(span) => SourceRegion::new(graph.source().clone(), span.start as u64, span.end as u64)
+            .map_err(encoding)?,
+        None => generated.clone(),
+    };
+    source_map.push(CheckedSourceMapEntry {
+        node_id: id.clone(),
+        role: occurrence.role.clone(),
+        ordinal: occurrence.ordinal,
+        regions: vec![CheckedSourceRegion {
+            source: source_artifact(region.source()),
+            start: region.start(),
+            end: region.end(),
+        }],
+    });
+    nodes.push(CheckedSemanticNodeV2 {
+        owner_model: None,
+        node_id: id.clone(),
+        schema_version: GRAPH_V2.into(),
+        node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
+        semantic_form: nominal.form.as_str().into(),
+        semantic_type,
+        dependencies: nominal
+            .dependencies
+            .iter()
+            .map(|key| node_id(ids, key))
+            .collect(),
+        occurrences: vec![occurrence],
+        recursion_group: None,
+        declaration,
+        owner: Some(owner),
+        body,
+    });
+    Ok(())
+}
+
 fn validate_temporal_clock(
     source_ref: &RawSourceRef,
     span: qsl_foundation::Span,
@@ -6332,6 +6467,23 @@ fn temporal_binding_rows(
             });
         }
         validate_temporal_clock(&source, span, clause.clock(), clock)?;
+        // QSpec FR-370 "Window aggregate atom": a `duration` window's bounds
+        // are quantities of the clause's clock unit, the `scalar_type`/`unit`
+        // node named by the selected `timestamp_unit` (FR-337 "Aggregate
+        // formula emission").
+        if let quire_contract_model::ClockConfiguration::TimestampedEvent { timestamp_unit } = clock
+        {
+            if clause
+                .duration_window_units()
+                .any(|unit| !qsl_semantics::check::is_clock_unit_node(unit, timestamp_unit))
+            {
+                return Err(EmitRefusal::InvalidTemporalClockValue {
+                    source_ref: source.clone(),
+                    span,
+                    field: "timestamp_unit",
+                });
+            }
+        }
         let declaration_key = temporal.identity();
         let declaration = emitted_node_ids
             .get(&declaration_key)
@@ -6733,12 +6885,13 @@ fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
 #[cfg(test)]
 pub(crate) mod tests;
 
+pub(crate) mod equality_reader;
 /// ADR-014 §4 (TC-440): QSL's extent classification agrees with
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
 mod monitor_plan;
-mod protocol_locations;
+pub(crate) mod protocol_locations;
 pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;

@@ -287,6 +287,89 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
     );
 }
 
+/// FR-230-AC-58 / TC-1334: S3 has no ambient named-population scope for a
+/// time invariant or `urgent when`, while ordinary state-clause population
+/// scope and self-only timed predicates remain available. Each population
+/// form FR-230 names is refused: a quantifier domain, `allInstances`,
+/// `lookup` and `count`/`sum`.
+#[trace("TC-1334", "FR-230-AC-58")]
+#[test]
+fn timed_predicates_refuse_named_populations_without_restricting_state_clauses() {
+    for predicate in [
+        "time invariant HasCalls when { forall(c in Config::calls : true) } { self.x <= 1 ms }\n",
+        "urgent CallsExist when { exists(c in Config::calls : true) };\n",
+        "time invariant AllCalls when { \
+         exists(c in allInstances<Config::Call>(Config::calls) : true) } { self.x <= 1 ms }\n",
+        "urgent Known when { present(lookup<Config::Call>(Config::calls, self) absent empty) };\n",
+        "time invariant Counted when { \
+         count<Config::VersionNumber>(c in Config::calls : true) > 0 } { self.x <= 1 ms }\n",
+        "urgent Summed when { sum<Config::VersionNumber>(c in Config::calls : c.n) > 0 };\n",
+    ] {
+        let body = format!("{}{}", rpc("time Config dense unit ms;"), predicate);
+        let (cause, text) = refused(&rpc_document(&["x"]), &body);
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (
+                Code::UnsupportedConstruct,
+                "not-yet-implemented",
+                "Config::calls"
+            ),
+            "the population reference is refused and no TimedModel is produced"
+        );
+        let TemporalCause::TimedPredicate { cause, .. } = cause else {
+            panic!("the named population refusal belongs to the timed predicate: {cause:?}");
+        };
+        assert!(
+            matches!(
+                &*cause,
+                CheckCause::PopulationFormNotChecked {
+                    what: "timed predicate population scope"
+                }
+            ),
+            "the refusal identifies the missing timed-predicate scope: {cause:?}"
+        );
+    }
+
+    // Two population references: the first, in source order, is reported.
+    let first = "exists(c in Config::calls : true)";
+    let body = format!(
+        "{}time invariant Two when {{ {first} and \
+         present(lookup<Config::Call>(Config::calls, self) absent empty) }} {{ self.x <= 1 ms }}\n",
+        rpc("time Config dense unit ms;"),
+    );
+    let document = rpc_document(&["x"]);
+    let refusals = check(&document, &body).expect_err("the named population is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal expected: {refusals:?}");
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a timed refusal expected: {refusal:?}");
+    };
+    let (text, _) = config_unit_with_profiles(&document, TEMPORAL, &body);
+    let expected = text.find(first).expect("the first quantifier") + "exists(c in ".len();
+    assert_eq!(
+        (
+            cause.span().start,
+            &text[cause.span().start..cause.span().end]
+        ),
+        (expected, "Config::calls"),
+        "the first population reference is reported, not the last"
+    );
+
+    let body = format!(
+        "{}{}{}",
+        rpc("time Config dense unit ms;"),
+        "time invariant SelfOnly when { self.inflight } { self.x <= 3 ms }\n\
+         urgent SelfUrgent when { self.waiting };\n",
+        "pre UsesCalls using v on Config::Call::reply { forall(c in Config::calls : true) }\n"
+    );
+    let graph = check(&rpc_document(&["x"]), &body)
+        .expect("self-only timed predicates and a population-reading precondition remain admitted");
+    let model = timed(&graph);
+    assert_eq!(model.invariants().len(), 3);
+    assert_eq!(model.urgency().len(), 1);
+}
+
 /// Part of FR-230-AC-1 (TC-685): under `time dense unit s`, `reply`'s bound
 /// `1 ms` converts to `1/1000`. Not covered: the `s` unit's package identity
 /// differing from `ms`'s, which S4 emits.
@@ -1070,4 +1153,233 @@ fn a_later_units_timed_predicate_names_types_through_its_own_alias() {
         model.invariants()
     );
     assert_eq!(model.urgency().len(), 1, "{:?}", model.urgency());
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): a clock-reading
+/// declaration's object parameter type `Config::Call` names the package its
+/// own unit binds `Config` to. Unit `a` binds `Config` to a copy of the
+/// package whose `x` is no clock, and is admitted first; unit `b` binds
+/// `Config` to the timed package, so its `own(o: Config::Call)`'s body
+/// `o.x` is a clock place, never a data field of `a`'s `Call`.
+#[trace("FR-480")]
+#[test]
+fn a_clock_reading_parameter_names_its_own_units_package() {
+    use qsl_semantics::check::{AssemblyLimits, PackageDeclarations};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::{admit_units_with_cancel, package_input};
+    use quire_exact::Cancel;
+
+    const CLOCKLESS: &str = "example/clockless-config-version";
+    let unit = |identity: &str, declarations: &str| {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{TEMPORAL}{declarations}\n"
+        );
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new("test", identity),
+            "unit.native",
+            source.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the source unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the source unit");
+        (parsed.source().reference().clone(), unit)
+    };
+    let declarations = format!(
+        "model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n\
+         function own using v(o: Config::Call): Clock pure {{ o.x }}\n"
+    );
+    let units = vec![
+        unit(
+            "a",
+            &format!("model Config = {CLOCKLESS:?};\ntype Pad = Integer;"),
+        ),
+        unit("b", &declarations),
+    ];
+    // The package with its clock `x` a Boolean field.
+    let clockless = String::from_utf8(rpc_document(&["x"]))
+        .expect("the document is UTF-8")
+        .replace("ix://quire/native/Clock", "ix://quire/native/Boolean")
+        .replace(PACKAGE, CLOCKLESS);
+    let packages = package_input([rpc_document(&["x"]).as_slice(), clockless.as_bytes()])
+        .expect("both packages admit");
+    let selections: Vec<_> = units
+        .iter()
+        .map(|(_, unit)| unit.selections().models.as_slice())
+        .collect();
+    let selected = admit_units_with_cancel(
+        &selections,
+        &packages,
+        ModelNormalizationLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("each unit's model selection admits");
+    let graph = PackageDeclarations::assemble_units(
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        units,
+        selected,
+        Vec::new(),
+        AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("both units assemble: {refusal:?}"))
+    .with_unwritten_timed_members()
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("b's o.x is a clock of b's package: {refusals:?}"));
+    // QSL-1650: b's `time Config` times b's package, whose `x` is a clock,
+    // never a's package of the same alias, which declares none.
+    let [source] = graph.time_sources() else {
+        panic!("one time source: {:?}", graph.time_sources());
+    };
+    let model = timed(&graph);
+    assert_eq!(&source.model_node, model.model_node());
+    let clocks: Vec<&str> = model.clocks().iter().map(|clock| clock.name()).collect();
+    assert_eq!(clocks, ["x"]);
+}
+
+/// `units`, each a source identity and its declarations under the model and
+/// temporal profiles, assembled over the packages `documents` and checked.
+fn check_units(
+    units: &[(&str, &str)],
+    documents: &[&[u8]],
+) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    let texts: Vec<String> = units
+        .iter()
+        .map(|(_, declarations)| {
+            format!("profile v = \"quire.model.complete/v1\";\n{TEMPORAL}{declarations}")
+        })
+        .collect();
+    let units: Vec<(&str, &str)> = units
+        .iter()
+        .zip(&texts)
+        .map(|((identity, _), text)| (*identity, text.as_str()))
+        .collect();
+    crate::model_operations::assemble_units(&units, documents)
+        .with_unwritten_timed_members()
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+}
+
+/// FR-480 "Selections and imports" (QSL-1650): two units bind `Config` to
+/// two packages and each writes `time Config`. Each time source times its
+/// own unit's package: neither is a duplicate of the other, and each timed
+/// model is the one of its own package, with that package's clock.
+#[trace("FR-480")]
+#[test]
+fn each_units_time_source_times_its_own_units_package() {
+    const OTHER: &str = "example/other-config-version";
+    // `OTHER`'s copy of the package has the further clock `y`.
+    let other = String::from_utf8(rpc_document(&["x", "y"]))
+        .expect("the document is UTF-8")
+        .replace(PACKAGE, OTHER);
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n");
+    let b = format!("model Config = {OTHER:?};\ntime Config dense unit ms;\n");
+    let graph = check_units(
+        &[("a", &a), ("b", &b)],
+        &[rpc_document(&["x"]).as_slice(), other.as_bytes()],
+    )
+    .unwrap_or_else(|refusals| panic!("each unit times its own package: {refusals:?}"));
+    let [first, second] = graph.time_sources() else {
+        panic!("two time sources: {:?}", graph.time_sources());
+    };
+    assert_ne!(first.model_node, second.model_node);
+    // The sources are in source position order, which interleaves units.
+    let mut clocks: Vec<Vec<&str>> = [first, second]
+        .into_iter()
+        .map(|source| {
+            let model = graph
+                .timed_models()
+                .iter()
+                .find(|model| model.is_timed_by(source))
+                .expect("each time source has its timed model");
+            model.clocks().iter().map(|clock| clock.name()).collect()
+        })
+        .collect();
+    clocks.sort();
+    assert_eq!(clocks, [vec!["x"], vec!["x", "y"]]);
+}
+
+/// FR-230: the common layout, both units binding `Config` to one package
+/// and each writing `time Config`, still gives that model two time sources,
+/// and the second refuses as its duplicate.
+#[trace("FR-230")]
+#[test]
+fn two_units_timing_one_package_under_one_alias_is_a_duplicate() {
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n");
+    let b = format!("model Config = {PACKAGE:?};\ntime Config dense unit ms;\n");
+    let refusals = check_units(&[("a", &a), ("b", &b)], &[rpc_document(&["x"]).as_slice()])
+        .expect_err("the second time source is a duplicate");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [CheckRefusal {
+                cause: CheckCause::Temporal(cause),
+                ..
+            }] if matches!(**cause, TemporalCause::DuplicateTimeSource { .. })
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// FR-230 (FND-003): two units bind two different aliases to one package and
+/// each writes `time` over its alias. The package is one state model with at
+/// most one `time` member, so the second refuses as a duplicate.
+#[trace("FR-230")]
+#[test]
+fn two_aliases_of_one_package_timed_twice_are_a_duplicate() {
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}time Config dense unit ms;\n");
+    let b = format!("model Other = {PACKAGE:?};\ntime Other dense unit ms;\n");
+    let refusals = check_units(&[("a", &a), ("b", &b)], &[rpc_document(&["x"]).as_slice()])
+        .expect_err("the second time source is a duplicate");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [CheckRefusal {
+                cause: CheckCause::Temporal(cause),
+                ..
+            }] if matches!(**cause, TemporalCause::DuplicateTimeSource { .. })
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// The package `rpc_document(&["x"])` with `x` a Boolean field, which a
+/// `tick` time source admits, and a copy of it under the identity `other`.
+fn clockless_pair(other: &str) -> (String, String) {
+    let first = String::from_utf8(rpc_document(&["x"]))
+        .expect("the document is UTF-8")
+        .replace("ix://quire/native/Clock", "ix://quire/native/Boolean");
+    let second = first.replace(PACKAGE, other);
+    (first, second)
+}
+
+/// FR-480 "Selections and imports" (QSL-1638): two units bind `Config` to
+/// two packages and each writes a `tick` time source over its own package's
+/// `Config::Call::bump`. Each source's operation anchor resolves through the
+/// package its own unit binds, never the first model of the shared alias.
+#[trace("FR-480")]
+#[test]
+fn each_units_tick_anchor_is_its_own_packages_operation() {
+    const OTHER: &str = "example/other-config-version";
+    let (first, other) = clockless_pair(OTHER);
+    let tick = "time Config tick Config::Call::bump period 1 ms unit ms;\n";
+    let a = format!("model Config = {PACKAGE:?};\n{UNITS}{tick}");
+    let b = format!("model Config = {OTHER:?};\n{tick}");
+    let graph = check_units(
+        &[("a", &a), ("b", &b)],
+        &[first.as_bytes(), other.as_bytes()],
+    )
+    .unwrap_or_else(|refusals| panic!("each unit anchors its own package: {refusals:?}"));
+    let [first, second] = graph.time_sources() else {
+        panic!("two time sources: {:?}", graph.time_sources());
+    };
+    let (Some(first_anchor), Some(second_anchor)) =
+        (&first.tick_operation_anchor, &second.tick_operation_anchor)
+    else {
+        panic!(
+            "every tick source has its operation anchor: {:?}",
+            graph.time_sources()
+        );
+    };
+    assert_ne!(first_anchor, second_anchor);
 }

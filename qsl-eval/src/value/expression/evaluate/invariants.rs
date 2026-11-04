@@ -95,6 +95,8 @@ fn iteration<'a>(node: CheckedNode<'a>) -> Box<Iteration<CheckedNode<'a>>> {
         sources: vec![],
         accumulator: None,
         count: Integer::zero(),
+        source_owner: Owner::None,
+        owner: Owner::None,
     })
 }
 
@@ -419,6 +421,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
                     reference(),
                 ),
                 node: node.root(),
+                owners: Vec::new(),
             })))
         }
     );
@@ -490,6 +493,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
                 receiver.clone(),
             ),
             node: node.root(),
+            owners: Vec::new(),
         })))
         .unwrap_or_else(|_| panic!("linked guard body"));
     finish_tasks(&mut machine).unwrap_or_else(|_| panic!("guard result"));
@@ -1159,7 +1163,8 @@ fn object_package(
     qsl_package::CheckedPackage::link(graph)
 }
 
-/// QSL-1470 (FR-049-AC-2/AC-3): the protocol reader's attribute read and
+/// QSL-1470 (FR-049-AC-2/AC-3): the machine's attribute read, which the
+/// protocol reader's projection also evaluates through, and
 /// `reaches`'s edge read take their slot through `admitted_slot`, so a stored
 /// value that is not of the package's declared type refuses instead of
 /// reaching a shape fault or projecting another type.
@@ -1194,22 +1199,17 @@ fn the_reader_and_edge_reads_refuse_a_stored_value_of_another_type() {
         machine.edge_targets(literal.root(), &reference(), &field),
         Err(Halt::Family(FamilyResult::Refused(_)))
     ));
-    set_frames(
-        &mut machine,
-        vec![vec![Some(Value::Reference(reference()))]],
-    );
-    let read = ReaderRoot {
-        slot: 0,
-        field: qsl_package::ReaderProtocolField::Attribute {
-            owner: field.owner.clone(),
-            name: field.name.to_string(),
-        },
+    // The reader's attribute read is the machine's own `Attribute` arm
+    // (FR-390-AC-16), here over the reference operand already evaluated.
+    let attribute = body(|ids| NodeKind::Attribute {
+        reference: ids[0],
+        field: field.clone(),
         optional: false,
         derefed: false,
-        value_type: reference_type.clone(),
-    };
+    });
+    machine.push_value(Value::Reference(reference()), false);
     assert!(matches!(
-        machine.eval_reader_read(read),
+        machine.apply(attribute.root()),
         Err(Halt::Family(FamilyResult::Refused(_)))
     ));
 }
@@ -1801,6 +1801,7 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
                 ),
             ),
             node: root.root(),
+            owners: Vec::new(),
         })))
     });
     probe!("evaluation-branch-node-expected", m, [], {
@@ -2571,4 +2572,258 @@ fn record_present_value_branch_has_a_local_count_and_zip_proof() {
     // pop_many supplies exactly present values or stops earlier; zip visits
     // only a prefix of slots and consumes one value per Present slot.
     // Thus the defensive values.next() failure has no executable fixture.
+}
+
+/// Run `$step` as one evaluation step of a machine that tracks binder owners
+/// and evaluate to the owner of `$slot` afterwards.
+macro_rules! slot_owner_after_step {
+    ($slots:expr, $slot:expr, |$m:ident| $step:expr) => {{
+        let (package, _) = super::tests::population_function_package();
+        let graph = package.graph();
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(
+            graph.scope(),
+            graph,
+            &objects,
+            &mut meter,
+            graph.dispatch_tables(),
+        );
+        machine.owners = Some(Owners::default());
+        machine.push_frame(vec![None; $slots], Vec::new());
+        if let Some(owners) = machine.owners.as_mut() {
+            owners.begin_step();
+        }
+        machine.iterations = 1;
+        let $m = &mut machine;
+        $step.unwrap_or_else(|_| panic!("the iteration step runs"));
+        machine
+            .owners
+            .as_ref()
+            .map_or(Owner::None, |owners| owners.slot($slot))
+    }};
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_query_binds_each_element_to_the_owner_of_its_source() {
+    let query = body(|ids| NodeKind::Query {
+        visit: Visit::Exists,
+        slot: 0,
+        source: ids[0],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        let mut pending = iteration(query.root());
+        pending.source_owner = Owner::Binder(7);
+        pending.owner = Owner::Binder(7);
+        m.iterate(pending)
+    });
+    assert_eq!(owner, Owner::Binder(7));
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_fold_binds_its_accumulator_and_element_to_the_owner_of_its_source() {
+    let fold = body(|ids| NodeKind::Fold {
+        accumulator: 0,
+        binder: 1,
+        source: ids[0],
+        step: ids[1],
+        identity: Some(ids[0]),
+    });
+    for slot in [0, 1] {
+        let owner = slot_owner_after_step!(2, slot, |m| {
+            let mut pending = iteration(fold.root());
+            pending.source_owner = Owner::Binder(7);
+            pending.owner = Owner::Binder(7);
+            pending.accumulator = Some(Value::Boolean(true));
+            m.iterate(pending)
+        });
+        assert_eq!(owner, Owner::Binder(7), "slot {slot}");
+    }
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_seq_binds_each_integer_to_the_owner_of_its_bounds() {
+    let seq = body(|ids| NodeKind::Seq {
+        slot: 0,
+        low: ids[0],
+        high: ids[1],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        m.iterate_seq(Box::new(SeqIteration {
+            node: seq.root(),
+            next: Integer::zero(),
+            high: Integer::one(),
+            awaiting: false,
+            results: Vec::new(),
+            source_owner: Owner::Binder(7),
+            owner: Owner::Binder(7),
+        }))
+    });
+    assert_eq!(owner, Owner::Binder(7));
+}
+
+/// A result of the previous body, owned by a binder other than the source's,
+/// is on the stack: the machine tracks owners and the step has just begun.
+fn push_other_binders_result<'a, N: NodeSource<'a>>(m: &mut Machine<'a, '_, N>, result: Value) {
+    if let Some(owners) = m.owners.as_mut() {
+        owners.absorb(Owner::Binder(9));
+    }
+    m.push_value(result, false);
+    if let Some(owners) = m.owners.as_mut() {
+        owners.begin_step();
+    }
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_query_element_after_the_first_keeps_its_source_owner_not_the_merged_results() {
+    let query = body(|ids| NodeKind::Query {
+        visit: Visit::Exists,
+        slot: 0,
+        source: ids[0],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        let mut pending = iteration(query.root());
+        pending.source = collection(vec![Value::Boolean(true), Value::Boolean(true)]);
+        pending.source_owner = Owner::Binder(7);
+        pending.owner = Owner::Binder(7);
+        pending.awaiting = true;
+        pending.next = 1;
+        push_other_binders_result(m, Value::Boolean(false));
+        m.iterate(pending)
+    });
+    assert_eq!(owner, Owner::Binder(7));
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_fold_element_after_the_first_keeps_its_source_owner_and_the_accumulator_takes_the_merge() {
+    let fold = body(|ids| NodeKind::Fold {
+        accumulator: 0,
+        binder: 1,
+        source: ids[0],
+        step: ids[1],
+        identity: Some(ids[0]),
+    });
+    for (slot, expected) in [(0, Owner::Mixed), (1, Owner::Binder(7))] {
+        let owner = slot_owner_after_step!(2, slot, |m| {
+            let mut pending = iteration(fold.root());
+            pending.source = collection(vec![Value::Boolean(true), Value::Boolean(true)]);
+            pending.source_owner = Owner::Binder(7);
+            pending.owner = Owner::Binder(7);
+            pending.accumulator = Some(Value::Boolean(true));
+            pending.awaiting = true;
+            pending.next = 1;
+            push_other_binders_result(m, Value::Boolean(true));
+            m.iterate(pending)
+        });
+        assert_eq!(owner, expected, "slot {slot}");
+    }
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_seq_integer_after_the_first_keeps_its_bounds_owner_not_the_merged_results() {
+    let seq = body(|ids| NodeKind::Seq {
+        slot: 0,
+        low: ids[0],
+        high: ids[1],
+        body: ids[1],
+    });
+    let owner = slot_owner_after_step!(2, 0, |m| {
+        push_other_binders_result(m, Value::Boolean(true));
+        m.iterate_seq(Box::new(SeqIteration {
+            node: seq.root(),
+            next: Integer::one(),
+            high: Integer::one().add(&Integer::one()),
+            awaiting: true,
+            results: Vec::new(),
+            source_owner: Owner::Binder(7),
+            owner: Owner::Binder(7),
+        }))
+    });
+    assert_eq!(owner, Owner::Binder(7));
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_dispatched_call_binds_the_receivers_owner_to_its_callee_frames() {
+    use qsl_semantics::check::DispatchCandidate;
+    let package = checked_dispatch_package();
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    let receiver = reference();
+    let node = CheckedBody::fixture(
+        vec![ValueType::Reference(receiver.object_type().clone())],
+        |ids| NodeKind::Dispatch {
+            receiver: ids[0],
+            operation: 0,
+            table: 0,
+            arguments: vec![],
+        },
+        ValueType::Boolean,
+    );
+    for guarded in [true, false] {
+        let tables = [DispatchTable::new(
+            vec![(
+                receiver.object_type().clone(),
+                DispatchCandidate {
+                    body: 0,
+                    precondition: guarded.then_some(1),
+                    precondition_clauses: guarded.then_some(1).into_iter().collect(),
+                },
+            )],
+            1,
+        )];
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, &tables);
+        machine.owners = Some(Owners::default());
+        if let Some(owners) = machine.owners.as_mut() {
+            owners.begin_step();
+            owners.absorb(Owner::Binder(3));
+        }
+        machine.push_value(Value::Reference(receiver.clone()), false);
+        if let Some(owners) = machine.owners.as_mut() {
+            owners.begin_step();
+        }
+        machine
+            .apply(node.root())
+            .unwrap_or_else(|_| panic!("linked dispatch"));
+        let owner_of_top_frame = |machine: &CheckedMachine<'_, '_>| {
+            machine
+                .owners
+                .as_ref()
+                .map_or(Owner::None, |owners| owners.slot(0))
+        };
+        assert_eq!(
+            owner_of_top_frame(&machine),
+            Owner::Binder(3),
+            "the frame the dispatch pushes, guarded: {guarded}"
+        );
+        let mut guard_steps = 0;
+        while let Some(task) = machine.tasks.pop() {
+            let is_guard = matches!(task, Task::DispatchGuard(_));
+            if let Some(owners) = machine.owners.as_mut() {
+                owners.begin_step();
+            }
+            machine
+                .step(task)
+                .unwrap_or_else(|_| panic!("linked callable bodies"));
+            if is_guard {
+                guard_steps += 1;
+                assert_eq!(
+                    owner_of_top_frame(&machine),
+                    Owner::Binder(3),
+                    "the body frame the guard pushes"
+                );
+            }
+        }
+        assert_eq!(guard_steps, usize::from(guarded));
+    }
 }

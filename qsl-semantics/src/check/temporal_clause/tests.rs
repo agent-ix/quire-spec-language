@@ -102,6 +102,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
             units: &units,
             time_sources: &package.time_sources,
             rational_bits: CheckingLimits::default().rational_bits(),
+            clock_units: &package.clock_units,
         },
     };
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
@@ -461,25 +462,25 @@ fn the_package_check_refuses_a_clause_no_emission_writes() {
     ));
 }
 
-/// FR-194-AC-4 (TC-629): aggregate expressions are type checked at S3, while
-/// the clause remains explicitly not emitted until FR-370's wire is confirmed.
+/// The package check of `text` admits its one temporal clause.
+fn package_admits(text: &str) {
+    let graph = assemble(text)
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("`{text}` checks: {refusals:?}"));
+    assert_eq!(graph.temporal_clauses().len(), 1, "{text}");
+}
+
+/// FR-194-AC-4 (TC-629): aggregate atoms and their expressions are checked
+/// at S3, and a clause whose atoms check is admitted into the package.
 #[trace("TC-629", "FR-194-AC-4", "FR-194-AC-7", "FR-194-AC-8", "FR-194-AC-10")]
 #[test]
-fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
-    let valid = source(&[EVENT], "Int[0,9]", "count over past[0,3] >= 1");
-    let refusal = package_refusal(&valid);
-    assert_eq!(refusal.code(), Code::UnsupportedConstruct);
-    assert_eq!(refusal.tag(), "not-yet-implemented");
-
-    let zero_minimum_count = source(
+fn aggregate_atoms_are_checked_and_admitted() {
+    package_admits(&source(&[EVENT], "Int[0,9]", "count over past[0,3] >= 1"));
+    package_admits(&source(
         &[EVENT],
         "Int[0,9]",
         "count over past[0,3] min_count 0 >= 1",
-    );
-    assert_eq!(
-        package_refusal(&zero_minimum_count).tag(),
-        "not-yet-implemented"
-    );
+    ));
 
     let invalid_quantile = source(&[EVENT], "Int[0,9]", "quantile 1 of c over past[0,3] <= 1");
     assert!(matches!(
@@ -532,34 +533,74 @@ fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
         ]
     );
 
-    let timestamped = timestamped_source("count over past[0 s, 1000 ms] >= 1");
-    assert_eq!(
-        package_refusal(&timestamped).tag(),
-        "not-yet-implemented",
-        "duration bounds convert exactly before emission is refused"
-    );
+    package_admits(&timestamped_source("count over past[0 s, 1000 ms] >= 1"));
     let inverted_duration = timestamped_source("count over past[2 s, 1000 ms] >= 1");
     assert!(matches!(
         package_refusal(&inverted_duration),
         TemporalCause::InvalidAggregateWindow { .. }
     ));
-    let wrong_duration_dimension = timestamped_source("count over past[0 m, 1 m] >= 1");
-    assert!(matches!(
-        package_refusal(&wrong_duration_dimension),
-        TemporalCause::TimeQuantity { .. }
-    ));
+    // FR-194: a bound of another dimension is no duration, a unit
+    // mismatch at its unit, whichever bound it is.
+    // FR-194-AC-7: at the unit `m` of the first such bound.
+    for (window, unit_at) in [("past[0 m, 1 m]", 7), ("past[0 s, 1 m]", 12)] {
+        let text = timestamped_source(&format!("count over {window} >= 1"));
+        let refusal = package_refusal(&text);
+        assert_eq!(
+            (refusal.code(), refusal.tag()),
+            (Code::IllTyped, "unit-mismatch"),
+            "{window}"
+        );
+        let start = first(&text, window).start + unit_at;
+        assert_eq!(
+            refusal,
+            TemporalCause::AggregateWindowKindMismatch {
+                span: Span {
+                    start,
+                    end: start + 1
+                }
+            },
+            "{window}"
+        );
+    }
 
-    let converted_threshold = timestamped_source("sum of c over past[0 s, 1000 ms] <= 1000 ms");
-    assert_eq!(
-        package_refusal(&converted_threshold).tag(),
-        "not-yet-implemented",
-        "the threshold may use another unit of the value's dimension"
-    );
+    // The threshold may use another unit of the value's dimension.
+    package_admits(&timestamped_source(
+        "sum of c over past[0 s, 1000 ms] <= 1000 ms",
+    ));
     let wrong_threshold_dimension = timestamped_source("sum of c over past[0 s, 1000 ms] <= 1 m");
+    // FR-194-AC-7: `5 m` against a time value is a unit mismatch at the
+    // threshold.
     let refusals = assemble(&wrong_threshold_dimension)
         .check(CheckingLimits::default())
         .expect_err("a threshold of another dimension is refused at S3");
     assert_eq!(refusals[0].cause.code(), Code::IllTyped);
+    assert_eq!(refusals[0].cause.cause(), Some("unit-mismatch"));
+    assert_eq!(
+        refusals[0].location,
+        crate::check::lowering::temporal_location(
+            0,
+            crate::check::lowering::TemporalSite::Aggregate(
+                0,
+                crate::check::lowering::AggregatePart::Threshold
+            )
+        )
+    );
+
+    // An exact fraction `n/d` threshold is the rational literal `n/d`; on
+    // `count` it is of another family.
+    package_admits(&source(
+        &[EVENT],
+        "Int[0,9]",
+        "fraction holds(c > 1) over past[0,3] >= 1/2",
+    ));
+    let rational_count = source(&[EVENT], "Int[0,9]", "count over past[0,3] >= 1/2");
+    let refusals = assemble(&rational_count)
+        .check(CheckingLimits::default())
+        .expect_err("a rational count threshold is refused");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+    );
 
     let ill_typed = source(
         &[EVENT],
@@ -590,6 +631,32 @@ fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
     ));
 
+    // QSpec FR-370's families: a value of family integer, rational or
+    // quantity; a threshold of the aggregate's result family, an integer
+    // literal standing for the rational of its value where a rational is
+    // required.
+    package_admits(&source(
+        &[EVENT],
+        "Int[0,9]",
+        "fraction holds(c > 1) over past[0,3] >= 1",
+    ));
+    package_admits(&source(&[EVENT], "Int[0,9]", "count over past[0,3] >= c"));
+    for formula in [
+        "sum of (c > 1) over past[0,3] <= 1",
+        "fraction holds(c > 1) over past[0,3] >= c",
+    ] {
+        let refusals = assemble(&source(&[EVENT], "Int[0,9]", formula))
+            .check(CheckingLimits::default())
+            .expect_err(formula);
+        assert!(
+            matches!(
+                refusals[0].cause,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+            ),
+            "{formula}: {refusals:?}"
+        );
+    }
+
     let bounded = check(&assemble(&source(
         &[EVENT],
         "Int[0,9]",
@@ -601,6 +668,155 @@ fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
         bounded.formula().nodes().get(1),
         Some(FormulaNode::Aggregate { .. })
     ));
+}
+
+/// FR-337-AC-15: a `duration` window lowers to quantity literals of its
+/// lower bound's time unit, both bounds converted exactly (`past[0 ms,
+/// 300 s]` is 0 and 300000 of `ms`), bound as `window_kind`, `lower` and
+/// `upper` of the aggregate argument in QSpec FR-370's order.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn a_duration_window_lowers_to_quantities_of_its_unit() {
+    use crate::check::node_key::{BodyTerm, GroupMember, LeafTerm, LiteralValue, MemberTerm};
+    let graph = assemble(&timestamped_source(
+        "always[0,2] (quantile 0.95 of c over past[0 ms, 300 s] <= 5 ms)",
+    ))
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("the clause checks: {refusals:?}"));
+    let [clause] = graph.temporal_clauses() else {
+        panic!("one clause");
+    };
+    let [unit] = clause.clause().duration_window_units().collect::<Vec<_>>()[..] else {
+        panic!("one duration window");
+    };
+    let arguments = graph
+        .semantic_graph()
+        .nodes()
+        .find_map(|node| match node.body() {
+            BodyTerm::Application(application)
+                if application.operation.identity == "quire.op.temporal.aggregate" =>
+            {
+                Some(application.arguments.clone())
+            }
+            _ => None,
+        })
+        .expect("an aggregate node");
+    let [MemberTerm::Group(argument)] = &arguments[..] else {
+        panic!("one aggregate argument: {arguments:?}");
+    };
+    let members: Vec<(&str, Option<&LiteralValue>, Option<NodeKey>)> = argument
+        .members
+        .iter()
+        .map(|member| match member {
+            GroupMember::Binding(binding) => match &binding.value {
+                LeafTerm::Literal { ty, value } => {
+                    (binding.name.as_str(), Some(value), ty.admitted().cloned())
+                }
+                _ => (binding.name.as_str(), None, None),
+            },
+            GroupMember::Leaf(_) => panic!("a binding: {member:?}"),
+        })
+        .collect();
+    assert_eq!(
+        members.iter().map(|(name, ..)| *name).collect::<Vec<_>>(),
+        [
+            "kind",
+            "q",
+            "value",
+            "window_kind",
+            "lower",
+            "upper",
+            "min_count",
+            "comparison",
+            "threshold"
+        ]
+    );
+    let quantity = |name: &str| {
+        members
+            .iter()
+            .find(|(bound, ..)| *bound == name)
+            .map(|(_, value, ty)| (value.cloned(), ty.clone()))
+            .unwrap_or_else(|| panic!("a binding {name}"))
+    };
+    let ms = |value: i64| {
+        (
+            Some(LiteralValue::Quantity(quire_exact::Rational::from_integer(
+                quire_exact::Integer::from(value),
+            ))),
+            Some(unit.clone()),
+        )
+    };
+    assert_eq!(quantity("lower"), ms(0));
+    assert_eq!(quantity("upper"), ms(300_000));
+    assert_eq!(quantity("threshold"), ms(5));
+
+    // A threshold in another unit of the value's dimension is converted
+    // to the value's unit: a reference to its converted node.
+    let graph = assemble(&timestamped_source(
+        "always[0,2] (quantile 0.95 of c over past[0 ms, 300 s] <= 1 s)",
+    ))
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("the clause checks: {refusals:?}"));
+    let converted = graph
+        .semantic_graph()
+        .nodes()
+        .find_map(|node| match node.body() {
+            BodyTerm::Application(application)
+                if application.operation.identity == "quire.op.temporal.aggregate" =>
+            {
+                match application.arguments.first() {
+                    Some(MemberTerm::Group(argument)) => argument.members.last().cloned(),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .expect("an aggregate threshold");
+    let GroupMember::Binding(threshold) = converted else {
+        panic!("a threshold binding");
+    };
+    assert_eq!(threshold.name, "threshold");
+    let LeafTerm::Reference { target } = &threshold.value else {
+        panic!("a reference to the converted threshold: {threshold:?}");
+    };
+    let node = target
+        .admitted()
+        .and_then(|key| graph.semantic_graph().node(key.clone()))
+        .expect("the converted threshold node");
+    assert_eq!(
+        node.semantic_type(),
+        Some(unit.clone()),
+        "the threshold is in the value's unit"
+    );
+}
+
+/// FR-337-AC-15: `s3.rational_bits` bounds a `duration` bound's converted
+/// value, the literal emitted, as well as its written magnitude: `past[0 ms,
+/// 255 s]` converts `255 s` (8 bits written) to `255000` of `ms`, 18 bits,
+/// so under a ceiling of 16 it refuses `LimitExceeded(S3RationalBits)` at
+/// `255 s`, and under a ceiling of 18 it checks.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn a_converted_duration_bound_past_the_rational_bits_ceiling_is_a_limit() {
+    let text = timestamped_source("count over past[0 ms, 255 s] >= 1");
+    let within = |bits| CheckingLimits::default().with_rational_bits(bits);
+    let refusals = assemble(&text)
+        .check(within(16))
+        .expect_err("the converted bound is past the ceiling");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a stage limit: {refusal:?}");
+    };
+    assert_eq!(limit.kind, crate::check::CheckingLimitKind::RationalBits);
+    assert_eq!((limit.limit, limit.actual), (16, 18));
+    let package = assemble(&text);
+    let expected = crate::check::region::region(&package.source, None, first(&text, "255 s"));
+    assert_eq!(limit.region, expected);
+    assemble(&text)
+        .check(within(18))
+        .unwrap_or_else(|refusals| panic!("within the ceiling: {refusals:?}"));
 }
 
 /// FR-337-AC-7: a guard whose divisor has no S3 law checks, the guard is

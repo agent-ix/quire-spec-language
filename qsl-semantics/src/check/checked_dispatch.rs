@@ -1695,6 +1695,7 @@ mod tests {
             Expression::float32_bits(0x3f80_0000),
             Expression::float64_bits(0x3ff0_0000_0000_0000),
             Expression::rational(Integer::from(1_i64), Integer::from(3_i64)),
+            Expression::decimal(Integer::from(125_i64), 2),
             Expression::quantity(qsl_forms::QuantityForm {
                 magnitude: qsl_forms::ExactValueForm {
                     kind: qsl_forms::ExactValueKind::Natural,
@@ -1814,12 +1815,13 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 39] = [
+    const FORM_NAMES: [&str; 40] = [
         "Case",
         "Boolean",
         "Absent",
         "Integer",
         "Rational",
+        "DecimalValue",
         "Float32",
         "Float64",
         "Quantity",
@@ -1867,6 +1869,7 @@ mod tests {
             ExprNode::Absent => "Absent",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
+            ExprNode::DecimalValue { .. } => "DecimalValue",
             ExprNode::Float32(_) => "Float32",
             ExprNode::Float64(_) => "Float64",
             ExprNode::Quantity(_) => "Quantity",

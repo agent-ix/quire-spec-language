@@ -132,6 +132,11 @@ pub struct AssemblyLimits {
     /// assembler forms `10^s` for (FR-091 "Dimension and unit
     /// declarations").
     pub decimal_scale: u64,
+    /// The written-scale limits on `decimal(c, s)` literals the checker
+    /// applies (`s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`;
+    /// FR-093 "Decimal constructors"). They travel with the assembly limits
+    /// because the assembled `PackageDeclarations` carries them to `check`.
+    pub decimal_literal: super::DecimalLiteralLimits,
     /// The type-environment ceilings the unit's records, tuples and object
     /// types are admitted under (FR-082).
     pub environment: TypeEnvironmentLimits,
@@ -144,7 +149,14 @@ pub struct AssemblyLimits {
 /// settings of its `environment`.
 impl SettingLimits for AssemblyLimits {
     fn bounds(&self) -> Vec<(Setting, u64)> {
-        let mut bounds = vec![(Setting::S3DecimalScale, self.decimal_scale)];
+        let mut bounds = vec![
+            (Setting::S3DecimalScale, self.decimal_scale),
+            (Setting::S3DecimalLiteralScale, self.decimal_literal.scale),
+            (
+                Setting::S3DecimalLiteralScaleTotal,
+                self.decimal_literal.total,
+            ),
+        ];
         bounds.extend(super::environment_bounds(&self.environment));
         bounds.extend(self.identity.bounds());
         bounds
@@ -154,6 +166,14 @@ impl SettingLimits for AssemblyLimits {
         match setting {
             Setting::S3DecimalScale => {
                 self.decimal_scale = bound;
+                true
+            }
+            Setting::S3DecimalLiteralScale => {
+                self.decimal_literal.scale = bound;
+                true
+            }
+            Setting::S3DecimalLiteralScaleTotal => {
+                self.decimal_literal.total = bound;
                 true
             }
             _ => {
@@ -174,6 +194,7 @@ impl Default for AssemblyLimits {
     fn default() -> Self {
         Self {
             decimal_scale: DEFAULT_DECIMAL_SCALE,
+            decimal_literal: super::DecimalLiteralLimits::default(),
             // FR-255's published default, 16777216 edges and units.
             environment: TypeEnvironmentLimits {
                 ancestor_steps: DEFAULT_ENVIRONMENT_STEPS,
@@ -766,7 +787,14 @@ pub use clock_forms::{ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePo
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TimedDeclaration {
     /// `time Model dense/tick ...`.
-    TimeSource(TimeSourceForm),
+    TimeSource {
+        /// The S2 form.
+        form: TimeSourceForm,
+        /// The key of its source unit among the package's source owners
+        /// (`time_source_owner`), which reads its model alias (FR-480
+        /// "Selections and imports").
+        owner: String,
+    },
     /// `time invariant ...`.
     TimeInvariant(TimeInvariantForm),
     /// `urgent ...`.
@@ -778,7 +806,7 @@ pub enum TimedDeclaration {
 impl TimedDeclaration {
     pub(super) const fn construct(&self) -> TimedConstruct {
         match self {
-            Self::TimeSource(_) => TimedConstruct::TimeSource,
+            Self::TimeSource { .. } => TimedConstruct::TimeSource,
             Self::TimeInvariant(_) => TimedConstruct::TimeInvariant,
             Self::Urgent(_) => TimedConstruct::Urgent,
             Self::ClockType(_) => TimedConstruct::Clock,
@@ -787,7 +815,7 @@ impl TimedDeclaration {
 
     pub(super) const fn span(&self) -> Span {
         match self {
-            Self::TimeSource(form) => form.span,
+            Self::TimeSource { form, .. } => form.span,
             Self::TimeInvariant(form) => form.span,
             Self::Urgent(form) => form.span,
             Self::ClockType(position) => position.span,
@@ -802,12 +830,18 @@ impl TimedDeclaration {
     /// unit has no one model it can belong to.
     pub(super) fn owner<'a>(&'a self, model: Option<&'a str>) -> &'a str {
         match self {
-            Self::TimeSource(source) => &source.model.name,
+            Self::TimeSource { form, .. } => &form.model.name,
             Self::TimeInvariant(invariant) => model.unwrap_or(&invariant.name.name),
             Self::Urgent(urgent) => model.unwrap_or(&urgent.name.name),
             Self::ClockType(position) => &position.owner,
         }
     }
+}
+
+/// The source-owner key of the package's `index`th time source, in source
+/// unit order: a time source declares no name of its own.
+pub(super) fn time_source_owner(index: usize) -> String {
+    format!("time_source:{index}")
 }
 
 /// The unit's declarations, split by kind, and the names they bind.
@@ -897,8 +931,15 @@ impl Unit {
                 .into_iter()
                 .map(TimedDeclaration::ClockType),
         );
+        // Each time source's position among the unit's time sources, the key
+        // of its source unit (`time_source_owner`).
+        let mut time_sources = 0usize;
         for (index, form) in forms.into_iter().enumerate() {
             let span = form.span();
+            let time_source = time_sources;
+            if matches!(form.form(), DeclarationForm::TimeSource(_)) {
+                time_sources += 1;
+            }
             let form = match clock_forms.dispositions.remove(&index) {
                 None => form.into_form(),
                 Some(clock_forms::Disposition::Drop) => continue,
@@ -958,7 +999,10 @@ impl Unit {
                 DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
                 DeclarationForm::Hybrid(hybrid) => unit.hybrids.push(*hybrid),
                 DeclarationForm::TimeSource(time) => {
-                    unit.timed.push(TimedDeclaration::TimeSource(*time))
+                    unit.timed.push(TimedDeclaration::TimeSource {
+                        form: *time,
+                        owner: time_source_owner(time_source),
+                    })
                 }
                 DeclarationForm::TimeInvariant(invariant) => {
                     unit.timed.push(TimedDeclaration::TimeInvariant(*invariant))
@@ -2561,6 +2605,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Float32(_)
                 | ExprNode::Float64(_)
                 | ExprNode::Rational(..)
+                | ExprNode::DecimalValue { .. }
                 | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
@@ -3262,6 +3307,8 @@ impl PackageDeclarations {
         let mut source_owners = BTreeMap::new();
         let sources: Vec<_> = units.iter().map(|(source, _)| source.clone()).collect();
         let mut state_clause_index = 0usize;
+        let mut time_source_index = 0usize;
+        let mut equivalence_index = 0usize;
         for (source, unit) in &units {
             for form in unit.forms() {
                 if matches!(form.form(), qsl_forms::DeclarationForm::StateClause(_)) {
@@ -3269,10 +3316,17 @@ impl PackageDeclarations {
                         .insert(format!("state_clause:{state_clause_index}"), source.clone());
                     state_clause_index += 1;
                 }
+                if matches!(form.form(), qsl_forms::DeclarationForm::TimeSource(_)) {
+                    source_owners.insert(time_source_owner(time_source_index), source.clone());
+                    time_source_index += 1;
+                }
                 match form.form() {
-                    qsl_forms::DeclarationForm::DimensionEquivalence(equivalence) => {
-                        source_owners
-                            .insert(equivalence::source_owner_key(equivalence), source.clone());
+                    qsl_forms::DeclarationForm::DimensionEquivalence(_) => {
+                        source_owners.insert(
+                            equivalence::source_owner_key(equivalence_index),
+                            source.clone(),
+                        );
+                        equivalence_index += 1;
                     }
                     qsl_forms::DeclarationForm::Dimension(dimension) => {
                         source_owners.insert(dimension.name.name.clone(), source.clone());
@@ -3570,7 +3624,8 @@ impl PackageDeclarations {
                 model_spellings.bind_model(unit_source, &selection.alias, Some(*package));
                 continue;
             }
-            let package = model_spellings.add_package();
+            let package =
+                model_spellings.add_package(model.view.domain_package().model_selection.clone());
             packages.insert(&selection.identity, package);
             model_spellings.bind_model(unit_source, &selection.alias, Some(package));
             match model_object_types(
@@ -3876,6 +3931,8 @@ impl PackageDeclarations {
                     equivalence::Ownership {
                         owner: &owner,
                         source_owners: &source_node_owners,
+                        units: &source_owners,
+                        spellings: &model_spellings,
                         package_name: &package_name,
                     },
                     limits,
@@ -3895,6 +3952,8 @@ impl PackageDeclarations {
                     equivalence::Ownership {
                         owner: &owner,
                         source_owners: &source_node_owners,
+                        units: &source_owners,
+                        spellings: &model_spellings,
                         package_name: &package_name,
                     },
                     limits,
@@ -4327,7 +4386,7 @@ impl PackageDeclarations {
         // over.
         let (admitted, bound_errors) = match population_bounds(
             &unit.population_bounds,
-            &models,
+            &resolve,
             &unit.state_clauses,
             &unit.functions,
         ) {
@@ -4447,6 +4506,7 @@ impl PackageDeclarations {
         }
 
         let mut package = PackageDeclarations::new(source, package_name, limits.identity);
+        package.decimal_literal_limits = limits.decimal_literal;
         package.sources = sources;
         package.source_owners = source_owners;
         package.execution_point_keys = execution_points.keys().cloned().collect();
@@ -4587,8 +4647,18 @@ impl PackageDeclarations {
             }
             for (id, node) in form.formula.iter() {
                 temporal_sites.push(TemporalSite::Node(id.index()));
-                if matches!(node, qsl_forms::TemporalNodeForm::Holds { .. }) {
-                    temporal_sites.push(TemporalSite::Condition(id.index()));
+                match node {
+                    qsl_forms::TemporalNodeForm::Holds { .. } => {
+                        temporal_sites.push(TemporalSite::Condition(id.index()));
+                    }
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => {
+                        temporal_sites.extend(
+                            aggregate_parts(atom)
+                                .map(|(part, _)| TemporalSite::Aggregate(id.index(), part)),
+                        );
+                    }
+                    qsl_forms::TemporalNodeForm::Constant { .. }
+                    | qsl_forms::TemporalNodeForm::Operator(_) => {}
                 }
             }
             temporal_sites.extend((0..form.fairness.len()).map(TemporalSite::Fairness));
@@ -4637,7 +4707,15 @@ impl PackageDeclarations {
                         *span
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
-                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => {
+                        for (part, expression) in aggregate_parts(atom) {
+                            declared_site_spans.insert(
+                                temporal_site(index, TemporalSite::Aggregate(id.index(), part)),
+                                expression.spans.clone(),
+                            );
+                        }
+                        atom.span
+                    }
                 };
                 declared_type_spans
                     .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
@@ -5235,7 +5313,11 @@ fn terminal_declarations(
     models: &[AdmittedModel],
 ) -> Result<Vec<TerminalClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
-        profiles, types, ..
+        source_owners,
+        profiles,
+        spellings,
+        types,
+        ..
     } = *resolve;
     let mut errors = Vec::new();
     let mut declarations = Vec::with_capacity(forms.len());
@@ -5253,8 +5335,14 @@ fn terminal_declarations(
                 form.profile.span,
             ));
         }
+        // The model the declaration's own unit binds the alias to (FR-480
+        // "Selections and imports").
         let alias = form.model.name.as_str();
-        let Some(model) = models.iter().find(|model| model.alias() == Some(alias)) else {
+        let package = spellings.selection(source_owners.get(&form.name.name), alias);
+        let Some(model) = models
+            .iter()
+            .find(|model| model.alias() == Some(alias) && Some(model.selection()) == package)
+        else {
             errors.push(error(
                 AssemblyCause::UnresolvedTerminalModel {
                     alias: alias.to_owned(),
@@ -5326,6 +5414,7 @@ fn terminal_declarations(
         declarations.push(TerminalClauseDeclaration {
             name: form.name.name.clone(),
             model: alias.to_owned(),
+            package: model.selection().identity.clone(),
             selection,
             span: form.span,
             kind,
@@ -5338,9 +5427,10 @@ fn terminal_declarations(
     }
 }
 
-/// The authored bound of each bounded population, by `model` alias and then
-/// the population's declaration key (FR-380).
-type PopulationBounds = BTreeMap<String, BTreeMap<DeclarationKey, AuthoredBound>>;
+/// The authored bound of each bounded population, by `model` alias and the
+/// identity of the package it binds, and then the population's declaration
+/// key (FR-380).
+type PopulationBounds = BTreeMap<(String, String), BTreeMap<DeclarationKey, AuthoredBound>>;
 
 /// FR-380 "The declaration": each `bound` declaration resolved. Its alias
 /// must name a `model` declaration of the unit and its population a
@@ -5351,10 +5441,16 @@ type PopulationBounds = BTreeMap<String, BTreeMap<DeclarationKey, AuthoredBound>
 /// not depend on the order of the declarations.
 fn population_bounds(
     forms: &[PopulationBoundForm],
-    selected: &[SelectedModel],
+    resolve: &Resolve<'_>,
     clauses: &[StateClauseForm],
     functions: &[FunctionDeclaration],
 ) -> Result<PopulationBounds, Vec<AssemblyError>> {
+    let Resolve {
+        source_owners,
+        spellings,
+        selected,
+        ..
+    } = *resolve;
     let mut errors = Vec::new();
     // Every declaration involved in an ambiguity, by what it shares.
     let mut ambiguous: Vec<(String, Vec<Span>)> = Vec::new();
@@ -5394,7 +5490,13 @@ fn population_bounds(
             },
             span: name.span,
         };
-        let Some(model) = selected.iter().find(|model| model.alias == form.model.name) else {
+        // The model the bound's own unit binds the alias to (FR-480
+        // "Selections and imports").
+        let package = spellings.selection(source_owners.get(&form.label.name), &form.model.name);
+        let Some(model) = selected.iter().find(|model| {
+            model.alias == form.model.name
+                && Some(&model.view.domain_package().model_selection) == package
+        }) else {
             errors.push(unresolved(&form.model));
             continue;
         };
@@ -5428,7 +5530,11 @@ fn population_bounds(
             .entry((form.model.name.as_str(), population.clone()))
             .or_default()
             .push(form.label.span);
-        bounds.entry(form.model.name.clone()).or_default().insert(
+        let bound_model = (
+            form.model.name.clone(),
+            model.view.domain_package().model_selection.identity.clone(),
+        );
+        bounds.entry(bound_model).or_default().insert(
             population.clone(),
             AuthoredBound {
                 maximum,
@@ -5472,12 +5578,14 @@ fn apply_population_bounds(
 ) -> Vec<AdmittedModel> {
     models
         .into_iter()
-        .map(
-            |model| match model.alias().and_then(|alias| bounds.remove(alias)) {
+        .map(|model| {
+            match model.alias().and_then(|alias| {
+                bounds.remove(&(alias.to_owned(), model.selection().identity.clone()))
+            }) {
                 Some(held) => model.with_population_bounds(held),
                 None => model,
-            },
-        )
+            }
+        })
         .collect()
 }
 
@@ -5768,6 +5876,34 @@ fn protocol_attempts(
     } else {
         refuse(errors)
     }
+}
+
+/// Each written expression of the window aggregate `atom` with its part:
+/// the value, the filter, the `fraction` predicate and the threshold.
+fn aggregate_parts(
+    atom: &qsl_forms::AggregateAtomForm,
+) -> impl Iterator<Item = (super::lowering::AggregatePart, &qsl_forms::ExpressionForm)> {
+    use super::lowering::AggregatePart;
+    let predicate = match &atom.term.kind {
+        qsl_forms::AggregateKindForm::Fraction(predicate) => Some(predicate),
+        qsl_forms::AggregateKindForm::Count
+        | qsl_forms::AggregateKindForm::Sum
+        | qsl_forms::AggregateKindForm::Min
+        | qsl_forms::AggregateKindForm::Max
+        | qsl_forms::AggregateKindForm::Quantile(_) => None,
+    };
+    atom.term
+        .value
+        .iter()
+        .map(|value| (AggregatePart::Value, value))
+        .chain(
+            atom.term
+                .filter
+                .iter()
+                .map(|filter| (AggregatePart::Filter, filter)),
+        )
+        .chain(predicate.map(|predicate| (AggregatePart::Predicate, predicate)))
+        .chain(std::iter::once((AggregatePart::Threshold, &atom.threshold)))
 }
 
 #[cfg(test)]

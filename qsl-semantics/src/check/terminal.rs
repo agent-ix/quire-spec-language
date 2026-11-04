@@ -41,6 +41,9 @@ pub struct TerminalClauseDeclaration {
     pub name: String,
     /// The model alias the declaration is on.
     pub model: String,
+    /// The identity of the domain package the declaration's unit binds the
+    /// model alias to (FR-480 "Selections and imports").
+    pub package: String,
     /// The profile selection the `using` alias resolved to.
     pub selection: ProfileSelection,
     /// The span of the whole declaration.

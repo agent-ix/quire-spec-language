@@ -19,6 +19,7 @@ use super::causes::{
     HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
     ObjectFieldIllTyped, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
+use super::protocol_slot::charges::{BinderCharges, ChargeRouting, Owner, Owners};
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
@@ -155,7 +156,7 @@ enum Halt {
 /// `Halt` small.
 struct LocatedStop {
     stop: Stop,
-    location: Location,
+    location: Option<Location>,
 }
 
 /// Which composite constructor refused.
@@ -476,38 +477,41 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     Ok(value)
 }
 
+/// The arguments a call popped, with whether each forwards the absent-key
+/// parameter and the binder each derives from.
+struct PoppedArguments {
+    values: Vec<Value>,
+    provenance: Vec<bool>,
+    owners: Vec<Owner>,
+}
+
+/// The binder of each root-frame source slot and the routing of one call's
+/// charge intervals onto them (FR-520-AC-11).
+struct BinderRouting {
+    slots: std::collections::BTreeMap<Slot, quire_exact::NodeKey>,
+    routing: ChargeRouting,
+}
+
 /// An unavailable binder read: the binder, the supplier's cause and the
-/// reading location (`None` for a reader-backed read).
+/// reading location (`None` for a reader-backed read of a node whose admitted
+/// wire carries no location, FR-390-AC-64).
 pub(crate) type UnavailableRead = (
     quire_exact::NodeKey,
     quire_semantic_value::catalog::CatalogCode,
     Option<Location>,
 );
 
-/// The reader-backed root of a protocol slot: the plain data the admitted
-/// graph projects for a record-field, attribute or bare-reference root.
-///
-/// Throwaway until the reader returns canonical `NodeRead`s (FR-390-AC-16,
-/// AC-50); the machine then matches `NodeKind` alone and this is deleted.
-/// It reports no location, because the admitted wire has none for a leaf yet.
-pub(crate) struct ReaderRoot {
-    pub(crate) slot: usize,
-    pub(crate) field: qsl_package::ReaderProtocolField,
-    pub(crate) optional: bool,
-    pub(crate) derefed: bool,
-    pub(crate) value_type: quire_exact::ValueType,
-}
-
 enum Task<'a, N> {
     Eval(N),
-    ReaderRead(Box<ReaderRoot>),
     Apply(N),
     Branch(N),
     Short(N),
     /// FR-322: the `case` at this node has evaluated its scrutinee; select
     /// the arm of its active member and evaluate only that arm's body.
     Select(N),
-    Retain(N),
+    /// The right operand of a connective is evaluated; carries the left
+    /// operand's owner, which the connective's own operation absorbs.
+    Retain(N, Owner),
     /// A function call's body has returned; its result now belongs to the
     /// call application at `node`.
     ObserveApplication(N),
@@ -553,6 +557,8 @@ struct DispatchGuard<N> {
     /// the whole expression's root and `precondition-false`'s
     /// `UndefinedRecord` reports the wrong locus.
     node: N,
+    /// The owner of each dispatched argument, receiver first.
+    owners: Vec<Owner>,
 }
 
 /// Which population an `allInstances`/`lookup` reads: the ambient post
@@ -582,6 +588,10 @@ struct Iteration<N> {
     sources: Vec<usize>,
     accumulator: Option<Value>,
     count: Integer,
+    /// The binder the source derives from; element slots take it.
+    source_owner: Owner,
+    /// The binder the source and every result so far derive from.
+    owner: Owner,
 }
 
 /// A `seq(i in low .. high: e)` in progress (FR-139).
@@ -593,6 +603,10 @@ struct SeqIteration<N> {
     high: Integer,
     awaiting: bool,
     results: Vec<Value>,
+    /// The binder the bounds derive from; the element slot takes it.
+    source_owner: Owner,
+    /// The binder the bounds and every result so far derive from.
+    owner: Owner,
 }
 
 /// The selection a recorded read evaluated (FR-107 "Read paths").
@@ -679,6 +693,11 @@ pub(crate) struct Machine<'a, 'm, N> {
     /// protocol-slot API can retain the exact read location. A reader-backed
     /// read has no location.
     unavailable_read: Option<UnavailableRead>,
+    /// FR-520-AC-11: the binder each root-frame source slot holds, and the
+    /// routing of this call's charge intervals onto those binders.
+    binder_routing: Option<BinderRouting>,
+    /// FR-520-AC-11: the binder each stack value and frame slot derives from.
+    owners: Option<Owners>,
     tasks: Vec<Task<'a, N>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
@@ -850,6 +869,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             frame_guard_provenance: Vec::new(),
             unavailable_slots: std::collections::BTreeMap::new(),
             unavailable_read: None,
+            binder_routing: None,
+            owners: None,
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
@@ -989,7 +1010,6 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     pub(crate) fn run_protocol_frame(
         mut self,
         root: N,
-        reader_root: Option<ReaderRoot>,
         frame: Vec<Option<Value>>,
         unavailable: std::collections::BTreeMap<
             Slot,
@@ -998,21 +1018,45 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 quire_semantic_value::catalog::CatalogCode,
             ),
         >,
-    ) -> Result<Result<Evaluation, UnavailableRead>, InternalFault> {
+        binder_slots: std::collections::BTreeMap<Slot, quire_exact::NodeKey>,
+    ) -> Result<(Result<Evaluation, UnavailableRead>, BinderCharges), InternalFault> {
         self.unavailable_slots = unavailable;
+        self.binder_routing = Some(BinderRouting {
+            slots: binder_slots,
+            routing: ChargeRouting::new(),
+        });
         let provenance = vec![false; frame.len()];
-        self.push_frame(frame, provenance);
-        let driven = match reader_root {
-            Some(read) => self.drive_reader_root(root, read),
-            None => self.drive(root),
-        };
-        match driven {
-            Ok(evaluation) => Ok(Ok(evaluation)),
-            Err(fault) => match self.unavailable_read.take() {
-                Some(read) => Ok(Err(read)),
-                None => Err(fault),
-            },
+        let mut source_owners = vec![Owner::None; frame.len()];
+        if let Some(binders) = self.binder_routing.as_ref() {
+            for slot in binders.slots.keys() {
+                if let Some(owner) = source_owners.get_mut(*slot) {
+                    *owner = Owner::Binder(*slot);
+                }
+            }
         }
+        self.owners = Some(Owners::default());
+        self.push_frame(frame, provenance);
+        if let Some(owners) = self.owners.as_mut() {
+            owners
+                .set_frame(source_owners)
+                .ok_or_else(|| InternalFault::new("FR-520", "protocol-root-frame-owners"))?;
+        }
+        let result = match self.drive(root) {
+            Ok(evaluation) => Ok(evaluation),
+            Err(fault) => match self.unavailable_read.take() {
+                Some(read) => Err(read),
+                None => return Err(fault),
+            },
+        };
+        let mut routing = self
+            .binder_routing
+            .take()
+            .map(|binders| binders.routing)
+            .ok_or_else(|| InternalFault::new("FR-520", "protocol-slot-routing-present"))?;
+        routing.attribute(self.meter, None).ok_or_else(|| {
+            InternalFault::new("FR-520", "protocol-slot-meter-captures-charge-intervals")
+        })?;
+        Ok((result, routing.finish()))
     }
 
     /// FR-265: [`Self::run`] over a state clause's body, returning the
@@ -1043,12 +1087,28 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 *slot = true;
             }
         }
+        if let Some(owners) = self.owners.as_mut() {
+            owners.push_frame(Vec::new(), frame.len());
+        }
         self.frames.push(frame);
         self.frame_guard_provenance.push(provenance);
     }
 
-    fn push_frame(&mut self, frame: Vec<Option<Value>>, mut provenance: Vec<bool>) {
+    fn push_frame(&mut self, frame: Vec<Option<Value>>, provenance: Vec<bool>) {
+        self.push_frame_owned(frame, provenance, Vec::new());
+    }
+
+    /// Push a frame whose first slots derive from `owners`, one per argument.
+    fn push_frame_owned(
+        &mut self,
+        frame: Vec<Option<Value>>,
+        mut provenance: Vec<bool>,
+        owners: Vec<Owner>,
+    ) {
         provenance.resize(frame.len(), false);
+        if let Some(tracked) = self.owners.as_mut() {
+            tracked.push_frame(owners, frame.len());
+        }
         self.frames.push(frame);
         self.frame_guard_provenance.push(provenance);
     }
@@ -1056,24 +1116,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     /// Evaluate `root` on the current frame to its outcome: the task loop
     /// [`Self::run`] and FR-268's separation check share.
     fn drive(&mut self, root: N) -> Result<Evaluation, InternalFault> {
-        self.drive_from(root, Task::Eval(root), false)
-    }
-
-    fn drive_reader_root(
-        &mut self,
-        root: N,
-        read: ReaderRoot,
-    ) -> Result<Evaluation, InternalFault> {
-        self.drive_from(root, Task::ReaderRead(Box::new(read)), true)
-    }
-
-    fn drive_from(
-        &mut self,
-        root: N,
-        initial: Task<'a, N>,
-        reader_backed: bool,
-    ) -> Result<Evaluation, InternalFault> {
-        self.tasks.push(initial);
+        self.tasks.push(Task::Eval(root));
         while let Some(task) = self.tasks.pop() {
             // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
@@ -1084,17 +1127,15 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 | Task::Branch(node)
                 | Task::Short(node)
                 | Task::Select(node)
-                | Task::Retain(node)
+                | Task::Retain(node, _)
                 | Task::ObserveApplication(node)
                 | Task::ChargeElement(node) => *node,
                 Task::Iterate(iteration) => iteration.node,
                 Task::IterateSeq(iteration) => iteration.node,
                 Task::DispatchGuard(guard) => guard.node,
-                Task::ReaderRead(_)
-                | Task::Bind(_)
-                | Task::Return
-                | Task::RestoreAnchor(_)
-                | Task::RestorePackage(_) => root,
+                Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) | Task::RestorePackage(_) => {
+                    root
+                }
             };
             let applied = matches!(
                 &task,
@@ -1106,15 +1147,16 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             | NodeKind::Dispatch { .. }
                     )
             );
-            if let Err(halt) = self.step(task) {
+            if let Some(owners) = self.owners.as_mut() {
+                owners.begin_step();
+            }
+            let stepped = self.step(task);
+            self.route_step_charges()?;
+            if let Err(halt) = stepped {
                 let located = self.imported.first().copied().unwrap_or(located);
-                // A reader-backed halt reports no location: it is never taken
-                // from the source CheckedBody (FR-390).
-                let reported_location = if reader_backed {
-                    None
-                } else {
-                    Some(located.location())
-                };
+                // A reader node reports only the location its admitted wire
+                // carries, never one of the source package (FR-390-AC-64).
+                let reported_location = located.location();
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
                     Halt::Unavailable { binder, cause } => {
@@ -1135,21 +1177,18 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     // An imported call site still locates at that call.
                     Halt::Located(at) => Self::stopped(
                         at.stop,
-                        if reader_backed {
-                            None
-                        } else {
-                            Some(
-                                self.imported
-                                    .first()
-                                    .map_or(&at.location, |call| call.location()),
-                            )
+                        match self.imported.first() {
+                            Some(call) => call.location(),
+                            None => at.location.as_ref(),
                         },
                     ),
                 };
             } else if applied {
                 if let Some(observed) = self.observed_applications.as_deref_mut() {
                     if let Some(value) = self.values.last() {
-                        observed.push((located.location().clone(), value.clone()));
+                        if let Some(location) = located.location() {
+                            observed.push((location.clone(), value.clone()));
+                        }
                     }
                 }
             }
@@ -1166,15 +1205,15 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             Err(Halt::Family(result)) => {
                 return Ok(Evaluation {
                     outcome: FamilyOutcome::FamilyEvaluated(result),
-                    location: (!reader_backed).then(|| root.location().clone()),
+                    location: root.location().cloned(),
                     losses: Vec::new(),
                 });
             }
             Err(Halt::Stop(stop)) => {
-                return Self::stopped(stop, (!reader_backed).then(|| root.location()));
+                return Self::stopped(stop, root.location());
             }
             Err(Halt::Located(at)) => {
-                return Self::stopped(at.stop, (!reader_backed).then_some(&at.location));
+                return Self::stopped(at.stop, at.location.as_ref());
             }
         };
         if !self.values.is_empty() || !self.value_guard_provenance.is_empty() {
@@ -1273,7 +1312,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         if let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(collection))) {
             return Some(provenance.clone());
         }
-        let occurrence = occurrence_at(self.graph, node.location(), None)?;
+        let occurrence = occurrence_at(self.graph, node.location()?, None)?;
         Some(Provenance::built(trail.observation.clone(), occurrence))
     }
 
@@ -1297,6 +1336,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     }
 
     fn pop(&mut self) -> Result<Value, Halt> {
+        Ok(self.pop_owned()?.0)
+    }
+
+    /// [`Self::pop`] with the owner of the popped value.
+    fn pop_owned(&mut self) -> Result<(Value, Owner), Halt> {
         let value = self
             .values
             .pop()
@@ -1305,10 +1349,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .value_guard_provenance
             .pop()
             .ok_or_else(|| invariant("evaluation-provenance-stack-underflow"))?;
+        let owner = self.pop_owners(1)?.first().copied().unwrap_or(Owner::None);
         if provenance {
             return Err(self.absent_key_halt(&value)?);
         }
-        Ok(value)
+        Ok((value, owner))
     }
 
     /// Pop a value while preserving whether it forwards the absent-key
@@ -1322,6 +1367,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .value_guard_provenance
             .pop()
             .ok_or_else(|| invariant("evaluation-provenance-stack-underflow"))?;
+        self.pop_owners(1)?;
         Ok((value, provenance))
     }
 
@@ -1347,9 +1393,52 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     fn push_value(&mut self, value: Value, provenance: bool) {
         self.values.push(value);
         self.value_guard_provenance.push(provenance);
+        if let Some(owners) = self.owners.as_mut() {
+            owners.push_value();
+        }
     }
 
-    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
+    /// Pop the owners of the top `count` values; none when owners are untracked.
+    fn pop_owners(&mut self, count: usize) -> Result<Vec<Owner>, Halt> {
+        let Some(owners) = self.owners.as_mut() else {
+            return Ok(Vec::new());
+        };
+        owners
+            .take_values(count)
+            .ok_or_else(|| invariant("evaluation-owner-stack-underflow"))
+    }
+
+    fn pop_frame_owners(&mut self) -> Result<(), Halt> {
+        match self.owners.as_mut() {
+            Some(owners) => owners
+                .pop_frame()
+                .ok_or_else(|| invariant("evaluation-owner-frame-underflow")),
+            None => Ok(()),
+        }
+    }
+
+    /// The owner of the operands the running step has popped so far.
+    fn step_owner(&self) -> Owner {
+        self.owners.as_ref().map_or(Owner::None, Owners::step)
+    }
+
+    fn absorb_owner(&mut self, owner: Owner) {
+        if let Some(owners) = self.owners.as_mut() {
+            owners.absorb(owner);
+        }
+    }
+
+    fn set_slot_owner(&mut self, slot: Slot, owner: Owner) -> Result<(), Halt> {
+        match self.owners.as_mut() {
+            Some(owners) => owners
+                .set_slot(slot, owner)
+                .ok_or_else(|| invariant("evaluation-owner-frame-underflow")),
+            None => Ok(()),
+        }
+    }
+
+    /// [`Self::pop_many`] with the owner of each popped value.
+    fn pop_many_owned(&mut self, count: usize) -> Result<(Vec<Value>, Vec<Owner>), Halt> {
         let start = self
             .values
             .len()
@@ -1357,25 +1446,32 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
         let values = self.values.split_off(start);
         let provenance = self.value_guard_provenance.split_off(start);
+        let owners = self.pop_owners(count)?;
         if let Some(index) = provenance.iter().position(|provenance| *provenance) {
             let reference = values
                 .get(index)
                 .ok_or_else(|| invariant("forwarded-value-missing"))?;
             return Err(self.absent_key_halt(reference)?);
         }
-        Ok(values)
+        Ok((values, owners))
     }
 
-    fn pop_many_forwarded(&mut self, count: usize) -> Result<(Vec<Value>, Vec<bool>), Halt> {
+    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
+        Ok(self.pop_many_owned(count)?.0)
+    }
+
+    fn pop_many_forwarded(&mut self, count: usize) -> Result<PoppedArguments, Halt> {
         let start = self
             .values
             .len()
             .checked_sub(count)
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
-        Ok((
-            self.values.split_off(start),
-            self.value_guard_provenance.split_off(start),
-        ))
+        let owners = self.pop_owners(count)?;
+        Ok(PoppedArguments {
+            values: self.values.split_off(start),
+            provenance: self.value_guard_provenance.split_off(start),
+            owners,
+        })
     }
 
     fn pop_integer(&mut self) -> Result<Integer, Halt> {
@@ -1413,11 +1509,18 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
-    fn record(&mut self, node: N, loss: ValueLoss) {
+    /// Record `loss` at `node`. A loss is always located: a reader node
+    /// whose admitted wire carries no location cannot report one, and its
+    /// evaluation faults rather than drop or invent the location (FR-390).
+    fn record(&mut self, node: N, loss: ValueLoss) -> Result<(), Halt> {
+        let location = node
+            .location()
+            .ok_or_else(|| invariant("value-loss-site-is-located"))?;
         self.losses.push(LocatedLoss {
-            location: node.location().clone(),
+            location: location.clone(),
             loss,
         });
+        Ok(())
     }
 
     /// Evaluate a decimal operation into `target`, recording its loss.
@@ -1426,10 +1529,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         node: N,
         operation: DecimalOperation<'_>,
         target: &DecimalType,
-    ) -> Result<Value, Stop> {
+    ) -> Result<Value, Halt> {
         let result = outcome_into_stop(evaluate_decimal(operation, target, self.meter))?;
         if let Some(loss) = result.loss() {
-            self.record(node, ValueLoss::Decimal(loss.clone()));
+            self.record(node, ValueLoss::Decimal(loss.clone()))?;
         }
         Ok(Value::Decimal(result.value().clone()))
     }
@@ -1450,7 +1553,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
         *self.slot(slot)? = Some(value);
         *self.frame_provenance_slot(slot)? = provenance;
-        Ok(())
+        let owner = self.step_owner();
+        self.set_slot_owner(slot, owner)
     }
 
     fn slot_has_guard_provenance(&self, slot: Slot) -> Result<bool, Halt> {
@@ -1622,7 +1726,6 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     fn step(&mut self, task: Task<'a, N>) -> Result<(), Halt> {
         match task {
             Task::Eval(node) => self.eval(node),
-            Task::ReaderRead(read) => self.eval_reader_read(*read),
             Task::Apply(node) => self.apply(node),
             Task::Branch(node) => {
                 let NodeKind::If {
@@ -1641,7 +1744,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let NodeKind::Connective(connective, origin, _, right) = node.kind() else {
                     return Err(invariant("evaluation-connective-node-expected"));
                 };
-                let left = self.pop_boolean()?;
+                let (left, left_owner) = match self.pop_owned()? {
+                    (Value::Boolean(value), owner) => (value, owner),
+                    _ => return Err(invariant("boolean-value-expected")),
+                };
                 // Only a connective the source wrote has a decision (FR-265);
                 // the checker's own composition of a float ordering has none.
                 if matches!(origin, ConnectiveOrigin::Authored) {
@@ -1658,13 +1764,14 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         self.push_value(Value::Boolean(result), false);
                     }
                     None => {
-                        self.tasks.push(Task::Retain(node));
+                        self.tasks.push(Task::Retain(node, left_owner));
                         self.tasks.push(Task::Eval(node.at(*right)));
                     }
                 }
                 Ok(())
             }
-            Task::Retain(_) => {
+            Task::Retain(_, left_owner) => {
+                self.absorb_owner(left_owner);
                 let result = retain_boolean(self.pop_boolean()?, self.meter)?;
                 self.push_value(Value::Boolean(result), false);
                 Ok(())
@@ -1675,7 +1782,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         .values
                         .last()
                         .ok_or_else(|| invariant("evaluation-call-result-missing"))?;
-                    observed.push((node.location().clone(), value.clone()));
+                    if let Some(location) = node.location() {
+                        observed.push((location.clone(), value.clone()));
+                    }
                 }
                 Ok(())
             }
@@ -1692,6 +1801,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 self.frame_guard_provenance
                     .pop()
                     .ok_or_else(|| invariant("evaluation-return-provenance-frame-missing"))?;
+                self.pop_frame_owners()?;
                 Ok(())
             }
             Task::DispatchGuard(guard) => {
@@ -1700,6 +1810,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     arguments,
                     failure,
                     node,
+                    owners,
                 } = *guard;
                 let holds = self.pop_boolean()?;
                 self.frames
@@ -1708,6 +1819,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 self.frame_guard_provenance
                     .pop()
                     .ok_or_else(|| invariant("evaluation-return-provenance-frame-missing"))?;
+                self.pop_frame_owners()?;
                 if !holds {
                     // ADR-013 O-16, FR-090-AC-11: a `StateModel` family-owned
                     // undefined result.
@@ -1718,11 +1830,16 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let callable = node
                     .callee(self.graph, body_function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                // The call is made over its arguments, so its charge belongs to
+                // the binder they derive from.
+                for owner in &owners {
+                    self.absorb_owner(*owner);
+                }
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let provenance = vec![false; frame.len()];
-                self.push_frame(frame, provenance);
+                self.push_frame_owned(frame, provenance, owners);
                 self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
@@ -1742,55 +1859,44 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
-    fn eval_reader_read(&mut self, read: ReaderRoot) -> Result<(), Halt> {
-        let ReaderRoot {
-            slot: operand,
-            field,
-            optional,
-            derefed,
-            value_type,
-        } = read;
-        match field {
-            qsl_package::ReaderProtocolField::Local => self.eval_local(operand),
-            qsl_package::ReaderProtocolField::RecordField { declaration, name } => {
-                self.eval_local(operand)?;
-                let Value::Composite(composite) = self.pop()? else {
-                    return Err(invariant("reader-field-composite-value-expected"));
-                };
-                let field = quire_checked::node::RecordField::new(declaration, name);
-                let index = self
-                    .scope
-                    .record_slot(composite.declaration().clone(), &field)
-                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
-                let slot = composite
-                    .slots()
-                    .get(index)
-                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
-                let value = Self::project(self.scope.types(), slot, optional, &value_type, false)?;
-                self.push_value(value, false);
-                Ok(())
-            }
-            qsl_package::ReaderProtocolField::Attribute { owner, name } => {
-                self.eval_local(operand)?;
-                let Value::Reference(reference) = self.pop()? else {
-                    return Err(invariant("reader-attribute-reference-is-a-reference"));
-                };
-                if derefed {
-                    charge_model_read(self.meter, ChargePoint::ModelDeref)?;
-                }
-                charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
-                let field = quire_semantic_value::declaration::FieldRef::new(owner, name);
-                let objects = self.objects;
-                let (slot, witnessed) = self.admitted_slot(objects, &reference, &field)?;
-                let value =
-                    Self::project(self.scope.types(), slot, optional, &value_type, witnessed)?;
-                self.push_value(value, false);
-                Ok(())
+    /// FR-520-AC-11: a read of the root frame's source `slot` registers its
+    /// binder as read.
+    fn route_binder_read(&mut self, slot: Slot) {
+        if self.frames.len() != 1 {
+            return;
+        }
+        if let Some(binders) = self.binder_routing.as_mut() {
+            if let Some(binder) = binders.slots.get(&slot) {
+                binders.routing.register(binder);
             }
         }
     }
 
+    /// Drain the meter's interval onto the binder that owns the step just run.
+    fn route_step_charges(&mut self) -> Result<(), InternalFault> {
+        let owner = self.step_owner();
+        let Some(binders) = self.binder_routing.as_mut() else {
+            return Ok(());
+        };
+        let binder = match owner {
+            Owner::Binder(slot) => binders.slots.get(&slot),
+            Owner::None | Owner::Mixed => None,
+        };
+        binders
+            .routing
+            .attribute(self.meter, binder)
+            .ok_or_else(|| {
+                InternalFault::new("FR-520", "protocol-slot-meter-captures-charge-intervals")
+            })
+    }
+
     fn eval_local(&mut self, slot: Slot) -> Result<(), Halt> {
+        self.route_binder_read(slot);
+        let owner = self
+            .owners
+            .as_ref()
+            .map_or(Owner::None, |owners| owners.slot(slot));
+        self.absorb_owner(owner);
         if let Some((binder, cause)) = self.unavailable_slots.get(&slot) {
             return Err(Halt::Unavailable {
                 binder: binder.clone(),
@@ -2162,7 +2268,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         .map_err(|_| invariant("ieee-operation-rejected"))?,
                 )?;
                 if result.flags() != IeeeFlags::EMPTY {
-                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
                 }
                 Value::Float(result.value())
             }
@@ -2178,7 +2284,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         .map_err(|_| invariant("ieee-operation-rejected"))?,
                 )?;
                 if result.flags() != IeeeFlags::EMPTY {
-                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
                 }
                 Value::Float(result.value())
             }
@@ -2200,7 +2306,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     .map_err(|_| invariant("ieee-operation-rejected"))?,
                 )?;
                 if result.flags() != IeeeFlags::EMPTY {
-                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
                 }
                 Value::Float(result.value())
             }
@@ -2380,7 +2486,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 }
                 let read_reference = reference.clone();
                 let reference = if self.reads.is_some_and(|reads| {
-                    reads.get(node.location())
+                    node.location().and_then(|location| reads.get(location))
                         == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
                 }) {
                     self.trail
@@ -2404,10 +2510,15 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 }
                 let (slot, witnessed) = self.admitted_slot(objects, &reference, field)?;
                 self.log_field_read(node, objects, &reference, field)?;
+                // A model read is an application, located by its own row
+                // on the reader path (FR-390).
+                let location = node
+                    .location()
+                    .ok_or_else(|| invariant("attribute-read-is-located"))?;
                 if witnessed {
-                    self.witnessed_reads.insert(node.location().clone());
+                    self.witnessed_reads.insert(location.clone());
                 } else {
-                    self.witnessed_reads.remove(node.location());
+                    self.witnessed_reads.remove(location);
                 }
                 let value = Self::project(
                     self.scope.types(),
@@ -2493,14 +2604,19 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let callable = node
                     .callee(self.graph, *function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
-                let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
+                let arguments_len = arguments.len();
+                let PoppedArguments {
+                    values: arguments,
+                    provenance,
+                    owners: argument_owners,
+                } = self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
                 frame_provenance.resize(frame.len(), false);
-                self.push_frame(frame, frame_provenance);
+                self.push_frame_owned(frame, frame_provenance, argument_owners);
                 // shared-grammar.md: "self, result and pre(...) are ...
                 // unavailable ... inside a reusable predicate" -- a callee's
                 // own body is never anchored by its caller's `pre(..)`, so
@@ -2535,14 +2651,19 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     }
                     return Err(invariant("evaluation-callable-unresolved"));
                 };
-                let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
+                let arguments_len = arguments.len();
+                let PoppedArguments {
+                    values: arguments,
+                    provenance,
+                    owners: argument_owners,
+                } = self.pop_many_forwarded(arguments_len)?;
                 charge_call(self.meter)?;
                 self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
                 frame_provenance.resize(frame.len(), false);
-                self.push_frame(frame, frame_provenance);
+                self.push_frame_owned(frame, frame_provenance, argument_owners);
                 let previous = self.enter(PackageContext {
                     scope: library.scope(),
                     graph: library,
@@ -2685,13 +2806,13 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         ConvertedValue::Exact(exact) => exact.clone(),
                         ConvertedValue::Decimal(result) => {
                             if let Some(loss) = result.loss() {
-                                self.record(node, ValueLoss::Decimal(loss.clone()));
+                                self.record(node, ValueLoss::Decimal(loss.clone()))?;
                             }
                             result.value().normalized().to_rational()
                         }
                         ConvertedValue::Integer { value, loss } => {
                             if let Some(loss) = loss {
-                                self.record(node, ValueLoss::Decimal(loss.clone()));
+                                self.record(node, ValueLoss::Decimal(loss.clone()))?;
                             }
                             Rational::from_integer(value.value().clone())
                         }
@@ -2710,7 +2831,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 }
                 let exact = outcome_into_stop(ieee_to_exact(value, domain, self.meter))?;
                 if let Some(loss) = exact.loss() {
-                    self.record(node, ValueLoss::IeeeExact(loss));
+                    self.record(node, ValueLoss::IeeeExact(loss))?;
                 }
                 Value::Rational(exact.value().clone())
             }
@@ -2875,10 +2996,13 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 arguments,
                 ..
             } => {
-                let arguments = self.pop_many(arguments.len())?;
-                let Value::Reference(reference) = self.pop()? else {
+                let (arguments, argument_owners) = self.pop_many_owned(arguments.len())?;
+                let (Value::Reference(reference), receiver_owner) = self.pop_owned()? else {
                     return Err(invariant("dispatch-reference-value-expected"));
                 };
+                let mut full_owners = Vec::with_capacity(argument_owners.len() + 1);
+                full_owners.push(receiver_owner);
+                full_owners.extend(argument_owners);
                 let subtype = reference.object_type();
                 // The exact call site that produced this node (`check.rs`'s
                 // `dispatch_call`), never re-derived by searching
@@ -2917,7 +3041,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             full_arguments.clone().into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
-                        self.push_frame(frame, provenance);
+                        self.push_frame_owned(frame, provenance, full_owners.clone());
                         self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
                             body_function: candidate.body,
                             arguments: full_arguments,
@@ -2927,6 +3051,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                                 reference,
                             ),
                             node,
+                            owners: full_owners,
                         })));
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());
@@ -2940,7 +3065,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             full_arguments.into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
-                        self.push_frame(frame, provenance);
+                        self.push_frame_owned(frame, provenance, full_owners);
                         self.tasks.push(Task::ObserveApplication(node));
                         self.tasks.push(Task::Return);
                         self.tasks.push(Task::Eval(callable.body));
@@ -2971,7 +3096,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     /// case (SR-750 FND-013).
     fn objects_for(&self, node: N) -> Result<&'a ObjectEnvironment, Halt> {
         if let Some(components) = &self.components {
-            if let Some(component) = components.reads.get(node.location()) {
+            if let Some(component) = node
+                .location()
+                .and_then(|location| components.reads.get(location))
+            {
                 return components
                     .environments
                     .get(*component)
@@ -2981,7 +3109,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
         match self.reads {
             Some(reads)
-                if reads.get(node.location())
+                if node.location().and_then(|location| reads.get(location))
                     == Some(&qsl_semantics::model::clause_observation::Observation::Pre) =>
             {
                 self.pre_objects.ok_or_else(|| {
@@ -3021,7 +3149,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .ok_or_else(|| invariant("logged-attribute-unresolved"))?;
         let observation = self
             .reads
-            .and_then(|reads| reads.get(node.location()).copied())
+            .and_then(|reads| node.location().and_then(|location| reads.get(location)))
+            .copied()
             .unwrap_or(qsl_semantics::model::clause_observation::Observation::Current);
         log.record(ObservedRead::Field {
             observation,
@@ -3262,6 +3391,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             high,
             awaiting: false,
             results: Vec::new(),
+            source_owner: self.step_owner(),
+            owner: self.step_owner(),
         }))
     }
 
@@ -3272,6 +3403,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         let NodeKind::Seq { slot, body, .. } = node.kind() else {
             return Err(invariant("seq-node-expected"));
         };
+        self.absorb_owner(iteration.owner);
         if iteration.awaiting {
             iteration.awaiting = false;
             let element = self.pop()?;
@@ -3288,6 +3420,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
         charge_visit(self.meter)?;
         *self.slot(*slot)? = Some(Value::Integer(iteration.next.clone()));
+        iteration.owner = self.step_owner();
+        self.set_slot_owner(*slot, iteration.source_owner)?;
         iteration.next = iteration.next.add(&Integer::one());
         iteration.awaiting = true;
         self.tasks.push(Task::IterateSeq(iteration));
@@ -3693,7 +3827,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     /// through `value(..)`.
     fn reads_witnessed(&self, operand: N) -> bool {
         match operand.kind() {
-            NodeKind::Attribute { .. } => self.witnessed_reads.contains(operand.location()),
+            NodeKind::Attribute { .. } => operand
+                .location()
+                .is_some_and(|location| self.witnessed_reads.contains(location)),
             NodeKind::Value(inner) => self.reads_witnessed(operand.at(*inner)),
             _ => false,
         }
@@ -3794,6 +3930,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             sources: Vec::new(),
             accumulator: identity,
             count: Integer::zero(),
+            source_owner: self.step_owner(),
+            owner: self.step_owner(),
         });
         if reduce {
             let first = iteration
@@ -3811,6 +3949,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
 
     fn iterate(&mut self, mut iteration: Box<Iteration<N>>) -> Result<(), Halt> {
         let node = iteration.node;
+        self.absorb_owner(iteration.owner);
         if iteration.awaiting {
             iteration.awaiting = false;
             let result = self.pop()?;
@@ -3847,7 +3986,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                                     if domain.is_some_and(|domain| !domain.contains(&summand)) {
                                         return Err(Halt::Located(Box::new(LocatedStop {
                                             stop: Stop::Undefined(Undefined::SumOutOfDomain),
-                                            location: node.at(*body).location().clone(),
+                                            location: node.at(*body).location().cloned(),
                                         })));
                                     }
                                     summand
@@ -3927,6 +4066,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             } => {
                 self.note_element(node.at(*source), &iteration.source, *slot, position);
                 *self.slot(*slot)? = Some(element);
+                iteration.owner = self.step_owner();
+                self.set_slot_owner(*slot, iteration.source_owner)?;
                 body
             }
             NodeKind::Fold {
@@ -3945,6 +4086,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 }
                 *self.slot(*accumulator)? = Some(current);
                 *self.slot(*binder)? = Some(element);
+                iteration.owner = self.step_owner();
+                self.set_slot_owner(*accumulator, iteration.owner)?;
+                self.set_slot_owner(*binder, iteration.source_owner)?;
                 step
             }
             _ => return Err(invariant("iteration-node-invalid")),
@@ -3960,7 +4104,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     fn decide(&mut self, node: N, value: bool) {
         if self.on_claim_level() {
             if let Some(trail) = self.trail.as_mut() {
-                trail.decide(node.location(), value);
+                if let Some(location) = node.location() {
+                    trail.decide(location, value);
+                }
             }
         }
     }
@@ -3974,8 +4120,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         if !self.on_claim_level() {
             return;
         }
-        let Some(occurrence) =
-            occurrence_at(self.graph, node.location(), Some(Operator::Collection))
+        let Some(occurrence) = node
+            .location()
+            .and_then(|location| occurrence_at(self.graph, location, Some(Operator::Collection)))
         else {
             return;
         };
@@ -3993,7 +4140,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             return;
         }
         let pre = self.reads.is_some_and(|reads| {
-            reads.get(node.location())
+            node.location().and_then(|location| reads.get(location))
                 == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
         });
         if let Some(trail) = self.trail.as_mut() {
@@ -4035,7 +4182,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
         let path = self.read_path(node, operand, step, reference);
         if let Some(trail) = self.trail.as_mut() {
-            trail.read(node.location(), path);
+            if let Some(location) = node.location() {
+                trail.read(location, path);
+            }
         }
     }
 
@@ -4067,7 +4216,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             self.located(operand)?
         };
         let under_pre = self.reads.is_some_and(|reads| {
-            reads.get(node.location())
+            node.location().and_then(|location| reads.get(location))
                 == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
         });
         if let (true, Some(pre)) = (under_pre, trail.pre.as_ref()) {
@@ -4136,9 +4285,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     steps: Vec::new(),
                 })
             }),
-            NodeKind::Attribute { .. } | NodeKind::Field { .. } => {
-                trail.selection_path(node.location()).cloned()
-            }
+            NodeKind::Attribute { .. } | NodeKind::Field { .. } => node
+                .location()
+                .and_then(|location| trail.selection_path(location))
+                .cloned(),
             NodeKind::Value(operand) => {
                 let mut path = self.located(node.at(*operand))?;
                 path.steps.push(ValuePathStep::OptionValue);
@@ -4338,12 +4488,13 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             .get(position)
             .cloned()
             .ok_or_else(|| invariant("query-stop-position-invalid"))?;
-        let quantifier = occurrence_at(
-            self.graph,
-            iteration.node.location(),
-            Some(Operator::Quantify),
-        )
-        .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "quantifier-has-an-occurrence")))?;
+        let quantifier = iteration
+            .node
+            .location()
+            .and_then(|location| occurrence_at(self.graph, location, Some(Operator::Quantify)))
+            .ok_or_else(|| {
+                Halt::Fault(InternalFault::new("S6a", "quantifier-has-an-occurrence"))
+            })?;
         let provenance = self
             .provenance_of(&iteration.source, iteration.node.at(*source))
             .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "domain-has-an-occurrence")))?;
@@ -4357,7 +4508,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             value_path: provenance.path(index),
         };
         if let Some(trail) = self.trail.as_mut() {
-            trail.stopped(iteration.node.location(), report);
+            if let Some(location) = iteration.node.location() {
+                trail.stopped(location, report);
+            }
         }
         Ok(())
     }
@@ -4444,6 +4597,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
 mod invariants;
 
 mod node_source;
+pub(super) mod reader_source;
 
 /// The machine over checked bodies, the one source every test drives.
 #[cfg(test)]

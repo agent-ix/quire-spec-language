@@ -166,8 +166,8 @@ routes then read the bytes column too, so that one value exists per fact.
 
 The package holds no source text and no source spans beyond its source map (FR-528
 integrity claims and `CheckedSourceMapEntry` regions), no source arena order of a
-checked formula, and no clause name on the clause node itself (IR-1278 gates the
-`name()` of FR-515). The declared name of each clause occurrence is carried by its
+checked formula, and no clause name on the clause node itself (FR-515 reads `name()` from the
+`temporal_clause_names` row). The declared name of each clause occurrence is carried by its
 `temporal_clause_names` row, and the bare route SHALL use that row wherever the
 evaluator reads a clause name. The outputs of the bare route therefore spell positions and keys by what
 the bytes carry, and the in-process routes spell them the same way:

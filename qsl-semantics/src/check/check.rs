@@ -76,7 +76,6 @@ use qsl_forms::{
 use qsl_foundation::source::provenance::RawSourceRef;
 use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
-use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::EnumShape;
@@ -85,6 +84,7 @@ use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
+use quire_exact::{Decimal, DecimalType};
 use quire_exact::{NodeKey, VariantId};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::absence::AbsenceMode;
@@ -439,6 +439,9 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The S3 limits on the written scale of `decimal(c, s)` literals
+    /// (`s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`).
+    pub decimal_literal_limits: DecimalLiteralLimits,
     /// The package's admitted `div`/`rem` law, when one was selected.
     pub integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
@@ -589,6 +592,10 @@ pub struct PackageDeclarations {
     /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
     /// name, "internal": [class, ...]}` objects. `None` is the empty list.
     pub refinement_internals: Option<serde_json::Value>,
+    /// FR-337 "Aggregate formula emission": the selected timestamped-event
+    /// clock unit of each clause whose clock the caller already knows, so a
+    /// `duration` window converts both bounds to it (QSpec FR-370).
+    pub clock_units: Vec<super::temporal_clause::ClockUnitSelection>,
     /// FR-135: the refinement features this build has built. A build
     /// capability, not a request parameter; only a test replaces it.
     pub refinement_support: super::RefinementSupport,
@@ -652,6 +659,17 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_refinement_internals(mut self, value: serde_json::Value) -> Self {
         self.refinement_internals = Some(value);
+        self
+    }
+
+    /// These declarations with the selected timestamped-event clock unit of
+    /// each clause `units` names (FR-337 "Aggregate formula emission").
+    #[must_use]
+    pub fn with_clock_units(
+        mut self,
+        units: Vec<super::temporal_clause::ClockUnitSelection>,
+    ) -> Self {
+        self.clock_units = units;
         self
     }
 
@@ -725,6 +743,7 @@ impl PackageDeclarations {
             model_operations: Vec::new(),
             functions: Vec::new(),
             ieee_profile: None,
+            decimal_literal_limits: DecimalLiteralLimits::default(),
             integer_division: None,
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
@@ -763,6 +782,7 @@ impl PackageDeclarations {
             hybrids: Vec::new(),
             hybrid_claims: Vec::new(),
             refinement_internals: None,
+            clock_units: Vec::new(),
             refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,
             emit_unwritten_protocols: false,
@@ -913,9 +933,32 @@ impl ModelRecords {
     }
 }
 
+/// The S3 limits on the written scale of `decimal(c, s)` literals (FR-093
+/// "Decimal constructors"; FR-255).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecimalLiteralLimits {
+    /// `s3.decimal_literal_scale`: the largest written scale of one literal.
+    pub scale: u64,
+    /// `s3.decimal_literal_scale_total`: the largest total of the written
+    /// scales of the literals of one checked package.
+    pub total: u64,
+}
+
+impl Default for DecimalLiteralLimits {
+    fn default() -> Self {
+        Self {
+            scale: 65_535,
+            total: 1_048_576,
+        }
+    }
+}
+
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone)]
 pub struct Scope {
+    /// The limits on decimal literal scale, and the total counted so far.
+    decimal_literal_limits: DecimalLiteralLimits,
+    decimal_literal_total: qsl_foundation::tally::Tally,
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
     /// Where a record value keeps the fields its ancestors name (FR-359).
@@ -952,17 +995,15 @@ pub struct Scope {
     /// Every admitted model currently uses `quire.model.complete/v1`; an
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
-    /// The selected package behind each source model alias, used by static
-    /// protocol roles that act on a whole model.
-    model_selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
     /// The package-owned type names each unit's model aliases spell (FR-480
     /// "Selections and imports").
     model_spellings: ModelSpellings,
     /// The source unit of each top-level declaration, by declared name; a
     /// name with no entry is the primary unit's.
     source_owners: BTreeMap<String, RawSourceRef>,
-    /// Admitted systems-model ports by their `M::artifact` source name,
-    /// with the exact declaration and owning object type used by a role.
+    /// Admitted systems-model ports by their package identity and source
+    /// artifact name, with the exact declaration and owning object type
+    /// used by a role.
     model_ports: BTreeMap<(String, String), (DeclarationKey, EffectiveId)>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// FR-150: each object type a `symmetric` population covers, with that
@@ -977,7 +1018,7 @@ pub struct Scope {
     imports: BTreeMap<String, super::AdmittedImport>,
 }
 
-qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, model_selections: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
+qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
 
 /// Drops the chain of imported checked graphs over an explicit stack
 /// (ADR-030): each import holds its library's graph, whose scope holds that
@@ -1002,6 +1043,28 @@ impl<'a> SourceScope<'a> {
     /// [`Scope::object_type_named`].
     pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
         self.scope.object_type_named(self.source, name)
+    }
+
+    /// The selected package this unit binds its model alias `alias` to, for
+    /// a static protocol role that acts on a whole model (FR-480
+    /// "Selections and imports").
+    pub(crate) fn model_selection(
+        &self,
+        alias: &str,
+    ) -> Option<&'a crate::model::domain_package::DomainPackageRef> {
+        self.scope.model_spellings.selection(self.source, alias)
+    }
+
+    /// The selected Port declaration `M::artifact` names in this unit, through
+    /// the package the unit binds `M` to, and the owning effective object
+    /// type that provides its runtime value context.
+    pub(crate) fn model_port(&self, name: &str) -> Option<(&'a DeclarationKey, &'a EffectiveId)> {
+        let (alias, artifact) = name.split_once("::")?;
+        let package = self.model_selection(alias)?;
+        self.scope
+            .model_ports
+            .get(&(package.identity.clone(), artifact.to_owned()))
+            .map(|(key, owner)| (key, owner))
     }
 }
 
@@ -1180,6 +1243,8 @@ impl Scope {
     ) -> Self {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
+            decimal_literal_limits: DecimalLiteralLimits::default(),
+            decimal_literal_total: qsl_foundation::tally::Tally::default(),
             types,
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),
@@ -1194,7 +1259,6 @@ impl Scope {
             clock_reading: BTreeSet::new(),
             history_names: Vec::new(),
             complete_model: false,
-            model_selections: BTreeMap::new(),
             model_spellings: ModelSpellings::default(),
             source_owners: BTreeMap::new(),
             model_ports: BTreeMap::new(),
@@ -1291,6 +1355,11 @@ impl Scope {
         self
     }
 
+    pub(crate) fn with_decimal_literal_limits(mut self, limits: DecimalLiteralLimits) -> Self {
+        self.decimal_literal_limits = limits;
+        self
+    }
+
     pub(crate) fn with_clock_reading(mut self, names: BTreeSet<String>) -> Self {
         self.clock_reading = names;
         self
@@ -1361,6 +1430,19 @@ impl Scope {
         self.source_owners.get(name)
     }
 
+    /// The model of `models` that the unit declaring the top-level
+    /// declaration `name` reads its model alias `alias` as (FR-480
+    /// "Selections and imports").
+    pub(crate) fn declared_model<'m>(
+        &self,
+        models: &'m [super::lowering::AdmittedModel],
+        name: &str,
+        alias: &str,
+    ) -> Option<&'m super::lowering::AdmittedModel> {
+        self.model_spellings
+            .model(models, self.source_of(name), alias)
+    }
+
     /// This scope as the unit declaring the top-level declaration `name`
     /// reads its type names.
     pub(crate) fn for_declaration(&self, name: &str) -> SourceScope<'_> {
@@ -1372,24 +1454,8 @@ impl Scope {
         self
     }
 
-    /// The selected domain package for each model alias in this unit.
-    pub(crate) fn with_model_selections(
-        mut self,
-        selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
-    ) -> Self {
-        self.model_selections = selections;
-        self
-    }
-
-    /// The selected package of a source model alias.
-    pub(crate) fn model_selection(
-        &self,
-        alias: &str,
-    ) -> Option<&crate::model::domain_package::DomainPackageRef> {
-        self.model_selections.get(alias)
-    }
-
-    /// This scope with the selected models' typed Port declarations.
+    /// This scope with the selected models' typed Port declarations, by
+    /// package identity and source artifact name.
     pub(crate) fn with_model_ports(
         mut self,
         ports: BTreeMap<(String, String), (DeclarationKey, EffectiveId)>,
@@ -1398,13 +1464,14 @@ impl Scope {
         self
     }
 
-    /// The selected Port declaration named by `M::artifact` and the owning
-    /// effective object type that provides its runtime value context.
-    pub(crate) fn model_port(&self, name: &str) -> Option<(&DeclarationKey, &EffectiveId)> {
-        let (alias, artifact) = name.split_once("::")?;
-        self.model_ports
-            .get(&(alias.to_owned(), artifact.to_owned()))
-            .map(|(key, owner)| (key, owner))
+    /// Each unit's model aliases bound to their packages.
+    pub(crate) fn model_spellings(&self) -> &ModelSpellings {
+        &self.model_spellings
+    }
+
+    /// The source unit of each top-level declaration, by declared name.
+    pub(crate) fn source_owners(&self) -> &BTreeMap<String, RawSourceRef> {
+        &self.source_owners
     }
 
     /// This scope with the unit's admitted dimension and unit declarations
@@ -2310,10 +2377,14 @@ fn contextual(expression: ExprRef<'_>) -> bool {
         | ExprNode::Float32(_)
         | ExprNode::Float64(_)
         | ExprNode::Rational(..)
+        | ExprNode::DecimalValue { .. }
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
         ExprNode::Call { name, .. } if name.name == "Text" => true,
-        ExprNode::Negate(operand) => matches!(expression.at(*operand).node(), ExprNode::Integer(_)),
+        ExprNode::Negate(operand) => matches!(
+            expression.at(*operand).node(),
+            ExprNode::Integer(_) | ExprNode::DecimalValue { .. }
+        ),
         ExprNode::Binary {
             operator: BinaryOperator::Divide,
             ..
@@ -3048,6 +3119,74 @@ impl<'a> Typer<'a> {
         ))
     }
 
+    /// `decimal(c, s)`: the decimal of coefficient `c` and scale `s` as
+    /// written, typed by its unique expected `Decimal[..]` type (FR-104-AC-13,
+    /// FR-104-AC-16). With no expected type it is ambiguous; where no decimal
+    /// is expected it is a type mismatch. A literal that is not a member of
+    /// that type by value (QSpec FR-140: membership scale `max(s, smin)`,
+    /// membership coefficient the exact integer at that scale) is a type
+    /// mismatch at check time, before any charge (QSpec FR-140-AC-8).
+    fn decimal_literal(
+        &self,
+        coefficient: &Integer,
+        scale: u32,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let domain = match hint {
+            None => {
+                return Err(CheckRefusal::ill_typed(
+                    location,
+                    IllTypedCause::AmbiguousLiteral,
+                ))
+            }
+            Some(ValueType::Decimal(domain)) => domain,
+            Some(_) => return Err(mismatch(location)),
+        };
+        // The literal scale limits come before membership: a zero coefficient
+        // is a member whatever its written scale, and the literal keeps that
+        // scale as written, so its wire spelling is bounded (FR-093 steps 2
+        // and 3).
+        let limits = self.scope.decimal_literal_limits;
+        let written = u64::from(scale);
+        let exhausted = |kind, limit: u64, actual: u64| {
+            refuse(
+                location,
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                    stage: CheckingStage::Typing,
+                    kind,
+                    limit,
+                    actual: u128::from(actual),
+                    region: None,
+                })),
+            )
+        };
+        if written > limits.scale {
+            return Err(exhausted(
+                CheckingLimitKind::DecimalLiteralScale,
+                limits.scale,
+                written,
+            ));
+        }
+        let total = self.scope.decimal_literal_total.add(written);
+        if total > limits.total {
+            return Err(exhausted(
+                CheckingLimitKind::DecimalLiteralScaleTotal,
+                limits.total,
+                total,
+            ));
+        }
+        let value = Decimal::new(coefficient.clone(), scale);
+        if !domain.contains(&value) {
+            return Err(mismatch(location));
+        }
+        Ok(node(
+            NodeKind::Literal(CheckedLiteral(Value::Decimal(value))),
+            ValueType::Decimal(domain.clone()),
+            location,
+        ))
+    }
+
     /// `protocol <target>` (FR-218): the unit's protocol declaration the
     /// written name resolves to, once, in the unit's own scope. The
     /// reference is typed `Boolean`, the semantic type every protocol node
@@ -3585,12 +3724,11 @@ impl<'a> Typer<'a> {
                     Some(ValueType::Decimal(target)) if target == left_decimal => target.clone(),
                     Some(ValueType::Decimal(_)) => return Err(mismatch(location)),
                     Some(_) => return Err(mismatch(location)),
-                    None => {
-                        return Err(CheckRefusal::ill_typed(
-                            location,
-                            IllTypedCause::AmbiguousLiteral,
-                        ))
-                    }
+                    // No expected type: decimal operands and result share one
+                    // named type (QSpec FR-140-AC-7), so `+`, `-`, `*` and `/`
+                    // are typed by their operands' type wherever they are
+                    // written (FR-104). A literal operand took its peer's type.
+                    None => left_decimal.clone(),
                 };
                 (
                     NodeKind::Decimal {
@@ -4946,5 +5084,73 @@ mod holds_float_tests {
             .expect("in the unit"),
         ));
         assert!(!holds_float(&bounded));
+    }
+}
+
+#[cfg(test)]
+mod source_scope_tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+    use crate::model::domain_package::DomainPackageRef;
+
+    fn source(identity: &str) -> RawSourceRef {
+        RawSourceRef::new("repo".to_owned(), identity.to_owned()).expect("a source reference")
+    }
+
+    fn port(package: &str) -> (DeclarationKey, EffectiveId) {
+        (
+            DeclarationKey {
+                package: package.to_owned(),
+                node: format!("ix://{package}/out"),
+            },
+            EffectiveId::new(
+                None,
+                quire_exact::OriginalDeclarationKey::new(package, format!("ix://{package}/Sys")),
+            ),
+        )
+    }
+
+    /// FR-480 "Selections and imports" (QSL-1638): unit `a` binds `N` to
+    /// package `x` and unit `b` binds `N` to package `y`, both declaring the
+    /// Port `out`. A protocol of each unit reads its own unit's package for
+    /// a whole-model role `N` and a Port role `N::out`, whichever package is
+    /// selected last; the primary unit reads `a`'s.
+    #[trace("FR-480")]
+    #[test]
+    fn a_shared_model_alias_names_each_units_own_selection_and_port() {
+        let mut spellings = ModelSpellings::new(source("a"));
+        for (unit, identity) in [("a", "x"), ("b", "y")] {
+            let package = spellings.add_package(DomainPackageRef {
+                identity: identity.to_owned(),
+            });
+            spellings.bind_model(&source(unit), "N", Some(package));
+        }
+        let scope = crate::check::family::fixtures::empty_scope()
+            .with_model_spellings(spellings)
+            .with_source_owners(BTreeMap::from([
+                ("Pa".to_owned(), source("a")),
+                ("Pb".to_owned(), source("b")),
+            ]))
+            .with_model_ports(BTreeMap::from([
+                (("x".to_owned(), "out".to_owned()), port("x")),
+                (("y".to_owned(), "out".to_owned()), port("y")),
+            ]));
+        for (protocol, identity) in [("Pa", "x"), ("Pb", "y"), ("Unowned", "x")] {
+            let unit = scope.for_declaration(protocol);
+            assert_eq!(
+                unit.model_selection("N")
+                    .map(|selection| selection.identity.as_str()),
+                Some(identity),
+                "{protocol}"
+            );
+            let (expected_key, expected_owner) = port(identity);
+            assert_eq!(
+                unit.model_port("N::out"),
+                Some((&expected_key, &expected_owner)),
+                "{protocol}"
+            );
+            assert_eq!(unit.model_port("M::out"), None, "{protocol}: no alias M");
+        }
     }
 }

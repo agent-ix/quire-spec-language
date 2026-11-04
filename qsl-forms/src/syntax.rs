@@ -591,6 +591,14 @@ pub enum ExprNode {
     Float64(u64),
     /// `rational(n, d)`; it takes its unique expected `Rational[..]` type.
     Rational(Integer, Integer),
+    /// `decimal(c, s)`: the coefficient and the scale exactly as written,
+    /// unreduced; it takes its unique expected `Decimal[..]` type.
+    DecimalValue {
+        /// The signed coefficient `c`.
+        coefficient: Integer,
+        /// The unsigned scale `s`.
+        scale: u32,
+    },
     /// A quantity literal such as `5 ms` (FR-393): the magnitude and the
     /// spelled unit. S2 resolves neither.
     Quantity(QuantityForm),
@@ -891,6 +899,7 @@ impl ExprNode {
             | Self::Float32(_)
             | Self::Float64(_)
             | Self::Rational(..)
+            | Self::DecimalValue { .. }
             | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
@@ -999,6 +1008,7 @@ impl ExprNode {
             | Self::Float32(_)
             | Self::Float64(_)
             | Self::Rational(..)
+            | Self::DecimalValue { .. }
             | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
@@ -1074,6 +1084,7 @@ impl ExprNode {
             | Self::Float32(_)
             | Self::Float64(_)
             | Self::Rational(..)
+            | Self::DecimalValue { .. }
             | Self::Quantity(_)
             | Self::String(_)
             | Self::SelfRef
@@ -1126,6 +1137,7 @@ impl ExprNode {
             | Self::Float32(_)
             | Self::Float64(_)
             | Self::Rational(..)
+            | Self::DecimalValue { .. }
             | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
@@ -1385,6 +1397,11 @@ impl Expression {
     /// `rational(numerator, denominator)`.
     pub fn rational(numerator: Integer, denominator: Integer) -> Self {
         Self::single(ExprNode::Rational(numerator, denominator))
+    }
+
+    /// `decimal(coefficient, scale)`.
+    pub fn decimal(coefficient: Integer, scale: u32) -> Self {
+        Self::single(ExprNode::DecimalValue { coefficient, scale })
     }
 
     /// A quantity literal such as `5 ms` (FR-393).
@@ -4352,6 +4369,10 @@ pub struct ProbabilisticForm {
     pub confidence: Vec<ConfidenceItemForm>,
     /// The claim body.
     pub body: ProbabilisticBody,
+    /// The whole claim's written content, with no span or position: the
+    /// producer ranks claims that share a name by it, so a claim's identity
+    /// does not depend on where it is declared (FR-498).
+    pub content: crate::SignificantContent,
     /// The span of the whole claim, closing `}` included.
     pub span: Span,
 }

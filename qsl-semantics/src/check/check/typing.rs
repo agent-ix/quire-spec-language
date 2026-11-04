@@ -785,6 +785,33 @@ impl<'a> Typer<'a> {
         Ok(std::mem::take(&mut self.body).finish(root))
     }
 
+    /// Type `expression`, then convert it to `unit_of` when both are
+    /// quantities whose units convert into one another and differ (FR-337-AC-15's
+    /// converted aggregate threshold). Any other type is returned unconverted
+    /// for the caller to judge.
+    pub(crate) fn infer_in_unit_of(
+        &mut self,
+        expression: &Expression,
+        unit_of: &ValueType,
+        location: &Location,
+    ) -> Result<CheckedBody, CheckRefusal> {
+        let root = self.run(Goal::Infer(expression.root(), None, location.clone()))?;
+        let root = match (&root.value_type, unit_of) {
+            (ValueType::Quantity(source), ValueType::Quantity(target))
+                if source != target
+                    && self
+                        .units
+                        .get(source.clone())
+                        .zip(self.units.get(target.clone()))
+                        .is_some_and(|(source, target)| source.converts_to(target)) =>
+            {
+                self.convert(unit_of, root, location)?
+            }
+            _ => root,
+        };
+        Ok(std::mem::take(&mut self.body).finish(root))
+    }
+
     /// Type the subexpression of `expression` rooted at `root`, located at
     /// `location`: a `match` conjunct is one subtree of its block.
     pub(crate) fn infer_subtree(
@@ -1045,6 +1072,9 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
+            ExprNode::DecimalValue { coefficient, scale } => {
+                self.decimal_literal(coefficient, *scale, hint.as_deref(), &location)?
+            }
             ExprNode::Absent => self.absent_literal(hint.as_deref(), &location)?,
             // FR-185: a quantity literal is its magnitude, measured and
             // reduced as an exact value, in the unit its name declares.
@@ -1224,7 +1254,14 @@ impl<'a> Typer<'a> {
                 )
             }
             ExprNode::Negate(operand) => {
-                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
+                // A negated `decimal(c, s)` literal takes its operand's
+                // decimal type from the expected one (FR-104-AC-16).
+                let operand = expression.at(*operand);
+                let operand_hint = hint.clone().filter(|each| {
+                    matches!(**each, ValueType::Decimal(_))
+                        && matches!(operand.node(), ExprNode::DecimalValue { .. })
+                });
+                let goal = Goal::Infer(operand, operand_hint, location.child(0));
                 return Ok(Self::unary(Unary::Negate(hint), goal, location, frames));
             }
             ExprNode::Not(operand) => {
@@ -1848,10 +1885,16 @@ impl<'a> Typer<'a> {
             // A float result type is the rounding mode of a contextual
             // float literal operand (FR-397-AC-24): `float32(bits: ..) + x`
             // under a `Float32[nearest-even]` result rounds by it.
+            // A `decimal(c, s)` literal with no typed peer takes the declared
+            // `Decimal[..]` result type and its peer then takes the
+            // literal's type (FR-104-AC-16).
             PeerOperator::Arithmetic(operator) => {
-                let first_hint = hint
-                    .clone()
-                    .filter(|each| matches!(**each, ValueType::Float(_)));
+                let literal = matches!(first.node(), ExprNode::DecimalValue { .. });
+                let first_hint = hint.clone().filter(|each| match **each {
+                    ValueType::Float(_) => true,
+                    ValueType::Decimal(_) => literal,
+                    _ => false,
+                });
                 (
                     PeerForm::Arithmetic {
                         operator,

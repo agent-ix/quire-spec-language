@@ -17,8 +17,9 @@ QSpec definition prose's `DefinitionRef` for that role, that
 the V2 reader admits the emitted packages, and that every float source form
 (bit constructors, arithmetic, comparison operators, the reserved intrinsic
 calls and the conversions into and out of a float) checks, lowers and evaluates
-as FR-397 states, with the ill-formed inputs refused. Scope: FR-397-AC-1 to
-FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-26, FR-091-AC-48 and FR-091-AC-49
+as FR-397 states, with the ill-formed inputs refused, and that each IEEE node
+charges the meter as the owned `quire_exact` operation does. Scope: FR-397-AC-1 to
+FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-28, FR-091-AC-48 and FR-091-AC-49
 (FR-397-AC-9 is TC-917's).
 
 ## Test Procedure
@@ -71,6 +72,16 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-26, FR-091-AC-48 and FR-091-AC-49
     the spend of `sqrt(p)`, `sqrt(q)`, `p` and `q` alone, check the equality of
     FR-397-AC-26, then run each sqrt body under a work limit equal to and one
     below its spend; repeat with a NaN operand.
+22. Write each vector of QSpec TC-193 F24, F25, F27, F28, F31, F32 and F33 as
+    the source form FR-397-AC-27 names. Evaluate each with the row's limit
+    tuple as the meter's remaining budget at the conversion or negation node,
+    and read the node's outcome and its entries in the meter's charge log.
+23. Evaluate `qn = one`, `numericEqual(qn, one)`, `qn != one` and `one = one`
+    of FR-397-AC-28 with the F17 tuple, then with `work_units: 1` and with
+    `value_occurrences: 0`, as the meter's remaining budget at the
+    `numeric_equal` node; read the node's outcome and charge-log entries and
+    compare them with `quire_exact::compare_ieee` over the same operands and
+    meter. Repeat over `Float64` constants.
 
 ## Expected Results
 
@@ -131,3 +142,11 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-26, FR-091-AC-48 and FR-091-AC-49
     spend once; at the limit each completes, one below it each is `incomplete`;
     a double evaluation of an operand fails the equality and the limit; a NaN
     operand gives false with at most one `compare_ieee` charge.
+22. Every vector gives its TC-193 row's bits and flags, rational, `Undefined`,
+    refusal or `incomplete` record exactly, and the node's charge-log entries
+    are the row's charge points in order; each negation charges exactly
+    `ieee.operands` then `ieee.result-retain` in every mode.
+23. Each comparison gives the listed Boolean after exactly `ieee.operands`
+    then `ieee.result-retain`, the same log as `compare_ieee`; the denied
+    charges give the listed `incomplete` records with no Boolean; the
+    `Float64` repeat charges 64 `integer_bits`.

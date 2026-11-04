@@ -1266,9 +1266,12 @@ pub(crate) fn site_location(site: &str) -> quire_semantic_value::location::Locat
 /// FR-230's checked `TimedModel`, for one dense time source: the model's
 /// clocks and the guards, resets, time invariants and urgency that read
 /// them. The time source itself is the graph's
-/// [`ModelTimeSource`](super::ModelTimeSource) of the same model.
+/// [`ModelTimeSource`] of the same model.
 pub struct TimedModel {
     model: String,
+    /// The model node of the model's state object, its time source's
+    /// [`ModelTimeSource::model_node`].
+    model_node: NodeKey,
     clocks: Vec<ClockField>,
     /// The `Clock` parameters of the operations whose clauses the model
     /// reads, each with its range.
@@ -1296,6 +1299,7 @@ impl DebugWith for TimedModel {
     fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             model,
+            model_node,
             clocks,
             clock_parameters,
             dimensions,
@@ -1310,6 +1314,7 @@ impl DebugWith for TimedModel {
         } = self;
         f.debug_struct("TimedModel")
             .field("model", &model)
+            .field("model_node", &NodeKeyDebug(model_node, table))
             .field("clocks", &clocks)
             .field("clock_parameters", &clock_parameters)
             .field("dimensions", &dimensions)
@@ -1335,6 +1340,18 @@ impl TimedModel {
     /// The model alias.
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    /// The model node of the model's state object, which names the model's
+    /// package where its alias alone may not (FR-480 "Selections and
+    /// imports").
+    pub fn model_node(&self) -> &NodeKey {
+        &self.model_node
+    }
+
+    /// Whether `source` is this model's time source.
+    pub fn is_timed_by(&self, source: &ModelTimeSource) -> bool {
+        source.model == self.model && source.model_node == self.model_node
     }
 
     /// The clock fields, in ascending declaration-key order.
@@ -1657,6 +1674,7 @@ struct AlternativeDraft {
 
 struct ModelDraft {
     model: String,
+    model_node: NodeKey,
     clocks: Vec<ClockField>,
     clock_parameters: Vec<ClockParameterRange>,
     dimensions: Vec<(EffectiveId, Option<u64>)>,
@@ -1753,6 +1771,8 @@ pub(crate) struct Inputs<'a> {
     pub(crate) timed_forms: &'a [TimedDeclaration],
     /// Each declaration's source unit, by declared name (FR-480).
     pub(crate) source_owners: &'a BTreeMap<String, RawSourceRef>,
+    /// Each unit's model aliases bound to their packages (FR-480).
+    pub(crate) spellings: &'a super::model_spelling::ModelSpellings,
     /// The unit's clock-reading declarations (FR-230 "Clock-reading
     /// declarations").
     pub(crate) clock_reading: &'a [super::assemble::ClockReadingDeclaration],
@@ -2081,10 +2101,16 @@ pub(crate) fn first_clock_read(
     model: &AdmittedModel,
     models: &[AdmittedModel],
     clock_reading: &[super::assemble::ClockReadingDeclaration],
+    scope: &super::check::Scope,
     context: &EffectiveId,
 ) -> Option<Span> {
     let units = TimeUnits::default();
-    let declarations = reading::Declarations::new(clock_reading, models);
+    let declarations = reading::Declarations::new(
+        clock_reading,
+        models,
+        scope.model_spellings(),
+        scope.source_owners(),
+    );
     let clocks = Clocks {
         model,
         fields: clock_fields(model),
@@ -4220,7 +4246,12 @@ fn prepare_models(
     // FR-230 "Clock-reading declarations": each body is checked once. A call
     // this check does not expand reaches the value checker, which refuses it
     // (`CheckCause::ClockReadingCall`).
-    let declarations = reading::Declarations::new(inputs.clock_reading, inputs.models);
+    let declarations = reading::Declarations::new(
+        inputs.clock_reading,
+        inputs.models,
+        inputs.spellings,
+        inputs.source_owners,
+    );
     for declaration in inputs.clock_reading {
         reading::check_declaration(declaration, &declarations).map_err(timed)?;
     }
@@ -4230,12 +4261,10 @@ fn prepare_models(
         }
     }
     let source_of = |model: &AdmittedModel| {
-        model.alias().and_then(|alias| {
-            inputs
-                .time_sources
-                .iter()
-                .find(|source| source.model == alias)
-        })
+        inputs
+            .time_sources
+            .iter()
+            .find(|source| source.times(model))
     };
     let clocks_of = |model| {
         let fields = clock_fields(model);
@@ -4328,7 +4357,9 @@ fn prepare_models(
                 let span = match form {
                     TimedDeclaration::TimeInvariant(form) => form.span,
                     TimedDeclaration::Urgent(form) => form.span,
-                    TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => form.span(),
+                    TimedDeclaration::TimeSource { .. } | TimedDeclaration::ClockType(_) => {
+                        form.span()
+                    }
                 };
                 return Err(timed(TemporalCause::AmbiguousTimedDeclaration { span }));
             }
@@ -4336,11 +4367,7 @@ fn prepare_models(
     }
     let mut models = Vec::new();
     for source in inputs.time_sources {
-        let Some(model) = inputs
-            .models
-            .iter()
-            .find(|model| model.alias() == Some(source.model.as_str()))
-        else {
+        let Some(model) = inputs.models.iter().find(|model| source.times(model)) else {
             continue;
         };
         let clocks = clocks_of(model);
@@ -4434,7 +4461,7 @@ fn prepare_models(
             let span = match form {
                 TimedDeclaration::TimeInvariant(form) => form.span,
                 TimedDeclaration::Urgent(form) => form.span,
-                TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => continue,
+                TimedDeclaration::TimeSource { .. } | TimedDeclaration::ClockType(_) => continue,
             };
             let state = || state_object(model, inputs.models, inputs.types, span);
             match form {
@@ -4456,7 +4483,7 @@ fn prepare_models(
                         &mut budget,
                     )?);
                 }
-                TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => {}
+                TimedDeclaration::TimeSource { .. } | TimedDeclaration::ClockType(_) => {}
             }
         }
         invariants.extend(clock_bounds(model, &clocks, inputs, source.span)?);
@@ -4474,6 +4501,7 @@ fn prepare_models(
             .collect();
         models.push(ModelDraft {
             model: source.model.clone(),
+            model_node: source.model_node.clone(),
             clocks: clocks.fields,
             clock_parameters: parameter_ranges,
             dimensions,
@@ -4609,6 +4637,14 @@ fn typed_alternative_in(
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
+    if let Some(span) = named_population_read(&alternative.predicate.predicate, declarations) {
+        return Err(refusal(timed(TemporalCause::TimedPredicate {
+            cause: Box::new(CheckCause::PopulationFormNotChecked {
+                what: "timed predicate population scope",
+            }),
+            span,
+        })));
+    }
     let (predicate, used) = typed_in(
         &state_view(
             &alternative.predicate,
@@ -4625,6 +4661,52 @@ fn typed_alternative_in(
         presences: alternative.presences,
         predicate,
     })
+}
+
+/// The first declared population read, in source order, in an S3
+/// timed-model predicate, which has no ambient population scope (FR-230,
+/// FR-391). The returned span is the population reference, so the
+/// unsupported result points at the construct that needs that scope.
+fn named_population_read(
+    form: &ExpressionForm,
+    declarations: &ClauseDeclarations<'_>,
+) -> Option<Span> {
+    let known = &declarations.scope.known_populations;
+    let root = form.expression.get(form.expression.root_id())?;
+    let mut pending = vec![root];
+    while let Some(expression) = pending.pop() {
+        let population_operand = match expression.node() {
+            ExprNode::AllInstances { population, .. } | ExprNode::Lookup { population, .. } => {
+                Some(*population)
+            }
+            ExprNode::Query { source, .. }
+            | ExprNode::Count { source, .. }
+            | ExprNode::Sum { source, .. }
+            | ExprNode::Accumulate { source, .. } => Some(*source),
+            ExprNode::Population {
+                population,
+                population_span,
+                ..
+            } if known.iter().any(|name| name == population) => return Some(*population_span),
+            // No other form names a population operand. `ExprNode` is not
+            // matched exhaustively outside `qsl-forms` (the seam probe), so a
+            // future population-reading form missed here still refuses in
+            // typing, which grants a timed predicate no population scope.
+            _ => None,
+        };
+        if let Some(operand) = population_operand {
+            let operand = expression.at(operand);
+            if let ExprNode::Name(name) = operand.node() {
+                if known.iter().any(|population| population == &name.name) {
+                    return Some(name.span);
+                }
+            }
+        }
+        // Reversed, so the stack pops children in source order and the
+        // first population reference is the one reported.
+        pending.extend(expression.children().into_iter().rev());
+    }
+    None
 }
 
 fn state_view<'v>(
@@ -5025,6 +5107,7 @@ pub(crate) fn check(
         }
         models.push(TimedModel {
             model: draft.model,
+            model_node: draft.model_node,
             clocks: draft.clocks,
             clock_parameters: draft.clock_parameters,
             dimensions: draft.dimensions,

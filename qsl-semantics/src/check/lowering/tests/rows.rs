@@ -807,3 +807,69 @@ fn rational_literals_are_one_literal_node_through_check() {
     }
     assert_eq!(keys[0], keys[1], "an equal rational is one node");
 }
+
+/// TC-1232 step 3 (QSpec FR-322 decimal literal spelling): a `decimal(c, s)`
+/// literal lowers to one `decimal` literal node spelled with exactly its
+/// written `s` fractional digits, so `decimal(125, 2)` is `"1.25"`,
+/// `decimal(5, 2)` is `"0.05"`, `decimal(10, 0)` is `"10"`, `decimal(0, 2)`
+/// is `"0.00"` and `decimal(-5, 1)` is `"-0.5"`. A zero coefficient is a
+/// member of every type whatever its scale, and spells at that scale
+/// without a formatting width, so 65534 and 65535 digits build and a larger
+/// scale is refused `stage_limit_exceeded`/`work-budget-exceeded`.
+#[trace("FR-093-AC-38", "FR-093-AC-39", "TC-1232")]
+#[test]
+fn a_decimal_constructor_lowers_with_its_written_scale_and_a_scale_past_65535_is_a_stage_limit() {
+    let bounds = ["-99999", "99999", "0", "2", "nearest-even"];
+    let lowered = |coefficient: i64, scale: u32| {
+        let literal = function(
+            "lit",
+            &[],
+            decimal_form(bounds),
+            None,
+            Expression::decimal(Integer::from(coefficient), scale),
+        );
+        let checked = check(vec![literal])?;
+        let literals: Vec<Json> = checked
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.semantic_form() == "literal")
+            .map(preimage)
+            .collect();
+        assert_eq!(literals.len(), 1, "{coefficient}/{scale}");
+        Ok::<_, Vec<CheckRefusal>>(literals[0]["body"].clone())
+    };
+    for (coefficient, scale, text) in [
+        (125, 2, "1.25"),
+        (5, 2, "0.05"),
+        (10, 0, "10"),
+        (0, 2, "0.00"),
+        (-5, 1, "-0.5"),
+        (1, 0, "1"),
+    ] {
+        let body = lowered(coefficient, scale).expect("the member literal checks");
+        assert_eq!(body["value_kind"], "decimal", "{coefficient}/{scale}");
+        assert_eq!(body["value"], text, "{coefficient}/{scale}");
+    }
+    for scale in [65_534_u32, 65_535] {
+        let body = lowered(0, scale).expect("a zero literal of that scale checks");
+        let value = body["value"].as_str().expect("a spelled value");
+        assert_eq!(value.len(), usize::try_from(scale).unwrap() + 2, "{scale}");
+        assert!(value.starts_with("0.") && value[2..].bytes().all(|each| each == b'0'));
+    }
+    for scale in [65_536_u32, u32::MAX] {
+        let refusals = lowered(0, scale).expect_err("a scale past the literal scale limit");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal, got {refusals:?}");
+        };
+        assert_eq!(
+            refusal.cause.code().as_str(),
+            "stage_limit_exceeded",
+            "{scale}"
+        );
+        assert_eq!(
+            refusal.cause.cause(),
+            Some("work-budget-exceeded"),
+            "{scale}"
+        );
+    }
+}

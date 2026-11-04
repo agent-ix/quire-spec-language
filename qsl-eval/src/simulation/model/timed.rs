@@ -480,7 +480,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let source = graph
             .time_sources()
             .iter()
-            .find(|source| source.model == model)
+            .find(|source| timed.is_timed_by(source))
             .ok_or_else(missing)?;
         for guard in timed.guards() {
             // `self` and the elements the part reads; an operation

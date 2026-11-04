@@ -711,7 +711,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 11] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 17] = [
         // S3: the checker.
         (
             S3_CONSTRUCTOR.file,
@@ -723,6 +723,29 @@ mod tests {
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             "check_with_cancel",
+        ),
+        // S3 keeping per-protocol results (FR-383), with and without a
+        // caller's cancel handle, continuing past a unit-level state-clause
+        // refusal (FR-503), and the one check all S3 entries delegate to.
+        (
+            S3_CONSTRUCTOR.file,
+            Some(S3_CONSTRUCTOR.receiver),
+            "check_with_protocol_results",
+        ),
+        (
+            S3_CONSTRUCTOR.file,
+            Some(S3_CONSTRUCTOR.receiver),
+            "check_with_protocol_results_and_cancel",
+        ),
+        (
+            S3_CONSTRUCTOR.file,
+            Some(S3_CONSTRUCTOR.receiver),
+            "check_with_protocol_continuation_and_cancel",
+        ),
+        (
+            S3_CONSTRUCTOR.file,
+            Some(S3_CONSTRUCTOR.receiver),
+            "check_retaining_protocols",
         ),
         // S4: the link step, and its dependency-bearing form (E4).
         ("qsl-package/src/checked.rs", Some("CheckedPackage"), "link"),
@@ -757,6 +780,18 @@ mod tests {
             "qsl-replay/src/spine/lifecycle.rs",
             Some("Resolution"),
             "finish_unit",
+        ),
+        // The same S3 and S4 step over an admitted unit list (FR-480), and
+        // the import-resolving loop both unit forms run.
+        (
+            "qsl-replay/src/spine/lifecycle.rs",
+            Some("Resolution"),
+            "check_unit_list",
+        ),
+        (
+            "qsl-replay/src/spine/lifecycle.rs",
+            Some("Resolution"),
+            "check_frame",
         ),
         // Lane-private: the native-v1 emitter's own `EmittedPackage`.
         ("src/protocol_artifact/native/mod.rs", None, "emit"),
@@ -1018,7 +1053,7 @@ mod tests {
     /// The raw wire views allowed a bare string type field, as (file, type,
     /// field). Each holds a snapshot document's `record` `type` string until a
     /// checked declaration resolves it by lookup; none is a model field type.
-    const RAW_WIRE_TYPE_FIELDS: [(&str, &str, &str); 4] = [
+    const RAW_WIRE_TYPE_FIELDS: [(&str, &str, &str); 6] = [
         // The public raw view of a `record` member.
         (
             "qsl-semantics/src/model/observation.rs",
@@ -1042,6 +1077,19 @@ mod tests {
             "qsl-semantics/src/model/observation/tree.rs",
             "Open",
             "type_identity",
+        ),
+        // The domain-package intake reader's lookups over the raw `types[]`
+        // wire: each node id string to the meaning string its `kind`
+        // resolves to, and the node ids of `Rational` value types (FR-208).
+        (
+            "qsl-semantics/src/model/intake.rs",
+            "TypeNodeReader",
+            "type_meanings",
+        ),
+        (
+            "qsl-semantics/src/model/intake.rs",
+            "TypeNodeReader",
+            "rational_types",
         ),
     ];
 

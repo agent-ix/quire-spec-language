@@ -100,7 +100,7 @@ key or request `over` member on that arm.
 - The request type SHALL carry exactly the ADR-013 O-26 members (the O-25
   packet plus the FR-070 envelope members) and SHALL invent no additional
   member; a construct → serialize → read round trip SHALL preserve the
-  package reference (`package_id`, every source
+  package reference (its own `package_id`, every source
   (authority, identity) pair), the replay members (`ReplaySource`, `QualifiedName`, a `function`
   request's occurrence key, arguments
   keyed by parameter node id, profile selections, proof bounds and declared
@@ -117,9 +117,12 @@ key or request `over` member on that arm.
   `dependencies`: `sources` names the proved package's own source
   references, and `dependencies` one entry per entry of the proved
   package's `dependency_selections`, in order, each
-  `{identity, package_id, sources}` (ADR-015 D-4). `identity` is a
+  `{identity, sources}` (ADR-015 D-4). `identity` is a
   `LibraryName`, and the entry names the dependency package by that identity
-  and QSpec FR-323's `package_id` member; an empty identity refuses at decode. Every source of every entry
+  alone. The entry has no `package_id` member: the corpus replay wire has no
+  source for it (FR-350), the recompile identifies the dependency package by
+  the identity it produces (FR-098), and a request is constructible from the
+  corpus without it; an empty identity refuses at decode. Every source of every entry
   is a source reference (authority, identity) the byte provision SHALL cover,
   as the proved package's are.
 - The package reference and each `dependencies` entry SHALL carry an

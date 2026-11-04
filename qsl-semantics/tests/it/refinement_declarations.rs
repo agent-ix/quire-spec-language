@@ -2114,3 +2114,35 @@ fn a_step_row_naming_an_ambiguous_operation_refuses_at_its_name() {
     );
     assert_eq!(ambiguous.at, "Impl::Child::op");
 }
+
+/// FR-480 "Selections and imports" (QSL-1638): a refinement's model aliases
+/// name the packages its own unit binds them to. Unit `a`, admitted first,
+/// binds `Impl` to the sub-counter package; unit `b` binds `Impl` to the
+/// CAS package and declares `CasRefinesCounter`, whose concrete side is
+/// `b`'s.
+#[trace("FR-480")]
+#[test]
+fn a_refinements_models_are_its_own_units_packages() {
+    let ((spec, cas), sub) = (counters(), sub_counter());
+    let header = "profile v = \"quire.value.complete/v1\";\n\
+                  profile inf = \"quire.temporal.infinite-trace/v1\";\n";
+    let a = format!("{header}model Impl = {SUB:?};\ntype Pad = Integer;");
+    let b = format!(
+        "{header}model Spec = {SPEC:?};\nmodel Impl = {CAS:?};\n{}",
+        cas_refines_counter()
+    );
+    let graph = crate::model_operations::assemble_units(
+        &[("a", &a), ("b", &b)],
+        &[spec.as_slice(), cas.as_slice(), sub.as_slice()],
+    )
+    .with_unwritten_refinements()
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("b's refinement checks: {refusals:?}"));
+    let refinement = only_refinement(&graph);
+    assert_eq!(refinement.abstract_model_selection().identity, SPEC);
+    assert_eq!(refinement.concrete_model_selection().identity, CAS);
+    let [population] = refinement.populations() else {
+        panic!("one population row: {:?}", refinement.populations());
+    };
+    assert_eq!(population.concrete_population, cas_key("counters"));
+}

@@ -79,6 +79,7 @@ mod abstraction;
 mod hybrid;
 mod hyper;
 mod model;
+mod probabilistic;
 mod protocol;
 mod refinement_rows;
 mod state;
@@ -118,7 +119,8 @@ pub(crate) use state::{
 pub(crate) use state_graph::StateGraphClaimInput;
 pub(crate) use state_transition::TransitionClause;
 pub(crate) use temporal::{
-    temporal_location, temporal_site, LoweredTemporalClause, TemporalClauseInput, TemporalSite,
+    temporal_location, temporal_site, AggregatePart, LoweredTemporalClause, TemporalClauseInput,
+    TemporalSite,
 };
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
 pub(crate) use timed_clause::TimedClauseInput;
@@ -5700,6 +5702,7 @@ impl<'a> Lowering<'a> {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
             Value::Integer(value) => LiteralValue::Integer(value.clone()),
             Value::Rational(value) => LiteralValue::Rational(value.clone()),
+            Value::Decimal(value) => LiteralValue::decimal(value),
             Value::Float(value) => match value.width() {
                 quire_exact::IeeeWidth::Binary32 => LiteralValue::Float32Bits(value.bits() as u32),
                 quire_exact::IeeeWidth::Binary64 => LiteralValue::Float64Bits(value.bits()),
@@ -5737,8 +5740,7 @@ impl<'a> Lowering<'a> {
             // FR-093-AC-50: Text retains the profile-normalized sequence,
             // while its semantic type points at the declared text_bounds node.
             Value::Text(value) => LiteralValue::Text(value.retained().to_owned()),
-            Value::Decimal(_)
-            | Value::Option(_)
+            Value::Option(_)
             | Value::Composite(_)
             | Value::Collection(_)
             | Value::Reference(_)
@@ -6479,6 +6481,7 @@ fn literal_operand_text(value: &LiteralValue) -> String {
             text.strip_suffix("/1")
                 .map_or_else(|| text.clone(), str::to_owned)
         }
+        LiteralValue::Decimal(text) => text.clone(),
         LiteralValue::Float32Bits(bits) => format!("{bits:08x}"),
         LiteralValue::Float64Bits(bits) => format!("{bits:016x}"),
         LiteralValue::Text(text) | LiteralValue::String(text) | LiteralValue::Enum(text) => {

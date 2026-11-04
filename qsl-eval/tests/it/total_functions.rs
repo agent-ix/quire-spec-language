@@ -1544,17 +1544,24 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
             ),
             function(
                 "divide",
-                &[("p", decimal_target.clone()), ("q", decimal_target.clone())],
+                &[("p", decimal_target.clone())],
                 decimal_target.clone(),
                 None,
-                binary(BinaryOperator::Divide, name("p"), name("q")),
+                // The divisor is a nonzero `decimal(c, s)` literal: only such a
+                // literal discharges a decimal divisor's obligation (FR-093
+                // "Decimal constructors").
+                binary(
+                    BinaryOperator::Divide,
+                    name("p"),
+                    Expression::decimal(integer(3), 0),
+                ),
             ),
         ];
         declarations.ieee_profile = Some(ieee_profile());
         declarations
     }
     .check(CheckingLimits::default())
-    .expect("convert(x) carries no definedness obligation, and q is nonzero");
+    .expect("convert(x) carries no definedness obligation, and the divisor is a nonzero literal");
     let package = CheckedPackage::link(package);
     let float = |bits: u64| vec![Value::Float(IeeeValue::binary64(bits))];
 
@@ -1609,8 +1616,7 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
     assert!(losses.is_empty());
 
     let decimal = |coefficient: i64| Value::Decimal(Decimal::new(integer(coefficient), 0));
-    let (third, location, losses) =
-        call_evaluated(&package, "divide", vec![decimal(1), decimal(3)], UNLIMITED);
+    let (third, location, losses) = call_evaluated(&package, "divide", vec![decimal(1)], UNLIMITED);
     assert_eq!(
         format!("{third:?}"),
         format!(

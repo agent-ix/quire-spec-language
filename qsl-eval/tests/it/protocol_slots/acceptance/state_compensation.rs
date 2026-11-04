@@ -5,6 +5,8 @@
 //! `Refund` and `Partial` templates.
 
 use super::*;
+use qsl_eval::value::{BinderCharges, ChargeAmounts, BINDER_ACCOUNTING_VERSION};
+use quire_exact::{Charge, ChargePoint};
 
 const COUNTERS: [LimitKind; 10] = [
     LimitKind::IntegerBits,
@@ -682,7 +684,479 @@ fn no_evaluation_result_is_coerced_with_unwrap_or_false() {
     );
 }
 
-// FR-520-AC-11 (per-binder charge accounting with `accounting_version`) has no
-// test here: it needs QSL's binder routing onto the quire-exact interval
-// accounting API, which is not built yet. Until it is, the matrix shows AC-11
-// uncovered rather than covered by a test that does not run.
+fn charges_of(result: &ProtocolSlotEvaluation) -> &BinderCharges {
+    match result {
+        ProtocolSlotEvaluation::Evaluated(_, charges)
+        | ProtocolSlotEvaluation::Unavailable { charges, .. } => charges,
+    }
+}
+
+fn amounts(charges: &ChargeAmounts) -> [u64; 10] {
+    COUNTERS.map(|kind| charges.amount(kind))
+}
+
+fn recovery_supply(package: &CheckedPackage, unavailable: Option<&str>) -> ProtocolSupply<'static> {
+    let binders = [
+        ("recovered", receipt(package, 5)),
+        ("target", int(5)),
+        ("activated", Value::Boolean(false)),
+    ]
+    .into_iter()
+    .map(|(name, value)| {
+        let supplied = if Some(name) == unavailable {
+            SuppliedValue::Unavailable(CatalogCode::new(
+                "unavailable_observation",
+                "missing-required-artifact",
+            ))
+        } else {
+            SuppliedValue::Value(value)
+        };
+        (binder(package, "Refunds", name), supplied.into())
+    })
+    .collect();
+    ProtocolSupply {
+        binders,
+        observation: None,
+    }
+}
+
+fn charge_log(
+    package: &CheckedPackage,
+    supply: &ProtocolSupply<'_>,
+) -> (ProtocolSlotEvaluation, [u64; 10]) {
+    let mut meter = Meter::new(UNLIMITED);
+    let result = package
+        .evaluate_protocol_slot(
+            &slot(package, "Refunds", "Refund", "recovery.predicate", None),
+            supply,
+            &mut meter,
+        )
+        .expect("the recovery slot evaluates");
+    (result, usage(&meter))
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_slot_call_logs_each_binder_it_read_with_the_accounting_version() {
+    let package = fixture();
+    let supply = recovery_supply(&package, Some("target"));
+    let (result, used) = charge_log(&package, &supply);
+    assert!(
+        matches!(result, ProtocolSlotEvaluation::Unavailable { .. }),
+        "{result:?}"
+    );
+    let charges = charges_of(&result);
+    assert_eq!(charges.accounting_version(), BINDER_ACCOUNTING_VERSION);
+    let read = |name: &str| charges.binder(&binder(&package, "Refunds", name));
+    assert!(read("recovered").is_some(), "the first read has an entry");
+    assert!(
+        read("target").is_some(),
+        "the unavailable binder was read and has an entry"
+    );
+    assert!(
+        read("activated").is_none(),
+        "the evaluation stopped before it read `activated`"
+    );
+    assert_eq!(charges.binders().count(), 2);
+    assert_eq!(amounts(&charges.total()), used);
+    let (again, _) = charge_log(&package, &supply);
+    assert_eq!(
+        charges_of(&again),
+        charges,
+        "equal supplies give equal logs"
+    );
+}
+
+const NOTHING: [u64; 10] = [0; 10];
+
+/// The TC-1070 package with its source rewritten by `edit`.
+fn variant(edit: impl Fn(String) -> String) -> CheckedPackage {
+    fixture_from_source(&edit(SOURCE.to_owned())).0
+}
+
+/// The Refund slot `recovery.predicate` over `recovered`, `target` and
+/// `activated` with `body` as its expression, beside the pure functions
+/// `plus` and `add`.
+fn recovery_variant(body: &str) -> CheckedPackage {
+    let original =
+        "recover (recovered: M::Receipt) { recovered.total = target and not activated };";
+    variant(|source| {
+        source
+            .replace(
+                "profile S =",
+                "profile v = \"quire.value.complete/v1\";\nprofile S =",
+            )
+            .replace(
+                original,
+                &format!("recover (recovered: M::Receipt) {{ {body} }};"),
+            )
+            + "function plus using v(a: Integer): Integer pure { a + 1 }\n\
+               function add using v(a: Integer, b: Integer): Integer pure { a + b }\n\
+               function bump using v(a: Integer): Integer pure { let x = a + 1 in x + 1 }\n\
+               function three using v(n: Integer): Sequence<Integer>[0, 16] pure { sequence[n, n, n] }\n"
+    })
+}
+
+fn recovery_log(package: &CheckedPackage) -> (ProtocolSlotEvaluation, [u64; 10]) {
+    charge_log(package, &recovery_supply(package, None))
+}
+
+fn entry(package: &CheckedPackage, charges: &BinderCharges, name: &str) -> [u64; 10] {
+    amounts(
+        charges
+            .binder(&binder(package, "Refunds", name))
+            .expect("every binder the expression reads has an entry"),
+    )
+}
+
+// Counter order: [integer_bits, decimal_digits, scale_expansion,
+// text_input_bytes, text_scalars, normalized_scalars, unit_edges,
+// value_occurrences, work_units, result_units].
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn an_operation_over_two_binders_is_unattributed_and_a_later_single_binder_operation_is_its_own() {
+    let package = fixture();
+    let (result, used) = recovery_log(&package);
+    let charges = charges_of(&result);
+    assert_eq!(entry(&package, charges, "recovered"), NOTHING);
+    assert_eq!(entry(&package, charges, "target"), NOTHING);
+    assert_eq!(
+        entry(&package, charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "`not activated` reads one binder after others were read; the `and` over two binders is not its"
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 1, 6, 2],
+        "`recovered.total = target` reads two binders, and the `and` joins two binders"
+    );
+    assert_eq!(
+        amounts(&charges.total()),
+        used,
+        "work and results sum, the eight high-water counters take the maximum"
+    );
+    let (again, _) = recovery_log(&package);
+    assert_eq!(
+        charges_of(&again),
+        charges,
+        "equal supplies give equal logs"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn operations_over_one_binder_each_are_charged_to_that_binder() {
+    let package = recovery_variant("recovered.total + 1 = target + 1 and not activated");
+    let (result, used) = recovery_log(&package);
+    let charges = charges_of(&result);
+    let one_operand = [4, 0, 0, 0, 0, 0, 0, 2, 3, 1];
+    assert_eq!(entry(&package, charges, "recovered"), one_operand);
+    assert_eq!(entry(&package, charges, "target"), one_operand);
+    assert_eq!(
+        entry(&package, charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1]
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 1, 6, 2],
+        "only the equality over both sums and the `and` joining two binders are unattributed"
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_literal_only_subexpression_is_unattributed_wherever_it_runs() {
+    let package = recovery_variant("(1 + 2 = 3) and recovered.total = target and not activated");
+    let (result, used) = recovery_log(&package);
+    let charges = charges_of(&result);
+    let base = fixture();
+    let (base_result, _) = recovery_log(&base);
+    for name in ["recovered", "target", "activated"] {
+        assert_eq!(
+            entry(&package, charges, name),
+            entry(&base, charges_of(&base_result), name),
+            "{name}: the literal prefix adds nothing to a binder"
+        );
+    }
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [3, 0, 0, 0, 0, 0, 0, 2, 15, 5],
+        "the literal prefix runs before the first binder read"
+    );
+    assert_eq!(amounts(&charges.total()), used);
+    let late = recovery_variant("recovered.total = target and (1 + 2 = 3) and not activated");
+    let (late_result, late_used) = recovery_log(&late);
+    let late_charges = charges_of(&late_result);
+    assert_eq!(
+        entry(&late, late_charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "a literal-only subexpression after a binder read is not that binder's"
+    );
+    assert_eq!(amounts(&late_charges.total()), late_used);
+    assert!(
+        late_charges.unattributed().amount(LimitKind::WorkUnits)
+            > charges_of(&base_result)
+                .unattributed()
+                .amount(LimitKind::WorkUnits),
+        "the literal subexpression's work is unattributed"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_connective_over_two_binders_is_unattributed_and_leaves_the_right_binder_its_own_operation() {
+    let (alone, alone_result, _) = recovery_log_of("not activated");
+    let (joined, joined_result, used) = recovery_log_of("target = 5 and not activated");
+    let charges = charges_of(&joined_result);
+    assert_eq!(
+        entry(&joined, charges, "activated"),
+        entry(&alone, charges_of(&alone_result), "activated"),
+        "`and` over `target` and `activated` is made by neither"
+    );
+    assert_eq!(
+        entry(&joined, charges, "activated"),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1]
+    );
+    assert!(charges.unattributed().amount(LimitKind::WorkUnits) >= 1);
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn every_element_of_a_query_over_one_binder_is_charged_to_that_binder() {
+    let (with_double, double_result, used) =
+        recovery_log_of("forall(x in three(target): x * 2 + recovered.total > 0)");
+    let (without, plain_result, _) =
+        recovery_log_of("forall(x in three(target): x + recovered.total > 0)");
+    let double = charges_of(&double_result);
+    let plain = charges_of(&plain_result);
+    let work =
+        |charges: &BinderCharges, package: &CheckedPackage| entry(package, charges, "target")[8];
+    let elements = 3;
+    assert!(
+        work(double, &with_double) >= work(plain, &without) + elements,
+        "`x * 2` over each of the {elements} elements is made by `target`, not only the first"
+    );
+    for kind in [LimitKind::WorkUnits, LimitKind::ResultUnits] {
+        assert_eq!(
+            double.unattributed().amount(kind),
+            plain.unattributed().amount(kind),
+            "no element's `x * 2` falls to unattributed after a result over `recovered`"
+        );
+    }
+    assert_eq!(amounts(&double.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn commuting_the_operands_of_a_two_binder_operation_leaves_the_log_unchanged() {
+    let forward = recovery_variant("recovered.total + target = 10 and not activated");
+    let backward = recovery_variant("target + recovered.total = 10 and not activated");
+    let (forward_result, used) = recovery_log(&forward);
+    let (backward_result, _) = recovery_log(&backward);
+    let charges = charges_of(&forward_result);
+    assert_eq!(charges, charges_of(&backward_result));
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 3]
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_call_made_before_any_read_registers_no_binder_in_the_callee_frame() {
+    let package = recovery_variant("plus(1) = 3 and recovered.total = target and not activated");
+    let (result, used) = recovery_log(&package);
+    let charges = charges_of(&result);
+    assert_eq!(
+        charges.binders().count(),
+        0,
+        "the callee's parameter slot is no binder read, and the short-circuit reads none"
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [2, 0, 0, 0, 0, 0, 0, 2, 11, 4]
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_high_water_counter_is_the_largest_binder_entry_not_the_sum() {
+    let package = fixture();
+    let mut meter = Meter::new(UNLIMITED);
+    let result = run(
+        &package,
+        "Refund",
+        "retry.relation",
+        None,
+        retry(&package, 0, 1),
+        &mut meter,
+    )
+    .expect("retry");
+    let charges = charges_of(&result);
+    assert!(charges.binders().count() > 1);
+    for kind in COUNTERS {
+        let entries = charges
+            .binders()
+            .map(|(_, held)| held.amount(kind))
+            .chain([charges.unattributed().amount(kind)]);
+        let expected = if kind.is_cumulative() {
+            entries.sum::<u64>()
+        } else {
+            entries.max().unwrap_or(0)
+        };
+        assert_eq!(charges.total().amount(kind), expected, "{kind:?}");
+        assert_eq!(
+            charges.total().amount(kind),
+            meter.consumed(kind),
+            "{kind:?}"
+        );
+    }
+    assert!(
+        COUNTERS
+            .iter()
+            .any(|kind| !kind.is_cumulative() && charges.total().amount(*kind) > 0),
+        "a high-water counter was charged"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_call_restores_the_meters_capture_state_and_drains_a_caller_interval_it_found() {
+    let package = fixture();
+    let supply = recovery_supply(&package, None);
+    let slot = slot(&package, "Refunds", "Refund", "recovery.predicate", None);
+    let mut off = Meter::new(UNLIMITED);
+    package
+        .evaluate_protocol_slot(&slot, &supply, &mut off)
+        .expect("evaluates");
+    assert!(
+        off.take_charge_accounting().is_none(),
+        "capture stays disabled for a caller that never enabled it"
+    );
+    let mut on = Meter::new(UNLIMITED);
+    on.enable_charge_accounting();
+    on.charge(Charge::new(ChargePoint::CollectionVisit))
+        .expect("the caller's own charge");
+    let before = on.consumed(LimitKind::WorkUnits);
+    assert!(before > 0);
+    let result = package
+        .evaluate_protocol_slot(&slot, &supply, &mut on)
+        .expect("evaluates");
+    assert_eq!(
+        charges_of(&result).total().amount(LimitKind::WorkUnits),
+        on.consumed(LimitKind::WorkUnits) - before,
+        "the returned log is the call's own total, without the caller's interval"
+    );
+    let drained = on
+        .take_charge_accounting()
+        .expect("capture stays enabled for a caller that enabled it");
+    assert_eq!(
+        COUNTERS.map(|kind| drained.amount(kind)),
+        NOTHING,
+        "the caller's interval before the call and the call's own charges are not in it"
+    );
+}
+
+/// The log of the Refund `recovery.predicate` slot with `body` as its
+/// expression, supplying only the binders `body` names.
+fn recovery_log_of(body: &str) -> (CheckedPackage, ProtocolSlotEvaluation, [u64; 10]) {
+    let package = recovery_variant(body);
+    let values = [
+        ("recovered", receipt(&package, 5)),
+        ("target", int(5)),
+        ("activated", Value::Boolean(false)),
+    ]
+    .into_iter()
+    .filter(|(name, _)| body.contains(name))
+    .collect();
+    let mut meter = Meter::new(UNLIMITED);
+    let result = run(
+        &package,
+        "Refund",
+        "recovery.predicate",
+        None,
+        values,
+        &mut meter,
+    )
+    .expect("the recovery slot evaluates");
+    (package, result, usage(&meter))
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_one_argument_call_charges_its_body_to_the_binder_of_its_argument() {
+    let (package, result, used) = recovery_log_of("plus(target) = 6 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(
+        entry(&package, charges, "target"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2]
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "only the `and` over `target` and `activated`"
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_one_argument_call_after_a_two_argument_call_takes_its_own_argument_owner() {
+    let (package, result, used) =
+        recovery_log_of("add(target, 1) = 6 and plus(recovered.total) = 6 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(
+        entry(&package, charges, "target"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2],
+        "`add(target, 1)` and its body belong to `target` and nothing after it does"
+    );
+    assert_eq!(
+        entry(&package, charges, "recovered"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 9, 2],
+        "`plus(recovered.total)` and its body belong to `recovered`"
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+        "the two `and`s each join operands of different binders"
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_call_over_two_binders_charges_its_body_to_no_binder() {
+    let (package, result, used) =
+        recovery_log_of("add(recovered.total, target) = 10 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(entry(&package, charges, "recovered"), NOTHING);
+    assert_eq!(entry(&package, charges, "target"), NOTHING);
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [4, 0, 0, 0, 0, 0, 0, 2, 10, 3]
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
+
+#[test]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn a_let_bound_value_keeps_the_binder_it_derives_from() {
+    let (package, result, used) = recovery_log_of("bump(target) = 7 and not activated");
+    let charges = charges_of(&result);
+    assert_eq!(
+        entry(&package, charges, "target"),
+        [4, 0, 0, 0, 0, 0, 0, 2, 12, 3],
+        "`x + 1` over the let-bound `x = a + 1` is made by `target`"
+    );
+    assert_eq!(
+        amounts(charges.unattributed()),
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "only the `and` over `target` and `activated`"
+    );
+    assert_eq!(amounts(&charges.total()), used);
+}
