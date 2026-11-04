@@ -31,3 +31,9 @@ The full Quoin matrix command did not return within the review window, so this i
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The FR-201-AC-6 trace tags cover only two of the criterion's rejection cases in this slice, so a binary trace matrix can report the criterion as covered before its remaining rule/locus cases are tested. | qsl-replay/src/probability_certificate.rs:437,469 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Both exact-value tests now retain the `TC-636` tag without claiming full `FR-201-AC-6` coverage. |
