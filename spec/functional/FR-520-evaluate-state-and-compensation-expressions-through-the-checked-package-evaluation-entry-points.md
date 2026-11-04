@@ -39,8 +39,7 @@ deleted that module. The replacement is the qsl-eval entry points over a strictl
 read checked package (`docs/compiled-protocol-v2.md`): `CheckedPackageEvaluation::call`,
 `evaluate` and `evaluate_protocol_slot` (FR-390). They are not a drop-in: there is
 no caller-supplied artifact graph and no `StateView`; the per-binder accounting
-of `EvaluationReport` is carried by the charge log below once Contract IR IR-1280
-decides where the attribution lives; the artifact-graph path
+of `EvaluationReport` is carried by the per-binder charge log below; the artifact-graph path
 `state::Refusal::UnpublishedArtifact` is retired by design (FR-049).
 
 This requirement gives every behavior quire-protocol relies on a successor
@@ -80,7 +79,7 @@ A `CheckedPackageEvaluation` over the package read with
 | `Unsupported(report)` | `Evaluated` with the family's unsupported result (exit 21) |
 | resource-incomplete | `Evaluated(Incomplete)` naming the counter |
 | `Refusal::UnpublishedArtifact`, `state::Refusal` artifact-graph causes | retired (FR-049): no successor, and no call can name an artifact |
-| `EvaluationReport` per-binder accounting, `ACCOUNTING_VERSION` | the `Meter` charge log of the ten counters FR-255 names, attributed per binder: every charge made while reading or evaluating a binder's supplied value is recorded under that binder's name, charges made by no binder are recorded under none, and the per-binder entries and the unattributed entry combine to the call's total (a sum for a cumulative counter, a maximum for a high-water one); the log carries `accounting_version`, a constant that changes when the attribution rules change. Neither `ProtocolSlotEvaluation` nor the quire-exact `Meter` carries the attribution or the version, so this row is gated on Contract IR IR-1280 (FR-520-AC-11) |
+| `EvaluationReport` per-binder accounting, `ACCOUNTING_VERSION` | the `Meter` charge log of the ten counters FR-255 names, attributed per binder: every charge made while reading or evaluating a binder's supplied value is recorded under that binder's name, charges made by no binder are recorded under none, and the per-binder entries and the unattributed entry combine to the call's total (a sum for a cumulative counter, a maximum for a high-water one); the log carries `accounting_version`, a constant that changes when the attribution rules change. A charge is made by binder B when it is made by reading B or by an operation whose binder-derived operands all come from B (operand provenance: a value derived only from B belongs to B, and the ownership passes through let bindings, through each argument of a call or dispatched call (the receiver and every argument keep their own binder, so a call over one binder is made by that binder), and through the element and accumulator bindings of a query, `seq` or fold, which take the binder their source or bounds derive from); an operation over operands from two binders, and a computation over literals alone, are made by no binder. A binder the expression read has an entry even with no charge, an unavailable binder included. `ProtocolSlotEvaluation` carries this log on both its variants, QSL routes the quire-exact `Meter`'s fixed-size interval accounting (IR-1280) per step of the evaluation, and the log is the call's authoritative total: the call owns the meter's interval capture while it runs, drains an interval the caller had open at entry without adding it to the log, and leaves capture enabled or disabled as it found it (FR-520-AC-11) |
 | `StateView` (binders, populations, objects, authority adapter) | `ProtocolSupply { binders, observation }`; references and populations through `ObservationAdmission` and `ProtocolReferenceOccurrence` (FR-390) |
 | the registration and activation captures | `registration_captures` and `activation_captures` slots, one call each |
 
@@ -121,13 +120,13 @@ the protocol.
 | FR-520-AC-8 | `evaluate_protocol_slot` and `call` perform no network, storage or business-operation I/O (FR-025 of quire-protocol): the evaluation crates have no I/O dependency (`cargo tree`) and a run under a denied-syscall harness completes. | Test (TC-1315) |
 | FR-520-AC-9 | The result for the in-process package equals the result for the package read back with the reader, charge log included, for each slot of **R**'s two compensations (FR-390's equality rule). | Test (TC-1315) |
 | FR-520-AC-10 | After QSL-834's deletion of `state::*`, the root crate has no `state` module, and no source names `StateView`, `EvaluationReport`, `state::evaluate_v2` or `state::ACCOUNTING_VERSION`. The `evaluate_v2` of `src/temporal.rs` and the `ACCOUNTING_VERSION` of `src/linking/composed/binding_work.rs` are other items and stay. | Inspection (TC-1315) |
-| FR-520-AC-11 | With a `Meter` that carries per-binder attribution and `accounting_version` (IR-1280), a slot call over three binders, one of them `Unavailable`, returns a charge log in which each binder that was read has its own entry, an unread binder has none, the entries combined with the unattributed entry equal the total, equal supplies give equal logs, and the log carries `accounting_version`. This is gated on IR-1280. | Test (TC-1315) |
+| FR-520-AC-11 | A slot call over three binders, one of them `Unavailable`, returns a charge log in which each binder that was read has its own entry, an unread binder has none, the entries combined with the unattributed entry equal the total, equal supplies give equal logs, and the log carries `accounting_version`; a literal-only subexpression and an operation over two binders are recorded under no binder, commuting the operands of such an operation leaves the log unchanged, and an operation over one binder is recorded under that binder. | Test (TC-1315) |
 | FR-520-AC-12 | `ProtocolSlotEvaluation` and `Evaluation` have no `as_bool` method and no `Into<bool>` conversion: each is a `compile_fail` doctest on the type, and a tagged test reads the doctest blocks of the type's source file and fails when a block loses its pinned error code or its compiling control. | Test (TC-1315) |
 | FR-520-AC-13 | No source file of the evaluation crates coerces an evaluation result to a Boolean with `unwrap_or(false)`. | Inspection (TC-1315) |
 
 ## Dependencies
 
-- **Contract IR:** IR-1280 (per-binder charge attribution and `accounting_version` in the charge log): FR-520-AC-11.
+- **Contract IR:** IR-1280 (the `Meter`'s interval accounting that FR-520-AC-11 routes per binder).
 - **Upstream:** FR-390 (and QSL-852's open gaps AC-13, AC-15, AC-16, AC-18 to
   AC-22, AC-24), FR-255, FR-383-AC-8, FR-519, FR-517.
 - **Downstream:** quire-protocol `src/compensation/graph.rs`,

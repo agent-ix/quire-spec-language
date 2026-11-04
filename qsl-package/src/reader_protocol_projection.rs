@@ -1,0 +1,1885 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! Reader-owned protocol expression nodes projected from admitted I2 terms
+//! (FR-390 "Composed roots from the reader").
+//!
+//! The whole package is projected once, when its reader-backed view is
+//! created: every slot of every protocol node, each a tree of positions in
+//! FR-383's slot-walk order, its applications paired with the admitted
+//! `protocol_locations` rows of the slot's own origin. A node reads its
+//! location from that row or, for a leaf, `let`, conditional or case, from its
+//! own admitted node, which the wire does not carry yet (QSpec
+//! FR-322-AC-310), so it reads none. Nothing here takes a location from the
+//! source package.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use qsl_semantics::check::wire_id::WireGraph;
+use quire_checked::node::{
+    Arithmetic, CaseArm, CheckedLiteral, Connective, ConnectiveOrigin, NodeKind, OrderedKind,
+    RecordField, RecordSlot,
+};
+use quire_contract_model::{
+    CheckedNodeId, CheckedPackageV2, CheckedProtocolLocation, CheckedProtocolSemanticLocation,
+    CheckedSemanticNodeV2, CheckedTerm,
+};
+use quire_exact::{
+    admit_text, ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload,
+    Timestamp, Uuid, Value, ValueType,
+};
+use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::declaration::{
+    CheckedEquality, EqualityOperand, EqualityOperator, FieldRef,
+};
+use quire_semantic_value::location::{Location, Origin};
+
+/// One projected protocol slot: owned evaluator nodes, the admitted function
+/// table its calls reach, and the frame its locals and case binders use.
+/// Wire terms and producer rows stay inside qsl-package.
+pub struct ReaderProtocolProjection {
+    nodes: Vec<ReaderProjectedNode>,
+    functions: Vec<ReaderFunction>,
+    root: usize,
+    frame_slots: usize,
+    locals: BTreeMap<NodeKey, usize>,
+}
+
+impl ReaderProtocolProjection {
+    /// Index of the selected root node.
+    pub fn root(&self) -> usize {
+        self.root
+    }
+
+    /// The exact node kind at an arena index.
+    pub fn kind(&self, index: usize) -> Option<&NodeKind<usize, CheckedLiteral>> {
+        self.nodes.get(index).map(|node| &node.kind)
+    }
+
+    /// The selected exact type of an arena node.
+    pub fn value_type(&self, index: usize) -> Option<&ValueType> {
+        self.nodes.get(index).map(|node| &node.value_type)
+    }
+
+    /// The admitted location of an arena node: its paired
+    /// `protocol_locations` row for a slot-walk application, `None` where
+    /// the admitted wire carries none for it (FR-390, QSpec FR-322-AC-310).
+    pub fn location(&self, index: usize) -> Option<&Location> {
+        self.nodes
+            .get(index)
+            .and_then(|node| node.location.as_ref())
+    }
+
+    /// Ordered child node indices.
+    pub fn children(&self, index: usize) -> Option<&[usize]> {
+        self.nodes.get(index).map(|node| node.children.as_slice())
+    }
+
+    /// Function table entry for a checked call.
+    pub fn function(&self, index: usize) -> Option<ReaderProtocolFunction<'_>> {
+        let function = self.functions.get(index)?;
+        Some(ReaderProtocolFunction {
+            name: &function.name,
+            body: function.body,
+            slots: function.slots,
+        })
+    }
+
+    /// The number of frame slots the slot's root context uses: its binders
+    /// and the binders of every `case` it holds outside a function.
+    pub fn frame_slots(&self) -> usize {
+        self.frame_slots
+    }
+
+    /// The local slot a supplied binder is read through.
+    pub fn local_slot(&self, binder: &NodeKey) -> Option<usize> {
+        self.locals.get(binder).copied()
+    }
+
+    /// The location of each application position of the slot's walk, in
+    /// walk order (FR-383).
+    #[cfg(test)]
+    pub(crate) fn term_locations(&self) -> Vec<Option<&Location>> {
+        walk(&self.nodes, self.root)
+            .into_iter()
+            .filter_map(|index| self.nodes.get(index))
+            .filter(|node| node.term.is_some())
+            .map(|node| node.location.as_ref())
+            .collect()
+    }
+}
+
+/// One admitted pure function available to a projected protocol expression.
+pub struct ReaderProtocolFunction<'a> {
+    /// Function name used by evaluator diagnostics.
+    pub name: &'a str,
+    /// Function body node index.
+    pub body: usize,
+    /// Number of checked parameter slots.
+    pub slots: usize,
+}
+
+/// The projection of one slot, or why it has none.
+pub enum ReaderSlot {
+    /// The slot's admitted expression projected to evaluator nodes.
+    Projected(ReaderProtocolProjection),
+    /// An admitted form or operation without a projection (FR-390
+    /// "Typed projection admission"), a typed refusal of this slot.
+    Unsupported(UnsupportedView),
+    /// The admitted package broke a projection invariant.
+    Fault(InternalFault),
+}
+
+/// Every protocol slot of one reader-backed package, keyed by the slot's root
+/// node and its type-declaration origin name (FR-383's site name).
+pub struct ReaderProtocolSlots {
+    slots: BTreeMap<(NodeKey, String), ReaderSlot>,
+}
+
+impl ReaderProtocolSlots {
+    /// The projection of the slot rooted at `root` under `origin`.
+    pub(crate) fn slot(&self, root: &NodeKey, origin: &str) -> Option<&ReaderSlot> {
+        self.slots.get(&(root.clone(), origin.to_owned()))
+    }
+
+    /// The slot projection under `origin`, whatever its root.
+    #[cfg(test)]
+    pub(crate) fn slot_named(&self, origin: &str) -> Option<&ReaderSlot> {
+        self.slots
+            .iter()
+            .find(|((_, name), _)| name == origin)
+            .map(|(_, slot)| slot)
+    }
+}
+
+/// FR-390's typed unsupported view: the catalog pair
+/// `unknown_required_feature`/`unsupported-feature`, the owning package, a
+/// typed locus and one typed reason.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnsupportedView {
+    package: String,
+    locus: ViewLocus,
+    reason: UnsupportedReason,
+}
+
+impl UnsupportedView {
+    /// The catalog code and cause every unsupported view carries.
+    pub fn catalog(&self) -> (&'static str, &'static str) {
+        ("unknown_required_feature", "unsupported-feature")
+    }
+
+    /// The owning package identity.
+    pub fn package(&self) -> &str {
+        &self.package
+    }
+
+    /// Where the unsupported projection is.
+    pub fn locus(&self) -> &ViewLocus {
+        &self.locus
+    }
+
+    /// Why the projection is unsupported.
+    pub fn reason(&self) -> &UnsupportedReason {
+        &self.reason
+    }
+}
+
+/// The `Node` locus of an [`UnsupportedView`]: the affected admitted node and
+/// its own admitted location (`None` where the wire carries none for it).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewLocus {
+    /// The node's structural key.
+    pub key: NodeKey,
+    /// The node's own admitted location.
+    pub location: Option<Location>,
+}
+
+/// The typed reason of an [`UnsupportedView`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UnsupportedReason {
+    /// An admitted type without a kernel representation.
+    MissingTypeRepresentation,
+    /// An admitted literal without a kernel value.
+    MissingLiteralProjection,
+    /// An admitted expression form or operation without a `NodeKind`.
+    MissingOperationProjection {
+        /// The operation identity, or the node's tag and form.
+        operation: String,
+    },
+    /// A slot-walk visit without its `protocol_locations` row, or a row
+    /// without its visit.
+    MissingLocationProjection(Box<MissingLocation>),
+}
+
+impl UnsupportedReason {
+    /// The reason's stable name; an operation reason carries its identity.
+    pub fn name(&self) -> String {
+        match self {
+            Self::MissingTypeRepresentation => "missing-type-representation".to_owned(),
+            Self::MissingLiteralProjection => "missing-literal-projection".to_owned(),
+            Self::MissingOperationProjection { operation } => {
+                format!("missing-operation-projection:{operation}")
+            }
+            Self::MissingLocationProjection(_) => "missing-location-projection".to_owned(),
+        }
+    }
+}
+
+/// The evidence of a [`UnsupportedReason::MissingLocationProjection`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MissingLocation {
+    /// The slot's type-declaration origin name.
+    pub origin: String,
+    /// The application's structural key.
+    pub application: NodeKey,
+    /// The unpaired visit number, or the unpaired row's index among the
+    /// application's rows of this origin.
+    pub index: usize,
+    /// The application's rows of this origin.
+    pub rows: usize,
+    /// The application's visits in this slot's walk.
+    pub visits: usize,
+    /// The producer-defect classification, `invalid_package`/`invalid-value`.
+    pub defect: (&'static str, &'static str),
+    /// `/checked_term_data/protocol_locations/<index>/location/origin` of the
+    /// origin's first row for the application, or
+    /// `/checked_term_data/protocol_locations` when it has none.
+    pub pointer: String,
+}
+
+/// Why view creation refused the whole package.
+pub(crate) enum PackageRefusal {
+    Unsupported(UnsupportedView),
+    Fault(InternalFault),
+}
+
+/// One slot to project: its root, origin name and binders in local-slot order.
+pub(crate) struct SlotRequest {
+    pub(crate) root: NodeKey,
+    pub(crate) origin: String,
+    pub(crate) binders: Vec<NodeKey>,
+}
+
+/// Project every slot of `admitted` and pair each projected slot's walk with
+/// its origin's `protocol_locations` rows (FR-390 view creation).
+pub(crate) fn project_package(
+    source_graph: &qsl_semantics::check::CheckedGraph,
+    admitted: &CheckedPackageV2,
+    emission: &crate::Emission,
+    package: &str,
+    requests: Vec<SlotRequest>,
+    work_limit: u64,
+) -> Result<ReaderProtocolSlots, PackageRefusal> {
+    let index = WireIndex::new(source_graph, admitted, emission, work_limit)
+        .map_err(PackageRefusal::Fault)?;
+    let rows = OriginRows::new(admitted);
+    let mut slots = BTreeMap::new();
+    let mut refusal: Option<UnsupportedView> = None;
+    for request in requests {
+        let slot = match index.project_slot(&request) {
+            Ok(mut projection) => {
+                let found = rows.pair(&mut projection, &request.origin, package, &index)?;
+                refusal = first_refusal(refusal, found);
+                ReaderSlot::Projected(projection)
+            }
+            Err(BuildError::Unsupported { reason, node }) => {
+                ReaderSlot::Unsupported(UnsupportedView {
+                    package: package.to_owned(),
+                    locus: ViewLocus {
+                        key: index.key(&node).map_err(PackageRefusal::Fault)?,
+                        location: None,
+                    },
+                    reason,
+                })
+            }
+            Err(BuildError::Fault(fault)) => ReaderSlot::Fault(fault),
+        };
+        slots.insert((request.root, request.origin), slot);
+    }
+    match refusal {
+        Some(view) => Err(PackageRefusal::Unsupported(view)),
+        None => Ok(ReaderProtocolSlots { slots }),
+    }
+}
+
+/// The refusal FR-390 reports: the first by ascending node key, then reason
+/// order (a visit without its row before a row without its visit, then by the
+/// unpaired index), never the walk order that found it.
+fn first_refusal(
+    current: Option<UnsupportedView>,
+    found: Option<UnsupportedView>,
+) -> Option<UnsupportedView> {
+    let rank = |view: &UnsupportedView| match &view.reason {
+        UnsupportedReason::MissingLocationProjection(missing) => (
+            view.locus.key.clone(),
+            missing.rows > missing.visits,
+            missing.index,
+        ),
+        _ => (view.locus.key.clone(), false, 0),
+    };
+    match (current, found) {
+        (Some(left), Some(right)) => Some(if rank(&right) < rank(&left) {
+            right
+        } else {
+            left
+        }),
+        (left, right) => left.or(right),
+    }
+}
+
+enum BuildError {
+    Unsupported {
+        reason: UnsupportedReason,
+        node: CheckedNodeId,
+    },
+    Fault(InternalFault),
+}
+
+impl From<InternalFault> for BuildError {
+    fn from(fault: InternalFault) -> Self {
+        Self::Fault(fault)
+    }
+}
+
+fn unsupported_operation(node: &CheckedNodeId, operation: impl Into<String>) -> BuildError {
+    BuildError::Unsupported {
+        reason: UnsupportedReason::MissingOperationProjection {
+            operation: operation.into(),
+        },
+        node: node.clone(),
+    }
+}
+
+/// The admitted package's nodes indexed by id and key, built once per view.
+struct WireIndex<'wire> {
+    source_graph: &'wire qsl_semantics::check::CheckedGraph,
+    admitted: &'wire CheckedPackageV2,
+    emission: &'wire crate::Emission,
+    nodes: BTreeMap<&'wire CheckedNodeId, &'wire CheckedSemanticNodeV2>,
+    ids: BTreeMap<NodeKey, &'wire CheckedNodeId>,
+    graph: WireGraph,
+    identities: quire_contract_model::SelectedExactIdentities,
+    /// The producer's equality rows, rejoined once on the first equality.
+    equality_rows: std::cell::OnceCell<crate::emit::equality_reader::EqualityRows>,
+    work_limit: u64,
+}
+
+impl<'wire> WireIndex<'wire> {
+    fn new(
+        source_graph: &'wire qsl_semantics::check::CheckedGraph,
+        admitted: &'wire CheckedPackageV2,
+        emission: &'wire crate::Emission,
+        work_limit: u64,
+    ) -> Result<Self, InternalFault> {
+        let identities = source_graph
+            .selected_exact_identities(admitted)
+            .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
+        let graph = crate::checked_v2::wire_graph(admitted)
+            .map_err(|_| fault("reader-protocol-graph-has-structural-keys"))?;
+        let mut nodes = BTreeMap::new();
+        let mut ids = BTreeMap::new();
+        for node in &admitted.graph().nodes {
+            nodes.insert(&node.node_id, node);
+            let key = graph
+                .key(&node.node_id)
+                .map_err(|_| fault("reader-protocol-graph-has-structural-keys"))?;
+            ids.insert(key, &node.node_id);
+        }
+        Ok(Self {
+            source_graph,
+            admitted,
+            emission,
+            nodes,
+            ids,
+            graph,
+            identities,
+            equality_rows: std::cell::OnceCell::new(),
+            work_limit,
+        })
+    }
+
+    fn node(&self, id: &CheckedNodeId) -> Option<&'wire CheckedSemanticNodeV2> {
+        self.nodes.get(id).copied()
+    }
+
+    fn key(&self, id: &CheckedNodeId) -> Result<NodeKey, InternalFault> {
+        self.graph
+            .key(id)
+            .map_err(|_| fault("reader-node-has-structural-key"))
+    }
+
+    fn project_slot(&self, request: &SlotRequest) -> Result<ReaderProtocolProjection, BuildError> {
+        let root = *self
+            .ids
+            .get(&request.root)
+            .ok_or_else(|| fault("reader-selected-protocol-node-is-retained"))?;
+        let mut locals = BTreeMap::new();
+        let mut local_keys = BTreeMap::new();
+        for (slot, binder) in request.binders.iter().enumerate() {
+            let id = *self
+                .ids
+                .get(binder)
+                .ok_or_else(|| fault("reader-protocol-binder-is-retained"))?;
+            locals.insert(id.clone(), slot);
+            local_keys.insert(binder.clone(), slot);
+        }
+        let mut builder = ReaderBuilder {
+            index: self,
+            nodes: Vec::new(),
+            functions: Vec::new(),
+            function_indexes: BTreeMap::new(),
+            memo: BTreeMap::new(),
+            root_slots: request.binders.len(),
+        };
+        builder.read_functions(root)?;
+        let root_index = builder.project_node(root, Context::Root, &locals)?;
+        Ok(ReaderProtocolProjection {
+            nodes: builder.nodes,
+            functions: builder.functions,
+            root: root_index,
+            frame_slots: builder.root_slots,
+            locals: local_keys,
+        })
+    }
+}
+
+/// One application's rows of one origin, each with its index among all rows.
+type ApplicationRows<'wire> = Vec<(usize, &'wire CheckedProtocolSemanticLocation)>;
+
+/// The admitted `protocol_locations` rows by origin name and application,
+/// each application's rows in ascending (occurrence, `term_ordinal`) order.
+struct OriginRows<'wire> {
+    rows: BTreeMap<&'wire str, BTreeMap<&'wire CheckedNodeId, ApplicationRows<'wire>>>,
+}
+
+const ROWS_POINTER: &str = "/checked_term_data/protocol_locations";
+
+impl<'wire> OriginRows<'wire> {
+    fn new(admitted: &'wire CheckedPackageV2) -> Self {
+        let mut rows: BTreeMap<_, BTreeMap<_, Vec<_>>> = BTreeMap::new();
+        let all = admitted
+            .checked_term_data()
+            .map_or(&[][..], |data| data.protocol_locations.as_slice());
+        for (position, row) in all.iter().enumerate() {
+            let quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name } =
+                &row.location.origin
+            else {
+                // A protocol-attempt origin names no slot.
+                continue;
+            };
+            rows.entry(name.as_ref())
+                .or_default()
+                .entry(&row.application)
+                .or_default()
+                .push((position, row));
+        }
+        for applications in rows.values_mut() {
+            for group in applications.values_mut() {
+                group.sort_by(|(_, left), (_, right)| {
+                    (&left.occurrence.ordinal, left.term_ordinal)
+                        .cmp(&(&right.occurrence.ordinal, right.term_ordinal))
+                });
+            }
+        }
+        Self { rows }
+    }
+
+    /// Pair visit `k` of each application in the slot's walk with the
+    /// application's row `k` of the slot's origin, and refuse a visit
+    /// without a row or a row without a visit (FR-390-AC-33..38, AC-57).
+    fn pair(
+        &self,
+        projection: &mut ReaderProtocolProjection,
+        origin: &str,
+        package: &str,
+        index: &WireIndex<'_>,
+    ) -> Result<Option<UnsupportedView>, PackageRefusal> {
+        let order = walk(&projection.nodes, projection.root);
+        let empty = BTreeMap::new();
+        let applications = self.rows.get(origin).unwrap_or(&empty);
+        let mut visits: BTreeMap<CheckedNodeId, usize> = BTreeMap::new();
+        for &position in &order {
+            for application in projection.nodes[position].terms() {
+                *visits.entry(application.clone()).or_default() += 1;
+            }
+        }
+        let missing = |application: &CheckedNodeId, at: usize, rows: usize, visits: usize| {
+            let pointer = applications
+                .get(application)
+                .and_then(|group| group.first())
+                .map_or_else(
+                    || ROWS_POINTER.to_owned(),
+                    |(row, _)| format!("{ROWS_POINTER}/{row}/location/origin"),
+                );
+            match index.key(application) {
+                Ok(key) => Ok(UnsupportedView {
+                    package: package.to_owned(),
+                    locus: ViewLocus {
+                        key: key.clone(),
+                        location: None,
+                    },
+                    reason: UnsupportedReason::MissingLocationProjection(Box::new(
+                        MissingLocation {
+                            origin: origin.to_owned(),
+                            application: key,
+                            index: at,
+                            rows,
+                            visits,
+                            defect: ("invalid_package", "invalid-value"),
+                            pointer,
+                        },
+                    )),
+                }),
+                Err(fault) => Err(PackageRefusal::Fault(fault)),
+            }
+        };
+        let mut refusal = None;
+        let mut seen: BTreeMap<CheckedNodeId, usize> = BTreeMap::new();
+        for &position in &order {
+            let terms: Vec<CheckedNodeId> = projection.nodes[position].terms().cloned().collect();
+            for application in terms {
+                let visit = seen.entry(application.clone()).or_default();
+                let group = applications
+                    .get(&application)
+                    .map_or(&[][..], Vec::as_slice);
+                let total = visits.get(&application).copied().unwrap_or_default();
+                let Some((_, row)) = group.get(*visit) else {
+                    refusal = first_refusal(
+                        refusal,
+                        Some(missing(&application, *visit, group.len(), total)?),
+                    );
+                    continue;
+                };
+                let location = location(&row.location)
+                    .ok_or_else(|| PackageRefusal::Fault(fault("reader-location-ordinal-fits")))?;
+                *visit += 1;
+                // The node's own term is its last; an absorbed conversion's
+                // row is paired and consumed before it.
+                if projection.nodes[position].term.as_ref() == Some(&application) {
+                    projection.nodes[position].location = Some(location);
+                }
+            }
+        }
+        for (application, group) in applications {
+            let total = visits.get(*application).copied().unwrap_or_default();
+            if group.len() > total {
+                refusal = first_refusal(
+                    refusal,
+                    Some(missing(application, total, group.len(), total)?),
+                );
+            }
+        }
+        Ok(refusal)
+    }
+}
+
+/// The positions of a slot in FR-383's walk order: pre-order, children in
+/// `NodeKind` operand order.
+fn walk(nodes: &[ReaderProjectedNode], root: usize) -> Vec<usize> {
+    let mut order = Vec::with_capacity(nodes.len());
+    let mut stack = vec![root];
+    while let Some(index) = stack.pop() {
+        order.push(index);
+        if let Some(node) = nodes.get(index) {
+            stack.extend(node.children.iter().rev().copied());
+        }
+    }
+    order
+}
+
+/// Where a projected node lives: the slot's own walk, or one function body.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Context {
+    Root,
+    Function(usize),
+}
+
+struct ReaderBuilder<'index, 'wire> {
+    index: &'index WireIndex<'wire>,
+    nodes: Vec<ReaderProjectedNode>,
+    functions: Vec<ReaderFunction>,
+    function_indexes: BTreeMap<CheckedNodeId, usize>,
+    /// Function bodies share a node reached twice; the slot's own walk
+    /// holds one position per parent (FR-390).
+    memo: BTreeMap<(usize, CheckedNodeId), usize>,
+    root_slots: usize,
+}
+
+impl<'wire> ReaderBuilder<'_, 'wire> {
+    fn admitted(&self) -> &'wire CheckedPackageV2 {
+        self.index.admitted
+    }
+
+    fn node(&self, id: &CheckedNodeId) -> Result<&'wire CheckedSemanticNodeV2, InternalFault> {
+        self.index
+            .node(id)
+            .ok_or_else(|| fault("reader-expression-child-is-admitted"))
+    }
+
+    fn read_functions(&mut self, root: &CheckedNodeId) -> Result<(), BuildError> {
+        let mut reachable = BTreeSet::new();
+        let mut pending = vec![root.clone()];
+        while let Some(id) = pending.pop() {
+            if !reachable.insert(id.clone()) {
+                continue;
+            }
+            let node = self
+                .index
+                .node(&id)
+                .ok_or_else(|| fault("reader-reachable-node-is-admitted"))?;
+            pending.extend(node.body.reference_targets().into_iter().cloned());
+        }
+        let declarations = reachable
+            .iter()
+            .filter_map(|id| self.index.node(id))
+            .filter(|node| {
+                node.node_tag.as_ref() == "function"
+                    && node.semantic_form.as_ref() == "pure_function"
+            })
+            .map(|node| {
+                let (parameters, body) = function_parts(&node.body)
+                    .ok_or_else(|| fault("reader-pure-function-has-checked-body"))?;
+                let parameters = parameters
+                    .iter()
+                    .map(|parameter| match parameter {
+                        CheckedTerm::Reference { target } => Ok(target.clone()),
+                        _ => Err(fault("reader-function-parameter-has-checked-identity")),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let body = match body {
+                    CheckedTerm::Reference { target } => target.clone(),
+                    _ => return Err(fault("reader-function-body-has-checked-identity")),
+                };
+                let name = node
+                    .declaration
+                    .as_ref()
+                    .and_then(|declaration| declaration.qualified_name.last())
+                    .map(|name| name.to_string())
+                    .ok_or_else(|| fault("reader-function-name-is-admitted"))?;
+                Ok((node.node_id.clone(), name, parameters, body))
+            })
+            .collect::<Result<Vec<_>, InternalFault>>()?;
+
+        for (node, name, parameters, _) in &declarations {
+            let index = self.functions.len();
+            self.function_indexes.insert(node.clone(), index);
+            self.functions.push(ReaderFunction {
+                name: name.clone(),
+                body: usize::MAX,
+                slots: parameters.len(),
+            });
+        }
+        for (index, (_, _, parameters, body)) in declarations.iter().enumerate() {
+            let locals = parameters
+                .iter()
+                .enumerate()
+                .map(|(slot, id)| (id.clone(), slot))
+                .collect::<BTreeMap<_, _>>();
+            let body = self.project_node(body, Context::Function(index), &locals)?;
+            self.functions[index].body = body;
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, node: ReaderProjectedNode) -> usize {
+        let index = self.nodes.len();
+        self.nodes.push(node);
+        index
+    }
+
+    fn project_node(
+        &mut self,
+        id: &CheckedNodeId,
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<usize, BuildError> {
+        if let Context::Function(function) = context {
+            if let Some(index) = self.memo.get(&(function, id.clone())) {
+                return Ok(*index);
+            }
+        }
+        let index = self.project_fresh(id, context, locals)?;
+        if let Context::Function(function) = context {
+            self.memo.insert((function, id.clone()), index);
+        }
+        Ok(index)
+    }
+
+    fn project_fresh(
+        &mut self,
+        id: &CheckedNodeId,
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<usize, BuildError> {
+        if let Some(slot) = locals.get(id).copied() {
+            let value_type = self.value_type(id)?;
+            return Ok(self.push(ReaderProjectedNode::leaf(NodeKind::Local(slot), value_type)));
+        }
+        let node = self.node(id)?;
+        let (kind, children, term) = match &node.body {
+            CheckedTerm::Literal { .. } => {
+                let literal = node
+                    .body
+                    .literal_read()
+                    .and_then(|literal| literal_value(literal.value, literal.type_id, self.index))
+                    .ok_or_else(|| BuildError::Unsupported {
+                        reason: UnsupportedReason::MissingLiteralProjection,
+                        node: id.clone(),
+                    })?;
+                (NodeKind::Literal(CheckedLiteral(literal)), Vec::new(), None)
+            }
+            CheckedTerm::Aggregate { members }
+                if node.node_tag.as_ref() == "value"
+                    && node.semantic_form.as_ref() == "union_value" =>
+            {
+                let (kind, children) = self.union_value(node, members, context, locals)?;
+                (kind, children, None)
+            }
+            CheckedTerm::Aggregate { members } => {
+                let (kind, children) = self.record_value(id, members, context, locals)?;
+                (kind, children, None)
+            }
+            CheckedTerm::Reference { target } => {
+                if let Some(slot) = locals.get(target).copied() {
+                    (NodeKind::Local(slot), Vec::new(), None)
+                } else {
+                    return self.project_node(target, context, locals);
+                }
+            }
+            CheckedTerm::Application {
+                operation,
+                arguments,
+                ..
+            } => {
+                let identity = operation.identity();
+                let (kind, children) =
+                    self.project_application(id, operation, arguments, context, locals)?;
+                // FR-383 assumption A1: a `case` (like a `let` or a
+                // conditional) is no term and has no row; every other
+                // application of the slot's own walk has one.
+                let term = (context == Context::Root && identity != Some("quire.op.control.case"))
+                    .then(|| id.clone());
+                (kind, children, term)
+            }
+            _ => {
+                return Err(unsupported_operation(
+                    id,
+                    format!("{}/{}", node.node_tag, node.semantic_form),
+                ));
+            }
+        };
+        let value_type = self.value_type(id)?;
+        Ok(self.push(ReaderProjectedNode {
+            kind,
+            value_type,
+            location: None,
+            children,
+            term,
+            absorbed: None,
+        }))
+    }
+
+    fn union_value(
+        &mut self,
+        node: &CheckedSemanticNodeV2,
+        members: &[CheckedTerm],
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
+        let union_key = self
+            .index
+            .graph
+            .key(&node.semantic_type)
+            .map_err(|_| fault("reader-union-value-has-declaration-key"))?;
+        let union_node = self
+            .index
+            .node(&node.semantic_type)
+            .filter(|candidate| {
+                candidate.node_tag.as_ref() == "composite_type"
+                    && candidate.semantic_form.as_ref() == "union"
+            })
+            .ok_or_else(|| fault("reader-union-value-type-is-union"))?;
+        let CheckedTerm::Aggregate {
+            members: union_members,
+        } = &union_node.body
+        else {
+            return Err(fault("reader-union-declaration-has-checked-members").into());
+        };
+        let [CheckedTerm::Binding { name, value }] = members else {
+            return Err(fault("reader-union-value-has-one-member").into());
+        };
+        let quire_contract_model::CheckedBindingNameKind::Other(member_name) = name.kind() else {
+            return Err(fault("reader-union-value-has-member-name").into());
+        };
+        let member = member_position(union_members, member_name)
+            .ok_or_else(|| fault("reader-union-value-member-is-declared"))?;
+        let CheckedTerm::Aggregate { members } = value.as_ref() else {
+            return Err(fault("reader-union-value-has-payload-list").into());
+        };
+        let children = members
+            .iter()
+            .map(|argument| self.project_argument(&node.node_id, argument, context, locals))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((
+            NodeKind::UnionValue {
+                declaration: union_key,
+                member,
+                arguments: children.clone(),
+            },
+            children,
+        ))
+    }
+
+    fn record_value(
+        &mut self,
+        id: &CheckedNodeId,
+        members: &[CheckedTerm],
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
+        let ValueType::Composite(declaration) = &self.value_type(id)? else {
+            return Err(fault("reader-aggregate-has-checked-record-type").into());
+        };
+        let declaration = declaration.clone();
+        let slots = members
+            .iter()
+            .map(|member| -> Result<RecordSlot<usize>, BuildError> {
+                let CheckedTerm::Binding { name, value } = member else {
+                    return Err(fault("reader-record-value-has-checked-field-binding").into());
+                };
+                if !matches!(
+                    name.kind(),
+                    quire_contract_model::CheckedBindingNameKind::Other(_)
+                ) {
+                    return Err(fault("reader-record-value-has-declared-field-names").into());
+                }
+                Ok(RecordSlot::Present(
+                    self.project_argument(id, value, context, locals)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let children = slots
+            .iter()
+            .filter_map(|slot| match slot {
+                RecordSlot::Present(child) => Some(*child),
+                RecordSlot::Absent | RecordSlot::Null => None,
+            })
+            .collect();
+        Ok((NodeKind::Record { declaration, slots }, children))
+    }
+
+    fn project_application(
+        &mut self,
+        id: &CheckedNodeId,
+        operation: &quire_contract_model::CheckedApplicationOperation,
+        arguments: &[CheckedTerm],
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
+        let identity = operation.identity();
+        match identity {
+            Some("quire.op.function.call") => {
+                let callee = arguments
+                    .first()
+                    .and_then(reference_target)
+                    .ok_or_else(|| fault("reader-call-has-callee"))?;
+                let function = self
+                    .function_indexes
+                    .get(callee)
+                    .copied()
+                    .ok_or_else(|| fault("reader-call-callee-is-admitted"))?;
+                let children = self.project_arguments(id, arguments.get(1..), context, locals)?;
+                Ok((
+                    NodeKind::Call {
+                        function,
+                        arguments: children.clone(),
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.boolean.and" | "quire.op.boolean.or" | "quire.op.boolean.implies") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-connective-has-two-operands").into());
+                };
+                let connective = match identity {
+                    Some("quire.op.boolean.and") => Connective::And,
+                    Some("quire.op.boolean.or") => Connective::Or,
+                    _ => Connective::Implies,
+                };
+                Ok((
+                    NodeKind::Connective(connective, ConnectiveOrigin::Authored, *left, *right),
+                    children,
+                ))
+            }
+            Some("quire.op.boolean.not") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-not-has-one-operand").into());
+                };
+                Ok((NodeKind::Not(*operand), children))
+            }
+            Some("quire.op.integer.add" | "quire.op.integer.sub" | "quire.op.integer.mul") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-integer-arithmetic-has-two-operands").into());
+                };
+                let operator = match identity {
+                    Some("quire.op.integer.add") => Arithmetic::Add,
+                    Some("quire.op.integer.sub") => Arithmetic::Subtract,
+                    _ => Arithmetic::Multiply,
+                };
+                Ok((NodeKind::Arithmetic(operator, *left, *right), children))
+            }
+            Some(
+                "quire.op.quantity.add"
+                | "quire.op.quantity.sub"
+                | "quire.op.quantity.mul"
+                | "quire.op.quantity.div",
+            ) => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-quantity-arithmetic-has-two-operands").into());
+                };
+                let operator = match identity {
+                    Some("quire.op.quantity.add") => ArithmeticOperator::Add,
+                    Some("quire.op.quantity.sub") => ArithmeticOperator::Subtract,
+                    Some("quire.op.quantity.mul") => ArithmeticOperator::Multiply,
+                    _ => ArithmeticOperator::Divide,
+                };
+                Ok((NodeKind::Quantity(operator, *left, *right), children))
+            }
+            Some("quire.op.numeric.narrow") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-narrow-has-one-operand").into());
+                };
+                let ValueType::Int(target) = &self.value_type(id)? else {
+                    return Err(fault("reader-narrow-has-exact-integer-target").into());
+                };
+                Ok((NodeKind::Coerce(*operand, target.clone()), children))
+            }
+            Some("quire.op.quantity.convert") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-quantity-conversion-has-one-operand").into());
+                };
+                let operand_id = arguments
+                    .first()
+                    .and_then(reference_target)
+                    .ok_or_else(|| fault("reader-quantity-conversion-has-checked-operand"))?;
+                let source = self.value_type(operand_id)?;
+                let target = self.value_type(id)?;
+                if !matches!(source, ValueType::Quantity(_))
+                    || !matches!(target, ValueType::Quantity(_))
+                {
+                    return Err(fault("reader-quantity-conversion-has-exact-units").into());
+                }
+                Ok((
+                    NodeKind::ConvertScalar(EqualityOperand::converted(source, target), *operand),
+                    children,
+                ))
+            }
+            Some("quire.op.control.case") => self.case(id, arguments, context, locals),
+            Some(
+                "quire.op.integer.lt"
+                | "quire.op.integer.le"
+                | "quire.op.integer.gt"
+                | "quire.op.integer.ge"
+                | "quire.op.rational.lt"
+                | "quire.op.rational.le"
+                | "quire.op.rational.gt"
+                | "quire.op.rational.ge"
+                | "quire.op.decimal.lt"
+                | "quire.op.decimal.le"
+                | "quire.op.decimal.gt"
+                | "quire.op.decimal.ge"
+                | "quire.op.enum.lt"
+                | "quire.op.enum.le"
+                | "quire.op.enum.gt"
+                | "quire.op.enum.ge"
+                | "quire.op.text.lt"
+                | "quire.op.text.le"
+                | "quire.op.text.gt"
+                | "quire.op.text.ge"
+                | "quire.op.quantity.lt"
+                | "quire.op.quantity.le"
+                | "quire.op.quantity.gt"
+                | "quire.op.quantity.ge",
+            ) => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-order-has-two-operands").into());
+                };
+                let (family, operator) = identity
+                    .and_then(|identity| identity.strip_prefix("quire.op."))
+                    .and_then(|identity| identity.split_once('.'))
+                    .ok_or_else(|| fault("reader-order-family-is-catalogued"))?;
+                let kind = match family {
+                    "integer" => OrderedKind::Integers,
+                    "rational" => OrderedKind::Rationals,
+                    "decimal" => OrderedKind::Decimals,
+                    "enum" => OrderedKind::Enums,
+                    "text" => OrderedKind::Texts,
+                    _ => OrderedKind::Quantities,
+                };
+                let operator = match operator {
+                    "lt" => OrderingOperator::Less,
+                    "le" => OrderingOperator::LessOrEqual,
+                    "gt" => OrderingOperator::Greater,
+                    _ => OrderingOperator::GreaterOrEqual,
+                };
+                Ok((NodeKind::Order(operator, kind, *left, *right), children))
+            }
+            Some("quire.op.record.project") => {
+                self.projection(id, operation, arguments, context, locals)
+            }
+            Some(
+                "quire.op.string.eq"
+                | "quire.op.string.ne"
+                | "quire.op.uuid.eq"
+                | "quire.op.uuid.ne"
+                | "quire.op.timestamp.eq"
+                | "quire.op.timestamp.ne"
+                | "quire.op.boolean.eq"
+                | "quire.op.boolean.ne"
+                | "quire.op.integer.eq"
+                | "quire.op.integer.ne"
+                | "quire.op.rational.eq"
+                | "quire.op.rational.ne"
+                | "quire.op.decimal.eq"
+                | "quire.op.decimal.ne"
+                | "quire.op.quantity.eq"
+                | "quire.op.quantity.ne"
+                | "quire.op.structural.eq"
+                | "quire.op.structural.ne",
+            ) => self.equality(id, identity, arguments, context, locals),
+            _ => Err(unsupported_operation(
+                id,
+                identity.unwrap_or("unidentified operation"),
+            )),
+        }
+    }
+
+    fn project_arguments(
+        &mut self,
+        id: &CheckedNodeId,
+        arguments: Option<&[CheckedTerm]>,
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<Vec<usize>, BuildError> {
+        arguments
+            .ok_or_else(|| fault("reader-application-has-operands"))?
+            .iter()
+            .map(|argument| self.project_argument(id, argument, context, locals))
+            .collect()
+    }
+
+    fn equality(
+        &mut self,
+        id: &CheckedNodeId,
+        identity: Option<&str>,
+        arguments: &[CheckedTerm],
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
+        // The admitted equality decision applies the authored conversion
+        // plan to its operand, so a quantity equality reads the conversion's
+        // own operand and the conversion is not applied twice.
+        let quantity = matches!(
+            identity,
+            Some("quire.op.quantity.eq" | "quire.op.quantity.ne")
+        );
+        let children = arguments
+            .iter()
+            .map(|argument| {
+                let conversion = quantity
+                    .then(|| self.quantity_conversion(argument))
+                    .flatten();
+                let Some((conversion, operand)) = conversion else {
+                    return self.project_argument(id, argument, context, locals);
+                };
+                let (conversion, operand) = (conversion.clone(), operand.clone());
+                let child = self.project_argument(id, &operand, context, locals)?;
+                // The conversion stays a position of the slot's walk (FR-383)
+                // with its own row, held by the operand it converts.
+                if context == Context::Root {
+                    if let Some(node) = self.nodes.get_mut(child) {
+                        node.absorbed = Some(conversion);
+                    }
+                }
+                Ok(child)
+            })
+            .collect::<Result<Vec<_>, BuildError>>()?;
+        let row = self
+            .index
+            .emission
+            .equality_producer_identity_rows()
+            .iter()
+            .find(|row| row.checked_node() == id)
+            .ok_or_else(|| fault("reader-equality-has-producer-identity-row"))?;
+        let rows = self
+            .index
+            .equality_rows
+            .get_or_init(|| self.index.emission.equality_rows());
+        let decision = self
+            .index
+            .emission
+            .admitted_equality_from(
+                rows,
+                self.admitted(),
+                id,
+                row.occurrence(),
+                self.index.work_limit,
+            )
+            .map_err(|_| fault("reader-equality-decision-is-admitted"))?;
+        let equality = CheckedEquality::from_admitted_decision(&decision);
+        let operator = if identity.is_some_and(|identity| identity.ends_with(".ne")) {
+            EqualityOperator::NotEqual
+        } else {
+            EqualityOperator::Equal
+        };
+        let [left, right] = children.as_slice() else {
+            return Err(fault("reader-equality-has-two-operands").into());
+        };
+        Ok((
+            NodeKind::Equality(operator, Box::new(equality), *left, *right),
+            children,
+        ))
+    }
+
+    /// A `case` over a union scrutinee. Its binders take the frame slots
+    /// after every slot of the enclosing context; the root context's frame
+    /// grows to hold them, as a function's does.
+    fn case(
+        &mut self,
+        id: &CheckedNodeId,
+        arguments: &[CheckedTerm],
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
+        let scrutinee_term = arguments
+            .first()
+            .ok_or_else(|| fault("reader-case-has-scrutinee"))?;
+        let scrutinee = self.project_argument(id, scrutinee_term, context, locals)?;
+        let scrutinee_id = reference_target(scrutinee_term)
+            .ok_or_else(|| fault("reader-union-case-scrutinee-has-identity"))?;
+        let ValueType::Composite(declaration) = &self.value_type(scrutinee_id)? else {
+            return Err(fault("reader-union-case-scrutinee-has-union-type").into());
+        };
+        let declaration = declaration.clone();
+        let union_node = self
+            .index
+            .ids
+            .get(&declaration)
+            .and_then(|id| self.index.node(id))
+            .filter(|candidate| {
+                candidate.node_tag.as_ref() == "composite_type"
+                    && candidate.semantic_form.as_ref() == "union"
+            })
+            .ok_or_else(|| fault("reader-union-case-declaration-is-admitted"))?;
+        let CheckedTerm::Aggregate {
+            members: union_members,
+        } = &union_node.body
+        else {
+            return Err(fault("reader-union-declaration-has-checked-members").into());
+        };
+        let mut arms = Vec::with_capacity(arguments.len().saturating_sub(1));
+        let mut children = vec![scrutinee];
+        let first_free = match context {
+            Context::Root => self.root_slots,
+            Context::Function(function) => self
+                .functions
+                .get(function)
+                .map_or(0, |function| function.slots),
+        };
+        let mut next_slot = locals
+            .values()
+            .copied()
+            .max()
+            .map_or(0, |slot| slot.saturating_add(1))
+            .max(first_free);
+        for argument in arguments.iter().skip(1) {
+            let CheckedTerm::Binding { name, value } = argument else {
+                return Err(fault("reader-union-case-arm-is-binding").into());
+            };
+            let quire_contract_model::CheckedBindingNameKind::Other(member_name) = name.kind()
+            else {
+                return Err(fault("reader-union-case-arm-has-member-name").into());
+            };
+            let member = member_position(union_members, member_name)
+                .ok_or_else(|| fault("reader-union-case-arm-is-declared"))?;
+            let CheckedTerm::Aggregate { members } = value.as_ref() else {
+                return Err(fault("reader-union-case-arm-has-body").into());
+            };
+            let [CheckedTerm::Aggregate { members: binders }, body] = members.as_slice() else {
+                return Err(fault("reader-union-case-arm-has-binders-and-body").into());
+            };
+            let mut arm_locals = locals.clone();
+            let mut arm_slots = Vec::with_capacity(binders.len());
+            for binder in binders {
+                let target = reference_target(binder)
+                    .ok_or_else(|| fault("reader-union-case-binder-has-identity"))?;
+                arm_slots.push(next_slot);
+                arm_locals.insert(target.clone(), next_slot);
+                next_slot = next_slot
+                    .checked_add(1)
+                    .ok_or_else(|| fault("reader-union-case-slot-index-fits"))?;
+            }
+            // Record the grown frame before the arm body, so a nested case
+            // in it numbers its binders after these.
+            self.grow_frame(context, next_slot);
+            let body = self.project_argument(id, body, context, &arm_locals)?;
+            children.push(body);
+            arms.push(CaseArm {
+                member,
+                binders: arm_slots,
+                body,
+            });
+        }
+        self.grow_frame(context, next_slot);
+        Ok((
+            NodeKind::Case {
+                scrutinee,
+                declaration,
+                arms,
+            },
+            children,
+        ))
+    }
+
+    fn grow_frame(&mut self, context: Context, slots: usize) {
+        match context {
+            Context::Root => self.root_slots = self.root_slots.max(slots),
+            Context::Function(function) => {
+                if let Some(function) = self.functions.get_mut(function) {
+                    function.slots = function.slots.max(slots);
+                }
+            }
+        }
+    }
+
+    /// `record.project`: a field of a record value, or an attribute of a
+    /// model object read through `model.deref` (FR-107's charged read).
+    fn projection(
+        &mut self,
+        id: &CheckedNodeId,
+        operation: &quire_contract_model::CheckedApplicationOperation,
+        arguments: &[CheckedTerm],
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
+        let operand_term = arguments
+            .first()
+            .ok_or_else(|| fault("reader-record-projection-has-operand"))?;
+        let operand_id = reference_target(operand_term)
+            .ok_or_else(|| fault("reader-record-projection-has-operand"))?;
+        let admitted_operation = operation
+            .read()
+            .map_err(|_| fault("reader-record-projection-has-admitted-field"))?;
+        let Some(quire_contract_model::CheckedOperationMember::Field {
+            declaration: field_declaration,
+            name: field_name,
+            read_form,
+        }) = admitted_operation.member
+        else {
+            return Err(fault("reader-record-projection-has-admitted-field").into());
+        };
+        let selected = self
+            .index
+            .identities
+            .declaration_rows()
+            .find(|row| row.structural_node == *field_declaration)
+            .map(|row| &row.exact_identity);
+        if let Some(quire_contract_model::SelectedExactIdentity::Object(owner)) = selected {
+            // A model attribute reads the reference under its `model.deref`.
+            let operand = self.node(operand_id)?;
+            let reference = match &operand.body {
+                CheckedTerm::Application {
+                    operation,
+                    arguments,
+                    ..
+                } if operation.identity() == Some("quire.op.model.deref") => arguments
+                    .first()
+                    .ok_or_else(|| fault("reader-attribute-deref-has-operand"))?
+                    .clone(),
+                _ => operand_term.clone(),
+            };
+            let fields = self
+                .admitted()
+                .model_object_fields(field_declaration)
+                .map_err(|_| fault("reader-field-declaration-is-admitted"))?;
+            let optional = matches!(
+                fields
+                    .field(field_name)
+                    .ok_or_else(|| fault("reader-field-member-is-admitted"))?
+                    .member_type(),
+                Some(quire_contract_model::CheckedMemberType::Option(_))
+            );
+            let child = self.project_argument(id, &reference, context, locals)?;
+            return Ok((
+                NodeKind::Attribute {
+                    reference: child,
+                    field: FieldRef::new(owner.clone(), field_name.to_string()),
+                    optional,
+                    derefed: matches!(
+                        read_form,
+                        Some(quire_contract_model::CheckedFieldReadForm::ExplicitDeref)
+                    ),
+                },
+                vec![child],
+            ));
+        }
+        let ValueType::Composite(record_key) = &self.value_type(operand_id)? else {
+            return Err(fault("reader-record-projection-operand-has-composite-type").into());
+        };
+        let record_key = record_key.clone();
+        let selected_record = match selected {
+            Some(quire_contract_model::SelectedExactIdentity::Record(key)) => Some(key),
+            _ => None,
+        };
+        if selected_record != Some(&record_key) {
+            // With no selected identity row for the field's declaring node,
+            // its checked record declaration key must be the exact operand
+            // identity; equal field shape is never evidence.
+            let declaration_key = self
+                .index
+                .graph
+                .key(field_declaration)
+                .map_err(|_| fault("reader-record-field-node-has-wire-key"))?;
+            let declaration = self
+                .index
+                .node(field_declaration)
+                .ok_or_else(|| fault("reader-record-field-node-is-admitted"))?;
+            let record_form = (declaration.node_tag.as_ref() == "model"
+                && declaration.semantic_form.as_ref() == "record_value_type")
+                || (declaration.node_tag.as_ref() == "composite_type"
+                    && declaration.semantic_form.as_ref() == "record");
+            if !record_form || declaration_key != record_key {
+                return Err(fault("reader-record-field-exact-type-matches-operand").into());
+            }
+        }
+        // Presence is the admitted record's, never the source package's: IR's
+        // record view where it projects the record, else the admitted record
+        // declaration's own member, whose type is an option exactly when the
+        // field is optional (IR's own convention for a record member).
+        let from_view = [operand_id, field_declaration]
+            .into_iter()
+            .find_map(|node| {
+                let projection = self
+                    .admitted()
+                    .project_exact_type(node, &self.index.identities, self.index.work_limit)
+                    .ok()?;
+                let view = projection.record_view()?;
+                if view.record_key() != &record_key {
+                    return None;
+                }
+                view.fields()
+                    .iter()
+                    .find(|field| field.name() == field_name.as_ref())
+                    .map(|field| field.presence())
+            });
+        let presence = match from_view {
+            Some(presence) => presence,
+            None => match self.declared_member_presence(&record_key, field_name.as_ref())? {
+                Some(presence) => presence,
+                // A model record whose fields IR's complete-or-refuse record
+                // view cannot project yet (an option or collection member)
+                // and whose wire declaration carries no members: the
+                // package's type scope, joined by the exact record key, is
+                // the only remaining carrier of presence.
+                None => self.source_member_presence(&record_key, field_name.as_ref())?,
+            },
+        };
+        let optional = presence == quire_exact::Presence::Optional;
+        let child = self.project_argument(id, operand_term, context, locals)?;
+        Ok((
+            NodeKind::Field {
+                operand: child,
+                field: RecordField::new(record_key, field_name.to_string()),
+                optional,
+            },
+            vec![child],
+        ))
+    }
+
+    /// The presence of record member `field` as the admitted record
+    /// declaration `record` declares it.
+    fn declared_member_presence(
+        &self,
+        record: &NodeKey,
+        field: &str,
+    ) -> Result<Option<quire_exact::Presence>, InternalFault> {
+        let declaration = self
+            .index
+            .ids
+            .get(record)
+            .and_then(|id| self.index.node(id))
+            .ok_or_else(|| fault("reader-record-declaration-is-admitted"))?;
+        if declaration.node_tag.as_ref() != "composite_type"
+            || declaration.semantic_form.as_ref() != "record"
+        {
+            return Ok(None);
+        }
+        let CheckedTerm::Aggregate { members } = &declaration.body else {
+            return Err(fault("reader-record-declaration-has-members"));
+        };
+        let member_type = members
+            .iter()
+            .find_map(|member| match member {
+                CheckedTerm::Binding { name, value } => {
+                    use quire_contract_model::CheckedBindingNameKind as Kind;
+                    let named = match name.kind() {
+                        Kind::Parameters => "parameters",
+                        Kind::Body => "body",
+                        Kind::Optional => "optional",
+                        Kind::Clause => "clause",
+                        Kind::Other(name) => name,
+                    };
+                    (named == field).then(|| reference_target(value)).flatten()
+                }
+                _ => None,
+            })
+            .and_then(|target| self.index.node(target))
+            .ok_or_else(|| fault("reader-record-field-member-is-admitted"))?;
+        Ok(Some(
+            if member_type.node_tag.as_ref() == "composite_type"
+                && member_type.semantic_form.as_ref() == "option"
+            {
+                quire_exact::Presence::Optional
+            } else {
+                quire_exact::Presence::Required
+            },
+        ))
+    }
+
+    /// The presence of record member `field` in the package's type scope.
+    fn source_member_presence(
+        &self,
+        record: &NodeKey,
+        field: &str,
+    ) -> Result<quire_exact::Presence, InternalFault> {
+        match self
+            .index
+            .source_graph
+            .scope()
+            .types()
+            .composite(record.clone())
+            .map(|record| record.shape())
+        {
+            Some(quire_semantic_value::declaration::CompositeShape::Record(fields)) => fields
+                .iter()
+                .find(|declared| declared.name() == field)
+                .map(|declared| declared.presence())
+                .ok_or_else(|| fault("reader-record-field-member-is-admitted")),
+            _ => Err(fault("reader-record-field-view-is-admitted")),
+        }
+    }
+
+    fn project_argument(
+        &mut self,
+        parent: &CheckedNodeId,
+        argument: &CheckedTerm,
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<usize, BuildError> {
+        match argument {
+            CheckedTerm::Reference { target } => self.project_node(target, context, locals),
+            CheckedTerm::Literal { .. } => self.project_inline_literal(parent, argument),
+            _ => Err(unsupported_operation(parent, "inline operand form")),
+        }
+    }
+
+    /// The `quantity.convert` application `argument` names, with its operand.
+    fn quantity_conversion<'a>(
+        &'a self,
+        argument: &'a CheckedTerm,
+    ) -> Option<(&'a CheckedNodeId, &'a CheckedTerm)> {
+        let id = reference_target(argument)?;
+        let conversion = self.index.node(id)?;
+        let CheckedTerm::Application {
+            operation,
+            arguments,
+            ..
+        } = &conversion.body
+        else {
+            return None;
+        };
+        (operation.identity() == Some("quire.op.quantity.convert"))
+            .then(|| arguments.first().map(|operand| (id, operand)))
+            .flatten()
+    }
+
+    fn value_type(&self, id: &CheckedNodeId) -> Result<ValueType, BuildError> {
+        node_value_type(self.index, id).map_err(|error| match error {
+            TypeError::Unsupported => BuildError::Unsupported {
+                reason: UnsupportedReason::MissingTypeRepresentation,
+                node: id.clone(),
+            },
+            TypeError::Fault(fault) => BuildError::Fault(fault),
+        })
+    }
+
+    fn project_inline_literal(
+        &mut self,
+        parent: &CheckedNodeId,
+        term: &CheckedTerm,
+    ) -> Result<usize, BuildError> {
+        let unsupported = || BuildError::Unsupported {
+            reason: UnsupportedReason::MissingLiteralProjection,
+            node: parent.clone(),
+        };
+        let literal = term
+            .literal_read()
+            .ok_or_else(|| fault("reader-inline-literal-is-typed"))?;
+        let value =
+            literal_value(literal.value, literal.type_id, self.index).ok_or_else(unsupported)?;
+        let value_type = match self.admitted().project_exact_type(
+            literal.type_id,
+            &self.index.identities,
+            self.index.work_limit,
+        ) {
+            Ok(projection) => projection.value_type().clone(),
+            Err(error) if error.form.as_ref() == "scalar_type/text" => ValueType::String,
+            Err(_) => return Err(unsupported()),
+        };
+        Ok(self.push(ReaderProjectedNode::leaf(
+            NodeKind::Literal(CheckedLiteral(value)),
+            value_type,
+        )))
+    }
+}
+
+enum TypeError {
+    Unsupported,
+    Fault(InternalFault),
+}
+
+impl From<InternalFault> for TypeError {
+    fn from(fault: InternalFault) -> Self {
+        Self::Fault(fault)
+    }
+}
+
+/// The selected exact type of admitted node `id`, joining declared and
+/// structural identities where IR's projection leaves the join to QSL.
+fn node_value_type(index: &WireIndex<'_>, id: &CheckedNodeId) -> Result<ValueType, TypeError> {
+    use quire_contract_model::ExactTypeProjectionErrorCode as Code;
+    use quire_contract_model::SelectedExactIdentity as Identity;
+    let error = match index
+        .admitted
+        .project_exact_type(id, &index.identities, index.work_limit)
+    {
+        Ok(projection) => return Ok(projection.value_type().clone()),
+        Err(error) => error,
+    };
+    let unresolved = matches!(
+        error.code,
+        Code::UnsupportedExactType | Code::UnresolvedSelectedDeclaration
+    );
+    let at = error.at.as_deref();
+    let selected = |declaration: &CheckedNodeId| {
+        index
+            .identities
+            .declaration_rows()
+            .find(|row| row.structural_node == *declaration)
+            .map(|row| &row.exact_identity)
+    };
+    // A checked declaration node of `form` is itself the exact structural
+    // identity when no selected identity row exists; equal shape never is.
+    let structural = |declaration: &CheckedNodeId, tag: &str, form: &str| {
+        index
+            .node(declaration)
+            .filter(|node| node.node_tag.as_ref() == tag && node.semantic_form.as_ref() == form)
+            .and_then(|_| index.graph.key(declaration).ok())
+    };
+    match error.form.as_ref() {
+        "scalar_type/text" if unresolved => {
+            index
+                .node(at.ok_or_else(|| fault("reader-string-type-node-is-admitted"))?)
+                .filter(|node| {
+                    node.node_tag.as_ref() == "scalar_type" && node.semantic_form.as_ref() == "text"
+                })
+                .ok_or_else(|| fault("reader-string-type-has-checked-form"))?;
+            Ok(ValueType::String)
+        }
+        "composite_type/record" if unresolved => {
+            let declaration = at.ok_or_else(|| fault("reader-record-type-error-has-node"))?;
+            let key = match selected(declaration) {
+                Some(Identity::Record(key)) => Some(key.clone()),
+                _ => structural(declaration, "composite_type", "record"),
+            }
+            .ok_or_else(|| fault("reader-record-type-has-exact-identity"))?;
+            Ok(ValueType::Composite(key))
+        }
+        "composite_type/union" if error.code == Code::UnavailableIdentityWitness => {
+            let declaration = at.ok_or_else(|| fault("reader-union-type-error-has-node"))?;
+            let key = match selected(declaration) {
+                Some(Identity::Union(key)) => Some(key.clone()),
+                _ => structural(declaration, "composite_type", "union"),
+            }
+            .ok_or_else(|| fault("reader-union-type-has-exact-identity"))?;
+            Ok(ValueType::Composite(key))
+        }
+        "scalar_type/unit" if unresolved => {
+            let declaration = at.ok_or_else(|| fault("reader-unit-has-exact-identity"))?;
+            let unit = match selected(declaration) {
+                Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
+                _ => structural(declaration, "scalar_type", "unit")
+                    .map(quire_exact::UnitId::declared),
+            }
+            .ok_or_else(|| fault("reader-unit-has-exact-identity"))?;
+            Ok(ValueType::Quantity(unit))
+        }
+        "scalar_type/compound_unit" if unresolved => {
+            let unit_node = at.ok_or_else(|| fault("reader-compound-unit-type-has-node"))?;
+            let unit = crate::checked_v2::compound_unit(index.admitted, unit_node)
+                .ok_or_else(|| fault("reader-compound-unit-has-exact-identity"))?;
+            Ok(ValueType::Quantity(unit))
+        }
+        _ => {
+            // A package-local record or unit is typed by its checked
+            // semantic-type declaration, the node's exact structural identity.
+            let semantic_type = &index
+                .node(id)
+                .ok_or_else(|| fault("reader-expression-child-is-admitted"))?
+                .semantic_type;
+            if error.code == Code::UnresolvedSelectedDeclaration {
+                let record = match selected(semantic_type) {
+                    Some(Identity::Record(key)) => Some(key.clone()),
+                    _ => structural(semantic_type, "model", "record_value_type"),
+                };
+                if let Some(key) = record {
+                    return Ok(ValueType::Composite(key));
+                }
+            }
+            if unresolved && error.form.as_ref() == "scalar_type/dimension" {
+                let unit = match selected(semantic_type) {
+                    Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
+                    _ => structural(semantic_type, "scalar_type", "unit")
+                        .map(quire_exact::UnitId::declared),
+                };
+                if let Some(unit) = unit {
+                    return Ok(ValueType::Quantity(unit));
+                }
+            }
+            Err(TypeError::Unsupported)
+        }
+    }
+}
+
+fn reference_target(term: &CheckedTerm) -> Option<&CheckedNodeId> {
+    match term {
+        CheckedTerm::Reference { target } => Some(target),
+        _ => None,
+    }
+}
+
+fn member_position(members: &[CheckedTerm], wanted: &str) -> Option<usize> {
+    members.iter().position(|candidate| match candidate {
+        CheckedTerm::Binding { name, .. } => matches!(
+            name.kind(),
+            quire_contract_model::CheckedBindingNameKind::Other(name) if name == wanted
+        ),
+        _ => false,
+    })
+}
+
+/// A wire location as the evaluator's `Location`; `None` for an ordinal no
+/// `usize` holds.
+fn location(admitted: &CheckedProtocolLocation) -> Option<Location> {
+    let origin = match &admitted.origin {
+        quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name } => {
+            Origin::TypeDeclaration {
+                name: name.to_string(),
+            }
+        }
+        quire_contract_model::CheckedProtocolLocationOrigin::ProtocolAttempt {
+            protocol,
+            attempt,
+        } => Origin::ProtocolAttempt {
+            protocol: usize::try_from(*protocol).ok()?,
+            attempt: usize::try_from(*attempt).ok()?,
+        },
+    };
+    let path = admitted
+        .path
+        .iter()
+        .map(|ordinal| match ordinal {
+            quire_contract_model::CheckedKeyOrdinal::Safe(value) => usize::try_from(*value).ok(),
+            quire_contract_model::CheckedKeyOrdinal::BeyondSafe(value) => {
+                value.parse::<usize>().ok()
+            }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(Location::at(origin, &path))
+}
+
+fn function_parts(term: &CheckedTerm) -> Option<(&[CheckedTerm], &CheckedTerm)> {
+    let CheckedTerm::Aggregate { members } = term else {
+        return None;
+    };
+    let mut parameters = None;
+    let mut body = None;
+    for member in members {
+        let CheckedTerm::Binding { name, value } = member else {
+            continue;
+        };
+        match name.kind() {
+            quire_contract_model::CheckedBindingNameKind::Parameters => {
+                let CheckedTerm::Aggregate { members } = value.as_ref() else {
+                    return None;
+                };
+                parameters = Some(members.as_slice());
+            }
+            quire_contract_model::CheckedBindingNameKind::Body => body = Some(value.as_ref()),
+            _ => {}
+        }
+    }
+    Some((parameters?, body?))
+}
+
+fn literal_value(
+    value: quire_contract_model::CheckedLiteralValue<'_>,
+    type_id: &CheckedNodeId,
+    index: &WireIndex<'_>,
+) -> Option<Value> {
+    use quire_contract_model::CheckedLiteralValue as Literal;
+    let (admitted, identities, work_limit) = (index.admitted, &index.identities, index.work_limit);
+    Some(match value {
+        Literal::Boolean(value) => Value::Boolean(value),
+        Literal::Integer(value) => Value::Integer(value.to_string().parse().ok()?),
+        Literal::Rational {
+            numerator,
+            denominator,
+        } => {
+            let magnitude = quire_exact::Rational::new(
+                numerator.to_string().parse().ok()?,
+                denominator.to_string().parse().ok()?,
+            )
+            .ok()?;
+            let literal_type = project_literal_type(type_id, index)?;
+            match &literal_type {
+                ValueType::Quantity(unit) => {
+                    Value::Quantity(quire_exact::Quantity::new(magnitude, unit.clone()))
+                }
+                ValueType::Rational(_) => Value::Rational(magnitude),
+                _ => return None,
+            }
+        }
+        Literal::String(value) => Value::String(value.into()),
+        Literal::Text(value) => {
+            let checked_type = index.node(type_id)?;
+            if checked_type.node_tag.as_ref() == "scalar_type"
+                && checked_type.semantic_form.as_ref() == "text"
+            {
+                return Some(Value::String(value.into()));
+            }
+            let type_projection = admitted.project_exact_type(type_id, identities, work_limit);
+            let projection = type_projection.ok()?;
+            let ValueType::Text(text_type) = projection.value_type() else {
+                return None;
+            };
+            let payload = TextPayload::from_utf8(value.as_bytes()).ok()?;
+            let mut meter = Meter::new(ScalarLimits {
+                integer_bits: u64::MAX,
+                decimal_digits: u64::MAX,
+                scale_expansion: u64::MAX,
+                text_input_bytes: u64::MAX,
+                text_scalars: u64::MAX,
+                normalized_scalars: u64::MAX,
+                unit_edges: u64::MAX,
+                value_occurrences: u64::MAX,
+                work_units: u64::MAX,
+                result_units: u64::MAX,
+            });
+            Value::Text(admit_text(&payload, text_type, &mut meter).completed()?)
+        }
+        Literal::Uuid(value) => Value::Uuid(Uuid::from_canonical_text(value).ok()?),
+        Literal::Timestamp(value) => {
+            Value::Timestamp(Timestamp::from_canonical_text(&value.to_string()).ok()?)
+        }
+        _ => return None,
+    })
+}
+
+fn project_literal_type(type_id: &CheckedNodeId, index: &WireIndex<'_>) -> Option<ValueType> {
+    let (admitted, identities, work_limit) = (index.admitted, &index.identities, index.work_limit);
+    match admitted.project_exact_type(type_id, identities, work_limit) {
+        Ok(projection) => Some(projection.value_type().clone()),
+        Err(error) => {
+            if !matches!(
+                error.code,
+                quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
+                    | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
+            ) || !matches!(error.form.as_ref(), "scalar_type/unit" | "scalar_type/dimension")
+            {
+                return None;
+            }
+            let declaration = type_id;
+            let unit_node = index.node(declaration)?;
+            if unit_node.node_tag.as_ref() != "scalar_type"
+                || unit_node.semantic_form.as_ref() != "unit"
+            {
+                return None;
+            }
+            let unit = identities
+                .declaration_rows()
+                .find(|row| row.structural_node == *declaration)
+                .and_then(|row| match &row.exact_identity {
+                    quire_contract_model::SelectedExactIdentity::DeclaredUnit(unit) => {
+                        Some(unit.clone())
+                    }
+                    _ => None,
+                })
+                .or_else(|| {
+                    index
+                        .key(declaration)
+                        .ok()
+                        .map(quire_exact::UnitId::declared)
+                })?;
+            Some(ValueType::Quantity(unit))
+        }
+    }
+}
+
+struct ReaderProjectedNode {
+    kind: NodeKind<usize, CheckedLiteral>,
+    value_type: ValueType,
+    /// Set from the paired row for a slot-walk application; `None` for any
+    /// other node, the wire carrying no location of its own for it.
+    location: Option<Location>,
+    children: Vec<usize>,
+    /// The application this slot-walk position is a term of (FR-383).
+    term: Option<CheckedNodeId>,
+    /// A quantity conversion the walk visits directly above this node,
+    /// which the enclosing equality's admitted decision applies itself.
+    absorbed: Option<CheckedNodeId>,
+}
+
+impl ReaderProjectedNode {
+    fn leaf(kind: NodeKind<usize, CheckedLiteral>, value_type: ValueType) -> Self {
+        Self {
+            kind,
+            value_type,
+            location: None,
+            children: Vec::new(),
+            term: None,
+            absorbed: None,
+        }
+    }
+
+    /// The applications this position is visited for, in walk order: an
+    /// absorbed conversion, then the node's own term.
+    fn terms(&self) -> impl Iterator<Item = &CheckedNodeId> {
+        self.absorbed.iter().chain(&self.term)
+    }
+}
+
+struct ReaderFunction {
+    name: String,
+    body: usize,
+    slots: usize,
+}
+
+fn fault(invariant: &'static str) -> InternalFault {
+    InternalFault::new("FR-390", invariant)
+}

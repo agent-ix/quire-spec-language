@@ -45,8 +45,9 @@ pub use closure::{PackageClosure, PackageTask};
 pub use evaluate::refusal_record;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use protocol_slot::{
-    ProtocolReferenceOccurrence, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSuppliedValue,
-    ProtocolSupply, SuppliedValue,
+    BinderCharges, ChargeAmounts, ProtocolReferenceOccurrence, ProtocolSlot,
+    ProtocolSlotEvaluation, ProtocolSuppliedValue, ProtocolSupply, SuppliedValue,
+    BINDER_ACCOUNTING_VERSION,
 };
 pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
@@ -129,6 +130,22 @@ fn occurrence_record(
         path,
         kernel: None,
     }
+}
+
+/// FR-390 "Typed projection admission": a reader-backed slot whose admitted
+/// expression has no projection is refused `unknown_required_feature`/
+/// `unsupported-feature` at its node, before evaluation and with no charge.
+fn unsupported_projection(unsupported: &qsl_package::UnsupportedView) -> CallFailure {
+    let (code, cause) = unsupported.catalog();
+    let mut record = occurrence_record(code, cause, Vec::new());
+    record
+        .fields
+        .insert("package", unsupported.package().to_owned());
+    record.fields.insert("reason", unsupported.reason().name());
+    let locus = CallAdmissionLocus::Node(unsupported.locus().key.clone());
+    CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
+        quire_eval::CallAdmissionRecord { record, locus },
+    )))
 }
 
 /// FR-358: evaluate `node`, a closed subexpression of a checked function
@@ -850,6 +867,12 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// FR-390: select and evaluate one checked expression stored on a V2
     /// protocol node, admitting only the expression's exact binder sources
     /// before the shared S6a evaluator runs.
+    ///
+    /// The result carries the call's per-binder charge log (FR-520-AC-11). The
+    /// call owns `meter`'s interval capture while it runs: an interval the
+    /// caller had open at entry is drained without being added to the log, so
+    /// the log is the call's own total, and capture is left enabled or
+    /// disabled as the caller left it.
     fn evaluate_protocol_slot(
         &self,
         slot: &ProtocolSlot,
@@ -1121,6 +1144,9 @@ impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
 /// ```
 pub trait AdmittedEvaluationViewEvaluation: admitted_view_sealed::Sealed {
     /// Evaluate one protocol slot selected through this exact admitted view.
+    ///
+    /// The meter's interval capture is owned by the call as in
+    /// [`CheckedPackageEvaluation::evaluate_protocol_slot`].
     fn evaluate_protocol_slot(
         &self,
         slot: &ProtocolSlot,
@@ -1653,6 +1679,10 @@ impl CheckedPackageEvaluation for CheckedPackage {
         }
         let mut frame = vec![None; selected.frame_len()];
         let mut unavailable = std::collections::BTreeMap::new();
+        let binder_slots = sources
+            .iter()
+            .map(|(index, _, binder)| (*index, binder.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>();
         for (index, source, key) in sources {
             let Some((_, supplied)) = supply
                 .binders
@@ -1939,42 +1969,71 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .and_then(|admission| admission.authority().ok())
             .map(|observation| observation.environment())
             .unwrap_or(&empty);
-        let body = selected.checked_body();
-        frame.resize(body.frame_slots(frame.len()), None);
-        let reader_root = if view.is_reader_backed() {
-            let Some(projection) = selected.reader_projection() else {
-                return Err(CallFailure::Fault(InternalFault::new(
-                    "FR-390",
-                    "reader-protocol-root-has-supported-plain-data-projection",
-                )));
+        let no_reads = std::collections::BTreeMap::new();
+        // One machine over either node source: the checked body, or the
+        // reader's projection of the same slot.
+        macro_rules! machine {
+            () => {
+                Machine::with_pre(
+                    self.graph().scope(),
+                    self.graph(),
+                    current,
+                    None,
+                    Some(&no_reads),
+                    meter,
+                    self.graph().dispatch_tables(),
+                )
             };
-            Some(evaluate::ReaderRoot {
-                slot: projection.slot(),
-                field: projection.field().clone(),
-                optional: projection.optional(),
-                derefed: projection.derefed(),
-                value_type: projection.value_type().clone(),
-            })
-        } else {
-            None
+        }
+        // FR-390-AC-16: a reader-backed view evaluates every slot root, of
+        // whatever kind, through its admitted projection on the one machine.
+        // The call owns the meter's interval capture while it runs: a caller
+        // interval open before the call is drained, and capture returns to
+        // the state the caller left it in.
+        let caller_capture = meter.take_charge_accounting().is_some();
+        meter.enable_charge_accounting();
+        let run: Result<_, CallFailure> = match selected.reader_slot() {
+            None => {
+                let body = selected.checked_body();
+                frame.resize(body.frame_slots(frame.len()), None);
+                machine!()
+                    .run_protocol_frame(body.root(), frame, unavailable, binder_slots)
+                    .map_err(CallFailure::Fault)
+            }
+            Some(qsl_package::ReaderSlot::Projected(projection)) => {
+                if selected
+                    .sources()
+                    .iter()
+                    .any(|source| projection.local_slot(source.binder()) != Some(source.index()))
+                {
+                    Err(CallFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "reader-slot-binder-is-the-selected-frame-slot",
+                    )))
+                } else {
+                    frame.resize(projection.frame_slots().max(frame.len()), None);
+                    let root = evaluate::reader_source::ReaderNode::root(projection);
+                    machine!()
+                        .run_protocol_frame(root, frame, unavailable, binder_slots)
+                        .map_err(CallFailure::Fault)
+                }
+            }
+            Some(qsl_package::ReaderSlot::Unsupported(unsupported)) => {
+                Err(unsupported_projection(unsupported))
+            }
+            Some(qsl_package::ReaderSlot::Fault(fault)) => Err(CallFailure::Fault(fault.clone())),
         };
-        let result = Machine::with_pre(
-            self.graph().scope(),
-            self.graph(),
-            current,
-            None,
-            Some(&std::collections::BTreeMap::new()),
-            meter,
-            self.graph().dispatch_tables(),
-        )
-        .run_protocol_frame(body.root(), reader_root, frame, unavailable)
-        .map_err(CallFailure::Fault)?;
+        if !caller_capture {
+            meter.disable_charge_accounting();
+        }
+        let (result, charges) = run?;
         match result {
-            Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation)),
+            Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation, charges)),
             Err((binder, cause, location)) => Ok(ProtocolSlotEvaluation::Unavailable {
                 binder,
                 cause,
                 location,
+                charges,
             }),
         }
     }

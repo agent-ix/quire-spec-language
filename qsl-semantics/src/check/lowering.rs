@@ -5702,6 +5702,7 @@ impl<'a> Lowering<'a> {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
             Value::Integer(value) => LiteralValue::Integer(value.clone()),
             Value::Rational(value) => LiteralValue::Rational(value.clone()),
+            Value::Decimal(value) => LiteralValue::decimal(value),
             Value::Float(value) => match value.width() {
                 quire_exact::IeeeWidth::Binary32 => LiteralValue::Float32Bits(value.bits() as u32),
                 quire_exact::IeeeWidth::Binary64 => LiteralValue::Float64Bits(value.bits()),
@@ -5739,8 +5740,7 @@ impl<'a> Lowering<'a> {
             // FR-093-AC-50: Text retains the profile-normalized sequence,
             // while its semantic type points at the declared text_bounds node.
             Value::Text(value) => LiteralValue::Text(value.retained().to_owned()),
-            Value::Decimal(_)
-            | Value::Option(_)
+            Value::Option(_)
             | Value::Composite(_)
             | Value::Collection(_)
             | Value::Reference(_)
@@ -6481,6 +6481,7 @@ fn literal_operand_text(value: &LiteralValue) -> String {
             text.strip_suffix("/1")
                 .map_or_else(|| text.clone(), str::to_owned)
         }
+        LiteralValue::Decimal(text) => text.clone(),
         LiteralValue::Float32Bits(bits) => format!("{bits:08x}"),
         LiteralValue::Float64Bits(bits) => format!("{bits:016x}"),
         LiteralValue::Text(text) | LiteralValue::String(text) | LiteralValue::Enum(text) => {

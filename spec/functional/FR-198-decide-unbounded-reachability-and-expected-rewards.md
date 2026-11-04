@@ -16,7 +16,7 @@ relationships:
 
 ## Description
 
-EN-5 SHALL decide `Reach` and `ExpectedReward` forms (ADR-028 XF-4, XF-5) by
+EN-5 SHALL decide `Reach`, `ExpectedReward` and `MeanTime` forms (ADR-028 XF-4, XF-5) by
 qualitative precomputation, maximal end-component collapse, interval
 iteration over dyadic intervals with outward rounding, and, when the
 interval still straddles the threshold, exact policy iteration with exact
@@ -31,7 +31,7 @@ no arithmetic, and the item is refuted by the scheduler that always waits.
 
 ## Inputs
 
-- FR-196's product for a `Reach` or `ExpectedReward` claim, and the
+- FR-196's product for a `Reach`, `ExpectedReward` or `MeanTime` claim, and the
   fairness set when the claim states one (FR-200 transforms the objective).
   Digital timed subjects additionally retain ADR-028 §13a's derived TS-5
   observation admissibility, even with an empty authored fairness set.

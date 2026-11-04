@@ -29,12 +29,14 @@ FR-498-AC-1 to FR-498-AC-4.
    identities again.
 2. For each claim, match the checked claim, its local `claim` node with
    `semantic_form` `probabilistic_claim`, its declared `claim` occurrence and
-   its sidecar row by `{declaration, occurrence}`. Rename the third claim and
+   its sidecar row by `{declaration, occurrence}`. Rename the third claim,
+   whose name no other claim shares, and
    re-emit; parse a claim moved, reformatted and commented, and one with a
    changed token, and compare their written content. Compile two claims
    written identically.
 3. Check an elapsed-time claim with an unsupported form and a punctual interval
-   in a non-admitted form over those claims and read the settled causes.
+   in a non-admitted form, each sharing its name with another claim, and read
+   the settled causes' `{declaration, occurrence}`.
 4. Read the emitted package with the strict reader and check every row names
    a node of the emitted graph with that node's own `claim` occurrence.
 
@@ -52,6 +54,7 @@ Vectors are referenced by QSpec case ID, never copied.
   identity; moving, reformatting and commenting leave written content equal
   and a changed token makes it differ; the identical twins have distinct
   identities.
-- Step 3: each cause carries the selected claim's identity and member path.
+- Step 3: each cause carries the selected claim's `{declaration, occurrence}`
+  and no other claim's.
 - Step 4: the strict reader admits the package and every row joins its node
   and occurrence.

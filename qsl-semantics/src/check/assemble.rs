@@ -132,6 +132,11 @@ pub struct AssemblyLimits {
     /// assembler forms `10^s` for (FR-091 "Dimension and unit
     /// declarations").
     pub decimal_scale: u64,
+    /// The written-scale limits on `decimal(c, s)` literals the checker
+    /// applies (`s3.decimal_literal_scale`, `s3.decimal_literal_scale_total`;
+    /// FR-093 "Decimal constructors"). They travel with the assembly limits
+    /// because the assembled `PackageDeclarations` carries them to `check`.
+    pub decimal_literal: super::DecimalLiteralLimits,
     /// The type-environment ceilings the unit's records, tuples and object
     /// types are admitted under (FR-082).
     pub environment: TypeEnvironmentLimits,
@@ -144,7 +149,14 @@ pub struct AssemblyLimits {
 /// settings of its `environment`.
 impl SettingLimits for AssemblyLimits {
     fn bounds(&self) -> Vec<(Setting, u64)> {
-        let mut bounds = vec![(Setting::S3DecimalScale, self.decimal_scale)];
+        let mut bounds = vec![
+            (Setting::S3DecimalScale, self.decimal_scale),
+            (Setting::S3DecimalLiteralScale, self.decimal_literal.scale),
+            (
+                Setting::S3DecimalLiteralScaleTotal,
+                self.decimal_literal.total,
+            ),
+        ];
         bounds.extend(super::environment_bounds(&self.environment));
         bounds.extend(self.identity.bounds());
         bounds
@@ -154,6 +166,14 @@ impl SettingLimits for AssemblyLimits {
         match setting {
             Setting::S3DecimalScale => {
                 self.decimal_scale = bound;
+                true
+            }
+            Setting::S3DecimalLiteralScale => {
+                self.decimal_literal.scale = bound;
+                true
+            }
+            Setting::S3DecimalLiteralScaleTotal => {
+                self.decimal_literal.total = bound;
                 true
             }
             _ => {
@@ -174,6 +194,7 @@ impl Default for AssemblyLimits {
     fn default() -> Self {
         Self {
             decimal_scale: DEFAULT_DECIMAL_SCALE,
+            decimal_literal: super::DecimalLiteralLimits::default(),
             // FR-255's published default, 16777216 edges and units.
             environment: TypeEnvironmentLimits {
                 ancestor_steps: DEFAULT_ENVIRONMENT_STEPS,
@@ -2561,6 +2582,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Float32(_)
                 | ExprNode::Float64(_)
                 | ExprNode::Rational(..)
+                | ExprNode::DecimalValue { .. }
                 | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
@@ -4448,6 +4470,7 @@ impl PackageDeclarations {
         }
 
         let mut package = PackageDeclarations::new(source, package_name, limits.identity);
+        package.decimal_literal_limits = limits.decimal_literal;
         package.sources = sources;
         package.source_owners = source_owners;
         package.execution_point_keys = execution_points.keys().cloned().collect();

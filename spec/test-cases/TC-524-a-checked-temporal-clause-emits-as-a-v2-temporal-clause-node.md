@@ -15,7 +15,7 @@ FR-370's `temporal`/`temporal_clause` node, that the resolved fairness set
 and intervals decide its identity, and that QSL's I2 reader admits the node
 and refuses each defect with FR-370's code.
 
-Scope: FR-337-AC-1 to FR-337-AC-4.
+Scope: FR-337-AC-1 to FR-337-AC-4 and FR-337-AC-24.
 
 ## Test Procedure
 
@@ -34,6 +34,10 @@ Use ADR-018 §6's ConfigVersion example unit.
    `null` interval under a bounded profile; with a fairness member naming
    `Absent`; with a `quire.op.temporal.fair` application inside the
    formula.
+5. Emit `eventually[0,5] holds(p)` under the finite-window profile; emit a
+   checked clause of that profile built with the timed interval `(0 ms, 5 ms]`;
+   feed the I2 reader the step 5 node with a `timed_interval` member and with
+   `temporal_interval` `{lower: "0", upper: null}`.
 
 Tag the tests `#[trace("TC-524", "FR-337-AC-n")]`.
 
@@ -50,3 +54,5 @@ Tag the tests `#[trace("TC-524", "FR-337-AC-n")]`.
 - Step 4: a schema failure; `invalid_package`/`operation-member-mismatch`;
   `missing_declaration`/`missing-name`; `ill_typed`/`operator-ineligible`;
   each at FR-370's locus.
+- Step 5: `temporal_interval` `{lower: "0", upper: "5"}`; an internal fault and
+  no node; `invalid_package`/`operation-member-mismatch` for each reader input.
