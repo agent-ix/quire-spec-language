@@ -252,7 +252,7 @@ fn the_directory_holds_the_outputs_table_except_the_inventory() {
 /// formal identity, FR-514).
 #[trace("FR-517-AC-11", "TC-1312")]
 #[test]
-#[ignore = "gated on QSL-1512 (PR 2140): qsl_inventory over the spine unit with a formal identity"]
+#[ignore = "open: qsl_inventory exists (QSL-1512) but the writer never runs the replay spine over the unit, and no requirement fixes the bytes of inventory.json or the selected formal identity (spec lane: FR-514/FR-517)"]
 fn each_directory_holds_the_inventory_with_the_outputs_table() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
     let paths: Vec<String> = tree(&out).into_keys().collect();
@@ -537,7 +537,7 @@ fn the_signed_64_extrema_are_package_values_within_their_declared_bounds() {
 /// Rational value type yet (FR-505, QSL-1522), so R has none.
 #[trace("FR-517-AC-12", "TC-1312")]
 #[test]
-#[ignore = "gated on QSL-1522 (FR-505): the spine admits no bounded Rational value type"]
+#[ignore = "open: FR-505 admits a bounded Rational only with a unit, and R carries no unit while the spine refuses an unreached unit (see FR-517-AC-16 and the QSL-1558 probe)"]
 fn the_extreme_rationals_are_package_values() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
     let text = String::from_utf8(tree(&out)["checked-package.json"].clone()).unwrap();
@@ -1711,7 +1711,7 @@ fn a_differing_declared_clause_name_is_refused_on_clause_name() {
 /// "Unit bounds"), the form [`unit_model`] writes.
 #[trace("FR-517-AC-13", "TC-1312")]
 #[test]
-#[ignore = "gated on QSL-1558: R refuses a unit on Amount and Total (FR-517-AC-16)"]
+#[ignore = "open: QSL-1558 only probed; the three spine refusals it recorded (an unreached unit is dropped from the package, a model alias is no source type name, sum over a quantity) still hold, pinned by FR-517-AC-16"]
 fn amount_and_total_carry_the_unit_u() {
     let model: Value =
         serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
