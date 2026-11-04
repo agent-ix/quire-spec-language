@@ -183,6 +183,7 @@ fn with_zero_step_request(body: impl FnOnce(&RefinementQueryRequest<'_>)) {
     }
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model Spec = \"{SPEC}\";\n\
          model Impl = \"{CAS}\";\n\
