@@ -173,7 +173,8 @@ evaluator reads a clause name. The outputs of the bare route therefore spell pos
 the bytes carry, and the in-process routes spell them the same way:
 
 - a clause is its `CheckedNodeId` plus an occurrence `{ role, ordinal }`;
-- an atom is its position in `formula_graph()` pre-order (FR-532 "Atom
+- an atom is its index among the distinct atom nodes, numbered by first use in
+  `formula_graph()` pre-order (FR-532 "Atom
   index");
 - a position and an instance are the request's own values;
 - a binder is its `NodeKey`, and its declared name only where the admitted binder
@@ -211,8 +212,31 @@ equal inputs.
 | Member | Content |
 | --- | --- |
 | `format` | the string `quire.checked-handoff.identities/1` |
-| `declarations` | the unit's `SelectedExactDeclarationRow` values in the order the emitter holds them; each is an object `{ "structural_node", "selected_document", "form", "original_identity", "exact_identity" }` with `structural_node` the wire node id string, `form` one of `record_value_type`, `object_type`, `union`, `declared_unit`, and `exact_identity` a tagged object `{ "kind": "record" \| "object" \| "union" \| "declared_unit", ... }` carrying the variant's members under their Rust field names |
+| `declarations` | the unit's `SelectedExactDeclarationRow` values in the order the emitter holds them; each is an object `{ "structural_node", "selected_document", "form", "original_identity", "exact_identity" }` with `structural_node` the wire node id string, `form` one of `record_value_type`, `object_type`, `union`, `declared_unit`, and `exact_identity` a tagged object `{ "kind": "record" \| "object" \| "union" \| "declared_unit", "value": <value> }` whose `value` is a node reference for `record` and `union`, an `EffectiveId` for `object` and a `UnitId` for `declared_unit`, each as the value encodings below state |
 | `fields` | the unit's `SelectedExactFieldRow` values in emitter order; each is `{ "record_node", "selected_document", "record_original_identity", "field_original_identity", "member_id" }` |
+
+Value encodings. A **node reference** (a `NodeKey`) is the wire node id string the
+package spells that node with (`CheckedNodeId`, as `structural_node` does); the
+`NodeKey` of the pinned kernel is a structural value, not a digest, so no digest
+spelling applies to it, and `read` recovers the key from the package's wire graph.
+An **`EffectiveId`** is `{ "chain": [ { "package": <text>, "node": <text> }, ... ] }`,
+the root effective type first and then each member in owner order. A **`MemberId`**
+(`member_id`) is `{ "owner": { "kind": "node", "node": <node reference> } | { "kind":
+"effective", "effective": <EffectiveId> }, "member": <nonempty text> }`. A **`UnitId`**
+is `{ "domain": "declared" | "compound", "digest": <64 lowercase hexadecimal
+digits> }`, the 32 digest bytes in order. Text is UTF-8 as written, and a number
+is never used for an identity.
+
+Trust boundary. Rows read from a consumer-parsed file grant no authority: IR
+states that a row constructed by a caller does not make its Exact identity
+authoritative, and the file is trusted as `checked-package.json` is, as an artifact
+of the producer the consumer chose to read. `read` verifies only what the package
+can answer: that each `structural_node`, `record_node` and node reference is a node
+of the package, and that each declaration's `form` matches its identity (`Unjoined`
+otherwise), and IR's `SelectedExactIdentities` projection validates the structural
+join. It does not verify that QSL's model stage issued an identity; a row that
+passes the joins but is forged can change which exact identity a node is read as,
+which the evaluator then checks against the admitted nodes and types of the slot.
 
 `ReadIdentityRows::read(bytes, package)` parses the file, joins the rows to the
 package by IR's `SelectedExactIdentities` projection, and never derives a row from
@@ -227,16 +251,19 @@ quire-protocol's admission input list (its FR-043) names this file beside
 ### Refusals
 
 - A call SHALL refuse with FR-516's cause table (temporal) or FR-390's catalog
-  refusals (protocol), unchanged. This requirement adds no call cause; it adds the
+  refusals (protocol), unchanged. This requirement adds no call cause of its own; the cause
+  `aggregate-sample-kind` is FR-516's (window aggregate atoms), and it adds the
   `clause-unreadable` reasons `profile-unknown`, `clause-name` and `capture-type`
-  and the supply refusals below, and FR-516's cause table lists the reasons.
+  and the supply refusals below, which FR-516's cause table lists.
 - A slot call on a `BarePackage` that has no supply SHALL refuse
   `ViewFailure::Unsupported` with `MissingIdentityWitness` at the package locus
   (FR-390). A supply whose rows name no admitted identity or another package
-  refuses `UnknownIdentityWitness` or `ForeignIdentityWitness`. A dependency the
-  lock selects and `dependencies` does not hold refuses `DependencyUnheld`
-  naming the package (a package whose lock selects a dependency that the package
-  retains none of). Each is evaluation-input admission before S6a, category
+  refuses `UnknownIdentityWitness` or `ForeignIdentityWitness`. There is no
+  dependency refusal: `read_checked_package` refuses `MissingImport` for a lock
+  that selects a dependency the read evidence does not supply, so a package it
+  admitted retains every dependency its lock selects, and the type system leaves
+  no package in the state a `DependencyUnheld` refusal would name. Each refusal
+  above is evaluation-input admission before S6a, category
   unsupported, exit 21, `CallFailure::Admission` carrying the catalog pair
   `unknown_required_feature`/`unsupported-feature`, with nothing charged.
 - A package that carries no `temporal_bindings` rows, or none for a clause
@@ -274,11 +301,12 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-2 | `BarePackage` has no constructor from bytes, from a decoded graph or from a term, and no public signature of `BarePackage`, `BareSupply`, `EvidencePackage::from_package` or the `BarePackage` evaluation names `CheckedPackage`, `Emission` or `AdmittedPackageRead`; compile-fail probes of each construction fail, and an API-surface inspection lists the signatures. | Test (TC-1331) |
 | FR-531-AC-3 | The evaluation code reached from `BarePackage` does not read a source graph: the same calls over a `BarePackage` whose package was read in a run where the source unit was never compiled give the results the calls give where it was (TC-1331 row 1 runs the calls in a child run that is given the handoff directory only). | Test (TC-1331) |
 | FR-531-AC-4 | Over **R**'s three packages the bare route evaluates every temporal clause form (event position, fixed sample, timestamped event) and every protocol slot kind of FR-390's slot table that **R** holds; a node that is not a temporal clause refuses `clause-root-unresolved` and a slot node that is not a protocol node refuses as FR-390-AC-4 states, each with an empty charge log. | Test (TC-1331) |
-| FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows naming no admitted identity, `UnknownIdentityWitness`; with a lock that selects a dependency the package retains none of, `DependencyUnheld` naming it. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result. | Test (TC-1331) |
+| FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows naming no admitted identity, `UnknownIdentityWitness`. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result; and `read_checked_package` over bytes whose lock selects a dependency the evidence does not supply refuses `MissingImport`, so no `BarePackage` exists for it and no dependency refusal is defined. | Test (TC-1331) |
 | FR-531-AC-6 | Over a package whose `temporal_bindings` rows are absent, the call returns `activation = Unavailable` with the `Missing` non-value for the clock row; over a lock with no `profile_selections` row for the clause, `clause-unreadable` with reason `profile-selection`; over a lock whose row names a definition no profile of the evaluator, `clause-unreadable` with reason `profile-unknown`; over a row naming an infinite-trace profile, the `not-finite-window-profile` temporal refusal. Each has the charges FR-516 gives its counterpart over a source. | Test (TC-1331) |
 | FR-531-AC-7 | No result of the bare route holds, in its canonical bytes or its fields, a clause name, a source label or a source span: over **R**, the encoded `EvidenceResult` and `ProtocolSlotEvaluation` values do not contain the unit's `source:` labels or a byte region of the source map, and a clause name appears only as the `temporal_clause_names` row of its occurrence gives it, identically on every route. Identity is spelled as the "What the bytes do not carry" list states, and the progress binding of a result holds `package.name()`. | Test (TC-1331) |
 | FR-531-AC-8 | The handoff directory of **R** holds `identities.json` with `format` `quire.checked-handoff.identities/1`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
 | FR-531-AC-12 | `ReadIdentityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with another `format`, one with a row whose `structural_node` the package does not hold and one whose `form` does not match its identity returns `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the format string or the first row, and returns no rows. | Test (TC-1331) |
+| FR-531-AC-13 | The identity file of **R** encodes every identity as the "Value encodings" state: a node reference is the wire node id string of the package, an `EffectiveId` has the `chain` list root first, a `MemberId` has `owner` and `member`, and a `UnitId` has `domain` and 64 lowercase hexadecimal digits; `read` returns rows equal to the writer's, an uppercase or short digest returns `Malformed`, and a node reference the package does not hold returns `Unjoined`. A forged row that passes the joins is accepted by `read` and the slot call over it evaluates against the admitted nodes, so the test records that `read` makes no claim of authority. | Test (TC-1331) |
 | FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
 | FR-531-AC-10 | The charge log of each call over the bare package equals the charge log of the same call over the in-process route (FR-532-AC-1, FR-533-AC-1); `BarePackage::new`, `with_supply` and view creation take no `Meter` and a call that refuses at supply admission leaves a caller's meter byte-identical. | Test (TC-1331) |
 | FR-531-AC-11 | A search of FR-515 for the phrases `bytes-only` and `separate future capability` and of FR-515, FR-516 and FR-520 for the heading `Consumer entry` finds that FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |

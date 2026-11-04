@@ -135,20 +135,27 @@ without a finite upper bound, a timed interval under a bounded profile and a
 
 ### Window aggregates
 
-A clause with a window aggregate atom is emitted as a `quire.op.temporal.aggregate`
+A clause with a window aggregate atom is written as a `quire.op.temporal.aggregate`
 entry whose typed argument carries the window, normalized `min_count`, expression,
 comparison and converted threshold (FR-337-AC-15) and the aggregate term's kind and
 filter (QSpec FR-414). QSpec defines the aggregate term (FR-414) and no wire members
 for the node, and FR-337-AC-15's citation of QSpec FR-370-AC-14 names a fairness
-criterion, not the aggregate argument, so the member names are FR-337-AC-15's until
-QSpec defines them. Every route SHALL evaluate such an atom as
-FR-516 "Window aggregate atoms" states, from the entry's members read from the
-bytes and the per-position samples the request carries. `formula_graph()` SHALL read
-the entry (FR-515: `aggregate` member), and a call over such a clause SHALL NOT
-refuse `clause-root-unresolved`, which every package route raised for it before this
-requirement because `temporal_subject` could not read the entry. The in-process truth
-plan, which faulted `aggregate-formula-not-emitted`, SHALL walk the entry as the atom
-it is. No unmet parity remains for aggregate atoms.
+criterion, so the member names are FR-337-AC-15's until QSpec defines them.
+
+Every route SHALL evaluate such an atom as FR-516 "Window aggregate atoms" states,
+from the entry's members read from the bytes and the per-position samples of the
+request. `formula_graph()` SHALL read the entry (FR-515: `aggregate` member) and the
+truth plan SHALL walk it as the atom it is.
+
+This does not run today, and no package route has ever raised a cause for it: the
+checker's lowering faults an aggregate atom (`aggregate-not-emitted`), so QSL emits
+no package for such a clause, FR-337-AC-15 is untagged, the in-process plan faults
+`aggregate-formula-not-emitted`, and no operation catalog entry exists for the node
+in QSpec or in Contract IR's reader. The criteria for aggregate atoms are specified
+now and are gated, as the IR-gated criteria of FR-533 are, on QSL-1643 (emission of
+aggregate clauses), a QSpec catalog entry for the node and its admission by Contract
+IR. No hand-built wire package can stand in: `read_checked_package` refuses an
+operation its catalog does not hold.
 
 ### The package identity of a progress binding and a result
 
@@ -182,7 +189,7 @@ the three routes. Construction charges nothing.
 | FR-532-AC-3 | For a unit the test authors over `examples/config-version` (capture, `on each` activation, guard) with four `holds` atoms, one clause per operator of FR-337's temporal list (`always`, `eventually`, `once`, `historically`, `until`, `release`, `since`, `triggered`, `not`, `and`, `or`, `implies`), the verdict, settlement, support and per-counter usage over `from_package` equal those over the other two routes at every position of a trace that distinguishes the operator. | Test (TC-1332) |
 | FR-532-AC-4 | A clause with the four distinct `holds` atoms of FR-515-AC-22 in formula order gives the instance-bound set `{0, 3}` on `from_package` and on the other routes, as atom indices 0 to 3 over the `holds` nodes only; swapping the first two atoms gives `{1, 3}`; for a clause whose checked formula has an arena order that differs from first-use order, valuations are keyed by first-use atom index on all three routes, and a request keyed by the arena index reads a different atom (an absent valuation, a `Missing` non-value with dimension `valuation:<atom>@<pos>`). | Test (TC-1332) |
 | FR-532-AC-10 | A clause `always[0,3] (holds(p) and holds(p))` with one shared `holds` node used twice has one atom, index 0: a request with one valuation of atom 0 per position returns a verdict and no `Missing` non-value; a valuation of atom 1 is not read; `usage` counts one `valuations` lookup per visited position, equal to that of `always[0,3] holds(p)`; `instance_bound` holds 0 once when `p` reads a capture; the three routes agree on all of it. | Test (TC-1332) |
-| FR-532-AC-11 | The package of a clause `always[0,2] (sum(v) over past[0, 2] <= 15)` with the samples 3, 4, 5, 6 at positions 0 to 3 (FR-516-AC-47) is read by `temporal_subject`; `formula_graph()` returns the aggregate entry with its kind, window, `min_count`, expression node, comparison and threshold; the call over `from_package`, `from_emission` and `from_read` returns the same result and charges, with the atom true at position 3 and false for a threshold of 14, and none refuses `clause-root-unresolved`. | Test (TC-1332) |
+| FR-532-AC-11 | Gated on the aggregate-node dependencies of "Window aggregates". Over the event-position false-extension profile, the clause `on origin always[0,3] (sum(v) over past[0,2] <= 15)` with `Value` samples 3, 4, 5, 6 at positions 0 to 3 (window sums 3, 7, 12, 15), progress `Complete { through: 3 }` and a closed decision scope, `temporal_subject` reads the aggregate entry, `formula_graph()` returns its kind, window, `min_count`, expression node, comparison and threshold, and the call over `from_package`, `from_emission` and `from_read` returns the same result and charges (FR-516-AC-50), with `truth = True`; with the threshold `<= 14` position 3 reads 15 and the call returns `truth = False` with settlement `DecisiveCounterexample`, on the three routes. | Test (TC-1332) |
 | FR-532-AC-12 | An occurrence with no `temporal_clause_names` row refuses `clause-unreadable` with reason `clause-name`, and a capture whose initializer type has no kernel representation refuses `clause-unreadable` with reason `capture-type`, each with an empty charge log on `from_package`; with the rows present the capture names, in authored order, and their value types equal those of the in-process clause on all three routes. | Test (TC-1332) |
 | FR-532-AC-5 | A `LedgerBinding` and a `result_identity` produced over `from_package` hold `package.name()` as their package component and no source authority or identity label, and over the same package `from_emission` and `from_read` produce byte-equal values; a ledger produced under the labels is progress for a different binding and is not read. | Test (TC-1332) |
 | FR-532-AC-6 | `from_package` over a package with two `temporal_clause_names` rows that pair to one `{ declaration, occurrence }` returns `PackageMismatch::AmbiguousName` and charges nothing; no package makes it return `ClauseRow`, `ProfileSelections` or `Bindings`, which an inspection of the constructor confirms. | Test (TC-1332) |
@@ -195,5 +202,9 @@ the three routes. Construction charges nothing.
 - **Upstream:** FR-515 (views and rows), FR-516, FR-522 to FR-524, FR-526, FR-043,
   FR-504, FR-531; QSpec's finite-window profile identities.
 - **Delivery:** the code change retires `CheckedTemporalClause` as an input of the
-  call and the arena index as an atom spelling.
+  call and the arena index as an atom spelling, and makes `ClauseFormula::of_graph`
+  dedupe shared nodes by the entry's `node` (the per-use list it reads today would
+  count a shared node once per use in `formula_nodes`, against FR-523-AC-6 and
+  FR-532-AC-10). The aggregate criteria are gated on QSL-1643, a QSpec catalog
+  entry for the aggregate node and its admission by Contract IR.
 - **Downstream:** quire-protocol FR-046.

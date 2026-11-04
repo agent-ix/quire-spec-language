@@ -82,7 +82,7 @@ at each eligible position and one scan per position).
 | --- | --- | --- | --- |
 | `formula_nodes` | peak | a distinct node of the clause's formula reachable from its root; a node shared by two parents counts once | `formula_nodes` |
 | `positions` | cumulative | one scan charge of FR-501: one position read by one temporal operator node at one activation, at an observed position or an observed position's false extension; a scan at a silent sample is not counted | `positions` |
-| `valuations` | cumulative | one atomic `holds` lookup, including one that finds no valuation | `valuations` |
+| `valuations` | cumulative | one atomic `holds` lookup, including one that finds no valuation, and one window position read for a window aggregate atom (FR-516 "Window aggregate atoms"), including one that finds no sample or an `Excluded` one | `valuations` |
 | `instances` | peak | one instance created from a delivery or an origin in this call, the greatest number created by the call (FR-524); a retained instance, a delivery with a false guard and an instance whose activation faulted are not created and charge nothing | NFR-008 `instances` |
 | `captures` | cumulative | one capture record retained, across all instances | `captures` |
 | `support` | peak | the greatest number of `(position, atom)` pairs an unsettled activation retains, and the number of pairs in a settled decision support | `support`; NFR-008 `retention` |
@@ -94,6 +94,15 @@ at each eligible position and one scan per position).
 | `result_bytes` | peak | one byte of the result's opaque byte members, in total | `output_bytes` |
 | `member_bytes` | peak | one byte of the longest single opaque member | `string_bytes` |
 
+- **Window aggregate visit.** An aggregate atom's lookup at a position is charged as a
+  `holds` lookup is (one `temporal.visit` unit counted in `evaluation_steps`, one
+  `valuations` unit), and each window position it then reads, oldest first, an
+  `Excluded` one included and up to and including the first undefined one, is one
+  `temporal.visit` unit counted in `evaluation_steps` and one `valuations` unit
+  (QSpec FR-414-AC-8's one unit per window position visited). `visited` counts those
+  `valuations` units by its own definition and takes no further unit; `positions` and
+  `formula_nodes` are unchanged by a window read, and a window position that is no
+  request position is not visited. A silent sample holds no window position.
 - **Evaluated position visit.** A silent sample is a fixed-sample watermark
   sample with no observation (FR-504); it is not an observed position. Every
   `temporal.visit` charge FR-501-AC-12 lists (a temporal node at its activation, a

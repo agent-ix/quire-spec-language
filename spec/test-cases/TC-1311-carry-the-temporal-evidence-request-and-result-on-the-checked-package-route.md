@@ -67,7 +67,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | 47 | 47 | event-position `sum` over `past[0, 2]` with samples 3, 4, 5, 6; thresholds `<= 15` and `<= 14`; position 1; `min`; `max`; `count` with an excluded position | true at position 3 and false for 14; sum 7 at position 1; 4; 6; 2 |
 | 48 | 48 | values 4, 5, 6 with `quantile 1/2` and `3/4`; `fraction` over `true, false, true` against `2/3`; an excluded sample | 5; 6; equal; not counted |
 | 49 | 49 | `min_count 2` with one sample; `count` and `sum` with `min_count 0` and an empty window; an undefined sample second of three; an unlisted window position | `insufficient-data{1, 2}`, `truth = None`; 0; stop with that cause; `Missing` |
-| 50 | 50 | `monitor.max_window_values` 2 and 3 over a window of 3 samples; per-position charges (an excluded position included); a counter one below; a `Value` sample for `fraction` | `LimitReached{2, 3, setting}` and a result; 3 `visited` and 3 `evaluation_steps`; `Incomplete` naming it; `aggregate-sample-kind`, empty log |
+| 50 | 50 | gated on the aggregate-node dependencies: `on origin always[0,3] (sum(v) over past[0,2] <= 15)`, samples 3, 4, 5, 6, event-position false-extension, `Complete { through: 3 }`, closed scope; `max_window_values` 2 and 3; counters one below; a `Value` sample for `fraction` | `truth = True`, `formula_nodes` 2, `instances` 1, `positions` 4, `valuations` 13, `captures` 0, `evaluation_steps` 19, `visited` 19; `LimitReached{2, 3}` at position 2; `Incomplete` naming the counter; `aggregate-sample-kind`, empty log |
 
 Tag the test `#[trace("FR-516-AC-1", ..., "FR-516-AC-50", "TC-1311")]`; rows 6, 8 and 13 also carry FR-052-AC-12 to AC-14. Every request states the clause's own `binding` (FR-522) unless a row varies it.
 
