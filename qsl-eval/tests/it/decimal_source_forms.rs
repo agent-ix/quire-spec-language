@@ -590,10 +590,58 @@ fn sums_differences_and_products_of_one_typed_pair_need_no_expected_type() {
         "{:?}",
         over.outcome
     );
+    // A quotient of two operands of one type is typed like `+`, `-` and `*`
+    // (FR-104); only its nonzero obligation refuses.
     assert_eq!(
         refusal(&format!(
             "{wide}function d using v(a: P, b: P): Boolean pure {{ let s = a / b in s = a }}\n"
         )),
-        ambiguous()
+        unproved_nonzero()
+    );
+}
+
+/// FR-104-AC-13 (TC-1084): the conversion, negation and mismatch forms.
+/// `convert<W>(a) + convert<W>(b)` at `0.99 + 0.01` returns `decimal(100, 2)`
+/// while `convert<W>(a + b)` is refused outside the domain of `P`; `-a = b`
+/// checks; with `b: R`, `a / b = a` refuses `ill_typed`/`type-mismatch`.
+#[trace("FR-104-AC-13", "TC-1084")]
+#[test]
+fn the_conversion_negation_and_mismatch_forms_of_the_criterion() {
+    let types = "type P = Decimal[-99, 99; 2, 2; nearest-even];\n\
+                 type R = Decimal[0, 1000; 1, 1; exact];\n\
+                 type W = Decimal[-198, 198; 2, 2; nearest-even];\n";
+    let decimal = |coefficient: i64| Value::Decimal(quire_exact::Decimal::new(int(coefficient), 2));
+    let wide = compile(&format!(
+        "{types}function f using v(a: P, b: P): W pure {{ convert<W>(a) + convert<W>(b) }}\n"
+    ))
+    .expect("the widened sum checks");
+    assert_eq!(
+        call(&wide, vec![decimal(99), decimal(1)], UNLIMITED).decimal(),
+        (int(100), 2)
+    );
+    let narrow = compile(&format!(
+        "{types}function f using v(a: P, b: P): W pure {{ convert<W>(a + b) }}\n"
+    ))
+    .expect("the narrow sum checks");
+    let refused = call(&narrow, vec![decimal(99), decimal(1)], UNLIMITED);
+    let Outcome::Refused(stop) = &refused.outcome else {
+        panic!("a refusal, not {:?}", refused.outcome);
+    };
+    assert!(format!("{stop:?}").contains("Domain"), "{stop:?}");
+    let negated = compile(&format!(
+        "{types}function f using v(a: P, b: P): Boolean pure {{ -a = b }}\n"
+    ))
+    .expect("the negation checks");
+    let run = call(&negated, vec![decimal(1), decimal(-1)], UNLIMITED);
+    assert!(
+        matches!(run.outcome, Outcome::Completed(Value::Boolean(true))),
+        "{:?}",
+        run.outcome
+    );
+    assert_eq!(
+        refusal(&format!(
+            "{types}function f using v(a: P, b: R): Boolean pure {{ a / b = a }}\n"
+        )),
+        mismatch()
     );
 }

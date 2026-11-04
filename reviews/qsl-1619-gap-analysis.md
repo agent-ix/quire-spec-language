@@ -40,3 +40,24 @@ Ticket: QSL-1619. Plan completion: not assessed. The PR's tests prove the D24, D
 Not mergeable on gap grounds alone for FND-001 to FND-004 only if the team holds the ACs in scope; FND-005 is a spec fix owned by the spec lane. In the traces of the PR's tests the charge list begins with FunctionCall for D24, D26 and D27 (qsl-eval/tests/it/decimal_source_forms.rs), which confirms FND-006: a limit of the vector's work_units figure stops at the call. This is a vector note, not an evaluator defect.
 
 Stale tests: the qsl-forms value_forms case that expected decimal(1, 2) to be unrepresented and the qsl-package protocol_captures case that expected the same were restated and are correct for FR-091-AC-57; no test was deleted without a replacement. Coverage tags: the three new qsl-eval vectors trace QSpec-TC-185 and QSpec-FR-140 criteria; the qsl-forms test traces FR-091-AC-57 and TC-1232.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | FR-104-AC-13's `function d using v(a: P, b: P): P pure { a / b }` is stated to check and evaluate, but the checker refuses it undefined_expression/unproved-nonzero (probed; P admits zero and nothing proves b nonzero), and no test covers the AC's division, `convert<W>`, `-a = b` or `a / b = a` with `b: R` clauses although FR-104-AC-13 is claimed by tests. Either the AC example lacks a nonzero premise (spec lane) or the checker is wrong. | spec/functional/FR-104-check-state-clauses.md:391 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | rows.rs asserts the exact spellings "1.25", "0.05", "10", "0.00", "-0.5", "1" and the 65534/65535-digit zero spellings; no spelling mutation was run, the assertions are value-exact. |
+| FND-002 | fixed | only_a_nonzero_literal_divisor_discharges_the_nonzero_obligation covers decimal(4, 0), decimal(400, 2), decimal(0, 2), decimal(0, 0), a parameter, p / q and an if of two literals; mutation forcing the discharge for a zero coefficient fails it. |
+| FND-003 | fixed | the_six_d25_expressions_check_or_refuse_as_the_criterion_states covers e1 to e6 and a_literal_beside_a_typed_operand_evaluates_at_the_peer_type covers `a + decimal(1, 2) = b` (checked and evaluated); both carry FR-104-AC-16/FR-104-AC-13 and TC-1084 trace tags. Other AC-13 clauses are FND-007. |
+| FND-004 | fixed | qsl-cst tests/it/decimal_constructor.rs names the malformed and well-formed constructors and the reserved name, tagged FR-091-AC-58 and TC-1232. |
+| FND-005 | deferred | Spec defect owned by the spec lane (titan:QSL:plan): FR-093 still has no AC-38 to AC-42 or Decimal constructors section; the PR changes no spec file, so a code fix round cannot resolve it. The lead must record a spec ticket before TC-1232 is called covered. |
+| FND-006 | deferred | QSpec TC-185 vector wording (work_units figures one low for a source call) lives in agent-ix/quire-specification, outside this PR; the PR's test records the call charge in a comment. Low severity, no behavior wrong. |
+
+## Disposition verdict (pass 1)
+
+Fixed: FND-001 to FND-004. Deferred to the spec lane: FND-005, FND-006. New: FND-007 (spec or checker, AC-13's division example). Gate and mutation evidence is in SR-2277001's Disposition verdict.

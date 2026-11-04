@@ -2499,15 +2499,23 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
         )),
         CheckCause::Unproved(Obligation::Nonzero)
     );
+    // FR-104: a quotient of two operands of one decimal type is typed by it
+    // wherever it is written, with no expected type. The divisor's nonzero
+    // obligation remains: proved here by the interval `[1, 10000]`, refused
+    // for the interval that includes zero.
+    check_in(&package, &parameters, &quotient, None, CheckMode::Kernel)
+        .expect("the quotient is typed by its operands' decimal type");
+    check_in(&package, &parameters, &quotient, None, CheckMode::Linked)
+        .expect("a divisor interval excluding zero proves the obligation");
     assert_eq!(
         refused(check_in(
             &package,
-            &parameters,
+            &zero_divisor,
             &quotient,
             None,
-            CheckMode::Kernel
+            CheckMode::Linked
         )),
-        CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)
+        CheckCause::Unproved(Obligation::Nonzero)
     );
 }
 

@@ -2617,18 +2617,6 @@ impl<'a> Typer<'a> {
     }
 
     /// Store `node` as an operand of the node being built, and name it.
-    /// Whether `node` is a checked `decimal(c, s)` literal, possibly negated.
-    fn is_decimal_literal(&self, node: &Node) -> bool {
-        match &node.kind {
-            NodeKind::Literal(CheckedLiteral(Value::Decimal(_))) => true,
-            NodeKind::DecimalNegate(operand, _) => self
-                .body
-                .get(*operand)
-                .is_some_and(|inner| self.is_decimal_literal(inner)),
-            _ => false,
-        }
-    }
-
     fn push(&mut self, node: Node) -> NodeId {
         self.body.push(node)
     }
@@ -3583,7 +3571,6 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
-        let literal_operand = self.is_decimal_literal(&left) || self.is_decimal_literal(&right);
         let (left_box, right_box) = (self.push(left), self.push(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
             (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => {
@@ -3649,20 +3636,10 @@ impl<'a> Typer<'a> {
                     Some(ValueType::Decimal(_)) => return Err(mismatch(location)),
                     Some(_) => return Err(mismatch(location)),
                     // No expected type: decimal operands and result share one
-                    // named type (QSpec FR-140-AC-7), so a sum, difference or
-                    // product is typed by its operands' type (FR-104-AC-13).
-                    // A quotient's result type is not determined by its
-                    // operands: it needs an expected type, or a `decimal(c, s)`
-                    // operand that took its typed peer's type (FR-140-AC-3).
-                    None if operator != ArithmeticOperator::Divide || literal_operand => {
-                        left_decimal.clone()
-                    }
-                    None => {
-                        return Err(CheckRefusal::ill_typed(
-                            location,
-                            IllTypedCause::AmbiguousLiteral,
-                        ))
-                    }
+                    // named type (QSpec FR-140-AC-7), so `+`, `-`, `*` and `/`
+                    // are typed by their operands' type wherever they are
+                    // written (FR-104). A literal operand took its peer's type.
+                    None => left_decimal.clone(),
                 };
                 (
                     NodeKind::Decimal {
