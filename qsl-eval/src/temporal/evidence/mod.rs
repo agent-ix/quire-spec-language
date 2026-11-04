@@ -19,8 +19,8 @@ mod limits;
 mod work;
 
 pub use binding::{
-    clock_mismatch, AuthenticatedBinding, BindingMismatch, ClauseSelection, MismatchedDimension,
-    TraceBinding, ADMIT_STAGE,
+    authenticate_clock, AuthenticatedBinding, BindingMismatch, ClauseSelection,
+    MismatchedDimension, TraceBinding, ADMIT_STAGE,
 };
 pub use counters::{CallMeter, ClauseStop, EvidenceStop, LimitReached, Visit};
 pub use identity::{

@@ -2611,7 +2611,6 @@ fn timestamped_mixed_authorities_have_one_canonical_order() {
 /// dimension, before any position is visited.
 #[trace("TC-1295", "FR-330-AC-9")]
 #[trace("TC-1317", "FR-330-AC-11")]
-#[trace("TC-1317", "FR-522-AC-3")]
 #[trace("TC-1317", "FR-522-AC-6")]
 #[test]
 fn timestamped_binding_is_required_and_authenticated() {

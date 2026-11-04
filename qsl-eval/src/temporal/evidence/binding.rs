@@ -155,7 +155,7 @@ impl TraceBinding {
                 expected: Some(expected_profile.to_string()),
             });
         }
-        let row = clock_mismatch(&self.clock_name, &self.parameters, selection.clock)?;
+        let row = authenticate_clock(&self.clock_name, &self.parameters, selection.clock)?;
         Ok(AuthenticatedBinding {
             package: selection.declaration.package.clone(),
             declaration: selection.declaration.clone(),
@@ -181,7 +181,7 @@ impl TraceBinding {
 /// `row` is `None` (the lock selects no clock for the declaration) or names
 /// another clock, `ClockParameters` for another configuration alternative,
 /// else the first differing member.
-pub fn clock_mismatch<'r>(
+pub fn authenticate_clock<'r>(
     clock_name: &str,
     parameters: &ClockConfiguration,
     row: Option<&'r TemporalBinding>,

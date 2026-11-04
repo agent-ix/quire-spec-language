@@ -16,7 +16,7 @@ Scope: FR-285-AC-1 to FR-285-AC-12.
 
 ## Test Procedure
 
-1. Map each of the ten table rows: success, violation, undefined, refusal, unsupported, incomplete, an inconclusive `analyze` item with cause `CertificateRejected`, FR-283-AC-1's pending clause, FR-501-AC-4's `Indeterminate` clause, and internal failure; then map the category of FR-281-AC-2's `refuted` terminal record.
+1. Map each of the ten table rows: success, violation, undefined, refusal, unsupported, incomplete, an inconclusive `analyze` item with cause `CertificateRejected`, FR-283-AC-1's pending clause, FR-501-AC-4's `Indeterminate` clause, and internal-failure; then map the category of FR-281-AC-2's `refuted` terminal record.
 2. Map the item-code sets {10, 22}, {0, 30, 20}, {21, 22}, {20, 21}, {0, 10}, {10, 11}, {11, 22}, {0, 11} and {0}.
 3. Map `StageFailure::Refused` with a profile-gated cause and with `ill_typed`, `StageFailure::Limit`, `StageFailure::Cancelled`, `StageFailure::Fault`, and `CallFailure::Input`, `Cancelled` and `Fault`.
 4. Render FR-100-AC-10's `sum-out-of-domain` evaluation through FR-100's outcome mapping.
@@ -26,7 +26,7 @@ Scope: FR-285-AC-1 to FR-285-AC-12.
 8. Render a clause pending at the end of its supplied trace and a run whose clauses are all discharged; read each machine-output record.
 
 9. Run FR-501-AC-3's `Pending` case and FR-501-AC-4's `Indeterminate` case, FR-501-AC-1's `Completed(true)` and `Completed(false)` cases and a work-stopped `Incomplete` case through `run_clause`, and read each label and exit from the report and from the multi-item ranking.
-10. With a catalog whose `Category` holds `Indeterminate` and `Pending` (IR-1281), read the label and exit of the `Pending` and `Indeterminate` cases; gated on IR-1281.
+10. Read the label and exit of the `Pending` and `Indeterminate` cases and compare them with the catalog's `Category::Pending` and `Category::Indeterminate`; compare `trace_exit_code` with `exit_code` for each of the ten categories; and search the production source (`src/` trees; tests, fixtures, examples, fuzz and xtask excluded) of every workspace member (`qsl-analyze`, `qsl-cst`, `qsl-eval`, `qsl-forms`, `qsl-foundation`, `qsl-inspect`, `qsl-package`, `qsl-replay`, `qsl-route`, `qsl-semantics`, `qsl-source`, `qsl-string-edge`, `qsl-walk-grow`) and of the root crate's `src/`, `src/command` included, for (a) the literal pairs `"pending"` with `0` and `"indeterminate"` with `11` in one expression, and (b) a `match` or `if let` over `TemporalCategory`, `ClauseDisposition` or any type that maps a temporal or trace outcome to a label string or an exit integer. Pass means zero hits for both searches and every label and exit read by a call to `as_str`, `exit_code` or `trace_exit_code` on a `Category`.
 
 Tag the tests `#[trace("TC-769", "<AC id>")]`.
 
@@ -41,4 +41,4 @@ Tag the tests `#[trace("TC-769", "<AC id>")]`.
 - Step 7: 20, 21, 22, each equal with and without the payload.
 - Step 8: category `pending`, exit 0, status `pending` and the pending clause ids; the discharged run has neither.
 - Step 9: `pending`/0, `indeterminate`/11, `success`/0, `violation`/10 and `incomplete`/22 from the report, each equal to the ranking's.
-- Step 10: the catalog's label and exit for each, and no local mapping in QSL.
+- Step 10: the catalog's label and exit for each (`pending`/0, `indeterminate`/11); equal trace and plain exits for all ten; zero hits in both searches.

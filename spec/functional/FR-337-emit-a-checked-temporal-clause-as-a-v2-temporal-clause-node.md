@@ -482,6 +482,18 @@ writes them from the checked graph at the same point as the nodes
 - The emitter SHALL sort both arrays by (`declaration` NodeId, `occurrence`),
   so the order is a function of the checked graph and not of declaration
   order.
+- The emitter SHALL return with its `Emission` the join between the in-memory
+  checked graph and the emitted ids, so that an in-process caller never derives a
+  NodeId: for every `claim` occurrence of a `temporal_clause` node, one
+  `TemporalClauseRef { declaration: CheckedNodeId, occurrence, clause }` where
+  `declaration` and `occurrence` are the values of that occurrence's
+  `temporal_clause_names` row as written and `clause` is the position of the
+  clause in the graph's temporal clauses. The `Emission` also returns the
+  `profile_selections` rows and the `temporal_bindings` rows exactly as written
+  into the lock and the package. These values are the emitter's own output and
+  are neither recomputed nor re-derived by a caller; the ids are hash-assigned
+  during emission, so deriving them elsewhere would duplicate the assignment and
+  could drift from the bytes.
 
 Hyper clauses and hybrid claims write into the same arrays by the rules of
 FR-488 and FR-447.
@@ -512,6 +524,7 @@ FR-488 and FR-447.
 | FR-337-AC-20 | A compile with an occurrence that has no clock selection, with a selection no occurrence uses, or with a selection of a kind its profile does not determine refuses and produces no package. | Test (TC-1326) |
 | FR-337-AC-21 | Under an unclocked profile (infinite-trace) the package carries the name rows and no `temporal_bindings` member. | Test (TC-1326) |
 | FR-337-AC-22 | The same declarations written in reversed source order emit `temporal_clause_names` and `temporal_bindings` arrays equal to those of the original order, each sorted by (`declaration` NodeId, `occurrence`); an emitter that writes rows in node or declaration order fails this. | Test (TC-1326) |
+| FR-337-AC-23 | For two structurally equal clauses with ordinals 0 and 1 under a clocked profile, `Emission` returns two `TemporalClauseRef` values whose `declaration` and `occurrence` equal the two `temporal_clause_names` rows read back from the emitted bytes, whose `clause` positions name the two declarations in the checked graph, and whose rows for `profile_selections` and `temporal_bindings` equal the lock's and the package's byte for byte; reordering the declarations changes `clause` and no `declaration`. | Test (TC-1326) |
 
 ### Aggregate formula emission
 

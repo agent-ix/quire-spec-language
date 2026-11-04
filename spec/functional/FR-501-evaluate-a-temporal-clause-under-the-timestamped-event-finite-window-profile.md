@@ -150,9 +150,9 @@ as separate fields that no one field determines:
   ceiling SHALL give a distinct identity, with the earlier result neither reused
   nor rewritten (FR-043-AC-13).
 
-The shared semantic catalog has no `Indeterminate` or `Pending` category until
-Contract IR IR-1281 adds them, so the QSL entry maps these two outcomes under
-the interim rule of FR-285.
+The shared semantic catalog's `Category` holds `Pending` and `Indeterminate`, so
+the QSL entry reads the label and the exit of these two outcomes from the catalog
+and keeps no local mapping (FR-285).
 
 `Pending` maps to the category pending and takes the exit of FR-285's
 row for a supplied-trace clause pending when the trace ends (FR-283); this

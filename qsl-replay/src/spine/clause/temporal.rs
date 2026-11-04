@@ -428,9 +428,12 @@ fn binding_refusal(
             Some(clause.profile().identity()),
         );
     }
-    let mismatch =
-        qsl_eval::temporal::evidence::clock_mismatch(&binding.clock_name, &binding.parameters, row)
-            .err()?;
+    let mismatch = qsl_eval::temporal::evidence::authenticate_clock(
+        &binding.clock_name,
+        &binding.parameters,
+        row,
+    )
+    .err()?;
     differ(
         mismatch.dimension.name(),
         &mismatch.asserted,
