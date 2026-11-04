@@ -2578,11 +2578,14 @@ impl<'a> Lowering<'a> {
         let carrier_type = match carried.carrier() {
             QuantityCarrier::Decimal(decimal) => ValueType::Decimal(decimal.clone()),
             QuantityCarrier::Integer { domain, .. } => ValueType::Int(domain.clone()),
+            QuantityCarrier::Rational(domain) => ValueType::Rational(domain.clone()),
         };
         let carrier = self.type_node(&carrier_type, location)?;
         let rounding_mode = match carried.carrier() {
             QuantityCarrier::Decimal(decimal) => decimal.rounding(),
             QuantityCarrier::Integer { rounding, .. } => *rounding,
+            // A Rational[..] carrier names no mode; its mode is exact (FR-497).
+            QuantityCarrier::Rational(_) => quire_exact::RoundingMode::Exact,
         };
         let rounding = self.text_literal(rounding_mode.as_str(), location)?;
         self.insert(

@@ -360,6 +360,13 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                         out.write_str(&domain.upper().to_string());
                         out.write_str(rounding_mode_tag(*rounding));
                     }
+                    QuantityCarrier::Rational(domain) => {
+                        out.write_str("rational");
+                        out.write_str(&domain.numerator().lower().to_string());
+                        out.write_str(&domain.numerator().upper().to_string());
+                        out.write_str(&domain.denominator().lower().to_string());
+                        out.write_str(&domain.denominator().upper().to_string());
+                    }
                 }
             }
             ValueType::Text(text_type) => {
@@ -4315,6 +4322,51 @@ mod locus_tests {
         assert_ne!(small, measured(&ValueType::Quantity(metre())));
         assert_eq!(small, measured(&carried(interval(-2, 2))));
         assert!(wide.1 > small.1, "a wider carrier writes more bytes");
+    }
+
+    /// A `Rational[..]` carrier is part of a carried quantity's identity
+    /// (FR-497, FR-505): each bound changes the encoding, and it differs
+    /// from an integer carrier of the same numerator range.
+    #[ix_trace_rs::trace("FR-497-AC-1", "TC-1287")]
+    #[test]
+    fn a_rational_carrier_is_encoded_with_its_numerator_and_denominator_bounds() {
+        let interval = |low: i64, high: i64| {
+            quire_exact::IntegerInterval::spanning(
+                quire_exact::Integer::from(low),
+                quire_exact::Integer::from(high),
+            )
+        };
+        let rational = |numerator: (i64, i64), denominator: (i64, i64)| {
+            ValueType::CarriedQuantity(std::sync::Arc::new(quire_exact::CarriedQuantityType::new(
+                metre(),
+                quire_exact::QuantityCarrier::Rational(
+                    quire_exact::RationalDomain::new(
+                        interval(numerator.0, numerator.1),
+                        interval(denominator.0, denominator.1),
+                    )
+                    .expect("a positive denominator"),
+                ),
+            )))
+        };
+        let base = measured(&rational((-3, 7), (1, 12)));
+        assert_eq!(base, measured(&rational((-3, 7), (1, 12))));
+        for different in [
+            rational((-2, 7), (1, 12)),
+            rational((-3, 6), (1, 12)),
+            rational((-3, 7), (2, 12)),
+            rational((-3, 7), (1, 11)),
+        ] {
+            assert_ne!(base, measured(&different));
+        }
+        let integer =
+            ValueType::CarriedQuantity(std::sync::Arc::new(quire_exact::CarriedQuantityType::new(
+                metre(),
+                quire_exact::QuantityCarrier::Integer {
+                    domain: interval(-3, 7),
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            )));
+        assert_ne!(base, measured(&integer));
     }
 
     /// A bounded quantity is its own type, not a `Quantity` (quire-exact

@@ -1135,7 +1135,7 @@ mod foundation_tests {
     }
 
     #[test]
-    fn category_has_exactly_the_adr_013_o16_eight_values() {
+    fn category_has_exactly_the_adr_013_o16_ten_values() {
         let spellings: Vec<&str> = Category::ALL
             .iter()
             .map(|category| category.as_str())
@@ -1149,12 +1149,14 @@ mod foundation_tests {
                 "refusal",
                 "unsupported",
                 "incomplete",
+                "pending",
+                "indeterminate",
                 "inconclusive",
                 "internal-failure",
             ]
         );
-        // Every match over `Category` in this crate must be exhaustive; a
-        // ninth variant added here without a corresponding compile error
+        // Every match over `Category` in this crate must be exhaustive; an
+        // eleventh variant added here without a corresponding compile error
         // elsewhere would mean some consumer grew a `_` arm.
         for category in Category::ALL {
             match category {
@@ -1164,6 +1166,8 @@ mod foundation_tests {
                 | Category::Refusal
                 | Category::Unsupported
                 | Category::Incomplete
+                | Category::Pending
+                | Category::Indeterminate
                 | Category::Inconclusive
                 | Category::InternalFailure => {}
             }

@@ -4416,6 +4416,9 @@ impl<'a> Lowering<'a> {
                         match carried.carrier() {
                             quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
                             quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
+                            quire_exact::QuantityCarrier::Rational(_) => {
+                                quire_exact::RoundingMode::Exact
+                            }
                         }
                     } else {
                         quire_exact::RoundingMode::Exact

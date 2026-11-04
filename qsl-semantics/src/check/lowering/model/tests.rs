@@ -1425,6 +1425,120 @@ mod quantities {
         }
     }
 
+    /// FR-497-AC-1 and FR-505-AC-7 (TC-1287, TC-1300): a `Rational[..]`
+    /// carrier lowers to a carried type over the `rational_range` node of
+    /// its bounds with the exact mode; equal bounds share a node and each
+    /// differing bound makes another.
+    #[trace("FR-497-AC-1", "FR-505-AC-7", "TC-1287", "TC-1300")]
+    #[test]
+    fn a_rational_carrier_lowers_over_its_rational_range_with_exact_mode() {
+        use quire_exact::{CarriedQuantityType, QuantityCarrier, RationalDomain};
+
+        let interval = |low: i64, high: i64| {
+            IntegerInterval::new(Integer::from(low), Integer::from(high)).expect("ordered bounds")
+        };
+        let carried = |numerator: (i64, i64), denominator: (i64, i64)| {
+            ValueType::carried_quantity(CarriedQuantityType::new(
+                UnitId::declared(node_key(METRE)),
+                QuantityCarrier::Rational(
+                    RationalDomain::new(
+                        interval(numerator.0, numerator.1),
+                        interval(denominator.0, denominator.1),
+                    )
+                    .expect("a positive denominator"),
+                ),
+            ))
+        };
+        let base = carried((-3, 7), (1, 12));
+        let same = carried((-3, 7), (1, 12));
+        let other_numerator = carried((-3, 6), (1, 12));
+        let other_denominator = carried((-3, 7), (1, 11));
+        let (keys, graph) = lower(&[], units(), |lowering| {
+            [&base, &same, &other_numerator, &other_denominator].map(|value_type| {
+                lowering
+                    .type_node(value_type, &generated_location())
+                    .expect("the rational carried quantity type lowers")
+            })
+        });
+        assert_eq!(keys[0], keys[1]);
+        assert_ne!(keys[0], keys[2]);
+        assert_ne!(keys[0], keys[3]);
+        assert_ne!(keys[2], keys[3]);
+        let node = graph.node(keys[0].clone()).expect("the carried type node");
+        assert_eq!(node.semantic_form(), "carried_quantity");
+        let node_preimage = preimage(node);
+        let members = node_preimage["body"]["members"]
+            .as_array()
+            .expect("the carried node body bindings");
+        let names: Vec<_> = members
+            .iter()
+            .map(|member| member["name"].as_str().expect("a binding name"))
+            .collect();
+        assert_eq!(names, ["unit", "carrier", "rounding"]);
+        let rational_range: Vec<_> = graph
+            .nodes()
+            .filter(|node| node.semantic_form() == "rational_range")
+            .collect();
+        assert_eq!(
+            rational_range.len(),
+            3,
+            "one range node per distinct bound set"
+        );
+        let rounding = graph
+            .nodes()
+            .find(|node| {
+                node.semantic_form() == "text_literal" || node.semantic_form() == "literal"
+            })
+            .map(preimage);
+        assert!(rounding.is_some_and(|literal| literal.to_string().contains("exact")));
+    }
+
+    /// FR-497-AC-3 (TC-1287): converting to a `Rational[..]` carrier carries
+    /// the exact mode, since a rational carrier names none.
+    #[trace("FR-497-AC-3", "TC-1287")]
+    #[test]
+    fn a_rational_carried_conversion_uses_exact_rounding() {
+        use quire_exact::{CarriedQuantityType, QuantityCarrier, RationalDomain};
+
+        let carried = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Rational(
+                RationalDomain::new(
+                    IntegerInterval::new(Integer::from(-3_i64), Integer::from(7_i64))
+                        .expect("ordered bounds"),
+                    IntegerInterval::new(Integer::from(1_i64), Integer::from(12_i64))
+                        .expect("ordered bounds"),
+                )
+                .expect("a positive denominator"),
+            ),
+        ));
+        let checked = check_declarations(PackageDeclarations {
+            types: TypeEnvironment::default().with_units(units()),
+            aliases: vec![
+                ("Length".to_owned(), quantity(METRE)),
+                ("RationalLength".to_owned(), carried),
+            ],
+            functions: vec![function(
+                "to_rational",
+                &[("a", named("Length"))],
+                named("RationalLength"),
+                Expression::convert(named("RationalLength"), name("a")),
+            )],
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        });
+        let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
+        assert_eq!(convert.len(), 1);
+        let convert = preimage(convert[0]);
+        assert_eq!(
+            convert["body"]["operation"]["mode"],
+            json!({"kind": "rounding", "value": "exact"})
+        );
+    }
+
     /// TC-419 step 3 (FR-094-AC-7): a compound `UnitId` the unit scope does
     /// not hold is an internal fault naming it, with no key.
     #[trace("FR-094-AC-7", "TC-419")]
