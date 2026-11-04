@@ -30,7 +30,7 @@ The change assigns timed-predicate scope to the QSL S3 timed-model checker, whil
 
 | Requirement | Owning component | Class |
 | --- | --- | --- |
-| FR-230-AC-55 | QSL S3 timed-model predicate checker | core |
+| FR-230-AC-58 | QSL S3 timed-model predicate checker | core |
 | FR-391 named-population positions | QSL clause checker | core |
 | FR-480 model-alias resolution | QSL package assembler | core |
 

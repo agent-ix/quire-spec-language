@@ -3,7 +3,7 @@ id: SR-164202
 title: "Failure-domain review — QSL-1642 timed population scope"
 type: SpecReview
 analysis: failure-domain
-scope: "spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md; spec/functional/FR-391-name-a-population-in-a-state-clause.md; spec/test-cases/TC-1331-refuse-named-populations-in-timed-model-predicates.md"
+scope: "spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md; spec/functional/FR-391-name-a-population-in-a-state-clause.md; spec/test-cases/TC-1334-refuse-named-populations-in-timed-model-predicates.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-230

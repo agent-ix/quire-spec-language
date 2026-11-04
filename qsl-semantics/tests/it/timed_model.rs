@@ -287,10 +287,10 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
     );
 }
 
-/// FR-230-AC-55 / TC-1331: S3 has no ambient named-population scope for a
+/// FR-230-AC-58 / TC-1334: S3 has no ambient named-population scope for a
 /// time invariant or `urgent when`, while ordinary state-clause population
 /// scope and self-only timed predicates remain available.
-#[trace("TC-1331", "FR-230-AC-55")]
+#[trace("TC-1334", "FR-230-AC-58")]
 #[test]
 fn timed_predicates_refuse_named_populations_without_restricting_state_clauses() {
     for predicate in [

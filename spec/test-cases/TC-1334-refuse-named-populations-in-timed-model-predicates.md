@@ -1,12 +1,12 @@
 ---
-id: TC-1331
+id: TC-1334
 title: "Refuse named populations in timed model predicates"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-230
+  - target: ix://agent-ix/quire-spec-language/FR-230-AC-58
     type: verifies
 ---
-# TC-1331: Refuse named populations in timed model predicates
+# TC-1334: Refuse named populations in timed model predicates
 
 ## Description
 
