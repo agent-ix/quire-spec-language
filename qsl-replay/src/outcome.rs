@@ -45,8 +45,10 @@ use crate::proof_result::{
 use crate::result::ReplayResult;
 use crate::spine::kernel_undefined_reason;
 use crate::spine::{
-    CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
-    FrontEndFailure, ParsedUnitSource, RunRefusal, SpineStage,
+    classify_clause_run, CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit,
+    ClauseDisposition, ClauseRunReport, CompileRefusal, EmittedUnit, FrontEndFailure,
+    ParsedUnitSource, RunRefusal, SpineStage, TemporalIndeterminateReason, TemporalUndefinedCause,
+    TemporalVerdict,
 };
 use crate::statistical::{self, Decision, StatisticalVerdict};
 use crate::ReplayRefusal;
@@ -161,9 +163,14 @@ impl From<SpineStage> for OutcomeStage {
     }
 }
 
-/// A proof item's result label (FR-331). It has no `undefined` member: an
-/// undefined claim evaluation is `refuted` with the `undefined-evaluation`
-/// cause ([`ItemCause::undefined_evaluation`]).
+/// An item's result label. The FR-331 terminal labels come from a terminal
+/// record ([`ItemLabel::of`]) and never include `undefined`: an undefined
+/// claim evaluation is `refuted` with the `undefined-evaluation` cause
+/// ([`ItemCause::undefined_evaluation`]). `pending`, `indeterminate` and
+/// `undefined` are the catalog's category labels (FR-286 "Monitor documents
+/// from clause runs"), written only on an item whose category is that
+/// category, which only a clause run gives
+/// ([`OutcomeItem::from_clause_run`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemLabel {
@@ -186,6 +193,14 @@ pub enum ItemLabel {
     /// A completed statistical run's measurement (FR-192), never proof
     /// evidence.
     Measured,
+    /// A clause still pending when its supplied trace ends (category
+    /// pending).
+    Pending,
+    /// A clause whose finite-window evidence cannot decide it (category
+    /// indeterminate).
+    Indeterminate,
+    /// A clause with insufficient data (category undefined, FR-283).
+    Undefined,
 }
 
 impl ItemLabel {
@@ -209,6 +224,13 @@ impl ItemLabel {
         }
     }
 }
+
+/// The error of building an item from a clause run whose category has no
+/// item: an evaluator fault fails the whole request (FR-283), and no clause
+/// run settles inconclusive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("a clause run of category {} is not an outcome item", .0.as_str())]
+pub struct ClauseRunNotAnItem(pub Category);
 
 /// Why a replay settled inconclusive: its disagreement reason and the two
 /// verdicts' categories.
@@ -360,6 +382,18 @@ pub struct ItemCause {
     /// The typed transition identity named by `not-stochastic`.
     #[serde(skip_serializing_if = "Option::is_none")]
     identity: Option<TimedTransitionWire>,
+    /// The trace position of an indeterminate valuation (FR-501).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<u64>,
+    /// The atom of an indeterminate valuation (FR-501).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    atom: Option<String>,
+    /// The instance of an instance-bound missing valuation (FR-524).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instance: Option<String>,
+    /// The other instances holding the valuation (FR-524).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    also_held_by: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -527,6 +561,10 @@ impl ItemCause {
             recompiled: None,
             state: None,
             identity: None,
+            position: None,
+            atom: None,
+            instance: None,
+            also_held_by: None,
         }
     }
 
@@ -703,6 +741,9 @@ pub struct OutcomeItem {
     /// The state-graph limit reached, when the run stopped at one.
     #[serde(skip_serializing_if = "Option::is_none")]
     limit_reached: Option<ReachedLimitWire>,
+    /// The qualified name of the clause a clause run settled (FR-286).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clause: Option<String>,
     #[serde(serialize_with = "category_str")]
     category: Category,
 }
@@ -893,6 +934,7 @@ impl OutcomeItem {
             witness_samples: None,
             limits: None,
             limit_reached: None,
+            clause: None,
             category: value.category(),
         }
     }
@@ -941,6 +983,7 @@ impl OutcomeItem {
             witness_samples: None,
             limits: None,
             limit_reached: None,
+            clause: None,
             category: Category::Violation,
         }
     }
@@ -948,6 +991,173 @@ impl OutcomeItem {
     /// The item's O-16 category.
     pub fn category(&self) -> Category {
         self.category
+    }
+
+    /// The item one clause run settles (FR-286 "Monitor documents from clause
+    /// runs"). The category is `report.category()`, the catalog's, and the
+    /// result label follows from it; a pending or indeterminate run carries
+    /// the catalog label and no FR-331 terminal record. The item names its
+    /// `clause`.
+    ///
+    /// # Errors
+    ///
+    /// [`ClauseRunNotAnItem`] for an internal failure (an evaluator fault
+    /// fails the whole request) and for the category inconclusive, which no
+    /// clause run settles.
+    pub fn from_clause_run(
+        request_index: RequestIndex,
+        clause: &str,
+        report: &ClauseRunReport,
+    ) -> Result<Self, ClauseRunNotAnItem> {
+        let category = report.category();
+        let result = match category {
+            Category::Success => ItemLabel::Tested,
+            Category::Violation => ItemLabel::Refuted,
+            Category::Pending => ItemLabel::Pending,
+            Category::Indeterminate => ItemLabel::Indeterminate,
+            Category::Incomplete => ItemLabel::Incomplete,
+            Category::Unsupported => ItemLabel::Unsupported,
+            Category::Refusal => ItemLabel::Declined,
+            Category::Undefined => ItemLabel::Undefined,
+            Category::Inconclusive | Category::InternalFailure => {
+                return Err(ClauseRunNotAnItem(category))
+            }
+        };
+        Ok(Self {
+            request_index: request_index.get(),
+            result,
+            cause: clause_run_cause(report),
+            basis: None,
+            certification: None,
+            measured: None,
+            method: None,
+            max_depth: None,
+            seed: None,
+            witness_samples: None,
+            limits: None,
+            limit_reached: None,
+            clause: Some(clause.to_owned()),
+            category,
+        })
+    }
+
+    /// The qualified name of the clause a clause run settled, when this item
+    /// came from one.
+    pub fn clause(&self) -> Option<&str> {
+        self.clause.as_deref()
+    }
+
+    /// The item's result label.
+    pub fn result(&self) -> ItemLabel {
+        self.result
+    }
+}
+
+/// FR-501's indeterminate reason, spelled as its result report spells it.
+fn indeterminate_reason(reason: &TemporalIndeterminateReason) -> ItemCause {
+    match reason {
+        TemporalIndeterminateReason::MissingValuation {
+            position,
+            atom,
+            instance,
+            also_held_by,
+        } => ItemCause {
+            position: Some(*position),
+            atom: Some(atom.clone()),
+            instance: instance.clone(),
+            also_held_by: instance.as_ref().map(|_| also_held_by.clone()),
+            ..ItemCause::kind("missing-valuation")
+        },
+        TemporalIndeterminateReason::ConflictingValuation { position, atom } => ItemCause {
+            position: Some(*position),
+            atom: Some(atom.clone()),
+            ..ItemCause::kind("conflicting-valuation")
+        },
+        TemporalIndeterminateReason::IncompleteInput => ItemCause::kind("incomplete-input"),
+        TemporalIndeterminateReason::MissingHistory => ItemCause::kind("missing-history"),
+        TemporalIndeterminateReason::StraddlesBound => ItemCause::kind("straddles-bound"),
+    }
+}
+
+/// The cause an item built from `report` carries: the table's `cause`
+/// column of FR-286 "Monitor documents from clause runs". A success, a
+/// violated clause, a pending run and a clause with insufficient data
+/// (`insufficient-data`) carry the spelling the table gives them.
+fn clause_run_cause(report: &ClauseRunReport) -> Option<ItemCause> {
+    let catalog = |code: &'static str, cause: &'static str| ItemCause {
+        code: Some(code.to_owned()),
+        ..ItemCause::kind(cause)
+    };
+    let limit = |kind: &'static str, value: u64, setting: &'static str| ItemCause {
+        limit: Some(kind),
+        value: Some(value),
+        setting: Some(setting),
+        ..ItemCause::kind("limit-reached")
+    };
+    match &report.disposition {
+        ClauseDisposition::Temporal(verdict) => match verdict {
+            TemporalVerdict::Holds
+            | TemporalVerdict::Violated { .. }
+            | TemporalVerdict::Pending
+            | TemporalVerdict::PendingWindow { .. }
+            | TemporalVerdict::PendingNextEvent { .. } => None,
+            TemporalVerdict::Undefined {
+                cause: TemporalUndefinedCause::InsufficientData { .. },
+                ..
+            } => Some(ItemCause::kind("insufficient-data")),
+            TemporalVerdict::Undefined { at, cause } => Some(ItemCause::undefined_evaluation(
+                format!("position {at}"),
+                cause.reason(),
+            )),
+            TemporalVerdict::Indeterminate { at, reason } => Some(ItemCause {
+                at: Some(format!("position {at}")),
+                ..indeterminate_reason(reason)
+            }),
+            TemporalVerdict::MissingFairnessPremise { .. } => Some(catalog(
+                "unsupported_projection",
+                "missing-fairness-premise",
+            )),
+            TemporalVerdict::Incomplete(incomplete) => Some(limit(
+                incomplete.limit_kind.as_str(),
+                incomplete.limit,
+                incomplete.limit_kind.as_str(),
+            )),
+            TemporalVerdict::ActivationIncomplete { at, .. } => Some(ItemCause {
+                position: Some(*at),
+                ..ItemCause::kind("activation-incomplete")
+            }),
+            TemporalVerdict::WindowLimitReached {
+                limit: kind,
+                value,
+                setting,
+            } => Some(limit(kind, *value, setting)),
+            TemporalVerdict::ProgressLimitReached(reached) => {
+                Some(limit(reached.limit, reached.value, reached.setting))
+            }
+        },
+        ClauseDisposition::TemporalRefusal(refusal) => {
+            let code = refusal.catalog_code();
+            Some(catalog(code.code(), code.cause()))
+        }
+        ClauseDisposition::ProgressContradiction(refusal) => {
+            let code = &refusal.record.catalog;
+            Some(catalog(code.code(), code.cause()))
+        }
+        ClauseDisposition::FrameViolation(witness) => {
+            Some(catalog(witness.code.as_str(), witness.cause))
+        }
+        ClauseDisposition::Evaluate(CallOutcome::Undefined { reason }) => Some(ItemCause {
+            cause: Some((*reason).to_owned()),
+            ..ItemCause::kind("undefined-evaluation")
+        }),
+        _ => classify_clause_run(report)
+            .classification
+            .causes
+            .first()
+            .map(|cause| ItemCause {
+                code: Some(cause.code.as_str().to_owned()),
+                ..ItemCause::kind(cause.cause.unwrap_or_else(|| cause.code.as_str()))
+            }),
     }
 }
 
@@ -1216,6 +1426,29 @@ impl OutcomeDocument {
             .and_then(|worst| items.iter().find(|item| code(item) == worst))
             .map_or(Category::Success, |item| item.category);
         Self::new(operation, last_stage, category).with_items(items)
+    }
+
+    /// The `monitor` document of `runs`, one item per clause run in request
+    /// order: each run is `(clause, report)`, its request index its position
+    /// in `runs`. The category is [`Self::settled`]'s, so a document whose
+    /// only item is a pending clause is pending, exit 0 (FR-286-AC-8).
+    ///
+    /// # Errors
+    ///
+    /// [`ClauseRunNotAnItem`] for the first run that is an evaluator fault or
+    /// inconclusive: the request fails as a whole (FR-283).
+    pub fn from_clause_runs<'a>(
+        last_stage: Option<OutcomeStage>,
+        runs: impl IntoIterator<Item = (&'a str, &'a ClauseRunReport)>,
+    ) -> Result<Self, ClauseRunNotAnItem> {
+        let items = runs
+            .into_iter()
+            .enumerate()
+            .map(|(index, (clause, report))| {
+                OutcomeItem::from_clause_run(RequestIndex::new(index), clause, report)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::settled(Operation::Monitor, last_stage, items))
     }
 
     /// This document with one entry per requested item, in request order.

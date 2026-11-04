@@ -3277,3 +3277,146 @@ fn report_of_progress(ledger: &crate::spine::ProgressLedger) -> ClauseRunReport 
     );
     report
 }
+
+fn monitor_json(runs: &[(&str, &ClauseRunReport)]) -> (crate::OutcomeDocument, serde_json::Value) {
+    let document = crate::OutcomeDocument::from_clause_runs(None, runs.iter().copied())
+        .expect("every run is an item");
+    let json = serde_json::from_slice(&document.to_bytes().expect("the document writes"))
+        .expect("the document is JSON");
+    (document, json)
+}
+
+/// FR-286-AC-8, FR-285-AC-9 (TC-770 step 7): a real clause run that is
+/// pending at the end of its finite trace is the only item of a `monitor`
+/// document; the item carries the catalog label `pending`, the clause name,
+/// no cause and no terminal record, and the document is pending, exit 0.
+#[trace("TC-770", "FR-286-AC-8")]
+#[trace("TC-770", "FR-285-AC-9")]
+#[test]
+fn a_pending_clause_run_is_a_pending_monitor_document_that_exits_zero() {
+    let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
+    let (document, json) = monitor_json(&[("Counters::Counter::Reaches", &pending)]);
+    assert_eq!(document.category(), Category::Pending);
+    assert_eq!(document.category().exit_code(), 0);
+    assert_eq!(json["operation"], "monitor");
+    assert_eq!(json["category"], "pending");
+    let items = json["items"].as_array().expect("items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["result"], "pending");
+    assert_eq!(items[0]["category"], "pending");
+    assert_eq!(items[0]["clause"], "Counters::Counter::Reaches");
+    assert_eq!(items[0]["request_index"], 0);
+    assert!(items[0]["cause"].is_null());
+    for member in ["basis", "certification", "measured", "method"] {
+        assert!(
+            items[0].get(member).is_none(),
+            "{member} is a terminal-record member"
+        );
+    }
+    assert!(!json.to_string().contains("\"undefined\""));
+    assert_eq!(items[0]["category"], pending.category().as_str());
+}
+
+/// FR-286-AC-9 (TC-770 step 8): an indeterminate run serializes with the
+/// catalog label and FR-501's reason and exits 11; with a pending run it is
+/// indeterminate; with a `Completed(false)` run it is a violation, exit 10;
+/// a `Completed(true)` run alone is the item `tested`, success.
+#[trace("TC-770", "FR-286-AC-9")]
+#[test]
+fn indeterminate_and_mixed_clause_runs_rank_by_severity() {
+    let indeterminate = report(timestamped(&[0], &[0], 5, None));
+    let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
+    let refuted = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
+    let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
+
+    let (document, json) = monitor_json(&[("Indeterminate", &indeterminate)]);
+    assert_eq!(document.category(), Category::Indeterminate);
+    assert_eq!(document.category().exit_code(), 11);
+    assert_eq!(json["items"][0]["result"], "indeterminate");
+    assert_eq!(json["items"][0]["category"], "indeterminate");
+    assert_eq!(json["items"][0]["clause"], "Indeterminate");
+    assert_eq!(json["items"][0]["cause"]["kind"], "incomplete-input");
+    assert_eq!(json["items"][0]["cause"]["where"], "position 0");
+
+    let (document, json) =
+        monitor_json(&[("Reaches", &pending), ("Indeterminate", &indeterminate)]);
+    assert_eq!(document.category(), Category::Indeterminate);
+    assert_eq!(json["items"][1]["request_index"], 1);
+
+    let (document, json) = monitor_json(&[
+        ("Reaches", &pending),
+        ("Indeterminate", &indeterminate),
+        ("Bounded", &refuted),
+    ]);
+    assert_eq!(document.category(), Category::Violation);
+    assert_eq!(document.category().exit_code(), 10);
+    assert_eq!(json["items"][2]["result"], "refuted");
+    assert_eq!(json["items"][2]["category"], "violation");
+
+    let (document, json) = monitor_json(&[("Reaches", &pending), ("Bounded", &refuted)]);
+    assert_eq!(document.category(), Category::Violation);
+    assert_eq!(json["items"][0]["result"], "pending");
+
+    let (document, json) = monitor_json(&[("Reaches", &held)]);
+    assert_eq!(document.category(), Category::Success);
+    assert_eq!(json["items"][0]["result"], "tested");
+    assert_eq!(json["items"][0]["category"], "success");
+    for (run, item) in [&indeterminate, &pending, &refuted, &held].into_iter().zip(
+        monitor_json(&[
+            ("a", &indeterminate),
+            ("b", &pending),
+            ("c", &refuted),
+            ("d", &held),
+        ])
+        .0
+        .items(),
+    ) {
+        assert_eq!(item.category(), run.category());
+        assert_eq!(item.category().as_str(), run.disposition.category_label());
+        assert_eq!(item.category().exit_code(), run.disposition.exit_code());
+    }
+}
+
+/// FR-286 table (TC-770 step 8): the label `undefined` appears exactly when
+/// the item's category is undefined, a monitor `InsufficientData` item with
+/// reason `insufficient-data`; a refusal is `declined` and an evaluator
+/// fault is no item.
+#[trace("TC-770", "FR-286-AC-8")]
+#[test]
+fn the_undefined_label_is_written_only_for_the_undefined_category() {
+    let synthetic = |disposition| ClauseRunReport {
+        basis: SettlementBasis::Unavailable,
+        witness: None,
+        disposition,
+        usage: super::super::ClauseRunUsage::default(),
+        consequent_source_events: crate::spine::ConsequentSourceEvents::Unavailable,
+        finite_window: None,
+        counterexample: None,
+        ledger: None,
+    };
+    let insufficient = synthetic(ClauseDisposition::Temporal(TemporalVerdict::Undefined {
+        at: 3,
+        cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+            count: 1,
+            min_count: 2,
+        },
+    }));
+    let (document, json) = monitor_json(&[("Window", &insufficient)]);
+    assert_eq!(document.category(), Category::Undefined);
+    assert_eq!(json["items"][0]["result"], "undefined");
+    assert_eq!(json["items"][0]["cause"]["kind"], "insufficient-data");
+
+    let violated = report(finite(Unit::Undefined, "Undefined", &[0, 1, 2]));
+    let (_, json) = monitor_json(&[("Undefined", &violated)]);
+    assert_eq!(json["items"][0]["result"], "refuted");
+    assert_eq!(json["items"][0]["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(json["items"][0]["cause"]["where"], "position 2");
+
+    let fault = synthetic(ClauseDisposition::EvaluateFault(
+        quire_semantic_value::catalog::InternalFault::new("monitor", "test"),
+    ));
+    assert_eq!(
+        crate::OutcomeDocument::from_clause_runs(None, [("Fault", &fault)]).unwrap_err(),
+        crate::ClauseRunNotAnItem(Category::InternalFailure)
+    );
+}

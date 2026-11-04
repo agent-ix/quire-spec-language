@@ -239,13 +239,7 @@ fn fairness_wire(
 
 /// The undefined value's FR-100 reason.
 fn undefined_reason(cause: &TemporalUndefinedCause) -> &'static str {
-    match cause {
-        TemporalUndefinedCause::Kernel(undefined) => {
-            crate::spine::kernel_undefined_reason(undefined.clone())
-        }
-        TemporalUndefinedCause::Family(record) => record.reason.as_str(),
-        TemporalUndefinedCause::InsufficientData { .. } => INSUFFICIENT_DATA,
-    }
+    cause.reason()
 }
 
 fn counterexample_wire(
