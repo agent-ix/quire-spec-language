@@ -222,12 +222,15 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
 
     let world = every(GUARD, true);
     let shape_refusal = refusal(&world, "Always");
-    let ProductRefusal::TimedFormShape { span } = shape_refusal else {
+    let ProductRefusal::TimedFormShape { span, claim } = shape_refusal else {
         panic!("an always event has no digital timed reading");
     };
     let simulation = world.request();
     let settled = settle_product_refusal(
-        ProductRefusal::TimedFormShape { span },
+        ProductRefusal::TimedFormShape {
+            span,
+            claim: claim.clone(),
+        },
         SubjectLimits {
             expansion: simulation.expansion,
             meter: &simulation.meter,
@@ -236,16 +239,94 @@ fn zero_delay_cycle_and_form_shape_are_unsupported() {
     .expect("the unsupported form settles");
     assert_eq!(
         settled.value(),
-        &TerminalValue::Unsupported(UnavailabilityCause::TimedFormShape { span })
+        &TerminalValue::Unsupported(UnavailabilityCause::TimedFormShape {
+            span,
+            claim: claim.clone()
+        })
     );
     let terminal = settled.into_terminal(RequestIndex::new(1), BackendId::new("qsl-en-5"));
     let wire = serde_json::to_value(OutcomeItem::from_terminal(&terminal))
         .expect("the form-shape refusal writes to FR-331");
     assert_eq!(wire["cause"]["kind"], "timed-form-shape");
-    assert_eq!(
-        wire["cause"]["where"],
-        format!("{}..{}", span.start, span.end)
-    );
+    // An assembled claim is located by its identity, never by its span.
+    assert!(claim.is_some());
+    assert!(wire["cause"].get("where").is_none());
+    assert_eq!(wire["cause"]["locus"]["occurrence"]["role"], "claim");
+    assert!(wire["cause"]["locus"].get("node").is_some());
+}
+
+/// Two same-named claims in `claims`, each refused `timed-form-shape`: each
+/// cause carries its own claim's `{node, occurrence}` locus and no span.
+fn assert_each_shape_cause_names_its_claim(claims: &str) {
+    let world = retx(GUARD, true, "", claims);
+    let checked = world.package.graph().probabilistic_model().claims();
+    assert_eq!(checked.len(), 2);
+    let simulation = world.request();
+    let mut loci = Vec::new();
+    for claim in checked {
+        let refusal = build_product(
+            ProductRequest {
+                subject: ModelSubject {
+                    simulation: world.request(),
+                    proof_bounds: Vec::new(),
+                },
+                claim,
+                limits: ExactProbLimits::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect_err("the form has no digital timed reading");
+        let ProductRefusal::TimedFormShape { claim: located, .. } = &refusal else {
+            panic!("a timed form shape refusal: {refusal:?}");
+        };
+        assert_eq!(located.as_ref(), claim.occurrence());
+        let settled = settle_product_refusal(
+            refusal,
+            SubjectLimits {
+                expansion: simulation.expansion,
+                meter: &simulation.meter,
+            },
+        )
+        .expect("the unsupported form settles");
+        let terminal = settled.into_terminal(RequestIndex::new(0), BackendId::new("qsl-en-5"));
+        let wire = serde_json::to_value(OutcomeItem::from_terminal(&terminal))
+            .expect("the form-shape refusal writes to FR-331");
+        assert_eq!(wire["cause"]["kind"], "timed-form-shape");
+        assert!(wire["cause"].get("where").is_none(), "no span locus");
+        assert_eq!(wire["cause"]["locus"]["occurrence"]["role"], "claim");
+        assert!(wire["cause"]["locus"].get("node").is_some());
+        assert!(wire["cause"]["locus"].get("declaration").is_none());
+        loci.push(wire["cause"]["locus"].clone());
+    }
+    assert_ne!(loci[0], loci[1], "each cause names its own claim");
+}
+
+/// FR-498-AC-3 (TC-1288 step 3): two claims with the same name whose
+/// `always` event has no digital reading each settle `timed-form-shape`
+/// carrying their own `{node, occurrence}` locus, not the other's.
+#[trace("FR-498-AC-3", "TC-1288")]
+#[test]
+fn timed_form_shape_names_the_selected_claim_among_equal_names() {
+    assert_each_shape_cause_names_its_claim(&format!(
+        "{}{}",
+        deadline_claim("Same", "under every scheduler", ">= 0.99", "always"),
+        deadline_claim("Same", "under every scheduler", ">= 0.5", "always"),
+    ));
+}
+
+/// FR-498-AC-3 (TC-1288 step 3): the same for two same-named elapsed-time
+/// claims.
+#[trace("FR-498-AC-3", "TC-1288")]
+#[test]
+fn timed_form_shape_names_the_selected_elapsed_claim_among_equal_names() {
+    let elapsed = |threshold: &str| {
+        format!(
+            "probabilistic Same using ev on M over (c: M::Call) under every scheduler on origin {{ \
+             quantile 0.5 of (elapsed from holds(not c.late) until holds(c.late) within 4 ms) \
+             <= {threshold} ms }}\n"
+        )
+    };
+    assert_each_shape_cause_names_its_claim(&format!("{}{}", elapsed("1"), elapsed("2")));
 }
 
 /// FR-204-AC-4: digital unbounded products have no monitor, but their actual

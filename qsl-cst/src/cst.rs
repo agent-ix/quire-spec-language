@@ -328,6 +328,20 @@ impl NodeIndex {
     }
 }
 
+/// A node's written content: the exact spellings of its significant tokens in
+/// source order ([`LosslessCst::significant_content`]). It carries no span,
+/// trivia or parse position, so it is independent of where the node is
+/// written; its order is a total order on written content.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SignificantContent(Vec<Box<[u8]>>);
+
+impl SignificantContent {
+    /// The significant token spellings, in source order.
+    pub fn tokens(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.0.iter().map(|spelling| &**spelling)
+    }
+}
+
 /// One source edit between two revisions: `range` of the earlier revision's
 /// bytes was replaced by `inserted` bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -540,6 +554,33 @@ impl LosslessCst {
             }
         }
         Ok(output)
+    }
+    /// The significant tokens `node` is written with, in order: its content
+    /// with no span, whitespace, comment or parse position. Moving a node
+    /// within its source, or reformatting it, leaves its content equal;
+    /// changing any token it is written with changes it.
+    pub fn significant_content(&self, node: &CstNode) -> SignificantContent {
+        let mut spellings = Vec::new();
+        let mut pending: Vec<CstElement> = node.children.iter().rev().copied().collect();
+        while let Some(element) = pending.pop() {
+            match element {
+                CstElement::Token(token) => {
+                    if let Some(token) = self
+                        .tokens
+                        .get(token)
+                        .filter(|token| token.class == TokenClass::Token)
+                    {
+                        spellings.push(token.spelling.clone());
+                    }
+                }
+                CstElement::Node(child) => {
+                    if let Some(child) = self.nodes.get(child) {
+                        pending.extend(child.children.iter().rev().copied());
+                    }
+                }
+            }
+        }
+        SignificantContent(spellings)
     }
     /// The node `identity` names in this revision, if it names one here.
     pub fn resolve(&self, identity: &NodeIdentity) -> Option<&CstNode> {
