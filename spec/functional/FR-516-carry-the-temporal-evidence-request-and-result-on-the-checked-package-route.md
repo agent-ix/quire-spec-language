@@ -121,12 +121,13 @@ construction (an empty trigger identity), a selection or supply refused before S
 capture fact (FR-524), an occurrence selector that is absent for a node with several occurrences (`occurrence-required`) or names no occurrence of the node (`occurrence-unknown`), a
 progress contradiction (FR-502), a `trigger-required` or `trigger-unknown`
 refusal, a control that does not map to the clause (below) and each relation
-refusal (FR-526). Each refusal names a `cause`, and the causes below
-are the whole set the call refuses with beyond those FR-522, FR-524 and FR-526
-state (`mismatched_dimension`, `delivery-contradiction`, `surplus-capture`,
-`no-ledger`, `predecessor-unknown`, `predecessor-not-latest`, `unchanged-input`,
-`correspondence-changed`); every one charges nothing and leaves the caller's
-ledgers unchanged:
+refusal (FR-526). Each refusal names a `cause`. The causes this requirement owns are the table
+below. The causes owned elsewhere are cross-referenced and not restated:
+`binding-mismatch` (FR-522; its `mismatched_dimension` is a field of the refusal,
+not a cause), `delivery-contradiction` and `surplus-capture` (FR-524), and
+`no-ledger`, `predecessor-unknown`, `predecessor-not-latest`, `unchanged-input` and
+`correspondence-changed` (FR-526). Every refusal charges nothing and leaves the
+caller's ledgers unchanged. No other cause exists.
 
 | `cause` | Condition |
 | --- | --- |
@@ -135,11 +136,18 @@ ledgers unchanged:
 | `occurrence-required` | the selected node has several occurrences and `occurrence` is `None` |
 | `occurrence-unknown` | `occurrence` names no occurrence of the selected node |
 | `activation-list-mismatch` | a clause `on each` carries a non-empty `origins` (naming `origins`), or a clause `on origin` carries a non-empty `deliveries` (naming `deliveries`) |
-| `surplus-capture` | a delivery or an origin carries more capture facts than the clause declares captures (FR-524; names `surplus_capture_identity` and `surplus_capture_index`) |
+| `activation-mapping-missing` | `control` is present and the package's FR-449 activation map has no row for it |
+| `activation-mapping-mismatch` | `control` is present and its row names another temporal clause |
 | `progress-contradiction` | the progress assertion contradicts the progress ledger's retained watermark, completeness or closure (FR-502; names `contradicted_dimension`) |
-| `progress-inconsistent` | the request's positions and its progress assertion contradict each other as FR-504 "Consistency" states: a fixed-sample watermark or a `Complete { through }` below the last position's coordinate, or an assertion on a clause whose profile is not event-position or fixed-sample |
-| `progress-ledger-limit` | recording the request's covered positions would exceed the progress ledger's capacity (`progress.covered_positions`, FR-255; names the setting) |
-| `clause-unreadable` | the clause's formula cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an operand that names no node or a cycle (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523), or a `predicate_leaves()` count that differs from the formula's `holds` count (FR-515) |
+| `progress-inconsistent` | the request's positions and its progress assertion contradict each other as FR-504 "Consistency" states: under the event-position or the fixed-sample profile a fixed-sample watermark or a `Complete { through }` below the last position's coordinate, or an assertion on a clause whose profile is neither |
+| `clause-unreadable` | the clause's formula, built from the subject view's `formula()` entries and `operands` edges (FR-515), cannot be measured in ticks for a bounded profile: an operator without a finite upper bound, an operator with a timed interval, an `operands` position that names no entry or a cycle, or a `predicate_leaves()` count that differs from the formula's `holds` count (a sum that overflows `u64` is not this cause: it is the `history_span` `Incomplete` of FR-523) |
+
+A progress ledger whose covered positions would exceed its capacity is not a
+refusal: the call returns an `Incomplete(LimitReached{limit: node count, value,
+setting: progress.covered_positions})` result with the request's `ledger` and
+`progress_ledger` unchanged (FR-502-AC-8). The capacity is the FR-255 setting
+`progress.covered_positions` (default 1000000 positions), a system setting and not
+a request member.
 
 `activation = Unavailable` is a result,
 not a refusal: the call ran and a fact the clause needs was withdrawn, or the
@@ -148,7 +156,8 @@ error: errors are for malformed input only, and a call that a counter, the meter
 the lineage ceiling or an evicted valuation stops returns `Ok` with
 `activation = Unavailable`, `truth = None`, `settlement = None` and `incomplete`
 naming the stop. The same holds for a stop at the clause (`formula_nodes`,
-`history_span`, a tick sum that does not fit), which assesses no instance.
+`history_span`, a tick sum that does not fit), which assesses no instance, and
+for the progress-ledger capacity stop above.
 `activation` is never unset: every `Ok` result holds exactly one of the four
 states. An `Incomplete` result returns the request's own `ledger` and
 `progress_ledger` unchanged for every stop kind (counter, meter, evicted
@@ -287,7 +296,7 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-15 | A request whose `control` names the protocol clause whose FR-449 row names the call's clause is evaluated. | Test (TC-1311) |
 | FR-516-AC-16 | A request whose `control` names a protocol clause with no FR-449 row is refused with cause `activation-mapping-missing`, and one whose row names another temporal clause is refused with `activation-mapping-mismatch`, each as `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
 | FR-516-AC-17 | Through `evaluate_temporal_evidence` with a `progress_ledger`, a regressing watermark and a conflicting completeness revision are refused as FR-502-AC-1 and AC-2 state, with an empty charge log and the progress ledger unchanged. | Test (TC-1311) |
-| FR-516-AC-18 | For each of **R**'s three clauses and for the twin package of AC-32, the `EvidenceResult` of the call over the `CheckedPackageEvaluation` constructed from the `Emission` equals, field for field and in its canonical byte encoding, the result over the package read back from the emitted bytes, the charge log and the `result_identity` included; replacing one clock row, one `CheckedNodeId` or one instance-bound atom of either side makes the two results differ, so the criterion fails on any such divergence. Gated on QSL-1608 until the code lands. | Test (TC-1311) |
+| FR-516-AC-18 | For each of **R**'s three clauses, the `EvidenceResult` of the call over the `CheckedPackageEvaluation` constructed from the `Emission` equals, field for field and in its canonical byte encoding, the result over the package read back from the emitted bytes, the charge log and the `result_identity` included; replacing one clock row, one `CheckedNodeId` or one instance-bound atom of either side makes the two results differ, so the criterion fails on any such divergence. | Test (TC-1311) |
 | FR-516-AC-19 | A request that carries `deliveries` and names a `trigger` that no delivery or ledger entry holds is refused with cause `trigger-unknown` as `Err(CallFailure::Admission)`. | Test (TC-1311) |
 | FR-516-AC-20 | A request that carries `deliveries` and a `trigger` of `None` is refused with cause `trigger-required`. | Test (TC-1311) |
 | FR-516-AC-21 | A request whose `trigger` names a delivery with a false guard returns no truth and the disposition of FR-524. | Test (TC-1311) |
@@ -298,19 +307,19 @@ ceilings from the same inputs is byte-equal to a call that never stopped
 | FR-516-AC-26 | A finite-window verdict `PendingNextEvent` and a verdict `Pending` each return `truth = Pending`. | Test (TC-1311) |
 | FR-516-AC-27 | Over the clause of FR-523-AC-21 through `evaluate_temporal_evidence`, `usage` reports `evaluation_steps` 4, `positions` 1, `valuations` 4, the meter's `temporal.visit` usage is 10, and `usage` reports exactly thirteen counters. | Test (TC-1311) |
 | FR-516-AC-28 | A request with a guard-`None` delivery and a healthy delivery lists both in `instances` (the first `Unavailable` with a guard fault), assessing the healthy one by `trigger`, and a request with a surplus capture fact returns `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
-| FR-516-AC-29 | Over the `CheckedPackageEvaluation` constructed from the `Emission`, the clause's profile selection and `TemporalBinding` row equal the rows of the package read back from its bytes, and `evaluate_temporal_evidence` over it authenticates the clause's own `binding`. Gated on QSL-1608 until the code lands. | Test (TC-1311) |
-| FR-516-AC-30 | In a package with two temporal clauses of different formulas and different clock rows, each clause's `CheckedNodeId` pairs with its own row: a `binding` asserting the other clause's row is refused with the dimension FR-522 names, over the package constructed from the `Emission` and the read-back package alike. Gated on QSL-1608 until the code lands. | Test (TC-1311) |
+| FR-516-AC-29 | Over the `CheckedPackageEvaluation` constructed from the `Emission`, the clause's profile selection and `TemporalBinding` row equal the rows of the package read back from its bytes, and `evaluate_temporal_evidence` over it authenticates the clause's own `binding`. | Test (TC-1311) |
+| FR-516-AC-30 | In a package with two temporal clauses of different formulas and different clock rows, each clause's `CheckedNodeId` pairs with its own row: a `binding` asserting the other clause's row is refused with cause `binding-mismatch` and the dimension FR-522 names, over the package constructed from the `Emission` and the read-back package alike. | Test (TC-1311) |
 | FR-516-AC-31 | For each stop kind of AC-25 other than the withdrawn anchor, the result's `ledger` and `progress_ledger` equal the request's byte for byte, even when instances were created or a receipt was added before the stop, and the retry of FR-523-AC-11 equals the call that never stopped. | Test (TC-1311) |
-| FR-516-AC-32 | Over a constructed package (in memory and read back) of twins of one node whose `occurrences` array lists ordinal 7 then ordinal 3 while the lock's clock rows ascend 3 then 7, with different clock rows (QSL's emitter cannot produce this order), a request with `occurrence` ordinal 3 authenticates a `binding` equal to the row keyed ordinal 3 and refuses one equal to the row keyed ordinal 7 with the dimension FR-522 names, and the reverse for ordinal 7; a pairing by position fails this criterion. | Test (TC-1311) |
+| FR-516-AC-32 | Over the constructed V2 twin package of FR-515-AC-20 (node `occurrences` 7 then 3, lock rows ascending 3 then 7, different clock rows), read back and evaluated through the read-back route only, a request with `occurrence` ordinal 3 authenticates a `binding` equal to the row keyed ordinal 3 and refuses one equal to the row keyed ordinal 7 with cause `binding-mismatch` and the dimension FR-522 names, and the reverse for ordinal 7; a pairing by position fails this criterion, and no in-process comparison exists for this package because no `Emission` produces it. | Test (TC-1311) |
 | FR-516-AC-33 | Over the twins of AC-32, a request with no `occurrence` returns `Err(CallFailure::Admission)` with cause `occurrence-required` and a request with ordinal 5 returns cause `occurrence-unknown`, each with an empty charge log; over a node with one occurrence a request with no `occurrence` is evaluated. | Test (TC-1311) |
 | FR-516-AC-34 | `execution` `Failed` and `execution` `Completed` over an otherwise equal request with open trigger scope return `Unknown` carrying `Failed` and `Completed` respectively, and over an admitted delivery the two requests return the same activation and truth. | Test (TC-1311) |
 | FR-516-AC-35 | Over a closed, admitted scope with no delivery, trigger record `Complete` returns `Inactive` and trigger record `Incomplete` returns `Unknown(open)`, each with the request's `execution` echoed. | Test (TC-1311) |
 | FR-516-AC-36 | A clause `on each` with a non-empty `origins` and a clause `on origin` with a non-empty `deliveries` each return `Err(CallFailure::Admission)` with cause `activation-list-mismatch` naming `origins` and `deliveries` respectively, with an empty charge log; the same requests with the matching list are evaluated. | Test (TC-1311) |
-| FR-516-AC-37 | Over a fixed-sample clause, a watermark one below the last position's coordinate and a `Complete { through }` one below it each return cause `progress-inconsistent`, and the same request with the watermark and `through` equal to that coordinate is evaluated; an event-position or fixed-sample assertion on a timestamped-event clause returns `progress-inconsistent` too, each with an empty charge log. | Test (TC-1311) |
-| FR-516-AC-38 | With a progress ledger whose retained covered positions plus the request's would exceed `progress.covered_positions` set to that total minus one, the call returns cause `progress-ledger-limit` naming the setting with an empty charge log and the progress ledger unchanged, and with the setting at the total it is evaluated. | Test (TC-1311) |
-| FR-516-AC-39 | A clause whose formula holds an operator without a finite upper bound, one holding a timed interval, one holding a cycle or an operand naming no node, and one whose `predicate_leaves()` count differs from its `holds` count each return cause `clause-unreadable` with an empty charge log, and a clause whose tick sum overflows `u64` returns the `history_span` `Incomplete` result and not this cause. | Test (TC-1311) |
-| FR-516-AC-40 | A delivery with one capture fact more than the clause declares, and an origin likewise, each return cause `surplus-capture` with `surplus_capture_identity` and `surplus_capture_index`, and an empty charge log (FR-524-AC-33). | Test (TC-1311) |
-| FR-516-AC-41 | Each cause of the table above that this requirement owns (`trigger-required`, `trigger-unknown`, `occurrence-required`, `occurrence-unknown`, `activation-list-mismatch`, `progress-contradiction`, `progress-inconsistent`, `progress-ledger-limit`, `clause-unreadable`, `surplus-capture`) leaves the request's `ledger` and `progress_ledger` unchanged and the meter's charge log empty, and no request returns a cause outside the table and the FR-522, FR-524 and FR-526 causes. | Test (TC-1311) |
+| FR-516-AC-37 | Over a fixed-sample clause and over an event-position clause, a `Complete { through }` one below the last position's coordinate returns cause `progress-inconsistent`, and over the fixed-sample clause a watermark one below it does too; the same requests with the watermark and `through` equal to that coordinate are evaluated; an assertion on a timestamped-event clause returns `progress-inconsistent` too, each with an empty charge log. | Test (TC-1311) |
+| FR-516-AC-38 | With `progress.covered_positions` set to the total of the ledger's retained covered positions and the request's, minus one, the call returns `Ok` with an `Incomplete(LimitReached{limit: node count, value, setting: progress.covered_positions})` result, `activation = Unavailable`, no truth, and the request's `ledger` and `progress_ledger` unchanged; with the setting at the total the same request is evaluated. | Test (TC-1311) |
+| FR-516-AC-39 | A clause whose formula holds an operator without a finite upper bound, one holding a timed interval, one whose view `operands` hold a cycle or an out-of-range position, and one whose `predicate_leaves()` count differs from its `holds` count each return cause `clause-unreadable` with an empty charge log; a readable clause of the same shape with a finite bound, a closed interval, acyclic in-range operands and equal counts returns a result; and a clause whose tick sum overflows `u64` returns the `history_span` `Incomplete` result and not this cause. | Test (TC-1311) |
+| FR-516-AC-40 | A request whose `control` names a protocol clause with no FR-449 row returns cause `activation-mapping-missing`, one whose row names another temporal clause returns `activation-mapping-mismatch`, and one whose row names the call's clause is evaluated, each refusal with an empty charge log (FR-516-AC-16). The cause `surplus-capture` is covered by FR-524-AC-33. | Test (TC-1311) |
+| FR-516-AC-41 | For each cause of the table above, the request that meets its condition returns `Err(CallFailure::Admission)` with that cause, an empty charge log and the request's `ledger` and `progress_ledger` unchanged, and the request that differs from it only in not meeting the condition returns `Ok`; every refusal the tests of TC-1311, TC-1317, TC-1319 and TC-1321 provoke carries a cause of the table or one of the cross-referenced causes. | Test (TC-1311) |
 
 ## Dependencies
 
@@ -320,5 +329,6 @@ ceilings from the same inputs is byte-equal to a call that never stopped
   does not replace. FR-522 supplies `binding`, `authenticated` and the
   `result_identity` rule, FR-523 the thirteen counters, FR-524 the activation
   states and faults, FR-526 the relation checks.
+- **Delivery:** FR-516-AC-18, AC-29 and AC-30 are delivered by QSL-1608 (see FR-515 Dependencies).
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/conformance/kernel.rs`,
   `tests/it002_observation_temporal.rs` (QSL-1549).
