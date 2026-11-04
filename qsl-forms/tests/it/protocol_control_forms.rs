@@ -185,6 +185,23 @@ fn a_channel_delivery_interval_builds_its_bounds() {
         );
         assert_eq!(slice(&text, channel.delivery.span), spelling);
     }
+
+    let too_large = "18446744073709551616";
+    let text = source(
+        &format!(
+            "channel Pay from R to S carries {OBJECT} ordering unordered delivery [0,{too_large}] \
+             capacity 1 overflow reject;"
+        ),
+        RUN,
+    );
+    let parsed = parse(&text);
+    assert!(!parsed.is_admissible());
+    let diagnostic = &parsed.diagnostics()[0];
+    assert_eq!(diagnostic.code, Code::InvalidSyntax);
+    assert_eq!(
+        diagnostic.byte_span().expect("located u64 overflow").start,
+        text.find(too_large).expect("upper bound appears")
+    );
 }
 
 /// FR-308-AC-13 (TC-1065 rows 1 and 2): the five overflow spellings build

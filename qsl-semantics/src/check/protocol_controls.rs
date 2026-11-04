@@ -1041,18 +1041,18 @@ mod tests {
             assert_eq!(checked.overflow, ChannelOverflow::Block);
         }
 
-        let source = pipeline(
-            &channel("Pay", ENDS, "Plain", "[4,3]", "2", "block"),
-            RUN,
-        );
+        let source = pipeline(&channel("Pay", ENDS, "Plain", "[4,3]", "2", "block"), RUN);
         let (text, cause, code, tag) = only_refusal(&source);
         assert_eq!((code, tag.as_str()), ("ill_typed", "type-mismatch"));
         assert_eq!(located(&text, &cause), "[4,3]");
-        assert!(matches!(cause, ProtocolAnchorCause::ChannelDeliveryRange {
-            lower: 4,
-            upper: 3,
-            ..
-        }));
+        assert!(matches!(
+            cause,
+            ProtocolAnchorCause::ChannelDeliveryRange {
+                lower: 4,
+                upper: 3,
+                ..
+            }
+        ));
     }
 
     /// FR-218-AC-22 (TC-1065 rows 4 and 5): two cases or two branches of

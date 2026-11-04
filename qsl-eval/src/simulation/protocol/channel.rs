@@ -16,7 +16,7 @@
 //! queued entry a `head` or `tail` selector removed for it.
 
 use qsl_semantics::check::ProtocolNodeId;
-use qsl_semantics::check::{ChannelOverflow, LossSelector};
+use qsl_semantics::check::{ChannelDelivery, ChannelOverflow, LossSelector};
 use quire_eval::FamilyOutcome;
 use quire_exact::{Meter, Outcome, Value};
 
@@ -58,6 +58,19 @@ type Deliverable<'i> = (Delivery<'i>, Vec<u8>);
 
 /// A deliverable entry's queue and position, and the entry.
 type Delivery<'i> = ((QueueKey, usize), &'i Entry);
+
+/// The inputs for one count choice of a delivery interval send.
+struct IntervalSend<'a, 'p> {
+    ordinal: u64,
+    path: &'a ThreadPath,
+    node: ProtocolNodeId,
+    after: Cursor,
+    channel: &'a Channel<'p>,
+    text: &'a str,
+    payload: Value,
+    key: QueueKey,
+    count: u64,
+}
 
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// The `send` or `receive` `node`.
@@ -151,16 +164,18 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             };
             self.send_interval_count(
                 state,
-                ordinal,
-                path,
-                node,
-                after,
                 gathered,
-                channel,
-                &text,
-                payload,
-                key,
-                remaining,
+                IntervalSend {
+                    ordinal,
+                    path,
+                    node,
+                    after,
+                    channel,
+                    text: &text,
+                    payload,
+                    key,
+                    count: remaining,
+                },
             )?;
             return Ok(());
         }
@@ -194,21 +209,23 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     continue;
                 }
             };
-            if let qsl_forms::ChannelDelivery::Between { lower, upper } = channel.delivery {
+            if let ChannelDelivery::Between { lower, upper } = channel.delivery {
                 let mut count = lower;
                 loop {
                     self.send_interval_count(
                         state,
-                        ordinal,
-                        path,
-                        node,
-                        after,
                         gathered,
-                        channel,
-                        &text,
-                        payload.clone(),
-                        key.clone(),
-                        count,
+                        IntervalSend {
+                            ordinal,
+                            path,
+                            node,
+                            after,
+                            channel,
+                            text: &text,
+                            payload: payload.clone(),
+                            key: key.clone(),
+                            count,
+                        },
                     )?;
                     if count == upper {
                         break;
@@ -334,17 +351,20 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     fn send_interval_count(
         &self,
         state: &ProtocolState<M>,
-        ordinal: u64,
-        path: &ThreadPath,
-        node: ProtocolNodeId,
-        after: Cursor,
         gathered: &mut Gathered<M>,
-        channel: &Channel<'_>,
-        text: &str,
-        payload: Value,
-        key: QueueKey,
-        count: u64,
+        send: IntervalSend<'_, '_>,
     ) -> Result<(), ExpansionStop> {
+        let IntervalSend {
+            ordinal,
+            path,
+            node,
+            after,
+            channel,
+            text,
+            payload,
+            key,
+            count,
+        } = send;
         gathered.budget.charge()?;
         let instance = Self::instance(state, ordinal)?;
         let fifo = key.fifo.is_some();

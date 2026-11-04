@@ -1044,6 +1044,29 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
     }
 }
 
+/// FR-509-AC-4 (TC-1304): emission writes normalized interval spelling and
+/// the strict typed reader returns the same checked bounds.
+#[trace("FR-509-AC-4", "TC-1304")]
+#[test]
+fn an_interval_channel_emits_and_reads_back_its_delivery_premise() {
+    let source = tc134_source().replace("delivery at-least-once", "delivery [ 0 , 3 ]");
+    let fixture = fixture_over(&source);
+    let charge = by_name(&fixture.admitted, "Charges");
+    assert_eq!(
+        delivery(charge).unwrap(),
+        Delivery::Between { lower: 0, upper: 3 }
+    );
+    assert_eq!(
+        fixture.protocol.channels[0].delivery,
+        qsl_forms::ChannelDelivery::Between { lower: 0, upper: 3 }
+    );
+    let qsl_charge = by_name(&fixture.qsl_read, "Charges");
+    assert_eq!(
+        delivery(qsl_charge).unwrap(),
+        Delivery::Between { lower: 0, upper: 3 }
+    );
+}
+
 /// FR-519-AC-5, locus: the package source-map entry of a node; and the clock
 /// binding row of a temporal clause.
 #[trace("FR-519-AC-5", "FR-519-AC-8", "TC-1314")]
