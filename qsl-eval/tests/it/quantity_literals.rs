@@ -331,6 +331,49 @@ fn a_carried_quantity_is_not_an_arithmetic_operand() {
     );
 }
 
+/// FR-497-AC-6 (TC-1287): a carried quantity is not an element of a sum. A
+/// `sum` over carried elements refuses during checking as a type mismatch,
+/// with no package to evaluate, while the same elements converted back to
+/// `Quantity<m>` check.
+#[trace("FR-497-AC-6", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-30")]
+#[test]
+fn a_carried_quantity_is_not_a_summand() {
+    let source = format!(
+        "{FUNCTIONS}\
+         type Total = Integer;\n\
+         function illegal_sum using v(xs: Sequence<Quantity<m, Int[-2, 2]>>[0, 4]): Integer pure {{ sum<Total>(x in xs: x) }}\n"
+    );
+    let refusals = package_with(&source).expect_err("a carried summand refuses during checking");
+    let in_sum: Vec<_> = refusals
+        .iter()
+        .filter(|refusal| {
+            matches!(
+                &refusal.location.origin,
+                quire_semantic_value::location::Origin::Body { function, .. }
+                    if function == "illegal_sum"
+            )
+        })
+        .collect();
+    assert_eq!(
+        in_sum.len(),
+        refusals.len(),
+        "only the sum refuses: {refusals:?}"
+    );
+    assert!(
+        in_sum.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        )),
+        "the carried summand is a type mismatch: {refusals:?}"
+    );
+
+    let converted_back = format!(
+        "{FUNCTIONS}\
+         function back using v(xs: Sequence<Quantity<m, Int[-2, 2]>>[0, 4]): Sequence<Quantity<m>>[0, 4] pure {{ map(x in xs: convert<Quantity<m>>(x)) }}\n"
+    );
+    package_with(&converted_back).expect("a carried element converted back checks");
+}
+
 /// FR-497-AC-2 (TC-1287): exponentiation spelling is refused by the source
 /// reader, so a carried quantity can never reach an evaluator as `a ** 2`.
 #[trace("FR-497-AC-2", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-27")]
