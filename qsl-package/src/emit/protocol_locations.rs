@@ -193,7 +193,7 @@ fn ordered(pending: Vec<PendingRow>) -> Vec<CheckedProtocolSemanticLocation> {
 
 /// Every slot expression of `protocol` (FR-383's site-name registry). A
 /// `repeat`'s loop proof is not a slot (FR-390) and is not listed.
-pub(super) fn slot_bodies(protocol: &CheckedProtocol) -> Vec<&CheckedBody> {
+pub(crate) fn slot_bodies(protocol: &CheckedProtocol) -> Vec<&CheckedBody> {
     let mut bodies = Vec::new();
     if let CheckedActivation::OnEach {
         guard: Some(guard), ..
