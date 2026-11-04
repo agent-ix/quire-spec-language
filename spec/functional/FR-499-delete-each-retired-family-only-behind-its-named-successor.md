@@ -77,7 +77,7 @@ and the tickets named below own each PORT.
    `qsl_inventory` is moved (QSL-1508, QSL-1509).
 6. QSL-499 lands last, in the change that removes the last importer of
    `native_model` (ADR-016 §9), and only after QSL-1682 (the FR-015-AC-5
-   `link_native` port) is green: `link_native` is kept until then.
+   `link_native` port) is green.
 7. QSL-316 and the epic QSL-67 close when their last child lands.
 
 ## Behavior
@@ -215,6 +215,6 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 - [FR-493](FR-493-retire-the-native-package-runtime-front-end-and-protocol-artifact-surfaces.md)
   states the deletion rule; [FR-500](FR-500-map-each-fr-042-criterion-to-its-checked-package-successor.md)
   maps FR-042 criteria to successors.
-- ADR-011 §7.3 and ADR-016 §9; tickets QSL-1501 to QSL-1511. The PORT row for
-  FR-015-AC-5 (`link_native` dereference-field and operation-role resolution)
-  has its successor work under QSL-1682.
+- ADR-011 §7.3 and ADR-016 §9; tickets QSL-1501 to QSL-1511. The FR-015-AC-5
+  row (`link_native` dereference-field and operation-role resolution) is
+  covered by the spine port delivered under QSL-1682.

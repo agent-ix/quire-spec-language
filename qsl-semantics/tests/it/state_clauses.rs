@@ -330,6 +330,36 @@ fn an_absent_field_after_deref_refuses_ill_typed_at_the_field_read() {
     );
 }
 
+/// TC-044 / FR-015-AC-5: an operation parameter is scoped to its operation.
+/// `target` resolves in a clause on `probe`, and refuses in a state invariant
+/// and in a clause on another operation.
+#[trace("TC-044", "FR-015-AC-5")]
+#[test]
+fn an_operation_parameter_is_not_visible_outside_its_operation() {
+    let document = config_version_document_with_operations(vec![
+        probe_operation(),
+        attempt_update_modifies_version_number(),
+    ]);
+    check(
+        &document,
+        "pre In using v on Config::ConfigVersion::probe { deref(target).versionNumber = 1 }\n",
+    )
+    .expect("the parameter resolves inside its operation");
+    for body in [
+        "invariant Out using v on Config::ConfigVersion at current { \
+         deref(target).versionNumber = 1 }\n",
+        "post Other using v on Config::ConfigVersion::attemptUpdate { \
+         deref(target).versionNumber = 1 }\n",
+    ] {
+        let refusals = check(&document, body).expect_err(body);
+        assert_eq!(
+            refusals,
+            vec![(Code::MissingDeclaration, Some("missing-name"))],
+            "{body}"
+        );
+    }
+}
+
 /// V1-TYPE-024: a subtype source and base-type target traverse an inherited
 /// edge without erasing either operand's checked reference identity.
 #[test]
