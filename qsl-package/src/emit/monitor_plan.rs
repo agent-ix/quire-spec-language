@@ -20,7 +20,7 @@ use super::{
     own_evidence, read_index_segments, write_index_segments, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef,
     CheckedPackageV2, CheckedSemanticGraphV2, CheckedSourceMapEntry, Emission, EmitRefusal,
-    EmittedPackage, StructuralIds, GRAPH_V2,
+    EmittedPackage, OmittedNode, StructuralIds, GRAPH_V2,
 };
 
 /// What the writer needs of one plan.
@@ -717,6 +717,227 @@ fn call_closure_body_roots(
     Ok(called.into_values().collect())
 }
 
+/// The witness rows an emission retains, with every node id they hold.
+pub(super) struct RetainedRows {
+    pub(super) omitted: Vec<OmittedNode>,
+    pub(super) selected_operation_member_rows:
+        Vec<quire_contract_model::SelectedOperationMemberRow>,
+    pub(super) selected_tuple_declaration_rows:
+        Vec<quire_contract_model::SelectedTupleDeclarationRow>,
+    pub(super) selected_source_unit_rows: Vec<quire_contract_model::SelectedSourceUnitRow>,
+    pub(super) selected_model_enum_declaration_rows:
+        Vec<quire_contract_model::SelectedModelEnumDeclarationRow>,
+    pub(super) selected_model_enum_member_rows:
+        Vec<quire_contract_model::SelectedModelEnumMemberRow>,
+    pub(super) selected_exact_declaration_rows:
+        Vec<quire_contract_model::SelectedExactDeclarationRow>,
+    pub(super) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
+    pub(super) equality_producer_identity_rows: Vec<super::EqualityProducerEmissionRow>,
+    pub(super) equality_fact_witness_rows: Vec<super::EqualityFactWitnessRow>,
+    pub(super) temporal_binding_rows: super::TemporalBindingRows,
+}
+
+/// Re-keys every node id a retained row holds through `changes`, in order.
+/// Each row type is destructured without a rest pattern, so a field added to
+/// a row refuses to compile until it is either re-keyed here or named as
+/// holding no node id.
+struct Rekey<'a>(&'a [(CheckedNodeId, CheckedNodeId)]);
+
+impl Rekey<'_> {
+    fn id(&self, id: &mut CheckedNodeId) {
+        for (old, new) in self.0 {
+            if *id == *old {
+                *id = new.clone();
+            }
+        }
+    }
+
+    fn entry(&self, entry: &mut CheckedSourceMapEntry) {
+        let CheckedSourceMapEntry {
+            node_id,
+            role: _,
+            ordinal: _,
+            regions: _,
+        } = entry;
+        self.id(node_id);
+    }
+
+    fn fact(&self, fact: &mut super::EqualityFactWitness) {
+        use super::EqualityFactWitness as F;
+        match fact {
+            F::OperandType { .. } | F::DimensionDeclaration { .. } | F::TextPlanType { .. } => {}
+            F::Unit { quantity_type, .. } => self.id(quantity_type),
+            F::DimensionTerm { base_node, .. } => self.id(base_node),
+            F::ConversionEdge { target_node, .. } => self.id(target_node),
+            F::EnumMember {
+                source_declaration_node,
+                declaration_node,
+                member_node,
+                ..
+            } => {
+                self.id(source_declaration_node);
+                self.id(declaration_node);
+                self.id(member_node);
+            }
+        }
+    }
+}
+
+/// The retained rows of `retained` with every node id they hold re-keyed
+/// through `changes` (the writer's renames). No row is written anew.
+pub(super) fn carry_rows(
+    retained: &Emission,
+    changes: &[(CheckedNodeId, CheckedNodeId)],
+) -> RetainedRows {
+    use quire_contract_model as m;
+    let rekey = Rekey(changes);
+    let mut omitted = retained.omitted.clone();
+    for super::OmittedNode { node, cause } in &mut omitted {
+        rekey.id(node);
+        match cause {
+            super::OmissionCause::UnsupportedForm { .. }
+            | super::OmissionCause::DeclarationOccurrenceMismatch
+            | super::OmissionCause::UnlockedOwner => {}
+            super::OmissionCause::NamesAbsentNode(id)
+            | super::OmissionCause::NamesOmittedNode(id) => rekey.id(id),
+        }
+    }
+    let mut operation = retained.selected_operation_member_rows.clone();
+    for row in &mut operation {
+        let m::SelectedOperationMemberRow {
+            anchor,
+            selected_document: _,
+            declaring_form: _,
+            original_model_identity: _,
+            original_operation_identity: _,
+            selected_operation_identity: _,
+        } = row;
+        rekey.id(anchor);
+    }
+    let mut tuples = retained.selected_tuple_declaration_rows.clone();
+    for row in &mut tuples {
+        let m::SelectedTupleDeclarationRow {
+            structural_node,
+            selected_document: _,
+            original_identity: _,
+            node_key: _,
+        } = row;
+        rekey.id(structural_node);
+    }
+    let mut units = retained.selected_source_unit_rows.clone();
+    for row in &mut units {
+        let m::SelectedSourceUnitRow {
+            structural_node,
+            source_authority: _,
+            source_identity: _,
+            qualified_declaration: _,
+            unit_id: _,
+        } = row;
+        rekey.id(structural_node);
+    }
+    let mut enum_declarations = retained.selected_model_enum_declaration_rows.clone();
+    for row in &mut enum_declarations {
+        let m::SelectedModelEnumDeclarationRow {
+            structural_node,
+            selected_document: _,
+            original_identity: _,
+            node_key: _,
+        } = row;
+        rekey.id(structural_node);
+    }
+    let mut enum_members = retained.selected_model_enum_member_rows.clone();
+    for row in &mut enum_members {
+        let m::SelectedModelEnumMemberRow {
+            structural_node,
+            declaration_node,
+            selected_document: _,
+            enum_original_identity: _,
+            member_original_identity: _,
+            case: _,
+            member_key: _,
+        } = row;
+        rekey.id(structural_node);
+        rekey.id(declaration_node);
+    }
+    let mut exact_declarations = retained.selected_exact_declaration_rows.clone();
+    for row in &mut exact_declarations {
+        let m::SelectedExactDeclarationRow {
+            structural_node,
+            selected_document: _,
+            form: _,
+            original_identity: _,
+            exact_identity: _,
+        } = row;
+        rekey.id(structural_node);
+    }
+    let mut exact_fields = retained.selected_exact_field_rows.clone();
+    for row in &mut exact_fields {
+        let m::SelectedExactFieldRow {
+            record_node,
+            selected_document: _,
+            record_original_identity: _,
+            field_original_identity: _,
+            member_id: _,
+        } = row;
+        rekey.id(record_node);
+    }
+    let mut producers = retained.equality_producer_identity_rows.clone();
+    for row in &mut producers {
+        let super::EqualityProducerEmissionRow {
+            application: _,
+            checked_node,
+            occurrence: _,
+            location: _,
+            source_map_entry,
+            producer_identity: _,
+            producer_data: _,
+        } = row;
+        rekey.id(checked_node);
+        rekey.entry(source_map_entry);
+    }
+    let mut facts = retained.equality_fact_witness_rows.clone();
+    for row in &mut facts {
+        let super::EqualityFactWitnessRow {
+            application: _,
+            checked_application,
+            occurrence: _,
+            source_map_entry,
+            structural_key: _,
+            structural_node,
+            owner: _,
+            value_type: _,
+            fact,
+        } = row;
+        rekey.id(checked_application);
+        rekey.entry(source_map_entry);
+        rekey.id(structural_node);
+        rekey.fact(fact);
+    }
+    let mut temporal = retained.temporal_binding_rows.clone();
+    for (_, row) in &mut temporal.rows {
+        let m::TemporalBinding {
+            declaration,
+            occurrence: _,
+            clock_name: _,
+            clock: _,
+        } = row;
+        rekey.id(declaration);
+    }
+    RetainedRows {
+        omitted,
+        selected_operation_member_rows: operation,
+        selected_tuple_declaration_rows: tuples,
+        selected_source_unit_rows: units,
+        selected_model_enum_declaration_rows: enum_declarations,
+        selected_model_enum_member_rows: enum_members,
+        selected_exact_declaration_rows: exact_declarations,
+        selected_exact_field_rows: exact_fields,
+        equality_producer_identity_rows: producers,
+        equality_fact_witness_rows: facts,
+        temporal_binding_rows: temporal,
+    }
+}
+
 /// The shared tail: index the graph, encode and wrap the bytes.
 fn finish(
     base: &CheckedPackageV2,
@@ -765,63 +986,24 @@ fn finish(
         )
         .map_err(EmitRefusal::from)
     })?;
-    let rekeyed = |id: &mut CheckedNodeId| {
-        for (old, new) in changes {
-            if *id == *old {
-                *id = new.clone();
-            }
-        }
-    };
-    let mut selected_operation_member_rows = retained.selected_operation_member_rows.clone();
-    for row in &mut selected_operation_member_rows {
-        rekeyed(&mut row.anchor);
-    }
-    let mut selected_tuple_declaration_rows = retained.selected_tuple_declaration_rows.clone();
-    for row in &mut selected_tuple_declaration_rows {
-        rekeyed(&mut row.structural_node);
-    }
-    let mut selected_source_unit_rows = retained.selected_source_unit_rows.clone();
-    for row in &mut selected_source_unit_rows {
-        rekeyed(&mut row.structural_node);
-    }
-    let mut selected_model_enum_declaration_rows =
-        retained.selected_model_enum_declaration_rows.clone();
-    for row in &mut selected_model_enum_declaration_rows {
-        rekeyed(&mut row.structural_node);
-    }
-    let mut selected_model_enum_member_rows = retained.selected_model_enum_member_rows.clone();
-    for row in &mut selected_model_enum_member_rows {
-        rekeyed(&mut row.structural_node);
-        rekeyed(&mut row.declaration_node);
-    }
-    let mut equality_producer_identity_rows = retained.equality_producer_identity_rows.clone();
-    for row in &mut equality_producer_identity_rows {
-        rekeyed(&mut row.checked_node);
-        rekeyed(&mut row.source_map_entry.node_id);
-    }
-    let mut equality_fact_witness_rows = retained.equality_fact_witness_rows.clone();
-    for row in &mut equality_fact_witness_rows {
-        rekeyed(&mut row.checked_application);
-        rekeyed(&mut row.structural_node);
-        rekeyed(&mut row.source_map_entry.node_id);
-    }
+    let rows = carry_rows(retained, changes);
     Ok(Emission {
         package,
-        omitted: retained.omitted.clone(),
+        omitted: rows.omitted,
         evidence: own_evidence(&lock),
         capability_report,
         source_map: inspection_source_map,
-        selected_operation_member_rows,
-        selected_tuple_declaration_rows,
-        selected_source_unit_rows,
-        selected_model_enum_declaration_rows,
-        selected_model_enum_member_rows,
-        selected_exact_declaration_rows: retained.selected_exact_declaration_rows.clone(),
-        selected_exact_field_rows: retained.selected_exact_field_rows.clone(),
-        equality_producer_identity_rows,
-        equality_fact_witness_rows,
+        selected_operation_member_rows: rows.selected_operation_member_rows,
+        selected_tuple_declaration_rows: rows.selected_tuple_declaration_rows,
+        selected_source_unit_rows: rows.selected_source_unit_rows,
+        selected_model_enum_declaration_rows: rows.selected_model_enum_declaration_rows,
+        selected_model_enum_member_rows: rows.selected_model_enum_member_rows,
+        selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
+        selected_exact_field_rows: rows.selected_exact_field_rows,
+        equality_producer_identity_rows: rows.equality_producer_identity_rows,
+        equality_fact_witness_rows: rows.equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
-        temporal_binding_rows: retained.temporal_binding_rows.clone(),
+        temporal_binding_rows: rows.temporal_binding_rows,
     })
 }
 

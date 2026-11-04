@@ -460,7 +460,8 @@ pub struct Emission {
         Vec<quire_contract_model::SelectedModelEnumMemberRow>,
     /// The checking stage's selected model declaration rows (record, object,
     /// union, declared unit), retained from the acquisition these bytes were
-    /// emitted from.
+    /// emitted from. QSL builds no row for a source-owned enum declaration or
+    /// member, nor for a collection; those row kinds have no producer yet.
     pub(crate) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     /// The checking stage's selected record-field rows, retained from the same

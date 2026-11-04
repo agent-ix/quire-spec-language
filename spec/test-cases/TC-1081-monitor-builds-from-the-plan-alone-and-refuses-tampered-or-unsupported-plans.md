@@ -43,7 +43,7 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 23. `always eventually holds(p)` and `eventually always holds(p)` with `activation_capacity` 2 over the traces of AC-35 and AC-36.
 24. Derive the plan of AC-1 and variants differing only in an atom body, the guard body, or a called helper's body; build `TimedMonitorPlan` through its public constructor with an atom body swapped (AC-37, AC-38, AC-39).
 25. Run the AC-7 differential over the unbounded past traces of steps 15 to 19 against the `HistoryCutoff` evaluator and the infinite-trace evaluator (AC-41).
-26. Emit the plan-root package of a unit that selects a model, and read the returned `Emission`'s selected model declaration and field rows, source-unit rows and equality producer and fact rows; read the package back through IR and join the exact rows to it.
+26. Write the plan-root package over an emission holding rows of every kind (selected model declaration and field, source-unit, model enum declaration and member, tuple declaration, operation-member, equality producer and fact, temporal binding, omitted nodes) with a rename of every node id those rows name, and read every id field of every returned row; write the plan-root package of a unit that selects a model, and read the returned `Emission`'s rows and join its exact rows to the package read back through IR.
 
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
@@ -74,4 +74,4 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 23: the third instance of each settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`; the first `p` settles the two `eventually` instances `true`; for `eventually always` no instance settles true on a `p` and a false `p` settles both `false`, the outer staying `Pending`.
 - Step 24: each variant has a different `PlanId`, the helper variant also a different plan-root key with the helper's `node_id` unchanged; equal bodies give an equal `PlanId`.
 - Step 25: monitor and `HistoryCutoff` evaluator equal on every trace; every definite monitor verdict equals the infinite-trace verdict; `indeterminate` verdicts are not compared.
-- Step 26: the declaration and field rows equal the unit's acquisition rows, the source-unit and equality rows are non-empty and each names a node of the package, and the IR join accepts the exact rows.
+- Step 26: every row kind is carried and non-empty where the acquisition had rows; each node id in each row equals the renamed id, and a row naming no renamed node is unchanged; the declaration and field rows equal the unit's acquisition rows, the source-unit and equality rows each name a node of the package, and the IR join accepts the exact rows.

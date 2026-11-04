@@ -377,45 +377,139 @@ fn a_function_named_like_a_generated_type_writes_no_plan_root() {
     assert!(matches!(refusal, PlanRootRefusal::Write(_)), "{refusal:?}");
 }
 
-/// The unit with `bump` and `twice` helpers called by the clause's atom,
-/// `bump` adding `step`.
-fn helper_unit(step: i64) -> String {
+/// The unit with `bump` and `twice` helpers called by the clause's atom
+/// (`bump` adding `step`) and an `isGate` helper called by the activation
+/// guard (comparing with `gate`). The entries call the generated helpers
+/// that call these.
+fn helper_unit(step: i64, gate: i64) -> String {
     let helpers = format!(
         "function bump using v(x: Int[0, 1000]): Integer pure {{ x + {step} }}\n\
-         function twice using v(x: Int[0, 1000]): Integer pure {{ bump(x) + bump(x) }}\n"
+         function twice using v(x: Int[0, 1000]): Integer pure {{ bump(x) + bump(x) }}\n\
+         function isGate using v(x: Int[0, 1000]): Boolean pure {{ x = {gate} }}\n"
     );
     unit_source(
         "always holds(twice(c.versionNumber) = 5)",
         &helpers,
         true,
-        "on origin",
+        "on each (q: M::ConfigVersion) when (isGate(q.versionNumber))",
     )
 }
 
-/// QSpec FR-487-AC-13 / FR-251-AC-38 (TC-1081): two plans that differ only
-/// in the body of a declared helper an atom calls (one directly, one through
-/// another helper) have different root keys; the entries' keys and the
-/// helpers' own declaration-path ids are unchanged, the helpers stay
-/// declared, and an equal helper body gives an equal root key.
-#[trace("TC-1081", "FR-251-AC-38")]
+/// The node ids a wire value names through `target` references.
+fn targets(value: &serde_json::Value, out: &mut Vec<serde_json::Value>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(target) = map.get("target") {
+                out.push(target.clone());
+            }
+            map.values().for_each(|child| targets(child, out));
+        }
+        serde_json::Value::Array(items) => items.iter().for_each(|child| targets(child, out)),
+        _ => {}
+    }
+}
+
+/// The call closure the root's key must end with, computed from the wire
+/// independently of the writer: the graph position of the body root of every
+/// declared function the four entries and the clause reach, ascending by the
+/// functions' node ids, one per function.
+fn expected_closure(wire: &serde_json::Value) -> Vec<u64> {
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let by_id = |id: &serde_json::Value| nodes.iter().find(|n| &n["node_id"] == id).unwrap();
+    let plan = nodes
+        .iter()
+        .find(|n| n["semantic_form"] == "monitor_plan")
+        .unwrap();
+    let members = plan["body"]["members"].as_array().unwrap();
+    let member =
+        |name: &str| members.iter().find(|m| m["name"] == name).unwrap()["value"]["target"].clone();
+    let mut pending: Vec<serde_json::Value> =
+        ["clause", "init", "on_event", "on_watermark", "on_gap"]
+            .iter()
+            .map(|name| member(name))
+            .collect();
+    let mut seen: Vec<serde_json::Value> = Vec::new();
+    let mut called: Vec<(CheckedNodeId, serde_json::Value)> = Vec::new();
+    while let Some(id) = pending.pop() {
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id.clone());
+        let node = by_id(&id);
+        if node["node_tag"] == "function" && node.get("declaration").is_some() {
+            let body = node["body"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["name"] == "body")
+                .unwrap()["value"]["target"]
+                .clone();
+            called.push((serde_json::from_value(id.clone()).unwrap(), body));
+        }
+        targets(&node["body"], &mut pending);
+    }
+    called.sort_by(|a, b| a.0.cmp(&b.0));
+    called
+        .iter()
+        .map(|(_, body)| nodes.iter().position(|n| &n["node_id"] == body).unwrap() as u64)
+        .collect()
+}
+
+/// The positions the root's key path ends with, after the activation
+/// capacity text.
+fn closure_tail(wire: &serde_json::Value) -> Vec<u64> {
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let plan = nodes
+        .iter()
+        .find(|n| n["semantic_form"] == "monitor_plan")
+        .unwrap();
+    let path = plan["node_id"]["path"].as_array().unwrap();
+    let capacity = path
+        .iter()
+        .position(|segment| segment == "8")
+        .expect("the activation capacity text ends the premises");
+    path[capacity + 1..]
+        .iter()
+        .map(|segment| segment["node"].as_u64().expect("an index segment"))
+        .collect()
+}
+
+/// QSpec FR-487-AC-13 (the plan-root key half of FR-251-AC-38; the `PlanId`
+/// half is not asserted here): two plans that differ only in the body of a
+/// declared helper have different root keys, whether the helper is called by
+/// an atom (directly or through another helper) or by the activation guard;
+/// the entries' keys and the helpers' own declaration-path ids are unchanged,
+/// the helpers stay declared, an equal helper body gives an equal root key,
+/// and the key's tail is exactly the body roots of the called helpers, once
+/// each, ascending by helper node id.
+#[trace("TC-1081", "FR-487-AC-13")]
 #[test]
 fn the_root_key_covers_the_bodies_of_called_helpers() {
-    let one = root_of(&helper_unit(1), "C", &target()).expect("step 1");
-    let one_again = root_of(&helper_unit(1), "C", &target()).expect("step 1 again");
-    let two = root_of(&helper_unit(2), "C", &target()).expect("step 2");
-    let [a, a2, b] = [&one, &one_again, &two].map(admitted);
-    let (ka, ka2, kb) = (keys(&a), keys(&a2), keys(&b));
+    let one = root_of(&helper_unit(1, 2), "C", &target()).expect("base");
+    let again = root_of(&helper_unit(1, 2), "C", &target()).expect("base again");
+    let atom = root_of(&helper_unit(2, 2), "C", &target()).expect("atom helper body");
+    let guard = root_of(&helper_unit(1, 3), "C", &target()).expect("guard helper body");
+    let [a, a2, b, c] = [&one, &again, &atom, &guard].map(admitted);
+    let (ka, ka2, kb, kc) = (keys(&a), keys(&a2), keys(&b), keys(&c));
     assert_eq!(ka, ka2, "an equal helper body gives an equal root key");
     assert_ne!(
         ka.root, kb.root,
-        "a swapped helper body changes the root key"
+        "a swapped atom helper body changes the root key"
+    );
+    assert_ne!(
+        ka.root, kc.root,
+        "a swapped guard helper body changes the root key"
     );
     assert_eq!(
         ka.entries, kb.entries,
         "the entries' own keys are unchanged"
     );
+    assert_eq!(
+        ka.entries, kc.entries,
+        "the entries' own keys are unchanged"
+    );
 
-    let wire = [&one, &two].map(json);
+    let wire = [&one, &atom, &guard].map(json);
     let declared = |wire: &serde_json::Value, name: &str| -> serde_json::Value {
         let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
         let found: Vec<&serde_json::Value> = nodes
@@ -426,43 +520,61 @@ fn the_root_key_covers_the_bodies_of_called_helpers() {
         assert_eq!(found[0]["node_tag"], "function");
         found[0]["node_id"].clone()
     };
-    for name in ["bump", "twice"] {
-        assert_eq!(declared(&wire[0], name), declared(&wire[1], name), "{name}");
+    for name in ["bump", "twice", "isGate"] {
+        for other in &wire[1..] {
+            assert_eq!(declared(&wire[0], name), declared(other, name), "{name}");
+        }
     }
-    // The key's path ends with the call closure: the graph position of the
-    // body root of each called helper, `bump` and `twice` among them.
-    let nodes = wire[0]["semantic_graph"]["nodes"].as_array().unwrap();
-    let position =
-        |id: &serde_json::Value| nodes.iter().position(|n| &n["node_id"] == id).unwrap() as u64;
-    let plan = nodes
-        .iter()
-        .find(|n| n["semantic_form"] == "monitor_plan")
-        .unwrap();
-    let path = plan["node_id"]["path"].as_array().unwrap();
-    let capacity = path
-        .iter()
-        .position(|segment| segment == "8")
-        .expect("the activation capacity text ends the premises");
-    let tail: Vec<u64> = path[capacity + 1..]
-        .iter()
-        .map(|segment| segment["node"].as_u64().expect("an index segment"))
-        .collect();
-    for name in ["bump", "twice"] {
-        let helper = nodes
-            .iter()
-            .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
-            .unwrap();
-        let body = helper["body"]["members"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|m| m["name"] == "body")
-            .unwrap();
-        assert!(
-            tail.contains(&position(&body["value"]["target"])),
-            "{name}'s body root is in the call closure"
+    for wire in &wire {
+        let expected = expected_closure(wire);
+        let tail = closure_tail(wire);
+        assert_eq!(
+            tail, expected,
+            "the call closure, ascending, one per helper"
         );
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let root_of_helper = |name: &str| {
+            let helper = nodes
+                .iter()
+                .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+                .unwrap();
+            let body = helper["body"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["name"] == "body")
+                .unwrap();
+            nodes
+                .iter()
+                .position(|n| n["node_id"] == body["value"]["target"])
+                .unwrap() as u64
+        };
+        for name in ["bump", "twice", "isGate"] {
+            assert!(
+                tail.contains(&root_of_helper(name)),
+                "{name} is in the closure"
+            );
+        }
+        // An entry calls generated helpers that are declared functions; they
+        // are in the closure too, so the closure is longer than the three
+        // authored helpers.
+        assert!(tail.len() > 3, "{}", tail.len());
     }
+    // The order is pinned: a reversed or duplicated tail differs.
+    let tail = closure_tail(&wire[0]);
+    let mut reversed = tail.clone();
+    reversed.reverse();
+    assert_ne!(
+        tail, reversed,
+        "the tail is not palindromic, so order is observable"
+    );
+    let mut doubled = tail.clone();
+    doubled.push(tail[0]);
+    assert_ne!(
+        doubled,
+        expected_closure(&wire[0]),
+        "a duplicated entry is not the closure"
+    );
 }
 
 /// FR-251-AC-42: the plan root's emission retains every witness row of the
