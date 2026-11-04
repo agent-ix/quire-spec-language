@@ -388,7 +388,8 @@ impl<'p> EvidencePackage<'p> {
         let graph = view.formula_graph();
         let formula = ClauseFormula::of_graph(graph);
         let reads = view_bound_atoms(&view).map_err(|_| unreadable("atom-count"))?;
-        let instance_bound = bound_atom_indices(graph, &reads);
+        let instance_bound =
+            bound_atom_indices(graph, &reads).ok_or_else(|| unreadable("atom-count"))?;
         let captures: Vec<(Box<str>, quire_exact::ValueType)> = view
             .capture_value_types(&self.identities)
             .ok_or_else(|| unreadable("capture-type"))?
@@ -465,26 +466,36 @@ impl<'p> EvidencePackage<'p> {
     }
 }
 
-/// The evaluator profile a lock row's definition identity names, in the
-/// closed table of the finite-window profiles, or the infinite-trace profile
-/// by its own identity (FR-532 `profile`).
+/// The evaluator profile a lock row's definition identity names. The timed
+/// profile is named too: the evaluator refuses it as the in-process route
+/// does (`not-finite-window-profile`).
 fn finite_window_profile(identity: &str) -> Option<TemporalProfile> {
-    TemporalProfile::from_identity(identity).filter(|profile| *profile != TemporalProfile::Timed)
+    TemporalProfile::from_identity(identity)
 }
 
 /// The atom indices of the instance-bound atoms (FR-532 "Atom index"), given
 /// for each `holds` use of `graph` in pre-order whether its operand reads an
 /// instance binder (`reads`, FR-515 `instance_bound_atoms`). A shared atom
-/// node has one index.
-pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> BTreeSet<u64> {
-    let numbers = atom_numbers(graph);
-    graph
+/// node has one index. `None` when `reads` and the `holds` entries differ in
+/// number (FR-516 `clause-unreadable` `atom-count`).
+pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Option<BTreeSet<u64>> {
+    let holds = graph
         .iter()
-        .zip(numbers)
-        .filter(|(entry, _)| entry.operation == "quire.op.temporal.holds")
-        .zip(reads)
-        .filter_map(|((_, number), bound)| bound.then_some(number).flatten())
-        .collect()
+        .filter(|entry| entry.operation == "quire.op.temporal.holds")
+        .count();
+    if holds != reads.len() {
+        return None;
+    }
+    let numbers = atom_numbers(graph);
+    Some(
+        graph
+            .iter()
+            .zip(numbers)
+            .filter(|(entry, _)| entry.operation == "quire.op.temporal.holds")
+            .zip(reads)
+            .filter_map(|((_, number), bound)| bound.then_some(number).flatten())
+            .collect(),
+    )
 }
 
 /// The part of an interval the two formulas compare.
@@ -670,7 +681,7 @@ mod tests {
 
     /// FR-532 `profile`, FR-531-AC-6: the closed table of the finite-window
     /// profile identities and the infinite-trace profile; any other identity
-    /// (the timed profile included) is `profile-unknown`.
+    /// is `profile-unknown`.
     #[test]
     fn only_the_finite_window_and_infinite_trace_identities_name_a_profile() {
         for (identity, profile) in [
@@ -693,11 +704,11 @@ mod tests {
         ] {
             assert_eq!(finite_window_profile(identity), Some(profile));
         }
-        for unknown in [
-            "quire.temporal.timed/v1",
-            "quire.temporal.event-position.false-extension/v2",
-            "",
-        ] {
+        assert_eq!(
+            finite_window_profile("quire.temporal.timed/v1"),
+            Some(TemporalProfile::Timed)
+        );
+        for unknown in ["quire.temporal.event-position.false-extension/v2", ""] {
             assert_eq!(finite_window_profile(unknown), None, "{unknown}");
         }
     }

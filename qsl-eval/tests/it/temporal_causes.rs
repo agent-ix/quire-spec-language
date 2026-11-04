@@ -296,8 +296,11 @@ fn a_leaf_count_that_differs_from_the_holds_count_maps_no_atoms() {
         use_of(ALWAYS, interval(json!({"lower": "0", "upper": "2"})), &[1]),
         use_of(HOLDS, None, &[]),
     ]);
-    assert_eq!(bound_atom_indices(&graph, &[true]), [0].into());
-    assert_eq!(bound_atom_indices(&graph, &[false]), [].into());
+    assert_eq!(bound_atom_indices(&graph, &[true]), Some([0].into()));
+    // A count of reads that differs from the `holds` count maps no atoms.
+    assert_eq!(bound_atom_indices(&graph, &[true, false]), None);
+    assert_eq!(bound_atom_indices(&graph, &[]), None);
+    assert_eq!(bound_atom_indices(&graph, &[false]), Some([].into()));
     // Two `holds` nodes are atoms 0 and 1 in first-use order; the second
     // alone reads an instance binder.
     let two = numbered(vec![
@@ -305,7 +308,28 @@ fn a_leaf_count_that_differs_from_the_holds_count_maps_no_atoms() {
         use_of(HOLDS, None, &[]),
         use_of(HOLDS, None, &[]),
     ]);
-    assert_eq!(bound_atom_indices(&two, &[false, true]), [1].into());
+    assert_eq!(bound_atom_indices(&two, &[false, true]), Some([1].into()));
+    // A shared atom node is one index, and instance-bound when its operand is.
+    let shared = numbered(vec![
+        use_of(NOT, None, &[1]),
+        use_of(HOLDS, None, &[]),
+        use_of(HOLDS, None, &[]),
+    ]);
+    let mut same = shared.clone();
+    same[2].node = same[1].node;
+    assert_eq!(bound_atom_indices(&same, &[true, true]), Some([0].into()));
+    // A distinct atom after a shared one is atom 1.
+    let mut after = numbered(vec![
+        use_of(NOT, None, &[1, 2, 3]),
+        use_of(HOLDS, None, &[]),
+        use_of(HOLDS, None, &[]),
+        use_of(HOLDS, None, &[]),
+    ]);
+    after[2].node = after[1].node;
+    assert_eq!(
+        bound_atom_indices(&after, &[false, false, true]),
+        Some([1].into())
+    );
 }
 
 /// FR-516-AC-40, FR-516-AC-41 (TC-1311 rows 40 and 41): each cause of the
