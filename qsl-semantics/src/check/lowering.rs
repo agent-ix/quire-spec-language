@@ -107,9 +107,10 @@ pub use model::{
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{
-    compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
-    CompensationNodes, ProtocolInput, ProtocolSite,
+    compensation_origin, declaration_origin, protocol_location, AttemptNodes, CompensationNodes,
+    ProtocolInput,
 };
+pub use protocol::{protocol_site, ProtocolSite};
 pub(crate) use state::{
     protocol_attempt_operation_location, protocol_attempt_operation_site,
     state_clause_name_location, state_clause_name_site, state_operation_location,
