@@ -352,6 +352,30 @@ fn a_literal_never_adapts_to_a_slot_of_another_type() {
     }
 }
 
+/// FR-390-AC-24: native scalar members inside a record retain their exact
+/// equality behavior, and native String/UUID/Timestamp values do not acquire
+/// ordering operators through a protocol value profile.
+#[trace("FR-390-AC-24")]
+#[test]
+fn native_scalars_reject_ordering() {
+    for ty in ["String", "UUID", "Timestamp"] {
+        for operator in ["<", "<=", ">", ">="] {
+            let body = match ty {
+                "String" => format!("\"a\" {operator} \"b\""),
+                "UUID" => format!("UUID(\"{U1}\") {operator} UUID(\"{U2}\")"),
+                "Timestamp" => format!("Timestamp(1) {operator} Timestamp(2)"),
+                _ => unreachable!(),
+            };
+            let refusal = refused(&format!("function f using v(): Boolean pure {{ {body} }}"));
+            assert_eq!(
+                refusal.cause,
+                CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
+                "{ty} rejects {operator}"
+            );
+        }
+    }
+}
+
 /// QSL-1461, FR-056-AC-51 / FR-093-AC-50, TC-1052 steps 7–9: `Text("...")`
 /// takes the `Text[..]` type from its position, retains the selected profile's
 /// normalization, and can take that type from a typed equality peer.

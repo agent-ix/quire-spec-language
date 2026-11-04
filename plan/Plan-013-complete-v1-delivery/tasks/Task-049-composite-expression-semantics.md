@@ -40,3 +40,5 @@ named predicates; and termination-checked total pure functions.
 
 - Complete composite value/expression kernel and immutable semantic libraries.
 - Property evidence for operation matrices, empty cases, bounds and termination.
+
+Boundary cases for rows whose central owner is one FR (QSL-1492): V1-EXPR-024 and V1-EXPR-025 also require QSpec FR-019-AC-5 (TC-010).

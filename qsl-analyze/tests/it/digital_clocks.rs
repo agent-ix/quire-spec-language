@@ -53,6 +53,12 @@ fn retx_with(
     declarations: &str,
     claims: &str,
 ) -> World {
+    let document = retx_document(operations);
+    let body = retx_body(guard, reset, declarations, claims);
+    timed_world::world(&document, PROFILES, &body)
+}
+
+fn retx_document(operations: &[(&str, &[&str])]) -> Vec<u8> {
     let mut document: serde_json::Value =
         serde_json::from_slice(&timed_world::document(&["x"], operations))
             .expect("the timed fixture is JSON");
@@ -68,12 +74,7 @@ fn retx_with(
         "origin": {"source": {"sourceIdentity": timed_world::ident("spec"),
             "path": "spec.qspec", "startLine": 1, "startColumn": 1}},
     }]);
-    let body = retx_body(guard, reset, declarations, claims);
-    timed_world::world(
-        &serde_json::to_vec(&document).expect("serializes"),
-        PROFILES,
-        &body,
-    )
+    serde_json::to_vec(&document).expect("serializes")
 }
 
 const PROFILES: &str = "profile ev = \"quire.temporal.timed/v1\";\n\
@@ -254,6 +255,53 @@ fn discrete_delays_under_a_workload_are_a_chain() {
         refusal(&exponential, "Under"),
         ProductRefusal::DelayDistribution { .. }
     ));
+}
+
+/// FR-204-AC-3 (TC-639): delay admission is scoped to the selected subject
+/// model, so its own distribution is refused while another model's is ignored.
+#[trace("FR-204-AC-3", "TC-639")]
+#[test]
+fn delay_admission_is_scoped_to_the_selected_subject_model() {
+    const OTHER_PACKAGE: &str = "test/other-timed";
+    let subject_delay = retx(
+        GUARD,
+        true,
+        "delay M::Call::send ~ exponential(1);\n",
+        &deadline_claim(
+            "SubjectDelay",
+            "under every scheduler",
+            ">= 0.99",
+            "eventually",
+        ),
+    );
+    let ProductRefusal::DelayDistribution { operation } = refusal(&subject_delay, "SubjectDelay")
+    else {
+        panic!("the subject model's delay distribution is unsupported");
+    };
+    assert!(operation.contains("send"), "{operation}");
+
+    let primary = retx_document(&[("send", &["late", "x"])]);
+    let other = String::from_utf8(timed_world::document(&["x"], &[("send", &["late", "x"])]))
+        .expect("fixture is UTF-8")
+        .replace(timed_world::PACKAGE, OTHER_PACKAGE)
+        .into_bytes();
+    let body = format!(
+        "model Other = \"{OTHER_PACKAGE}\";\ntime Other dense unit ms;\n{}",
+        retx_body(
+            GUARD,
+            true,
+            "delay Other::Call::send ~ exponential(1);\n",
+            &deadline_claim("Deadline", "under every scheduler", ">= 0.99", "eventually",),
+        )
+        .replace(
+            "time invariant Deadline when { not self.late } { self.x <= 2 ms }\n",
+            ""
+        ),
+    );
+    let world = timed_world::world_built_with_packages(&primary, &[&other], PROFILES, &body);
+    let built = product(&world, "Deadline");
+    assert_eq!(built.kind, ProductKind::Mdp);
+    assert!(!built.states.is_empty());
 }
 
 /// FR-204-AC-5 (TC-642): under a workload that gives no delay distribution the

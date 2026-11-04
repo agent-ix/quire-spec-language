@@ -1553,7 +1553,7 @@ labels! {
         /// A later-bound invocation identity.
         Invocation => "invocation",
         /// A later-bound population identity.
-        Population => "population",
+        Population => qsl_package::protocol_artifact_v1::BindingKind::Population.as_str(),
         /// A later-bound relationship instance identity.
         Relationship => "relationship",
         /// A later-bound clock identity.

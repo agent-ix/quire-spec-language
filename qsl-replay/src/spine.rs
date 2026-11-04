@@ -338,6 +338,10 @@ impl CompileRefusal {
         match self {
             Self::UnitList(refusal) => refusal.cause(),
             Self::Check { refusals, .. } => refusals.first()?.cause.cause(),
+            Self::Assembly { refusal, .. } => refusal
+                .errors
+                .first()
+                .map(|error| error.cause.catalog_code().cause()),
             Self::Profile { refusals, .. } => refusals.first().map(ProfileRefusal::cause),
             Self::DependencyInput(refusal) => refusal.cause(),
             Self::Import { refusal, .. } => refusal.cause(),
@@ -349,7 +353,6 @@ impl CompileRefusal {
             | Self::Forms { .. }
             | Self::OperationClause { .. }
             | Self::TypeInvariant { .. }
-            | Self::Assembly { .. }
             | Self::Emit(_)
             | Self::Omitted(_) => None,
         }

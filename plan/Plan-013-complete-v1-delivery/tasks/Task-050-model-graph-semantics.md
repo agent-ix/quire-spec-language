@@ -64,3 +64,5 @@ filament-core-data owns the Semantic IR lowering and reader, and quire-rs owns
 artifact extraction; this task consumes both crates and edits neither.
 Component, endpoint, participant and configuration constructs
 are outside this task until their Quire meanings are decided.
+
+Boundary cases for rows whose central owner is one FR (QSL-1492): V1-TYPE-010 and V1-TYPE-011 also require QSpec FR-019-AC-2 (TC-007); V1-TYPE-030 also requires QSpec FR-145-AC-3 and AC-7 (TC-190), FR-143-AC-2 and AC-5 (TC-188) and FR-019-AC-4 (TC-009).

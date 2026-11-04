@@ -1070,6 +1070,162 @@ fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
         .all(|unit| unit.type_report().declarations().len() == 1));
 }
 
+/// FR-514-AC-5 and FR-480-AC-6: aggregate quantity failures preserve their
+/// topology cause, dependency edges, declaration span and owning source.
+#[trace("FR-514-AC-5", "FR-480-AC-6", "TC-1309")]
+#[test]
+fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
+    fn refusal(documents: &[(&str, &str)]) -> (Box<CompileRefusal>, Vec<SourceIdentity>) {
+        let identities: Vec<_> = documents
+            .iter()
+            .map(|(identity, _)| SourceIdentity::new("agent-ix", *identity))
+            .collect();
+        let parsed = documents
+            .iter()
+            .zip(&identities)
+            .map(|((_, source), identity)| {
+                parse_named(identity, format!("{HEADER}{source}").as_bytes())
+            })
+            .collect();
+        let admitted = admit_parsed_unit_list(parsed, &DependencyInput::default())
+            .expect("distinct source documents are admitted");
+        let Err(StageFailure::Refused(refusal)) = check_units(
+            &admitted,
+            "aggregate-quantity-cycle".to_owned(),
+            &AdmittedModels::default(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &Cancel::new(),
+        ) else {
+            panic!("the invalid aggregate quantity declarations are refused");
+        };
+        (refusal, identities)
+    }
+
+    fn assert_region_source(
+        refusal: &CompileRefusal,
+        expected_source: &SourceIdentity,
+        source_body: &str,
+        declaration_kind: &str,
+        declaration_name: &str,
+    ) {
+        let region = refusal
+            .region()
+            .expect("the declaration has a source region");
+        assert_eq!(
+            region.source().identity(),
+            expected_source.identity.as_str()
+        );
+        let source = format!("{HEADER}{source_body}");
+        let marker = format!("{declaration_kind} {declaration_name}");
+        let start = source
+            .find(&marker)
+            .expect("the expected declaration is in its source")
+            + declaration_kind.len()
+            + 1;
+        let end = start + declaration_name.len();
+        assert_eq!(
+            region.start(),
+            u64::try_from(start).expect("source is small")
+        );
+        assert_eq!(region.end(), u64::try_from(end).expect("source is small"));
+    }
+
+    let document_one = (
+        "test:lifecycle:quantity-zero-a",
+        "dimension T; unit z : T = rational(0, 1) * z2; unit z2 : T = rational(1, 1);",
+    );
+    let document_two = (
+        "test:lifecycle:quantity-self-b",
+        "dimension L; unit u_self : L = rational(1, 1) * u_self;",
+    );
+    let (zero_scale, identities) = refusal(&[document_one, document_two]);
+    assert_eq!(zero_scale.code(), Code::InvalidPackage);
+    assert_eq!(zero_scale.cause(), Some("invalid-value"));
+    assert_region_source(&zero_scale, &identities[0], document_one.1, "unit", "z");
+
+    let (single_cycle, identities) = refusal(&[document_two, document_one]);
+    assert_eq!(single_cycle.code(), Code::InvalidPackage);
+    assert_eq!(single_cycle.cause(), Some("definition-cycle"));
+    assert_region_source(
+        &single_cycle,
+        &identities[0],
+        document_two.1,
+        "unit",
+        "u_self",
+    );
+    let CompileRefusal::Assembly {
+        refusal: assembly_refusal,
+        ..
+    } = single_cycle.as_ref()
+    else {
+        panic!("quantity cycles are assembler refusals");
+    };
+    assert!(matches!(
+        &assembly_refusal.errors[0].cause,
+        qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
+            if edges == &[("u_self".to_owned(), "u_self".to_owned())]
+    ));
+
+    let (cross_unit_cycle, identities) = refusal(&[
+        (
+            "test:lifecycle:quantity-cross-a",
+            "dimension T; unit z : T = rational(2, 1) * z2;",
+        ),
+        (
+            "test:lifecycle:quantity-cross-b",
+            "unit z2 : T = rational(2, 1) * z;",
+        ),
+    ]);
+    assert_eq!(cross_unit_cycle.code(), Code::InvalidPackage);
+    assert_eq!(cross_unit_cycle.cause(), Some("definition-cycle"));
+    assert_region_source(
+        &cross_unit_cycle,
+        &identities[0],
+        "dimension T; unit z : T = rational(2, 1) * z2;",
+        "unit",
+        "z",
+    );
+    let CompileRefusal::Assembly {
+        refusal: assembly_refusal,
+        ..
+    } = cross_unit_cycle.as_ref()
+    else {
+        panic!("quantity cycles are assembler refusals");
+    };
+    assert!(matches!(
+        &assembly_refusal.errors[0].cause,
+        qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
+            if edges == &[("z".to_owned(), "z2".to_owned()), ("z2".to_owned(), "z".to_owned())]
+    ));
+
+    let (dimension_cycle, identities) = refusal(&[
+        ("test:lifecycle:dimension-cycle-a", "dimension A = B;"),
+        ("test:lifecycle:dimension-cycle-b", "dimension B = A;"),
+    ]);
+    assert_eq!(dimension_cycle.code(), Code::InvalidPackage);
+    assert_eq!(dimension_cycle.cause(), Some("definition-cycle"));
+    assert_region_source(
+        &dimension_cycle,
+        &identities[0],
+        "dimension A = B;",
+        "dimension",
+        "A",
+    );
+    let CompileRefusal::Assembly {
+        refusal: assembly_refusal,
+        ..
+    } = dimension_cycle.as_ref()
+    else {
+        panic!("dimension cycles are assembler refusals");
+    };
+    assert!(matches!(
+        &assembly_refusal.errors[0].cause,
+        qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
+            if edges == &[("A".to_owned(), "B".to_owned()), ("B".to_owned(), "A".to_owned())]
+    ));
+}
+
 /// FR-480-AC-1: I1 has a public composition path for all model selections in
 /// an admitted list, preserving every unit's alias and admitting the shared
 /// identity once through the aggregate meter.

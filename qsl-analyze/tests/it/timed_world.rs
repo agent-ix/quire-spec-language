@@ -301,7 +301,37 @@ pub(crate) fn world_built_in(
     extra: &Json,
 ) -> World {
     world_built_in_with_protocol_selection(
-        package, document, profiles, body, keys, armed, extra, true,
+        package,
+        &[document],
+        profiles,
+        body,
+        keys,
+        armed,
+        extra,
+        true,
+    )
+}
+
+/// [`world_built_in`] with additional admitted domain packages available to
+/// the unit's model selections.
+pub(crate) fn world_built_with_packages(
+    document: &[u8],
+    additional_documents: &[&[u8]],
+    profiles: &str,
+    body: &str,
+) -> World {
+    let mut documents = Vec::with_capacity(additional_documents.len() + 1);
+    documents.push(document);
+    documents.extend_from_slice(additional_documents);
+    world_built_in_with_protocol_selection(
+        PACKAGE,
+        &documents,
+        profiles,
+        body,
+        &["c"],
+        &[],
+        &json!({}),
+        true,
     )
 }
 
@@ -318,14 +348,21 @@ pub(crate) fn world_built_in_without_protocol_profile(
     extra: &Json,
 ) -> World {
     world_built_in_with_protocol_selection(
-        package, document, profiles, body, keys, armed, extra, false,
+        package,
+        &[document],
+        profiles,
+        body,
+        keys,
+        armed,
+        extra,
+        false,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn world_built_in_with_protocol_selection(
     package: &str,
-    document: &[u8],
+    documents: &[&[u8]],
     profiles: &str,
     body: &str,
     keys: &[&str],
@@ -333,7 +370,7 @@ fn world_built_in_with_protocol_selection(
     extra: &Json,
     select_protocol_profile: bool,
 ) -> World {
-    let packages = package_input([document]).unwrap();
+    let packages = package_input(documents.iter().copied()).unwrap();
     let unit = unit_text(package, profiles, body);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-239"),
