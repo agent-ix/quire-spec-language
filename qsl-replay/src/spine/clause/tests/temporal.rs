@@ -35,6 +35,8 @@ enum ObservedReplayExpectation {
 enum Unit {
     /// `Bounded`, under event-position false-extension.
     Bounded,
+    /// `Bounded` and its same-body twin under a third name `Twin2`.
+    RenamedTwin,
     /// `Reaches` and `Fair`, under infinite-trace.
     Infinite,
     /// `Undefined`, under the bounded profile, with integer modulo by zero
@@ -86,7 +88,9 @@ enum Unit {
 impl Unit {
     fn profile(self) -> &'static str {
         match self {
-            Self::Bounded => "profile t = \"quire.temporal.event-position.false-extension/v1\";\n",
+            Self::Bounded | Self::RenamedTwin => {
+                "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
+            }
             Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
             Self::Undefined | Self::Guarded | Self::GuardUndefined => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
@@ -124,6 +128,12 @@ impl Unit {
                 "temporal Bounded using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { eventually[0,1] holds(c.value = 2) }\n\
                  temporal Twin using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { eventually[0,1] holds(c.value = 2) }\n"
+            }
+            Self::RenamedTwin => {
+                "temporal Bounded using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { eventually[0,1] holds(c.value = 2) }\n\
+                 temporal Twin2 using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { eventually[0,1] holds(c.value = 2) }\n"
             }
             Self::Infinite => {
@@ -3137,9 +3147,23 @@ fn two_clauses_with_one_body_keep_separate_progress_bindings() {
         100
     );
     assert_eq!(updated.entry(&twin).expect("Twin's entry").watermark(), 50);
-    // A later lower watermark under `Bounded` is still a regression.
+    // A later lower watermark under `Bounded` is still a regression, and it
+    // names the retained 100.
     let regress = report_of_progress(&updated);
-    assert_eq!(regress.ledger, Some(updated));
+    assert_eq!(regress.ledger, Some(updated.clone()));
+    // Renaming `Twin` to `Twin2` changes neither entry's key: the same
+    // occurrence under the new name finds `Twin`'s entry (watermark 50, so a
+    // watermark of 50 is not a regression) and adds no binding.
+    let renamed = self::report(with_progress(
+        finite(Unit::RenamedTwin, "Twin2", &[0, 1, 2]),
+        50,
+        crate::spine::ProgressCompleteness::Complete { through: 50 },
+        &updated,
+    ));
+    let after = renamed.ledger.expect("the renamed clause is accepted");
+    let keys =
+        |ledger: &crate::spine::ProgressLedger| ledger.bindings().cloned().collect::<Vec<_>>();
+    assert_eq!(keys(&after), keys(&updated));
 }
 
 /// `Bounded` asserting a watermark below the 100 it retained: refused.
@@ -3160,6 +3184,10 @@ fn report_of_progress(ledger: &crate::spine::ProgressLedger) -> ClauseRunReport 
             .get("contradicted_dimension")
             .map(String::as_str),
         Some("Watermark")
+    );
+    assert_eq!(
+        refusal.record.fields.get("retained").map(String::as_str),
+        Some("100")
     );
     report
 }
