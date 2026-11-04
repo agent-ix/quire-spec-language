@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-16. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
+Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-17. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
 
 ## Test Procedure
 
@@ -31,8 +31,9 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-16. **R** is the pa
 | 13 | 14 | **R**'s directory: read `equality.json`; compare with the encoding of the in-process rows; write twice | slot call with an equality application evaluates; bytes equal; two writes equal |
 | 14 | 15 | `ReadEqualityRows::read` over a non-JSON file, an unknown or repeated member, an unknown fact tag, another `format`, a row the package does not hold, a row that is no equality application | `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined`, `Unjoined`; no rows |
 | 15 | 16 | a slot call whose walk holds an equality application with `equality: None`, foreign rows, unjoined rows; a slot call with no equality application | `MissingEqualityWitness`, `ForeignEqualityWitness`, `UnknownEqualityWitness` as exit-21 `Admission` at `CallAdmissionLocus::Package`, meter untouched; evaluates |
+| 16 | 17 | the vector rows of "The equality file"; a row of every fact tag, value-type tag, owner kind and a compound unit in a fact row; malformed rationals; a compound unit in `source_units` | bytes equal the vector; rows round-trip with byte-identical rewrites; `Malformed` |
 
-Tag the test `#[trace("FR-531-AC-1", ..., "FR-531-AC-16", "TC-1331")]`.
+Tag the test `#[trace("FR-531-AC-1", ..., "FR-531-AC-17", "TC-1331")]`.
 
 ## Expected Results
 

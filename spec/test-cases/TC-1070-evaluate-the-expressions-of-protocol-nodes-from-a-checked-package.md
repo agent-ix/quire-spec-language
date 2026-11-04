@@ -14,7 +14,7 @@ Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
 the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23 and FR-390-AC-28 to
-FR-390-AC-66. The E-P procedure below verifies FR-390-AC-23 without
+FR-390-AC-67. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
@@ -246,6 +246,7 @@ slot, and its binder `m` or `choice` is shared with no other slot.
 | C14f | the package of C14e | any | the `Picked` constraint's visit is paired and not reported unpaired (AC-58) |
 | C15 | every slot of fixtures E, E-C and L, selected on the source route and on the bytes route | the slot's supply | the same triple (node, member, index), root, binders and origin; the bytes descriptor carries no span; `Decide.visible[0]` and `Decide.cases.guard[1]` select distinct origins (AC-65) |
 | C16 | a bare package with no supply, with identity rows of another package, with rows naming no identity; a missing node; a missing member | any | the three witness refusals report `CallAdmissionLocus::Package` and the in-process view the `Package` locus of `UnsupportedView`; the node and member refusals report `Node` and `Member`; no witness refusal reports `Node` or `Binder` (AC-66) |
+| C17 | a package with unsupported projections of several reasons at once, including the three equality-witness reasons | any | the first reason in FR-390's order is reported; equality-witness reasons at the `Package` locus, no charge (AC-67) |
 
 ## Fixture E-P: reference-population provenance extension
 

@@ -170,8 +170,7 @@ against their source order are paired with each other's origin: the value, outco
 and charge log are unaffected (a location is not an input to evaluation), and the
 `Location` values of the two guards are exchanged. That exchange is unmet parity
 with FR-390-AC-15's location equality, recorded by FR-533-AC-13, and is closed
-when the package carries the pairing in a member the QSpec site-name registry does
-not forbid (see Dependencies).
+by the QSpec follow-up named in Dependencies.
 
 In TC-1070 fixture L, `Decide` is a `choice` with one visible entry and two cases:
 `case yes when { got.ready }` (written first) and `case no when { not got.ready }`
@@ -277,7 +276,7 @@ FR-520-AC-11 states.
 | FR-533-AC-10 | `BarePackage::new`, `with_supply`, view creation, slot selection and supply admission charge no counter and take no `Meter`; a refusal at any of them leaves a caller's meter byte-identical. | Test (TC-1333) |
 | FR-533-AC-11 | Over the package of TC-1070 fixture L, the bare route selects `Decide.visible[0]`, `Decide.cases.guard[0]` and `Decide.cases.guard[1]` by the triple (control node, member, index) alone, with a descriptor that carries no span and no site name; the origins resolve to `protocol Pipeline run Main Decide decision 2641..2650`, `... 2735..2748` and `... 2676..2685` respectively, as the table of "Slot naming on the bytes route" gives, each slot has exactly one origin, and no selection returns two origins or refuses as ambiguous. | Test (TC-1333) |
 | FR-533-AC-12 | For every slot of TC-1070 fixtures E, E-C and L, the source route and the bytes route select the same triple, the same root node, the same binders (name, level, key, `ValueType`) and the same origin; `Got.related.from[0]` and `Got.related.to[0]` of fixture L have no origin on either route. In a copy of fixture L's package whose origins `... decision 2641..2650`, `... 2676..2685` and `... 2735..2748` are renamed, rows with them, to `... decision 999..1005`, `... decision 1000..1004` and `... decision 1001..1002`, `Decide.visible[0]` takes `999..1005`, `Decide.cases.guard[1]` takes `1000..1004` and `Decide.cases.guard[0]` takes `1001..1002`, because the candidates are ordered numerically by `(start, end)`; ordered by the UTF-8 bytes of the names they would take `1000..1004` and `1001..1002`, so the test fails if the bytes order is used. | Test (TC-1333) |
-| FR-533-AC-13 | In a copy of fixture L's unit whose two cases have the equal guard `got.ready` and whose labels sort against their source order, the bytes route returns the value, outcome and charge log of the source route for `cases.guard[0]` and `cases.guard[1]`, and the two slots' `Location` values are exchanged relative to the source route; the test records that exchange as the unmet parity named in "Slot naming on the bytes route". Where the labels sort in source order the two routes return equal `Location` values. | Test (TC-1333) |
+| FR-533-AC-13 | Unmet parity, exact condition: a `choice` has two cases whose guards are one equal expression (so both guards have one root node and one walk, and both slots `cases.guard[i]` and `cases.guard[j]` are tied) and the labels of the two cases sort in the opposite order to their source positions (cases are held in ascending label order, so the lower index is the later case in source). Then the bytes route gives `cases.guard[i]` the candidate origin of rank `i` and `cases.guard[j]` that of rank `j`, which are each other's source-route origins, and the two slots' `Location` values are exchanged relative to the source route; no other slot kind and no case with a distinct guard expression is affected. The value, outcome, exit status, catalog code, cause and charge log of both slots equal the source route's. In a copy of fixture L's unit whose cases `yes` and `no` both have the guard `got.ready`, the labels sort `no` before `yes` while `yes` is written first, the test asserts the equal values and charge logs and the exchanged `Location` values and records the exchange as this unmet parity; with the cases written `no` first, it asserts equal `Location` values. | Test (TC-1333) |
 | FR-533-AC-14 | In a copy of fixture L's package whose rows of the `decision 2641..2650` origin are removed, `Decide.visible[0]` (rank 0 of two tied slots, one candidate) takes `... 2676..2685` and view creation refuses `MissingLocationProjection` at the `Node` locus of the `got.ready` application for `Decide.cases.guard[1]` (rank 1, no candidate), carrying no partial view and no charge. | Test (TC-1333) |
 | FR-533-AC-15 | Over a `BarePackage` with no supply, with identity rows of another package and with identity rows that name no admitted identity, the slot call refuses `MissingIdentityWitness`, `ForeignIdentityWitness` and `UnknownIdentityWitness`, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature` and `locus == CallAdmissionLocus::Package`; the same three refusals for the equality rows (FR-531) report `Package`; a slot over a missing node reports `Node`, over a missing member `Member { name, index }`, and `MissingTypeRepresentation` reports `Node` with the binder's key; no witness refusal reports `Node` or `Binder`; the meter is byte-identical after each. | Test (TC-1333) |
 | FR-533-AC-16 | A slot of fixture E or E-C whose walk holds an `==` or `!=` application (an integer equality in `Refund`'s retry relation and recovery predicate; a String, UUID, Timestamp, enum and quantity equality in the added slots of TC-1333) evaluates on the bare route, given the identity rows and the equality rows read from the handoff directory, to the value and charge log of the in-process route, with no `Emission` and no `CheckedPackage` in the test crate. Over a bare package whose equality rows are omitted the same slot refuses `MissingEqualityWitness` and, for a slot with no equality application in its walk, the call is unaffected. | Test (TC-1333) |
@@ -310,9 +309,15 @@ FR-520-AC-11 states.
   equality rows of "Equality slots" are read with IR's `admitted_equality`; the
   writer (FR-517) and the reader (FR-531) are QSL's, and no IR change is needed
   for the file. If IR derives the rows from the package alone, the file is removed.
-- **Pairing of equal case guards:** the exchange of FR-533-AC-13 closes only when
-  the package carries the case-guard pairing itself, which needs a member or origin
-  form that the QSpec FR-322 site-name registry admits; QSpec owns that registry.
+- **Pairing of equal case guards (QSpec follow-up):** the exchange of FR-533-AC-13
+  closes only when the package carries, for each case guard, which source case it
+  belongs to. The origin name a slot is located under belongs to the site-name
+  registry of QSpec FR-322, which writes a case guard's name from its source span
+  and carries no case label or ordinal; QSL cannot add a form to that registry. The
+  fix is a QSpec follow-up (a registry form or a row member that names the case, for
+  example by label), after which the rule of "Slot naming on the bytes route" uses it
+  in place of rank for tied case guards. Until then FR-533-AC-13 stays unmet parity
+  and no feature is cut.
 - **Observation admission:** the type environment of FR-533's observation admission
   (the composites and object types an observation and a supply are admitted against)
   is built from the package's `model_root` nodes, the selected record views and the
