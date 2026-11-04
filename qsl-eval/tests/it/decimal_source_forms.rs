@@ -73,11 +73,15 @@ fn compile(declarations: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
     .map(CheckedPackage::link)
 }
 
+/// An admitted charge: its point and the integer-bits, decimal-digits and
+/// scale-expansion sizes it requested.
+type Charged = (ChargePoint, Option<u64>, Option<u64>, Option<u64>);
+
 /// One finished call of `f`: the kernel outcome and the charge points the
 /// meter admitted, with the high-water sizes of the decimal charges.
 struct Run {
     outcome: Outcome<Value>,
-    charges: Vec<(ChargePoint, Option<u64>, Option<u64>, Option<u64>)>,
+    charges: Vec<Charged>,
 }
 
 fn call(package: &CheckedPackage, arguments: Vec<Value>, limits: ScalarLimits) -> Run {
