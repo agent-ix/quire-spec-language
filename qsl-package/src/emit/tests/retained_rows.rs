@@ -287,11 +287,9 @@ fn every_retained_row_kind_is_carried_with_its_node_ids_rekeyed() {
         .iter()
         .zip(&emission.selected_enum_declaration_rows)
     {
-        assert_eq!(
-            got.structural_node,
-            renamed(&was.structural_node),
-            "source enum"
-        );
+        let mut want = was.clone();
+        want.structural_node = renamed(&was.structural_node);
+        assert_eq!(got, &want, "source enum");
     }
     assert!(!emission.selected_enum_member_rows.is_empty());
     assert_eq!(
@@ -303,16 +301,10 @@ fn every_retained_row_kind_is_carried_with_its_node_ids_rekeyed() {
         .iter()
         .zip(&emission.selected_enum_member_rows)
     {
-        assert_eq!(
-            got.structural_node,
-            renamed(&was.structural_node),
-            "source member"
-        );
-        assert_eq!(
-            got.declaration_node,
-            renamed(&was.declaration_node),
-            "source member's declaration"
-        );
+        let mut want = was.clone();
+        want.structural_node = renamed(&was.structural_node);
+        want.declaration_node = renamed(&was.declaration_node);
+        assert_eq!(got, &want, "source member");
     }
 
     assert_eq!(rows.selected_exact_declaration_rows.len(), 1);

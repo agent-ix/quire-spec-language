@@ -455,6 +455,11 @@ impl SemanticGraph {
         self.source_enum_declarations.iter()
     }
 
+    /// The source-owned enum declaration lowered at `key`, if any.
+    pub fn source_enum_declaration(&self, key: &NodeKey) -> Option<&SourceEnumDeclaration> {
+        self.source_enum_declarations.get(key)
+    }
+
     /// The source-owned enum members associated with lowered nodes.
     pub fn source_enum_members(&self) -> impl Iterator<Item = (&NodeKey, &SourceEnumMember)> {
         self.source_enum_members.iter()
@@ -2872,30 +2877,31 @@ impl<'a> Lowering<'a> {
             ))),
         )?;
         // Two bindings of one admitted declaration are one node, declared
-        // once.
+        // once; its row comes from the binding that built the node, so the
+        // row's owner is the node's owner.
         if inserted {
             self.record(
                 declaration.clone(),
                 OccurrenceRole::Declaration,
                 site.clone(),
             );
-        }
-        self.graph.source_enum_declarations.insert(
-            declaration.clone(),
-            SourceEnumDeclaration {
-                owner,
-                qualified_declaration,
-            },
-        );
-        for member in &binding.members {
-            let key = self.enum_member_node(&site, declaration.clone(), member)?;
-            self.graph.source_enum_members.insert(
-                key,
-                SourceEnumMember {
-                    declaration_key: declaration.clone(),
-                    case: member.case().into(),
+            self.graph.source_enum_declarations.insert(
+                declaration.clone(),
+                SourceEnumDeclaration {
+                    owner,
+                    qualified_declaration,
                 },
             );
+        }
+        for member in &binding.members {
+            let key = self.enum_member_node(&site, declaration.clone(), member)?;
+            self.graph
+                .source_enum_members
+                .entry(key)
+                .or_insert_with(|| SourceEnumMember {
+                    declaration_key: declaration.clone(),
+                    case: member.case().into(),
+                });
         }
         Ok(())
     }

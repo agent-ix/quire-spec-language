@@ -5950,17 +5950,15 @@ fn source_enum_rows(
     ),
     EmitRefusal,
 > {
-    let declarations: BTreeMap<&NodeKey, &qsl_semantics::check::SourceEnumDeclaration> =
-        graph.source_enum_declarations().collect();
-    let declaration_rows = declarations
-        .iter()
+    let declaration_rows = graph
+        .source_enum_declarations()
         .filter_map(|(key, declaration)| {
             Some(quire_contract_model::SelectedEnumDeclarationRow::new(
-                emitted.get(*key)?.clone(),
+                emitted.get(key)?.clone(),
                 declaration.owner.authority(),
                 declaration.owner.identity(),
                 declaration.qualified_declaration.clone(),
-                (*key).clone(),
+                key.clone(),
             ))
         })
         .collect();
@@ -5968,8 +5966,8 @@ fn source_enum_rows(
         .source_enum_members()
         .filter_map(|(key, member)| Some((key, member, emitted.get(key)?)))
         .map(|(key, member, structural_node)| {
-            let declaration = declarations
-                .get(&member.declaration_key)
+            let declaration = graph
+                .source_enum_declaration(&member.declaration_key)
                 .ok_or(EmitRefusal::SourceMapInvariant)?;
             let declaration_node = emitted
                 .get(&member.declaration_key)

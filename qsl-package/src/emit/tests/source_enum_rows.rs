@@ -20,7 +20,7 @@ fn node_with_id<'w>(wire: &'w Value, id: &quire_contract_model::CheckedNodeId) -
         .unwrap_or_else(|| panic!("{id} is an emitted node"))
 }
 
-#[trace("FR-092-AC-19")]
+#[trace("FR-092-AC-19", "TC-1021")]
 #[test]
 fn a_source_enum_emits_its_declaration_and_member_rows() {
     let (_, emission) = emit_from_text(STATUS);
@@ -49,6 +49,13 @@ fn a_source_enum_emits_its_declaration_and_member_rows() {
         ("a", "u")
     );
     assert_eq!(declaration.qualified_declaration, [Box::from("Status")]);
+    let declaration_id =
+        serde_json::to_value(&declaration.structural_node).expect("a node id serializes");
+    assert_eq!(
+        node_id_of(&wire, &declaration.node_key),
+        declaration_id,
+        "the declaration row's key is its node's key"
+    );
     assert_eq!(
         emission
             .wire_nodes
@@ -64,8 +71,6 @@ fn a_source_enum_emits_its_declaration_and_member_rows() {
     let mut cases: Vec<&str> = members.iter().map(|row| row.case.as_ref()).collect();
     cases.sort_unstable();
     assert_eq!(cases, ["DONE", "READY"]);
-    let declaration_id =
-        serde_json::to_value(&declaration.structural_node).expect("a node id serializes");
     for member in members {
         let node = node_with_id(&wire, &member.structural_node);
         assert_eq!(
@@ -83,11 +88,15 @@ fn a_source_enum_emits_its_declaration_and_member_rows() {
             ),
             ("a", "u")
         );
-        assert_ne!(member.member_key, declaration.node_key);
+        assert_eq!(
+            node_id_of(&wire, &member.member_key),
+            serde_json::to_value(&member.structural_node).expect("a node id serializes"),
+            "the member row's key is its node's key"
+        );
     }
 }
 
-#[trace("FR-092-AC-19")]
+#[trace("FR-092-AC-19", "TC-1021")]
 #[test]
 fn a_model_variant_type_has_no_source_enum_row() {
     let emission = emitted_enums(UNIT);
