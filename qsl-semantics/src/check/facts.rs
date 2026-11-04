@@ -3,8 +3,9 @@
 //! the call sites termination checking consumes.
 //!
 //! Facts are only ever added by the accepted guard forms: `present(p)` for a
-//! stable path `p`, and an integer ordering or equality between a stable
-//! integer path (or `size(p)`) and an integer literal. A comparison of two
+//! stable path `p`, `contains(c, v)` for stable paths `c` and `v`, and an
+//! integer ordering or equality between a stable integer path (or
+//! `size(p)`) and an integer literal. A comparison of two
 //! non-literal operands yields no fact. The walk and every guard-fact helper
 //! it calls run on the walker toolkit, and each path's facts are persistent
 //! (one trie path more than its parent's), so no depth of typed expression is
@@ -14,7 +15,7 @@
 use quire_checked::node::{
     Arithmetic, CheckedLiteral, Connective, NodeKind, OrderedKind, RecordField, Visit,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
@@ -23,7 +24,7 @@ use std::rc::Rc;
 mod persistent;
 
 use self::persistent::PersistentMap;
-use super::check::DispatchOperation;
+use super::check::{holds_float, DispatchOperation};
 use super::ir::{CheckedNode, DispatchTable, Slot};
 use super::observation::Observations;
 use super::refusal::{
@@ -75,6 +76,9 @@ struct Facts {
     intervals: PersistentMap<Subject, ProvedInterval>,
     present: PersistentMap<StablePath, ()>,
     nonzero: PersistentMap<StablePath, ()>,
+    /// The membership facts `contains(c, v)`: each stable collection path
+    /// `c` with the stable paths `v` it is proved to hold.
+    members: PersistentMap<StablePath, Rc<BTreeSet<StablePath>>>,
 }
 
 /// How a call argument relates to the caller's parameters.
@@ -86,6 +90,10 @@ pub(crate) enum ArgumentShape {
     Decremented(Slot),
     /// A nonempty stable projection path rooted at parameter `p`.
     Projection(Slot),
+    /// A removal filter of collection parameter `p` under a membership
+    /// fact, optionally inside a same-kind conversion: its bound count is
+    /// at most `size(p) - 1` (QSpec FR-146 cardinality decrease).
+    Shrunk(Slot),
     /// Anything else.
     Other,
 }
@@ -357,6 +365,9 @@ fn join(left: Option<Rc<Facts>>, right: Option<Rc<Facts>>) -> Option<Rc<Facts>> 
                 }),
             present: left.present.intersect_with(&right.present, &|_, _| ()),
             nonzero: left.nonzero.intersect_with(&right.nonzero, &|_, _| ()),
+            members: left.members.intersect_with(&right.members, &|left, right| {
+                Rc::new(left.intersection(right).cloned().collect())
+            }),
         })),
     }
 }
@@ -724,6 +735,9 @@ impl<'a> Definedness<'a> {
             NodeKind::Literal(CheckedLiteral(Value::Boolean(false))) => {
                 (None, Some(Rc::clone(facts)))
             }
+            NodeKind::Contains(collection, value) => {
+                self.membership(condition.at(*collection), condition.at(*value), facts)
+            }
             NodeKind::Present(operand) => match self.stable_path(condition.at(*operand), facts) {
                 Some(path) => {
                     let mut when_true = Facts::clone(facts);
@@ -767,6 +781,135 @@ impl<'a> Definedness<'a> {
             }
             _ => (Some(Rc::clone(facts)), Some(Rc::clone(facts))),
         }
+    }
+
+    /// QSpec FR-146 "Membership facts": `contains(c, v)` for a stable
+    /// collection path `c` and a stable path `v` proves `contains(c, v)` and
+    /// `size(c) >= 1` on its true outcome; its false outcome proves nothing.
+    fn membership(
+        &self,
+        collection: CheckedNode<'_>,
+        value: CheckedNode<'_>,
+        facts: &Rc<Facts>,
+    ) -> Outcomes {
+        let unchanged = || Some(Rc::clone(facts));
+        let ValueType::Collection(collection_type) = collection.value_type() else {
+            return (unchanged(), unchanged());
+        };
+        let (Some(collection), Some(value)) = (
+            self.stable_path(collection, facts),
+            self.stable_path(value, facts),
+        ) else {
+            return (unchanged(), unchanged());
+        };
+        let size = Subject::Size(collection.clone());
+        let nonempty = facts
+            .intervals
+            .get(&size)
+            .map_or_else(|| cardinality(collection_type), Interval::of_proved)
+            .intersect(&Interval {
+                lower: End::Finite(Integer::one()),
+                upper: End::PositiveInfinity,
+            });
+        if nonempty.is_empty() {
+            return (None, unchanged());
+        }
+        let mut members = facts
+            .members
+            .get(&collection)
+            .map_or_else(BTreeSet::new, |members| BTreeSet::clone(members));
+        members.insert(value);
+        let mut when_true = Facts::clone(facts);
+        when_true.members.insert(collection, Rc::new(members));
+        when_true.intervals.insert(size, nonempty.proved());
+        (Some(Rc::new(when_true)), unchanged())
+    }
+
+    /// QSpec FR-146 "Calls, measures and definedness facts": the collection
+    /// parameter `argument` is a removal filter of, if it is one. A removal
+    /// filter is `filter(x in p: q)`, optionally the operand of a same-kind
+    /// collection conversion, of a parameter `p` with the membership fact
+    /// `contains(p, e)` for a stable path `e` in which `x` does not occur,
+    /// whose predicate `q` is `x != e`, `e != x` or `not (x = e)` (an element
+    /// type with no float leaf), or `not contains(d, x)` for a stable
+    /// collection path `d` that also holds such an `e`. The
+    /// `not bitIdentical(x, e)` shape over a float element type waits on the
+    /// kernel admitting float collection elements (IR-1320).
+    fn removal_filter(&self, argument: CheckedNode<'_>, facts: &Facts) -> Option<Slot> {
+        let mut filter = argument;
+        if let NodeKind::ConvertCollection { target, operand } = filter.kind() {
+            let operand = filter.at(*operand);
+            match operand.value_type() {
+                ValueType::Collection(source)
+                    if source.kind() == target.kind() && source.element() == target.element() =>
+                {
+                    filter = operand;
+                }
+                _ => return None,
+            }
+        }
+        let NodeKind::Query {
+            visit: Visit::Filter,
+            slot: binder,
+            source,
+            body,
+        } = filter.kind()
+        else {
+            return None;
+        };
+        let source = filter.at(*source);
+        let ValueType::Collection(collection) = source.value_type() else {
+            return None;
+        };
+        let path = self.stable_path(source, facts)?;
+        if !path.steps.is_empty() || path.root >= self.parameters {
+            return None;
+        }
+        let members = facts.members.get(&path)?;
+        let binder = *binder;
+        let is_binder =
+            |node: CheckedNode<'_>| matches!(node.kind(), NodeKind::Local(slot) if *slot == binder);
+        let is_member = |node: CheckedNode<'_>| {
+            self.stable_path(node, facts)
+                .is_some_and(|excluded| excluded.root != binder && members.contains(&excluded))
+        };
+        let removes = |left: CheckedNode<'_>, right: CheckedNode<'_>| {
+            (is_binder(left) && is_member(right)) || (is_binder(right) && is_member(left))
+        };
+        let element = collection.element();
+        // `holds_float` sees a float behind an option, collection or map but
+        // not inside a record or tuple field (that needs the type table). A
+        // record element with a float field is therefore not caught here; this
+        // gate depends on `check_equality_in` refusing such an operand as
+        // operator-ineligible before a `!=` over it reaches this point.
+        let exact = !holds_float(element);
+        let body = filter.at(*body);
+        let removal = match body.kind() {
+            NodeKind::Equality(EqualityOperator::NotEqual, _, left, right) => {
+                exact && removes(body.at(*left), body.at(*right))
+            }
+            NodeKind::Not(operand) => {
+                let negated = body.at(*operand);
+                match negated.kind() {
+                    NodeKind::Equality(EqualityOperator::Equal, _, left, right) => {
+                        exact && removes(negated.at(*left), negated.at(*right))
+                    }
+                    NodeKind::Contains(other, value) => {
+                        let other = negated.at(*other);
+                        is_binder(negated.at(*value))
+                            && matches!(other.value_type(), ValueType::Collection(d) if d.element() == element)
+                            && self
+                                .stable_path(other, facts)
+                                .filter(|other| other.root != binder)
+                                .and_then(|other| facts.members.get(&other))
+                                .is_some_and(|held| !held.is_disjoint(members))
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
+        removal.then_some(path.root)
     }
 
     /// QSpec FR-146 "Accepted proof forms": the rational stable path `x` of
@@ -815,6 +958,9 @@ impl<'a> Definedness<'a> {
         };
         if let Some(slot) = parameter(argument) {
             return ArgumentShape::Parameter(slot);
+        }
+        if let Some(slot) = self.removal_filter(argument, facts) {
+            return ArgumentShape::Shrunk(slot);
         }
         if let NodeKind::Arithmetic(Arithmetic::Subtract, left, right) = argument.kind() {
             if let (Some(slot), Some(decrement)) = (
@@ -1003,10 +1149,20 @@ impl<'a> Definedness<'a> {
                     _ => Err(Self::refuse(node, Obligation::Nonzero)),
                 }
             }
-            // A quantity carries no declared value interval and no guard form
-            // proves one nonzero.
-            NodeKind::Quantity(ArithmeticOperator::Divide, _, _) => {
-                Err(Self::refuse(node, Obligation::Nonzero))
+            // QSpec FR-146 "Accepted proof forms": a quantity carries no
+            // declared value interval and no guard form proves one nonzero, so
+            // only a quantity literal divisor of nonzero magnitude discharges
+            // the obligation. The quotient has the whole rational domain and
+            // carries no range obligation.
+            NodeKind::Quantity(ArithmeticOperator::Divide, _, right) => {
+                match node.at(*right).kind() {
+                    NodeKind::Literal(CheckedLiteral(Value::Quantity(divisor)))
+                        if !divisor.magnitude().is_zero() =>
+                    {
+                        Ok(())
+                    }
+                    _ => Err(Self::refuse(node, Obligation::Nonzero)),
+                }
             }
             NodeKind::Query {
                 visit: Visit::Sum,
