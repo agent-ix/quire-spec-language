@@ -375,33 +375,45 @@ fn recursive_predicate_cycles_with_decreasing_measures_admit_on_the_spine() {
     .expect("measured self and mutual predicate recursion admits");
 
     // A measure that does not decrease on the edge still refuses: the
-    // measure is checked, not merely accepted.
-    let unit = concat!(
-        "language \"ix:native\" edition \"1-draft\";\n",
-        "profile v = \"quire.value.complete/v1\";\n",
-        "predicate R using v(x: Int[0, 9]): Boolean decreases(x) { R(x) }\n",
-    );
-    let refusal = crate::support::front_end::emitted(
-        SourceIdentity::new("agent-ix", "test:tc-1308-undecreasing-measure"),
-        "undecreasing-predicate.native",
-        unit.as_bytes(),
-        &BTreeMap::new(),
-        &DependencyInput::default(),
-    )
-    .expect_err("a measure that does not decrease refuses");
-    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
-        panic!("an undecreasing measure refuses at check, got {refusal:?}");
-    };
-    assert!(
-        refusals.iter().any(|refusal| matches!(
-            &refusal.cause,
-            qsl_semantics::check::CheckCause::UnprovedDecrease {
-                obligation: qsl_semantics::check::MeasureObligation::Decrease,
-                ..
-            }
-        )),
-        "the undecreasing edge carries the decrease obligation: {refusals:?}"
-    );
+    // measure is checked, not merely accepted. Both the self cycle and the
+    // mutual cycle passing `x` unchanged refuse.
+    for (identity, declarations) in [
+        (
+            "test:tc-1308-undecreasing-measure",
+            "predicate R using v(x: Int[0, 9]): Boolean decreases(x) { R(x) }\n",
+        ),
+        (
+            "test:tc-1308-undecreasing-mutual-measure",
+            "predicate A using v(x: Int[0, 9]): Boolean decreases(x) { B(x) }\n\
+             predicate B using v(x: Int[0, 9]): Boolean decreases(x) { A(x) }\n",
+        ),
+    ] {
+        let unit = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\";\n{declarations}"
+        );
+        let refusal = crate::support::front_end::emitted(
+            SourceIdentity::new("agent-ix", identity),
+            "undecreasing-predicate.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+        )
+        .expect_err("a measure that does not decrease refuses");
+        let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+            panic!("an undecreasing measure refuses at check, got {refusal:?}");
+        };
+        assert!(
+            refusals.iter().any(|refusal| matches!(
+                &refusal.cause,
+                qsl_semantics::check::CheckCause::UnprovedDecrease {
+                    obligation: qsl_semantics::check::MeasureObligation::Decrease,
+                    ..
+                }
+            )),
+            "{identity}: the undecreasing edge carries the decrease obligation: {refusals:?}"
+        );
+    }
 }
 
 /// TC-1308 row 10: `D`'s divisor guarded by the QSpec FR-146 rational
@@ -471,6 +483,23 @@ fn guarded_predicate_division_admits_on_the_spine() {
         &DependencyInput::default(),
     )
     .expect("the false outcome of `x = rational(0, 1)` is a nonzero fact");
+
+    // The integer divisor in a rational-typed context (QSpec FR-147-AC-11):
+    // `x != 0` is the QSpec FR-146 integer nonzero fact.
+    let unit = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
+        "function F using v(x: Int[-10, 10]): Rational[-10, 10; 1, 10] pure { if x != 0 then 10 / x else rational(0, 1) }\n",
+        "predicate DI using v(x: Int[-10, 10]): Boolean { F(x) > rational(1, 1) }\n",
+    );
+    crate::support::front_end::emitted(
+        SourceIdentity::new("agent-ix", "test:tc-1308-guarded-integer-division"),
+        "guarded-division.native",
+        unit.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+    )
+    .expect("the guarded integer divisor carries its nonzero fact");
 }
 
 /// TC-1308 row 9/10: predicate call type errors and a partial divisor retain
@@ -610,6 +639,37 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
     assert!(
         span.contains("rational(10, 1) / x"),
         "refusal span is {span:?}"
+    );
+
+    // The integer divisor: an `Int[..]` operand of a rational `/` whose
+    // expected result type is rational (QSpec FR-147-AC-11) still needs its
+    // nonzero proof (QSpec FR-146), and the predicate calling it refuses too.
+    let (unit, result) = compile(
+        "test:tc-1308-unguarded-integer-division",
+        "function F using v(x: Int[-10, 10]): Rational[-10, 10; 1, 10] pure { 10 / x }\n\
+         predicate DI using v(x: Int[-10, 10]): Boolean { F(x) > rational(1, 1) }\n",
+    );
+    let refusal = result.expect_err("an unguarded integer divisor that may be zero refuses");
+    assert!(
+        refusal.causes().iter().any(|cause| {
+            cause.code.as_str() == "undefined_expression" && cause.cause == Some("unproved-nonzero")
+        }),
+        "the integer division refusal is unproved-nonzero: {refusal:?}"
+    );
+    let qsl_replay::spine::CompileRefusal::Check {
+        region: Some(region),
+        ..
+    } = refusal.as_ref()
+    else {
+        panic!("the integer division refusal identifies its span: {refusal:?}");
+    };
+    let start = usize::try_from(region.start()).unwrap();
+    let end = usize::try_from(region.end()).unwrap();
+    assert!(
+        unit.get(start..end)
+            .is_some_and(|span| span.contains("10 / x")),
+        "refusal span is {:?}",
+        unit.get(start..end)
     );
 
     let (non_boolean_unit, non_boolean) = compile(

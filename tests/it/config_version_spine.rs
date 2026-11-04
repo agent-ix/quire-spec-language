@@ -1117,9 +1117,16 @@ fn run_report_separates_check_evidence_from_replay_evidence() {
         "outcome".to_owned(),
         replayed["disposition"]["outcome"].clone(),
     );
+    let promoted = read(&promoted);
     assert!(
-        read(&promoted).is_err(),
-        "a check pass cannot stand for an unexecuted replay"
+        matches!(
+            promoted,
+            Err(qsl_replay::spine::NativeRunReadError::Invalid {
+                member: "disposition.refusal",
+                ..
+            })
+        ),
+        "a check pass cannot stand for an unexecuted replay: {promoted:?}"
     );
 }
 
