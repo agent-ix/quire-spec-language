@@ -44,6 +44,7 @@ mod child_composite;
 mod clock_places;
 mod control_node;
 mod converted_equality;
+mod decimal_constructors;
 mod deep_bodies;
 mod envelope_adoption;
 mod golden;

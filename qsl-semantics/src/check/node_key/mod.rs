@@ -13,7 +13,9 @@ use serde::Serialize;
 use crate::value::semantic_node::{NodeOwner, OwnerSubject};
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
-use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Timestamp, Uuid};
+use quire_exact::{
+    Decimal, Identifier, Integer, Rational, RoundingMode, TextProfile, Timestamp, Uuid,
+};
 use quire_semantic_value::absence::AbsenceMode;
 
 use crate::value::definition::DefinitionReference;
@@ -1524,6 +1526,9 @@ pub enum LiteralValue {
     Count(u64),
     /// `rational`: `"n/d"`, reduced, positive denominator.
     Rational(Rational),
+    /// `decimal`: the coefficient and scale as written, spelled with exactly
+    /// `scale` fractional digits (`"1.00"` for coefficient 100, scale 2).
+    Decimal(String),
     /// `float32_bits`: the eight lowercase hexadecimal binary32 bits.
     Float32Bits(u32),
     /// `float64_bits`: the sixteen lowercase hexadecimal binary64 bits.
@@ -1547,6 +1552,37 @@ pub enum LiteralValue {
     /// `enum`: the member's case identifier, the body of an enum member's
     /// QSpec `value`/`enum_value` node.
     Enum(String),
+}
+
+impl LiteralValue {
+    /// The `decimal` spelling of `value`: its coefficient with the decimal
+    /// point placed `scale` digits from the right, so the retained scale
+    /// is the count of fractional digits (`"1.25"`, `"0.05"`, `"10"`,
+    /// `"-0.5"`).
+    #[must_use]
+    pub fn decimal(value: &Decimal) -> Self {
+        let representation = value.representation();
+        let coefficient = representation.coefficient().to_string();
+        let (sign, digits) = coefficient
+            .strip_prefix('-')
+            .map_or(("", coefficient.as_str()), |digits| ("-", digits));
+        let scale = usize::try_from(representation.scale()).unwrap_or(usize::MAX);
+        if scale == 0 {
+            return Self::Decimal(format!("{sign}{digits}"));
+        }
+        let mut text = String::from(sign);
+        if digits.len() > scale {
+            let (whole, fractional) = digits.split_at(digits.len() - scale);
+            text.push_str(whole);
+            text.push('.');
+            text.push_str(fractional);
+        } else {
+            text.push_str("0.");
+            text.push_str(&"0".repeat(scale - digits.len()));
+            text.push_str(digits);
+        }
+        Self::Decimal(text)
+    }
 }
 
 /// The schema's closed application `operator` vocabulary.

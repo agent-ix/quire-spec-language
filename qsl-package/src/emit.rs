@@ -1708,6 +1708,7 @@ fn literal_value(value: &LiteralValue) -> (LiteralKind, serde_json::Value) {
         LiteralValue::Integer(value) => (LiteralKind::Integer, json!(value.to_string())),
         LiteralValue::Count(value) => (LiteralKind::Integer, json!(value)),
         LiteralValue::Rational(value) => (LiteralKind::Rational, json!(rational(value))),
+        LiteralValue::Decimal(value) => (LiteralKind::Decimal, json!(value)),
         LiteralValue::Float32Bits(value) => {
             (LiteralKind::Float32Bits, json!(format!("{value:08x}")))
         }

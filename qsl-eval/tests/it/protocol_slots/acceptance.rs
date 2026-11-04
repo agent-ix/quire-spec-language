@@ -976,10 +976,13 @@ fn observation_authority_is_bound_to_one_checked_package_instance() {
 
 fn completed(result: ProtocolSlotEvaluation) -> Value {
     match result {
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)),
-            ..
-        }) => value,
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)),
+                ..
+            },
+            _,
+        ) => value,
         other => panic!("expected completed slot value, got {other:?}"),
     }
 }
@@ -1258,10 +1261,13 @@ fn retry_supply(package: &CheckedPackage, first: i64) -> ProtocolSupply<'static>
 
 fn assert_incomplete(result: ProtocolSlotEvaluation, counter: LimitKind) {
     match result {
-        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
-            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(record)),
-            ..
-        }) => assert_eq!(
+        ProtocolSlotEvaluation::Evaluated(
+            quire_eval::Evaluation {
+                outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(record)),
+                ..
+            },
+            _,
+        ) => assert_eq!(
             record.limit_kind, counter,
             "the denied counter is retained and no completed value is returned"
         ),
@@ -2421,6 +2427,7 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         binder: reader_binder,
         cause: reader_cause,
         location,
+        ..
     } = unavailable
     else {
         panic!("reader-backed unavailable source must halt at its read: {unavailable:?}");
@@ -2450,6 +2457,7 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         binder: checked_binder,
         cause: checked_cause,
         location: checked_location,
+        ..
     } = checked_unavailable
     else {
         panic!("the checked view halts at the unavailable read");
@@ -2849,14 +2857,23 @@ fn read_checked_package_with_model_document<'p>(
 /// A call result with its location removed. A reader-backed read of a leaf
 /// carries no location (the admitted wire has none for a leaf, and a reader
 /// view never takes one from the source package), so parity is compared on
-/// everything else: outcome, value, binder, cause and losses.
+/// everything else: outcome, value, binder, cause, losses and the per-binder
+/// charge log (FR-520-AC-9).
 fn without_location(result: &Result<ProtocolSlotEvaluation, CallFailure>) -> String {
     match result {
-        Ok(ProtocolSlotEvaluation::Evaluated(evaluation)) => {
-            format!("{:?} {:?}", evaluation.outcome, evaluation.losses)
+        Ok(ProtocolSlotEvaluation::Evaluated(evaluation, charges)) => {
+            format!(
+                "{:?} {:?} {charges:?}",
+                evaluation.outcome, evaluation.losses
+            )
         }
-        Ok(ProtocolSlotEvaluation::Unavailable { binder, cause, .. }) => {
-            format!("unavailable {binder:?} {cause:?}")
+        Ok(ProtocolSlotEvaluation::Unavailable {
+            binder,
+            cause,
+            charges,
+            ..
+        }) => {
+            format!("unavailable {binder:?} {cause:?} {charges:?}")
         }
         other => format!("{other:?}"),
     }
@@ -2885,7 +2902,7 @@ fn assert_location_parity(
 /// TC-1073: compares the explicit supported TC-1070 root list between the
 /// in-process view and the strict-reader view.
 #[test]
-#[trace("TC-142", "TC-1073", "FR-049-AC-9")]
+#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-520-AC-9")]
 fn reader_backed_tc1070_slots_match_the_checked_view_for_supported_roots() {
     let (package, model_view) = fixture_with_view();
     let read = read_checked_package(&package);
@@ -2918,7 +2935,7 @@ fn reader_backed_tc1070_slots_match_the_checked_view_for_supported_roots() {
         let mut checked_meter = Meter::new(UNLIMITED);
         let checked =
             package.evaluate_protocol_slot(&selected, &checked_supply, &mut checked_meter);
-        let ProtocolSlotEvaluation::Evaluated(ref checked_evaluation) = *checked
+        let ProtocolSlotEvaluation::Evaluated(ref checked_evaluation, _) = *checked
             .as_ref()
             .unwrap_or_else(|failure| panic!("{label}: checked view: {failure:?}"))
         else {
@@ -4550,7 +4567,7 @@ fn unrelated_incomplete_population_does_not_change_a_successful_slot() {
                 &mut meter,
             );
             assert!(
-                matches!(result, Ok(ProtocolSlotEvaluation::Evaluated(_))),
+                matches!(result, Ok(ProtocolSlotEvaluation::Evaluated(_, _))),
                 "the selected capture evaluates: {result:?}"
             );
             (without_location(&result), meter.admitted_charges().to_vec())
