@@ -580,6 +580,10 @@ pub enum UnavailabilityCause {
     TimedFormShape {
         /// The source span of the unsupported form.
         span: qsl_foundation::Span,
+        /// The selected claim's checked-package `{declaration, occurrence}`
+        /// (FR-498); `None` for a claim checked outside an assembled
+        /// package, which keeps the span as its locus.
+        claim: Option<qsl_foundation::source::provenance::OccurrenceKey>,
     },
     /// ADR-020 AX-5: a refinement with a hidden abstract field and a
     /// non-empty `F_A` has no liveness half to decide. Wire cause
