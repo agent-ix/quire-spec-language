@@ -155,6 +155,7 @@ pub use refinement::{
     RefinementClass, RefusalCause, RunClassification,
 };
 mod native_result;
+pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{
     read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
     CallOriginRead, ClauseRunRecord, ClosureRead, CommandErrorRecord, CounterexampleRead,

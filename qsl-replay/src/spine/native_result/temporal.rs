@@ -137,9 +137,10 @@ pub(super) enum TemporalWire {
     },
 }
 
-#[derive(Serialize)]
+/// FR-501's indeterminate reason as the result report spells it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
-pub(super) enum ReasonWire {
+pub(crate) enum ReasonWire {
     MissingValuation {
         position: u64,
         atom: String,
@@ -239,13 +240,7 @@ fn fairness_wire(
 
 /// The undefined value's FR-100 reason.
 fn undefined_reason(cause: &TemporalUndefinedCause) -> &'static str {
-    match cause {
-        TemporalUndefinedCause::Kernel(undefined) => {
-            crate::spine::kernel_undefined_reason(undefined.clone())
-        }
-        TemporalUndefinedCause::Family(record) => record.reason.as_str(),
-        TemporalUndefinedCause::InsufficientData { .. } => INSUFFICIENT_DATA,
-    }
+    cause.reason()
 }
 
 fn counterexample_wire(
@@ -426,18 +421,80 @@ fn positioned(variant: &'static str, position: u64) -> TemporalWire {
     }
 }
 
+impl From<&TemporalIndeterminateReason> for ReasonWire {
+    fn from(reason: &TemporalIndeterminateReason) -> Self {
+        match reason {
+            TemporalIndeterminateReason::MissingValuation {
+                position,
+                atom,
+                instance,
+                also_held_by,
+            } => Self::MissingValuation {
+                position: *position,
+                atom: atom.clone(),
+                instance: instance.clone(),
+                also_held_by: instance.as_ref().map(|_| also_held_by.clone()),
+            },
+            TemporalIndeterminateReason::ConflictingValuation { position, atom } => {
+                Self::ConflictingValuation {
+                    position: *position,
+                    atom: atom.clone(),
+                }
+            }
+            TemporalIndeterminateReason::IncompleteInput => Self::IncompleteInput,
+            TemporalIndeterminateReason::MissingHistory => Self::MissingHistory,
+            TemporalIndeterminateReason::StraddlesBound => Self::StraddlesBound,
+        }
+    }
+}
+
+/// The counterexample at `at` the report holds, in its wire spelling.
+fn checked_counterexample(
+    counterexample: Option<&ObservedTemporalCounterexample>,
+    at: u64,
+    reason: Option<&'static str>,
+) -> Result<CounterexampleWire, NativeRunResultError> {
+    let counterexample = counterexample.ok_or(NativeRunResultError::Counterexample)?;
+    if counterexample.trace_position.index() != at {
+        return Err(NativeRunResultError::Counterexample);
+    }
+    counterexample_wire(counterexample, reason)
+}
+
+/// FR-283's `counterexample` of a violation or an undefined evaluation, as
+/// a JSON value in the one wire spelling; `None` for every other verdict.
+pub(super) fn item_counterexample(
+    verdict: &TemporalVerdict,
+    counterexample: Option<&ObservedTemporalCounterexample>,
+) -> Result<Option<serde_json::Value>, NativeRunResultError> {
+    let (at, reason) = match verdict {
+        TemporalVerdict::Violated { at } => (*at, None),
+        TemporalVerdict::Undefined {
+            cause: TemporalUndefinedCause::InsufficientData { .. },
+            ..
+        } => return Ok(None),
+        TemporalVerdict::Undefined { at, cause } => (*at, Some(undefined_reason(cause))),
+        TemporalVerdict::Holds
+        | TemporalVerdict::Pending
+        | TemporalVerdict::PendingWindow { .. }
+        | TemporalVerdict::PendingNextEvent { .. }
+        | TemporalVerdict::Indeterminate { .. }
+        | TemporalVerdict::MissingFairnessPremise { .. }
+        | TemporalVerdict::Incomplete(_)
+        | TemporalVerdict::ActivationIncomplete { .. }
+        | TemporalVerdict::WindowLimitReached { .. }
+        | TemporalVerdict::ProgressLimitReached(_) => return Ok(None),
+    };
+    let wire = checked_counterexample(counterexample, at, reason)?;
+    Ok(Some(serde_json::to_value(wire)?))
+}
+
 /// The `temporal` member and `outcome` of a verdict's table row.
 pub(super) fn verdict_wire(
     verdict: &TemporalVerdict,
     counterexample: Option<&ObservedTemporalCounterexample>,
 ) -> Result<(TemporalWire, Option<Outcome>), NativeRunResultError> {
-    let checked = |at: u64, reason| {
-        let counterexample = counterexample.ok_or(NativeRunResultError::Counterexample)?;
-        if counterexample.trace_position.index() != at {
-            return Err(NativeRunResultError::Counterexample);
-        }
-        counterexample_wire(counterexample, reason)
-    };
+    let checked = |at: u64, reason| checked_counterexample(counterexample, at, reason);
     Ok(match verdict {
         TemporalVerdict::Holds => (TemporalWire::Holds, None),
         TemporalVerdict::Violated { at } => (
@@ -484,28 +541,7 @@ pub(super) fn verdict_wire(
         TemporalVerdict::Indeterminate { at, reason } => (
             TemporalWire::Indeterminate {
                 position: *at,
-                reason: match reason {
-                    TemporalIndeterminateReason::MissingValuation {
-                        position,
-                        atom,
-                        instance,
-                        also_held_by,
-                    } => ReasonWire::MissingValuation {
-                        position: *position,
-                        atom: atom.clone(),
-                        instance: instance.clone(),
-                        also_held_by: instance.as_ref().map(|_| also_held_by.clone()),
-                    },
-                    TemporalIndeterminateReason::ConflictingValuation { position, atom } => {
-                        ReasonWire::ConflictingValuation {
-                            position: *position,
-                            atom: atom.clone(),
-                        }
-                    }
-                    TemporalIndeterminateReason::IncompleteInput => ReasonWire::IncompleteInput,
-                    TemporalIndeterminateReason::MissingHistory => ReasonWire::MissingHistory,
-                    TemporalIndeterminateReason::StraddlesBound => ReasonWire::StraddlesBound,
-                },
+                reason: ReasonWire::from(reason),
             },
             None,
         ),
