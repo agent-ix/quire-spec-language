@@ -149,10 +149,11 @@ truth plan SHALL walk it as the atom it is.
 
 This does not run on a package route today, and no package route has ever raised a cause
 for it: QSL emits the node (FR-337-AC-15), QSpec FR-370 catalogues it and the Contract IR
-reader QSL locks admits it. The evaluator plans the node as an atom on every route and
+reader QSL locks admits it. The in-process evaluator plans the node as an atom and
 evaluates it from the observation owner's per-position samples, but the package subject
 view does not yet read the node's argument and the evidence request carries no
-`aggregate_samples`, so no package carrying it is evaluated. The criteria for aggregate
+`aggregate_samples`, so a package route over a clause with the node is refused
+`clause-root-unresolved` and evaluates nothing. The criteria for aggregate
 atoms (FR-532-AC-11, FR-516-AC-47 to AC-50) are gated on those two.
 
 ### The package identity of a progress binding and a result

@@ -528,7 +528,8 @@ enum IntervalKey {
 }
 
 /// The operation identity of `node` and its interval, `None` for a node the
-/// package route does not read.
+/// package route does not read (a window aggregate: its samples are not a
+/// request member yet).
 fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>)> {
     use qsl_foundation::bound::TemporalUpper;
     use qsl_semantics::check::{BinaryTemporal, CheckedInterval, UnaryTemporal};
@@ -586,7 +587,7 @@ fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>
             },
             key(interval),
         ),
-        FormulaNode::Aggregate { .. } => ("quire.op.temporal.aggregate", None),
+        FormulaNode::Aggregate { .. } => return None,
     })
 }
 
@@ -672,8 +673,21 @@ fn same_formula(graph: &[FormulaNodeUse<'_>], formula: &CheckedFormula) -> bool 
 
 #[cfg(test)]
 mod tests {
-    use super::finite_window_profile;
-    use qsl_semantics::check::TemporalProfile;
+    use super::{finite_window_profile, operation_of};
+    use qsl_foundation::source::Span;
+    use qsl_semantics::check::{FormulaNode, TemporalProfile};
+
+    /// FR-516 "Window aggregate atoms": the package cross-check reads no
+    /// aggregate node, so `same_formula` never takes it for a `holds` atom.
+    #[test]
+    fn an_aggregate_node_has_no_package_operation() {
+        let span = Span { start: 0, end: 1 };
+        assert_eq!(operation_of(&FormulaNode::Aggregate { span }), None);
+        assert_eq!(
+            operation_of(&FormulaNode::Holds { span }).map(|(identity, _)| identity),
+            Some("quire.op.temporal.holds")
+        );
+    }
 
     /// FR-532 `profile`, FR-531-AC-6: the closed table of the finite-window
     /// profile identities and the infinite-trace profile; any other identity
