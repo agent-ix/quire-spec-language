@@ -210,3 +210,6 @@ families".
 - The node-to-family reader that AC-7, AC-8 and AC-11 require, which reads an
   item's family from the claim node's tag, `semantic_form` and occurrence role
   through QSpec FR-290's table, is `qsl-analyze`'s `claim_family`.
+  Remaining work: QSL-1702 (the adapters that still hardcode a family),
+  QSL-1714 (the Boolean clause on an `expression` node) and QSL-1715 (the
+  relation's one shared `claim` occurrence).

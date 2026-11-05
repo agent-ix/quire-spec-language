@@ -75,6 +75,37 @@ fn settle(
     }
 }
 
+/// Settle one probe item per `(kind, item_kind, claim)` of `requests` in a
+/// single `analyze_items` call, the item at position `n` at request index
+/// `n`; the settlements come back in caller order.
+fn settle_many(
+    package: &CheckedPackage,
+    requests: &[(Capability, ItemKind, &OccurrenceKey)],
+) -> Vec<Settled> {
+    let ran: Vec<Cell<bool>> = requests.iter().map(|_| Cell::new(false)).collect();
+    let items = requests
+        .iter()
+        .zip(&ran)
+        .enumerate()
+        .map(|(index, ((kind, item_kind, claim), ran))| {
+            AnalyzeItem::probe(RequestIndex::new(index), *kind, PROBE, ran)
+                .at_claim(package, *item_kind, claim)
+        })
+        .collect();
+    let mut engines = Engines::default();
+    engines.with(Engine::probe(PROBE)).expect("one engine");
+    let records = analyze_items(&engines, items, &Cancel::new());
+    assert_eq!(records.len(), requests.len(), "one record per item");
+    records
+        .into_iter()
+        .zip(&ran)
+        .map(|(record, ran)| Settled {
+            record,
+            ran: ran.get(),
+        })
+        .collect()
+}
+
 /// The item ran on the probe engine: its record is the engine's, naming the
 /// engine's `BackendId` (`settled_by` is the engine's result).
 fn assert_engine_settled(settled: &Settled, index: usize) {
@@ -186,6 +217,11 @@ fn claims_world() -> World {
 
 /// The relation's model claim and its code claim: two occurrences of its one
 /// `claim`/`step_relation` node.
+///
+/// QSpec FR-477 and FR-507-AC-7 put both claims on one `claim` occurrence,
+/// told apart by kind; the producer writes the code claim on its own
+/// occurrence until QSL-1715 lands, so the callers assert only that both name
+/// the one node.
 fn relation_claims(package: &CheckedPackage) -> (OccurrenceKey, OccurrenceKey) {
     let graph = package.graph();
     let [relation] = graph.step_relations() else {
@@ -236,54 +272,33 @@ fn refinement_claims(
 fn a_bound_relations_model_and_code_claims_are_read_as_relation_claims() {
     let world = claims_world();
     let (model, code) = relation_claims(&world.package);
-    assert_ne!(model, code, "two claims of one node");
     assert_eq!(model.node(), code.node());
     let relation = DeclarationFamily::RelationClaim;
 
-    let model_item = settle(
+    // All six items in one request, in caller order.
+    let settled = settle_many(
         &world.package,
-        0,
-        Capability::TemporalSatisfaction,
-        ItemKind::Formula,
-        &model,
+        &[
+            (Capability::TemporalSatisfaction, ItemKind::Formula, &model),
+            (Capability::OperationContract, ItemKind::Formula, &code),
+            (Capability::GlobalConformance, ItemKind::Formula, &model),
+            (Capability::Schedulability, ItemKind::Formula, &model),
+            (Capability::GlobalConformance, ItemKind::Formula, &code),
+            (Capability::Schedulability, ItemKind::Formula, &code),
+        ],
     );
-    let code_item = settle(
-        &world.package,
-        1,
-        Capability::OperationContract,
-        ItemKind::Formula,
-        &code,
-    );
-    assert_engine_settled(&model_item, 0);
-    assert_engine_settled(&code_item, 1);
-
+    assert_engine_settled(&settled[0], 0);
+    assert_engine_settled(&settled[1], 1);
     for claim in [&model, &code] {
         assert_eq!(
             claim_family(&world.package, ItemKind::Formula, claim),
             Some(relation)
         );
-        let global = settle(
-            &world.package,
-            2,
-            Capability::GlobalConformance,
-            ItemKind::Formula,
-            claim,
-        );
-        assert_inapplicable(&global, 2, Capability::GlobalConformance, Some(relation));
-        let schedulability = settle(
-            &world.package,
-            3,
-            Capability::Schedulability,
-            ItemKind::Formula,
-            claim,
-        );
-        assert_inapplicable(
-            &schedulability,
-            3,
-            Capability::Schedulability,
-            Some(relation),
-        );
     }
+    assert_inapplicable(&settled[2], 2, Capability::GlobalConformance, Some(relation));
+    assert_inapplicable(&settled[3], 3, Capability::Schedulability, Some(relation));
+    assert_inapplicable(&settled[4], 4, Capability::GlobalConformance, Some(relation));
+    assert_inapplicable(&settled[5], 5, Capability::Schedulability, Some(relation));
 }
 
 /// The code claim of the bound relation runs on the real
@@ -366,22 +381,23 @@ fn a_proof_eligible_refinements_four_occurrences_are_relation_claims() {
             .map(|claim| (claim, Capability::OperationContract)),
     );
     assert_eq!(items.len(), 4);
-    for (position, (claim, kind)) in items.iter().enumerate() {
-        let settled = settle(package, position, *kind, ItemKind::Formula, claim);
-        assert_engine_settled(&settled, position);
-        let schedulability = settle(
-            package,
-            position,
-            Capability::Schedulability,
-            ItemKind::Formula,
-            claim,
-        );
-        assert_inapplicable(
-            &schedulability,
-            position,
-            Capability::Schedulability,
-            Some(relation),
-        );
+    // The four items, then `schedulability` on each, in one request.
+    let requests: Vec<_> = items
+        .iter()
+        .map(|(claim, kind)| (*kind, ItemKind::Formula, claim))
+        .chain(
+            items
+                .iter()
+                .map(|(claim, _)| (Capability::Schedulability, ItemKind::Formula, claim)),
+        )
+        .collect();
+    let settled = settle_many(package, &requests);
+    for (position, settled) in settled.iter().enumerate() {
+        if position < 4 {
+            assert_engine_settled(settled, position);
+        } else {
+            assert_inapplicable(settled, position, Capability::Schedulability, Some(relation));
+        }
     }
 }
 
@@ -467,20 +483,22 @@ fn derived_items_take_temporal_trace_from_their_item_kind_on_any_anchor() {
     assert_engine_settled(&own, 3);
 }
 
-/// FR-507-AC-11: every claim form of "QSL claim forms and their families"
-/// that requires a kind is read from its node, tag, `semantic_form` and
-/// occurrence role.
-#[trace("TC-1302", "FR-507-AC-11")]
-#[test]
-fn each_claim_form_is_read_from_its_node_tag_form_and_role() {
-    use DeclarationFamily::{RelationClaim, StateModel, TemporalTrace, Value};
-
-    // `value`: a Boolean value clause at roles `claim` and `declaration`,
-    // and a scalar operation application in a `Value` function body.
-    let package = crate::value_validity::package_of(
+/// The package of a `Value` function with a Boolean result and a scalar
+/// operation application in its body.
+fn value_package() -> CheckedPackage {
+    crate::value_validity::package_of(
         "function f using v(x: Integer): Integer pure { x }\n\
          function subject using v(x: Integer): Boolean pure { f(x) + 1 > x }\n",
-    );
+    )
+}
+
+/// A Boolean value clause is read as `value` on the function node, at roles
+/// `claim` and `declaration`: the interim carrier the producer writes today.
+/// QSpec FR-290 and FR-484 put the clause on a Boolean `expression` node, so
+/// this is not FR-507-AC-11's form. Remaining work: QSL-1714.
+#[test]
+fn a_boolean_value_clause_is_read_on_its_function_node() {
+    let package = value_package();
     let function = package
         .graph()
         .callable("subject")
@@ -491,9 +509,65 @@ fn each_claim_form_is_read_from_its_node_tag_form_and_role() {
             &package,
             &at(&function, role, 0),
             Capability::ValueValidity,
-            Value,
+            DeclarationFamily::Value,
         );
     }
+}
+
+/// FR-507-AC-9 evidence for the reader's remaining rows: an `item_kind` of
+/// `refinement` is a `relation-claim` whatever node it names, and the
+/// `operation_anchor` and `state_clause` rows answer only at their own roles.
+#[test]
+fn item_kind_and_occurrence_role_decide_the_family() {
+    let world = claims_world();
+    let package = &world.package;
+    let temporal = at(&node(package, "state_graph"), "claim", 0);
+    assert_eq!(
+        claim_family(package, ItemKind::Formula, &temporal),
+        Some(DeclarationFamily::TemporalTrace)
+    );
+    assert_eq!(
+        claim_family(package, ItemKind::Refinement, &temporal),
+        Some(DeclarationFamily::RelationClaim)
+    );
+
+    let anchor = node(package, "operation_anchor");
+    assert_eq!(
+        claim_family(package, ItemKind::Formula, &at(&anchor, "anchor", 0)),
+        Some(DeclarationFamily::StateModel)
+    );
+    assert_eq!(
+        claim_family(package, ItemKind::Formula, &at(&anchor, "claim", 0)),
+        None
+    );
+
+    let clause = node(package, "state_clause");
+    assert_eq!(
+        claim_family(package, ItemKind::Formula, &at(&clause, "claim", 0)),
+        Some(DeclarationFamily::StateModel)
+    );
+    assert_eq!(
+        claim_family(package, ItemKind::Formula, &at(&clause, "anchor", 0)),
+        None
+    );
+}
+
+/// FR-507-AC-11: every claim form of "QSL claim forms and their families"
+/// that requires a kind is read from its node, tag, `semantic_form` and
+/// occurrence role, except the Boolean value clause, which
+/// `a_boolean_value_clause_is_read_on_its_function_node` covers.
+#[trace("TC-1302", "FR-507-AC-11")]
+#[test]
+fn each_claim_form_is_read_from_its_node_tag_form_and_role() {
+    use DeclarationFamily::{RelationClaim, StateModel, TemporalTrace, Value};
+
+    // `value`: a scalar operation application in a `Value` function body.
+    let package = value_package();
+    let function = package
+        .graph()
+        .callable("subject")
+        .expect("subject is callable")
+        .identity;
     let scalar = package
         .graph()
         .requirements()

@@ -35,6 +35,9 @@ num-bigint = "0.4.8"
 num-integer = "0.1.47"
 num-traits = "0.2.19"
 thiserror = "2.0.20"
+# ADR-012 section 9: the `#[string_edge]` marker `claim_family` decodes wire
+# words at, and the trace tags of the tests.
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 # `Por::visible` and `Por::candidate_seeded_by` let a test read the visibility
 # and the candidate that `Por::ample` decides on. Only the dev-dependency on
@@ -47,7 +50,6 @@ qsl-analyze = { path = ".", features = ["test-support"] }
 # FR-237's timed replay core (`replay_timed_counterexample`), driven by the
 # zone replay tests until S4 writes timed members (QSL-580).
 qsl-replay = { path = "../qsl-replay", features = ["test-support"] }
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # The model-check tests compile a modelled unit through S1 to S4 and check
 # its temporal clauses with `qsl-semantics`' test-only `check_clauses`.
 qsl-cst = { path = "../qsl-cst" }
