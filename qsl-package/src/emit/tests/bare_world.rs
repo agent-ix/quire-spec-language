@@ -33,11 +33,11 @@ fn ieee_flags(package: &CheckedPackage) -> (bool, bool) {
     (world.has_ieee_profile(), selected)
 }
 
-/// FR-533-AC-1: a package whose lock selects the IEEE profile law has the
+/// FR-533 "What the bare view reads": a package whose lock selects the IEEE profile law has the
 /// profile in its bytes-route world, and one whose lock does not has none, so
 /// a float conversion on the bytes route is not refused as an unresolved
 /// profile.
-#[trace("FR-533-AC-1", "TC-1333")]
+#[trace("TC-1333")]
 #[test]
 fn the_bare_world_holds_the_ieee_profile_exactly_when_the_lock_selects_it() {
     assert_eq!(

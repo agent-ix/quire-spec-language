@@ -617,7 +617,7 @@ impl<'wire> WireIndex<'wire> {
         }
     }
 
-    /// The first equality-witness refusal, by [`UnsupportedReason::rank`], of
+    /// The equality-witness refusal of
     /// the equality applications reachable from `root`, whatever the walk
     /// reached first (FR-390-AC-67: `Package` before `Node`).
     fn equality_refusal(&self, root: &CheckedNodeId) -> Option<EqualityWitnessRefusal> {
@@ -639,11 +639,10 @@ impl<'wire> WireIndex<'wire> {
                 continue;
             }
             if let Err(BuildError::Equality(refusal)) = self.equality_decision(self.admitted, &id) {
-                let rank =
-                    |refusal: EqualityWitnessRefusal| UnsupportedReason::from(refusal).rank();
-                if first.is_none_or(|held| rank(refusal) < rank(held)) {
-                    first = Some(refusal);
-                }
+                // One supply gives one reason: Missing (no rows) and Foreign
+                // (another package's rows) hold for every application, and a
+                // present supply can only fail as Unknown.
+                first.get_or_insert(refusal);
             }
         }
         first
