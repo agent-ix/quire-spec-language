@@ -909,7 +909,7 @@ fn a_holds_condition_is_typed_over_the_over_parameter() {
 /// steps, here under `model-steps` with infinite-trace and event-position,
 /// refuses `ill_typed`/`type-mismatch` at the interval, rather than being
 /// checked as a step interval or dropped.
-#[trace("TC-1078")]
+#[trace("TC-1078", "TC-688", "FR-233-AC-2")]
 #[test]
 fn a_timed_interval_under_a_step_count_refuses_type_mismatch_at_the_interval() {
     let formula = "eventually[0 ms, 3 ms) holds(c.level = 3)";

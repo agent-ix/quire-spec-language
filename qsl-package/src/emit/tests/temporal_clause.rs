@@ -1017,12 +1017,18 @@ fn root_interval(wire: &Value) -> Value {
 /// strong previous, emits `quire.op.temporal.once` with `{lower: "1",
 /// upper: "1"}`; under infinite-trace `eventually[3,*]` emits `{lower: "3",
 /// upper: null}`. Each package is admitted by QSL's I2 read.
-#[trace("TC-524")]
+#[trace("TC-524", "FR-337-AC-24")]
 #[test]
 fn each_interval_form_emits_its_temporal_interval_member() {
     let cases = [
         (
             EVENT,
+            "eventually[0,5] holds(c.versionNumber = 2)",
+            "quire.op.temporal.eventually",
+            json!({"lower": "0", "upper": "5"}),
+        ),
+        (
+            "quire.temporal.timestamped-event.finite-window/v1",
             "eventually[0,5] holds(c.versionNumber = 2)",
             "quire.op.temporal.eventually",
             json!({"lower": "0", "upper": "5"}),

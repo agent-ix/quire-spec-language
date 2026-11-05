@@ -839,6 +839,7 @@ mod tick_interval_tests {
     /// FR-337-AC-24: a step interval is written as the FR-370 step interval;
     /// a timed interval in a finite-window clause, integral and closed or
     /// not, is a fault, not a rational timed member.
+    #[ix_trace_rs::trace("TC-524", "FR-337-AC-24")]
     #[test]
     fn a_tick_interval_is_a_step_interval_and_a_timed_one_is_a_fault() {
         let step = qsl_foundation::bound::TemporalInterval::new(

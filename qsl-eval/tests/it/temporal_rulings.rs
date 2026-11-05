@@ -1304,7 +1304,10 @@ fn a_timed_interval_has_no_tick_reach_and_a_finite_window_interval_is_one() {
     // A finite-window clause measures ticks.
     let window = env("on origin", "eventually[2, 5] holds(p)");
     let work = ClauseWork::of(window.fixture.clause.formula()).expect("a tick reach");
-    assert_eq!(work.history_span, 5);
+    assert_eq!(
+        (work.history_span, work.future_reach, work.formula_nodes),
+        (5, 5, 2)
+    );
 }
 
 #[trace("FR-516-AC-2", "TC-1311")]

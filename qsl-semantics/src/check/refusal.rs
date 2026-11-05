@@ -1695,6 +1695,13 @@ pub enum TemporalCause {
         /// The interval's span.
         span: Span,
     },
+    /// A timed interval in a hyper clause under the timed profile, which has
+    /// no timed reading yet (FR-488-AC-18): refused rather than checked.
+    /// `unsupported_construct`/`not-yet-implemented` at the interval.
+    TimedIntervalNotChecked {
+        /// The interval's span.
+        span: Span,
+    },
     /// A clause whose checked parts all hold, but that no S4 emission
     /// writes yet (FR-337): refused rather than compiled and silently
     /// missing from the emitted package.
@@ -2058,6 +2065,7 @@ impl TemporalCause {
             | Self::AggregateWindowKindMismatch { span }
             | Self::AggregateProfileUnsupported { span }
             | Self::TimedIntervalUnderStepCount { span }
+            | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
             | Self::ProtocolFairnessNotEmitted { span, .. }
             | Self::InvalidTimedInterval { span, .. }
@@ -2132,6 +2140,7 @@ impl TemporalCause {
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
             | Self::AggregateModelSubject { .. }
+            | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
@@ -2227,7 +2236,8 @@ impl TemporalCause {
             | Self::UnknownReleaseTask { .. }
             | Self::UnresolvedReleaseOperation { .. } => "missing-name",
             Self::AmbiguousReleaseOperation { .. } => "ambiguous-name",
-            Self::NotEmitted { .. }
+            Self::TimedIntervalNotChecked { .. }
+            | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
             | Self::TimedTraceSubject { .. }

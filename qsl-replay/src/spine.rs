@@ -1628,6 +1628,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")
                 }
+                TemporalCause::TimedIntervalNotChecked { .. } => {
+                    format!("{message}: a timed interval in a hyper clause is not checked yet")
+                }
                 TemporalCause::TimedIntervalUnderStepCount { .. } => {
                     format!("{message}: a timed interval where the clause counts steps or ticks")
                 }

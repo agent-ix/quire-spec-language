@@ -1078,12 +1078,12 @@ pub(crate) fn checked_operators(
                     Err(timed::IntervalFailure::Stop(failure)) => return Err(failure),
                 }
             }
-            (
-                Some(OperatorInterval::Timed(timed)),
-                true,
-                IntervalReading::Steps { .. } | IntervalReading::TimedUnread,
-            ) => {
+            (Some(OperatorInterval::Timed(timed)), true, IntervalReading::Steps { .. }) => {
                 refusals.push(TemporalCause::TimedIntervalUnderStepCount { span: timed.span });
+                None
+            }
+            (Some(OperatorInterval::Timed(timed)), true, IntervalReading::TimedUnread) => {
+                refusals.push(TemporalCause::TimedIntervalNotChecked { span: timed.span });
                 None
             }
             (
