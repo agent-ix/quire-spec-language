@@ -286,6 +286,33 @@ fn decisive_aggregate(
                         _ => None,
                     }
                 }
+                FormulaNode::Or(left, right) => {
+                    let left_node = formula.nodes().get(left.index())?;
+                    let right_node = formula.nodes().get(right.index())?;
+                    match (left_node, right_node) {
+                        (FormulaNode::Aggregate { .. }, FormulaNode::Holds { .. }) => {
+                            first_false_disjunct_aggregate(
+                                atom_values,
+                                *left,
+                                *right,
+                                true,
+                                start,
+                                end,
+                            )
+                        }
+                        (FormulaNode::Holds { .. }, FormulaNode::Aggregate { .. }) => {
+                            first_false_disjunct_aggregate(
+                                atom_values,
+                                *right,
+                                *left,
+                                false,
+                                start,
+                                end,
+                            )
+                        }
+                        _ => None,
+                    }
+                }
                 _ => None,
             }
         }
@@ -344,6 +371,41 @@ fn first_false_conjunct_aggregate(
     None
 }
 
+fn first_false_disjunct_aggregate(
+    atom_values: &BTreeMap<(usize, u64), Option<bool>>,
+    aggregate: FormulaNodeId,
+    holds: FormulaNodeId,
+    aggregate_is_first: bool,
+    start: u64,
+    end: u64,
+) -> Option<(usize, u64)> {
+    let first_atom = if aggregate_is_first { aggregate } else { holds };
+    for ((_, position), first_value) in
+        atom_values.range((first_atom.index(), start)..=(first_atom.index(), end))
+    {
+        let aggregate_value = atom_values.get(&(aggregate.index(), *position)).copied();
+        let holds_value = atom_values.get(&(holds.index(), *position)).copied();
+        if aggregate_is_first {
+            match (first_value, holds_value) {
+                (Some(true), _) | (Some(false), Some(Some(true))) => {}
+                (Some(false), Some(Some(false))) => {
+                    return Some((aggregate.index(), *position));
+                }
+                _ => return None,
+            }
+        } else {
+            match (first_value, aggregate_value) {
+                (Some(true), _) | (Some(false), Some(Some(true))) => {}
+                (Some(false), Some(Some(false))) => {
+                    return Some((aggregate.index(), *position));
+                }
+                _ => return None,
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod decisive_aggregate_tests {
     use super::*;
@@ -362,6 +424,23 @@ mod decisive_aggregate_tests {
             first_false_conjunct_aggregate(&atom_values, aggregate, holds, false, 0, 2),
             Some((aggregate.index(), 0)),
             "false is decisive for `undefined and false`"
+        );
+    }
+
+    #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
+    #[test]
+    fn a_left_false_aggregate_is_selected_for_a_false_or_formula() {
+        let aggregate = FormulaNodeId::from_arena_index(0);
+        let holds = FormulaNodeId::from_arena_index(1);
+        let atom_values = BTreeMap::from([
+            ((aggregate.index(), 0), Some(false)),
+            ((holds.index(), 0), Some(false)),
+        ]);
+
+        assert_eq!(
+            first_false_disjunct_aggregate(&atom_values, aggregate, holds, true, 0, 2),
+            Some((aggregate.index(), 0)),
+            "the left aggregate is the selected false disjunct"
         );
     }
 }
@@ -834,6 +913,9 @@ mod tests {
          temporal ComposedHeld using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,2] ((count where holds(c.level = 0) over past[0,0] min_count 0 >= 1) and holds(c.level > 0))\n\
          }\n\
+         temporal ComposedOr using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,2] ((count where holds(c.level > 9) over past[0,0] min_count 0 >= 1) or holds(c.level > 0))\n\
+         }\n\
          temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,0] holds(c.level > 0)\n\
          }\n";
@@ -1077,9 +1159,12 @@ mod tests {
         assert!(decisive.aggregate.is_some());
         assert_eq!(decisive.position, Some(0));
 
-        let composed_holds_false =
-            run_trace_subject_clause(request("ComposedHeld", counter.clone(), each_samples))
-                .expect("valid composed formula reports");
+        let composed_holds_false = run_trace_subject_clause(request(
+            "ComposedHeld",
+            counter.clone(),
+            each_samples.clone(),
+        ))
+        .expect("valid composed formula reports");
         assert!(matches!(
             composed_holds_false.disposition,
             ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
@@ -1088,6 +1173,19 @@ mod tests {
             composed_holds_false.decisive.is_none(),
             "a false later aggregate must not replace the first failing holds conjunct"
         );
+
+        let composed_or_false =
+            run_trace_subject_clause(request("ComposedOr", counter, each_samples))
+                .expect("valid composed disjunction reports");
+        assert!(matches!(
+            composed_or_false.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        let decisive = composed_or_false
+            .decisive
+            .expect("the false left aggregate is selected in the disjunction");
+        assert!(decisive.aggregate.is_some());
+        assert_eq!(decisive.position, Some(0));
     }
 
     #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
