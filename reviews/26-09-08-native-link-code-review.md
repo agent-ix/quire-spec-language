@@ -33,7 +33,7 @@ previously reviewed contract at ceccabb and SR-066–073. This continues the sam
 LC02 #3 / Plan-005 task after the reviewed FR-017 repairs. Applied the actual
 agent-skills/code-review/SKILL.md and agent-skills/rust-review/SKILL.md, portable
 rust-style defaults and implementation-gap-analysis discovery. Repository
-AGENTS.md, README.md, LICENSE-DECISION.md and Cargo lints remain authoritative.
+AGENTS.md, README.md and Cargo lints remain authoritative.
 No applicable AssuranceProfile or deny.toml was found. The owner-declined
 optional gap semantic review was not run; ordinary code-review faithfulness
 and code/test alignment were inspected. No additional agents were used.

@@ -38,7 +38,7 @@ native scalar/observation meaning, runtime input encoding or model authority.
 
 Applied the actual /home/peter/dev/agent-skills/code-review/SKILL.md,
 rust-review/SKILL.md, rust-style/SKILL.md and implementation-gap-analysis
-discovery. AGENTS.md, README.md, LICENSE-DECISION.md and Cargo lints govern.
+discovery. AGENTS.md, README.md and Cargo lints govern.
 No applicable AssuranceProfile, Rust style override or deny.toml was found.
 The owner-declined optional semantic gap comparison was not run. Ordinary
 code/spec faithfulness, negative controls, assertion quality and reverse

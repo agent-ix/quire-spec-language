@@ -31,7 +31,7 @@ required by the original assignment.
 
 Applied the actual /home/peter/dev/agent-skills/code-review/SKILL.md,
 rust-review/SKILL.md, rust-style/SKILL.md and implementation-gap-analysis
-discovery. Read AGENTS.md, README.md, LICENSE-DECISION.md, Cargo lints and the
+discovery. Read AGENTS.md, README.md, Cargo lints and the
 owning LC03 issue. No applicable AssuranceProfile, repository Rust style
 override or deny.toml exists. Cargo-deny is therefore not a required gate here.
 No optional semantic gap comparison or additional agent was used.

@@ -36,7 +36,7 @@ This author's review is not independent B/C acceptance or whole-epic closure.
 
 Applied the actual local agent-skills/code-review/SKILL.md,
 agent-skills/rust-review/SKILL.md and rust-style/SKILL.md. Read the owning
-AGENTS.md, README, LICENSE-DECISION and Cargo lints; their shared trace attributes
+AGENTS.md, README and Cargo lints; their shared trace attributes
 take precedence over the portable skill's legacy doc-line convention. The
 Rust lane replaces Python-specific checks. No applicable AssuranceProfile,
 repository-specific Rust skill, deny.toml or asynchronous/concurrent boundary

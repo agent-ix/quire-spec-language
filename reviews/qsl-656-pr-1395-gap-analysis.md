@@ -25,7 +25,7 @@ Ticket: QSL-656. Independent review of PR #1395's accounting setting rename and 
 
 Plan completion: not assessed
 
-Diff reviewed: origin/main...HEAD at the dispatched candidate. Read repository AGENTS.md, CLAUDE.md, README.md, LICENSE-DECISION.md, CONTRIBUTING.md, Cargo and deny configuration; current FR-255, related criteria below, QSL-656 and newest comments, QSL-661 and newest comments. No spec or CI workflow change in the diff; no spec-review method required. No applicable AssuranceProfile found. No new unsafe, concurrency, narrowing conversions, dependency copies, or gate weakening in this change.
+Diff reviewed: origin/main...HEAD at the dispatched candidate. Read repository AGENTS.md, CLAUDE.md, README.md, CONTRIBUTING.md, Cargo and deny configuration; current FR-255, related criteria below, QSL-656 and newest comments, QSL-661 and newest comments. No spec or CI workflow change in the diff; no spec-review method required. No applicable AssuranceProfile found. No new unsafe, concurrency, narrowing conversions, dependency copies, or gate weakening in this change.
 
 Manual affected-criterion-to-test review ran, including production routing through SettingName, parse_operands, StageLimits, effective_accounting_limits, CallIncomplete, OutcomeDocument, refinement reporting and case-file parsing. All ten setting names and bare counter conversions have executable assertions; zero/max, unknown, duplicate and overflow operands, replay precedence and identity consistency are exercised. Existing FR-255-AC-11 tests compare sent and reported identities and successful/incomplete results. No whole-repository coverage claim is made.
 
