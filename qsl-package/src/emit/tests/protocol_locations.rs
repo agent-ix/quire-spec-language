@@ -689,7 +689,7 @@ fn missing_location(failure: &ViewFailure) -> &crate::MissingLocation {
     let crate::UnsupportedReason::MissingLocationProjection(missing) = view.reason() else {
         panic!("MissingLocationProjection: {view:?}");
     };
-    assert_eq!(view.locus().key, missing.application);
+    assert_eq!(view.locus().key(), Some(&missing.application));
     assert_eq!(missing.defect, ("invalid_package", "invalid-value"));
     missing
 }
@@ -961,7 +961,7 @@ fn an_unprojected_slot_root_is_a_typed_refusal_at_its_node() {
                     operation: "quire.op.control.if".to_owned()
                 }
             );
-            assert_eq!(view.locus().location, None);
+            assert_eq!(view.locus().location(), None);
             assert!(matches!(
                 slots.slot_named(&composed("Tried")),
                 Some(crate::ReaderSlot::Projected(_))
