@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{Activation as ClauseActivation, TemporalProfile};
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallAdmissionRecord, CallFailure};
-use quire_exact::{ChargePoint, Incomplete, LimitKind, Meter};
+use quire_exact::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
 use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
@@ -44,9 +44,14 @@ use crate::temporal::finite_window::{
 use crate::temporal::ledger::{
     ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
 };
-use crate::temporal::letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters};
+use crate::temporal::letters::{
+    AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause,
+};
 use crate::temporal::outcome::TemporalRefusal;
 use crate::temporal::position::TemporalPosition;
+use crate::temporal::window::{
+    AggregateKind, AggregateSample, InsufficientData, WindowRead, WindowSource,
+};
 use qsl_semantics::check::FormulaNodeId;
 
 pub(super) fn fault(invariant: &'static str) -> CallFailure {
@@ -86,6 +91,7 @@ struct ResolvedSubject<'p> {
     activation_map: &'p [super::request::ActivationRow],
     progress: crate::temporal::ledger::LedgerBinding,
     progress_capacity: u64,
+    max_window_values: u64,
     occurrence: u64,
     occurrence_key: Vec<u8>,
 }
@@ -141,6 +147,7 @@ fn resolve<'p>(
             ..subject.progress.clone()
         },
         progress_capacity: subject.progress_capacity,
+        max_window_values: subject.max_window_values,
         occurrence: chosen.occurrence.ordinal,
         occurrence_key,
     })
@@ -256,6 +263,7 @@ fn admit<'a>(
     request: &'a EvidenceRequest,
     meter: &Meter,
 ) -> Result<Facts<'a>, CallFailure> {
+    admit_aggregate_samples(subject.facts.formula(), request)?;
     let declaration = subject.selection.declaration;
     let authenticated = request
         .binding
@@ -317,6 +325,46 @@ fn admit<'a>(
         progress_ledger,
         progress_stop,
     })
+}
+
+/// Refuse a sample of a kind its package aggregate does not consume before
+/// the call charges any work (FR-516-AC-50).
+fn admit_aggregate_samples(
+    formula: &crate::temporal::facts::ClauseFormula,
+    request: &EvidenceRequest,
+) -> Result<(), CallFailure> {
+    let refuse = |atom: u64, position: u64| {
+        refusal(
+            "aggregate-sample-kind",
+            "aggregate_samples",
+            &[
+                ("atom", atom.to_string()),
+                ("position", position.to_string()),
+            ],
+        )
+    };
+    for supplied in &request.positions {
+        for (atom, sample) in &supplied.aggregate_samples {
+            let valid = formula
+                .aggregate_atom(*atom)
+                .is_some_and(|aggregate| sample.is_taken_by(aggregate.kind()));
+            if !valid {
+                return Err(refuse(*atom, supplied.position));
+            }
+        }
+        for (instance, samples) in &supplied.instance_aggregate_samples {
+            let _ = instance;
+            for (atom, sample) in samples {
+                let valid = formula
+                    .aggregate_atom(*atom)
+                    .is_some_and(|aggregate| sample.is_taken_by(aggregate.kind()));
+                if !valid {
+                    return Err(refuse(*atom, supplied.position));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// FR-502 as the call applies it: the contradiction is a refusal and the
@@ -460,6 +508,27 @@ fn encode_valuations(
     encoder
 }
 
+fn encode_aggregate_samples(
+    mut encoder: MemberEncoder,
+    samples: &BTreeMap<u64, AggregateSample>,
+) -> MemberEncoder {
+    encoder = encoder.u64(samples.len() as u64);
+    for (atom, sample) in samples {
+        encoder = encoder.u64(*atom);
+        encoder = match sample {
+            AggregateSample::Excluded => encoder.u64(1),
+            AggregateSample::Value(value) => encoder
+                .u64(2)
+                .text(&value.numerator().to_string())
+                .text(&value.denominator().to_string()),
+            AggregateSample::Holds(value) => encoder.u64(3).flag(*value),
+            AggregateSample::Counted => encoder.u64(4),
+            AggregateSample::Undefined(cause) => encoder.u64(5).text(&format!("{cause:?}")),
+        };
+    }
+    encoder
+}
+
 /// The positions in the canonical order of FR-501, so the listing decides
 /// nothing.
 fn canonical(positions: &[EvidencePosition]) -> Vec<&EvidencePosition> {
@@ -509,9 +578,14 @@ fn encode_trace(subject: &ResolvedSubject<'_>, request: &EvidenceRequest) -> Vec
             encoder.text(&key.authority).u64(key.key as u64)
         });
         encoder = encode_valuations(encoder, &position.valuations);
+        encoder = encode_aggregate_samples(encoder, &position.aggregate_samples);
         encoder = encoder.u64(position.instance_valuations.len() as u64);
         for (instance, valuations) in &position.instance_valuations {
             encoder = encode_valuations(encoder.bytes(instance.as_bytes()), valuations);
+        }
+        encoder = encoder.u64(position.instance_aggregate_samples.len() as u64);
+        for (instance, samples) in &position.instance_aggregate_samples {
+            encoder = encode_aggregate_samples(encoder.bytes(instance.as_bytes()), samples);
         }
     }
     encoder.finish()
@@ -813,7 +887,7 @@ fn halted(limit: &LimitReached) -> Incomplete {
     }
 }
 
-/// Charges the evaluator's units on the call's counters before the meter.
+/// Charges the evaluator's units on the call's counters and evaluator meter.
 struct UnitCharger<'c, 'm> {
     call: &'c mut CallMeter<'m>,
     stop: Option<EvidenceStop>,
@@ -841,6 +915,20 @@ impl WindowCharge for UnitCharger<'_, '_> {
             }
         }
     }
+
+    fn aggregate_window_visit(&mut self, meter: &mut Meter) -> Result<(), Incomplete> {
+        match self.call.visit_with_meter(Visit::Lookup, meter) {
+            Ok(()) => Ok(()),
+            Err(stop) => {
+                let incomplete = match &stop {
+                    EvidenceStop::Limit(limit) => halted(limit),
+                    EvidenceStop::Meter { incomplete, .. } => incomplete.clone(),
+                };
+                self.stop = Some(stop);
+                Err(incomplete)
+            }
+        }
+    }
 }
 
 /// Reads each atom of the clause from the request's valuations: shared ones
@@ -851,11 +939,110 @@ struct EvidenceLetters<'a> {
     trace: &'a TimestampedTrace,
     bound: &'a BTreeSet<u64>,
     formula: &'a crate::temporal::facts::ClauseFormula,
+    max_window_values: u64,
     assessed: Option<&'a SemanticTriggerIdentity>,
     evicted: Option<EvidenceIncomplete>,
     holders: BTreeMap<(u64, u64), Vec<SemanticTriggerIdentity>>,
     /// The `(position, atom)` valuations the request does not hold.
     absent: Vec<(u64, u64)>,
+    /// Aggregate atoms whose windows fell short of `min_count`.
+    insufficient: Vec<(u64, u64, InsufficientData)>,
+}
+
+/// The sparse aggregate samples the observation owner supplied for one
+/// aggregate atom and one instance (FR-516).
+struct EvidenceAggregateSamples<'a> {
+    request: &'a EvidenceRequest,
+    trace: &'a TimestampedTrace,
+    atom_index: u64,
+    instance_bound: bool,
+    assessed: Option<&'a SemanticTriggerIdentity>,
+    kind: AggregateKind,
+}
+
+impl<'a> EvidenceAggregateSamples<'a> {
+    fn at(&self, position: TemporalPosition) -> Result<Option<&'a AggregateSample>, LetterStop> {
+        let Some(supplied) = self
+            .trace
+            .supplied_index(position)
+            .and_then(|index| self.request.positions.get(index))
+        else {
+            return Ok(None);
+        };
+        let samples = if self.instance_bound {
+            self.assessed
+                .and_then(|identity| supplied.instance_aggregate_samples.get(identity))
+        } else {
+            Some(&supplied.aggregate_samples)
+        };
+        let Some(sample) = samples.and_then(|samples| samples.get(&self.atom_index)) else {
+            return Ok(None);
+        };
+        if !sample.is_taken_by(&self.kind) {
+            return Err(LetterStop::Fault(InternalFault::new(
+                "temporal.evidence",
+                "aggregate-sample-kind-validated-on-admission",
+            )));
+        }
+        Ok(Some(sample))
+    }
+}
+
+impl WindowSource for EvidenceAggregateSamples<'_> {
+    fn admits(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        Ok(match self.at(position)? {
+            None => WindowRead::Missing,
+            Some(AggregateSample::Excluded) => WindowRead::Defined(false),
+            Some(AggregateSample::Undefined(cause)) => WindowRead::Undefined(cause.clone()),
+            Some(
+                AggregateSample::Value(_) | AggregateSample::Holds(_) | AggregateSample::Counted,
+            ) => WindowRead::Defined(true),
+        })
+    }
+
+    fn value(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<WindowRead<quire_exact::Rational>, LetterStop> {
+        Ok(match self.at(position)? {
+            None => WindowRead::Missing,
+            Some(AggregateSample::Value(value)) => WindowRead::Defined(value.clone()),
+            Some(AggregateSample::Undefined(cause)) => WindowRead::Undefined(cause.clone()),
+            Some(
+                AggregateSample::Excluded | AggregateSample::Holds(_) | AggregateSample::Counted,
+            ) => {
+                return Err(LetterStop::Fault(InternalFault::new(
+                    "temporal.evidence",
+                    "aggregate-sample-kind-validated-on-admission",
+                )))
+            }
+        })
+    }
+
+    fn predicate(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        Ok(match self.at(position)? {
+            None => WindowRead::Missing,
+            Some(AggregateSample::Holds(value)) => WindowRead::Defined(*value),
+            Some(AggregateSample::Undefined(cause)) => WindowRead::Undefined(cause.clone()),
+            Some(
+                AggregateSample::Excluded | AggregateSample::Value(_) | AggregateSample::Counted,
+            ) => {
+                return Err(LetterStop::Fault(InternalFault::new(
+                    "temporal.evidence",
+                    "aggregate-sample-kind-validated-on-admission",
+                )))
+            }
+        })
+    }
 }
 
 impl EvidenceLetters<'_> {
@@ -884,12 +1071,57 @@ impl TemporalLetters for EvidenceLetters<'_> {
         &mut self,
         atom: FormulaNodeId,
         position: TemporalPosition,
-        _meter: &mut Meter,
+        meter: &mut Meter,
+    ) -> Result<Valuation, LetterStop> {
+        let mut visit = |meter: &mut Meter| {
+            meter
+                .charge(Charge::new(ChargePoint::TemporalVisit))
+                .map_err(LetterStop::Incomplete)
+        };
+        self.valuation_with_window_visits(atom, position, meter, &mut visit)
+    }
+
+    fn valuation_with_window_visits(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        meter: &mut Meter,
+        visit: &mut dyn FnMut(&mut Meter) -> Result<(), LetterStop>,
     ) -> Result<Valuation, LetterStop> {
         let atom_index = self
             .formula
             .atom_index(atom.index())
             .ok_or_else(|| Self::invariant("letter-read-is-an-atom"))?;
+        if let Some(aggregate) = self.formula.aggregate_atom(atom_index) {
+            let mut source = EvidenceAggregateSamples {
+                request: self.request,
+                trace: self.trace,
+                atom_index,
+                instance_bound: self.bound.contains(&atom_index),
+                assessed: self.assessed,
+                kind: aggregate.kind().clone(),
+            };
+            let trace = self
+                .trace
+                .aggregate_window_trace(aggregate.window())
+                .map_err(|_| Self::invariant("aggregate-window-matches-profile"))?;
+            let value = aggregate.evaluate_valuation_with_visits(
+                &trace,
+                &mut source,
+                self.max_window_values,
+                position,
+                meter,
+                visit,
+            )?;
+            if value == Valuation::Missing {
+                self.absent.push((position.index(), atom_index));
+            }
+            if let Valuation::Undefined(UndefinedCause::InsufficientData(data)) = &value {
+                self.insufficient
+                    .push((position.index(), atom_index, *data));
+            }
+            return Ok(value);
+        }
         let Some(supplied) = self
             .trace
             .supplied_index(position)
@@ -1367,10 +1599,12 @@ fn evaluate(
         trace,
         bound: facts.subject.instance_bound,
         formula: facts.subject.facts.formula(),
+        max_window_values: facts.subject.max_window_values,
         assessed: Some(trigger),
         evicted: None,
         holders: BTreeMap::new(),
         absent: Vec::new(),
+        insufficient: Vec::new(),
     };
     let mut scratch = Meter::new(*call.meter().limits());
     let mut charger = UnitCharger { call, stop: None };
@@ -1490,8 +1724,39 @@ fn evaluate(
             outcome.indeterminate = Some(indeterminate);
             outcome = outcome.with_non_value(kind, code, None);
         }
-        WindowVerdict::Undefined(_) => {
-            outcome = outcome.with_non_value(NonValueKind::Refused, "undefined-atom", None);
+        WindowVerdict::Undefined(undefined) => match undefined.cause {
+            UndefinedCause::InsufficientData(data) => {
+                let atom = letters
+                    .insufficient
+                    .iter()
+                    .find_map(|(position, atom, recorded)| {
+                        (*position == undefined.at.index() && *recorded == data).then_some(*atom)
+                    })
+                    .ok_or_else(|| fault("insufficient-data-has-aggregate-atom"))?;
+                let dimension = format!("valuation:{atom}@{}", undefined.at.index());
+                outcome = outcome.with_non_value(
+                    NonValueKind::Missing,
+                    "insufficient-data",
+                    Some(dimension),
+                );
+                if let Some(non_value) = outcome.non_value.as_mut() {
+                    non_value.detail = vec![
+                        ("count".to_owned(), data.count.to_string()),
+                        ("min_count".to_owned(), data.min_count.to_string()),
+                    ];
+                }
+            }
+            cause => {
+                outcome = outcome.with_non_value(NonValueKind::Refused, "undefined-atom", None);
+                if let Some(non_value) = outcome.non_value.as_mut() {
+                    non_value.detail = vec![("cause".to_owned(), format!("{cause:?}"))];
+                }
+            }
+        },
+        WindowVerdict::WindowLimitReached(limit) => {
+            outcome.activation = ActivationState::Unavailable;
+            outcome.incomplete = Some(EvidenceIncomplete::WindowLimit(limit));
+            outcome.settlement = None;
         }
         WindowVerdict::Incomplete(incomplete) => {
             outcome.activation = ActivationState::Unavailable;

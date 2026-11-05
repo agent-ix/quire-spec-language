@@ -24,6 +24,7 @@ use crate::temporal::finite_window::{ClockCover, OrderKey, Valuation};
 use crate::temporal::ledger::{
     LedgerBinding, ProgressClosure, ProgressCompleteness, ProgressLedger,
 };
+use crate::temporal::window::AggregateSample;
 
 /// The observation owner's reference to a piece of evidence (FR-516
 /// `EvidenceRef`). `contract`, `schema_digest`, `digest` and
@@ -89,9 +90,16 @@ pub struct EvidencePosition {
     /// formula) that does not depend on an instance. An absent atom has no
     /// valuation at the position.
     pub valuations: BTreeMap<u64, Valuation>,
+    /// The aggregate samples of each shared aggregate atom, keyed by its
+    /// atom index in the clause formula.
+    pub aggregate_samples: BTreeMap<u64, AggregateSample>,
     /// The valuations that belong to one instance, by its trigger identity
     /// (FR-524 "Instance-bound valuations").
     pub instance_valuations: BTreeMap<SemanticTriggerIdentity, BTreeMap<u64, Valuation>>,
+    /// The aggregate samples of each instance-bound aggregate atom, keyed
+    /// first by the assessed instance and then by atom index.
+    pub instance_aggregate_samples:
+        BTreeMap<SemanticTriggerIdentity, BTreeMap<u64, AggregateSample>>,
 }
 
 /// The completeness record (FR-516 `completeness`).
@@ -315,6 +323,8 @@ pub enum EvidenceIncomplete {
     /// setting `progress.covered_positions` (FR-502, FR-255): `limit` is the
     /// limit kind `node count`.
     CoveredPositions(crate::temporal::ledger::CoveredPositionsLimitReached),
+    /// An aggregate window exceeded `monitor.max_window_values`.
+    WindowLimit(crate::temporal::window::WindowLimitReached),
     /// A valuation the activation required is in `evicted`.
     EvictedValuation {
         /// The instance the valuation is bound to, when it is.
@@ -434,4 +444,6 @@ pub struct EvidenceSubject<'p> {
     /// positions the progress ledger may cover, the default being
     /// `DEFAULT_COVERED_POSITIONS`.
     pub progress_capacity: u64,
+    /// The system limit on values gathered by one aggregate window.
+    pub max_window_values: u64,
 }

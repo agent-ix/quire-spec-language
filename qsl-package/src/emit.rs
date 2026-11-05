@@ -6343,7 +6343,7 @@ fn source_record_rows_over<'d>(
 /// The member entries of one record row, joining the declared fields to the
 /// record node's bindings position by position and keeping both the declared
 /// name and the node's binding name. A binding list that disagrees with the
-/// declaration in member count, or names a type node that was not emitted, is
+/// declaration in member count, or that permutes the declared names, or names a type node that was not emitted, is
 /// a writer fault.
 fn record_member_rows(
     declared: &[quire_semantic_value::declaration::FieldDeclaration],
@@ -6351,6 +6351,17 @@ fn record_member_rows(
     emitted: &HashMap<NodeKey, CheckedNodeId>,
 ) -> Result<Vec<SelectedSourceRecordMemberRow>, EmitRefusal> {
     if bindings.len() != declared.len() {
+        return Err(EmitRefusal::SourceMapInvariant);
+    }
+    // A rename to a name outside the declared set is legal; the same names in
+    // another order are not, since position would then pair a declared field
+    // with another field's binding.
+    let mut declared_names: Vec<&str> = declared.iter().map(|field| field.name()).collect();
+    let mut binding_names: Vec<&str> = bindings.iter().map(|(name, _)| *name).collect();
+    let in_declared_order = declared_names.iter().eq(binding_names.iter());
+    declared_names.sort_unstable();
+    binding_names.sort_unstable();
+    if declared_names == binding_names && !in_declared_order {
         return Err(EmitRefusal::SourceMapInvariant);
     }
     declared

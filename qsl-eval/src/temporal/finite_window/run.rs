@@ -24,6 +24,7 @@ use crate::temporal::letters::{
 use crate::temporal::outcome::{TemporalRefusal, UndefinedEvaluation};
 use crate::temporal::plan::{fault, slot, Direction, Node, Plan, Window};
 use crate::temporal::position::TemporalPosition;
+use crate::temporal::window::WindowLimitReached;
 
 const VISIT: ChargePoint = ChargePoint::TemporalVisit;
 
@@ -57,11 +58,17 @@ pub trait WindowCharge {
     /// The `Incomplete` that stops the evaluation; a refused unit is not
     /// performed.
     fn charge(&mut self, unit: WindowUnit) -> Result<(), Incomplete>;
+
+    /// Charge one aggregate window read against both the call's counters and
+    /// this evaluation's meter. Implementations must leave the counters
+    /// unchanged when the meter refuses the visit.
+    fn aggregate_window_visit(&mut self, meter: &mut Meter) -> Result<(), Incomplete>;
 }
 
 /// Why a run stopped before it finished every activation.
 enum Stop {
     Incomplete(Incomplete),
+    WindowLimit(WindowLimitReached),
     /// An `on each` guard that cannot be established at a position.
     GuardUnresolved(TemporalPosition),
     Undefined(UndefinedEvaluation),
@@ -100,10 +107,8 @@ impl From<LetterStop> for Stop {
     fn from(stop: LetterStop) -> Self {
         match stop {
             LetterStop::Incomplete(incomplete) => Self::Incomplete(incomplete),
+            LetterStop::WindowLimit(limit) => Self::WindowLimit(limit),
             LetterStop::Window(refusal) => Self::Refused(TemporalRefusal::Window(refusal)),
-            LetterStop::WindowLimit(_) => {
-                Self::Refused(TemporalRefusal::Fault(fault("window-aggregate-not-read")))
-            }
             LetterStop::Fault(internal) => Self::Refused(TemporalRefusal::Fault(internal)),
             // Every read of a letter goes through `Stop::at`, which knows
             // the position the refusal is returned at.
@@ -137,6 +142,7 @@ enum Tail {
     GuardUnresolved(TemporalPosition),
     Undefined(UndefinedEvaluation),
     Incomplete(Incomplete),
+    WindowLimit(WindowLimitReached),
 }
 
 struct Run<'a, L: TemporalLetters> {
@@ -272,6 +278,7 @@ fn run_window<'a, L: TemporalLetters>(
     let tail = match run.activations(&mut done) {
         Ok(()) => Tail::Done,
         Err(Stop::Incomplete(incomplete)) => Tail::Incomplete(incomplete),
+        Err(Stop::WindowLimit(limit)) => Tail::WindowLimit(limit),
         Err(Stop::GuardUnresolved(at)) => Tail::GuardUnresolved(at),
         Err(Stop::Undefined(undefined)) => Tail::Undefined(undefined),
         // In evaluation order: an atom undefined at an earlier position, or
@@ -533,9 +540,26 @@ impl<L: TemporalLetters> Run<'_, L> {
             .node_id(class)
             .ok_or_else(|| fault("atom-has-node-id"))?;
         let at = position_of(member)?;
-        match self
-            .letters
-            .valuation(id, at, &mut *self.meter)
+        let Run {
+            letters,
+            meter,
+            units,
+            visits,
+            ..
+        } = self;
+        let mut aggregate_visit = |meter: &mut Meter| {
+            if let Some(units) = units.as_deref_mut() {
+                units
+                    .aggregate_window_visit(meter)
+                    .map_err(LetterStop::Incomplete)?;
+            } else {
+                meter.charge(Charge::new(VISIT))?;
+            }
+            *visits = visits.saturating_add(1);
+            Ok(())
+        };
+        match letters
+            .valuation_with_window_visits(id, at, meter, &mut aggregate_visit)
             .map_err(|stop| Stop::at(stop, at, true))?
         {
             Valuation::True => {
@@ -980,6 +1004,11 @@ impl<L: TemporalLetters> Run<'_, L> {
                     Basis::Unavailable,
                     Vec::new(),
                 ),
+                Tail::WindowLimit(limit) => (
+                    WindowVerdict::WindowLimitReached(limit),
+                    Basis::Unavailable,
+                    Vec::new(),
+                ),
                 Tail::Done => match first_open {
                     Some(activation) => {
                         let at = position_of(activation.anchor)?;
@@ -1029,9 +1058,9 @@ impl<L: TemporalLetters> Run<'_, L> {
             }
         };
         let assessment = match verdict {
-            WindowVerdict::Incomplete(_) | WindowVerdict::ActivationIncomplete { .. } => {
-                Assessment::Failed
-            }
+            WindowVerdict::Incomplete(_)
+            | WindowVerdict::WindowLimitReached(_)
+            | WindowVerdict::ActivationIncomplete { .. } => Assessment::Failed,
             WindowVerdict::Holds
             | WindowVerdict::Violated { .. }
             | WindowVerdict::Pending { .. }

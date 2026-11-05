@@ -221,6 +221,26 @@ impl<'m> CallMeter<'m> {
         Ok(())
     }
 
+    /// Admit a visit against an evaluator-owned meter, committing counters
+    /// only after that meter admits the same unit.
+    pub(super) fn visit_with_meter(
+        &mut self,
+        visit: Visit,
+        meter: &mut Meter,
+    ) -> Result<(), EvidenceStop> {
+        let next = self
+            .admit(visit.spends().iter().map(|counter| (*counter, 1)))
+            .map_err(EvidenceStop::Limit)?;
+        meter
+            .charge(Charge::new(ChargePoint::TemporalVisit))
+            .map_err(|incomplete| EvidenceStop::Meter {
+                incomplete,
+                instance: self.instance.clone(),
+            })?;
+        self.usage = next;
+        Ok(())
+    }
+
     /// Admit the clause before any instance is assessed (FR-523 "Tick
     /// arithmetic", "Stop scope"): the distinct formula nodes, the history
     /// span, and the sum `t0 + Hf + m` of every activation anchor `t0` in

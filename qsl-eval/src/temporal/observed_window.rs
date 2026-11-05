@@ -138,6 +138,7 @@ impl<'a> ObservedWindowSource<'a> {
             WindowRead::Defined(Value::Boolean(held)) => Ok(WindowRead::Defined(held)),
             WindowRead::Defined(_) => Err(fault("window-condition-boolean")),
             WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+            WindowRead::Missing => Ok(WindowRead::Missing),
         }
     }
 }
@@ -170,6 +171,7 @@ impl WindowSource for ObservedWindowSource<'_> {
             }
             WindowRead::Defined(_) => Err(fault("window-value-is-a-number")),
             WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+            WindowRead::Missing => Ok(WindowRead::Missing),
         }
     }
 

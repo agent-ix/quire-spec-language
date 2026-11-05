@@ -54,6 +54,7 @@ fn use_of(
         node: placeholder_node(),
         operation,
         interval,
+        aggregate: None,
         operands: operands.to_vec(),
     }
 }
