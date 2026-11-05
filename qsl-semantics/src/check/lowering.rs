@@ -334,6 +334,10 @@ impl SemanticNode {
 /// nodes under, first among its members (FR-092 "Function nodes").
 const FUNCTION_PARAMETERS: &str = "parameters";
 
+/// The name of the binding a function node's body holds its body expression
+/// under (FR-092 "Function nodes").
+const FUNCTION_BODY: &str = "body";
+
 /// The admitted facts of one lowered source-owned enum declaration
 /// (FR-092 "Source enum identity rows").
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3620,7 +3624,20 @@ impl<'a> Lowering<'a> {
         )];
         let mut binders = Binders::new(function.body_slots, &parameters);
         let body = self.expression(function.body, &mut binders)?;
-        members.push(MemberTerm::bound("body", body));
+        // QSpec FR-290, FR-484: the Boolean clause of a source-declared
+        // function is its Boolean body `expression` node, claimed at roles
+        // `claim` and `declaration`.
+        let clause = if function.clause.is_none()
+            && *function.result == ValueType::Boolean
+            && !matches!(
+                function.body.kind(),
+                NodeKind::Literal(_) | NodeKind::Local(_)
+            ) {
+            body.reference_target().cloned()
+        } else {
+            None
+        };
+        members.push(MemberTerm::bound(FUNCTION_BODY, body));
         if let Some(measure) = function.measure {
             let mut binders = Binders::new(function.measure_slots, &parameters);
             let measure = self.expression(measure, &mut binders)?;
@@ -3673,6 +3690,18 @@ impl<'a> Lowering<'a> {
                 key
             }
         };
+        if let Some(clause) = clause {
+            self.record(
+                clause.clone(),
+                OccurrenceRole::Claim,
+                function.location.clone(),
+            );
+            self.record(
+                clause,
+                OccurrenceRole::Declaration,
+                function.location.clone(),
+            );
+        }
         if let Some(slot) = self.functions.get_mut(index) {
             *slot = Some(key.clone());
             self.unsettled_functions.push(index);

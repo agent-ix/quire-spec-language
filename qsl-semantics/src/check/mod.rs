@@ -7040,9 +7040,9 @@ fn finish_step_relations(
         }]);
     }
     let mut relations = Vec::with_capacity(checked.len());
-    // The relations' records, ranked into the package's once at the end;
-    // one at an occurrence the package already keys is a fault there.
-    let mut added = std::collections::HashMap::new();
+    // The relations' records, ranked into the package's once at the end.
+    // One occurrence may hold distinct capability records (FR-477).
+    let mut added = Vec::new();
     for (index, (relation, lowered)) in checked.into_iter().zip(lowered).enumerate() {
         let location = hyper_clause::lowering::hyper_location(
             index,
@@ -7125,12 +7125,7 @@ fn finish_step_relations(
             })?;
         let record =
             claims::RequirementRecord::model_claim(requirements, claims::wire(boolean.clone()));
-        if added.insert(occurrence.clone(), record).is_some() {
-            return Err(vec![CheckRefusal {
-                location: root(Origin::Expression),
-                cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
-            }]);
-        }
+        added.push((occurrence.clone(), record));
         if let Some(code_claim) =
             abstraction.and_then(|abstraction| relation.code_claim(abstraction))
         {
@@ -7141,24 +7136,13 @@ fn finish_step_relations(
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             })?;
-            let code_origin = graph.occurrences.record(
-                key.clone(),
-                family::OccurrenceRole::Claim,
-                location.clone(),
-            );
-            let code_occurrence = OccurrenceKey::new(claims::wire(key.clone()), code_origin);
             let code_record = claims::RequirementRecord::unguarded(
                 code_requirements,
                 ValueType::Boolean,
                 claims::wire(boolean),
                 references::ModelReferences::default(),
             );
-            if added.insert(code_occurrence, code_record).is_some() {
-                return Err(vec![CheckRefusal {
-                    location: root(Origin::Expression),
-                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
-                }]);
-            }
+            added.push((occurrence.clone(), code_record));
         }
         relations.push(relation.assembled_at(key, occurrence));
     }

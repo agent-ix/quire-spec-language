@@ -850,6 +850,14 @@ impl LeafTerm {
         Self::Literal { ty, value }
     }
 
+    /// The target of a `reference` leaf, `None` for any other leaf.
+    pub(crate) fn reference_target(&self) -> Option<&NodeRef> {
+        match self {
+            Self::Reference { target } => Some(target),
+            Self::Literal { .. } | Self::DependencyReference { .. } => None,
+        }
+    }
+
     /// The node key this leaf names in its own graph: a `reference`'s
     /// target or a literal's `type`. A dependency's node is no key of this
     /// graph.
