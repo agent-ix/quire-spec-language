@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-330-AC-17: run a temporal clause over caller-supplied record samples.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::temporal::{
     AggregateAtom, AtomReading, CaptureReading, DEFAULT_MAX_WINDOW_VALUES, LetterStop,
@@ -185,7 +185,7 @@ pub fn run_trace_subject_clause(
         samples: &request.samples,
         trace: WindowTrace::positions(len),
         captures: Vec::new(),
-        first_false_aggregate_positions: BTreeMap::new(),
+        false_aggregate_positions: BTreeMap::new(),
         undefined_atom: None,
     };
     let result = qsl_eval::temporal::evaluate(
@@ -196,8 +196,7 @@ pub fn run_trace_subject_clause(
     );
     let (disposition, decisive) = match result {
         Ok(outcome) => {
-            let decisive =
-                decisive_aggregate(node, &outcome, &letters.first_false_aggregate_positions);
+            let decisive = decisive_aggregate(node, &outcome, &letters.false_aggregate_positions);
             (
                 ClauseDisposition::Temporal(map_outcome(outcome, letters.undefined_atom)),
                 decisive,
@@ -235,33 +234,39 @@ pub fn run_trace_subject_clause(
 fn decisive_aggregate(
     node: &TemporalClauseNode,
     outcome: &TemporalOutcome,
-    first_false_aggregate_positions: &BTreeMap<usize, u64>,
+    false_aggregate_positions: &BTreeMap<usize, BTreeSet<u64>>,
 ) -> Option<(usize, u64)> {
     let TemporalOutcome::Violated { at } = outcome else {
         return None;
     };
     let formula = node.clause().formula();
     let root = formula.nodes().get(formula.root().index())?;
-    let atom = match root {
-        FormulaNode::Aggregate { .. } => formula.root(),
+    let (atom, eligible) = match root {
+        FormulaNode::Aggregate { .. } => (formula.root(), at.index()..=at.index()),
         FormulaNode::Unary {
             operator: UnaryTemporal::Always,
             interval: Some(CheckedInterval::Steps(interval)),
             operand,
-        } if interval.lower() == 0
-            && interval.upper() == qsl_foundation::bound::TemporalUpper::Finite(0)
-            && matches!(
-                formula.nodes().get(operand.index()),
-                Some(FormulaNode::Aggregate { .. })
-            ) =>
+        } if matches!(
+            formula.nodes().get(operand.index()),
+            Some(FormulaNode::Aggregate { .. })
+        ) =>
         {
-            *operand
+            let qsl_foundation::bound::TemporalUpper::Finite(upper) = interval.upper() else {
+                return None;
+            };
+            let start = at.index().checked_add(interval.lower())?;
+            let end = at.index().checked_add(upper)?;
+            (*operand, start..=end)
         }
         _ => return None,
     };
-    let position = at.index();
-    (first_false_aggregate_positions.get(&atom.index()) == Some(&position))
-        .then_some((atom.index(), position))
+    false_aggregate_positions
+        .get(&atom.index())?
+        .range(eligible)
+        .next()
+        .copied()
+        .map(|position| (atom.index(), position))
 }
 
 fn temporal_clock_selections(
@@ -392,7 +397,7 @@ struct TraceSubjectLetters<'a> {
     samples: &'a [Value],
     trace: WindowTrace,
     captures: Vec<Value>,
-    first_false_aggregate_positions: BTreeMap<usize, u64>,
+    false_aggregate_positions: BTreeMap<usize, BTreeSet<u64>>,
     undefined_atom: Option<usize>,
 }
 
@@ -507,9 +512,10 @@ impl TemporalLetters for TraceSubjectLetters<'_> {
                 self.undefined_atom = Some(atom.index());
             }
             if matches!(reading, AtomReading::False) {
-                self.first_false_aggregate_positions
+                self.false_aggregate_positions
                     .entry(atom.index())
-                    .or_insert_with(|| position.index());
+                    .or_default()
+                    .insert(position.index());
             }
             return Ok(reading);
         }
@@ -708,6 +714,9 @@ mod tests {
          }\n\
          temporal Each using t over (c: Counter) clock \"model-steps\" on each (q: Counter) {\n\
            always[0,0] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
+         }\n\
+         temporal BoundedFalse using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,2] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
          }\n\
          temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,0] holds(c.level > 0)\n\
@@ -915,6 +924,22 @@ mod tests {
                 .and_then(|decisive| decisive.position),
             Some(0),
             "the later false aggregate must not replace the first failing activation"
+        );
+
+        let bounded =
+            run_trace_subject_clause(request("BoundedFalse", counter.clone(), each_samples))
+                .expect("valid bounded aggregate input reports");
+        assert!(matches!(
+            bounded.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        assert_eq!(
+            bounded
+                .decisive
+                .as_ref()
+                .and_then(|decisive| decisive.position),
+            Some(0),
+            "always[0,2] descends to the least eligible false aggregate position"
         );
     }
 

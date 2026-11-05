@@ -47,3 +47,17 @@ Coder-reported checks: `trace_subject_` tests 3/3, the existing bounded-clause t
 ## Review Method Limits
 
 The full-repository Test Matrix did not complete: `quoin matrix --repo . --json` ran for about four minutes without output and was stopped at the lead's direction. The separate gap-analysis artifact records the manual AC-to-test check. Optional semantic review was not requested and was skipped.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-004 | medium | `decisive_aggregate` returns a decisive record only when the formula root is an aggregate or `always[0,0]` directly over an aggregate. Other valid formulas, such as `always[0,2]` directly over a false window aggregate, still produce a `Violated` result decided by that aggregate but return no `decisive`, contrary to FR-330's trace-subject route behavior. Follow the evaluator's actual false descent for the supported formula tree, or constrain and specify the route's formula profile. | qsl-replay/src/spine/clause/trace_subject.rs:235-269; spec/functional/FR-330-run-a-temporal-clause-through-the-spine.md:215-220, 222-254 | correct-requirement-no-evidence |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit `efba68725` records the first false position per aggregate occurrence and emits a decisive only when it matches the evaluator's failing position. The added `on each always[0,0]` regression asserts the earlier violation position remains decisive despite later false reads. |
+| FND-002 | fixed | Commit `efba68725` removes the blanket no-aggregate refusal. The new record-clause test expects `Holds`, and the model fixture test exercises a model-subject/no-aggregate clause and asserts refusal before evaluation. |
+| FND-003 | fixed | Commit `efba68725` restores FR-267's wire row to exactly `position`, `count`, and `min_count`; the wire test asserts the emitted row has no `atom` and explicitly refuses an added `atom` member. |
