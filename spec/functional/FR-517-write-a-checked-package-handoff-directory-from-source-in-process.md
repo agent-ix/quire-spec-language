@@ -118,7 +118,8 @@ with no copy of the format.
 The writer builds `equality.json` from the in-process unit's `Emission` rows
 (`equality_producer_identity_rows`, `equality_fact_witness_rows` and
 `selected_source_unit_rows`). The emitted package bytes are used for one join only:
-every node and key member is written as the wire node id of that node, which the
+every node and key member is written as the wire value of that node's `CheckedNodeId`
+(the node id object of FR-531 "The identity file"), which the
 writer reads from `WireGraph::of_package_bytes` over the emitted bytes, as for the
 `node` member of `inventory.json`. A unit that holds no
 equality application writes the file with `applications`, `facts` and `source_units`
@@ -135,7 +136,8 @@ byte-identical for equal inputs. The writer builds every row from the outcome
 `qsl_inventory` returns for the in-process unit. The emitted package bytes are
 used for one join only: a requirement row holds a structural `CheckedNodeId`
 (`qsl_semantics::check::wire_id::structural_id` of the occurrence's node key),
-and its `node` member is the wire node id string of that node, which the writer
+and its `node` member is the wire value of that node's `CheckedNodeId` in the package (an object
+with `package`, `path` and `ordinal`, as `selection.json` and `identities.json` spell node ids), which the writer
 reads from `WireGraph::of_package_bytes` over the emitted bytes, as
 `Selection::derive` does for `selection.json`. A node the package does not
 name is the writer's `Error::Unnameable`, and nothing is written.
@@ -152,7 +154,7 @@ name is the writer's `Error::Unnameable`, and nothing is written.
 
 A row is a closed object with a `kind`. A requirement record is `{ "kind":
 "requirement_record", "node": <node reference>, "role": <text>, "ordinal":
-<integer> }`, with `node` the wire node id string of the package (the node
+<integer> }`, with `node` the wire value of the package's `CheckedNodeId` for that node (the node
 reference of FR-531 "The identity file"), `role` the requirement's role text and
 `ordinal` its occurrence ordinal. A pending obligation is `{ "kind":
 "pending_obligation", "declaration": <integer>, "unit": 0, "start": <integer>,
@@ -196,9 +198,10 @@ each on its own line, so its formal identity is document `unit.native`, revision
 1. `qsl_inventory` over it (measured on the spine) returns four rows: two
 requirement records with role `expression` and ordinals 0 and 1, then two
 pending obligations of capability kind `value-validity` for declaration 0 at
-byte spans 150 to 155 and 161 to 166. `N0` and `N1` stand for the wire node id
-strings the test reads from the emitted package for the two records, which are
-not fixed here. The bytes are exactly these lines, each ending in a line feed,
+byte spans 150 to 155 and 161 to 166. `N0` and `N1` stand for the `CheckedNodeId` wire values (a JSON object, written with
+the same two-space indentation at the depth of the row's members) of the node
+the two records name in the emitted package, which are not fixed here; both
+records are occurrences of one node. The bytes are exactly these lines, each ending in a line feed,
 with no trailing space:
 
 ```
@@ -215,13 +218,13 @@ with no trailing space:
   "rows": [
     {
       "kind": "requirement_record",
-      "node": "N0",
+      "node": N0,
       "role": "expression",
       "ordinal": 0
     },
     {
       "kind": "requirement_record",
-      "node": "N1",
+      "node": N1,
       "role": "expression",
       "ordinal": 1
     },
@@ -369,6 +372,6 @@ the three directories. The packages hold:
 
 ## Dependencies
 
-- **Upstream:** the inventory writer (FR-517-AC-11, AC-17): `qsl_inventory` over the spine unit exists (FR-514), and the writer does not yet run the replay spine over the unit or write the file, so the feature is specified and unmet. FR-517-AC-12 needs no spine change: FR-505 admits a Rational value type without a unit, and the criterion fixes only what **R**'s model declares and the source reaches. FR-517-AC-13 is gated on the three spine capabilities of FR-517-AC-18 to AC-20 (the unit a model type names is emitted, a model alias is a source type name, `sum` over a quantity), which are the refusals FR-517-AC-16 pins today; they are unmet and are not narrowed away. FR-517-AC-14 holds: the reader admits a binder that a protocol slot introduces itself, such as the `sum` query binder inside `recover`. FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
+- **Upstream:** the inventory writer (FR-517-AC-11, AC-17) runs the replay spine over the unit and calls `qsl_inventory` over it (FR-514). FR-517-AC-12 needs no spine change: FR-505 admits a Rational value type without a unit, and the criterion fixes only what **R**'s model declares and the source reaches. FR-517-AC-13 is gated on the three spine capabilities of FR-517-AC-18 to AC-20 (the unit a model type names is emitted, a model alias is a source type name, `sum` over a quantity), which are the refusals FR-517-AC-16 pins today; they are unmet and are not narrowed away. FR-517-AC-14 holds: the reader admits a binder that a protocol slot introduces itself, such as the `sum` query binder inside `recover`. FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
   FR-505, FR-514, FR-515, `emit_checked_v2`, `qsl_package::emit_checked_with_temporal_selections`.
 - **Downstream:** quire-protocol IT-001 (QSL-1549).

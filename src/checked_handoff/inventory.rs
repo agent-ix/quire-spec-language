@@ -197,6 +197,12 @@ impl RowJson {
     }
 }
 
+/// The `format` member alone.
+#[derive(Deserialize)]
+struct Head {
+    format: String,
+}
+
 /// The file's members in file order.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -223,10 +229,13 @@ fn malformed(what: impl std::fmt::Display) -> InventoryReadError {
 impl Inventory {
     /// Parse an inventory file. No partial value is returned.
     pub fn read(bytes: &[u8]) -> Result<Self, InventoryReadError> {
-        let file: FileJson = serde_json::from_slice(bytes).map_err(malformed)?;
-        if !is_inventory_format(&file.format) {
-            return Err(InventoryReadError::Format(file.format));
+        // The format decides first: a file of another format is `Format`
+        // whatever else it holds.
+        let head: Head = serde_json::from_slice(bytes).map_err(malformed)?;
+        if !is_inventory_format(&head.format) {
+            return Err(InventoryReadError::Format(head.format));
         }
+        let file: FileJson = serde_json::from_slice(bytes).map_err(malformed)?;
         if usize::try_from(file.observed_count).ok() != Some(file.rows.len()) {
             return Err(malformed(format!(
                 "observed_count {} is not the {} rows",
@@ -262,13 +271,16 @@ impl Inventory {
 
     /// The file's bytes, deterministic.
     pub(super) fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        let observed_count = u64::try_from(self.rows.len()).map_err(|_| Error::Unnameable {
+            what: "inventory row count".to_owned(),
+        })?;
         let file = FileJson {
             format: INVENTORY_FORMAT.to_owned(),
             owner: Owner::Qsl,
             scope: Scope::CheckedRequirementsAndPendingObligations,
             source: self.source.clone(),
             completeness: Completeness::Complete,
-            observed_count: u64::try_from(self.rows.len()).unwrap_or(u64::MAX),
+            observed_count,
             rows: self.rows.iter().map(RowJson::of).collect(),
         };
         let mut bytes = serde_json::to_vec_pretty(&file).map_err(|source| Error::Encode {
@@ -335,5 +347,185 @@ impl Inventory {
             },
             rows,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quire_contract_model::source_obligation::{
+        SourceDeclarationHandle, SourceInventoryEnumerator, SourceInventoryIncompleteReason,
+        SourceInventoryOwner, SourceInventoryRow, SourceInventoryScope, SourceObligationSite,
+        SourcePendingObligationId, SourceRequirementOccurrenceId, SourceUnitHandle,
+    };
+    use quire_contract_model::{SourceDocumentId, SourceIdentity, SourceRevision};
+    use quire_exact::{NodeKey, PathSegment};
+
+    use super::*;
+
+    /// A package holding one node, `scalar_type/integer`.
+    const PACKAGE: &str = r#"{"semantic_graph":{"nodes":[
+        {"node_id":{"package":"p","path":["scalar_type","integer"],"ordinal":0}}]}}"#;
+
+    struct Rows {
+        identity: SourceIdentity,
+        rows: std::vec::IntoIter<SourceInventoryIdentity>,
+        stop: Option<SourceInventoryIncompleteReason>,
+        observed: usize,
+    }
+
+    impl SourceInventoryEnumerator for Rows {
+        fn source(&self) -> &SourceIdentity {
+            &self.identity
+        }
+        fn owner(&self) -> SourceInventoryOwner {
+            SourceInventoryOwner::Qsl
+        }
+        fn scope(&self) -> SourceInventoryScope {
+            SourceInventoryScope::QslCheckedRequirementsAndPendingObligations
+        }
+        fn next_row(
+            &mut self,
+        ) -> Result<Option<SourceInventoryRow>, SourceInventoryIncompleteReason> {
+            if let Some(identity) = self.rows.next() {
+                self.observed += 1;
+                return Ok(Some(SourceInventoryRow::new(
+                    self.identity.clone(),
+                    identity,
+                )));
+            }
+            self.stop.take().map_or(Ok(None), Err)
+        }
+        fn observed_count(&self) -> usize {
+            self.observed
+        }
+    }
+
+    fn outcome(
+        rows: Vec<SourceInventoryIdentity>,
+        stop: Option<SourceInventoryIncompleteReason>,
+    ) -> SourceInventoryOutcome {
+        let identity = SourceIdentity::new(
+            SourceDocumentId::new("u.native").unwrap(),
+            SourceRevision::new(1).unwrap(),
+        );
+        SourceInventoryOutcome::from_enumerator(Rows {
+            identity,
+            rows: rows.into_iter(),
+            stop,
+            observed: 0,
+        })
+        .unwrap()
+    }
+
+    fn requirement(name: &str) -> SourceInventoryIdentity {
+        let key = NodeKey::new(
+            "p",
+            vec![
+                PathSegment::Text("scalar_type".into()),
+                PathSegment::Text(name.into()),
+            ],
+            0,
+        )
+        .unwrap();
+        SourceInventoryIdentity::RequirementRecord(SourceRequirementOccurrenceId {
+            node: qsl_semantics::check::wire_id::structural_id(&key),
+            role: "expression".into(),
+            ordinal: 3,
+        })
+    }
+
+    fn obligation(kind: SourcePendingObligationKind) -> SourceInventoryIdentity {
+        SourceInventoryIdentity::PendingObligation(SourcePendingObligationId {
+            site: SourceObligationSite {
+                declaration: SourceDeclarationHandle(2),
+                unit: SourceUnitHandle(0),
+                expression: None,
+                start: 4,
+                end: 9,
+            },
+            kind,
+        })
+    }
+
+    fn unnameable(result: Result<Inventory, Error>) -> String {
+        match result {
+            Err(Error::Unnameable { what }) => what,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[ix_trace_rs::trace("FR-517-AC-11", "TC-1312")]
+    #[test]
+    fn a_node_the_package_holds_is_named_by_its_wire_id() {
+        let found = outcome(
+            vec![
+                requirement("integer"),
+                obligation(SourcePendingObligationKind::CapabilityKind("k".into())),
+            ],
+            None,
+        );
+        let inventory = Inventory::derive(&found, PACKAGE.as_bytes()).unwrap();
+        let wire: serde_json::Value = serde_json::from_str(PACKAGE).unwrap();
+        let expected: CheckedNodeId =
+            serde_json::from_value(wire["semantic_graph"]["nodes"][0]["node_id"].clone()).unwrap();
+        assert_eq!(
+            inventory.rows(),
+            [
+                InventoryRow::RequirementRecord {
+                    node: expected,
+                    role: "expression".into(),
+                    ordinal: 3,
+                },
+                InventoryRow::PendingObligation {
+                    declaration: 2,
+                    unit: 0,
+                    start: 4,
+                    end: 9,
+                    capability_kind: "k".into(),
+                },
+            ]
+        );
+    }
+
+    #[ix_trace_rs::trace("FR-517-AC-11", "TC-1312")]
+    #[test]
+    fn a_node_the_package_does_not_hold_is_unnameable() {
+        let found = outcome(vec![requirement("boolean")], None);
+        assert_eq!(
+            unnameable(Inventory::derive(&found, PACKAGE.as_bytes())),
+            "requirement node in the package"
+        );
+    }
+
+    #[ix_trace_rs::trace("FR-517-AC-7", "FR-517-AC-11", "TC-1312")]
+    #[test]
+    fn an_incomplete_outcome_is_never_written() {
+        let stopped = outcome(
+            vec![requirement("integer")],
+            Some(SourceInventoryIncompleteReason::EarlyStop {
+                owner: SourceInventoryOwner::Qsl,
+            }),
+        );
+        assert!(matches!(
+            stopped.completeness(),
+            SourceInventoryCompleteness::Incomplete(_)
+        ));
+        assert_eq!(
+            unnameable(Inventory::derive(&stopped, PACKAGE.as_bytes())),
+            "a complete inventory"
+        );
+    }
+
+    #[ix_trace_rs::trace("FR-517-AC-11", "TC-1312")]
+    #[test]
+    fn an_obligation_without_a_capability_kind_is_unnameable() {
+        let found = outcome(
+            vec![obligation(SourcePendingObligationKind::Presence)],
+            None,
+        );
+        assert_eq!(
+            unnameable(Inventory::derive(&found, PACKAGE.as_bytes())),
+            "capability kind of an obligation"
+        );
     }
 }

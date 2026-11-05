@@ -327,9 +327,14 @@ fn vector_directory() -> (tempfile::TempDir, BTreeMap<String, Vec<u8>>) {
 
 /// [`vector_directory`] with the unit in a file called `name`.
 fn vector_directory_named(name: &str) -> (tempfile::TempDir, BTreeMap<String, Vec<u8>>) {
+    unit_directory(name, VECTOR_UNIT)
+}
+
+/// The handoff directory written for the unit `text` in a file called `name`.
+fn unit_directory(name: &str, text: &str) -> (tempfile::TempDir, BTreeMap<String, Vec<u8>>) {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join(name);
-    std::fs::write(&source, VECTOR_UNIT).unwrap();
+    std::fs::write(&source, text).unwrap();
     let request = CheckedHandoffRequest {
         emit: Request {
             source,
@@ -420,6 +425,62 @@ fn the_vector_unit_writes_the_stated_bytes() {
     assert_eq!(file["rows"][0]["node"], file["rows"][1]["node"]);
     assert_eq!(file["rows"][0]["ordinal"], 0);
     assert_eq!(file["rows"][1]["ordinal"], 1);
+}
+
+/// FR-517-AC-11: each requirement row names the node of its own occurrence. In
+/// a unit whose two guarded branches are different expressions the records sit
+/// on different nodes, and the package's source map gives each node's region:
+/// the region of row k is the span of the k-th pending obligation, so rows
+/// carrying each other's node ids fail.
+#[trace("FR-517-AC-11", "TC-1312")]
+#[test]
+fn each_requirement_row_names_the_node_of_its_occurrence() {
+    let text = VECTOR_UNIT.replace("else x + 1", "else x + 2");
+    assert_ne!(text, VECTOR_UNIT);
+    let (_dir, files) = unit_directory("unit.native", &text);
+    let file: Value = serde_json::from_slice(&files["inventory.json"]).unwrap();
+    let package: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
+    let rows = file["rows"].as_array().unwrap();
+    let records: Vec<&Value> = rows
+        .iter()
+        .filter(|row| row["kind"] == "requirement_record")
+        .collect();
+    let obligations: Vec<&Value> = rows
+        .iter()
+        .filter(|row| row["kind"] == "pending_obligation")
+        .collect();
+    assert_eq!((records.len(), obligations.len()), (2, 2));
+    assert_ne!(records[0]["node"], records[1]["node"]);
+    for (record, obligation) in records.iter().zip(&obligations) {
+        let entry = package["source_map"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| {
+                entry["node_id"] == record["node"]
+                    && entry["role"] == record["role"]
+                    && entry["ordinal"] == record["ordinal"]
+            })
+            .unwrap_or_else(|| panic!("no source-map entry for {record}"));
+        let spans: Vec<(u64, u64)> = entry["regions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|region| {
+                (
+                    region["start"].as_u64().unwrap(),
+                    region["end"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert!(
+            spans.contains(&(
+                obligation["start"].as_u64().unwrap(),
+                obligation["end"].as_u64().unwrap()
+            )),
+            "{record} has regions {spans:?}, not the span of {obligation}"
+        );
+    }
 }
 
 /// FR-517-AC-11: the formal identity is the file name with each character
@@ -521,6 +582,17 @@ fn the_reader_refuses_each_vector() {
         InventoryReadError::Malformed(_)
     ));
     assert!(matches!(refused(""), InventoryReadError::Malformed(_)));
+    // The format decides before the shape: a /2 file of another shape is `Format`.
+    match refused(r#"{"format": "quire.checked-handoff.inventory/2", "rows": 7}"#) {
+        InventoryReadError::Format(format) => {
+            assert_eq!(format, "quire.checked-handoff.inventory/2")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        refused(r#"{"rows": []}"#),
+        InventoryReadError::Malformed(_)
+    ));
     // A repeated or foreign row member, and a row missing a member of its kind.
     assert!(matches!(
         refused(&swap(
