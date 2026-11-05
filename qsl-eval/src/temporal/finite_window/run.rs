@@ -74,18 +74,18 @@ enum Stop {
     Undefined(UndefinedEvaluation),
     /// A `holds` condition, an `on each` guard or a capture was refused at
     /// this position (FR-327 "Refused condition").
-    /// The flag is whether the refused condition is a `holds` atom, not an
+    /// The atom class for a refused `holds` condition, or `None` for an
     /// `on each` guard or a capture.
-    ConditionRefused(TemporalPosition, bool),
+    ConditionRefused(TemporalPosition, Option<usize>),
     Refused(TemporalRefusal),
 }
 
 impl Stop {
     /// The stop of a letter that failed at `at`: its refusal is the refused
     /// condition at `at`.
-    fn at(stop: LetterStop, at: TemporalPosition, atom: bool) -> Self {
+    fn at(stop: LetterStop, at: TemporalPosition, atom_class: Option<usize>) -> Self {
         match stop {
-            LetterStop::Refused => Self::ConditionRefused(at, atom),
+            LetterStop::Refused => Self::ConditionRefused(at, atom_class),
             other => other.into(),
         }
     }
@@ -284,21 +284,18 @@ fn run_window<'a, L: TemporalLetters>(
         // In evaluation order: an atom undefined at an earlier position, or
         // an activation that ended false before the refused condition, is
         // returned instead of it.
-        Err(Stop::ConditionRefused(at, atom)) => {
+        Err(Stop::ConditionRefused(at, atom_class)) => {
             let refused = usize::try_from(at.index()).unwrap_or(usize::MAX);
-            // An atom undefined before the refused position precedes the
-            // refusal. At the refused position itself, an undefined atom
-            // precedes a refused atom: `read_atom` reads a position's atoms in
-            // ascending clause-node order in one call that stops at the first
-            // refusal, so every undefined atom stored at that position is of
-            // a lower order than the refused one. It does not precede a
-            // refused guard or capture, which is read before that position's
-            // atoms: an undefined atom stored there was read for another
-            // activation's closure.
-            if let Some(((position, _), cause)) = run
-                .undefined
-                .iter()
-                .find(|((position, _), _)| *position < refused || (atom && *position == refused))
+            // Only an earlier undefined atom or a lower-class atom at the
+            // refused position precedes this refusal. `read_atom` can retain
+            // lower-class valuations outside the activation's closure, so
+            // position alone cannot establish precedence for guards/captures.
+            if let Some(((position, _), cause)) =
+                run.undefined.iter().find(|((position, class), _)| {
+                    *position < refused
+                        || (*position == refused
+                            && atom_class.is_some_and(|refused_class| *class < refused_class))
+                })
             {
                 Tail::Undefined(UndefinedEvaluation {
                     at: position_of(*position).map_err(TemporalRefusal::Fault)?,
@@ -416,7 +413,7 @@ impl<L: TemporalLetters> Run<'_, L> {
                 match self
                     .letters
                     .activation(at, &mut *self.meter)
-                    .map_err(|stop| Stop::at(stop, at, false))?
+                    .map_err(|stop| Stop::at(stop, at, None))?
                 {
                     AtomReading::True => {}
                     AtomReading::False => continue,
@@ -434,7 +431,7 @@ impl<L: TemporalLetters> Run<'_, L> {
                 if let CaptureReading::Undefined { cause, .. } = self
                     .letters
                     .captures(at, &mut *self.meter)
-                    .map_err(|stop| Stop::at(stop, at, false))?
+                    .map_err(|stop| Stop::at(stop, at, None))?
                 {
                     return Err(Stop::Undefined(UndefinedEvaluation { at, cause }));
                 }
@@ -560,7 +557,7 @@ impl<L: TemporalLetters> Run<'_, L> {
         };
         match letters
             .valuation_with_window_visits(id, at, meter, &mut aggregate_visit)
-            .map_err(|stop| Stop::at(stop, at, true))?
+            .map_err(|stop| Stop::at(stop, at, Some(class)))?
         {
             Valuation::True => {
                 self.cells.insert((member, class), Cell::True);
