@@ -25,7 +25,8 @@ use crate::protocol_view::{
     argument, control_operation, group_member, integer, reference, text, ControlOperation,
 };
 use crate::reader_protocol_projection::{
-    node_value_type, BareWalker, TypeError, TypeReader, UnsupportedView, WalkFailure,
+    node_value_type, BareWalker, ReaderProtocolProjection, TypeError, TypeReader, UnsupportedView,
+    WalkFailure,
 };
 use crate::wire_form::{has_tag, WireTag};
 
@@ -45,6 +46,25 @@ pub enum BareSelectionFailure {
     Slot(SlotSelectionFailure),
     /// A binder type has no kernel representation in the admitted closure.
     Unsupported(Box<UnsupportedView>),
+}
+
+impl BareSelectionFailure {
+    /// The typed unsupported view of a refusal that is one (FR-390 "Typed
+    /// projection admission"): a witness refusal at the `Package` locus, an
+    /// unsupported projection at its `Node` locus. A selection failure is
+    /// returned unchanged.
+    ///
+    /// # Errors
+    ///
+    /// The [`SlotSelectionFailure`] of a descriptor that names no slot.
+    pub fn into_view(self, package: &str) -> Result<UnsupportedView, SlotSelectionFailure> {
+        match self {
+            Self::Identity(refusal) => Ok(UnsupportedView::witness(package, refusal.into())),
+            Self::Equality(refusal) => Ok(UnsupportedView::witness(package, refusal.into())),
+            Self::Slot(failure) => Err(failure),
+            Self::Unsupported(view) => Ok(*view),
+        }
+    }
 }
 
 impl From<SlotSelectionFailure> for BareSelectionFailure {
@@ -614,6 +634,47 @@ impl<'p> BarePackage<'p> {
     }
 }
 
+impl<'p> BarePackage<'p> {
+    /// The projection of `slot`: its admitted expression as evaluator nodes
+    /// over the slot's frame, each application paired with its
+    /// `protocol_locations` row (FR-533 "The call"). Charges nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`BareSelectionFailure`], the first unsupported projection.
+    pub fn project_protocol_slot(
+        &self,
+        slot: &BareSlot,
+    ) -> Result<ReaderProtocolProjection, BareSelectionFailure> {
+        let supply = self.supply().ok_or(BareSelectionFailure::Identity(
+            IdentityWitnessRefusal::Missing,
+        ))?;
+        let identities = supply
+            .identities
+            .selected(self.package())
+            .map_err(BareSelectionFailure::Identity)?;
+        let walker = BareWalker::new(
+            self.package(),
+            identities,
+            supply.equality,
+            package_work_limit(),
+        )
+        .map_err(SlotSelectionFailure::Fault)?;
+        let binders: Vec<NodeKey> = slot
+            .sources()
+            .iter()
+            .map(|source| source.binder().clone())
+            .collect();
+        walker
+            .project(slot.root(), slot.origin(), &binders)
+            .map_err(|failure| match failure {
+                WalkFailure::Unsupported(view) => BareSelectionFailure::Unsupported(Box::new(view)),
+                WalkFailure::Equality(refusal) => BareSelectionFailure::Equality(refusal),
+                WalkFailure::Fault(failure) => SlotSelectionFailure::Fault(failure).into(),
+            })
+    }
+}
+
 /// The origins among `names` that the control's span family spells with
 /// `prefix` and a span of `form`, in ascending numeric `(start, end)` order,
 /// parsing both as decimal integers and not comparing the names' bytes
@@ -631,7 +692,7 @@ fn ordered_candidates<'a>(
 }
 
 /// The projection work bound: the I2 reader's default.
-fn package_work_limit() -> u64 {
+pub(crate) fn package_work_limit() -> u64 {
     crate::checked_v2::V2ReadLimits::default().work
 }
 

@@ -168,12 +168,43 @@ impl UnsupportedView {
     pub(crate) fn missing_type(package: &str, key: NodeKey) -> Self {
         Self {
             package: package.to_owned(),
-            locus: ViewLocus {
-                key,
-                location: None,
-            },
+            locus: ViewLocus::node(key),
             reason: UnsupportedReason::MissingTypeRepresentation,
         }
+    }
+
+    /// A witness refusal (FR-390, FR-531): the package-scoped locus, no node
+    /// key and no location, because producer-row validity is a property of
+    /// the package.
+    pub(crate) fn witness(package: &str, reason: UnsupportedReason) -> Self {
+        Self {
+            package: package.to_owned(),
+            locus: ViewLocus::Package,
+            reason,
+        }
+    }
+
+    /// The order view creation reports the first unsupported projection by
+    /// (FR-390-AC-67): ascending package identity, then locus (`Package`
+    /// before `Node`), then ascending node key, then FR-390's reason order. A
+    /// location reason breaks its own tie as FR-390-AC-33..38 state: a visit
+    /// without its row before a row without its visit, then the unpaired
+    /// index.
+    pub(crate) fn order(&self) -> (&str, u8, Option<&NodeKey>, u8, bool, usize) {
+        let (surplus_rows, index) = match &self.reason {
+            UnsupportedReason::MissingLocationProjection(missing) => {
+                (missing.rows > missing.visits, missing.index)
+            }
+            _ => (false, 0),
+        };
+        (
+            &self.package,
+            u8::from(matches!(self.locus, ViewLocus::Node { .. })),
+            self.locus.key(),
+            self.reason.rank(),
+            surplus_rows,
+            index,
+        )
     }
 
     /// The catalog code and cause every unsupported view carries.
@@ -197,14 +228,46 @@ impl UnsupportedView {
     }
 }
 
-/// The `Node` locus of an [`UnsupportedView`]: the affected admitted node and
-/// its own admitted location (`None` where the wire carries none for it).
+/// The locus of an [`UnsupportedView`] (FR-390 "Typed projection admission").
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewLocus {
-    /// The node's structural key.
-    pub key: NodeKey,
-    /// The node's own admitted location.
-    pub location: Option<Location>,
+pub enum ViewLocus {
+    /// The package as a whole, with no node key and no location: the locus of
+    /// every witness refusal, because producer-row validity is package-scoped.
+    Package,
+    /// The affected admitted node and its own admitted location (`None` where
+    /// the wire carries none for it).
+    Node {
+        /// The node's structural key.
+        key: NodeKey,
+        /// The node's own admitted location.
+        location: Option<Location>,
+    },
+}
+
+impl ViewLocus {
+    /// The affected node's structural key; `None` at the `Package` locus.
+    pub fn key(&self) -> Option<&NodeKey> {
+        match self {
+            Self::Package => None,
+            Self::Node { key, .. } => Some(key),
+        }
+    }
+
+    /// The affected node's admitted location; `None` at the `Package` locus
+    /// and where the wire carries none.
+    pub fn location(&self) -> Option<&Location> {
+        match self {
+            Self::Package => None,
+            Self::Node { location, .. } => location.as_ref(),
+        }
+    }
+
+    fn node(key: NodeKey) -> Self {
+        Self::Node {
+            key,
+            location: None,
+        }
+    }
 }
 
 /// The typed reason of an [`UnsupportedView`].
@@ -222,6 +285,19 @@ pub enum UnsupportedReason {
     /// A slot-walk visit without its `protocol_locations` row, or a row
     /// without its visit.
     MissingLocationProjection(Box<MissingLocation>),
+    /// The identity rows of a bytes-only supply are absent (FR-531).
+    MissingIdentityWitness,
+    /// The identity rows name no identity the package admits (FR-531).
+    UnknownIdentityWitness,
+    /// The identity rows were produced for another package (FR-531).
+    ForeignIdentityWitness,
+    /// A slot reaches an equality application and the supply holds no
+    /// equality rows (FR-531 "The equality file").
+    MissingEqualityWitness,
+    /// The equality rows join to no equality application the slot reaches.
+    UnknownEqualityWitness,
+    /// The equality rows were produced for another package.
+    ForeignEqualityWitness,
 }
 
 impl UnsupportedReason {
@@ -234,6 +310,50 @@ impl UnsupportedReason {
                 format!("missing-operation-projection:{operation}")
             }
             Self::MissingLocationProjection(_) => "missing-location-projection".to_owned(),
+            Self::MissingIdentityWitness => "missing-identity-witness".to_owned(),
+            Self::UnknownIdentityWitness => "unknown-identity-witness".to_owned(),
+            Self::ForeignIdentityWitness => "foreign-identity-witness".to_owned(),
+            Self::MissingEqualityWitness => "missing-equality-witness".to_owned(),
+            Self::UnknownEqualityWitness => "unknown-equality-witness".to_owned(),
+            Self::ForeignEqualityWitness => "foreign-equality-witness".to_owned(),
+        }
+    }
+
+    /// The position of this reason in FR-390's reason order, the last key of
+    /// the order view creation reports the first unsupported projection by.
+    fn rank(&self) -> u8 {
+        match self {
+            Self::MissingTypeRepresentation => 0,
+            Self::MissingIdentityWitness => 1,
+            Self::UnknownIdentityWitness => 2,
+            Self::ForeignIdentityWitness => 3,
+            Self::MissingEqualityWitness => 4,
+            Self::UnknownEqualityWitness => 5,
+            Self::ForeignEqualityWitness => 6,
+            Self::MissingLiteralProjection => 7,
+            Self::MissingOperationProjection { .. } => 8,
+            Self::MissingLocationProjection(_) => 9,
+        }
+    }
+}
+
+impl From<crate::bare::IdentityWitnessRefusal> for UnsupportedReason {
+    fn from(refusal: crate::bare::IdentityWitnessRefusal) -> Self {
+        use crate::bare::IdentityWitnessRefusal as Refusal;
+        match refusal {
+            Refusal::Missing => Self::MissingIdentityWitness,
+            Refusal::Unknown => Self::UnknownIdentityWitness,
+            Refusal::Foreign => Self::ForeignIdentityWitness,
+        }
+    }
+}
+
+impl From<EqualityWitnessRefusal> for UnsupportedReason {
+    fn from(refusal: EqualityWitnessRefusal) -> Self {
+        match refusal {
+            EqualityWitnessRefusal::Missing => Self::MissingEqualityWitness,
+            EqualityWitnessRefusal::Unknown => Self::UnknownEqualityWitness,
+            EqualityWitnessRefusal::Foreign => Self::ForeignEqualityWitness,
         }
     }
 }
@@ -305,10 +425,7 @@ pub(crate) fn project_package(
             Err(BuildError::Unsupported { reason, node }) => {
                 ReaderSlot::Unsupported(UnsupportedView {
                     package: package.to_owned(),
-                    locus: ViewLocus {
-                        key: index.key(&node).map_err(PackageRefusal::Fault)?,
-                        location: None,
-                    },
+                    locus: ViewLocus::node(index.key(&node).map_err(PackageRefusal::Fault)?),
                     reason,
                 })
             }
@@ -325,23 +442,14 @@ pub(crate) fn project_package(
     }
 }
 
-/// The refusal FR-390 reports: the first by ascending node key, then reason
-/// order (a visit without its row before a row without its visit, then by the
-/// unpaired index), never the walk order that found it.
+/// The refusal FR-390 reports: the first by [`UnsupportedView::order`], never
+/// the walk order that found it.
 fn first_refusal(
     current: Option<UnsupportedView>,
     found: Option<UnsupportedView>,
 ) -> Option<UnsupportedView> {
-    let rank = |view: &UnsupportedView| match &view.reason {
-        UnsupportedReason::MissingLocationProjection(missing) => (
-            view.locus.key.clone(),
-            missing.rows > missing.visits,
-            missing.index,
-        ),
-        _ => (view.locus.key.clone(), false, 0),
-    };
     match (current, found) {
-        (Some(left), Some(right)) => Some(if rank(&right) < rank(&left) {
+        (Some(left), Some(right)) => Some(if right.order() < left.order() {
             right
         } else {
             left
@@ -605,10 +713,7 @@ impl<'wire> OriginRows<'wire> {
             match index.key(application) {
                 Ok(key) => Ok(UnsupportedView {
                     package: package.to_owned(),
-                    locus: ViewLocus {
-                        key: key.clone(),
-                        location: None,
-                    },
+                    locus: ViewLocus::node(key.clone()),
                     reason: UnsupportedReason::MissingLocationProjection(Box::new(
                         MissingLocation {
                             origin: origin.to_owned(),
@@ -719,10 +824,7 @@ impl<'wire> BareWalker<'wire> {
             Err(BuildError::Unsupported { reason, node }) => {
                 return Err(WalkFailure::Unsupported(UnsupportedView {
                     package: self.index.admitted.name().to_owned(),
-                    locus: ViewLocus {
-                        key: self.index.key(&node).map_err(WalkFailure::Fault)?,
-                        location: None,
-                    },
+                    locus: ViewLocus::node(self.index.key(&node).map_err(WalkFailure::Fault)?),
                     reason,
                 }))
             }
@@ -734,6 +836,44 @@ impl<'wire> BareWalker<'wire> {
             }
         }
         Ok(visits)
+    }
+
+    /// The projection of the slot rooted at `root` under `origin` (`None`
+    /// for a slot with no application to locate), its applications paired
+    /// with the origin's `protocol_locations` rows (FR-390 view creation,
+    /// FR-533). The first unsupported projection by [`UnsupportedView::order`]
+    /// is the failure.
+    pub(crate) fn project(
+        &self,
+        root: &NodeKey,
+        origin: Option<&str>,
+        binders: &[NodeKey],
+    ) -> Result<ReaderProtocolProjection, WalkFailure> {
+        let package = self.index.admitted.name();
+        let request = SlotRequest {
+            root: root.clone(),
+            origin: origin.unwrap_or_default().to_owned(),
+            binders: binders.to_vec(),
+        };
+        let mut projection = match self.index.project_slot(&request) {
+            Ok(projection) => projection,
+            Err(BuildError::Fault(fault)) => return Err(WalkFailure::Fault(fault)),
+            Err(BuildError::Equality(refusal)) => return Err(WalkFailure::Equality(refusal)),
+            Err(BuildError::Unsupported { reason, node }) => {
+                return Err(WalkFailure::Unsupported(UnsupportedView {
+                    package: package.to_owned(),
+                    locus: ViewLocus::node(self.index.key(&node).map_err(WalkFailure::Fault)?),
+                    reason,
+                }))
+            }
+        };
+        let rows = OriginRows::new(self.index.admitted);
+        match rows.pair(&mut projection, &request.origin, package, &self.index) {
+            Ok(None) => Ok(projection),
+            Ok(Some(view)) => Err(WalkFailure::Unsupported(view)),
+            Err(PackageRefusal::Unsupported(view)) => Err(WalkFailure::Unsupported(view)),
+            Err(PackageRefusal::Fault(fault)) => Err(WalkFailure::Fault(fault)),
+        }
     }
 
     /// The number of rows each type-declaration origin holds for each
@@ -2089,10 +2229,7 @@ impl UnsupportedView {
     ) -> Self {
         Self {
             package: package.to_owned(),
-            locus: ViewLocus {
-                key: application.clone(),
-                location: None,
-            },
+            locus: ViewLocus::node(application.clone()),
             reason: UnsupportedReason::MissingLocationProjection(Box::new(MissingLocation {
                 origin: prefix.trim_end().to_owned(),
                 application,

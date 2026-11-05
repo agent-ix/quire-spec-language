@@ -271,6 +271,7 @@
 //!
 
 pub mod automaton;
+pub mod bare;
 pub mod fairness;
 pub mod hyper;
 pub mod model_subject;
