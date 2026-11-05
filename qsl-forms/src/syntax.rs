@@ -695,6 +695,15 @@ pub enum ExprNode {
     },
     /// `flatten(source)`.
     Flatten(ExprId),
+    /// `dropFirst(c)` (QSpec FR-145-AC-10).
+    DropFirst(ExprId),
+    /// `removeOne(c, v)` (QSpec FR-145-AC-11).
+    RemoveOne {
+        /// The collection operand.
+        collection: ExprId,
+        /// The value whose one occurrence is removed.
+        item: ExprId,
+    },
     /// `fold<A>(acc, x in c: step, identity: i)` or `reduce<A>(acc, x in c:
     /// step)`; the identity is kept whichever form is written so its presence
     /// is checked.
@@ -921,6 +930,7 @@ impl ExprNode {
             | Self::Value(operand)
             | Self::Deref(operand)
             | Self::Flatten(operand)
+            | Self::DropFirst(operand)
             | Self::Size(operand)
             | Self::Field { operand, .. }
             | Self::Convert { operand, .. }
@@ -958,7 +968,9 @@ impl ExprNode {
             Self::Seq {
                 low, high, body, ..
             } => vec![*low, *high, *body],
-            Self::Contains { collection, item } => vec![*collection, *item],
+            Self::Contains { collection, item } | Self::RemoveOne { collection, item } => {
+                vec![*collection, *item]
+            }
             Self::AllInstances { population, .. } => vec![*population],
             Self::Lookup {
                 population,
@@ -1022,6 +1034,7 @@ impl ExprNode {
             | Self::Value(_)
             | Self::Deref(_)
             | Self::Flatten(_)
+            | Self::DropFirst(_)
             | Self::Size(_)
             | Self::Field { .. }
             | Self::Convert { .. }
@@ -1030,6 +1043,7 @@ impl ExprNode {
             | Self::Record { .. }
             | Self::Collection { .. }
             | Self::Contains { .. }
+            | Self::RemoveOne { .. }
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
@@ -1097,6 +1111,7 @@ impl ExprNode {
             | Self::Value(_)
             | Self::Deref(_)
             | Self::Flatten(_)
+            | Self::DropFirst(_)
             | Self::Size(_)
             | Self::Field { .. }
             | Self::Convert { .. }
@@ -1105,6 +1120,7 @@ impl ExprNode {
             | Self::Record { .. }
             | Self::Collection { .. }
             | Self::Contains { .. }
+            | Self::RemoveOne { .. }
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
@@ -1152,6 +1168,7 @@ impl ExprNode {
             | Self::Value(operand)
             | Self::Deref(operand)
             | Self::Flatten(operand)
+            | Self::DropFirst(operand)
             | Self::Size(operand)
             | Self::Field { operand, .. }
             | Self::Convert { operand, .. }
@@ -1187,6 +1204,10 @@ impl ExprNode {
                 ..
             }
             | Self::Contains {
+                collection: first,
+                item: second,
+            }
+            | Self::RemoveOne {
                 collection: first,
                 item: second,
             }
@@ -1513,6 +1534,18 @@ impl Expression {
     /// `flatten(operand)`.
     pub fn flatten(operand: Self) -> Self {
         Self::compose([operand], |[operand]| ExprNode::Flatten(operand))
+    }
+
+    /// `dropFirst(operand)`.
+    pub fn drop_first(operand: Self) -> Self {
+        Self::compose([operand], |[operand]| ExprNode::DropFirst(operand))
+    }
+
+    /// `removeOne(collection, item)`.
+    pub fn remove_one(collection: Self, item: Self) -> Self {
+        Self::compose([collection, item], |[collection, item]| {
+            ExprNode::RemoveOne { collection, item }
+        })
     }
 
     /// `size(operand)`.
@@ -4372,9 +4405,28 @@ pub struct ProbabilisticForm {
     /// The whole claim's written content, with no span or position: the
     /// producer ranks claims that share a name by it, so a claim's identity
     /// does not depend on where it is declared (FR-498).
-    pub content: crate::SignificantContent,
+    pub content: SignificantContent,
     /// The span of the whole claim, closing `}` included.
     pub span: Span,
+}
+
+/// A declaration's written content (FR-498): the exact spellings of its
+/// significant tokens in source order, with no span, trivia or parse
+/// position. Its order is a total order on written content.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SignificantContent(Vec<Box<[u8]>>);
+
+impl SignificantContent {
+    /// The content `cst` carries, converted into the forms crate's own type
+    /// so no `qsl_cst` type crosses the S2 boundary (FR-091-AC-20).
+    pub(crate) fn from_cst(content: &qsl_cst::SignificantContent) -> Self {
+        Self(content.tokens().map(Box::from).collect())
+    }
+
+    /// The significant token spellings, in source order.
+    pub fn tokens(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.0.iter().map(|spelling| &**spelling)
+    }
 }
 
 /// One temporal operator written inside a state-graph claim's predicate. S1

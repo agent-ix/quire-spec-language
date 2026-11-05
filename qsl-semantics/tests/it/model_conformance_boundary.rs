@@ -1291,7 +1291,12 @@ fn two_model_unit(reverse: bool) -> (String, qsl_semantics::model::intake::Packa
 
 /// T10: two selections report in selection byte order whatever the alias or
 /// source order, with identical totals.
-#[trace("QSpec-FR-151-AC-12", "FR-082-AC-17", "QSpec-TC-196")]
+#[trace(
+    "QSpec-FR-151-AC-12",
+    "QSpec-FR-151-AC-15",
+    "FR-082-AC-17",
+    "QSpec-TC-196"
+)]
 #[test]
 fn c06_two_selections_canonical_order() {
     let mut totals = None;

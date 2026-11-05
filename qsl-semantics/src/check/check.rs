@@ -4942,6 +4942,22 @@ impl<'a> Typer<'a> {
         element: ValueType,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        self.require_member_equality(element, location)?;
+        Ok(node(
+            NodeKind::Contains(self.push(collection), self.push(item)),
+            ValueType::Boolean,
+            location,
+        ))
+    }
+}
+
+impl Typer<'_> {
+    /// The element type admits the equality `contains` and `removeOne` use.
+    fn require_member_equality(
+        &self,
+        element: ValueType,
+        location: &Location,
+    ) -> Result<(), CheckRefusal> {
         self.scope
             .types
             .check_equality_in(
@@ -4951,10 +4967,75 @@ impl<'a> Typer<'a> {
                 EqualityOperand::typed(element),
                 &|shape: &EnumShape| self.scope.enum_members_of(shape),
             )
-            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+            .map(|_| ())
+            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))
+    }
+
+    /// `removeOne(c, v)` over its typed collection `c`, of element type
+    /// `element`, and its typed item `v`: the same kind with the bound
+    /// `[max(a-1,0), b]` (QSpec FR-145-AC-11).
+    fn remove_one(
+        &mut self,
+        collection: Node,
+        item: Node,
+        element: ValueType,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.require_member_equality(element, location)?;
+        let ValueType::Collection(source) = &collection.value_type else {
+            return Err(mismatch(&collection.location));
+        };
+        let shrunk = match source.bound() {
+            Some(source_bound) => Some(bound(
+                source_bound.minimum().saturating_sub(1),
+                source_bound.maximum(),
+                location,
+            )?),
+            None => None,
+        };
+        let value_type = ValueType::collection(CollectionType::new(
+            source.kind(),
+            source.element().clone(),
+            shrunk,
+        ));
+        self.check_declared_type(&value_type, location)?;
         Ok(node(
-            NodeKind::Contains(self.push(collection), self.push(item)),
-            ValueType::Boolean,
+            NodeKind::RemoveOne(self.push(collection), self.push(item)),
+            value_type,
+            location,
+        ))
+    }
+
+    /// `dropFirst(c)` over a sequence or an ordered set: the same kind with
+    /// the bound `[max(a-1,0), max(b-1,0)]`; a set or a bag has no first
+    /// occurrence (QSpec FR-145-AC-10).
+    fn drop_first(&mut self, source: Node, location: &Location) -> Result<Node, CheckRefusal> {
+        let ValueType::Collection(collection) = &source.value_type else {
+            return Err(mismatch(&source.location));
+        };
+        if !matches!(
+            collection.kind(),
+            CollectionKind::Sequence | CollectionKind::OrderedSet
+        ) {
+            return Err(ineligible(location));
+        }
+        let shrunk = match collection.bound() {
+            Some(source_bound) => Some(bound(
+                source_bound.minimum().saturating_sub(1),
+                source_bound.maximum().saturating_sub(1),
+                location,
+            )?),
+            None => None,
+        };
+        let value_type = ValueType::collection(CollectionType::new(
+            collection.kind(),
+            collection.element().clone(),
+            shrunk,
+        ));
+        self.check_declared_type(&value_type, location)?;
+        Ok(node(
+            NodeKind::DropFirst(self.push(source)),
+            value_type,
             location,
         ))
     }

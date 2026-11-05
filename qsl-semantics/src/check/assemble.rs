@@ -2628,6 +2628,8 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Flatten(_)
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }
+                | ExprNode::DropFirst(_)
+                | ExprNode::RemoveOne { .. }
                 | ExprNode::Lookup { .. }
                 | ExprNode::Dispatch { .. }
                 | ExprNode::Pre(_)

@@ -781,7 +781,7 @@ fn a_candidates_precondition_is_the_units_pre_clauses_not_the_domain_requires() 
     }
 }
 
-/// FR-302-AC-7: a called operation whose family has no body for a concrete
+/// FR-302-AC-3: a called operation whose family has no body for a concrete
 /// subtype is not applicable there. `A` is concrete and only `B.size` has a
 /// body, so the compile refuses at S3 as `ambiguous_dispatch`/`no-applicable`
 /// naming `A`, and produces no package.

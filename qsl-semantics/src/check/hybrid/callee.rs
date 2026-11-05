@@ -159,7 +159,9 @@ fn form_name(node: &ExprNode) -> &'static str {
         | ExprNode::Population { .. }
         | ExprNode::Seq { .. }
         | ExprNode::Size(_)
-        | ExprNode::Contains { .. } => "a collection operation",
+        | ExprNode::Contains { .. }
+        | ExprNode::DropFirst(_)
+        | ExprNode::RemoveOne { .. } => "a collection operation",
         ExprNode::Present(_) | ExprNode::Value(_) => "an option operation",
         ExprNode::Pre(_) => "`pre`",
         _ => "an expression form outside the hybrid expression forms",

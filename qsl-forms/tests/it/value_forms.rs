@@ -166,6 +166,8 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Convert { target, .. } => format!("Convert[{:?}]", target.head),
         ExprNode::Query { query, binder, .. } => format!("Query[{query:?},{binder}]"),
         ExprNode::Flatten(_) => "Flatten".into(),
+        ExprNode::DropFirst(_) => "DropFirst".into(),
+        ExprNode::RemoveOne { .. } => "RemoveOne".into(),
         ExprNode::Accumulate {
             form,
             accumulator_type,
@@ -400,6 +402,8 @@ fn each_expression_construct_maps_to_its_variant() {
         ("forall(x in c: a)", "Query[Forall,x](c, a)"),
         ("exists(x in c: a)", "Query[Exists,x](c, a)"),
         ("flatten(c)", "Flatten(c)"),
+        ("dropFirst(c)", "DropFirst(c)"),
+        ("removeOne(c, a)", "RemoveOne(c, a)"),
         (
             "fold<A>(acc, x in c: a, identity: b)",
             "Accumulate[Fold,A,acc,x](c, a, b)",

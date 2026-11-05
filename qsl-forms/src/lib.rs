@@ -66,8 +66,6 @@ pub use protocol_control::{
     ChannelOverflow, FenceForm, JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm,
     ProtocolMemberForm, RepeatForm, SchedulingForm, TerminalForm,
 };
-/// A declaration's written content (FR-498), as [`ProbabilisticForm::content`] carries it.
-pub use qsl_cst::SignificantContent;
 pub use refinement::{
     AbstractSideForm, ArgumentForm, FairnessRowForm, FairnessSide, FieldRowForm,
     HistoryLiteralForm, HistoryRowForm, HistoryUpdateForm, ObjectRowForm, PopulationRowForm,
@@ -96,15 +94,16 @@ pub use syntax::{
     RatioNumberForm, RatioNumberKind, RatioTermForm, RecordFieldForm, RecordForm, RelatedForm,
     RelationshipForm, ReleaseForm, ReplicatedRoleForm, RequirementForm, ResponseForm, RewardForm,
     RoleForm, RoleLifetime, SchedulableForm, SchedulerForm, ScopeEntry, ScopeId, ScopeName,
-    ScopedAnchorForm, ShapeChanged, SignedQuantityForm, Spellings, StateClauseForm,
-    StateClauseKind, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
-    StepLabelForm, StringLiteral, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
-    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TemporalOperatorUse,
-    TermOperator, TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantBoundForm,
-    TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedIntervalForm, TimedUpper,
-    TransitionForm, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm,
-    UnitForm, UrgentForm, UrgentTarget, UsingAlias, WeightedDelayForm, WeightedValueForm,
-    WeightingForm, WorkloadForm, WorkloadWeightForm,
+    ScopedAnchorForm, ShapeChanged, SignedQuantityForm, SignificantContent, Spellings,
+    StateClauseForm, StateClauseKind, StateGraphClaimForm, StateGraphClaimKind,
+    StateGraphPredicateForm, StepLabelForm, StringLiteral, TaskForm, TasksetForm,
+    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
+    TemporalOperatorForm, TemporalOperatorUse, TermOperator, TerminalDeclarationForm,
+    TerminalDeclarationKind, TimeInvariantBoundForm, TimeInvariantForm, TimeSourceForm,
+    TimeSourceSyntax, TimedIntervalForm, TimedUpper, TransitionForm, TreeRefusal, TupleForm,
+    TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm, UrgentTarget,
+    UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm, WorkloadForm,
+    WorkloadWeightForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a
