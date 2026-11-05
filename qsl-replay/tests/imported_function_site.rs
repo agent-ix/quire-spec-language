@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-516 (FR-121-AC-32 to FR-121-AC-36): `call_site` selects a function a
+//! TC-516 (FR-121-AC-34 fully; the library-name and package-bytes parts of
+//! FR-121-AC-32, AC-33, AC-35 and AC-36): the code has no `package_id`, which
+//! those ACs state their package identity in, so those tests are tagged
+//! `TC-516` only and claim none of AC-32, AC-33, AC-35 or AC-36.
+//!
+//! `call_site` selects a function a
 //! direct import of the unit declares through an [`ImportedFunctionName`],
 //! and answers the declaring library, its v2 bytes and the function's
 //! `FunctionSite` from the unit's own compile of its dependency input.
@@ -8,9 +13,8 @@ use ix_trace_rs::trace;
 use qsl_replay::{
     call_site, replay, CallSite, CallSiteRefusal, Code, DeclineCode, DependencyInput, FunctionSite,
     Identifier, ImportedFunctionName, InputSettlement, LibraryName, ProofRefusalCause,
-    QualifiedName, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplayResult, ReplaySource,
-    RequestTargetWire, SourceIdentity, StateEnvironment, SuppliedLibrary, TerminalValue,
-    WitnessValue,
+    QualifiedName, ReplayLimits, ReplayRequestWire, ReplayResult, ReplaySource, RequestTargetWire,
+    SourceIdentity, StateEnvironment, SuppliedLibrary, TerminalValue, WitnessValue,
 };
 use qsl_replay::{CanonicalAssignment, EvaluatedValue};
 use quire_exact::ScalarLimits;
@@ -145,7 +149,7 @@ fn dependency_reference(bytes: &[u8]) -> (String, serde_json::Value) {
 /// standalone compile of the library, and its `library` and `function` equal
 /// the `dependency_reference` term of the unit's call; the unit's own
 /// `package` differs from the library's.
-#[trace("TC-516", "FR-121-AC-32")]
+#[trace("TC-516")]
 #[test]
 fn an_imported_function_site_equals_the_standalone_library_site() {
     let unit = unit_source("test/units", UNIT_BODY);
@@ -183,29 +187,25 @@ fn an_imported_function_site_equals_the_standalone_library_site() {
     }
 }
 
-/// FR-121-AC-33: from the imported site alone a request keyed by the
-/// library's package name and the site's parameter replays `big(3)` to `false`.
-#[trace("TC-516", "FR-121-AC-33")]
-#[test]
-fn the_imported_site_alone_keys_a_replay_of_the_library_function() {
-    let unit = unit_source("test/units", UNIT_BODY);
-    let site = selected(&unit, vec![units()], &imported("test/units", "big")).expect("big");
-    let library = &site.site;
+/// A request replaying `name` of `test/units` with `assignments`, keyed from
+/// the imported `site` alone.
+fn library_replay(
+    site: &qsl_replay::ImportedFunctionSite,
+    name: &str,
+    assignments: Vec<CanonicalAssignment>,
+) -> qsl_replay::InputArmResult {
     let source = ("a".to_owned(), "units".to_owned());
     let wire = ReplayRequestWire {
         profile_selections: vec![],
-        package_name: library.library.as_str().to_owned(),
+        package_name: site.library.as_str().to_owned(),
         sources: vec![source.clone()],
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(
-            function("big"),
-            library.function.declaration.clone(),
+            function(name),
+            site.function.declaration.clone(),
         ),
-        source: ReplaySource::Input(vec![CanonicalAssignment {
-            parameter: library.function.parameters[0].1.clone(),
-            value: WitnessValue::Integer(3),
-        }]),
-        obligation_identity: library.function.obligation_identity().clone(),
+        source: ReplaySource::Input(assignments),
+        obligation_identity: site.function.obligation_identity().clone(),
         backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: UNLIMITED,
@@ -224,11 +224,67 @@ fn the_imported_site_alone_keys_a_replay_of_the_library_function() {
     else {
         panic!("an input-sourced request settles on the input arm");
     };
+    result
+}
+
+/// FR-121-AC-33: from the imported site alone a request keyed by the
+/// library's package name and the site's parameter replays `big(3)` to `false`.
+#[trace("TC-516")]
+#[test]
+fn the_imported_site_alone_keys_a_replay_of_the_library_function() {
+    let unit = unit_source("test/units", UNIT_BODY);
+    let site = selected(&unit, vec![units()], &imported("test/units", "big")).expect("big");
+    let result = library_replay(
+        &site.site,
+        "big",
+        vec![CanonicalAssignment {
+            parameter: site.site.function.parameters[0].1.clone(),
+            value: WitnessValue::Integer(3),
+        }],
+    );
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(
         result.settlement(),
         InputSettlement::ReproducedWithoutWitness
     );
+}
+
+/// FR-121-AC-32, FR-121-AC-33: the ordered parameter keys of a two-parameter
+/// function bind the argument of their own name. `both` is `a < b`; with
+/// `a = 1` and `b = 5` it is `true`, and with the values on the swapped keys
+/// it is `false`, so a site that listed the keys in the wrong order, or
+/// paired a name with the other's key, fails here independently of the
+/// standalone-compile equality.
+#[trace("TC-516")]
+#[test]
+fn imported_parameter_keys_bind_their_own_arguments_in_declared_order() {
+    let unit = unit_source("test/units", UNIT_BODY);
+    let site = selected(&unit, vec![units()], &imported("test/units", "both")).expect("both");
+    let [(a_name, a_key), (b_name, b_key)] = &site.site.function.parameters[..] else {
+        panic!("both declares two parameters");
+    };
+    assert_eq!((a_name.as_str(), b_name.as_str()), ("a", "b"));
+    assert_ne!(a_key, b_key);
+    let assign = |a: i128, b: i128| {
+        vec![
+            CanonicalAssignment {
+                parameter: a_key.clone(),
+                value: WitnessValue::Integer(a),
+            },
+            CanonicalAssignment {
+                parameter: b_key.clone(),
+                value: WitnessValue::Integer(b),
+            },
+        ]
+    };
+    for (a, b, holds) in [(1, 5, true), (5, 1, false)] {
+        let result = library_replay(&site.site, "both", assign(a, b));
+        assert_eq!(
+            result.value(),
+            Some(EvaluatedValue::Boolean(holds)),
+            "a = {a}, b = {b}"
+        );
+    }
 }
 
 /// FR-121-AC-34: a unit function of the same name never answers an imported
@@ -255,7 +311,7 @@ fn a_same_named_unit_function_is_never_the_imported_site() {
 /// FR-121-AC-35: a library the unit does not import directly -- supplied but
 /// unimported, absent, or reached only through another library -- refuses
 /// `UnknownImport` paired with the unit's package.
-#[trace("TC-516", "FR-121-AC-35")]
+#[trace("TC-516")]
 #[test]
 fn a_library_without_a_direct_import_refuses_unknown_import() {
     let other = supplied("test/other", "other", BIG);
@@ -306,7 +362,7 @@ fn a_library_without_a_direct_import_refuses_unknown_import() {
 
 /// FR-121-AC-36: a function the library does not declare, and one whose
 /// signature is not package-independent, refuse paired with the library.
-#[trace("TC-516", "FR-121-AC-36")]
+#[trace("TC-516")]
 #[test]
 fn an_undeclared_or_unimportable_function_refuses_paired_with_the_library() {
     let library = supplied(
@@ -353,5 +409,4 @@ fn an_undeclared_or_unimportable_function_refuses_paired_with_the_library() {
             }
         ));
     }
-    let _ = ReplayRefusal::Fault;
 }
