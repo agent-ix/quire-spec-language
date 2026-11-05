@@ -179,10 +179,22 @@ fn one_step_relation_claim_occurrence_is_admitted_by_ir() {
     assert_eq!(roles.len(), 2);
     assert!(roles.contains(&"claim"));
     assert!(roles.contains(&"declaration"));
-    let admitted = match read_back(&emission) {
-        Read::Verified { admitted, .. } => admitted,
-        other => panic!("Contract IR admits the relation package: {other:?}"),
-    };
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
+        .expect("the fixture evidence is unique");
+    let admitted = crate::checked_v2::read_checked_package_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+    )
+    .unwrap_or_else(|failure| panic!("Contract IR admits the relation package: {failure:?}"))
+    .into_value()
+    .admitted;
     let admitted_relation = admitted
         .graph()
         .nodes
