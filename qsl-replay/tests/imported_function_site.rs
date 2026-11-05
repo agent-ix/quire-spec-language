@@ -167,7 +167,14 @@ fn an_imported_function_site_equals_the_standalone_library_site() {
             .iter()
             .map(|(name, _)| name.as_str())
             .collect();
-        assert_eq!(names, if name == "both" { vec!["a", "b"] } else { vec!["x"] });
+        assert_eq!(
+            names,
+            if name == "both" {
+                vec!["a", "b"]
+            } else {
+                vec!["x"]
+            }
+        );
         if name == "big" {
             assert_eq!(site.site.library.as_str(), term_package);
             let node = wire_node(&site.site.function.function);
