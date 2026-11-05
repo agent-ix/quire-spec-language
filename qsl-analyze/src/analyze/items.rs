@@ -28,6 +28,7 @@ use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::CatalogCode;
 
 use super::{AnalyzeItem, EngineReport, Refusal};
+use crate::claim_family::claim_family;
 use crate::model_check::{
     check_model, check_protocol, manifest as en1, HyperRefusal, LivenessRefusal, ModelCheckRefusal,
     ModelCheckRequest, ProtocolCheckRequest,
@@ -44,7 +45,11 @@ use crate::zone_check::{
 /// existing unsupported-requested-capability disposition. The route writer
 /// supplies the matching typed cause and an empty candidate set; admitted
 /// forms and mismatched request items return `None` for their ordinary path.
-pub fn hyper_form_item(item: &RequirementItem, form: &HyperForm) -> Option<AnalyzeItem<'static>> {
+pub fn hyper_form_item(
+    package: &CheckedPackage,
+    item: &RequirementItem,
+    form: &HyperForm,
+) -> Option<AnalyzeItem<'static>> {
     if item.kind() != Capability::TemporalSatisfaction {
         return None;
     }
@@ -61,10 +66,17 @@ pub fn hyper_form_item(item: &RequirementItem, form: &HyperForm) -> Option<Analy
         AnalyzeItem::unadapted(
             item.index(),
             item.kind(),
-            Some(DeclarationFamily::TemporalTrace),
+            claim_family(package, ItemKind::Formula, item.occurrence()),
         )
     })
 }
+
+/// The family of an authored clause item (`ModelCheckItem::Clause`,
+/// `ZoneCheckItem::Clause`): the item runs a checked `temporal`/
+/// `temporal_clause` node, whose row of QSpec FR-290's table is
+/// `temporal-trace`, whatever the subject it runs over. A caller that holds
+/// the claim's occurrence replaces it with [`AnalyzeItem::at_claim`].
+const CLAUSE_FAMILY: Option<DeclarationFamily> = Some(DeclarationFamily::TemporalTrace);
 
 /// `runtime_invariant`/`established-invariant-broken`: the diagnostic of a
 /// refusal whose own type names no code.
@@ -105,7 +117,7 @@ pub fn model_item<'a>(
     item: ModelItem<'a>,
 ) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
     match item.request.item {
-        ModelCheckItem::Clause { .. } => Ok(run_model_item(index, item)),
+        ModelCheckItem::Clause { .. } => Ok(run_model_item(index, CLAUSE_FAMILY, item)),
         ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => {
             Err(DerivedItemMismatch::DerivedRun { index })
         }
@@ -114,11 +126,15 @@ pub fn model_item<'a>(
 
 /// [`model_item`] with no check of what `item` runs: the derived adapters'
 /// path once they have joined the run to its request item.
-fn run_model_item(index: RequestIndex, item: ModelItem<'_>) -> AnalyzeItem<'_> {
+fn run_model_item(
+    index: RequestIndex,
+    family: Option<DeclarationFamily>,
+    item: ModelItem<'_>,
+) -> AnalyzeItem<'_> {
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
-        Some(DeclarationFamily::TemporalTrace),
+        family,
         Mode::Bounded,
         en1::BACKEND_ID,
         move |cancel| {
@@ -176,7 +192,7 @@ pub fn protocol_item<'a>(
     item: ProtocolItem<'a>,
 ) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
     match item.request.item {
-        ModelCheckItem::Clause { .. } => Ok(run_protocol_item(index, item)),
+        ModelCheckItem::Clause { .. } => Ok(run_protocol_item(index, CLAUSE_FAMILY, item)),
         ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => {
             Err(DerivedItemMismatch::DerivedRun { index })
         }
@@ -184,17 +200,15 @@ pub fn protocol_item<'a>(
 }
 
 /// [`protocol_item`] with no check of what `item` runs.
-fn run_protocol_item(index: RequestIndex, item: ProtocolItem<'_>) -> AnalyzeItem<'_> {
-    let family = match &item.request.item {
-        ModelCheckItem::Clause { .. } => DeclarationFamily::Protocol,
-        ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => {
-            DeclarationFamily::TemporalTrace
-        }
-    };
+fn run_protocol_item(
+    index: RequestIndex,
+    family: Option<DeclarationFamily>,
+    item: ProtocolItem<'_>,
+) -> AnalyzeItem<'_> {
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
-        Some(family),
+        family,
         Mode::Bounded,
         en1::BACKEND_ID,
         move |cancel| {
@@ -280,7 +294,7 @@ pub fn zone_item<'a, S: Clone + Eq + 'a>(
     item: TimedItem<'a, S>,
 ) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
     match item.request.item {
-        ZoneCheckItem::Clause { .. } => Ok(run_zone_item(index, item)),
+        ZoneCheckItem::Clause { .. } => Ok(run_zone_item(index, CLAUSE_FAMILY, item)),
         ZoneCheckItem::DeadlockFreedom | ZoneCheckItem::TimeLockFreedom => {
             Err(DerivedItemMismatch::DerivedRun { index })
         }
@@ -290,12 +304,13 @@ pub fn zone_item<'a, S: Clone + Eq + 'a>(
 /// [`zone_item`] with no check of what `item` runs.
 fn run_zone_item<'a, S: Clone + Eq + 'a>(
     index: RequestIndex,
+    family: Option<DeclarationFamily>,
     item: TimedItem<'a, S>,
 ) -> AnalyzeItem<'a> {
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
-        Some(DeclarationFamily::TemporalTrace),
+        family,
         Mode::Bounded,
         en6::BACKEND_ID,
         move |cancel| {
@@ -532,7 +547,12 @@ pub fn derived_model_item<'a>(
     item.replay = joined_replay(item.replay, expected);
     item.request.limits.limits = derived_graph_limits(limits);
     item.request.max_depth = None;
-    Ok(run_model_item(index, item))
+    let family = claim_family(
+        item.request.subject.simulation.package,
+        ItemKind::DeadlockFreedom,
+        derived.occurrence(),
+    );
+    Ok(run_model_item(index, family, item))
 }
 
 /// The EN-1 item that runs the derived `deadlock-freedom` (QSpec FR-429) or
@@ -604,7 +624,12 @@ pub fn derived_protocol_item<'a, S>(
     item.certificate.max_store_buffer = max_store_buffer;
     item.certificate.max_messages = max_messages;
     item.certificate.max_live_instances = max_live_instances;
-    Ok(run_protocol_item(index, item))
+    let family = claim_family(
+        item.request.subject.model.simulation.package,
+        kind,
+        derived.occurrence(),
+    );
+    Ok(run_protocol_item(index, family, item))
 }
 
 /// The EN-6 item that runs the derived `deadlock-freedom` or
@@ -687,7 +712,12 @@ pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
         DerivedLimit::MaxTransitions,
         defaults.max_symbolic_transitions,
     );
-    Ok(run_zone_item(index, item))
+    let family = claim_family(
+        item.request.subject.system().package(),
+        kind,
+        derived.occurrence(),
+    );
+    Ok(run_zone_item(index, family, item))
 }
 
 /// An EN-6 timed refinement item (QSpec FR-430, FR-144): the safety half's

@@ -9,6 +9,7 @@
 //! same claim forms on the product with the claim's counted monitor.
 
 use ix_trace_rs::trace;
+use qsl_analyze::analyze::ProtocolItem;
 use qsl_analyze::model_check::{
     check_model, check_protocol, ModelCheckRequest, ProtocolCheckRequest,
 };
@@ -173,6 +174,69 @@ impl Case {
         );
         record.label
     }
+}
+
+impl Case {
+    /// The `temporal-satisfaction` request item EN-1 runs over `protocol`'s
+    /// claim; its replay is for a claim that holds, so it is never called.
+    fn protocol_item<'a>(
+        &'a self,
+        protocol: &str,
+        letters: &'a dyn ModelLetters,
+    ) -> ProtocolItem<'a> {
+        let item = || ModelCheckItem::Clause {
+            clause: self.clause(),
+            letters,
+        };
+        ProtocolItem {
+            request: ProtocolCheckRequest {
+                temporal_clock_selections: &self.temporal_clock_selections,
+                subject: self.subject(protocol),
+                item: item(),
+                max_depth: None,
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+                limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
+            },
+            certificate: ProtocolCertificateRequest {
+                temporal_clock_selections: &self.temporal_clock_selections,
+                subject: self.subject(protocol),
+                item: item(),
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+            },
+            replay: Box::new(|_| panic!("a claim that holds has no counterexample")),
+        }
+    }
+}
+
+/// QSL FR-507 (TC-1302): a protocol clause item is a `temporal-trace` claim
+/// (its clause is a `temporal_clause` node, QSpec FR-290), so
+/// `temporal-satisfaction` applies and EN-1 settles it; read as a `protocol`
+/// claim, `analyze` would refuse it `inapplicable-kind`.
+#[test]
+fn a_protocol_clause_item_is_settled_by_en1_not_refused() {
+    use qsl_analyze::analyze::{analyze_items, protocol_item, Engines, Settlement};
+    use qsl_foundation::RequestIndex;
+
+    let case = repaired_fill("eventually[0,2] holds(k.v >= 2)");
+    let letters = CellV(at_least_two);
+    let item = protocol_item(RequestIndex::new(0), case.protocol_item("Fill", &letters))
+        .expect("a clause run");
+    let record = analyze_items(
+        &Engines::qsl().expect("the linked engines register"),
+        vec![item],
+        &Cancel::new(),
+    )
+    .remove(0);
+    assert!(
+        matches!(record.settlement, Settlement::Terminal(_)),
+        "{:?}",
+        record.settlement
+    );
 }
 
 /// The claim's one atom, a predicate of the bound cell's `v`.

@@ -59,7 +59,12 @@ fn run(world: &World, claim: &OccurrenceKey, max_cases: Option<u64>) -> AnalyzeR
     });
     analyze_items(
         &Engines::qsl().expect("the linked engines register"),
-        vec![contract_item(RequestIndex::new(0), request)],
+        vec![contract_item(
+            RequestIndex::new(0),
+            &world.package,
+            claim,
+            request,
+        )],
         &Cancel::new(),
     )
     .remove(0)
@@ -101,7 +106,7 @@ fn an_inapplicable_request_does_not_change_the_state_clause_record() {
     let records = analyze_items(
         &Engines::qsl().expect("the linked engines register"),
         vec![
-            contract_item(RequestIndex::new(0), request),
+            contract_item(RequestIndex::new(0), &world.package, &claim, request),
             AnalyzeItem::unadapted(
                 RequestIndex::new(1),
                 Capability::FiniteReplay,
@@ -319,11 +324,23 @@ fn the_case_budget_settles_incomplete_naming_max_cases() {
 #[trace("QSpec-TC-974", "QSpec-FR-485-AC-1")]
 #[test]
 fn a_claim_that_selects_no_form_is_declined_invalid_input() {
-    let world = world("", 0);
-    let claim = OccurrenceKey::new(
+    let world = world(
+        "invariant Stable using v on Config::ConfigVersion at current { self.versionNumber <= 3 }\n",
+        0,
+    );
+    // A node the package does not hold has no family, so FR-507 refuses it
+    // before the arm; a state clause's node at an occurrence the clause does
+    // not have is a `state-model` claim that selects no form.
+    let absent = OccurrenceKey::new(
         crate::fixture_ids::node_key([7]),
         Origin::new(Role::new("claim"), 0),
     );
+    assert_eq!(
+        select_contract(&world.package, &absent),
+        Err(ContractSelection::NoForm)
+    );
+    let real = clause(&world, "Stable");
+    let claim = OccurrenceKey::new(real.node().clone(), Origin::new(Role::new("claim"), 99));
     assert_eq!(
         select_contract(&world.package, &claim),
         Err(ContractSelection::NoForm)
@@ -485,7 +502,12 @@ mod simulation {
         });
         analyze_items(
             &Engines::qsl().expect("the linked engines register"),
-            vec![contract_item(RequestIndex::new(0), request)],
+            vec![contract_item(
+                RequestIndex::new(0),
+                world.package(),
+                claim,
+                request,
+            )],
             &Cancel::new(),
         )
         .remove(0)
@@ -738,7 +760,12 @@ fn assert_no_per_step_reading(
         });
         let record = analyze_items(
             &Engines::qsl().expect("the linked engines register"),
-            vec![contract_item(RequestIndex::new(0), request)],
+            vec![contract_item(
+                RequestIndex::new(0),
+                package,
+                &claim,
+                request,
+            )],
             &Cancel::new(),
         )
         .remove(0);

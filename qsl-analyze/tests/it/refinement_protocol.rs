@@ -21,7 +21,7 @@ use quire_exact::Cancel;
 use crate::refinement_fixture::{cas_refines_counter, World, UNLIMITED};
 use crate::refinement_fixture::{key, Variant, CAS, SPEC};
 
-fn cas_twice(peek: bool, lost_update: bool) -> String {
+pub(crate) fn cas_twice(peek: bool, lost_update: bool) -> String {
     let retries = if lost_update {
         ""
     } else {

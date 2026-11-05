@@ -82,6 +82,36 @@ impl Engine {
         Self { descriptor }
     }
 
+    /// A probe engine `id` that advertises every capability kind in bounded
+    /// mode: the engine [`AnalyzeItem::probe`] items run on, so a test sees
+    /// which items `analyze` routes to an engine and which it refuses first.
+    ///
+    /// # Panics
+    ///
+    /// Never for a well-formed `id`.
+    #[cfg(feature = "test-support")]
+    pub fn probe(id: &str) -> Self {
+        let advertisements = Capability::ALL
+            .iter()
+            .map(|kind| (Some(kind.to_wire()), Some(Mode::Bounded.to_wire())))
+            .collect::<Vec<_>>();
+        Self::new(
+            qsl_route::descriptor_from_manifest(
+                Candidate::new(BackendId::new(id)),
+                ProviderOrigin::Linked,
+                advertisements,
+                qsl_route::ManifestMembers {
+                    domains: Some(&[qsl_foundation::bound::DomainKind::Population.to_wire()]),
+                    fairness_kinds: Some(qsl_route::FairnessKindsMember::List(&[])),
+                    evidence_kinds: Some(&["statistical", "exact"]),
+                    memory_models: None,
+                    reductions: None,
+                },
+            )
+            .expect("a well-formed probe engine that advertises every capability"),
+        )
+    }
+
     /// EN-1, the explicit-state model checker.
     ///
     /// # Errors
@@ -563,6 +593,40 @@ impl<'a> AnalyzeItem<'a> {
             diagnostic: Some(unsupported_kind(kind)),
             work: None,
         }
+    }
+
+    /// A probe item of kind `kind` for [`Engine::probe`]`(backend)`, in no
+    /// family until [`Self::at_claim`] reads one. Its work sets `ran` and
+    /// settles `failed`, so a test sees whether `analyze` ran it.
+    #[cfg(feature = "test-support")]
+    pub fn probe(
+        index: RequestIndex,
+        kind: Capability,
+        backend: &str,
+        ran: &'a std::cell::Cell<bool>,
+    ) -> Self {
+        Self::new(index, kind, None, Mode::Bounded, backend, move |_| {
+            ran.set(true);
+            EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                "runtime_invariant",
+                "established-invariant-broken",
+            )))
+        })
+    }
+
+    /// This item at the claim `claim` of `package`, in the family that
+    /// claim is in (FR-507): the family replaces the one the adapter gave
+    /// the item, so an item built from an engine run, which holds no claim
+    /// occurrence, is read at its request item's `item_kind` and claim.
+    #[must_use]
+    pub fn at_claim(
+        mut self,
+        package: &CheckedPackage,
+        item_kind: qsl_route::request::ItemKind,
+        claim: &qsl_foundation::source::provenance::OccurrenceKey,
+    ) -> Self {
+        self.family = crate::claim_family::claim_family(package, item_kind, claim);
+        self
     }
 
     /// This item with the disposition the caller's negotiation settled it

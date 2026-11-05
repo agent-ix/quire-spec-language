@@ -660,7 +660,17 @@ fn an_other_clause_settles_unsupported_at_negotiation_with_no_run() {
 fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
     let reason = HyperUnsupported::ExistentialBeforeUniversal;
     let form = HyperForm::Other { reason };
-    let node = crate::fixture_ids::node_key([17]);
+    // The request names the world's real `claim`/`hyperproperty` node: the
+    // item's family is read from the checked package (FR-507).
+    let world = crate::graph_world::temporal_config_world();
+    let node = world
+        .package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "hyperproperty")
+        .expect("the world holds a hyper clause node")
+        .key();
     let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("claim"), 0));
     let extent = ClaimExtent::from_domains(
         [(
@@ -706,7 +716,8 @@ fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
         qsl_route::CandidateOutcome::Candidates(set) if set.candidates().is_empty()
     ));
 
-    let analyze_item = hyper_form_item(item, &form).expect("HP-4 settles at negotiation");
+    let analyze_item =
+        hyper_form_item(&world.package, item, &form).expect("HP-4 settles at negotiation");
     let results = analyze_items(&Engines::default(), vec![analyze_item], &Cancel::new());
     let [result] = results.as_slice() else {
         panic!("one analysis result");
