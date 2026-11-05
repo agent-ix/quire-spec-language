@@ -296,6 +296,28 @@ impl SemanticNode {
         &self.content.body
     }
 
+    /// FR-092 "Function nodes": a function node's body expression node, read
+    /// from its `body` binding. `None` for every node that is not a function
+    /// node and for a function node whose body is not a keyed reference.
+    pub fn function_body(&self) -> Option<NodeKey> {
+        if self.content.node_tag != NodeTag::Function {
+            return None;
+        }
+        let BodyTerm::Aggregate(AggregateTerm { members }) = &self.content.body else {
+            return None;
+        };
+        // The body binding follows the parameters binding, which is first
+        // (`function_parameters` reads it positionally for the same reason).
+        let MemberTerm::Binding(Binding {
+            value: BindingValue::Leaf(leaf),
+            ..
+        }) = members.get(1)?
+        else {
+            return None;
+        };
+        leaf.reference_target()?.admitted().cloned()
+    }
+
     /// FR-092 "Function nodes": a function node's parameter nodes, in
     /// declared parameter order, read from its `parameters` binding. `None`
     /// for every node that is not a function node. The replay executor
@@ -3631,9 +3653,27 @@ impl<'a> Lowering<'a> {
             && *function.result == ValueType::Boolean
             && !matches!(
                 function.body.kind(),
-                NodeKind::Literal(_) | NodeKind::Local(_)
+                NodeKind::Literal(_)
+                    | NodeKind::Local(_)
+                    | NodeKind::ProtocolReference { .. }
+                    | NodeKind::NamedPopulation { .. }
             ) {
-            body.reference_target().cloned()
+            // Only an `expression` node carries the clause. A node keyed
+            // already must be tagged so; a draft member of a recursion group
+            // is resolved to its application, an `expression`, later.
+            match body.reference_target() {
+                Some(NodeRef::Admitted(key))
+                    if self
+                        .graph
+                        .nodes
+                        .get(key)
+                        .is_none_or(|node| node.node_tag() == NodeTag::Expression) =>
+                {
+                    Some(NodeRef::Admitted(key.clone()))
+                }
+                Some(pending @ NodeRef::Pending(_)) => Some(pending.clone()),
+                _ => None,
+            }
         } else {
             None
         };

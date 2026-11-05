@@ -190,3 +190,78 @@ fn a_boolean_value_clause_expression_is_admitted_by_the_v2_reader() {
             && occurrence.ordinal == 0
     }));
 }
+
+/// QSL FR-507-AC-11, QSpec FR-290/FR-484: a Boolean function whose body is an
+/// equality application keeps its equality producer row on the application's
+/// `expression` occurrence, although the same node also holds the clause's
+/// `claim` and `declaration` occurrences at the same body location.
+#[trace("FR-507-AC-11", "QSpec-FR-290", "QSpec-FR-484")]
+#[test]
+fn an_equality_or_inequality_bodied_boolean_clause_emits_and_keeps_all_three_occurrences() {
+    for operator in [BinaryOperator::Equal, BinaryOperator::NotEqual] {
+        equality_bodied_clause_keeps_all_three_occurrences(operator);
+    }
+}
+
+fn equality_bodied_clause_keeps_all_three_occurrences(operator: BinaryOperator) {
+    let same = function(
+        "same",
+        &["a", "b"],
+        Expression::binary(operator, name("a"), name("b")),
+    );
+    let emission = emit(&package(vec![same]));
+    assert_eq!(emission.omitted, [], "nothing is omitted");
+    let wire = wire(&emission);
+    let equality = nodes(&wire)
+        .iter()
+        .find(|node| node["node_tag"] == "expression" && node["body"]["operator"] == "equal")
+        .or_else(|| {
+            nodes(&wire).iter().find(|node| {
+                node["occurrences"].as_array().is_some_and(|occurrences| {
+                    occurrences
+                        .iter()
+                        .any(|occurrence| occurrence["role"] == "claim")
+                })
+            })
+        })
+        .expect("the equality application node");
+    let roles: Vec<_> = equality["occurrences"]
+        .as_array()
+        .expect("occurrences")
+        .iter()
+        .map(|occurrence| occurrence["role"].as_str().expect("role"))
+        .collect();
+    assert_eq!(roles, ["claim", "declaration", "expression"]);
+    assert!(
+        matches!(read_back(&emission), Read::Verified { .. }),
+        "IR's v2 reader admits the package"
+    );
+    // The clause is the body expression: its claim and declaration occurrences
+    // sit at the body's location, shared with the `expression` occurrence.
+    let checked = graph_of(vec![function(
+        "same",
+        &["a", "b"],
+        Expression::binary(operator, name("a"), name("b")),
+    )]);
+    let mut sites: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for (node, origin, location) in checked.occurrences() {
+        if matches!(
+            origin.role().as_str(),
+            "claim" | "declaration" | "expression"
+        ) {
+            sites
+                .entry(format!("{node:?}"))
+                .or_default()
+                .push(format!("{}@{location:?}", origin.role().as_str()));
+        }
+    }
+    let shared = sites
+        .values()
+        .find(|entries| entries.iter().any(|entry| entry.starts_with("claim@")))
+        .expect("the clause node holds a claim occurrence");
+    let places: std::collections::BTreeSet<_> = shared
+        .iter()
+        .map(|entry| entry.split_once('@').expect("role@location").1)
+        .collect();
+    assert_eq!(places.len(), 1, "one body location: {shared:?}");
+}

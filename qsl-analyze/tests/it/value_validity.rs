@@ -399,10 +399,16 @@ fn wire_of(package: &CheckedPackage, function: &str) -> quire_exact::NodeKey {
         .graph()
         .callable(function)
         .expect("the function exists");
-    callable.identity.clone()
+    package
+        .graph()
+        .semantic_graph()
+        .node(callable.identity.clone())
+        .and_then(|node| node.function_body())
+        .expect("the function node holds its body expression")
 }
 
-/// The key the vector names: the function's node at the vector's role and
+/// The key the vector names: the function's Boolean body expression node (QSpec
+/// FR-290) at the vector's role and
 /// ordinal.
 fn key_of(package: &CheckedPackage, function: &str, occurrence: &Json) -> OccurrenceKey {
     OccurrenceKey::new(

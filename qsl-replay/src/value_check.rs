@@ -40,8 +40,8 @@ use qsl_semantics::check::{Capability, NodeTag};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{CallFailure, FamilyOutcome};
 use quire_exact::{
-    Cancel, CancelCause, Incomplete, Integer, IntegerInterval, Meter, NodeKey, Origin, Outcome,
-    Role, Undefined, Value, ValueType,
+    Cancel, CancelCause, Incomplete, Integer, IntegerInterval, Meter, NodeKey, Outcome, Role,
+    Undefined, Value, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
@@ -220,8 +220,8 @@ pub struct ValueTarget<'p> {
 impl<'p> ValueTarget<'p> {
     /// The target of the claim at `claim` of the function named `function`.
     ///
-    /// A `Boolean` function's node at occurrence role `declaration` or
-    /// `claim` is a `clause`; an
+    /// A `Boolean` function's body expression node at occurrence role
+    /// `declaration` or `claim` is a `clause`; an
     /// occurrence a `value-validity` requirement record of the function keys
     /// is a `scalar-operation`. Every other occurrence selects no form.
     ///
@@ -246,14 +246,16 @@ impl<'p> ValueTarget<'p> {
         if parameters.len() != callable.parameters.len() {
             return Err(fault("function-node-parameters-match-signature"));
         }
-        // FR-484 "Forms": a clause's occurrence role is `claim` or
-        // `declaration`. Both select the one clause a `Boolean` function
-        // is, so an item that names the function's node by either role
-        // selects it; the claim keeps the role the item named.
-        let is_clause_key = [Role::new("declaration"), Role::new("claim")]
-            .into_iter()
-            .any(|role| {
-                *claim == OccurrenceKey::new(callable.identity.clone(), Origin::new(role, 0))
+        // FR-484 "Forms" and QSpec FR-290: a clause is a Boolean `expression`
+        // node at occurrence role `claim` or `declaration`; for a `Boolean`
+        // function that node is its body. Either role selects the one clause.
+        let is_clause_key = semantic
+            .node(callable.identity.clone())
+            .and_then(|node| node.function_body())
+            .is_some_and(|body| {
+                *claim.node() == body
+                    && ["declaration", "claim"].contains(&claim.origin().role().as_str())
+                    && graph.occurrence(body, claim.origin()).is_some()
             });
         let form = if is_clause_key {
             if *callable.result != ValueType::Boolean {
