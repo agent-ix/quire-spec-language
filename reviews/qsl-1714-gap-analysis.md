@@ -31,3 +31,9 @@ This manual acceptance-to-test check covers the changed QSL-1714/QSL-1715 behavi
 - Reverse-gap inventory was limited to the changed behavior: four behavior areas examined, none found without an owning requirement; no source or test stubs found in the changed files. A repository-wide reverse-gap inventory was not completed.
 - Semantic review: skipped; this optional analysis was not requested.
 - The repository root `spec/spec.md` declares no `id`, so no `relationships` edge to a spec-root id was fabricated.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The Boolean-clause test now carries the TC-1302 and FR-507-AC-11 trace tags. |

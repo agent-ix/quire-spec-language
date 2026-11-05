@@ -41,3 +41,10 @@ The new `one_occurrence_can_hold_records_of_distinct_kinds` test and `a_boolean_
 - Focused tests: pass, as reported in the PR verification body.
 - Combined workspace check, Clippy configurations and full suite: deferred to the lead's aggregate gate per review dispatch.
 - `cargo deny`: not run; this diff changes no dependency manifests or lockfiles.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The distinct-kind occurrence test now carries the FR-507-AC-7 trace tag. |
+| FND-002 | fixed | The Boolean-clause test now carries the TC-1302 and FR-507-AC-11 trace tags. |
