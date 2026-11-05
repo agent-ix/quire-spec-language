@@ -523,6 +523,11 @@ pub enum ReplayRequestRefusal {
         /// The request's target member.
         target: TargetMember,
     },
+    /// A request carries `function_owner` without `function`
+    /// (`invalid_runtime_input`/`unknown-member` at
+    /// `/replay/function_owner`).
+    #[error("invalid_runtime_input/unknown-member at /replay/function_owner: a function_owner names the owner of a `function` and the request carries none")]
+    FunctionOwnerWithoutFunction,
     /// The request supplies an observed `over` binding for a function or
     /// frame target, which has no temporal clause binding.
     #[error("invalid_runtime_input/unknown-member at /replay/over: only a state-clause target accepts over")]
@@ -561,6 +566,9 @@ fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestR
         TargetSelectionRefusal::Conflicting { members } => {
             ReplayRequestRefusal::ConflictingReplayTarget { members }
         }
+        TargetSelectionRefusal::OwnerWithoutFunction => {
+            ReplayRequestRefusal::FunctionOwnerWithoutFunction
+        }
     })?;
     let member = target.member();
     if member == TargetMember::Function {
@@ -568,9 +576,12 @@ fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestR
             return Err(ReplayRequestRefusal::MissingOccurrenceKey);
         };
         return Ok(match target {
-            ReplayTarget::Declaration { kind, name, .. } => ReplayTarget::Declaration {
+            ReplayTarget::Declaration {
+                kind, name, owner, ..
+            } => ReplayTarget::Declaration {
                 kind,
                 name,
+                owner,
                 occurrence_key: Some(key),
             },
             other @ ReplayTarget::FrameOperation(_) => other,
@@ -597,6 +608,7 @@ impl ReplayRequestRefusal {
             Self::StageLimitEntry { .. }
             | Self::MissingReplayTarget
             | Self::MissingOccurrenceKey
+            | Self::FunctionOwnerWithoutFunction
             | Self::ConflictingReplayTarget { .. }
             | Self::UnexpectedArguments { .. }
             | Self::UnexpectedOccurrenceKey { .. }
@@ -614,6 +626,7 @@ impl ReplayRequestRefusal {
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
             Self::UnexpectedArguments { .. }
             | Self::UnexpectedOccurrenceKey { .. }
+            | Self::FunctionOwnerWithoutFunction
             | Self::UnexpectedOverBinding
             | Self::UnexpectedModelGraphTarget { .. } => Some("unknown-member"),
             _ => None,
@@ -630,6 +643,7 @@ impl ReplayRequestRefusal {
                 Some(members.last().map_or("/replay", |member| member.pointer()))
             }
             Self::UnexpectedArguments { .. } => Some("/replay/arguments"),
+            Self::FunctionOwnerWithoutFunction => Some(crate::target::FUNCTION_OWNER_POINTER),
             Self::UnexpectedOccurrenceKey { .. } => Some("/replay/occurrence_key"),
             Self::UnexpectedOverBinding => Some("/replay/over"),
             Self::UnexpectedModelGraphTarget { member } => {
@@ -1207,6 +1221,69 @@ mod tests {
         assert_eq!(round_tripped.replay_target(), request.replay_target());
     }
 
+    /// FR-071, FR-098-AC-32: a `function` target round-trips its
+    /// `function_owner`, an owner-less one decodes owner-less, and an owner
+    /// without a `function` refuses at `/replay/function_owner`.
+    #[trace("FR-098-AC-32", "TC-444")]
+    #[test]
+    fn a_function_target_round_trips_its_owner() {
+        let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+        let owner = LibraryName::new("test/units".to_owned()).unwrap();
+        let key = crate::target::test_key();
+        let mut owned = wire(1);
+        owned.replay_target =
+            RequestTargetWire::imported_function(owner.clone(), function.clone(), key.clone());
+        let request = ReplayRequest::decode(owned, crate::ReplayLimits::default()).unwrap();
+        let target = request.replay_target().unwrap();
+        assert_eq!(target.function_owner(), Some(&owner));
+        assert_eq!(target.as_function(), Some(&function));
+        let again =
+            ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
+        assert_eq!(again.replay_target(), request.replay_target());
+        assert_eq!(
+            again.replay_target().and_then(ReplayTarget::function_owner),
+            Some(&owner)
+        );
+
+        let mut plain = wire(1);
+        plain.replay_target = RequestTargetWire::function(function.clone(), key.clone());
+        let plain = ReplayRequest::decode(plain, crate::ReplayLimits::default()).unwrap();
+        assert_eq!(
+            plain.replay_target().and_then(ReplayTarget::function_owner),
+            None
+        );
+        assert_ne!(plain.replay_target(), request.replay_target());
+        // The unit-only entries refuse an owner-carrying target, and accept
+        // the owner-less one.
+        for entry in [
+            crate::ReplayEntry::ReplayValueParity,
+            crate::ReplayEntry::ReplayOperatorParity,
+            crate::ReplayEntry::ReplayCompositeParity,
+        ] {
+            assert!(matches!(
+                crate::execute::function_target(&request, entry),
+                Err(crate::ReplayRefusal::ImportedFunctionTarget { .. })
+            ));
+            assert_eq!(
+                crate::execute::function_target(&plain, entry).unwrap(),
+                &function
+            );
+        }
+
+        let mut orphan = wire(1);
+        orphan.replay_target = RequestTargetWire {
+            members: ReplayTargetMembers {
+                function_owner: Some(owner),
+                ..ReplayTargetMembers::default()
+            },
+            ..RequestTargetWire::default()
+        };
+        let refusal = ReplayRequest::decode(orphan, crate::ReplayLimits::default()).unwrap_err();
+        assert_eq!(refusal, ReplayRequestRefusal::FunctionOwnerWithoutFunction);
+        assert_eq!(refusal.pointer(), Some("/replay/function_owner"));
+        assert_eq!(refusal.cause(), Some("unknown-member"));
+    }
+
     /// FR-331-AC-6: an observed temporal replay request carries the object
     /// that binds the clause's `over` parameter through decode and re-encode.
     #[trace("TC-841", "FR-331-AC-6")]
@@ -1383,6 +1460,7 @@ mod tests {
             (
                 ReplayTargetMembers {
                     function: Some(function.clone()),
+                    function_owner: None,
                     frame_operation: Some(frame_target()),
                     state_clause: None,
                 }
@@ -1396,6 +1474,7 @@ mod tests {
             (
                 ReplayTargetMembers {
                     function: Some(function.clone()),
+                    function_owner: None,
                     frame_operation: None,
                     state_clause: Some(clause_name()),
                 }
@@ -1431,6 +1510,7 @@ mod tests {
             (
                 ReplayTargetMembers {
                     function: None,
+                    function_owner: None,
                     frame_operation: Some(frame_target()),
                     state_clause: Some(clause_name()),
                 }
@@ -1444,6 +1524,7 @@ mod tests {
             (
                 ReplayTargetMembers {
                     function: Some(function.clone()),
+                    function_owner: None,
                     frame_operation: Some(frame_target()),
                     state_clause: Some(clause_name()),
                 }

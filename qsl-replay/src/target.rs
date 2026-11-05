@@ -13,6 +13,7 @@ use std::fmt;
 use crate::identity::QualifiedName;
 use crate::witness::FrameOperation;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::library::LibraryName;
 
 /// One of QSpec FR-323's replay target members, in FR-323's order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -24,6 +25,9 @@ pub enum TargetMember {
     /// `state_clause`: a state clause's declared `QualifiedName`.
     StateClause,
 }
+
+/// The RFC 6901 pointer of the `function` target's optional owner.
+pub(crate) const FUNCTION_OWNER_POINTER: &str = "/replay/function_owner";
 
 impl TargetMember {
     /// The member's wire name.
@@ -109,6 +113,10 @@ pub enum ReplayTarget {
         kind: NamedKind,
         /// The declared name.
         name: QualifiedName,
+        /// The library that declares the function, for a `function` target
+        /// naming a function of a direct import of the unit; `None` selects
+        /// the unit's own function (FR-098, FR-121).
+        owner: Option<LibraryName>,
         /// A `function` request's QSpec FR-323 `occurrence_key`: the failing
         /// node's occurrence key, which selects the claim the replay decides
         /// (FR-071, FR-098). Present on every decoded `function` request;
@@ -127,6 +135,22 @@ impl ReplayTarget {
         Self::Declaration {
             kind: NamedKind::Function,
             name,
+            owner: None,
+            occurrence_key,
+        }
+    }
+
+    /// A `function` target naming `name` as declared by the library `owner`,
+    /// a direct import of the unit.
+    pub fn imported_function(
+        owner: LibraryName,
+        name: QualifiedName,
+        occurrence_key: Option<OccurrenceKey>,
+    ) -> Self {
+        Self::Declaration {
+            kind: NamedKind::Function,
+            name,
+            owner: Some(owner),
             occurrence_key,
         }
     }
@@ -136,6 +160,7 @@ impl ReplayTarget {
         Self::Declaration {
             kind: NamedKind::StateClause,
             name,
+            owner: None,
             occurrence_key: None,
         }
     }
@@ -163,6 +188,23 @@ impl ReplayTarget {
                 name,
                 ..
             } => Some(name),
+            Self::Declaration {
+                kind: NamedKind::StateClause,
+                ..
+            }
+            | Self::FrameOperation(_) => None,
+        }
+    }
+
+    /// The declaring library, when this is a `function` target naming a
+    /// function of an import rather than of the unit.
+    pub fn function_owner(&self) -> Option<&LibraryName> {
+        match self {
+            Self::Declaration {
+                kind: NamedKind::Function,
+                owner,
+                ..
+            } => owner.as_ref(),
             Self::Declaration {
                 kind: NamedKind::StateClause,
                 ..
@@ -207,6 +249,11 @@ impl ReplayTarget {
 impl fmt::Display for ReplayTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Declaration {
+                name,
+                owner: Some(owner),
+                ..
+            } => write!(f, "{} `{name}` of `{owner}`", self.member()),
             Self::Declaration { name, .. } => write!(f, "{} `{name}`", self.member()),
             Self::FrameOperation(operation) => write!(f, "{} `{operation}`", self.member()),
         }
@@ -220,6 +267,9 @@ impl fmt::Display for ReplayTarget {
 pub struct ReplayTargetMembers {
     /// The `function` member.
     pub function: Option<QualifiedName>,
+    /// The `function_owner` member: the library that declares `function`,
+    /// present only beside `function`.
+    pub function_owner: Option<LibraryName>,
     /// The `frame_operation` member.
     pub frame_operation: Option<FrameOperation>,
     /// The `state_clause` member.
@@ -237,6 +287,8 @@ pub enum TargetSelectionRefusal {
         /// The members present.
         members: Vec<TargetMember>,
     },
+    /// `function_owner` is present without `function`.
+    OwnerWithoutFunction,
 }
 
 impl ReplayTargetMembers {
@@ -244,6 +296,15 @@ impl ReplayTargetMembers {
     pub fn function(name: QualifiedName) -> Self {
         Self {
             function: Some(name),
+            ..Self::default()
+        }
+    }
+
+    /// A `function` target naming a function the library `owner` declares.
+    pub fn imported_function(owner: LibraryName, name: QualifiedName) -> Self {
+        Self {
+            function: Some(name),
+            function_owner: Some(owner),
             ..Self::default()
         }
     }
@@ -280,8 +341,15 @@ impl ReplayTargetMembers {
     /// target is defaulted or inferred.
     pub fn select(self) -> Result<ReplayTarget, TargetSelectionRefusal> {
         let members = self.present();
+        if self.function_owner.is_some() && self.function.is_none() {
+            return Err(TargetSelectionRefusal::OwnerWithoutFunction);
+        }
         match (self.function, self.frame_operation, self.state_clause) {
-            (Some(name), None, None) => Ok(ReplayTarget::function(name, None)),
+            (Some(name), None, None) => Ok(match self.function_owner {
+                Some(owner) => ReplayTarget::imported_function(owner, name, None),
+                None => ReplayTarget::function(name, None),
+            }),
+
             (None, Some(operation), None) => Ok(ReplayTarget::FrameOperation(operation)),
             (None, None, Some(name)) => Ok(ReplayTarget::state_clause(name)),
             (None, None, None) => Err(TargetSelectionRefusal::Missing),
@@ -297,6 +365,10 @@ impl ReplayTargetMembers {
             .map(|name| name.to_string().len())
             .sum::<usize>()
             + self
+                .function_owner
+                .as_ref()
+                .map_or(0, |owner| owner.as_str().len())
+            + self
                 .frame_operation
                 .as_ref()
                 .map_or(0, |operation| operation.to_string().len())
@@ -309,6 +381,13 @@ impl From<ReplayTarget> for ReplayTargetMembers {
             ReplayTarget::Declaration {
                 kind: NamedKind::Function,
                 name,
+                owner: Some(owner),
+                ..
+            } => Self::imported_function(owner, name),
+            ReplayTarget::Declaration {
+                kind: NamedKind::Function,
+                name,
+                owner: None,
                 ..
             } => Self::function(name),
             ReplayTarget::Declaration {
@@ -356,6 +435,19 @@ impl RequestTargetWire {
         Self {
             occurrence_key: Some(occurrence_key),
             ..ReplayTargetMembers::function(name).into()
+        }
+    }
+
+    /// A function request for the claim at `occurrence_key` of `name`, a
+    /// function the library `owner` declares.
+    pub fn imported_function(
+        owner: LibraryName,
+        name: QualifiedName,
+        occurrence_key: OccurrenceKey,
+    ) -> Self {
+        Self {
+            occurrence_key: Some(occurrence_key),
+            ..ReplayTargetMembers::imported_function(owner, name).into()
         }
     }
 
