@@ -116,6 +116,10 @@ fn zero() -> Rational {
     Rational::from_integer(quire_exact::Integer::from(0_i64))
 }
 
+fn one() -> Rational {
+    Rational::from_integer(quire_exact::Integer::from(1_i64))
+}
+
 /// A product as its evaluators read it: unchanged without a `FreeDelays`
 /// state, otherwise with one evaluation node per row after its states.
 pub(super) struct Evaluation<'p> {
@@ -276,28 +280,51 @@ pub fn free_delays_choice(
     Some(ProductAction::FreeDelays(chosen))
 }
 
+/// Why a randomized policy gives no entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum DistributionFault {
+    /// Not a `FreeDelays` state, a row without a selected choice, an
+    /// out-of-range choice, or a distribution FR-202 refuses.
+    NoChoice,
+    /// The entry's alternatives exceed the transition limit.
+    TooMany,
+}
+
 /// The exact randomized `FreeDelays` action a randomized policy takes at
 /// `state` (FR-204 "Evidence": randomized exact-rational entries): each
 /// row's [`SchedulerChoice`] is a distribution over the row's choices, and
 /// the entry is the product measure over the whole actions, so every row has
-/// the distribution the policy gives it. Alternatives of probability 0 are
-/// omitted. `None` when `state` is not a `FreeDelays` state, the policy does
-/// not select a choice for every row, or a distribution does not sum to 1.
+/// the distribution the policy gives it. The alternatives are in canonical
+/// order (rows in order, each row's choices by index) and number at most
+/// `max_alternatives`.
+///
+/// # Errors
+///
+/// [`DistributionFault`] when `state` is not a `FreeDelays` state, the policy
+/// does not select a choice for every row, a row's distribution is refused
+/// by [`scheduler_distribution`], or the product has too many alternatives.
 pub(super) fn free_delays_distribution(
     product: &ProbProduct,
     state: ProbStateId,
     policy: &[Option<SchedulerChoice>],
-) -> Option<Vec<(ProductAction, Rational)>> {
-    let (node, rows) = rows_at(product, state)?;
-    let one = Rational::from_integer(quire_exact::Integer::from(1_i64));
-    let mut actions: Vec<(Vec<FreeDelayRow>, Rational)> = vec![(Vec::new(), one)];
+    max_alternatives: usize,
+) -> Result<Vec<(ProductAction, Rational)>, DistributionFault> {
+    let fault = DistributionFault::NoChoice;
+    let (node, rows) = rows_at(product, state).ok_or(fault)?;
+    let mut actions: Vec<(Vec<FreeDelayRow>, Rational)> = vec![(Vec::new(), one())];
     for (offset, row) in rows.iter().enumerate() {
-        let choice = policy.get(node + offset)?.as_ref()?;
-        let weighted = scheduler_distribution(choice)?;
+        let choice = policy
+            .get(node + offset)
+            .and_then(Option::as_ref)
+            .ok_or(fault)?;
+        let weighted = scheduler_distribution(choice).ok_or(fault)?;
+        if actions.len().saturating_mul(weighted.len()) > max_alternatives {
+            return Err(DistributionFault::TooMany);
+        }
         let mut next = Vec::with_capacity(actions.len() * weighted.len());
         for (chosen, mass) in &actions {
             for (index, weight) in &weighted {
-                let (body, _) = row.get(*index)?;
+                let (body, _) = row.get(*index).ok_or(fault)?;
                 let mut extended = chosen.clone();
                 extended.push((*body).clone());
                 next.push((extended, mass.mul(weight)));
@@ -305,32 +332,33 @@ pub(super) fn free_delays_distribution(
         }
         actions = next;
     }
-    Some(
-        actions
-            .into_iter()
-            .map(|(rows, mass)| (ProductAction::FreeDelays(rows), mass))
-            .collect(),
-    )
+    Ok(actions
+        .into_iter()
+        .map(|(rows, mass)| (ProductAction::FreeDelays(rows), mass))
+        .collect())
 }
 
-/// The positive-probability alternatives of a scheduler choice, by action
-/// index; `None` when the probabilities do not sum to 1.
+/// The alternatives of a scheduler choice by action index, ascending
+/// (FR-202's canonical choice order); `None` when an index repeats, a
+/// probability is zero or negative, or the probabilities do not sum to 1.
 pub(super) fn scheduler_distribution(choice: &SchedulerChoice) -> Option<Vec<(usize, Rational)>> {
-    let weighted: Vec<(usize, Rational)> = match choice {
-        SchedulerChoice::Deterministic(ActionChoice(index)) => {
-            vec![(
-                *index,
-                Rational::from_integer(quire_exact::Integer::from(1_i64)),
-            )]
-        }
+    let mut weighted: Vec<(usize, Rational)> = match choice {
+        SchedulerChoice::Deterministic(ActionChoice(index)) => vec![(*index, one())],
         SchedulerChoice::Randomized(alternatives) => alternatives
             .iter()
-            .filter(|(_, probability)| *probability > zero())
             .map(|(ActionChoice(index), probability)| (*index, probability.clone()))
             .collect(),
     };
+    weighted.sort_by_key(|(index, _)| *index);
+    if weighted.windows(2).any(|pair| pair[0].0 == pair[1].0)
+        || weighted
+            .iter()
+            .any(|(_, probability)| *probability <= zero())
+    {
+        return None;
+    }
     let total = weighted
         .iter()
         .fold(zero(), |sum, (_, probability)| sum.add(probability));
-    (total == Rational::from_integer(quire_exact::Integer::from(1_i64))).then_some(weighted)
+    (total == one()).then_some(weighted)
 }
