@@ -387,6 +387,7 @@ fn operation_width(operation: IeeeOperation) -> IeeeWidth {
         | IeeeOperation::Multiply(a, _)
         | IeeeOperation::Divide(a, _)
         | IeeeOperation::SquareRoot(a)
+        | IeeeOperation::Negate(a)
         | IeeeOperation::FusedMultiplyAdd(a, _, _) => a.width(),
     }
 }
