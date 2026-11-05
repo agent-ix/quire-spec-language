@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_eval::simulation::protocol::{
-    visible, AnchorName, ClaimReads, PathStep, ProtocolLocation, ProtocolSystem,
+    protocol_domains, visible, AnchorName, ClaimReads, PathStep, ProtocolLocation, ProtocolSystem,
     ProtocolTransition, RegistrationKey, RestKind, Sc, StepKind, ThreadPath, WaitCause,
 };
 use qsl_eval::simulation::{independent, Footprint, Location, SubjectSystem};
@@ -28,7 +28,10 @@ use qsl_replay::{
 use quire_exact::Cancel;
 use serde_json::{json, Value as Json};
 
-use crate::fill::{contracts, json_of, key, protocol, reachable, sc_system, Reached};
+use crate::fill::{
+    contracts, json_of, key, package_with, protocol, reachable, sc_system, Reached,
+    PROTOCOL_PROFILE,
+};
 use crate::protocol_system::{violated, Case};
 
 /// `dec`'s contracts: the refund.
@@ -1556,6 +1559,101 @@ fn requires_bound(attempts: &str) -> Vec<(Vec<u32>, DomainKind)> {
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// QSL-1705, ADR-027 ST-11, TS-5: a compensation node maps to its own
+/// template's attempt type. `Zeta` is declared first with an enumerable
+/// attempt type and `Alpha` second with one this system cannot enumerate, so
+/// the declaration order is the reverse of the name order; the unbounded
+/// domain is at `Alpha`'s node.
+#[test]
+fn an_attempt_type_is_bound_at_its_own_templates_node() {
+    // Binder names are unique across the protocol's templates.
+    let template = |name: &str, attempts: &str| {
+        refund_of("Main::Paid", "touch", attempts, "false", "never", "true")
+            .replace("compensate Refund", &format!("compensate {name}"))
+            .replace("fwd", &format!("fwd{name}"))
+            .replace("(f:", &format!("(f{name}:"))
+            .replace("{ f }", &format!("{{ f{name} }}"))
+            .replace("(e:", &format!("(e{name}:"))
+            .replace(", l:", &format!(", l{name}:"))
+            .replace("(r:", &format!("(r{name}:"))
+    };
+    let run = format!(
+        "sequence Main {{ {CHARGE} {} {FAIL} {COMMITTED} }}",
+        paid("Main::C")
+    );
+    let body = unit(
+        &format!(
+            "{} {}",
+            template("Zeta", "1 of M::Attempt"),
+            template("Alpha", "1 of M::TextAttempt")
+        ),
+        &run,
+    );
+    let checked = package_with(PROTOCOL_PROFILE, &body);
+    let protocol = checked.graph().protocol("Pay").expect("the Pay protocol");
+    let declared: Vec<&str> = protocol
+        .obligations
+        .compensations
+        .iter()
+        .map(|template| template.name.as_str())
+        .collect();
+    assert_eq!(declared, ["Zeta", "Alpha"], "source declaration order");
+    let alpha = checked
+        .graph()
+        .protocol_node_keys("Pay")
+        .and_then(|keys| keys.compensations.get(&1))
+        .expect("Alpha's compensation node")
+        .clone();
+    let zeta = checked
+        .graph()
+        .protocol_node_keys("Pay")
+        .and_then(|keys| keys.compensations.get(&0))
+        .expect("Zeta's compensation node")
+        .clone();
+    assert_ne!(
+        protocol.obligations.compensations[0].attempt_type,
+        protocol.obligations.compensations[1].attempt_type
+    );
+    let domains = protocol_domains(protocol, checked.graph());
+    for (node, template) in [(&zeta, 0), (&alpha, 1)] {
+        let attempt_type = &protocol.obligations.compensations[template].attempt_type;
+        assert!(
+            domains
+                .iter()
+                .any(|(key, value_type)| key == node && value_type == attempt_type),
+            "{template}: the root at the node is its own template's attempt type"
+        );
+    }
+
+    let case = Case::new(&body, &[0]);
+    let refused = check_protocol(
+        ProtocolCheckRequest {
+            temporal_clock_selections: &[],
+            subject: case.subject("Pay"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
+        },
+        &Cancel::new(),
+    );
+    let Err(ModelCheckRefusal::RequiresBound(bound)) = refused else {
+        panic!("an unenumerable attempt type requires a bound: {refused:?}");
+    };
+    let nodes: Vec<_> = bound
+        .domains
+        .iter()
+        .map(|(key, _)| match key {
+            DomainKey::Node { node, path } => (node.clone(), path.clone()),
+            other => panic!("a node domain, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(nodes, [(alpha, vec![0])]);
 }
 
 /// ADR-027 ST-11, TS-5: an attempt type with a field this system cannot

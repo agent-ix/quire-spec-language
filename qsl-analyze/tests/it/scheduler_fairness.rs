@@ -47,9 +47,9 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use serde_json::Value;
 
 use crate::fill::{
-    attempt, contracts, document, fill_unit, instance, package_with, package_with_name, protocol,
-    reachable, sc_system, subject, tcb_01_event_position_selection, unit_text, universe, v,
-    Documents,
+    attempt, contracts, document, fill_unit, instance, package_over, package_with,
+    package_with_name, protocol, reachable, sc_system, single_object_document, subject,
+    tcb_01_event_position_selection, unit_text, universe, v, Documents,
 };
 use crate::model_settle::{envelope_at, request_named};
 
@@ -844,6 +844,79 @@ fn a_compensation_uses_its_finite_temporal_profile() {
         .steps
         .iter()
         .any(|(step, _)| { matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd) })));
+}
+
+/// Every object below `value` whose `kind` is `kind`.
+fn objects_of_kind<'a>(value: &'a Value, kind: &str, found: &mut Vec<&'a Value>) {
+    match value {
+        Value::Object(members) => {
+            if members.get("kind").and_then(Value::as_str) == Some(kind) {
+                found.push(value);
+            }
+            members
+                .values()
+                .for_each(|member| objects_of_kind(member, kind, found));
+        }
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| objects_of_kind(item, kind, found)),
+        _ => {}
+    }
+}
+
+/// QSL-1705, FR-212 (TC-657): an authored fairness constraint naming one
+/// compensation template lowers to that template's own node. `Zeta` is
+/// declared before `Alpha`, so the declaration order is the reverse of the
+/// name order, and each constraint targets the node whose declaration
+/// carries its name.
+#[trace("TC-657", "FR-212")]
+#[test]
+fn an_authored_constraint_targets_its_own_compensation_templates_node() {
+    // Binder names are unique across the protocol's templates.
+    let template = |name: &str| {
+        crate::protocol_compensation::refund("Main::Paid", "dec", 1, "false", "never", "true")
+            .replace("compensate Refund", &format!("compensate {name}"))
+            .replace("fwd", &format!("fwd{name}"))
+            .replace("(f:", &format!("(f{name}:"))
+            .replace("{ f }", &format!("{{ f{name} }}"))
+            .replace("(e:", &format!("(e{name}:"))
+            .replace(", l:", &format!(", l{name}:"))
+            .replace("(r:", &format!("(r{name}:"))
+    };
+    let templates = format!("{} {}", template("Zeta"), template("Alpha"));
+    let run = crate::protocol_compensation::pay_run("");
+    for name in ["Zeta", "Alpha"] {
+        let claim = format!(
+            "temporal Live using t0 over (k: M::Cell) clock \"model-time\" \
+             on origin {{ fair weak each Pay::{name}; eventually holds(k.v = 0) }}\n"
+        );
+        let body = contracts("self.v = 0")
+            + crate::protocol_compensation::REFUND
+            + &protocol("Pay", &templates, &run, "d")
+            + &claim;
+        let checked = package_over(
+            single_object_document(),
+            "package",
+            &(compensation_fairness_profiles() + "profile t0 = \"quire.temporal.timed/v1\";\n"),
+            &body,
+        );
+        let emission = qsl_package::emit_checked_with_temporal_selections(&checked, &[])
+            .expect("the unit emits");
+        let wire: Value =
+            serde_json::from_slice(emission.package().bytes()).expect("emitted checked package");
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let template = nodes
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == "compensation"
+                    && node["declaration"]["qualified_name"][2] == name
+            })
+            .unwrap_or_else(|| panic!("the template {name}"));
+        let mut targets = Vec::new();
+        objects_of_kind(&wire, "compensation_template", &mut targets);
+        assert_eq!(targets.len(), 1, "{name}: {targets:?}");
+        assert_eq!(targets[0]["node"], template["node_id"], "{name}");
+    }
 }
 
 /// FR-212 Outputs (TC-657): an authored operation constraint over a protocol

@@ -1196,7 +1196,7 @@ fn template_node(package: &CheckedPackage, forward: &str) -> NodeKey {
 /// declared first and `Partial` second; each node found by graph identity
 /// evaluates only its own template's binders.
 #[test]
-#[trace("FR-390-AC-9", "TC-1315")]
+#[trace("FR-390-AC-1", "TC-1315")]
 fn each_compensation_node_selects_its_own_template_slots() {
     let package = fixture();
     let checked = package.graph().protocol("Refunds").unwrap();

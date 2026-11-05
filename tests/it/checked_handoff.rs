@@ -1446,6 +1446,74 @@ fn axis_of(sidecar: &Value, package: &CheckedPackageV2) -> Option<SelectionAxis>
     selection.check(package).err().map(|refusal| refusal.axis)
 }
 
+/// The event-position unit with `Partial` declared before `Full`, so the
+/// declaration order of the two templates is the reverse of their name (and
+/// node-key) order.
+fn swapped_source() -> String {
+    let source = std::fs::read_to_string(format!("{DIR}/unit-event-position.native"))
+        .expect("the event-position unit");
+    let full = source.find("    compensate Full").expect("Full template");
+    let requires = source
+        .find("    requires temporal Due;")
+        .expect("requires clause");
+    let partial = source
+        .find("    compensate Partial")
+        .expect("Partial template");
+    let run = source.find("    run sequence Main").expect("run node");
+    format!(
+        "{}{}{}{}{}",
+        &source[..full],
+        &source[partial..run],
+        &source[requires..partial],
+        &source[full..requires],
+        &source[run..]
+    )
+}
+
+/// QSL-1705, QSpec FR-322-AC-305: each sidecar compensation row names its
+/// own template's node, however the template declaration order and the
+/// package's node order relate. Over a unit declaring `Partial` before
+/// `Full`, the row of each template names the package node that carries its
+/// own name and no other template's.
+#[trace("FR-517-AC-2", "TC-1312")]
+#[test]
+fn each_sidecar_compensation_row_names_its_own_templates_node() {
+    let holder = tempfile::tempdir().expect("temporary directory");
+    let source = holder.path().join("unit-swapped.native");
+    std::fs::write(&source, swapped_source()).expect("write the unit");
+    let mut handoff = request("event_position", Corpus::None);
+    handoff.emit.source = source;
+    let out = holder.path().join("handoff");
+    write_with(&handoff, &out, &Double::default()).expect("the handoff is written");
+    let sidecar: Value =
+        serde_json::from_slice(&std::fs::read(out.join("selection.json")).unwrap()).unwrap();
+    let package = admitted(
+        &std::fs::read(out.join("checked-package.json")).unwrap(),
+        &evidence(&handoff).unwrap(),
+    );
+    let rows = sidecar["compensations"].as_array().unwrap();
+    let names: Vec<&str> = rows
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Partial", "Full"], "declared template order");
+    for row in rows {
+        let name = row["name"].as_str().unwrap();
+        let node = package
+            .graph()
+            .nodes
+            .iter()
+            .find(|node| serde_json::to_value(&node.node_id).unwrap() == row["node"])
+            .expect("the row's node is in the package graph");
+        let id = serde_json::to_string(&node.node_id).unwrap();
+        let other = if name == "Full" { "Partial" } else { "Full" };
+        assert!(
+            id.contains(&format!("\"{name}\"")) && !id.contains(&format!("\"{other}\"")),
+            "{name}: the row names {id}"
+        );
+    }
+}
+
 /// Selection::check compares every sidecar value with the package; each edit
 /// of one sidecar value, against the unchanged admitted package, is refused
 /// on that value's own axis. Deleting any comparison turns one row red.
