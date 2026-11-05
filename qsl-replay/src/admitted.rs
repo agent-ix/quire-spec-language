@@ -234,6 +234,7 @@ impl AdmittedComposite {
 pub struct AdmittedDimension {
     node: NodeKey,
     qualified_name: Vec<Identifier>,
+    base: bool,
     terms: Vec<(NodeKey, Integer)>,
 }
 
@@ -253,7 +254,7 @@ impl AdmittedDimension {
     /// Whether the dimension is a base dimension (`dimension Length;`)
     /// rather than one derived from base dimensions.
     pub fn is_base(&self) -> bool {
-        self.terms.is_empty()
+        self.base
     }
 
     /// The base dimensions a derived dimension is made of, each as its node
@@ -882,7 +883,7 @@ fn declared_nodes(
         if !seen.insert(key) {
             continue;
         }
-        let NominalUnitForm::Dimension { terms } = &nominal.form else {
+        let NominalUnitForm::Dimension { terms, .. } = &nominal.form else {
             return Err(InternalFault::new(
                 "replay",
                 "every-admitted-unit-dimension-is-a-dimension",
@@ -935,7 +936,7 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
     }
     let mut dimensions = BTreeMap::new();
     for nominal in named_dimensions {
-        let NominalUnitForm::Dimension { terms } = &nominal.form else {
+        let NominalUnitForm::Dimension { base, terms } = &nominal.form else {
             continue;
         };
         dimensions.insert(
@@ -943,6 +944,7 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
             AdmittedDimension {
                 node: nominal.key.clone(),
                 qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
+                base: *base,
                 terms: terms.clone(),
             },
         );
