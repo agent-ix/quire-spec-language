@@ -12,14 +12,14 @@ use std::collections::HashMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, evaluate_finite_window, Assessment, AtomReading, Basis, ClockCover, Containment,
-    IndeterminateReason, LetterStop, LowerBoundary, OrderKey, ProgressClosure,
+    evaluate, evaluate_finite_window, Assessment, AtomReading, Basis, CaptureReading, ClockCover,
+    Containment, IndeterminateReason, LetterStop, LowerBoundary, OrderKey, ProgressClosure,
     ProgressCompleteness, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal,
-    TemporalTrace, TimestampedObservation, TimestampedTrace, Valuation, Watermark, WindowClock,
-    WindowProgress, WindowVerdict,
+    TemporalTrace, TimestampedObservation, TimestampedTrace, UndefinedCause, Valuation, Watermark,
+    WindowClock, WindowProgress, WindowVerdict,
 };
 use qsl_semantics::check::{FormulaNode, FormulaNodeId, SCALAR_LIMITS_UNLIMITED};
-use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits};
+use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits, Undefined};
 
 use crate::temporal_trace::{fixture, Fixture, EVENT, INFINITE};
 
@@ -273,6 +273,192 @@ fn pending(index: u64, deadline: u64) -> WindowVerdict {
         at: at(index),
         deadline,
     }
+}
+
+struct GuardProvenanceLetters<'a> {
+    fixture: &'a Fixture,
+    values: [i64; 3],
+    refused_at: u64,
+    refuse_capture: bool,
+}
+
+impl GuardProvenanceLetters<'_> {
+    fn reading(&self, atom: FormulaNodeId, position: TemporalPosition) -> AtomReading {
+        let Some(FormulaNode::Holds { span }) =
+            self.fixture.clause.formula().nodes().get(atom.index())
+        else {
+            panic!("the letter reads only holds atoms");
+        };
+        let text = &self.fixture.text[span.start..span.end];
+        let value = self.values[position.index() as usize];
+        if text.starts_with("holds(3 mod (2 - c.level)") && value == 2 {
+            return AtomReading::Undefined(UndefinedCause::Kernel(Undefined::DivisionByZero));
+        }
+        AtomReading::True
+    }
+}
+
+impl TemporalLetters for GuardProvenanceLetters<'_> {
+    fn atom(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        Ok(self.reading(atom, position))
+    }
+
+    fn valuation(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<Valuation, LetterStop> {
+        Ok(match self.reading(atom, position) {
+            AtomReading::True => Valuation::True,
+            AtomReading::False => Valuation::False,
+            AtomReading::Undefined(cause) => Valuation::Undefined(cause),
+        })
+    }
+
+    fn activation(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        if position.index() == self.refused_at {
+            Err(LetterStop::Refused)
+        } else {
+            Ok(AtomReading::True)
+        }
+    }
+
+    fn captures(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<CaptureReading, LetterStop> {
+        if self.refuse_capture && position.index() == self.refused_at {
+            Err(LetterStop::Refused)
+        } else {
+            Ok(CaptureReading::Fixed)
+        }
+    }
+}
+
+/// FR-327-AC-6: an undefined atom retained at the refused position outside
+/// an earlier activation's closure does not outrank its later guard refusal.
+#[trace("TC-1295", "FR-327-AC-6")]
+#[test]
+fn a_same_position_guard_refusal_wins_over_an_unreached_lower_class_undefined() {
+    let source = fixture(
+        EVENT,
+        "c: Counter",
+        "on each (q: Counter) when (q.level >= 0)",
+        "holds(3 mod (2 - c.level) >= 0) and eventually[0,2] holds(c.level >= 0)",
+    );
+
+    for (values, stamps, refused_at) in [
+        ([0, 0, 2], [0, 1, 2], 2),
+        ([0, 2, 0], [0, 1, 2], 1),
+        ([0, 2, 1], [0, 1, 2], 1),
+        ([0, 2, 2], [0, 1, 2], 1),
+    ] {
+        let mut event_letters = GuardProvenanceLetters {
+            fixture: &source,
+            values,
+            refused_at,
+            refuse_capture: false,
+        };
+        let mut event_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let event_result = evaluate(
+            &source.clause,
+            TemporalTrace::Finite { len: 3 },
+            &mut event_letters,
+            &mut event_meter,
+        );
+
+        let request = request(
+            stamps
+                .iter()
+                .zip(values)
+                .map(|(stamp, value)| Row {
+                    stamp: *stamp,
+                    atoms: vec![("p", if value >= 0 { "T" } else { "F" })],
+                    key: None,
+                })
+                .collect(),
+            2,
+            Some(2),
+        );
+        let trace = request
+            .admit(&source)
+            .expect("the timestamped trace admits");
+        let mut window_letters = GuardProvenanceLetters {
+            fixture: &source,
+            values,
+            refused_at,
+            refuse_capture: false,
+        };
+        let mut window_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let window_result = evaluate_finite_window(
+            &qsl_eval::temporal::evidence::ClauseFacts::of_checked(&source.clause),
+            &trace,
+            &mut window_letters,
+            &mut window_meter,
+        );
+        let expected = TemporalRefusal::ConditionRefused { at: at(refused_at) };
+        assert_eq!(event_result, Err(expected.clone()), "values {values:?}");
+        assert_eq!(window_result, Err(expected), "values {values:?}");
+    }
+}
+
+/// FR-327-AC-6: capture refusal has the same precedence as guard refusal.
+#[trace("TC-1295", "FR-327-AC-6")]
+#[test]
+fn a_same_position_capture_refusal_wins_over_an_unreached_lower_class_undefined() {
+    let source = fixture(
+        EVENT,
+        "c: Counter",
+        "on each (q: Counter)",
+        "capture snapshot: Int[0,9] = c.level; holds(3 mod (2 - c.level) >= 0) and eventually[0,2] holds(c.level >= 0)",
+    );
+    let values = [0, 0, 2];
+    let refused_at = 2;
+    let mut event_letters = GuardProvenanceLetters {
+        fixture: &source,
+        values,
+        refused_at,
+        refuse_capture: true,
+    };
+    let mut event_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let event_result = evaluate(
+        &source.clause,
+        TemporalTrace::Finite { len: 3 },
+        &mut event_letters,
+        &mut event_meter,
+    );
+
+    let request = request(rows(&[0, 1, 2], &["T", "T", "T"]), 2, Some(2));
+    let trace = request
+        .admit(&source)
+        .expect("the timestamped trace admits");
+    let mut window_letters = GuardProvenanceLetters {
+        fixture: &source,
+        values,
+        refused_at,
+        refuse_capture: true,
+    };
+    let mut window_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let window_result = evaluate_finite_window(
+        &qsl_eval::temporal::evidence::ClauseFacts::of_checked(&source.clause),
+        &trace,
+        &mut window_letters,
+        &mut window_meter,
+    );
+    let expected = TemporalRefusal::ConditionRefused { at: at(refused_at) };
+    assert_eq!(event_result, Err(expected.clone()));
+    assert_eq!(window_result, Err(expected));
 }
 
 fn indeterminate(index: u64, reason: IndeterminateReason) -> WindowVerdict {

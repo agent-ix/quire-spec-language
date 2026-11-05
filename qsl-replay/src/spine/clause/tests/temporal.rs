@@ -25,7 +25,7 @@ use quire_exact::Identifier;
 
 const OPERATIONS: &[&str] = &["noop"];
 
-/// The clauses `D0` to `D16` of the differential tests, over `clock`: the
+/// The clauses `D0` to `D24` of the differential tests, over `clock`: the
 /// atoms `U` (undefined where `c.value` is 2), `R` (refused where it is 1 or
 /// more) and `F` (false where it is not 0), in conjunctions, scans, `on each`
 /// activations, a refused `when` guard and a refused capture.
@@ -118,6 +118,22 @@ macro_rules! differential_clauses {
              on each (q: Counters::Counter) \
              { always[0,0] (holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) and \
              holds(3 mod (2 - c.value) >= 0)) }\n",
+            "temporal D17 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) when (count<Zero>(m in ints(sequence[q.value]): m > 0) = 0) { holds(3 mod (2 - c.value) >= 0) and eventually[0,2] holds(c.value >= 0) }\n",
+            "temporal D18 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) when (count<Zero>(m in ints(sequence[q.value]): m > 0) = 0) { eventually[0,2] holds(c.value >= 0) and holds(3 mod (2 - c.value) >= 0) }\n",
+            "temporal D19 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) when (count<Zero>(m in ints(sequence[q.value]): m > 0) = 0) { holds(3 mod (2 - c.value) >= 0) and not eventually[0,2] holds(c.value < 0) }\n",
+            "temporal D20 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) when (count<Zero>(m in ints(sequence[q.value]): m > 0) = 0) { holds(3 mod (2 - c.value) >= 0) and once[0,2] holds(c.value >= 0) }\n",
+            "temporal D21 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) { capture z: Zero = count<Zero>(m in ints(sequence[q.value]): m > 0); holds(3 mod (2 - c.value) >= 0) and eventually[0,2] holds(c.value >= 0) }\n",
+            "temporal D22 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) { capture z: Zero = count<Zero>(m in ints(sequence[q.value]): m > 0); eventually[0,2] holds(c.value >= 0) and holds(3 mod (2 - c.value) >= 0) }\n",
+            "temporal D23 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) { capture z: Zero = count<Zero>(m in ints(sequence[q.value]): m > 0); holds(3 mod (2 - c.value) >= 0) and not eventually[0,2] holds(c.value < 0) }\n",
+            "temporal D24 using t over (c: Counters::Counter) clock ", $clock, " \
+             on each (q: Counters::Counter) { capture z: Zero = count<Zero>(m in ints(sequence[q.value]): m > 0); holds(3 mod (2 - c.value) >= 0) and once[0,2] holds(c.value >= 0) }\n",
             "temporal D13 using t over (c: Counters::Counter) clock ",
             $clock,
             " \
