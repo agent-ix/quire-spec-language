@@ -23,8 +23,8 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, CheckedTerm, OperationModeKind,
 };
 use quire_exact::{
-    ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload, Timestamp,
-    Uuid, Value, ValueType, admit_text,
+    admit_text, ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload,
+    Timestamp, Uuid, Value, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
@@ -33,7 +33,7 @@ use quire_semantic_value::declaration::{
 use quire_semantic_value::location::{Location, Origin};
 
 use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
-use crate::wire_form::{OperationSuffix, WireForm, WireTag, has_form, split_tag_form};
+use crate::wire_form::{has_form, split_tag_form, OperationSuffix, WireForm, WireTag};
 
 /// One projected protocol slot: owned evaluator nodes, the admitted function
 /// table its calls reach, and the frame its locals and case binders use.
@@ -2089,37 +2089,56 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 return Err(fault("reader-record-field-exact-type-matches-operand").into());
             }
         }
-        // Presence is the admitted record's, never the source package's: IR's
-        // record view where it projects the record, else the admitted record
-        // declaration's own member, whose type is an option exactly when the
-        // field is optional (IR's own convention for a record member).
-        let from_view = [operand_id, field_declaration]
-            .into_iter()
-            .find_map(|node| {
-                let projection = self
+        // Selected model records retain field presence independently from
+        // member-type projection, so nested option and collection types do not
+        // require projecting the record's complete Exact type.
+        let selected_presence = selected_record
+            .map(|record| {
+                let record_id = self
+                    .index
+                    .ids
+                    .get(record)
+                    .ok_or_else(|| fault("reader-selected-record-has-admitted-node"))?;
+                let fields = self
                     .admitted()
-                    .project_exact_type(node, &self.index.identities, self.index.work_limit)
-                    .ok()?;
-                let view = projection.record_view()?;
-                if view.record_key() != &record_key {
-                    return None;
-                }
-                view.fields()
-                    .iter()
-                    .find(|field| field.name() == field_name.as_ref())
-                    .map(|field| field.presence())
-            });
-        let presence = match from_view {
+                    .model_record_fields(record_id)
+                    .map_err(|_| fault("reader-selected-record-fields-are-admitted"))?;
+                let field = fields
+                    .field(field_name.as_ref())
+                    .ok_or_else(|| fault("reader-selected-record-field-is-admitted"))?;
+                Ok::<_, InternalFault>(if field.optional() {
+                    quire_exact::Presence::Optional
+                } else {
+                    quire_exact::Presence::Required
+                })
+            })
+            .transpose()?;
+        let presence = match selected_presence {
             Some(presence) => presence,
-            None => match self.declared_member_presence(&record_key, field_name.as_ref())? {
-                Some(presence) => presence,
-                // A model record whose fields IR's complete-or-refuse record
-                // view cannot project yet (an option or collection member)
-                // and whose wire declaration carries no members: the
-                // package's type scope, joined by the exact record key, is
-                // the only remaining carrier of presence.
-                None => self.source_member_presence(id, &record_key, field_name.as_ref())?,
-            },
+            None => {
+                let from_view = [operand_id, field_declaration]
+                    .into_iter()
+                    .find_map(|node| {
+                        let projection = self
+                            .admitted()
+                            .project_exact_type(node, &self.index.identities, self.index.work_limit)
+                            .ok()?;
+                        let view = projection.record_view()?;
+                        if view.record_key() != &record_key {
+                            return None;
+                        }
+                        view.fields()
+                            .iter()
+                            .find(|field| field.name() == field_name.as_ref())
+                            .map(|field| field.presence())
+                    });
+                from_view
+                    .or(self.declared_member_presence(&record_key, field_name.as_ref())?)
+                    .ok_or_else(|| BuildError::Unsupported {
+                        reason: UnsupportedReason::MissingTypeRepresentation,
+                        node: id.clone(),
+                    })?
+            }
         };
         let optional = presence == quire_exact::Presence::Optional;
         let child = self.project_argument(id, operand_term, context, locals)?;
@@ -2177,36 +2196,6 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 quire_exact::Presence::Required
             },
         ))
-    }
-
-    /// The presence of record member `field` in the package's type scope,
-    /// which only the source route holds: the bytes route refuses the
-    /// record's type, as FR-533 "Types the bytes cannot project" states.
-    fn source_member_presence(
-        &self,
-        id: &CheckedNodeId,
-        record: &NodeKey,
-        field: &str,
-    ) -> Result<quire_exact::Presence, BuildError> {
-        let ProjectionSource::Source { graph, .. } = &self.index.source else {
-            return Err(BuildError::Unsupported {
-                reason: UnsupportedReason::MissingTypeRepresentation,
-                node: id.clone(),
-            });
-        };
-        match graph
-            .scope()
-            .types()
-            .composite(record.clone())
-            .map(|record| record.shape())
-        {
-            Some(quire_semantic_value::declaration::CompositeShape::Record(fields)) => fields
-                .iter()
-                .find(|declared| declared.name() == field)
-                .map(|declared| declared.presence())
-                .ok_or_else(|| fault("reader-record-field-member-is-admitted").into()),
-            _ => Err(fault("reader-record-field-view-is-admitted").into()),
-        }
     }
 
     fn project_argument(

@@ -11,16 +11,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use quire_contract_model::{
-    CHECKED_PACKAGE_V2, CheckedOccurrenceRole, CheckedPackageDispatchResult,
+    read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
     CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, read_checked_package,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CHECKED_PACKAGE_V2,
 };
 
 use qsl_foundation::diagnostic::{
     Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
-use qsl_foundation::source::node_table::{DebugTable, DebugWith, With, scoped};
+use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, With};
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
@@ -30,7 +30,7 @@ use qsl_semantics::library::{ImportView, LibraryName, LibraryPackage, LibraryRef
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
-use crate::emit::{Emission, EmitRefusal, emit_checked};
+use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{NodeKey, Origin, Role};
 
 mod clause_root;
@@ -43,18 +43,18 @@ mod terminal;
 pub(crate) mod tests;
 mod timed_model;
 
-pub use clause_root::{ClauseRoot, ClauseRootUnresolved, clause_roots, resolve_clause_root};
-pub use hybrid::{HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel, read_hybrids};
-pub use hyper_root::{HyperRoot, HyperRootUnresolved, hyper_roots, resolve_hyper_root};
+pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
+pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
+pub use hyper_root::{hyper_roots, resolve_hyper_root, HyperRoot, HyperRootUnresolved};
 pub use schedulability_root::{
-    SchedulabilityRoot, resolve_schedulability_root, schedulability_roots,
+    resolve_schedulability_root, schedulability_roots, SchedulabilityRoot,
 };
 pub use state_graph_root::{
-    StateGraphKind, StateGraphRoot, resolve_state_graph_root, state_graph_roots,
+    resolve_state_graph_root, state_graph_roots, StateGraphKind, StateGraphRoot,
 };
 pub use terminal::{
-    PackageTerminal, PackageTerminalDeclaration, ReadTerminal, ReadTerminalDeclaration,
-    TerminalResolveRefusal, read_terminal, read_terminals, resolve_terminals,
+    read_terminal, read_terminals, resolve_terminals, PackageTerminal, PackageTerminalDeclaration,
+    ReadTerminal, ReadTerminalDeclaration, TerminalResolveRefusal,
 };
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
@@ -1010,7 +1010,7 @@ impl AdmittedPackageRead<'_> {
         crate::evaluation_view::ViewFailure,
     > {
         use crate::evaluation_view::ViewFailure;
-        use crate::reader_protocol_projection::{PackageRefusal, project_package};
+        use crate::reader_protocol_projection::{project_package, PackageRefusal};
         let source_nodes: BTreeSet<_> = self
             .source
             .graph()

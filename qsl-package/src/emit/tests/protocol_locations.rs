@@ -6,8 +6,8 @@
 //! verdict on an edited package is the reader's.
 
 use super::protocol_controls::{
-    E_C_TRIED_PICKED, assert_refused_at, expression_occurrences_of_node_at, read_protocol_over,
-    tc1070,
+    assert_refused_at, expression_occurrences_of_node_at, read_protocol_over, tc1070,
+    E_C_TRIED_PICKED,
 };
 use super::*;
 use crate::ViewFailure;
@@ -225,7 +225,7 @@ fn assert_rows_read_back_at_their_terms(package: &CheckedPackage, wire: &Value, 
 #[trace("TC-1063", "FR-383-AC-32", "FR-383-AC-33")]
 #[test]
 fn every_slot_has_one_row_per_walk_visit_over_w_e_and_e_c() {
-    use super::protocol_requirements::fixture_w::{PROFILES_W, W, document as w_document};
+    use super::protocol_requirements::fixture_w::{document as w_document, PROFILES_W, W};
     let w = super::reachability::lower_with(w_document(), PROFILES_W, W);
     assert_one_row_per_walk_visit(&w.package, &w.wire);
     for source in [
@@ -243,7 +243,7 @@ fn every_slot_has_one_row_per_walk_visit_over_w_e_and_e_c() {
 #[trace("TC-1063", "FR-383-AC-35")]
 #[test]
 fn every_row_reads_back_at_i2_with_its_terms_location() {
-    use super::protocol_requirements::fixture_w::{PROFILES_W, W, document as w_document};
+    use super::protocol_requirements::fixture_w::{document as w_document, PROFILES_W, W};
     let w = super::reachability::lower_with(w_document(), PROFILES_W, W);
     assert_rows_read_back_at_their_terms(&w.package, &w.wire, &w_document());
     // The reader admits the `let` binder a slot introduces itself, so E-C is
@@ -548,11 +548,9 @@ fn e_c_let_and_if_rows_cover_every_term_and_no_non_term() {
     row_at(&wire, &branch, &[2]);
     // The condition `im.ready` is a term; the conditional at the root is not.
     row_at(&wire, &branch, &[0]);
-    assert!(
-        rows(&wire)
-            .iter()
-            .all(|row| !(origin_name(row) == branch && path(row).is_empty()))
-    );
+    assert!(rows(&wire)
+        .iter()
+        .all(|row| !(origin_name(row) == branch && path(row).is_empty())));
 
     // `let c = lm.count in c + c >= 1`: `lm.count` once, the comparison and
     // the sum; the `let` at the root and the two `c` reads have none.
