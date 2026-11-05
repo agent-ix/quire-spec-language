@@ -843,6 +843,33 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
     assert!(!CompleteCause::UnexpectedEnd.is_cause_of(CompleteCode::ResourceExhausted));
 }
 
+/// TC-1335 step 4 (FR-093-AC-59): the one-occurrence forms fix their arity in
+/// the grammar, so another argument count is `invalid_syntax`/`unexpected-token`,
+/// while the right count is admissible.
+#[trace("FR-093-AC-59", "TC-1335")]
+#[test]
+fn one_occurrence_forms_fix_their_arity_in_the_grammar() {
+    for (id, body, admitted) in [
+        ("drop-one", "dropFirst(s)", true),
+        ("remove-two", "removeOne(s, 1)", true),
+        ("drop-two", "dropFirst(s, s)", false),
+        ("remove-one", "removeOne(s)", false),
+    ] {
+        let text = source(&format!(
+            "function f using Complete (s: Sequence<Integer>[0, 9]): Sequence<Integer>[0, 9] pure {{ {body} }}"
+        ));
+        if admitted {
+            assert!(parse(id, &text).is_admissible(), "{body}");
+        } else {
+            assert_eq!(
+                first_diagnostic(id, text.as_bytes()),
+                (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken),
+                "{body}"
+            );
+        }
+    }
+}
+
 /// FR-001-AC-6, AC-11: the complete reader carries `blank-label` with the
 /// first blank label, and `empty-path` only when every label is non-blank;
 /// neither names a region.
