@@ -389,3 +389,121 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
     assert!(item.path_condition().is_empty());
     assert_eq!(item.conversion_context(), None);
 }
+
+/// FR-495-AC-7 (TC-1284 step 6; QSpec FR-147-AC-3, AC-8): an integer `div`,
+/// `rem` or `mod` over mathematical `Integer` operands has one
+/// `value-validity` record whose extent is `Unbounded` over both operand
+/// parameter nodes. Its item is written with a finite bound available and
+/// names `Integer` domains, never an `Int[..]`. A bounded-only descriptor's
+/// `requires-bound` settlement routes no target, with or without a second
+/// registered backend, so the disposition is the same in both runs.
+#[trace(
+    "TC-1284",
+    "FR-495-AC-7",
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-3",
+    "QSpec-FR-147-AC-8"
+)]
+#[test]
+fn a_finite_backend_settles_integer_division_requires_bound_unnarrowed() {
+    use qsl_semantics::value::{admit_integer_division, DefinitionRole};
+    use quire_exact::DivisionProfile;
+
+    for profile in [
+        DivisionProfile::Truncating,
+        DivisionProfile::Floor,
+        DivisionProfile::Euclidean,
+    ] {
+        let role = match profile {
+            DivisionProfile::Truncating => DefinitionRole::IntegerDivisionTruncating,
+            DivisionProfile::Floor => DefinitionRole::IntegerDivisionFloor,
+            DivisionProfile::Euclidean => DefinitionRole::IntegerDivisionEuclidean,
+        };
+        for operator in ["div", "rem", "mod"] {
+            let text = format!(
+                "{HEADER}function q using v(a: Integer, b: Integer): Integer pure \
+                 {{ if b != 0 then a {operator} b else 0 }}\n"
+            );
+            let parsed = qsl_cst::parse(
+                SourceIdentity::new("a", "u", "git", "1"),
+                "unit.native",
+                text.as_bytes(),
+                qsl_cst::Limits::default(),
+            )
+            .expect("S1 reads the unit");
+            let unit = build_unit(&parsed).expect("S2 builds the unit");
+            let mut declarations = PackageDeclarations::assemble(
+                parsed.source().reference().clone(),
+                unit,
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("the unit assembles");
+            declarations.integer_division =
+                Some(admit_integer_division(&[role.reference()], None).expect("a closed law"));
+            let package = CheckedPackage::link(
+                declarations
+                    .check(CheckingLimits::default())
+                    .unwrap_or_else(|refusals| panic!("{operator}: {refusals:?}")),
+            );
+            let graph = package.graph();
+            let parameters = graph
+                .semantic_graph()
+                .node(graph.function_identity("q").expect("q is declared"))
+                .and_then(|function| function.function_parameters())
+                .expect("q's function node")
+                .to_vec();
+            let integer_domains: Vec<_> = parameters
+                .iter()
+                .map(|parameter| {
+                    (
+                        DomainKey::Node {
+                            node: WireNodeId::from_digest(*parameter.as_bytes()),
+                            path: Vec::new(),
+                        },
+                        DomainKind::Integer,
+                    )
+                })
+                .collect();
+
+            let descriptor = backend("kani", (Capability::ValueValidity, Mode::Bounded));
+            let kani = descriptor.candidate().clone();
+            let mut bounded_alone = Registry::new();
+            bounded_alone
+                .register(descriptor.clone())
+                .expect("one registration");
+            let mut with_smt = Registry::new();
+            with_smt.register(descriptor).expect("one registration");
+            with_smt
+                .register(backend("cvc5", (Capability::ValueValidity, Mode::Unbounded)))
+                .expect("the SMT registration");
+
+            for registry in [&with_smt, &bounded_alone] {
+                let items = items_from_requirements(graph.requirements(), registry, None);
+                let division: Vec<_> = items
+                    .iter()
+                    .filter(|item| item.unbounded() == integer_domains)
+                    .collect();
+                let [item] = division.as_slice() else {
+                    panic!("{operator}: one division item over a and b: {items:#?}");
+                };
+                assert_eq!(
+                    item.extent(),
+                    ExtentClassification::Unbounded {
+                        finite_bound_available: true
+                    },
+                    "{operator}"
+                );
+                assert_eq!(item.kind(), Capability::ValueValidity);
+                assert!(candidates(item).contains(&kani), "{operator}");
+                // The settlement `negotiate_*` makes for a bounded-only
+                // candidate over an unbounded extent is a fixture here.
+                assert_eq!(
+                    route(&[Disposition::RequiresBound]),
+                    vec![None],
+                    "{operator}: requires-bound routes no target"
+                );
+            }
+        }
+    }
+}
