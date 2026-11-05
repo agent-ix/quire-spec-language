@@ -85,7 +85,9 @@ const OBJECT_ENVIRONMENT: &str = "object-environment";
 /// The record of `failure` when it is [`admit_objects`]'s refusal of the
 /// object environment -- caller input, refused before any charge, that a
 /// caller maps to its own typed input refusal -- and `None` for any other
-/// call admission failure.
+/// call admission failure. The refusal's locus names its member by string, so
+/// this reader is the one place that string is matched.
+#[ix_trace_rs::string_edge]
 pub fn object_environment_refusal(failure: &CallAdmissionFailure) -> Option<&AdmissionRecord> {
     match failure {
         CallAdmissionFailure::Refused(CallAdmissionRecord {

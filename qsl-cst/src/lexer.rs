@@ -35,7 +35,7 @@ pub struct Limits {
     pub nodes: usize,
     /// Parser work units per significant token: the complete-V1 parser
     /// stops once it has taken this many steps per token, plus this many
-    /// for the end of input. Defaults to 256.
+    /// for the end of input. Defaults to 288.
     pub work_units: usize,
 }
 

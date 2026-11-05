@@ -365,6 +365,8 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::Float64(_)
         | ExprNode::Convert { .. }
         | ExprNode::Flatten(_)
+        | ExprNode::DropFirst(_)
+        | ExprNode::RemoveOne { .. }
         | ExprNode::Accumulate { .. } => Some(LayerForm::ValueConstruct),
         ExprNode::Boolean(_)
         | ExprNode::Absent
@@ -377,6 +379,7 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::Let { .. }
         | ExprNode::If { .. }
         | ExprNode::Negate(_)
+        | ExprNode::Power { .. }
         | ExprNode::Not(_)
         | ExprNode::Field { .. }
         | ExprNode::Present(_)

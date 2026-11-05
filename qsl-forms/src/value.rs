@@ -756,6 +756,7 @@ enum Shape {
     Case(Vec<ArmSyntax>, Span),
     Binary(BinaryOperator),
     Negate,
+    Power(Integer),
     Not,
     Field(String),
     Present,
@@ -772,6 +773,8 @@ enum Shape {
     Dispatch(String),
     Query(BinderQuery, String),
     Flatten,
+    DropFirst,
+    RemoveOne,
     Accumulate {
         form: Accumulation,
         accumulator_type: DeclaredName,
@@ -927,6 +930,13 @@ impl Shape {
                 arity(1)?;
                 ExprNode::Negate(operands.next()?)
             }
+            Self::Power(exponent) => {
+                arity(1)?;
+                ExprNode::Power {
+                    base: operands.next()?,
+                    exponent,
+                }
+            }
             Self::Not => {
                 arity(1)?;
                 ExprNode::Not(operands.next()?)
@@ -957,6 +967,17 @@ impl Shape {
             Self::Flatten => {
                 arity(1)?;
                 ExprNode::Flatten(operands.next()?)
+            }
+            Self::DropFirst => {
+                arity(1)?;
+                ExprNode::DropFirst(operands.next()?)
+            }
+            Self::RemoveOne => {
+                arity(2)?;
+                ExprNode::RemoveOne {
+                    collection: operands.next()?,
+                    item: operands.next()?,
+                }
             }
             Self::Size => {
                 arity(1)?;
@@ -1626,6 +1647,15 @@ impl<'c> Mapping<'c> {
                 self.pass(&task, operand);
                 Ok(())
             }
+            // `postfix ^ signed-int` (FR-091 "Integer power spelling"): one
+            // node over the base, the exponent exactly as written.
+            [Item::Node(base), Item::Token(caret), Item::Node(exponent)]
+                if caret.spelling() == b"^"
+                    && exponent.production() == Production::SignedInteger =>
+            {
+                let exponent = integer(&spelled(self.cst, exponent)?, exponent)?;
+                self.with_children(Shape::Power(exponent), &task, vec![*base])
+            }
             _ => Err(unexpected(node)),
         }
     }
@@ -1861,11 +1891,16 @@ impl<'c> Mapping<'c> {
                 }
                 self.with_children(Shape::Size, &task, one(&operands)?)
             }
-            b"contains" => {
+            b"contains" | b"removeOne" => {
                 if operands.len() != 2 {
                     return Err(unexpected(node));
                 }
-                self.with_children(Shape::Contains, &task, operands)
+                let shape = if token.spelling() == b"contains" {
+                    Shape::Contains
+                } else {
+                    Shape::RemoveOne
+                };
+                self.with_children(shape, &task, operands)
             }
             b"(" => {
                 let [inner] = operands.as_slice() else {
@@ -2222,6 +2257,7 @@ impl<'c> Mapping<'c> {
         } else {
             match head.spelling() {
                 b"flatten" => Shape::Flatten,
+                b"dropFirst" => Shape::DropFirst,
                 b"fold" | b"reduce" => Shape::Accumulate {
                     form: if head.spelling() == b"fold" {
                         Accumulation::Fold

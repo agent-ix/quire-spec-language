@@ -32,6 +32,9 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::location::{Location, Origin};
 
+use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
+use crate::wire_form::{has_form, split_tag_form, OperationSuffix, WireForm, WireTag};
+
 /// One projected protocol slot: owned evaluator nodes, the admitted function
 /// table its calls reach, and the frame its locals and case binders use.
 /// Wire terms and producer rows stay inside qsl-package.
@@ -161,6 +164,18 @@ pub struct UnsupportedView {
 }
 
 impl UnsupportedView {
+    /// A binder type with no kernel representation, at its node.
+    pub(crate) fn missing_type(package: &str, key: NodeKey) -> Self {
+        Self {
+            package: package.to_owned(),
+            locus: ViewLocus {
+                key,
+                location: None,
+            },
+            reason: UnsupportedReason::MissingTypeRepresentation,
+        }
+    }
+
     /// The catalog code and cause every unsupported view carries.
     pub fn catalog(&self) -> (&'static str, &'static str) {
         ("unknown_required_feature", "unsupported-feature")
@@ -268,8 +283,15 @@ pub(crate) fn project_package(
     requests: Vec<SlotRequest>,
     work_limit: u64,
 ) -> Result<ReaderProtocolSlots, PackageRefusal> {
-    let index = WireIndex::new(source_graph, admitted, emission, work_limit)
-        .map_err(PackageRefusal::Fault)?;
+    let index = WireIndex::new(
+        ProjectionSource::Source {
+            graph: source_graph,
+            emission,
+        },
+        admitted,
+        work_limit,
+    )
+    .map_err(PackageRefusal::Fault)?;
     let rows = OriginRows::new(admitted);
     let mut slots = BTreeMap::new();
     let mut refusal: Option<UnsupportedView> = None;
@@ -291,6 +313,9 @@ pub(crate) fn project_package(
                 })
             }
             Err(BuildError::Fault(fault)) => ReaderSlot::Fault(fault),
+            Err(BuildError::Equality(_)) => {
+                ReaderSlot::Fault(self::fault("source-route-equality-has-producer-rows"))
+            }
         };
         slots.insert((request.root, request.origin), slot);
     }
@@ -330,6 +355,9 @@ enum BuildError {
         reason: UnsupportedReason,
         node: CheckedNodeId,
     },
+    /// The bytes route holds no admitted equality decision for an
+    /// application (FR-531 "The equality file").
+    Equality(EqualityWitnessRefusal),
     Fault(InternalFault),
 }
 
@@ -350,9 +378,8 @@ fn unsupported_operation(node: &CheckedNodeId, operation: impl Into<String>) -> 
 
 /// The admitted package's nodes indexed by id and key, built once per view.
 struct WireIndex<'wire> {
-    source_graph: &'wire qsl_semantics::check::CheckedGraph,
+    source: ProjectionSource<'wire>,
     admitted: &'wire CheckedPackageV2,
-    emission: &'wire crate::Emission,
     nodes: BTreeMap<&'wire CheckedNodeId, &'wire CheckedSemanticNodeV2>,
     ids: BTreeMap<NodeKey, &'wire CheckedNodeId>,
     graph: WireGraph,
@@ -362,16 +389,46 @@ struct WireIndex<'wire> {
     work_limit: u64,
 }
 
+/// What the projection reads beside the admitted package.
+pub(crate) enum ProjectionSource<'wire> {
+    /// The in-process route: the checked source graph's identity rows and
+    /// presence scope, and the emission's equality rows.
+    Source {
+        graph: &'wire qsl_semantics::check::CheckedGraph,
+        emission: &'wire crate::Emission,
+    },
+    /// The bytes route: the identity witness the supply gave and, where the
+    /// handoff carried one, the equality rows (FR-531).
+    Bytes {
+        identities: quire_contract_model::SelectedExactIdentities,
+        equality: Option<&'wire ReadEqualityRows>,
+    },
+}
+
 impl<'wire> WireIndex<'wire> {
     fn new(
-        source_graph: &'wire qsl_semantics::check::CheckedGraph,
+        source: ProjectionSource<'wire>,
         admitted: &'wire CheckedPackageV2,
-        emission: &'wire crate::Emission,
         work_limit: u64,
     ) -> Result<Self, InternalFault> {
-        let identities = source_graph
-            .selected_exact_identities(admitted)
-            .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
+        let (source, identities) = match source {
+            ProjectionSource::Source { graph, emission } => {
+                let identities = graph
+                    .selected_exact_identities(admitted)
+                    .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
+                (ProjectionSource::Source { graph, emission }, identities)
+            }
+            ProjectionSource::Bytes {
+                identities,
+                equality,
+            } => (
+                ProjectionSource::Bytes {
+                    identities: identities.clone(),
+                    equality,
+                },
+                identities,
+            ),
+        };
         let graph = crate::checked_v2::wire_graph(admitted)
             .map_err(|_| fault("reader-protocol-graph-has-structural-keys"))?;
         let mut nodes = BTreeMap::new();
@@ -384,9 +441,8 @@ impl<'wire> WireIndex<'wire> {
             ids.insert(key, &node.node_id);
         }
         Ok(Self {
-            source_graph,
+            source,
             admitted,
-            emission,
             nodes,
             ids,
             graph,
@@ -398,6 +454,43 @@ impl<'wire> WireIndex<'wire> {
 
     fn node(&self, id: &CheckedNodeId) -> Option<&'wire CheckedSemanticNodeV2> {
         self.nodes.get(id).copied()
+    }
+
+    /// The admitted equality decision of application `id`: from the
+    /// emission's producer rows on the source route, from the handoff's
+    /// equality file on the bytes route (FR-531 "The equality file").
+    fn equality_decision(
+        &self,
+        admitted: &CheckedPackageV2,
+        id: &CheckedNodeId,
+    ) -> Result<quire_semantic_value::declaration::AdmittedEqualityDecision, BuildError> {
+        match &self.source {
+            ProjectionSource::Source { emission, .. } => {
+                let row = emission
+                    .equality_producer_identity_rows()
+                    .iter()
+                    .find(|row| row.checked_node() == id)
+                    .ok_or_else(|| fault("reader-equality-has-producer-identity-row"))?;
+                let rows = self.equality_rows.get_or_init(|| emission.equality_rows());
+                emission
+                    .admitted_equality_from(rows, admitted, id, row.occurrence(), self.work_limit)
+                    .map_err(|_| fault("reader-equality-decision-is-admitted").into())
+            }
+            ProjectionSource::Bytes { equality, .. } => equality
+                .ok_or(BuildError::Equality(EqualityWitnessRefusal::Missing))?
+                .decision(admitted, id, self.work_limit)
+                .map_err(BuildError::Equality),
+        }
+    }
+
+    fn types(&self) -> TypeReader<'_> {
+        TypeReader {
+            admitted: self.admitted,
+            identities: &self.identities,
+            nodes: &self.nodes,
+            graph: &self.graph,
+            work_limit: self.work_limit,
+        }
     }
 
     fn key(&self, id: &CheckedNodeId) -> Result<NodeKey, InternalFault> {
@@ -571,6 +664,102 @@ impl<'wire> OriginRows<'wire> {
     }
 }
 
+/// Why the walk of a bytes-route slot produced no visits.
+pub(crate) enum WalkFailure {
+    /// An admitted form, operation or type without a projection.
+    Unsupported(UnsupportedView),
+    /// The equality rows do not give an application its decision.
+    Equality(EqualityWitnessRefusal),
+    /// The admitted package broke a projection invariant.
+    Fault(InternalFault),
+}
+
+/// The slot walks of a package read from its bytes alone (FR-533 "Slot
+/// naming on the bytes route"): the projection of FR-390 over the package's
+/// own nodes, the identity witness and the equality rows.
+pub(crate) struct BareWalker<'wire> {
+    index: WireIndex<'wire>,
+}
+
+impl<'wire> BareWalker<'wire> {
+    pub(crate) fn new(
+        admitted: &'wire CheckedPackageV2,
+        identities: quire_contract_model::SelectedExactIdentities,
+        equality: Option<&'wire ReadEqualityRows>,
+        work_limit: u64,
+    ) -> Result<Self, InternalFault> {
+        Ok(Self {
+            index: WireIndex::new(
+                ProjectionSource::Bytes {
+                    identities,
+                    equality,
+                },
+                admitted,
+                work_limit,
+            )?,
+        })
+    }
+
+    /// The applications the walk of the slot rooted at `root` visits, each
+    /// with its number of visits (FR-383 "Protocol term locations").
+    pub(crate) fn visits(
+        &self,
+        root: &NodeKey,
+        binders: &[NodeKey],
+    ) -> Result<BTreeMap<CheckedNodeId, usize>, WalkFailure> {
+        let request = SlotRequest {
+            root: root.clone(),
+            origin: String::new(),
+            binders: binders.to_vec(),
+        };
+        let projection = match self.index.project_slot(&request) {
+            Ok(projection) => projection,
+            Err(BuildError::Fault(fault)) => return Err(WalkFailure::Fault(fault)),
+            Err(BuildError::Equality(refusal)) => return Err(WalkFailure::Equality(refusal)),
+            Err(BuildError::Unsupported { reason, node }) => {
+                return Err(WalkFailure::Unsupported(UnsupportedView {
+                    package: self.index.admitted.name().to_owned(),
+                    locus: ViewLocus {
+                        key: self.index.key(&node).map_err(WalkFailure::Fault)?,
+                        location: None,
+                    },
+                    reason,
+                }))
+            }
+        };
+        let mut visits: BTreeMap<CheckedNodeId, usize> = BTreeMap::new();
+        for position in walk(&projection.nodes, projection.root) {
+            for application in projection.nodes[position].terms() {
+                *visits.entry(application.clone()).or_default() += 1;
+            }
+        }
+        Ok(visits)
+    }
+
+    /// The number of rows each type-declaration origin holds for each
+    /// application, by origin name.
+    pub(crate) fn origin_rows(&self) -> BTreeMap<&'wire str, BTreeMap<CheckedNodeId, usize>> {
+        OriginRows::new(self.index.admitted)
+            .rows
+            .into_iter()
+            .map(|(origin, applications)| {
+                (
+                    origin,
+                    applications
+                        .into_iter()
+                        .map(|(application, rows)| (application.clone(), rows.len()))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// The key of `application`, as the package's wire graph spells it.
+    pub(crate) fn key(&self, application: &CheckedNodeId) -> Result<NodeKey, InternalFault> {
+        self.index.key(application)
+    }
+}
+
 /// The positions of a slot in FR-383's walk order: pre-order, children in
 /// `NodeKind` operand order.
 fn walk(nodes: &[ReaderProjectedNode], root: usize) -> Vec<usize> {
@@ -630,10 +819,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let declarations = reachable
             .iter()
             .filter_map(|id| self.index.node(id))
-            .filter(|node| {
-                node.node_tag.as_ref() == "function"
-                    && node.semantic_form.as_ref() == "pure_function"
-            })
+            .filter(|node| has_form(node, WireTag::Function, WireForm::PureFunction))
             .map(|node| {
                 let (parameters, body) = function_parts(&node.body)
                     .ok_or_else(|| fault("reader-pure-function-has-checked-body"))?;
@@ -727,8 +913,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 (NodeKind::Literal(CheckedLiteral(literal)), Vec::new(), None)
             }
             CheckedTerm::Aggregate { members }
-                if node.node_tag.as_ref() == "value"
-                    && node.semantic_form.as_ref() == "union_value" =>
+                if has_form(node, WireTag::Value, WireForm::UnionValue) =>
             {
                 let (kind, children) = self.union_value(node, members, context, locals)?;
                 (kind, children, None)
@@ -792,10 +977,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let union_node = self
             .index
             .node(&node.semantic_type)
-            .filter(|candidate| {
-                candidate.node_tag.as_ref() == "composite_type"
-                    && candidate.semantic_form.as_ref() == "union"
-            })
+            .filter(|candidate| has_form(candidate, WireTag::CompositeType, WireForm::Union))
             .ok_or_else(|| fault("reader-union-value-type-is-union"))?;
         let CheckedTerm::Aggregate {
             members: union_members,
@@ -1009,24 +1191,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [left, right] = children.as_slice() else {
                     return Err(fault("reader-order-has-two-operands").into());
                 };
-                let (family, operator) = identity
-                    .and_then(|identity| identity.strip_prefix("quire.op."))
-                    .and_then(|identity| identity.split_once('.'))
+                let (kind, operator) = identity
+                    .and_then(order_of)
                     .ok_or_else(|| fault("reader-order-family-is-catalogued"))?;
-                let kind = match family {
-                    "integer" => OrderedKind::Integers,
-                    "rational" => OrderedKind::Rationals,
-                    "decimal" => OrderedKind::Decimals,
-                    "enum" => OrderedKind::Enums,
-                    "text" => OrderedKind::Texts,
-                    _ => OrderedKind::Quantities,
-                };
-                let operator = match operator {
-                    "lt" => OrderingOperator::Less,
-                    "le" => OrderingOperator::LessOrEqual,
-                    "gt" => OrderingOperator::Greater,
-                    _ => OrderingOperator::GreaterOrEqual,
-                };
                 Ok((NodeKind::Order(operator, kind, *left, *right), children))
             }
             Some("quire.op.record.project") => {
@@ -1109,30 +1276,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 Ok(child)
             })
             .collect::<Result<Vec<_>, BuildError>>()?;
-        let row = self
-            .index
-            .emission
-            .equality_producer_identity_rows()
-            .iter()
-            .find(|row| row.checked_node() == id)
-            .ok_or_else(|| fault("reader-equality-has-producer-identity-row"))?;
-        let rows = self
-            .index
-            .equality_rows
-            .get_or_init(|| self.index.emission.equality_rows());
-        let decision = self
-            .index
-            .emission
-            .admitted_equality_from(
-                rows,
-                self.admitted(),
-                id,
-                row.occurrence(),
-                self.index.work_limit,
-            )
-            .map_err(|_| fault("reader-equality-decision-is-admitted"))?;
+        let decision = self.index.equality_decision(self.admitted(), id)?;
         let equality = CheckedEquality::from_admitted_decision(&decision);
-        let operator = if identity.is_some_and(|identity| identity.ends_with(".ne")) {
+        let operator = if identity.and_then(OperationSuffix::of) == Some(OperationSuffix::Ne) {
             EqualityOperator::NotEqual
         } else {
             EqualityOperator::Equal
@@ -1171,10 +1317,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .ids
             .get(&declaration)
             .and_then(|id| self.index.node(id))
-            .filter(|candidate| {
-                candidate.node_tag.as_ref() == "composite_type"
-                    && candidate.semantic_form.as_ref() == "union"
-            })
+            .filter(|candidate| has_form(candidate, WireTag::CompositeType, WireForm::Union))
             .ok_or_else(|| fault("reader-union-case-declaration-is-admitted"))?;
         let CheckedTerm::Aggregate {
             members: union_members,
@@ -1349,10 +1492,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 .index
                 .node(field_declaration)
                 .ok_or_else(|| fault("reader-record-field-node-is-admitted"))?;
-            let record_form = (declaration.node_tag.as_ref() == "model"
-                && declaration.semantic_form.as_ref() == "record_value_type")
-                || (declaration.node_tag.as_ref() == "composite_type"
-                    && declaration.semantic_form.as_ref() == "record");
+            let record_form = (has_form(declaration, WireTag::Model, WireForm::RecordValueType))
+                || (has_form(declaration, WireTag::CompositeType, WireForm::Record));
             if !record_form || declaration_key != record_key {
                 return Err(fault("reader-record-field-exact-type-matches-operand").into());
             }
@@ -1386,7 +1527,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 // and whose wire declaration carries no members: the
                 // package's type scope, joined by the exact record key, is
                 // the only remaining carrier of presence.
-                None => self.source_member_presence(&record_key, field_name.as_ref())?,
+                None => self.source_member_presence(id, &record_key, field_name.as_ref())?,
             },
         };
         let optional = presence == quire_exact::Presence::Optional;
@@ -1414,9 +1555,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .get(record)
             .and_then(|id| self.index.node(id))
             .ok_or_else(|| fault("reader-record-declaration-is-admitted"))?;
-        if declaration.node_tag.as_ref() != "composite_type"
-            || declaration.semantic_form.as_ref() != "record"
-        {
+        if !has_form(declaration, WireTag::CompositeType, WireForm::Record) {
             return Ok(None);
         }
         let CheckedTerm::Aggregate { members } = &declaration.body else {
@@ -1441,9 +1580,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .and_then(|target| self.index.node(target))
             .ok_or_else(|| fault("reader-record-field-member-is-admitted"))?;
         Ok(Some(
-            if member_type.node_tag.as_ref() == "composite_type"
-                && member_type.semantic_form.as_ref() == "option"
-            {
+            if has_form(member_type, WireTag::CompositeType, WireForm::Option) {
                 quire_exact::Presence::Optional
             } else {
                 quire_exact::Presence::Required
@@ -1451,15 +1588,22 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         ))
     }
 
-    /// The presence of record member `field` in the package's type scope.
+    /// The presence of record member `field` in the package's type scope,
+    /// which only the source route holds: the bytes route refuses the
+    /// record's type, as FR-533 "Types the bytes cannot project" states.
     fn source_member_presence(
         &self,
+        id: &CheckedNodeId,
         record: &NodeKey,
         field: &str,
-    ) -> Result<quire_exact::Presence, InternalFault> {
-        match self
-            .index
-            .source_graph
+    ) -> Result<quire_exact::Presence, BuildError> {
+        let ProjectionSource::Source { graph, .. } = &self.index.source else {
+            return Err(BuildError::Unsupported {
+                reason: UnsupportedReason::MissingTypeRepresentation,
+                node: id.clone(),
+            });
+        };
+        match graph
             .scope()
             .types()
             .composite(record.clone())
@@ -1469,8 +1613,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 .iter()
                 .find(|declared| declared.name() == field)
                 .map(|declared| declared.presence())
-                .ok_or_else(|| fault("reader-record-field-member-is-admitted")),
-            _ => Err(fault("reader-record-field-view-is-admitted")),
+                .ok_or_else(|| fault("reader-record-field-member-is-admitted").into()),
+            _ => Err(fault("reader-record-field-view-is-admitted").into()),
         }
     }
 
@@ -1509,7 +1653,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     }
 
     fn value_type(&self, id: &CheckedNodeId) -> Result<ValueType, BuildError> {
-        node_value_type(self.index, id).map_err(|error| match error {
+        node_value_type(&self.index.types(), id).map_err(|error| match error {
             TypeError::Unsupported => BuildError::Unsupported {
                 reason: UnsupportedReason::MissingTypeRepresentation,
                 node: id.clone(),
@@ -1538,7 +1682,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             self.index.work_limit,
         ) {
             Ok(projection) => projection.value_type().clone(),
-            Err(error) if error.form.as_ref() == "scalar_type/text" => ValueType::String,
+            Err(error)
+                if split_tag_form(&error.form) == Some((WireTag::ScalarType, WireForm::Text)) =>
+            {
+                ValueType::String
+            }
             Err(_) => return Err(unsupported()),
         };
         Ok(self.push(ReaderProjectedNode::leaf(
@@ -1548,7 +1696,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     }
 }
 
-enum TypeError {
+pub(crate) enum TypeError {
     Unsupported,
     Fault(InternalFault),
 }
@@ -1559,14 +1707,57 @@ impl From<InternalFault> for TypeError {
     }
 }
 
+/// What reading the exact type of an admitted node needs: the package, the
+/// selected identity witness, the nodes by id and the structural keys.
+pub(crate) struct TypeReader<'a> {
+    pub(crate) admitted: &'a CheckedPackageV2,
+    pub(crate) identities: &'a quire_contract_model::SelectedExactIdentities,
+    pub(crate) nodes: &'a BTreeMap<&'a CheckedNodeId, &'a CheckedSemanticNodeV2>,
+    pub(crate) graph: &'a WireGraph,
+    pub(crate) work_limit: u64,
+}
+
+impl TypeReader<'_> {
+    fn node(&self, id: &CheckedNodeId) -> Option<&CheckedSemanticNodeV2> {
+        self.nodes.get(id).copied()
+    }
+}
+
+/// The comparison family and operator a `quire.op.<family>.<operator>` order
+/// identity names, `None` for any other identity.
+#[ix_trace_rs::string_edge]
+fn order_of(identity: &str) -> Option<(OrderedKind, OrderingOperator)> {
+    let (family, operator) = identity.strip_prefix("quire.op.")?.split_once('.')?;
+    let kind = match family {
+        "integer" => OrderedKind::Integers,
+        "rational" => OrderedKind::Rationals,
+        "decimal" => OrderedKind::Decimals,
+        "enum" => OrderedKind::Enums,
+        "text" => OrderedKind::Texts,
+        "quantity" => OrderedKind::Quantities,
+        _ => return None,
+    };
+    let operator = match operator {
+        "lt" => OrderingOperator::Less,
+        "le" => OrderingOperator::LessOrEqual,
+        "gt" => OrderingOperator::Greater,
+        "ge" => OrderingOperator::GreaterOrEqual,
+        _ => return None,
+    };
+    Some((kind, operator))
+}
+
 /// The selected exact type of admitted node `id`, joining declared and
 /// structural identities where IR's projection leaves the join to QSL.
-fn node_value_type(index: &WireIndex<'_>, id: &CheckedNodeId) -> Result<ValueType, TypeError> {
+pub(crate) fn node_value_type(
+    index: &TypeReader<'_>,
+    id: &CheckedNodeId,
+) -> Result<ValueType, TypeError> {
     use quire_contract_model::ExactTypeProjectionErrorCode as Code;
     use quire_contract_model::SelectedExactIdentity as Identity;
     let error = match index
         .admitted
-        .project_exact_type(id, &index.identities, index.work_limit)
+        .project_exact_type(id, index.identities, index.work_limit)
     {
         Ok(projection) => return Ok(projection.value_type().clone()),
         Err(error) => error,
@@ -1585,51 +1776,51 @@ fn node_value_type(index: &WireIndex<'_>, id: &CheckedNodeId) -> Result<ValueTyp
     };
     // A checked declaration node of `form` is itself the exact structural
     // identity when no selected identity row exists; equal shape never is.
-    let structural = |declaration: &CheckedNodeId, tag: &str, form: &str| {
+    let structural = |declaration: &CheckedNodeId, tag: WireTag, form: WireForm| {
         index
             .node(declaration)
-            .filter(|node| node.node_tag.as_ref() == tag && node.semantic_form.as_ref() == form)
+            .filter(|node| has_form(node, tag, form))
             .and_then(|_| index.graph.key(declaration).ok())
     };
-    match error.form.as_ref() {
-        "scalar_type/text" if unresolved => {
+    match split_tag_form(&error.form) {
+        Some((WireTag::ScalarType, WireForm::Text)) if unresolved => {
             index
                 .node(at.ok_or_else(|| fault("reader-string-type-node-is-admitted"))?)
-                .filter(|node| {
-                    node.node_tag.as_ref() == "scalar_type" && node.semantic_form.as_ref() == "text"
-                })
+                .filter(|node| has_form(node, WireTag::ScalarType, WireForm::Text))
                 .ok_or_else(|| fault("reader-string-type-has-checked-form"))?;
             Ok(ValueType::String)
         }
-        "composite_type/record" if unresolved => {
+        Some((WireTag::CompositeType, WireForm::Record)) if unresolved => {
             let declaration = at.ok_or_else(|| fault("reader-record-type-error-has-node"))?;
             let key = match selected(declaration) {
                 Some(Identity::Record(key)) => Some(key.clone()),
-                _ => structural(declaration, "composite_type", "record"),
+                _ => structural(declaration, WireTag::CompositeType, WireForm::Record),
             }
             .ok_or_else(|| fault("reader-record-type-has-exact-identity"))?;
             Ok(ValueType::Composite(key))
         }
-        "composite_type/union" if error.code == Code::UnavailableIdentityWitness => {
+        Some((WireTag::CompositeType, WireForm::Union))
+            if error.code == Code::UnavailableIdentityWitness =>
+        {
             let declaration = at.ok_or_else(|| fault("reader-union-type-error-has-node"))?;
             let key = match selected(declaration) {
                 Some(Identity::Union(key)) => Some(key.clone()),
-                _ => structural(declaration, "composite_type", "union"),
+                _ => structural(declaration, WireTag::CompositeType, WireForm::Union),
             }
             .ok_or_else(|| fault("reader-union-type-has-exact-identity"))?;
             Ok(ValueType::Composite(key))
         }
-        "scalar_type/unit" if unresolved => {
+        Some((WireTag::ScalarType, WireForm::Unit)) if unresolved => {
             let declaration = at.ok_or_else(|| fault("reader-unit-has-exact-identity"))?;
             let unit = match selected(declaration) {
                 Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
-                _ => structural(declaration, "scalar_type", "unit")
+                _ => structural(declaration, WireTag::ScalarType, WireForm::Unit)
                     .map(quire_exact::UnitId::declared),
             }
             .ok_or_else(|| fault("reader-unit-has-exact-identity"))?;
             Ok(ValueType::Quantity(unit))
         }
-        "scalar_type/compound_unit" if unresolved => {
+        Some((WireTag::ScalarType, WireForm::CompoundUnit)) if unresolved => {
             let unit_node = at.ok_or_else(|| fault("reader-compound-unit-type-has-node"))?;
             let unit = crate::checked_v2::compound_unit(index.admitted, unit_node)
                 .ok_or_else(|| fault("reader-compound-unit-has-exact-identity"))?;
@@ -1645,16 +1836,18 @@ fn node_value_type(index: &WireIndex<'_>, id: &CheckedNodeId) -> Result<ValueTyp
             if error.code == Code::UnresolvedSelectedDeclaration {
                 let record = match selected(semantic_type) {
                     Some(Identity::Record(key)) => Some(key.clone()),
-                    _ => structural(semantic_type, "model", "record_value_type"),
+                    _ => structural(semantic_type, WireTag::Model, WireForm::RecordValueType),
                 };
                 if let Some(key) = record {
                     return Ok(ValueType::Composite(key));
                 }
             }
-            if unresolved && error.form.as_ref() == "scalar_type/dimension" {
+            if unresolved
+                && split_tag_form(&error.form) == Some((WireTag::ScalarType, WireForm::Dimension))
+            {
                 let unit = match selected(semantic_type) {
                     Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
-                    _ => structural(semantic_type, "scalar_type", "unit")
+                    _ => structural(semantic_type, WireTag::ScalarType, WireForm::Unit)
                         .map(quire_exact::UnitId::declared),
                 };
                 if let Some(unit) = unit {
@@ -1768,9 +1961,7 @@ fn literal_value(
         Literal::String(value) => Value::String(value.into()),
         Literal::Text(value) => {
             let checked_type = index.node(type_id)?;
-            if checked_type.node_tag.as_ref() == "scalar_type"
-                && checked_type.semantic_form.as_ref() == "text"
-            {
+            if has_form(checked_type, WireTag::ScalarType, WireForm::Text) {
                 return Some(Value::String(value.into()));
             }
             let type_projection = admitted.project_exact_type(type_id, identities, work_limit);
@@ -1810,15 +2001,16 @@ fn project_literal_type(type_id: &CheckedNodeId, index: &WireIndex<'_>) -> Optio
                 error.code,
                 quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
                     | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
-            ) || !matches!(error.form.as_ref(), "scalar_type/unit" | "scalar_type/dimension")
+            ) || !matches!(
+                split_tag_form(&error.form),
+                Some((WireTag::ScalarType, WireForm::Unit | WireForm::Dimension))
+            )
             {
                 return None;
             }
             let declaration = type_id;
             let unit_node = index.node(declaration)?;
-            if unit_node.node_tag.as_ref() != "scalar_type"
-                || unit_node.semantic_form.as_ref() != "unit"
-            {
+            if !has_form(unit_node, WireTag::ScalarType, WireForm::Unit) {
                 return None;
             }
             let unit = identities
@@ -1882,4 +2074,34 @@ struct ReaderFunction {
 
 fn fault(invariant: &'static str) -> InternalFault {
     InternalFault::new("FR-390", invariant)
+}
+
+impl UnsupportedView {
+    /// A span-named slot whose root holds an application and which no origin
+    /// of the package names (FR-533 "Slot naming on the bytes route", rule
+    /// 5): `rows` is the number of candidate origins and `visits` the
+    /// application's visits in the slot's walk.
+    pub(crate) fn missing_origin(
+        package: &str,
+        prefix: &str,
+        application: NodeKey,
+        visits: usize,
+    ) -> Self {
+        Self {
+            package: package.to_owned(),
+            locus: ViewLocus {
+                key: application.clone(),
+                location: None,
+            },
+            reason: UnsupportedReason::MissingLocationProjection(Box::new(MissingLocation {
+                origin: prefix.trim_end().to_owned(),
+                application,
+                index: 0,
+                rows: 0,
+                visits,
+                defect: ("invalid_package", "invalid-value"),
+                pointer: ROWS_POINTER.to_owned(),
+            })),
+        }
+    }
 }

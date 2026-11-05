@@ -97,7 +97,8 @@ use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumVa
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::quantity::{
-    check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
+    check_comparable, evaluate_quantity_unit, result_unit, IdentifiedUnit, QuantityOperation,
+    QuantityRefusal, UnitOperation, UnitScope,
 };
 
 /// An enum declaration bound to its source name, with its admitted members.
@@ -2233,6 +2234,21 @@ pub(crate) struct StateContext {
     pub(crate) result_slot: Option<Slot>,
 }
 
+/// A meter that admits no charge: the first charge of an operation is denied,
+/// so an operation typed against it computes nothing (`Typer::power`).
+const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+    integer_bits: 0,
+    decimal_digits: 0,
+    scale_expansion: 0,
+    text_input_bytes: 0,
+    text_scalars: 0,
+    normalized_scalars: 0,
+    unit_edges: 0,
+    value_occurrences: 0,
+    work_units: 0,
+    result_units: 0,
+};
+
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
     CheckRefusal {
         location: location.clone(),
@@ -2370,6 +2386,12 @@ enum AliasStep<'e> {
     OrElse(ExprRef<'e>, Option<usize>),
 }
 
+/// Whether a call's callee names the `Text` constructor.
+#[ix_trace_rs::string_edge]
+fn is_text_constructor(callee: &str) -> bool {
+    callee == "Text"
+}
+
 /// Whether an expression takes its type from its context.
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
@@ -2380,7 +2402,7 @@ fn contextual(expression: ExprRef<'_>) -> bool {
         | ExprNode::DecimalValue { .. }
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
-        ExprNode::Call { name, .. } if name.name == "Text" => true,
+        ExprNode::Call { name, .. } if is_text_constructor(&name.name) => true,
         ExprNode::Negate(operand) => matches!(
             expression.at(*operand).node(),
             ExprNode::Integer(_) | ExprNode::DecimalValue { .. }
@@ -3779,6 +3801,53 @@ impl<'a> Typer<'a> {
         Ok(node(kind, value_type, location))
     }
 
+    /// `operand ^ exponent` over a typed quantity operand and its exponent
+    /// literal (FR-093 "Integer power"): a non-affine quantity, the result in
+    /// the compound unit with every root exponent multiplied by `exponent`.
+    /// The unit is the quantity core's own: the power is typed against a
+    /// probe quantity under a meter that admits no charge, so only the
+    /// type-time half of the operation runs (QSpec FR-142 "integer power").
+    fn power(
+        &mut self,
+        operand: Node,
+        exponent: Integer,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let unit = match &operand.value_type {
+            ValueType::Quantity(unit) => unit.clone(),
+            // FR-497: a carried quantity is refused at the expression.
+            ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
+            _ => return Err(mismatch(&location.child(0))),
+        };
+        let probe = quire_exact::Quantity::new(Rational::from_integer(Integer::one()), unit);
+        let Some(base) = self.units.resolve(&probe) else {
+            return Err(mismatch(&location.child(0)));
+        };
+        // An affine base is the only type-time refusal of a power.
+        let (_, result) = evaluate_quantity_unit(
+            QuantityOperation::Power(base, &exponent),
+            &mut quire_exact::Meter::new(NO_CHARGE),
+        )
+        .map_err(|refusal| match refusal {
+            QuantityRefusal::IllTyped(_) => ineligible(location),
+            QuantityRefusal::Identity(refusal) => CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::Identity(refusal),
+            },
+        })?;
+        let base = self.push(operand);
+        let exponent = self.push(node(
+            NodeKind::Literal(CheckedLiteral(Value::Integer(exponent))),
+            ValueType::Integer,
+            location,
+        ));
+        Ok(node(
+            NodeKind::QuantityPower(base, exponent),
+            ValueType::Quantity(self.units.form(result)),
+            location,
+        ))
+    }
+
     /// Unary `-` over its typed operand: integers, rationals and decimals.
     /// FR-148 and FR-142 define no negation of an IEEE value or a quantity.
     fn negate(
@@ -4942,6 +5011,22 @@ impl<'a> Typer<'a> {
         element: ValueType,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        self.require_member_equality(element, location)?;
+        Ok(node(
+            NodeKind::Contains(self.push(collection), self.push(item)),
+            ValueType::Boolean,
+            location,
+        ))
+    }
+}
+
+impl Typer<'_> {
+    /// The element type admits the equality `contains` and `removeOne` use.
+    fn require_member_equality(
+        &self,
+        element: ValueType,
+        location: &Location,
+    ) -> Result<(), CheckRefusal> {
         self.scope
             .types
             .check_equality_in(
@@ -4951,10 +5036,75 @@ impl<'a> Typer<'a> {
                 EqualityOperand::typed(element),
                 &|shape: &EnumShape| self.scope.enum_members_of(shape),
             )
-            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+            .map(|_| ())
+            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))
+    }
+
+    /// `removeOne(c, v)` over its typed collection `c`, of element type
+    /// `element`, and its typed item `v`: the same kind with the bound
+    /// `[max(a-1,0), b]` (QSpec FR-145-AC-11).
+    fn remove_one(
+        &mut self,
+        collection: Node,
+        item: Node,
+        element: ValueType,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.require_member_equality(element, location)?;
+        let ValueType::Collection(source) = &collection.value_type else {
+            return Err(mismatch(&collection.location));
+        };
+        let shrunk = match source.bound() {
+            Some(source_bound) => Some(bound(
+                source_bound.minimum().saturating_sub(1),
+                source_bound.maximum(),
+                location,
+            )?),
+            None => None,
+        };
+        let value_type = ValueType::collection(CollectionType::new(
+            source.kind(),
+            source.element().clone(),
+            shrunk,
+        ));
+        self.check_declared_type(&value_type, location)?;
         Ok(node(
-            NodeKind::Contains(self.push(collection), self.push(item)),
-            ValueType::Boolean,
+            NodeKind::RemoveOne(self.push(collection), self.push(item)),
+            value_type,
+            location,
+        ))
+    }
+
+    /// `dropFirst(c)` over a sequence or an ordered set: the same kind with
+    /// the bound `[max(a-1,0), max(b-1,0)]`; a set or a bag has no first
+    /// occurrence (QSpec FR-145-AC-10).
+    fn drop_first(&mut self, source: Node, location: &Location) -> Result<Node, CheckRefusal> {
+        let ValueType::Collection(collection) = &source.value_type else {
+            return Err(mismatch(&source.location));
+        };
+        if !matches!(
+            collection.kind(),
+            CollectionKind::Sequence | CollectionKind::OrderedSet
+        ) {
+            return Err(ineligible(location));
+        }
+        let shrunk = match collection.bound() {
+            Some(source_bound) => Some(bound(
+                source_bound.minimum().saturating_sub(1),
+                source_bound.maximum().saturating_sub(1),
+                location,
+            )?),
+            None => None,
+        };
+        let value_type = ValueType::collection(CollectionType::new(
+            collection.kind(),
+            collection.element().clone(),
+            shrunk,
+        ));
+        self.check_declared_type(&value_type, location)?;
+        Ok(node(
+            NodeKind::DropFirst(self.push(source)),
+            value_type,
             location,
         ))
     }

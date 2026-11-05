@@ -2415,15 +2415,12 @@ fn bounded_protocol_clause_declarations(
             .iter()
             .find(|node| node.production() == Production::ProtocolClause)?;
         let name_span = clause.span();
-        let declaration_name = isolated
-            .source()
-            .text()
-            .get(name_span.start..name_span.end)?
-            .strip_prefix("protocol")?
-            .trim_start()
-            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-            .next()?
-            .to_owned();
+        let declaration_name = protocol_clause_name(
+            isolated
+                .source()
+                .text()
+                .get(name_span.start..name_span.end)?,
+        )?;
         let declaration = isolated.cst().nodes().iter().find(|node| {
             node.production() == Production::Declaration
                 && node.span().start <= name_span.start
@@ -2442,6 +2439,21 @@ fn bounded_protocol_clause_declarations(
     Some(declarations)
 }
 
+/// The declared name of the `protocol` clause whose source text is
+/// `clause_text`: the identifier after the `protocol` keyword. This reads the
+/// clause's own source keyword, the one place that text is matched.
+#[ix_trace_rs::string_edge]
+fn protocol_clause_name(clause_text: &str) -> Option<String> {
+    Some(
+        clause_text
+            .strip_prefix("protocol")?
+            .trim_start()
+            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .next()?
+            .to_owned(),
+    )
+}
+
 fn protocol_clause_declaration(
     cst: &qsl_cst::LosslessCst,
     source_text: &str,
@@ -2453,13 +2465,7 @@ fn protocol_clause_declaration(
             && node.span().start <= clause_span.start
             && clause_span.end <= node.span().end
     })?;
-    let name = source_text
-        .get(clause_span.start..clause_span.end)?
-        .strip_prefix("protocol")?
-        .trim_start()
-        .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-        .next()?
-        .to_owned();
+    let name = protocol_clause_name(source_text.get(clause_span.start..clause_span.end)?)?;
     Some((name, declaration.span()))
 }
 
@@ -2546,15 +2552,8 @@ fn forms_protocol_results(
         .enumerate()
         .map(|(source_index, node)| {
             let span = node.span();
-            let declaration = parsed
-                .source()
-                .text()
-                .get(span.start..span.end)?
-                .strip_prefix("protocol")?
-                .trim_start()
-                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-                .next()?
-                .to_owned();
+            let declaration =
+                protocol_clause_name(parsed.source().text().get(span.start..span.end)?)?;
             let result = if let Some(failure) = refusals
                 .iter()
                 .find(|failure| failure.declaration == declaration)
@@ -2592,15 +2591,8 @@ fn protocol_check_outcome(
         .filter(|node| node.production() == Production::ProtocolClause)
         .filter_map(|node| {
             let span = node.span();
-            let declaration = parsed
-                .source()
-                .text()
-                .get(span.start..span.end)?
-                .strip_prefix("protocol")?
-                .trim_start()
-                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-                .next()?
-                .to_owned();
+            let declaration =
+                protocol_clause_name(parsed.source().text().get(span.start..span.end)?)?;
             Some((declaration, span))
         })
         .collect();
@@ -2676,14 +2668,21 @@ fn protocol_check_outcome(
     }
     if first_failure.is_none() && !graph.unit_refusals().is_empty() {
         // FR-096: a unit-level refusal is located like any other check
-        // refusal, by the span its cause carries or by its `location`.
+        // refusal, by the span its cause carries or by its `location`. The
+        // continuation graph omits the refused clause's own spans, so a
+        // refusal the lifecycle re-reported at a call (a dispatch family that
+        // did not link, FR-302) keeps the region resolved against the
+        // declarations before the graph dropped them; the locator is the
+        // fallback.
         let regions = graph.memoized_regions();
         let refusals = graph.unit_refusals().to_vec();
-        let region = refusals.first().and_then(|refusal| match &refusal.cause {
-            CheckCause::LayerEquality {
-                span: Some(span), ..
-            } => region(parsed.source().reference(), *span),
-            _ => regions(&refusal.location),
+        let region = graph.unit_refusal_region().cloned().or_else(|| {
+            refusals.first().and_then(|refusal| match &refusal.cause {
+                CheckCause::LayerEquality {
+                    span: Some(span), ..
+                } => region(parsed.source().reference(), *span),
+                _ => regions(&refusal.location),
+            })
         });
         first_failure = Some(CompileRefusal::Check { refusals, region });
     }
@@ -2708,15 +2707,12 @@ fn attach_protocol_results(
         .filter(|node| node.production() == Production::ProtocolClause)
         .filter_map(|node| {
             let declaration_span = node.span();
-            let declaration = parsed
-                .source()
-                .text()
-                .get(declaration_span.start..declaration_span.end)?
-                .strip_prefix("protocol")?
-                .trim_start()
-                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-                .next()?
-                .to_owned();
+            let declaration = protocol_clause_name(
+                parsed
+                    .source()
+                    .text()
+                    .get(declaration_span.start..declaration_span.end)?,
+            )?;
             let existing = parsed.protocol_results.iter().find(|result| match result {
                 super::ProtocolResult::Cleared {
                     declaration: name, ..
@@ -2794,13 +2790,7 @@ fn syntax_protocol_results(
     let mut results = Vec::with_capacity(clauses.len());
     for (source_index, node) in clauses.iter().enumerate() {
         let span = node.span();
-        let declaration = source_text
-            .get(span.start..span.end)?
-            .strip_prefix("protocol")?
-            .trim_start()
-            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-            .next()?
-            .to_owned();
+        let declaration = protocol_clause_name(source_text.get(span.start..span.end)?)?;
         if source_index == owner {
             results.push(super::ProtocolResult::Refused {
                 declaration,
@@ -3489,6 +3479,17 @@ impl<'a> Resolution<'a> {
             });
             Box::new(CompileRefusal::Check { region, refusals })
         })?;
+        // The protocol continuation check keeps a refused state clause on the
+        // graph instead of failing: report it the same way (FR-302).
+        let graph = if graph.unit_refusals().is_empty() {
+            graph
+        } else {
+            let refusals = pending.report(graph.unit_refusals().to_vec());
+            let region = refusals
+                .first()
+                .and_then(|refusal| regions.refusal_region(refusal));
+            graph.with_unit_refusals(refusals, region)
+        };
         charged(cancel, &mut self.work.s4, || {
             pkg::CheckedPackage::link_with(graph, links)
         })

@@ -107,9 +107,10 @@ pub use model::{
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{
-    compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
-    CompensationNodes, ProtocolInput, ProtocolSite,
+    compensation_origin, declaration_origin, protocol_location, AttemptNodes, CompensationNodes,
+    ProtocolInput,
 };
+pub use protocol::{protocol_site, ProtocolSite};
 pub(crate) use state::{
     protocol_attempt_operation_location, protocol_attempt_operation_site,
     state_clause_name_location, state_clause_name_site, state_operation_location,
@@ -908,6 +909,20 @@ pub(crate) fn admitted_step_relation_key(
         0,
     )
     .map_err(|refusal| fault(location, KeyFault::ModelRootKey(refusal.to_string())))
+}
+
+/// The original identity of a model variant whose owner path is
+/// `model/variant_type/<identity>`, `None` for any other owner path.
+#[ix_trace_rs::string_edge]
+fn variant_type_identity(path: &[quire_exact::PathSegment]) -> Option<&String> {
+    match path {
+        [quire_exact::PathSegment::Text(kind), quire_exact::PathSegment::Text(form), quire_exact::PathSegment::Text(identity)]
+            if kind == "model" && form == "variant_type" =>
+        {
+            Some(identity)
+        }
+        _ => None,
+    }
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -4481,14 +4496,19 @@ impl<'a> Lowering<'a> {
                     // an exact source is `from_exact` under the target's mode.
                     let law = self.law(LawRole::IeeeProfile, node.location())?;
                     let rounding = OperationMode::Rounding(to.rounding());
-                    let (identity, mode) = match (node.at(*operand).value_type(), to.width()) {
-                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary32) => {
+                    let float_source =
+                        matches!(node.at(*operand).value_type(), ValueType::Float(_));
+                    let (identity, mode) = match (float_source, to.width()) {
+                        (true, quire_exact::IeeeWidth::Binary32) => {
                             ("quire.op.ieee.to_float32", Some(rounding))
                         }
-                        (ValueType::Float(_), quire_exact::IeeeWidth::Binary64) => {
+                        (true, quire_exact::IeeeWidth::Binary64) => {
                             ("quire.op.ieee.to_float64", None)
                         }
-                        _ => ("quire.op.ieee.from_exact", Some(rounding)),
+                        (
+                            false,
+                            quire_exact::IeeeWidth::Binary32 | quire_exact::IeeeWidth::Binary64,
+                        ) => ("quire.op.ieee.from_exact", Some(rounding)),
                     };
                     Operation {
                         laws: vec![law],
@@ -5307,14 +5327,7 @@ impl<'a> Lowering<'a> {
                 };
                 for (position, variant) in shape.variants().enumerate() {
                     let owner_path = variant.owner().path();
-                    let original_identity = match owner_path.as_slice() {
-                        [quire_exact::PathSegment::Text(kind), quire_exact::PathSegment::Text(form), quire_exact::PathSegment::Text(identity)]
-                            if kind == "model" && form == "variant_type" =>
-                        {
-                            Some(identity)
-                        }
-                        _ => None,
-                    };
+                    let original_identity = variant_type_identity(owner_path.as_slice());
                     let (source_declaration, declaration, member_key, case, ordinal, ordered) =
                         if let Some(original_identity) = original_identity {
                             let declarations = self

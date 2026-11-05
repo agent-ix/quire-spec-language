@@ -548,6 +548,11 @@ fn encode_expression(
                 out.write_str("negate");
                 pending.push(expr.at(*operand));
             }
+            ExprNode::Power { base, exponent } => {
+                out.write_str("power");
+                out.write_str(&exponent.to_string());
+                pending.push(expr.at(*base));
+            }
             ExprNode::Not(operand) => {
                 out.write_str("not");
                 pending.push(expr.at(*operand));
@@ -691,6 +696,14 @@ fn encode_expression(
             }
             ExprNode::Contains { collection, item } => {
                 out.write_str("contains");
+                pending.extend([expr.at(*collection), expr.at(*item)]);
+            }
+            ExprNode::DropFirst(operand) => {
+                out.write_str("drop-first");
+                pending.push(expr.at(*operand));
+            }
+            ExprNode::RemoveOne { collection, item } => {
+                out.write_str("remove-one");
                 pending.extend([expr.at(*collection), expr.at(*item)]);
             }
             ExprNode::AllInstances { target, population } => {

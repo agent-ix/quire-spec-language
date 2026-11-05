@@ -972,6 +972,25 @@ impl<'a> ModelSystem<'a> {
         crate::simulation::key::canonical_bytes(transition, identity_limits())
     }
 
+    /// FR-187's canonical order key of a scheduled identity: the canonical
+    /// bytes of its transition identity without random arguments, the order
+    /// of [`Self::actions`]'s identities.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when the identity has no canonical encoding.
+    pub fn scheduled_identity_key(
+        &self,
+        identity: &ScheduledIdentity,
+    ) -> Result<Vec<u8>, ExpansionStop> {
+        frames::identity_bytes(
+            &identity.operation,
+            &identity.receiver,
+            &identity.arguments,
+            self.typing(),
+        )
+    }
+
     /// The operation text a transition of `operation` carries (FR-181): the
     /// declaration identity text of the operation `name` that `declaring`
     /// declares, which [`ModelTransition::operation`] returns for each of its

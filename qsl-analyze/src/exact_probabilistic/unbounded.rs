@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Exact algorithms for the unbounded probabilistic forms (FR-198, FR-199).
 
+use super::rows::Evaluation;
 use super::{ProbEdge, ProbProduct, ProbStateId, ProductAction, ProductKind};
 use num_bigint::BigInt;
 use num_integer::Integer as BigInteger;
@@ -42,7 +43,9 @@ pub enum UnboundedObjective {
 pub struct UnboundedResult {
     /// One exact value per product state.
     pub values: Vec<ExtRational>,
-    /// The action-group index selected at each state, when it has choices.
+    /// The action-group index selected at each state, when it has choices,
+    /// then the row choice selected at each row of each `FreeDelays` state
+    /// (FR-204; [`super::free_delays_choice`]).
     pub policy: Vec<Option<usize>>,
     /// Exact policy improvements performed.
     pub policy_iterations: u64,
@@ -63,7 +66,8 @@ pub enum UnboundedOutcome {
         precision_bits: u32,
         /// Bellman sweeps performed.
         sweeps: u64,
-        /// Selected action-group index per state.
+        /// Selected action-group index per state, then per `FreeDelays`
+        /// row as in [`UnboundedResult::policy`].
         policy: Vec<Option<usize>>,
     },
     /// The interval straddled the threshold at maximum precision.
@@ -221,7 +225,50 @@ fn product_with_blocked(
     Ok(product)
 }
 
+/// An evaluation with its target and blocked labels extended to it.
+type EvaluatedReach<'p> = (Evaluation<'p>, Vec<bool>, Option<Vec<bool>>);
+
+/// The evaluation of `product` (FR-204's row-factored operator at a
+/// `FreeDelays` state) with `target` and `blocked` extended to it.
+fn evaluation_of<'p>(
+    product: &'p ProbProduct,
+    target: &[bool],
+    blocked: Option<&[bool]>,
+) -> Result<EvaluatedReach<'p>, UnboundedError> {
+    let evaluation = Evaluation::of(product).map_err(|_| UnboundedError::InvalidProbability)?;
+    let target = evaluation
+        .extend(target)
+        .ok_or(UnboundedError::InvalidState)?;
+    let blocked = blocked
+        .map(|blocked| {
+            evaluation
+                .extend(blocked)
+                .ok_or(UnboundedError::InvalidState)
+        })
+        .transpose()?;
+    Ok((evaluation, target, blocked))
+}
+
 fn decide_reachability_with_blocked(
+    product: &ProbProduct,
+    target: &[bool],
+    blocked: Option<&[bool]>,
+    objective: UnboundedObjective,
+    limits: &ExactProbLimits,
+) -> Result<UnboundedResult, UnboundedError> {
+    let (evaluation, target, blocked) = evaluation_of(product, target, blocked)?;
+    let mut result = reachability(
+        &evaluation.product,
+        &target,
+        blocked.as_deref(),
+        objective,
+        limits,
+    )?;
+    result.values = evaluation.restrict(result.values);
+    Ok(result)
+}
+
+fn reachability(
     product: &ProbProduct,
     target: &[bool],
     blocked: Option<&[bool]>,
@@ -345,6 +392,48 @@ fn decide_reachability_threshold_with_blocked(
     threshold: &Rational,
     limits: &ExactProbLimits,
 ) -> Result<UnboundedOutcome, UnboundedError> {
+    let (evaluation, target, blocked) = evaluation_of(product, target, blocked)?;
+    Ok(
+        match reachability_threshold(
+            &evaluation.product,
+            &target,
+            blocked.as_deref(),
+            objective,
+            threshold,
+            limits,
+        )? {
+            UnboundedOutcome::Exact(mut result) => {
+                result.values = evaluation.restrict(result.values);
+                UnboundedOutcome::Exact(result)
+            }
+            UnboundedOutcome::Bounds {
+                lower,
+                upper,
+                precision_bits,
+                sweeps,
+                policy,
+            } => UnboundedOutcome::Bounds {
+                lower: evaluation.restrict(lower),
+                upper: evaluation.restrict(upper),
+                precision_bits,
+                sweeps,
+                policy,
+            },
+            outcome @ (UnboundedOutcome::PrecisionBudget { .. } | UnboundedOutcome::Stopped(_)) => {
+                outcome
+            }
+        },
+    )
+}
+
+fn reachability_threshold(
+    product: &ProbProduct,
+    target: &[bool],
+    blocked: Option<&[bool]>,
+    objective: UnboundedObjective,
+    threshold: &Rational,
+    limits: &ExactProbLimits,
+) -> Result<UnboundedOutcome, UnboundedError> {
     if target.len() != product.states.len()
         || limits.precision_bits == 0
         || limits.max_precision_bits < limits.precision_bits
@@ -430,7 +519,7 @@ fn decide_reachability_threshold_with_blocked(
                 });
             }
         }
-        match decide_reachability_with_blocked(product, target, blocked, objective, limits) {
+        match reachability(product, target, blocked, objective, limits) {
             Ok(result) => {
                 return Ok(UnboundedOutcome::Exact(result));
             }
@@ -465,6 +554,19 @@ fn decide_reachability_threshold_with_blocked(
 /// reaching the target receive positive infinity. Remaining states are
 /// evaluated by exact policy iteration.
 pub fn decide_expected_reward(
+    product: &ProbProduct,
+    target: &[bool],
+    reward: &str,
+    objective: UnboundedObjective,
+    limits: &ExactProbLimits,
+) -> Result<UnboundedResult, UnboundedError> {
+    let (evaluation, target, _) = evaluation_of(product, target, None)?;
+    let mut result = expected_reward(&evaluation.product, &target, reward, objective, limits)?;
+    result.values = evaluation.restrict(result.values);
+    Ok(result)
+}
+
+fn expected_reward(
     product: &ProbProduct,
     target: &[bool],
     reward: &str,
@@ -1044,6 +1146,7 @@ fn same_action(left: &ProductAction, right: &ProductAction) -> bool {
                 delay: right_delay,
             },
         ) => left == right && left_delay == right_delay,
+        (ProductAction::FreeDelays(left), ProductAction::FreeDelays(right)) => left == right,
         _ => false,
     }
 }

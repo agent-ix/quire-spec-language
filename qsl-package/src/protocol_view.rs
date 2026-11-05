@@ -57,6 +57,8 @@ use quire_contract_model::{
 };
 use serde_json::Value;
 
+use crate::wire_form::{has_form, has_tag, WireForm, WireTag};
+
 pub use qsl_semantics::check::{EdgeKind, Port};
 
 type Node = CheckedSemanticNodeV2;
@@ -184,6 +186,8 @@ pub enum ControlOperation {
 }
 
 impl ControlOperation {
+    /// The control form a wire word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
     fn from_wire(text: &str) -> Option<Self> {
         Some(match text {
             "protocol" => Self::Protocol,
@@ -320,9 +324,9 @@ impl<'p> Index<'p> {
             .nodes
             .get(id)
             .copied()
-            .filter(|node| &*node.node_tag == "protocol")
+            .filter(|node| has_tag(node, WireTag::Protocol))
             .ok_or_else(|| ViewRefusal::UnknownProtocol { node: id.clone() })?;
-        if &*node.semantic_form == "protocol_clause" {
+        if has_form(node, WireTag::Protocol, WireForm::ProtocolClause) {
             Ok(node)
         } else {
             Err(ViewRefusal::NotAProtocolClause { node: id.clone() })
@@ -358,7 +362,7 @@ fn malformed(node: &CheckedNodeId, member: &'static str) -> ViewRefusal {
 }
 
 /// The argument `name` of `node`'s application body.
-fn argument<'n>(node: &'n Node, name: &str) -> Option<&'n CheckedTerm> {
+pub(crate) fn argument<'n>(node: &'n Node, name: &str) -> Option<&'n CheckedTerm> {
     let CheckedTerm::Application { arguments, .. } = &node.body else {
         return None;
     };
@@ -373,7 +377,7 @@ fn required<'n>(node: &'n Node, name: &'static str) -> Result<&'n CheckedTerm, V
 }
 
 /// The member `name` of the Group `term`.
-fn group_member<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedTerm> {
+pub(crate) fn group_member<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedTerm> {
     let CheckedTerm::Aggregate { members } = term else {
         return None;
     };
@@ -383,14 +387,14 @@ fn group_member<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedTerm
     })
 }
 
-fn reference(term: &CheckedTerm) -> Option<&CheckedNodeId> {
+pub(crate) fn reference(term: &CheckedTerm) -> Option<&CheckedNodeId> {
     match term {
         CheckedTerm::Reference { target } => Some(target),
         _ => None,
     }
 }
 
-fn text(term: &CheckedTerm) -> Option<&str> {
+pub(crate) fn text(term: &CheckedTerm) -> Option<&str> {
     match term {
         CheckedTerm::Literal {
             value_kind: LiteralKind::Text,
@@ -401,7 +405,7 @@ fn text(term: &CheckedTerm) -> Option<&str> {
     }
 }
 
-fn integer(term: &CheckedTerm) -> Option<u64> {
+pub(crate) fn integer(term: &CheckedTerm) -> Option<u64> {
     match term {
         CheckedTerm::Literal {
             value_kind: LiteralKind::Integer,
@@ -771,16 +775,39 @@ impl Derive<'_, '_> {
         let target = group_member(after, "target")
             .and_then(reference)
             .ok_or_else(|| malformed(id, "after"))?;
-        match kind {
-            "event" => self.edge(EdgeKind::AwaitAnchor, port(target, exit), port(id, enter)),
-            "compensation" => {
+        match AwaitAnchor::from_wire(kind) {
+            Some(AwaitAnchor::Event) => {
+                self.edge(EdgeKind::AwaitAnchor, port(target, exit), port(id, enter));
+            }
+            Some(AwaitAnchor::Compensation) => {
                 let template = self.index.target(id, "after", target)?;
                 let forward = single(template, "forward")?;
                 self.edge(EdgeKind::AwaitAnchor, port(forward, enter), port(id, enter));
             }
-            _ => return Err(malformed(id, "after")),
+            None => return Err(malformed(id, "after")),
         }
         Ok(())
+    }
+}
+
+/// What an `await` clause's `after` anchor names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AwaitAnchor {
+    /// An `event` control: the await follows it.
+    Event,
+    /// A `compensation` template: the await follows its forward body.
+    Compensation,
+}
+
+impl AwaitAnchor {
+    /// The anchor a wire word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "event" => Some(Self::Event),
+            "compensation" => Some(Self::Compensation),
+            _ => None,
+        }
     }
 }
 
@@ -820,6 +847,7 @@ pub enum Delivery {
 /// [`ViewRefusal::MissingMember`] naming `delivery` when the node has none,
 /// [`ViewRefusal::MalformedMember`] when its text is no policy word or
 /// interval.
+#[ix_trace_rs::string_edge]
 pub fn delivery(channel: &CheckedSemanticNodeV2) -> Result<Delivery, ViewRefusal> {
     let word = text(required(channel, "delivery")?)
         .ok_or_else(|| malformed(&channel.node_id, "delivery"))?;

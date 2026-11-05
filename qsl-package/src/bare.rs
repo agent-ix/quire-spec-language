@@ -56,6 +56,9 @@ pub struct BarePackage<'p> {
 pub struct BareSupply<'p> {
     /// The selected model identity rows of the package.
     pub identities: &'p ReadIdentityRows,
+    /// The producer's equality rows, read from `equality.json`; `None` for
+    /// a package whose slots hold no equality application (FR-531).
+    pub equality: Option<&'p crate::equality_file::ReadEqualityRows>,
 }
 
 impl<'p> BarePackage<'p> {
@@ -257,6 +260,7 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
         formatter.write_str("an identity file object")
     }
 
+    #[ix_trace_rs::string_edge]
     fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<File, A::Error> {
         let mut format: Option<String> = None;
         let mut declarations: Option<Vec<DeclarationJson>> = None;
@@ -320,6 +324,19 @@ fn form_spelling(form: SelectedExactDeclarationForm) -> &'static str {
     }
 }
 
+/// Whether `format` spells the identities file format this reader admits.
+#[ix_trace_rs::string_edge]
+fn is_identities_format(format: &str) -> bool {
+    format == IDENTITIES_FORMAT
+}
+
+/// Whether `kind` spells a declared unit identity.
+#[ix_trace_rs::string_edge]
+fn is_declared_unit_kind(kind: &str) -> bool {
+    kind == "declared"
+}
+
+#[ix_trace_rs::string_edge]
 fn form_of(spelling: &str) -> Option<SelectedExactDeclarationForm> {
     Some(match spelling {
         "record_value_type" => SelectedExactDeclarationForm::RecordValueType,
@@ -342,7 +359,43 @@ fn node_references(package: &CheckedPackageV2) -> Option<BTreeMap<NodeKey, Check
         .collect()
 }
 
+/// Why identity rows are no witness for a slot call (FR-531-AC-5).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum IdentityWitnessRefusal {
+    /// The bare package has no supply.
+    #[error("the bare package holds no identity rows")]
+    Missing,
+    /// The rows name no identity the package admits.
+    #[error("the identity rows name no admitted identity")]
+    Unknown,
+    /// The rows were produced for another package.
+    #[error("the identity rows belong to another package")]
+    Foreign,
+}
+
 impl ReadIdentityRows {
+    /// The identity witness these rows give `package`, joined by IR's
+    /// `SelectedExactIdentities` projection.
+    ///
+    /// # Errors
+    ///
+    /// [`IdentityWitnessRefusal::Foreign`] for rows of another package,
+    /// [`IdentityWitnessRefusal::Unknown`] for rows IR does not join.
+    pub fn selected(
+        &self,
+        package: &CheckedPackageV2,
+    ) -> Result<quire_contract_model::SelectedExactIdentities, IdentityWitnessRefusal> {
+        if self.package != package.name() {
+            return Err(IdentityWitnessRefusal::Foreign);
+        }
+        qsl_semantics::model::intake::selected_exact_identities_from_rows(
+            package,
+            &self.declarations,
+            &self.fields,
+        )
+        .map_err(|_| IdentityWitnessRefusal::Unknown)
+    }
+
     /// The package the rows were produced for.
     pub fn package_name(&self) -> &str {
         &self.package
@@ -375,7 +428,7 @@ impl ReadIdentityRows {
     ) -> Result<Self, IdentityFileRefusal> {
         let malformed = |member: IdentityMember| IdentityFileRefusal::Malformed { member };
         let file = parse_file(identities_json).map_err(malformed)?;
-        if file.format != IDENTITIES_FORMAT {
+        if !is_identities_format(&file.format) {
             return Err(IdentityFileRefusal::Format(file.format));
         }
         let graph = wire_graph(package).map_err(|_| malformed(IdentityMember::File))?;
@@ -430,7 +483,7 @@ impl ReadIdentityRows {
                 ("declared_unit", SelectedExactDeclarationForm::DeclaredUnit) => {
                     let unit: UnitJson = serde_json::from_value(row.exact_identity.value.clone())
                         .map_err(|_| malformed(IdentityMember::ExactIdentity))?;
-                    if unit.kind != "declared" {
+                    if !is_declared_unit_kind(&unit.kind) {
                         return Err(malformed(IdentityMember::ExactIdentity));
                     }
                     SelectedExactIdentity::DeclaredUnit(UnitId::declared(key(

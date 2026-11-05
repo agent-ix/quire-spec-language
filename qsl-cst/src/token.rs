@@ -208,7 +208,7 @@ vocabulary! {
     Decimal => "decimal", Float32 => "float32", Float64 => "float64", Bits => "bits",
     Convert => "convert", AllInstances => "allInstances", Lookup => "lookup",
     Absent => "absent", Collect => "collect",
-    FlatMap => "flatMap", Flatten => "flatten", Fold => "fold", Reduce => "reduce",
+    FlatMap => "flatMap", Flatten => "flatten", DropFirst => "dropFirst", RemoveOne => "removeOne", Fold => "fold", Reduce => "reduce",
     Identity => "identity", Exact => "exact",
     Nfc => "nfc", Nfd => "nfd", Nfkc => "nfkc", Nfkd => "nfkd",
     SetValue => "set", BagValue => "bag",
@@ -239,6 +239,8 @@ impl Kind {
                 | "OrderedSet"
                 | "collect"
                 | "flatten"
+                | "dropFirst"
+                | "removeOne"
                 | "tuple"
                 | "Decimal"
                 | "Rational"
