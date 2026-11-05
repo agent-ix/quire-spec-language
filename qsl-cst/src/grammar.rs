@@ -796,7 +796,12 @@ fn expressions(g: &mut Grammar) {
         P::Unary,
         c(vec![
             s(vec![c(vec![x("not"), x("-")]), r(P::Unary)]),
-            r(P::Postfix),
+            // QSpec's `power = postfix, [ '^', signed-int ]` (QSL FR-091
+            // "Integer power spelling"): one exponent, never chained.
+            s(vec![
+                r(P::Postfix),
+                opt(s(vec![x("^"), r(P::SignedInteger)])),
+            ]),
         ]),
     );
     g.insert(
@@ -1229,7 +1234,14 @@ fn hyper_expression_rules(g: &mut Grammar) {
         let copied = copy_rule(rule, PAIRS, false, false);
         let rule = match (base, copied) {
             (P::Unary, Rule::Choice(mut alternatives)) => {
-                alternatives.insert(alternatives.len() - 1, r(P::IndexedRead));
+                // `e @ t` is admitted wherever a postfix is, including as
+                // the base of a power: `v.l @ a ^ 2` is `(v.l @ a) ^ 2`.
+                let Some(Rule::Sequence(mut power)) = alternatives.pop() else {
+                    unreachable!("the last unary alternative is the power sequence")
+                };
+                let base = std::mem::replace(&mut power[0], r(P::IndexedRead));
+                power[0] = c(vec![r(P::IndexedRead), base]);
+                alternatives.push(s(power));
                 c(alternatives)
             }
             (P::Primary, Rule::Choice(mut alternatives)) => {

@@ -637,6 +637,15 @@ pub enum ExprNode {
     },
     /// Unary `-e`.
     Negate(ExprId),
+    /// `base ^ exponent` (FR-091 "Integer power spelling"): the exponent is
+    /// the signed integer literal as written, any magnitude, so the checker
+    /// forms the result's unit from it.
+    Power {
+        /// The quantity operand.
+        base: ExprId,
+        /// The exponent literal.
+        exponent: Integer,
+    },
     /// `not e`.
     Not(ExprId),
     /// `e.f`.
@@ -935,6 +944,7 @@ impl ExprNode {
             | Self::Field { operand, .. }
             | Self::Convert { operand, .. }
             | Self::Indexed { read: operand, .. }
+            | Self::Power { base: operand, .. }
             | Self::Pre(operand) => vec![*operand],
             Self::Call { arguments, .. } => arguments.clone(),
             Self::Record { fields, .. } => fields
@@ -1029,6 +1039,7 @@ impl ExprNode {
             | Self::If { .. }
             | Self::Binary { .. }
             | Self::Negate(_)
+            | Self::Power { .. }
             | Self::Not(_)
             | Self::Present(_)
             | Self::Value(_)
@@ -1106,6 +1117,7 @@ impl ExprNode {
             | Self::If { .. }
             | Self::Binary { .. }
             | Self::Negate(_)
+            | Self::Power { .. }
             | Self::Not(_)
             | Self::Present(_)
             | Self::Value(_)
@@ -1177,6 +1189,7 @@ impl ExprNode {
                 ..
             }
             | Self::Indexed { read: operand, .. }
+            | Self::Power { base: operand, .. }
             | Self::Pre(operand) => one(operand),
             Self::Let {
                 value: first,
@@ -1479,6 +1492,11 @@ impl Expression {
     /// `-operand`.
     pub fn negate(operand: Self) -> Self {
         Self::compose([operand], |[operand]| ExprNode::Negate(operand))
+    }
+
+    /// `base ^ exponent`.
+    pub fn power(base: Self, exponent: Integer) -> Self {
+        Self::compose([base], |[base]| ExprNode::Power { base, exponent })
     }
 
     /// `not operand`.

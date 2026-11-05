@@ -97,7 +97,8 @@ use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumVa
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::quantity::{
-    check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
+    check_comparable, evaluate_quantity_unit, result_unit, IdentifiedUnit, QuantityOperation,
+    QuantityRefusal, UnitOperation, UnitScope,
 };
 
 /// An enum declaration bound to its source name, with its admitted members.
@@ -2233,6 +2234,21 @@ pub(crate) struct StateContext {
     pub(crate) result_slot: Option<Slot>,
 }
 
+/// A meter that admits no charge: the first charge of an operation is denied,
+/// so an operation typed against it computes nothing (`Typer::power`).
+const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+    integer_bits: 0,
+    decimal_digits: 0,
+    scale_expansion: 0,
+    text_input_bytes: 0,
+    text_scalars: 0,
+    normalized_scalars: 0,
+    unit_edges: 0,
+    value_occurrences: 0,
+    work_units: 0,
+    result_units: 0,
+};
+
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
     CheckRefusal {
         location: location.clone(),
@@ -3777,6 +3793,53 @@ impl<'a> Typer<'a> {
             _ => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
+    }
+
+    /// `operand ^ exponent` over a typed quantity operand and its exponent
+    /// literal (FR-093 "Integer power"): a non-affine quantity, the result in
+    /// the compound unit with every root exponent multiplied by `exponent`.
+    /// The unit is the quantity core's own: the power is typed against a
+    /// probe quantity under a meter that admits no charge, so only the
+    /// type-time half of the operation runs (QSpec FR-142 "integer power").
+    fn power(
+        &mut self,
+        operand: Node,
+        exponent: Integer,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let unit = match &operand.value_type {
+            ValueType::Quantity(unit) => unit.clone(),
+            // FR-497: a carried quantity is refused at the expression.
+            ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
+            _ => return Err(mismatch(&location.child(0))),
+        };
+        let probe = quire_exact::Quantity::new(Rational::from_integer(Integer::one()), unit);
+        let Some(base) = self.units.resolve(&probe) else {
+            return Err(mismatch(&location.child(0)));
+        };
+        // An affine base is the only type-time refusal of a power.
+        let (_, result) = evaluate_quantity_unit(
+            QuantityOperation::Power(base, &exponent),
+            &mut quire_exact::Meter::new(NO_CHARGE),
+        )
+        .map_err(|refusal| match refusal {
+            QuantityRefusal::IllTyped(_) => ineligible(location),
+            QuantityRefusal::Identity(refusal) => CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::Identity(refusal),
+            },
+        })?;
+        let base = self.push(operand);
+        let exponent = self.push(node(
+            NodeKind::Literal(CheckedLiteral(Value::Integer(exponent))),
+            ValueType::Integer,
+            location,
+        ));
+        Ok(node(
+            NodeKind::QuantityPower(base, exponent),
+            ValueType::Quantity(self.units.form(result)),
+            location,
+        ))
     }
 
     /// Unary `-` over its typed operand: integers, rationals and decimals.
