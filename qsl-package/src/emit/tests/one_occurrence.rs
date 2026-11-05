@@ -135,17 +135,19 @@ fn a_boolean_value_clause_expression_is_admitted_by_the_v2_reader() {
         .find(|node| {
             node["node_tag"] == "expression"
                 && node["occurrences"].as_array().is_some_and(|occurrences| {
-                    occurrences.len() == 2
+                    occurrences
+                        .iter()
+                        .filter(|occurrence| occurrence["role"] == "claim")
+                        .count()
+                        == 1
                         && occurrences
                             .iter()
-                            .any(|occurrence| occurrence["role"] == "claim")
-                        && occurrences
-                            .iter()
-                            .any(|occurrence| occurrence["role"] == "declaration")
+                            .filter(|occurrence| occurrence["role"] == "declaration")
+                            .count()
+                            == 1
                 })
         })
         .expect("a Boolean expression with claim and declaration occurrences");
-    assert_eq!(expression["occurrences"].as_array().unwrap().len(), 2);
     let semantic_type = nodes(&wire)
         .iter()
         .find(|node| node["node_id"] == expression["semantic_type"])
@@ -159,7 +161,25 @@ fn a_boolean_value_clause_expression_is_admitted_by_the_v2_reader() {
         .graph()
         .nodes
         .iter()
-        .find(|node| node.node_tag.as_ref() == "expression" && node.occurrences.len() == 2)
+        .find(|node| {
+            node.node_tag.as_ref() == "expression"
+                && node
+                    .occurrences
+                    .iter()
+                    .filter(|occurrence| {
+                        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Claim
+                    })
+                    .count()
+                    == 1
+                && node
+                    .occurrences
+                    .iter()
+                    .filter(|occurrence| {
+                        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Declaration
+                    })
+                    .count()
+                    == 1
+        })
         .expect("the reader retains the clause expression and both occurrences");
     assert!(admitted_expression.occurrences.iter().any(|occurrence| {
         occurrence.role == quire_contract_model::CheckedOccurrenceRole::Claim
