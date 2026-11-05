@@ -474,7 +474,7 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let world = good.world().expect("world");
     let wanted = slot(&package, "Refunds", "Refund", "retry.relation", None);
     let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
-    let values = vec![
+    let values = [
         ("earlier", attempt(&package, 0)),
         ("later", attempt(&package, 1)),
         ("target", int(5)),
