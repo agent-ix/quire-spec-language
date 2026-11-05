@@ -509,9 +509,7 @@ fn plan_node(entry: &FormulaNodeUse<'_>, operands: &[usize]) -> Result<Node, Int
         FormulaOperation::Release => binary(Base::Until, true),
         FormulaOperation::Since => binary(Base::Since, false),
         FormulaOperation::Triggered => binary(Base::Since, true),
-        // A window aggregate atom is gated on its emission and admission
-        // (FR-532 "Window aggregates"): no admitted package carries one.
-        FormulaOperation::Aggregate => Err(fault("aggregate-formula-not-emitted")),
+        FormulaOperation::Aggregate => Ok(Node::Atom),
     }
 }
 

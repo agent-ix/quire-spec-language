@@ -7,6 +7,8 @@
 //! Each clause below is the spec's, with `Counters::Counter` for the model
 //! alias and `noop` for the fairness operation.
 
+use qsl_foundation::diagnostic::Code;
+use qsl_semantics::check::{CheckCause, TemporalCause};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
@@ -42,6 +44,9 @@ enum Unit {
     /// `Undefined`, under the bounded profile, with integer modulo by zero
     /// at position 2 (FR-330-AC-5).
     Undefined,
+    /// `Window`: FR-327-AC-7's `always[0,2] A` over the model `Counter`,
+    /// under the bounded profile (FR-330-AC-8).
+    AggregateModel,
     /// `Guarded`, under the bounded profile: an `on each` clause activated
     /// where the counter's value is 1 (FR-337, FR-330).
     Guarded,
@@ -109,6 +114,7 @@ impl Unit {
                 "profile t = \"quire.temporal.infinite-trace/v1\";\n"
             }
             Self::Undefined
+            | Self::AggregateModel
             | Self::Guarded
             | Self::GuardUndefined
             | Self::Decisive
@@ -166,6 +172,11 @@ impl Unit {
             Self::Undefined => {
                 "temporal Undefined using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { always[0,2] holds(3 mod (2 - c.value) >= 0) }\n"
+            }
+            Self::AggregateModel => {
+                "temporal Window using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always[0,2] (count where holds(c.value != 2) over past[0, 0] \
+                 min_count 1 >= 1) }\n"
             }
             Self::Guarded => {
                 "temporal Guarded using t over (c: Counters::Counter) clock \"model-steps\" \
@@ -1251,6 +1262,49 @@ fn an_undefined_evaluation_over_a_finite_trace_is_a_violation_at_its_position() 
     ));
     assert_eq!(report.disposition.category(), Category::Violation);
     assert_eq!(exit_code(&report), 10);
+}
+
+/// FR-330-AC-8: FR-194 refuses a window aggregate over a model subject, so
+/// FR-327-AC-7's clause written over the model `Counter` compiles to a
+/// refusal at the `count` term and no run reaches the evaluator. The clause's
+/// `InsufficientData` outcome over a non-model subject is FR-327-AC-7's.
+#[trace("TC-847", "FR-330-AC-8")]
+#[test]
+fn a_window_aggregate_over_a_model_subject_is_refused_at_compile() {
+    let request = finite(Unit::AggregateModel, "Window", &[0, 1, 2]);
+    let text = match &request.source {
+        ClauseRunSource::Program { bytes, .. } => String::from_utf8(bytes.clone()).expect("utf-8"),
+        #[cfg(feature = "quire-extraction")]
+        ClauseRunSource::Extracted(_) => panic!("a program source"),
+    };
+    let report = run_clause(request).expect("a well-formed request always reports");
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
+    assert_eq!(report.disposition.category(), Category::Unsupported);
+    assert_eq!(report.disposition.category().exit_code(), 21);
+    let ClauseDisposition::Compile(refusal) = &report.disposition else {
+        panic!("expected a compile refusal, got {:?}", report.disposition);
+    };
+    let CompileRefusal::Check { refusals, .. } = refusal.as_ref() else {
+        panic!("expected a checker refusal, got {refusal:?}");
+    };
+    let [only] = refusals.as_slice() else {
+        panic!("one refusal, not {refusals:?}");
+    };
+    let CheckCause::Temporal(cause) = &only.cause else {
+        panic!("a temporal cause, not {:?}", only.cause);
+    };
+    let TemporalCause::AggregateModelSubject { span } = cause.as_ref() else {
+        panic!("the model-subject refusal, not {cause:?}");
+    };
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::UnsupportedConstruct, "expression-form")
+    );
+    assert!(
+        text[span.start..span.end].starts_with("count where holds(c.value != 2)"),
+        "{}",
+        &text[span.start..span.end]
+    );
 }
 
 /// `Reaches` over the same `Finite` trace is pending: the catalog's pending, exit 0,

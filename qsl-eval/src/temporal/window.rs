@@ -35,6 +35,9 @@
 
 use std::cmp::Ordering;
 
+use qsl_semantics::check::{
+    AggregateComparison, AggregateKind as CheckedKind, AggregateWindow, CheckedAggregate,
+};
 use quire_exact::{Charge, ChargePoint, ComparisonOperator, Integer, Meter, Rational};
 use quire_semantic_value::catalog::InternalFault;
 
@@ -304,6 +307,108 @@ pub trait WindowSource {
     ) -> Result<WindowRead<bool>, LetterStop>;
 }
 
+/// What the observation owner supplies for an aggregate atom at one
+/// position (FR-516 "Window aggregate atoms"): the filter, value and predicate
+/// are the owner's, so the evaluator is handed their result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AggregateSample {
+    /// The filter is false at the position, or the position is not admitted.
+    Excluded,
+    /// The value expression's exact value, in the aggregate's value unit.
+    Value(Rational),
+    /// The `fraction` predicate's value.
+    Holds(bool),
+    /// The filter holds, for `count`.
+    Counted,
+    /// The filter, the value or the predicate is undefined there.
+    Undefined(UndefinedCause),
+}
+
+impl AggregateSample {
+    /// Whether a term of `kind` takes this sample: `Excluded` and `Undefined`
+    /// fit every kind, `Counted` only `count`, `Holds` only `fraction`, and
+    /// `Value` the kinds that read a value expression.
+    pub fn is_taken_by(&self, kind: &AggregateKind) -> bool {
+        match self {
+            Self::Excluded | Self::Undefined(_) => true,
+            Self::Counted => matches!(kind, AggregateKind::Count),
+            Self::Holds(_) => matches!(kind, AggregateKind::Fraction),
+            Self::Value(_) => matches!(
+                kind,
+                AggregateKind::Sum
+                    | AggregateKind::Min
+                    | AggregateKind::Max
+                    | AggregateKind::Quantile(_)
+            ),
+        }
+    }
+}
+
+/// A [`WindowSource`] over the samples the observation owner supplied, one
+/// per trace position, indexed by position.
+#[derive(Clone, Copy, Debug)]
+pub struct SampledWindow<'a> {
+    samples: &'a [AggregateSample],
+}
+
+impl<'a> SampledWindow<'a> {
+    /// A source over `samples`, `samples[i]` being the sample at position `i`.
+    pub fn new(samples: &'a [AggregateSample]) -> Self {
+        Self { samples }
+    }
+
+    fn at(&self, position: TemporalPosition) -> Result<&'a AggregateSample, LetterStop> {
+        usize::try_from(position.index())
+            .ok()
+            .and_then(|index| self.samples.get(index))
+            .ok_or_else(|| fault("aggregate-sample-listed").into())
+    }
+}
+
+impl WindowSource for SampledWindow<'_> {
+    fn admits(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        Ok(match self.at(position)? {
+            AggregateSample::Excluded => WindowRead::Defined(false),
+            AggregateSample::Undefined(cause) => WindowRead::Undefined(cause.clone()),
+            AggregateSample::Value(_) | AggregateSample::Holds(_) | AggregateSample::Counted => {
+                WindowRead::Defined(true)
+            }
+        })
+    }
+
+    fn value(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<WindowRead<Rational>, LetterStop> {
+        match self.at(position)? {
+            AggregateSample::Value(value) => Ok(WindowRead::Defined(value.clone())),
+            AggregateSample::Undefined(cause) => Ok(WindowRead::Undefined(cause.clone())),
+            AggregateSample::Excluded | AggregateSample::Holds(_) | AggregateSample::Counted => {
+                Err(fault("aggregate-sample-is-a-value").into())
+            }
+        }
+    }
+
+    fn predicate(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        match self.at(position)? {
+            AggregateSample::Holds(held) => Ok(WindowRead::Defined(*held)),
+            AggregateSample::Undefined(cause) => Ok(WindowRead::Undefined(cause.clone())),
+            AggregateSample::Excluded | AggregateSample::Value(_) | AggregateSample::Counted => {
+                Err(fault("aggregate-sample-is-a-predicate").into())
+            }
+        }
+    }
+}
+
 /// An aggregate compared with a threshold: one atom of a monitor (ADR-024
 /// WA-1).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -454,6 +559,51 @@ fn nearest_rank(q: &Rational, n: u64) -> Option<u64> {
 }
 
 impl AggregateAtom {
+    /// The atom a checked clause's aggregate `checked` states, compared with
+    /// `threshold`: its kind, past window, `min_count` and comparison are the
+    /// checked term's (FR-337-AC-15), so the evaluator plans the aggregate
+    /// from what the clause emits.
+    pub fn of_checked(
+        checked: &CheckedAggregate,
+        threshold: Rational,
+    ) -> Result<Self, TermRefusal> {
+        let kind = match &checked.kind {
+            CheckedKind::Count => AggregateKind::Count,
+            CheckedKind::Sum => AggregateKind::Sum,
+            CheckedKind::Min => AggregateKind::Min,
+            CheckedKind::Max => AggregateKind::Max,
+            CheckedKind::Fraction => AggregateKind::Fraction,
+            CheckedKind::Quantile(level) => AggregateKind::Quantile(level.clone()),
+        };
+        let window = match &checked.window {
+            AggregateWindow::Positions { lower, upper } => PastWindow::Positions {
+                a: *lower,
+                b: *upper,
+            },
+            AggregateWindow::Duration(window) => PastWindow::Duration {
+                a: window.lower.clone(),
+                b: window.upper.clone(),
+            },
+        };
+        let operator = match checked.comparison {
+            AggregateComparison::Less => ComparisonOperator::Less,
+            AggregateComparison::LessEqual => ComparisonOperator::LessOrEqual,
+            AggregateComparison::Equal => ComparisonOperator::Equal,
+            AggregateComparison::GreaterEqual => ComparisonOperator::GreaterOrEqual,
+            AggregateComparison::Greater => ComparisonOperator::Greater,
+        };
+        Ok(Self::new(
+            AggregateTerm::new(kind, window, checked.min_count)?,
+            operator,
+            threshold,
+        ))
+    }
+
+    /// The term's kind, which decides the samples it takes.
+    pub fn kind(&self) -> &AggregateKind {
+        &self.term.kind
+    }
+
     /// The atom `term <operator> threshold`.
     pub fn new(term: AggregateTerm, operator: ComparisonOperator, threshold: Rational) -> Self {
         Self {

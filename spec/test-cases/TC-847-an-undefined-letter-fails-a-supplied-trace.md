@@ -42,7 +42,9 @@ undefined atom or a refused condition (FR-327-AC-7, FR-330-AC-8).
 Fixture: the `Counter` unit, the closed trace and the prefix with `c.value`
 0, 1, 2, and the observed lasso with an empty prefix and loop 0, 1, 2.
 Each clause's undefined letter is `3 mod (2 - c.value)` at `c.value` 2, the
-Euclidean remainder by zero; the step 4 unit compiles from source with no
+Euclidean remainder by zero; FR-327-AC-7's clauses run over the non-model
+subject `c: Counter`, a record with the attribute `level`, with the
+window-aggregate samples the observation owner supplies; the step 4 unit compiles from source with no
 refusal.
 
 1. Evaluate the two clauses of FR-327-AC-5 over the closed trace.
@@ -66,7 +68,8 @@ refusal.
    source locus and only the cause changed.
 6. Evaluate each clause of FR-327-AC-7, in its order, over the closed trace, and the two
    clauses over the one-position trace with `c.value` 2.
-7. Run FR-330-AC-8's request from source.
+7. Run FR-330-AC-8's request from source: FR-327-AC-7's `always[0,2] A`
+   written over the model `Counter`.
 8. Compile FR-125-AC-18's guarded Counter clause whose `when` expression is
    `6 mod (2 - c.value) = 0`, evaluate it over the prefix 0, 1, 2, and replay
    an observed temporal `UndefinedEvaluation` packet at position 2 whose locus
@@ -120,8 +123,9 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   `InsufficientData{where: 0, count: 1, min_count: 2}`, not `Completed(false)`,
   for the clause whose false `holds` atom shares position 0 with the short `B`; over
   the one-position trace, `UndefinedEvaluation` at 0 for both orders.
-- Step 7: stage `evaluate`, `undefined`, exit 10, position 2, `count` 0,
-  `min_count` 1, no `truth`, no counterexample.
+- Step 7: stage `compile`, `unsupported`, `unsupported_construct`/`expression-form`,
+  exit 21, one refusal located at the `count` term; no snapshot is admitted
+  and the report holds no position, `count` or `min_count`.
 - Step 8: replay retains `Undefined` at position 2 with cause
   `division-by-zero` and settles `inconclusive`, `ReplayParity`, because the
   undefined expression is the activation guard and the packet's locus names a

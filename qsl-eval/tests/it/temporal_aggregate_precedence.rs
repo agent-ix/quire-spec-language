@@ -1,35 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-327-AC-7 (TC-847): the precedence among a false activation, an
 //! undefined evaluation and insufficient data across the activations of a
-//! clause, over the closed `Counter` trace `c.level` 0, 1, 2 under
+//! clause, over the closed `Counter` record trace `c.level` 0, 1, 2 under
 //! event-position false-extension.
 //!
-//! The letter reads each `holds` atom from its source text and the two
-//! aggregate stand-ins by what the AC says of the aggregates: `A` (`count
-//! where holds(c.value != 2) over past[0, 0] min_count 1 >= 1`) is true at
-//! positions 0 and 1 and short of data (count 0, `min_count` 1) at 2; `B`
-//! (`count over past[0, 9] min_count 2 >= 1`) is short of data (count 1,
-//! `min_count` 2) at 0 and true at 1 and 2. This covers the evaluator's
-//! precedence among those readings; the aggregates' own evaluation is
-//! `window_aggregates`'s (FR-194).
+//! The two aggregates `A` and `B` are written in the clause's source and
+//! checked at S3; the evaluator plans them as the atoms they are and
+//! evaluates each from its checked term (kind, window, `min_count`,
+//! comparison) over the per-position samples the observation owner supplies
+//! (FR-516 "Window aggregate atoms"). The letter below is that owner: it
+//! reads each `holds` atom from its source text and supplies the aggregates'
+//! samples from `A`'s filter `c.level != 2`, which is the owner's to
+//! evaluate. The window, `min_count` and threshold comparison, the
+//! insufficient-data report and its precedence are the evaluator's.
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
-    TemporalPosition, TemporalTrace, UndefinedCause, UndefinedEvaluation,
+    evaluate, AggregateAtom, AggregateSample, AtomReading, InsufficientData, LetterStop,
+    SampledWindow, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace,
+    UndefinedCause, UndefinedEvaluation, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
 };
 use qsl_semantics::check::{FormulaNode, FormulaNodeId, SCALAR_LIMITS_UNLIMITED};
-use quire_exact::{Meter, Undefined};
+use quire_exact::{Integer, Meter, Rational, Undefined};
 use quire_semantic_value::catalog::Category;
 
 use crate::temporal_trace::{fixture, Fixture, EVENT};
 
-/// `A` and `B` are `holds` atoms the letter reads as the aggregates: the
-/// evaluator plans an aggregate node only from an emitted package
-/// (`aggregate-formula-not-emitted`), and a model-subject `over` refuses one
-/// at the check, so the precedence is exercised on the letter's readings.
-const A: &str = "holds(c.level = 100)";
-const B: &str = "holds(c.level = 200)";
+/// FR-327-AC-7's `A`: true at positions 0 and 1 and short of data (count 0,
+/// `min_count` 1) at 2.
+const A: &str = "count where holds(c.level != 2) over past[0, 0] min_count 1 >= 1";
+/// FR-327-AC-7's `B`: short of data (count 1, `min_count` 2) at 0, true at 1
+/// and 2.
+const B: &str = "count over past[0, 9] min_count 2 >= 1";
+/// The threshold both aggregates are compared with.
+const THRESHOLD: i64 = 1;
 
 struct Counters<'a> {
     fixture: &'a Fixture,
@@ -77,31 +81,56 @@ impl TemporalLetters for Counters<'_> {
         &mut self,
         atom: FormulaNodeId,
         position: TemporalPosition,
-        _meter: &mut Meter,
+        meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
         let at = usize::try_from(position.index()).expect("a small position");
         let level = self.levels[at];
         match self.fixture.clause.formula().nodes().get(atom.index()) {
             Some(FormulaNode::Holds { span }) => {
                 let source = &self.fixture.text[span.start..span.end];
-                let (short, count, min_count) = match source {
-                    A => (2, 0, 1),
-                    B => (0, 1, 2),
-                    _ => {
-                        let inner = source
-                            .strip_prefix("holds(")
-                            .and_then(|rest| rest.strip_suffix(')'))
-                            .expect("a holds atom");
-                        return Ok(Self::holds(inner, level));
-                    }
-                };
-                if at == short {
-                    Ok(AtomReading::Undefined(UndefinedCause::InsufficientData(
-                        InsufficientData { count, min_count },
-                    )))
-                } else {
-                    Ok(AtomReading::True)
-                }
+                let inner = source
+                    .strip_prefix("holds(")
+                    .and_then(|rest| rest.strip_suffix(')'))
+                    .expect("a holds atom");
+                Ok(Self::holds(inner, level))
+            }
+            Some(FormulaNode::Aggregate { span }) => {
+                let source = &self.fixture.text[span.start..span.end];
+                let checked = self
+                    .fixture
+                    .clause
+                    .aggregates()
+                    .get(&atom.index())
+                    .expect("the aggregate atom has its checked term");
+                let aggregate = AggregateAtom::of_checked(
+                    checked,
+                    Rational::from_integer(Integer::from(THRESHOLD)),
+                )
+                .expect("the checked term is well formed");
+                // The observation owner's samples: `A`'s filter admits the
+                // positions whose level is not 2; `B` has none.
+                let samples: Vec<AggregateSample> = self
+                    .levels
+                    .iter()
+                    .map(|level| {
+                        if source.contains("where holds(c.level != 2)") && *level == 2 {
+                            AggregateSample::Excluded
+                        } else {
+                            AggregateSample::Counted
+                        }
+                    })
+                    .collect();
+                assert!(samples
+                    .iter()
+                    .all(|sample| sample.is_taken_by(aggregate.kind())));
+                let trace = WindowTrace::positions(samples.len() as u64);
+                aggregate.evaluate(
+                    &trace,
+                    &mut SampledWindow::new(&samples),
+                    DEFAULT_MAX_WINDOW_VALUES,
+                    position,
+                    meter,
+                )
             }
             other => panic!("the letter reads atoms only, not {other:?}"),
         }
@@ -164,9 +193,9 @@ fn assert_insufficient(
     };
     assert_eq!(short.at, TemporalPosition::new(at));
     assert_eq!(short.data, InsufficientData { count, min_count });
-    let Some(FormulaNode::Holds { span }) = fx.clause.formula().nodes().get(short.atom.index())
+    let Some(FormulaNode::Aggregate { span }) = fx.clause.formula().nodes().get(short.atom.index())
     else {
-        panic!("the short atom is an atom node");
+        panic!("the short atom is the aggregate node");
     };
     assert_eq!(&fx.text[span.start..span.end], source);
     assert_eq!(outcome.category(), Category::Undefined);

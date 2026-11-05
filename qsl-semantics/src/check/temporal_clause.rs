@@ -283,7 +283,7 @@ pub enum FormulaNode {
 
 /// A checked aggregate kind (FR-194 "Outputs").
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum AggregateKind {
+pub enum AggregateKind {
     /// `count`.
     Count,
     /// `sum`.
@@ -300,7 +300,7 @@ pub(crate) enum AggregateKind {
 
 impl AggregateKind {
     /// The kind's FR-337 wire spelling.
-    pub(crate) const fn spelling(&self) -> &'static str {
+    pub const fn spelling(&self) -> &'static str {
         match self {
             Self::Count => "count",
             Self::Sum => "sum",
@@ -314,7 +314,7 @@ impl AggregateKind {
 
 /// A checked `past[a, b]` window (FR-194 "Outputs").
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum AggregateWindow {
+pub enum AggregateWindow {
     /// Position offsets, under the event-position profile.
     Positions {
         /// The nearest offset `a`.
@@ -331,30 +331,30 @@ pub(crate) enum AggregateWindow {
 /// when S3 was given no clock for the clause; the emitter requires the unit
 /// to be the clause's clock unit (FR-337 "Aggregate formula emission").
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct DurationWindow {
+pub struct DurationWindow {
     /// The nearest age `a`.
-    pub(crate) lower: Rational,
+    pub lower: Rational,
     /// The farthest age `b`.
-    pub(crate) upper: Rational,
+    pub upper: Rational,
     /// The node of the time unit both bounds are expressed in.
-    pub(crate) unit: NodeKey,
+    pub unit: NodeKey,
     /// The unit's nominal dimension and unit nodes, its dependency closure:
     /// a model-owned unit's nodes are written by the emitter.
-    pub(crate) nominal_nodes: Vec<TimeNominalNode>,
+    pub nominal_nodes: Vec<TimeNominalNode>,
 }
 
 /// The checked term of one window aggregate atom, beside its typed value,
 /// filter, predicate and threshold expressions (FR-194, FR-337-AC-15).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedAggregate {
+pub struct CheckedAggregate {
     /// The aggregate kind.
-    pub(crate) kind: AggregateKind,
+    pub kind: AggregateKind,
     /// The past window.
-    pub(crate) window: AggregateWindow,
+    pub window: AggregateWindow,
     /// The normalized `min_count`: 1 when the source omits it.
-    pub(crate) min_count: u64,
+    pub min_count: u64,
     /// The comparison with the threshold.
-    pub(crate) comparison: qsl_forms::AggregateComparison,
+    pub comparison: qsl_forms::AggregateComparison,
 }
 
 impl FormulaNode {
@@ -776,7 +776,7 @@ impl CheckedTemporalClause {
 
     /// The checked term of each window aggregate atom, by its formula
     /// node's arena index.
-    pub(crate) fn aggregates(&self) -> &BTreeMap<usize, CheckedAggregate> {
+    pub fn aggregates(&self) -> &BTreeMap<usize, CheckedAggregate> {
         &self.aggregates
     }
 
