@@ -24,10 +24,8 @@ temporal DueLate using t over (view: M::Workflow) clock "events" on origin {
 }
 
 // The legacy recipe compares the receipt sum with the captured target in
-// `recover`. QSL emits a `sum` query binder there (QSL-1555), but the Contract
-// IR reader refuses a binder bound inside a protocol slot as an out-of-stage
-// read (IR-1311), so these conditions read the target and bound the receipt
-// count instead.
+// `recover`: `Full` requires them equal, `Partial` a positive sum below the
+// target. The `sum` query binder is bound inside the `recover` slot.
 protocol Flow using p over (view: M::Workflow) on origin {
     role Service on M::Workflow;
     role Provider on M::Provider;
@@ -47,7 +45,7 @@ protocol Flow using p over (view: M::Workflow) on origin {
         };
         commit Main::Committed;
         recover (recoveredFull: M::Recovery) {
-            size(recoveredFull.receipts) <= 5 and targetFull >= 0
+            sum<M::Total>(receipt in recoveredFull.receipts: receipt) = targetFull
             and not activatedFull
         };
     }
@@ -67,8 +65,9 @@ protocol Flow using p over (view: M::Workflow) on origin {
         };
         commit never;
         recover (recoveredPartial: M::Recovery) {
-            size(recoveredPartial.receipts) > 0 and size(recoveredPartial.receipts) < 5
-            and targetPartial >= 0 and not activatedPartial
+            sum<M::Total>(receipt in recoveredPartial.receipts: receipt) > 0
+            and sum<M::Total>(receipt in recoveredPartial.receipts: receipt) < targetPartial
+            and not activatedPartial
         };
     }
 
