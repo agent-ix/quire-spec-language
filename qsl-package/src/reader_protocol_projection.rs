@@ -442,6 +442,32 @@ pub(crate) fn project_package(
     }
 }
 
+/// Whether `identity` names one of the equality operations whose decision
+/// the equality rows carry.
+fn is_equality_identity(identity: &str) -> bool {
+    matches!(
+        identity,
+        "quire.op.string.eq"
+            | "quire.op.string.ne"
+            | "quire.op.uuid.eq"
+            | "quire.op.uuid.ne"
+            | "quire.op.timestamp.eq"
+            | "quire.op.timestamp.ne"
+            | "quire.op.boolean.eq"
+            | "quire.op.boolean.ne"
+            | "quire.op.integer.eq"
+            | "quire.op.integer.ne"
+            | "quire.op.rational.eq"
+            | "quire.op.rational.ne"
+            | "quire.op.decimal.eq"
+            | "quire.op.decimal.ne"
+            | "quire.op.quantity.eq"
+            | "quire.op.quantity.ne"
+            | "quire.op.structural.eq"
+            | "quire.op.structural.ne"
+    )
+}
+
 /// The refusal FR-390 reports: the first by [`UnsupportedView::order`], never
 /// the walk order that found it.
 fn first_refusal(
@@ -589,6 +615,38 @@ impl<'wire> WireIndex<'wire> {
                 .decision(admitted, id, self.work_limit)
                 .map_err(BuildError::Equality),
         }
+    }
+
+    /// The first equality-witness refusal, by [`UnsupportedReason::rank`], of
+    /// the equality applications reachable from `root`, whatever the walk
+    /// reached first (FR-390-AC-67: `Package` before `Node`).
+    fn equality_refusal(&self, root: &CheckedNodeId) -> Option<EqualityWitnessRefusal> {
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![root.clone()];
+        let mut first: Option<EqualityWitnessRefusal> = None;
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            let Some(node) = self.node(&id) else { continue };
+            pending.extend(node.body.reference_targets().into_iter().cloned());
+            let is_equality = matches!(
+                &node.body,
+                CheckedTerm::Application { operation, .. }
+                    if operation.identity().is_some_and(is_equality_identity)
+            );
+            if !is_equality {
+                continue;
+            }
+            if let Err(BuildError::Equality(refusal)) = self.equality_decision(self.admitted, &id) {
+                let rank =
+                    |refusal: EqualityWitnessRefusal| UnsupportedReason::from(refusal).rank();
+                if first.is_none_or(|held| rank(refusal) < rank(held)) {
+                    first = Some(refusal);
+                }
+            }
+        }
+        first
     }
 
     fn types(&self) -> TypeReader<'_> {
@@ -805,6 +863,35 @@ impl<'wire> BareWalker<'wire> {
         })
     }
 
+    /// `project_slot`, reporting the first refusal of the whole walk by
+    /// FR-390-AC-67's order: an equality-witness refusal anywhere in the
+    /// walk (a `Package` locus) is reported before a `Node` refusal the walk
+    /// reached first.
+    fn slot(&self, request: &SlotRequest) -> Result<ReaderProtocolProjection, WalkFailure> {
+        let failure = match self.index.project_slot(request) {
+            Ok(projection) => return Ok(projection),
+            Err(BuildError::Fault(fault)) => return Err(WalkFailure::Fault(fault)),
+            Err(failure) => failure,
+        };
+        let root = self.index.ids.get(&request.root).ok_or_else(|| {
+            WalkFailure::Fault(fault("reader-selected-protocol-node-is-retained"))
+        })?;
+        if let Some(refusal) = self.index.equality_refusal(root) {
+            return Err(WalkFailure::Equality(refusal));
+        }
+        match failure {
+            BuildError::Equality(refusal) => Err(WalkFailure::Equality(refusal)),
+            BuildError::Unsupported { reason, node } => {
+                Err(WalkFailure::Unsupported(UnsupportedView {
+                    package: self.index.admitted.name().to_owned(),
+                    locus: ViewLocus::node(self.index.key(&node).map_err(WalkFailure::Fault)?),
+                    reason,
+                }))
+            }
+            BuildError::Fault(fault) => Err(WalkFailure::Fault(fault)),
+        }
+    }
+
     /// The applications the walk of the slot rooted at `root` visits, each
     /// with its number of visits (FR-383 "Protocol term locations").
     pub(crate) fn visits(
@@ -817,18 +904,7 @@ impl<'wire> BareWalker<'wire> {
             origin: String::new(),
             binders: binders.to_vec(),
         };
-        let projection = match self.index.project_slot(&request) {
-            Ok(projection) => projection,
-            Err(BuildError::Fault(fault)) => return Err(WalkFailure::Fault(fault)),
-            Err(BuildError::Equality(refusal)) => return Err(WalkFailure::Equality(refusal)),
-            Err(BuildError::Unsupported { reason, node }) => {
-                return Err(WalkFailure::Unsupported(UnsupportedView {
-                    package: self.index.admitted.name().to_owned(),
-                    locus: ViewLocus::node(self.index.key(&node).map_err(WalkFailure::Fault)?),
-                    reason,
-                }))
-            }
-        };
+        let projection = self.slot(&request)?;
         let mut visits: BTreeMap<CheckedNodeId, usize> = BTreeMap::new();
         for position in walk(&projection.nodes, projection.root) {
             for application in projection.nodes[position].terms() {
@@ -855,18 +931,7 @@ impl<'wire> BareWalker<'wire> {
             origin: origin.unwrap_or_default().to_owned(),
             binders: binders.to_vec(),
         };
-        let mut projection = match self.index.project_slot(&request) {
-            Ok(projection) => projection,
-            Err(BuildError::Fault(fault)) => return Err(WalkFailure::Fault(fault)),
-            Err(BuildError::Equality(refusal)) => return Err(WalkFailure::Equality(refusal)),
-            Err(BuildError::Unsupported { reason, node }) => {
-                return Err(WalkFailure::Unsupported(UnsupportedView {
-                    package: package.to_owned(),
-                    locus: ViewLocus::node(self.index.key(&node).map_err(WalkFailure::Fault)?),
-                    reason,
-                }))
-            }
-        };
+        let mut projection = self.slot(&request)?;
         let rows = OriginRows::new(self.index.admitted);
         match rows.pair(&mut projection, &request.origin, package, &self.index) {
             Ok(None) => Ok(projection),
@@ -1339,26 +1404,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             Some("quire.op.record.project") => {
                 self.projection(id, operation, arguments, context, locals)
             }
-            Some(
-                "quire.op.string.eq"
-                | "quire.op.string.ne"
-                | "quire.op.uuid.eq"
-                | "quire.op.uuid.ne"
-                | "quire.op.timestamp.eq"
-                | "quire.op.timestamp.ne"
-                | "quire.op.boolean.eq"
-                | "quire.op.boolean.ne"
-                | "quire.op.integer.eq"
-                | "quire.op.integer.ne"
-                | "quire.op.rational.eq"
-                | "quire.op.rational.ne"
-                | "quire.op.decimal.eq"
-                | "quire.op.decimal.ne"
-                | "quire.op.quantity.eq"
-                | "quire.op.quantity.ne"
-                | "quire.op.structural.eq"
-                | "quire.op.structural.ne",
-            ) => self.equality(id, identity, arguments, context, locals),
+            Some(name) if is_equality_identity(name) => {
+                self.equality(id, identity, arguments, context, locals)
+            }
             _ => Err(unsupported_operation(
                 id,
                 identity.unwrap_or("unidentified operation"),
