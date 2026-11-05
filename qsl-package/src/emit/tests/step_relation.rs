@@ -26,6 +26,22 @@ pub(super) fn checked_graph() -> qsl_semantics::check::CheckedGraph {
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"))
 }
 
+fn checked_bound_graph() -> qsl_semantics::check::CheckedGraph {
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
+    let unit = format!(
+        "{}\
+         abstraction A using v {{\n\
+         population Config::config_history to \"store::history\";\n\
+         operation Config::ConfigVersion::attemptUpdate to \"store::update\" receiver \"self\" ();\n\
+         }}\n",
+        relation_unit()
+    );
+    assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the bound unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the bound unit checks: {refusals:?}"))
+}
+
 /// FR-180/FR-477: both execution binders remain distinct, their body is
 /// represented in the checked wire, and I2 admits the emitted package.
 #[trace("TC-1143", "FR-180-AC-2", "FR-180-AC-3")]
@@ -103,4 +119,83 @@ fn a_step_relation_emits_and_reads_back_its_execution_body() {
     assert_eq!(typed_body.executions.len(), 2);
     assert_eq!(typed_body.executions[0].variable.as_ref(), "x");
     assert_eq!(typed_body.executions[1].variable.as_ref(), "y");
+}
+
+/// QSL FR-507-AC-7, QSpec FR-477/FR-485: a bound relation has one claim
+/// occurrence shared by its model and code capability records, plus one
+/// declaration occurrence; Contract IR admits the emitted package.
+#[trace("FR-507-AC-7", "QSpec-FR-477", "QSpec-FR-485")]
+#[test]
+fn one_step_relation_claim_occurrence_is_admitted_by_ir() {
+    use qsl_semantics::check::Capability;
+
+    let graph = checked_bound_graph();
+    assert_eq!(graph.requirements().len(), 2);
+    let [relation] = graph.step_relations() else {
+        panic!("one step relation");
+    };
+    let claim = relation.occurrence().expect("the model claim occurrence");
+    assert_eq!(
+        graph
+            .requirements()
+            .get_kind(claim, Capability::TemporalSatisfaction)
+            .expect("the model claim record")
+            .requirements()
+            .kind(),
+        Capability::TemporalSatisfaction
+    );
+    assert_eq!(
+        graph
+            .requirements()
+            .get_kind(claim, Capability::OperationContract)
+            .expect("the code claim record")
+            .requirements()
+            .kind(),
+        Capability::OperationContract
+    );
+    let claim_origins: Vec<_> = graph
+        .occurrences()
+        .filter(|(node, origin, _)| node == claim.node() && origin.role().as_str() == "claim")
+        .collect();
+    let declaration_origins: Vec<_> = graph
+        .occurrences()
+        .filter(|(node, origin, _)| node == claim.node() && origin.role().as_str() == "declaration")
+        .collect();
+    assert_eq!(claim_origins.len(), 1);
+    assert_eq!(declaration_origins.len(), 1);
+
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let relation_node = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "step_relation")
+        .expect("the relation node is present");
+    let roles: Vec<_> = relation_node["occurrences"]
+        .as_array()
+        .expect("occurrences")
+        .iter()
+        .map(|occurrence| occurrence["role"].as_str().expect("role"))
+        .collect();
+    assert_eq!(roles.len(), 2);
+    assert!(roles.contains(&"claim"));
+    assert!(roles.contains(&"declaration"));
+    let admitted = match read_back(&emission) {
+        Read::Verified { admitted, .. } => admitted,
+        other => panic!("Contract IR admits the relation package: {other:?}"),
+    };
+    let admitted_relation = admitted
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| node.semantic_form.as_ref() == "step_relation")
+        .expect("the reader retains the relation node");
+    assert_eq!(admitted_relation.occurrences.len(), 2);
+    assert!(admitted_relation.occurrences.iter().any(|occurrence| {
+        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Claim
+            && occurrence.ordinal == 0
+    }));
+    assert!(admitted_relation.occurrences.iter().any(|occurrence| {
+        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Declaration
+            && occurrence.ordinal == 0
+    }));
 }

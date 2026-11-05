@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! [`RequirementMap`]: a package's requirement records, keyed by occurrence
-//! and held in ascending [`OccurrenceKey`] order without comparing node keys.
+//! and capability and held in occurrence order without comparing node keys.
 //!
 //! `OccurrenceKey` orders by its node key first, and two node keys that
 //! share a deep chain of nested operands cost that chain's depth to compare.
@@ -19,15 +19,16 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 
 use super::RequirementRecord;
 use crate::check::key_order;
+use crate::check::Capability;
 
-/// Requirement records keyed by occurrence, iterated in ascending
-/// [`OccurrenceKey`] order.
+/// Requirement records keyed by occurrence and capability, iterated in
+/// ascending occurrence order.
 #[derive(Clone, Default)]
 pub struct RequirementMap {
-    /// Every record, ascending by key.
+    /// Every record, ascending by occurrence, then capability label.
     entries: Vec<(OccurrenceKey, RequirementRecord)>,
-    /// Each key's position in `entries`.
-    index: HashMap<OccurrenceKey, usize>,
+    /// Each occurrence's positions in `entries`.
+    index: HashMap<OccurrenceKey, Vec<usize>>,
 }
 
 impl RequirementMap {
@@ -36,40 +37,72 @@ impl RequirementMap {
         Self::default()
     }
 
-    /// `records` ranked: ascending by origin, then stably by node, which is
-    /// ascending `OccurrenceKey` order because the keys are distinct.
-    fn ranked(records: HashMap<OccurrenceKey, RequirementRecord>) -> Self {
-        let mut entries: Vec<(OccurrenceKey, RequirementRecord)> = records.into_iter().collect();
-        entries.sort_by(|(left, _), (right, _)| left.origin().cmp(right.origin()));
+    /// `records` ranked by occurrence, then capability label. Later duplicate
+    /// occurrence and capability pairs replace earlier records.
+    fn ranked(records: impl IntoIterator<Item = (OccurrenceKey, RequirementRecord)>) -> Self {
+        let mut entries: Vec<(OccurrenceKey, RequirementRecord)> = Vec::new();
+        let mut positions: HashMap<(OccurrenceKey, Capability), usize> = HashMap::new();
+        for (occurrence, record) in records {
+            let pair = (occurrence.clone(), record.requirements().kind());
+            if let Some(&at) = positions.get(&pair) {
+                entries[at].1 = record;
+            } else {
+                positions.insert(pair, entries.len());
+                entries.push((occurrence, record));
+            }
+        }
+        entries.sort_by(|(left_key, left), (right_key, right)| {
+            left_key.origin().cmp(right_key.origin()).then_with(|| {
+                left.requirements()
+                    .kind()
+                    .to_wire()
+                    .cmp(right.requirements().kind().to_wire())
+            })
+        });
         let entries = key_order::sorted_by_key(entries, |(occurrence, _)| occurrence.node());
-        let index = entries
-            .iter()
-            .enumerate()
-            .map(|(at, (occurrence, _))| (occurrence.clone(), at))
-            .collect();
+        let mut index: HashMap<OccurrenceKey, Vec<usize>> = HashMap::new();
+        for (at, (occurrence, _)) in entries.iter().enumerate() {
+            index.entry(occurrence.clone()).or_default().push(at);
+        }
         Self { entries, index }
     }
 
     /// The map with `records` added, ranked once, or the map unchanged as
-    /// the error when a key of `records` is already present.
+    /// the error when an occurrence and capability pair already exists.
     pub(crate) fn extended(
         self,
-        records: HashMap<OccurrenceKey, RequirementRecord>,
+        records: impl IntoIterator<Item = (OccurrenceKey, RequirementRecord)>,
     ) -> Result<Self, Self> {
-        if records.is_empty() {
-            return Ok(self);
+        let records: Vec<_> = records.into_iter().collect();
+        let mut pairs = std::collections::HashSet::new();
+        for (occurrence, record) in &records {
+            let kind = record.requirements().kind();
+            if !pairs.insert((occurrence.clone(), kind))
+                || self.get_kind(occurrence, kind).is_some()
+            {
+                return Err(self);
+            }
         }
-        if records.keys().any(|key| self.index.contains_key(key)) {
-            return Err(self);
-        }
-        let mut all: HashMap<OccurrenceKey, RequirementRecord> = self.entries.into_iter().collect();
+        let mut all = self.entries;
         all.extend(records);
         Ok(Self::ranked(all))
     }
 
-    /// The record at `key`.
+    /// The sole record at `key`, or `None` when absent or ambiguous by kind.
     pub fn get(&self, key: &OccurrenceKey) -> Option<&RequirementRecord> {
-        self.index.get(key).map(|&at| &self.entries[at].1)
+        let [at] = self.index.get(key)?.as_slice() else {
+            return None;
+        };
+        Some(&self.entries[*at].1)
+    }
+
+    /// The record of `kind` at `key`.
+    pub fn get_kind(&self, key: &OccurrenceKey, kind: Capability) -> Option<&RequirementRecord> {
+        self.index
+            .get(key)?
+            .iter()
+            .map(|&at| &self.entries[at].1)
+            .find(|record| record.requirements().kind() == kind)
     }
 
     /// Whether a record is at `key`.
@@ -114,10 +147,11 @@ impl RequirementMap {
     }
 }
 
-/// A later record for a key replaces an earlier one, as in a `BTreeMap`.
+/// A later record for one occurrence and capability replaces its earlier
+/// record. Different capabilities may share the occurrence.
 impl FromIterator<(OccurrenceKey, RequirementRecord)> for RequirementMap {
     fn from_iter<I: IntoIterator<Item = (OccurrenceKey, RequirementRecord)>>(records: I) -> Self {
-        Self::ranked(records.into_iter().collect())
+        Self::ranked(records)
     }
 }
 
@@ -127,7 +161,7 @@ impl From<HashMap<OccurrenceKey, RequirementRecord>> for RequirementMap {
     }
 }
 
-/// The record at `key`; panics when none is, as a `BTreeMap` does.
+/// The sole record at `key`; panics when absent or ambiguous by capability.
 impl std::ops::Index<&OccurrenceKey> for RequirementMap {
     type Output = RequirementRecord;
 
@@ -148,8 +182,8 @@ impl<'a> IntoIterator for &'a RequirementMap {
     }
 }
 
-/// Two maps are equal when they hold equal records at equal keys, the
-/// same as two `BTreeMap`s: both are in key order, so this is a walk.
+/// Two maps are equal when their ordered occurrence and capability records
+/// match.
 impl PartialEq for RequirementMap {
     fn eq(&self, other: &Self) -> bool {
         self.entries == other.entries
@@ -190,9 +224,13 @@ mod tests {
     use quire_exact::ValueType;
 
     fn record(fill: u64) -> RequirementRecord {
+        record_for(Capability::ValueValidity, fill)
+    }
+
+    fn record_for(kind: Capability, fill: u64) -> RequirementRecord {
         let node = NodeKey::new("p", vec![PathSegment::Text(format!("t{fill}"))], fill).unwrap();
         RequirementRecord::unguarded(
-            Requirements::new(Capability::ValueValidity, ClaimExtent::Bounded),
+            Requirements::new(kind, ClaimExtent::Bounded),
             ValueType::Boolean,
             node,
             Default::default(),
@@ -262,7 +300,7 @@ mod tests {
         let (first, second) = all.split_at(all.len() / 2);
         let map: RequirementMap = first.iter().cloned().collect();
         let map = map
-            .extended(second.iter().cloned().collect())
+            .extended(second.iter().cloned())
             .unwrap_or_else(|_| panic!("distinct keys extend"));
         let expected: RequirementMap = all.iter().cloned().collect();
         assert_eq!(map, expected);
@@ -271,14 +309,28 @@ mod tests {
         assert_eq!(refused, expected, "a refused extension adds nothing");
     }
 
-    /// A later record for a key replaces an earlier one.
+    /// Different capability records share an occurrence, while a duplicate
+    /// occurrence and capability pair replaces its earlier record.
     #[test]
-    fn a_later_record_replaces_an_earlier_one() {
+    fn one_occurrence_can_hold_records_of_distinct_kinds() {
         let key = keys().remove(0);
-        let map: RequirementMap = [(key.clone(), record(1)), (key.clone(), record(2))]
-            .into_iter()
-            .collect();
-        assert_eq!(map.len(), 1);
-        assert_eq!(map.get(&key), Some(&record(2)));
+        let temporal = record_for(Capability::TemporalSatisfaction, 1);
+        let operation = record_for(Capability::OperationContract, 2);
+        let map: RequirementMap = [
+            (key.clone(), temporal.clone()),
+            (key.clone(), operation.clone()),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&key), None, "an unqualified lookup is ambiguous");
+        assert_eq!(
+            map.get_kind(&key, Capability::TemporalSatisfaction),
+            Some(&temporal)
+        );
+        assert_eq!(
+            map.get_kind(&key, Capability::OperationContract),
+            Some(&operation)
+        );
     }
 }

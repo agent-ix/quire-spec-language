@@ -296,28 +296,6 @@ impl SemanticNode {
         &self.content.body
     }
 
-    /// FR-092 "Function nodes": a function node's body expression node, read
-    /// from its `body` binding. `None` for every node that is not a function
-    /// node and for a function whose body is a literal.
-    pub fn function_body(&self) -> Option<NodeKey> {
-        if self.content.node_tag != NodeTag::Function {
-            return None;
-        }
-        let BodyTerm::Aggregate(AggregateTerm { members }) = &self.content.body else {
-            return None;
-        };
-        members.iter().find_map(|member| match member {
-            MemberTerm::Binding(Binding {
-                name,
-                value: BindingValue::Leaf(leaf),
-            }) if name == FUNCTION_BODY => leaf
-                .reference_target()
-                .and_then(NodeRef::admitted)
-                .cloned(),
-            MemberTerm::Binding(_) | MemberTerm::Leaf(_) | MemberTerm::Group(_) => None,
-        })
-    }
-
     /// FR-092 "Function nodes": a function node's parameter nodes, in
     /// declared parameter order, read from its `parameters` binding. `None`
     /// for every node that is not a function node. The replay executor
@@ -3649,7 +3627,12 @@ impl<'a> Lowering<'a> {
         // QSpec FR-290, FR-484: the Boolean clause of a source-declared
         // function is its Boolean body `expression` node, claimed at roles
         // `claim` and `declaration`.
-        let clause = if function.clause.is_none() && *function.result == ValueType::Boolean {
+        let clause = if function.clause.is_none()
+            && *function.result == ValueType::Boolean
+            && !matches!(
+                function.body.kind(),
+                NodeKind::Literal(_) | NodeKind::Local(_)
+            ) {
             body.reference_target().cloned()
         } else {
             None
@@ -3713,7 +3696,11 @@ impl<'a> Lowering<'a> {
                 OccurrenceRole::Claim,
                 function.location.clone(),
             );
-            self.record(clause, OccurrenceRole::Declaration, function.location.clone());
+            self.record(
+                clause,
+                OccurrenceRole::Declaration,
+                function.location.clone(),
+            );
         }
         if let Some(slot) = self.functions.get_mut(index) {
             *slot = Some(key.clone());

@@ -419,9 +419,9 @@ fn step_relation(
         .ok_or(ContractSelection::NoForm)?;
     let code = graph
         .requirements()
-        .get(claim)
-        .is_some_and(|record| record.requirements().kind() == Capability::OperationContract);
-    if relation.occurrence() == Some(claim) || !code {
+        .get_kind(claim, Capability::OperationContract)
+        .is_some();
+    if !code {
         return Err(ContractSelection::NoForm);
     }
     let elements = graph
