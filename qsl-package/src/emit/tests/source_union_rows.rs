@@ -180,6 +180,38 @@ fn a_recursive_union_row_names_the_payload_node_that_reaches_its_own_node() {
 
 #[trace("FR-092-AC-20", "TC-1021")]
 #[test]
+fn mutually_recursive_unions_each_get_a_row_under_their_type_handle_and_settled_key() {
+    let (package, emission, wire) = emitted(
+        "union Left { Stop, Go(Option<Right>) }\n\
+         union Right { Halt, Move(Option<Left>) }\n\
+         function f using v(l: Left): Boolean pure { true }\n",
+    );
+    let rows = emission.selected_source_union_rows();
+    assert_eq!(rows.len(), 2);
+    let types = package.graph().scope().types();
+    for name in ["Left", "Right"] {
+        let handle = declaration(&package, name).key();
+        let row = rows
+            .iter()
+            .find(|row| row.type_handle == handle)
+            .unwrap_or_else(|| panic!("{name} has a row under its type handle"));
+        assert_eq!(
+            types.union_key(handle.clone()),
+            Some(row.settled_key.clone())
+        );
+        assert_eq!(
+            node_id_of(&wire, &row.settled_key),
+            serde_json::to_value(&row.structural_node).expect("a node id serializes")
+        );
+        assert!(row
+            .members
+            .iter()
+            .all(|member| member.member.declaration() == &row.settled_key));
+    }
+}
+
+#[trace("FR-092-AC-20", "TC-1021")]
+#[test]
 fn every_emitted_union_node_has_one_row_and_other_units_have_none() {
     let (_, emission, wire) = emitted(
         "union Shape { Empty, Circle(Integer) }\n\
