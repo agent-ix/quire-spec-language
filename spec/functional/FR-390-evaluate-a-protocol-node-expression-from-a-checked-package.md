@@ -453,7 +453,7 @@ application and no other, the walk being the slot walk and the bodies of the
 functions it calls (FR-533 "Equality slots"), not the dependency closure. Over one
 supply the three reasons are mutually exclusive: `MissingEqualityWitness` when no
 equality rows are supplied; `ForeignEqualityWitness` when the supplied rows were
-produced for another package, decided before any row is joined, so foreign rows are
+produced for another package (the rows' package name differs from the package's; rows of a different package with the same name are not detected), decided before any row is joined, so foreign rows are
 never `UnknownEqualityWitness`; `UnknownEqualityWitness` when the rows are the
 package's own and the row of a reached application is absent or Contract IR does not
 admit it. The identity-witness reasons are decided the same way and before the

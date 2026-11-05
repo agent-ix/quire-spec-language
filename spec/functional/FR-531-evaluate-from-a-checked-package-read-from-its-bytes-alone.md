@@ -283,14 +283,13 @@ its `node` member), because an in-process `CheckedNodeId` or `NodeKey` carries
 structural path segments and the wire form carries operand indices. A node the
 package does not name is the writer's `Error::Unnameable`.
 
-The file's value-type vocabulary is closed (the tags of "Value encodings" below). An
-equality fact whose value type is `CarriedQuantity`, `Map` or `BoundedQuantity` (the
-`quire_exact::ValueType` variants the vocabulary does not hold) SHALL NOT be admitted
-to the handoff: the writer refuses with `Error::Unnameable` naming the value type,
-writes nothing, and `ReadEqualityRows::to_bytes` returns `Malformed` for the same
-rows. The refusal is typed and happens at write time, so the handoff never carries a
-fact the reader cannot decode and no equality fact is lost without a refusal. No
-requirement asks for equality over those types.
+The file's value-type vocabulary covers every `quire_exact::ValueType` variant (the
+tags listed under "Value encodings" below, `carried_quantity`, `map` and
+`bounded_quantity` included), so the writer names the value type of any equality
+fact. FR-517-AC-14's `Full` recover compares a receipt sum with a captured target
+that FR-517-AC-13 types as a carried quantity; whether the checker records that
+operand type as `Quantity` or as `CarriedQuantity` is not established by FR-505 or
+FR-517, and the vocabulary admits both.
 
 | Member | Content |
 | --- | --- |
@@ -347,7 +346,20 @@ text is UTF-8 as written.
   reference>, "case": <text> }, ... ] }`; `option` `{ "element": <value type> }`;
   `composite` `{ "node": <node reference> }`; `collection` `{ "collection": <kind>,
   "element": <value type>, "bound": null | { "minimum", "maximum" } }`; `reference`
-  `{ "effective": <effective id> }`; `population` `{ "maximum": null | <integer> }`.
+  `{ "effective": <effective id> }`; `population` `{ "maximum": null | <integer> }`; `carried_quantity` `{ "unit":
+  <unit id>, "carrier": <carrier> }`; `bounded_quantity` `{ "unit": <unit id>, "min":
+  null | <quantity>, "max": null | <quantity> }`; `map` `{ "values": <value type>,
+  "bound": null | { "minimum", "maximum" } }` (a map's keys are Text, so the member
+  names no key type). A *quantity* is `{ "magnitude": <checked rational>, "unit":
+  <unit id> }`. A *carrier* is a tagged object `{ "kind": "decimal", "lower", "upper",
+  "min_scale", "max_scale", "rounding" }`, `{ "kind": "integer", "lower", "upper",
+  "rounding" }` or `{ "kind": "rational", "numerator": <interval>, "denominator":
+  <interval> }`, with the members and spellings of `decimal`, `int` and `rational`
+  above. For example a `map` of `bounded_quantity` values is `{ "kind": "map",
+  "values": { "kind": "bounded_quantity", "unit": { "kind": "declared", "node":
+  "E" }, "min": null, "max": { "magnitude": { "numerator": "5", "denominator": "1" },
+  "unit": { "kind": "declared", "node": "E" } } }, "bound": { "minimum": "0",
+  "maximum": "4" } }`, members in the order shown.
   An *interval* is `{ "lower": <text>, "upper": <text> }` and `lower`, `upper` of
   `int` and `decimal` are canonical decimal integer strings; `rounding` is one of
   `exact`, `toward_zero`, `toward_positive`, `toward_negative`, `nearest_even`,
@@ -573,7 +585,8 @@ names this file beside `identities.json`.
   slots"), over a supply with no
   equality rows, refuses `ViewFailure::Unsupported` with `MissingEqualityWitness`;
   with rows of another package, `ForeignEqualityWitness` (decided before any row is
-  joined); with rows of the package that hold no row for an equality application the
+  joined, by comparing the rows' package name with the package's name; rows of a
+  different package that has the same name are not detected); with rows of the package that hold no row for an equality application the
   walk reaches, or that Contract IR does not admit, `UnknownEqualityWitness`. Each is
   evaluation-input admission like the identity-witness refusals above, at the
   `Package` locus, which the bytes route reports as `CallAdmissionLocus::Package`
@@ -628,7 +641,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-15 | `ReadEqualityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with an unknown fact tag, one with another `format`, one with a row whose node id string the package does not hold and one whose application is not an equality application returns `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the tag, the format string or the first row, and returns no rows. | Test (TC-1331) |
 | FR-531-AC-16 | A slot call on TC-1070 fixture E's `Refund` retry relation refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows of the package from which the row of the retry relation's application is removed, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; `Refund`'s `trigger.guard`, whose walk holds no equality application, over the same supply evaluates. | Test (TC-1331) |
 | FR-531-AC-17 | The encoding of the rows of "The equality file" vector equals the vector's bytes exactly; `ReadEqualityRows::read` over those bytes and a package that holds the node `["E"]` and `["U"]` returns rows equal to the input rows; for a row of every fact tag, every value-type tag, every owner kind and a compound unit id in a fact row, writing then reading returns equal rows and a second write is byte-identical; a checked rational whose numerator is spelled `+1`, `01` or `-0`, or whose denominator is `0` or `-2`, returns `Malformed`; a compound unit id in a `source_units` row returns `Malformed`. | Test (TC-1331) |
-| FR-531-AC-18 | `ReadEqualityRows::to_bytes` over rows with an equality fact of value type `CarriedQuantity`, of `Map` and of `BoundedQuantity` returns `Malformed` for each, and the handoff writer over a unit whose equality rows hold one returns `Error::Unnameable` naming the value type and writes no file; over the same rows with the fact's value type replaced by `Quantity` the writer succeeds. | Test (TC-1331) |
+| FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the bytes of the example equal the example text; a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
 
 ## Dependencies
 
@@ -638,6 +651,10 @@ outcome map. Each carries a "Consumer entry" section that points here.
   and `SelectedExactIdentities`; QSL-1377 (selected-model identity-row production).
 - **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533. quire-protocol
   FR-043's admission input list follows the two files.
+- **Writer and reader encoders for the three added tags:** the code ticket for the
+  `carried_quantity`, `bounded_quantity` and `map` encoders follows in the B2a work;
+  until it lands FR-531-AC-18 is unmet and the writer refuses the three types
+  `Error::Unnameable`.
 - **Wire forms the writer adds:** the equality file's leaf encodings are pinned in
   "The equality file". `CheckedNodeId`, `CheckedOccurrence`, `CheckedSourceMapEntry`,
   `CheckedNodeOwner` and `CheckedRational` have `serde` forms in Contract IR today and
