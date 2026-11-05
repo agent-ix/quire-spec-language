@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-17. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
+Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-18. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
 
 ## Test Procedure
 
@@ -30,10 +30,11 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-17. **R** is the pa
 | 12 | 11 | read FR-515, FR-516, FR-520 | the out-of-scope sentence is gone; each has a "Consumer entry" section naming FR-531 |
 | 13 | 14 | TC-1070 fixture E's handoff directory: read `equality.json`; compare with the encoding of the in-process rows; write twice | `Refund`'s retry relation evaluates; bytes equal; two writes equal |
 | 14 | 15 | `ReadEqualityRows::read` over a non-JSON file, an unknown or repeated member, an unknown fact tag, another `format`, a row the package does not hold, a row that is no equality application | `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined`, `Unjoined`; no rows |
-| 15 | 16 | a slot call on fixture E's `Refund` retry relation with `equality: None`, foreign rows, unjoined rows; `Refund`'s `trigger.guard` | `MissingEqualityWitness`, `ForeignEqualityWitness`, `UnknownEqualityWitness` as exit-21 `Admission` at `CallAdmissionLocus::Package`, meter untouched; evaluates |
+| 15 | 16 | a slot call on fixture E's `Refund` retry relation with `equality: None`, foreign rows, the package's own rows without the application's row; `Refund`'s `trigger.guard` | `MissingEqualityWitness`, `ForeignEqualityWitness`, `UnknownEqualityWitness` as exit-21 `Admission` at `CallAdmissionLocus::Package`, meter untouched; evaluates |
 | 16 | 17 | the vector rows of "The equality file"; a row of every fact tag, value-type tag, owner kind and a compound unit in a fact row; malformed rationals; a compound unit in `source_units` | bytes equal the vector; rows round-trip with byte-identical rewrites; `Malformed` |
+| 17 | 18 | rows with an equality fact of value type `CarriedQuantity`, `Map` and `BoundedQuantity` through `to_bytes`; the writer over a unit holding one; the same with `Quantity` | `Malformed` for each; `Error::Unnameable` naming the value type, no file written; the writer succeeds |
 
-Tag the test `#[trace("FR-531-AC-1", ..., "FR-531-AC-17", "TC-1331")]`.
+Tag the test `#[trace("FR-531-AC-1", ..., "FR-531-AC-18", "TC-1331")]`.
 
 ## Expected Results
 

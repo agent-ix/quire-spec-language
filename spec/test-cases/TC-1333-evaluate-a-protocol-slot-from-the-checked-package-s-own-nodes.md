@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify protocol-slot evaluation from a bare package and its equality with the source routes. Scope: FR-533-AC-1 to FR-533-AC-17. **R** is the package of FR-517.
+Verify protocol-slot evaluation from a bare package and its equality with the source routes. Scope: FR-533-AC-1 to FR-533-AC-18. **R** is the package of FR-517.
 
 ## Test Procedure
 
@@ -28,13 +28,14 @@ Verify protocol-slot evaluation from a bare package and its equality with the so
 | 10 | 10 | `new`, `with_supply`, view creation, selection and supply admission | no counter charged, no `Meter` taken; a refusal leaves the meter identical |
 | 11 | 11 | fixture L (TC-1070): select `Decide.visible[0]`, `Decide.cases.guard[0]` and `Decide.cases.guard[1]` by (node, member, index) with a descriptor that carries no span | origins `... 2641..2650`, `... 2735..2748`, `... 2676..2685` respectively; one origin per slot; no ambiguity refusal |
 | 12 | 12 | every slot of fixtures E, E-C and L on both routes; the fixture L package with its three `decision` origins renamed to `999..1005`, `1000..1004`, `1001..1002` | equal triple, root, binders and origin; `Got.related.*[0]` have no origin; the renamed package gives `999..1005`, `1000..1004`, `1001..1002` to `visible[0]`, `cases.guard[1]`, `cases.guard[0]` (numeric order, not byte order) |
-| 13 | 13 | fixture L's unit with the equal guard `got.ready` in cases `yes` (written first) and `no` (labels sorting `no` before `yes`), then with `no` written first | values and charge logs equal to the source route; `Location` values exchanged in the first and equal in the second (recorded unmet parity) |
+| 13 | 13 | two package copies of fixture L edited so that `Decide.cases.guard[0]` and `Decide.cases.guard[1]` both have the `got.ready` application as root: labels `no` and `yes` kept; labels renamed to `b` and `a` | values and charge logs of the two slots equal; `guard[0]` takes `2676..2685` and `guard[1]` `2735..2748` in the first (`Location` values exchanged, recorded unmet parity), the same origins each on its own case's span in the second |
 | 14 | 14 | fixture L's package with the rows of `decision 2641..2650` removed; with the rows of every `got.ready` origin removed; a package copy whose `related` ends are one application under `related 99 100` and `related 100 105` | `visible[0]` takes `2676..2685`, `cases.guard[1]` refuses `MissingLocationProjection` at the `Node` locus of `got.ready`; refusal for both in the second package; `related.from[0]` takes `99 100` and `related.to[0]` `100 105` (byte order would give `100 105` to `from[0]`); no charge |
 | 15 | 15 | bare slot calls with no supply, foreign rows, unknown rows, for identity rows and for equality rows; a missing node, a missing member, `MissingTypeRepresentation` | `Package` locus for every witness refusal; `Node`, `Member`, `Node` for the others; exit 21, meter identical |
 | 16 | 16 | fixture E's `Refund` retry relation and recovery predicate, the TC-1289 slot and the TC-1290 slot, with equality rows read from the handoff directory; the same slots with the file omitted; `Refund`'s `trigger.guard` with the file omitted | the in-process route's value and charge log; `MissingEqualityWitness`; evaluates |
 | 17 | 17 | search the bare route for derivation of equality rows, reads of the three `Emission` row accessors and name-text selection of an origin | none outside the stated rule |
+| 18 | 18 | a package copy of fixture E with the retry relation's equality application added to the `dependencies` of a walked node of `trigger.guard` but no operand; a copy where `trigger.guard` calls a function whose body holds `==`; equality rows omitted, then supplied | `trigger.guard` evaluates in the first copy and the retry relation refuses `MissingEqualityWitness`; `trigger.guard` refuses `MissingEqualityWitness` at `Package` in the second with rows omitted and evaluates with them |
 
-Tag the test `#[trace("FR-533-AC-1", ..., "FR-533-AC-17", "TC-1333")]`; rows 1 and 2 also carry FR-390-AC-11 and FR-520-AC-9.
+Tag the test `#[trace("FR-533-AC-1", ..., "FR-533-AC-18", "TC-1333")]`; rows 1 and 2 also carry FR-390-AC-11 and FR-520-AC-9.
 
 ## Expected Results
 
