@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-330-AC-17: run a temporal clause over caller-supplied record samples.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
     AggregateAtom, AtomReading, CaptureReading, DEFAULT_MAX_WINDOW_VALUES, LetterStop,
@@ -185,7 +185,7 @@ pub fn run_trace_subject_clause(
         samples: &request.samples,
         trace: WindowTrace::positions(len),
         captures: Vec::new(),
-        false_aggregate_positions: BTreeMap::new(),
+        atom_values: BTreeMap::new(),
         undefined_atom: None,
     };
     let result = qsl_eval::temporal::evaluate(
@@ -196,7 +196,7 @@ pub fn run_trace_subject_clause(
     );
     let (disposition, decisive) = match result {
         Ok(outcome) => {
-            let decisive = decisive_aggregate(node, &outcome, &letters.false_aggregate_positions);
+            let decisive = decisive_aggregate(node, &outcome, &letters.atom_values);
             (
                 ClauseDisposition::Temporal(map_outcome(outcome, letters.undefined_atom)),
                 decisive,
@@ -234,39 +234,111 @@ pub fn run_trace_subject_clause(
 fn decisive_aggregate(
     node: &TemporalClauseNode,
     outcome: &TemporalOutcome,
-    false_aggregate_positions: &BTreeMap<usize, BTreeSet<u64>>,
+    atom_values: &BTreeMap<(usize, u64), Option<bool>>,
 ) -> Option<(usize, u64)> {
     let TemporalOutcome::Violated { at } = outcome else {
         return None;
     };
     let formula = node.clause().formula();
     let root = formula.nodes().get(formula.root().index())?;
-    let (atom, eligible) = match root {
-        FormulaNode::Aggregate { .. } => (formula.root(), at.index()..=at.index()),
+    match root {
+        FormulaNode::Aggregate { .. } => {
+            first_false_in_range(atom_values, formula.root(), at.index(), at.index())
+        }
         FormulaNode::Unary {
             operator: UnaryTemporal::Always,
             interval: Some(CheckedInterval::Steps(interval)),
             operand,
-        } if matches!(
-            formula.nodes().get(operand.index()),
-            Some(FormulaNode::Aggregate { .. })
-        ) =>
-        {
+        } => {
             let qsl_foundation::bound::TemporalUpper::Finite(upper) = interval.upper() else {
                 return None;
             };
             let start = at.index().checked_add(interval.lower())?;
             let end = at.index().checked_add(upper)?;
-            (*operand, start..=end)
+            match formula.nodes().get(operand.index())? {
+                FormulaNode::Aggregate { .. } => {
+                    first_false_in_range(atom_values, *operand, start, end)
+                }
+                FormulaNode::And(left, right) => {
+                    let left_node = formula.nodes().get(left.index())?;
+                    let right_node = formula.nodes().get(right.index())?;
+                    match (left_node, right_node) {
+                        (FormulaNode::Aggregate { .. }, FormulaNode::Holds { .. }) => {
+                            first_false_conjunct_aggregate(
+                                atom_values,
+                                *left,
+                                *right,
+                                true,
+                                start,
+                                end,
+                            )
+                        }
+                        (FormulaNode::Holds { .. }, FormulaNode::Aggregate { .. }) => {
+                            first_false_conjunct_aggregate(
+                                atom_values,
+                                *right,
+                                *left,
+                                false,
+                                start,
+                                end,
+                            )
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
         }
-        _ => return None,
-    };
-    false_aggregate_positions
-        .get(&atom.index())?
-        .range(eligible)
-        .next()
-        .copied()
-        .map(|position| (atom.index(), position))
+        _ => None,
+    }
+}
+
+fn first_false_in_range(
+    atom_values: &BTreeMap<(usize, u64), Option<bool>>,
+    atom: FormulaNodeId,
+    start: u64,
+    end: u64,
+) -> Option<(usize, u64)> {
+    atom_values
+        .range((atom.index(), start)..=(atom.index(), end))
+        .find_map(|((_, position), value)| {
+            (*value == Some(false)).then_some((atom.index(), *position))
+        })
+}
+
+fn first_false_conjunct_aggregate(
+    atom_values: &BTreeMap<(usize, u64), Option<bool>>,
+    aggregate: FormulaNodeId,
+    holds: FormulaNodeId,
+    aggregate_is_first: bool,
+    start: u64,
+    end: u64,
+) -> Option<(usize, u64)> {
+    let first_atom = if aggregate_is_first { aggregate } else { holds };
+    for ((_, position), first_value) in
+        atom_values.range((first_atom.index(), start)..=(first_atom.index(), end))
+    {
+        let aggregate_value = atom_values.get(&(aggregate.index(), *position)).copied();
+        let holds_value = atom_values.get(&(holds.index(), *position)).copied();
+        if aggregate_is_first {
+            match (first_value, holds_value) {
+                (Some(false), _) => return Some((aggregate.index(), *position)),
+                (Some(true), Some(Some(false))) => return None,
+                (Some(true), Some(Some(true))) => {}
+                _ => return None,
+            }
+        } else {
+            match (first_value, aggregate_value) {
+                (Some(false), _) => return None,
+                (Some(true), Some(Some(false))) => {
+                    return Some((aggregate.index(), *position));
+                }
+                (Some(true), Some(Some(true))) => {}
+                _ => return None,
+            }
+        }
+    }
+    None
 }
 
 fn temporal_clock_selections(
@@ -397,7 +469,7 @@ struct TraceSubjectLetters<'a> {
     samples: &'a [Value],
     trace: WindowTrace,
     captures: Vec<Value>,
-    false_aggregate_positions: BTreeMap<usize, BTreeSet<u64>>,
+    atom_values: BTreeMap<(usize, u64), Option<bool>>,
     undefined_atom: Option<usize>,
 }
 
@@ -511,12 +583,14 @@ impl TemporalLetters for TraceSubjectLetters<'_> {
             ) {
                 self.undefined_atom = Some(atom.index());
             }
-            if matches!(reading, AtomReading::False) {
-                self.false_aggregate_positions
-                    .entry(atom.index())
-                    .or_default()
-                    .insert(position.index());
-            }
+            self.atom_values.insert(
+                (atom.index(), position.index()),
+                match reading {
+                    AtomReading::True => Some(true),
+                    AtomReading::False => Some(false),
+                    AtomReading::Undefined(_) => None,
+                },
+            );
             return Ok(reading);
         }
         let (body, slots) = self
@@ -524,12 +598,21 @@ impl TemporalLetters for TraceSubjectLetters<'_> {
             .condition(atom)
             .ok_or_else(|| fault("holds-condition-retained"))?;
         let bindings = self.bindings(position)?;
-        match self.evaluate(body, slots, bindings, meter)? {
+        let reading = match self.evaluate(body, slots, bindings, meter)? {
             ExpressionReading::Defined(Value::Boolean(true)) => Ok(AtomReading::True),
             ExpressionReading::Defined(Value::Boolean(false)) => Ok(AtomReading::False),
             ExpressionReading::Defined(_) => Err(fault("holds-condition-is-boolean")),
             ExpressionReading::Undefined(cause) => Ok(AtomReading::Undefined(cause)),
-        }
+        }?;
+        self.atom_values.insert(
+            (atom.index(), position.index()),
+            match reading {
+                AtomReading::True => Some(true),
+                AtomReading::False => Some(false),
+                AtomReading::Undefined(_) => None,
+            },
+        );
+        Ok(reading)
     }
 
     fn activation(
@@ -716,7 +799,10 @@ mod tests {
            always[0,0] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
          }\n\
          temporal BoundedFalse using t over (c: Counter) clock \"model-steps\" on origin {\n\
-           always[0,2] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
+           always[0,2] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1 and holds(c.level > 0))\n\
+         }\n\
+         temporal ComposedHeld using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,2] (count where holds(c.level = 0) over past[0,0] min_count 0 >= 1 and holds(c.level > 0))\n\
          }\n\
          temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,0] holds(c.level > 0)\n\
@@ -926,9 +1012,12 @@ mod tests {
             "the later false aggregate must not replace the first failing activation"
         );
 
-        let bounded =
-            run_trace_subject_clause(request("BoundedFalse", counter.clone(), each_samples))
-                .expect("valid bounded aggregate input reports");
+        let bounded = run_trace_subject_clause(request(
+            "BoundedFalse",
+            counter.clone(),
+            each_samples.clone(),
+        ))
+        .expect("valid bounded aggregate input reports");
         assert!(matches!(
             bounded.disposition,
             ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
@@ -940,6 +1029,34 @@ mod tests {
                 .and_then(|decisive| decisive.position),
             Some(0),
             "always[0,2] descends to the least eligible false aggregate position"
+        );
+
+        let composed_aggregate_false = run_trace_subject_clause(request(
+            "BoundedFalse",
+            counter.clone(),
+            each_samples.clone(),
+        ))
+        .expect("valid composed formula reports");
+        assert!(matches!(
+            composed_aggregate_false.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        let decisive = composed_aggregate_false
+            .decisive
+            .expect("the false aggregate is the first conjunct deciding the activation");
+        assert!(decisive.aggregate.is_some());
+        assert_eq!(decisive.position, Some(0));
+
+        let composed_holds_false =
+            run_trace_subject_clause(request("ComposedHeld", counter, each_samples))
+                .expect("valid composed formula reports");
+        assert!(matches!(
+            composed_holds_false.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        assert!(
+            composed_holds_false.decisive.is_none(),
+            "a false later aggregate must not replace the first failing holds conjunct"
         );
     }
 
