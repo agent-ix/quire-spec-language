@@ -342,3 +342,45 @@ fn instance_bound_atoms_are_derived_by_formula_order() {
     assert_eq!(bound(&atoms([0, 1, 2, 3])), [true, false, false, true]);
     assert_eq!(bound(&atoms([1, 0, 2, 3])), [false, true, false, true]);
 }
+
+/// FR-532-AC-11: aggregate capture dependence survives package reading.
+#[trace("FR-532-AC-11", "FR-516-AC-47")]
+#[test]
+fn aggregate_formula_graph_retains_members_and_capture_binding() {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile t = \"{EVENT}\";\n\
+         temporal Due using t over (e: Int[0, 9]) clock \"model-steps\" on origin {{\
+           capture n: Int[0, 9] = e; always[0,5] (sum of n over past[0,2] <= 15)\
+         }}\n"
+    );
+    let compiled = compile(&source);
+    let package = admit_bytes(compiled.emission.package.bytes(), &compiled.wire);
+    let node = clause_ids(&package).pop().expect("one temporal clause");
+    let view = temporal_subject(&package, &node).expect("aggregate is a readable formula atom");
+    let aggregate = view
+        .formula_graph()
+        .iter()
+        .find(|entry| entry.kind() == Some(crate::checked_views::FormulaOperation::Aggregate))
+        .expect("one aggregate atom");
+    let quire_contract_model::CheckedTerm::Aggregate { members } = aggregate.aggregate.unwrap()
+    else {
+        panic!("aggregate bindings");
+    };
+    let names = members
+        .iter()
+        .filter_map(|member| match member {
+            quire_contract_model::CheckedTerm::Binding { name, .. } => Some(name.as_ref()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names.join(","),
+        "kind,value,window_kind,lower,upper,min_count,comparison,threshold"
+    );
+    assert_eq!(
+        instance_bound_atoms(&view).expect("aggregate binder scan"),
+        [true]
+    );
+}

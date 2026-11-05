@@ -98,6 +98,8 @@ pub enum WindowVerdict {
     Undefined(UndefinedEvaluation),
     /// The work budget ran out; no truth value (FR-327 "Work").
     Incomplete(Incomplete),
+    /// An aggregate window exceeded `monitor.max_window_values`.
+    WindowLimitReached(crate::temporal::window::WindowLimitReached),
     /// An `on each` guard cannot be established at `at`: an incomplete
     /// activation, not a false guard (FR-044-AC-7); no truth value.
     ActivationIncomplete {

@@ -151,6 +151,7 @@ impl Env {
                 profile: FINITE_WINDOW.to_owned(),
             },
             progress_capacity: qsl_eval::temporal::DEFAULT_COVERED_POSITIONS,
+            max_window_values: qsl_eval::temporal::DEFAULT_MAX_WINDOW_VALUES,
         }
     }
 

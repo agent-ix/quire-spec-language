@@ -178,6 +178,9 @@ pub struct FormulaNodeUse<'p> {
     pub operation: &'p str,
     /// The interval member, `None` for an unbounded or interval-free node.
     pub interval: Option<CheckedOperationInterval>,
+    /// The checked aggregate argument of an aggregate atom, including its
+    /// bindings. `None` for every other formula operation.
+    pub aggregate: Option<&'p CheckedTerm>,
     /// The positions, in [`TemporalSubjectView::formula_graph`], of the
     /// node's operand entries.
     pub operands: Vec<usize>,
@@ -711,6 +714,15 @@ fn formula_reads<'p>(
             Some(CheckedOperationMember::TemporalInterval { interval }) => interval.clone(),
             _ => None,
         };
+        let arguments = graph.arguments(at).ok_or(ViewRefusal::UnresolvedClause)?;
+        let aggregate = if FormulaOperation::of(operation) == Some(FormulaOperation::Aggregate) {
+            let [CheckedTerm::Aggregate { .. }] = arguments else {
+                return Err(ViewRefusal::UnresolvedClause);
+            };
+            Some(&arguments[0])
+        } else {
+            None
+        };
         let position = uses.len();
         if let Some(parent) = parent {
             uses.get_mut(parent)
@@ -725,9 +737,9 @@ fn formula_reads<'p>(
                 .ok_or(ViewRefusal::UnresolvedClause)?,
             operation,
             interval,
+            aggregate,
             operands: Vec::new(),
         });
-        let arguments = graph.arguments(at).ok_or(ViewRefusal::UnresolvedClause)?;
         if FormulaOperation::of(operation) == Some(FormulaOperation::Holds) {
             let [operand] = arguments else {
                 return Err(ViewRefusal::UnresolvedClause);
@@ -737,7 +749,7 @@ fn formula_reads<'p>(
                     .cloned()
                     .ok_or(ViewRefusal::UnresolvedClause)?,
             );
-        } else {
+        } else if aggregate.is_none() {
             for operand in arguments.iter().rev() {
                 pending.push((reference_position(graph, operand)?, Some(position)));
             }

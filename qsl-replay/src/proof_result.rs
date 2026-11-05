@@ -1962,9 +1962,10 @@ mod tests {
         assert_eq!(
             UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::WindowLimitReached(
                 qsl_eval::temporal::WindowLimitReached {
-                    limit: "max_window_values",
-                    value: 10,
+                    limit: 10,
+                    value: 11,
                     setting: "monitor.max_window_values",
+                    position: qsl_eval::temporal::TemporalPosition::new(10),
                 }
             )),
             None
