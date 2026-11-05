@@ -470,8 +470,8 @@ thread_local! {
 
 /// One source-owned record's QSL-stage declaration witness (FR-092 "Source
 /// record identity rows"). The checking stage identifies a source record's
-/// fields by declared name, so this row has no `MemberId`: the type
-/// environment retains none for a source record.
+/// fields by declared name and issues them no member identity, so this row
+/// has no `MemberId`; only model records carry one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SelectedSourceRecordRow {
     /// The record declaration's emitted `composite_type` node.
@@ -6261,31 +6261,47 @@ fn source_union_rows(
 /// record, joined to its final structural id. Declared names, presence and
 /// field types come from the checked declaration; binding names and type
 /// nodes come from the emitted record node; the two are joined by position.
-/// A record whose node and declaration disagree, or whose type node was not
-/// emitted, is a writer fault.
 fn source_record_rows(
     graph: &CheckedGraph,
     emitted: &HashMap<NodeKey, CheckedNodeId>,
 ) -> Result<Vec<SelectedSourceRecordRow>, EmitRefusal> {
+    source_record_rows_over(graph, emitted, graph.scope().types().composites())
+}
+
+/// [`source_record_rows`] over the record declarations `declarations`. An
+/// emitted source record node that no declaration of `declarations` joins to,
+/// a declared record whose node is absent from the graph or is a source
+/// composite without an owner or declaration, and a binding list or type node
+/// that cannot be joined are writer faults; a record node that was not
+/// emitted, and a model-owned record, have no row.
+fn source_record_rows_over<'d>(
+    graph: &CheckedGraph,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+    declarations: impl Iterator<Item = &'d quire_semantic_value::declaration::CompositeDeclaration>,
+) -> Result<Vec<SelectedSourceRecordRow>, EmitRefusal> {
     use quire_semantic_value::declaration::CompositeShape;
 
+    let semantic = graph.semantic_graph();
     let mut rows = Vec::new();
-    for declaration in graph.scope().types().composites() {
+    for declaration in declarations {
         let CompositeShape::Record(declared) = declaration.shape() else {
             continue;
         };
-        let Some(node_key) = graph.semantic_graph().composite_node(&declaration.key()) else {
+        let Some(node_key) = semantic.composite_node(&declaration.key()) else {
             continue;
         };
-        let (Some(node), Some(structural_node)) = (
-            graph.semantic_graph().node(node_key.clone()),
-            emitted.get(node_key),
-        ) else {
+        let node = semantic
+            .node(node_key.clone())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        if node.node_tag() != NodeTag::CompositeType {
+            // A selected model record uses its model-owned node.
             continue;
-        };
-        let (NodeTag::CompositeType, Some(Owner::Source(owner)), Some(qualified)) =
-            (node.node_tag(), node.owner(), node.declaration())
+        }
+        let (Some(Owner::Source(owner)), Some(qualified)) = (node.owner(), node.declaration())
         else {
+            return Err(EmitRefusal::SourceMapInvariant);
+        };
+        let Some(structural_node) = emitted.get(node_key) else {
             continue;
         };
         let bindings = node
@@ -6307,14 +6323,28 @@ fn source_record_rows(
             },
         ));
     }
+    let rowed: std::collections::BTreeSet<&NodeKey> = rows.iter().map(|(key, _)| key).collect();
+    let unmatched = semantic.nodes().any(|node| {
+        node.node_tag() == NodeTag::CompositeType
+            && matches!(node.owner(), Some(Owner::Source(_)))
+            && node
+                .record_member_nodes()
+                .is_some_and(|bindings| !bindings.is_empty())
+            && emitted.contains_key(&node.key())
+            && !rowed.contains(&node.key())
+    });
+    if unmatched {
+        return Err(EmitRefusal::SourceMapInvariant);
+    }
     rows.sort_by(|(left, _), (right, _)| left.cmp(right));
     Ok(rows.into_iter().map(|(_, row)| row).collect())
 }
 
 /// The member entries of one record row, joining the declared fields to the
-/// record node's bindings position by position. A binding list that
-/// disagrees with the declaration in member count or order, or names a type
-/// node that was not emitted, is a writer fault.
+/// record node's bindings position by position and keeping both the declared
+/// name and the node's binding name. A binding list that disagrees with the
+/// declaration in member count, or names a type node that was not emitted, is
+/// a writer fault.
 fn record_member_rows(
     declared: &[quire_semantic_value::declaration::FieldDeclaration],
     bindings: Vec<(&str, NodeKey)>,
@@ -6327,9 +6357,6 @@ fn record_member_rows(
         .iter()
         .zip(bindings)
         .map(|(field, (name, type_key))| {
-            if name != field.name() {
-                return Err(EmitRefusal::SourceMapInvariant);
-            }
             Ok(SelectedSourceRecordMemberRow {
                 original_member_identity: field.name().into(),
                 admitted_name: name.into(),

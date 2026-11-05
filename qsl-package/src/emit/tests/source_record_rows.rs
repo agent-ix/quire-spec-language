@@ -213,11 +213,21 @@ fn rows_are_ascending_and_other_units_have_none() {
     let (package, tuple, _) = emitted("tuple Pair(Boolean, Boolean);\nunion U { A, B(Integer) }\n");
     assert_eq!(tuple.selected_source_record_rows(), []);
     drop(package);
-    let enums = super::variant_types::emitted_enums(super::variant_types::UNIT);
+}
+
+#[trace("FR-092-AC-21", "TC-1021")]
+#[test]
+fn a_model_owned_record_has_no_source_record_row() {
+    let (emission, wire, _) = super::child_composite::emit_unit(super::child_composite::UNIT);
+    let model_records = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "record_value_type")
+        .count();
+    assert!(model_records >= 1, "the unit emits model-owned records");
     assert_eq!(
-        enums.selected_source_record_rows(),
+        emission.selected_source_record_rows(),
         [],
-        "a model record is not a source record"
+        "a model-owned record is not a source record"
     );
 }
 
@@ -302,23 +312,56 @@ fn bindings_that_disagree_with_the_declaration_are_a_writer_fault() {
     fewer.pop();
     assert_eq!(call(&fewer, &emitted), Err(EmitRefusal::SourceMapInvariant));
 
+    // A writer that renames a binding changes only the admitted name; the
+    // declared name stays the original member identity.
     let mut renamed = bindings.clone();
-    renamed[1].0 = "other".to_owned();
+    renamed[1].0 = "annotation".to_owned();
+    let rows = call(&renamed, &emitted).expect("a renamed binding still joins");
+    let names: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|m| {
+            (
+                m.original_member_identity.as_ref(),
+                m.admitted_name.as_ref(),
+            )
+        })
+        .collect();
     assert_eq!(
-        call(&renamed, &emitted),
-        Err(EmitRefusal::SourceMapInvariant)
-    );
-
-    let mut swapped = bindings.clone();
-    swapped.swap(0, 1);
-    assert_eq!(
-        call(&swapped, &emitted),
-        Err(EmitRefusal::SourceMapInvariant)
+        names,
+        [("p", "p"), ("note", "annotation"), ("maybe", "maybe")]
     );
 
     assert_eq!(
         call(&bindings, &HashMap::new()),
         Err(EmitRefusal::SourceMapInvariant),
         "a type node that was not emitted"
+    );
+}
+
+#[trace("FR-092-AC-21", "TC-1021")]
+#[test]
+fn an_emitted_source_record_node_no_declaration_joins_to_is_a_writer_fault() {
+    let (package, emission, _) = emitted(RECORDS);
+    let emitted: HashMap<NodeKey, CheckedNodeId> = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .map(|node| (node.key(), node_id(node.key())))
+        .collect();
+    let graph = package.graph();
+    let all =
+        crate::emit::source_record_rows_over(graph, &emitted, graph.scope().types().composites())
+            .expect("every declared record joins");
+    assert_eq!(all.len(), emission.selected_source_record_rows().len());
+
+    let without_tagged = graph
+        .scope()
+        .types()
+        .composites()
+        .filter(|declaration| declaration.name() != "Tagged");
+    assert_eq!(
+        crate::emit::source_record_rows_over(graph, &emitted, without_tagged),
+        Err(EmitRefusal::SourceMapInvariant),
+        "an emitted record node with no matching declaration gets a fault, not no row"
     );
 }

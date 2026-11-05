@@ -46,7 +46,7 @@ Catches an implementation that binds by name and looks it up again at emission, 
 11. Emit a unit that declares `record Point { x: Integer; y: Integer; }` and
     `record Tagged { p: Point; note: Boolean?; maybe: Option<Integer>; }`, a
     recursive record with a sequence and an `Option` self-reference, and a
-    unit with a tuple, a union and a model variant type. Read the first package
+    unit with a tuple, a union and a unit whose records are model-owned. Read the first package
     back through IR.
 
 ## Expected Results
@@ -92,7 +92,7 @@ Catches an implementation that binds by name and looks it up again at emission, 
   presence `Required`, `Optional`, `Required`, field types `Composite(Point)`,
   `Boolean` and `Option<Integer>`, and type node ids equal to the targets of
   the node's bindings. The recursive record's collection and `Option` member
-  type nodes share its recursion group. The tuple, union and model-variant
+  type nodes share its recursion group. The tuple, union and model-owned-record
   units give no source record row. IR admits each row's record node and
   type nodes.
 - Assertions compare typed fields, causes and keys, never message text.
