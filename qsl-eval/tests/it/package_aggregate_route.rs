@@ -9,10 +9,10 @@ use qsl_package::{
     emit_checked_with_temporal_selections, read_evaluation_emission, CheckedPackage,
     ClockConfiguration, TemporalClockSelection, V2ReadLimits,
 };
-use qsl_semantics::check::{PackageDeclarations, ScalarLimits, SCALAR_LIMITS_UNLIMITED};
+use qsl_semantics::check::{PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::{package_input, SelectedModels};
-use quire_exact::{Integer, Meter, Rational, Undefined};
+use quire_exact::{Integer, Meter, Rational, ScalarLimits, Undefined};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
