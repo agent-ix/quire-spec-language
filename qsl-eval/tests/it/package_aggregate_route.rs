@@ -261,15 +261,19 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
 #[test]
 fn denied_aggregate_window_visit_keeps_counters_at_the_successful_prefix() {
     with_routes(
-        "always[0,3] (sum of e over past[0,2] <= 15)",
+        "always[0,4] (sum of e over past[0,4] <= 100)",
         |routes, clause, env| {
             let mut meter = Meter::new(ScalarLimits {
-                work_units: 5,
+                work_units: 12,
                 ..SCALAR_LIMITS_UNLIMITED
             });
             let result = routes
                 .from_read
-                .evaluate_temporal_evidence(clause, &asked(env, &values(&[3, 4, 5, 6])), &mut meter)
+                .evaluate_temporal_evidence(
+                    clause,
+                    &asked(env, &values(&[3, 4, 5, 6, 7])),
+                    &mut meter,
+                )
                 .expect("a denied window visit is an incomplete result");
 
             assert_eq!(result.truth, None);
@@ -277,9 +281,9 @@ fn denied_aggregate_window_visit_keeps_counters_at_the_successful_prefix() {
                 result.incomplete,
                 Some(EvidenceIncomplete::Meter { .. })
             ));
-            assert_eq!(result.usage.get(EvidenceCounter::Valuations), 9);
-            assert_eq!(result.usage.get(EvidenceCounter::EvaluationSteps), 15);
-            assert_eq!(result.usage.get(EvidenceCounter::Visited), 15);
+            assert_eq!(result.usage.get(EvidenceCounter::Valuations), 17);
+            assert_eq!(result.usage.get(EvidenceCounter::EvaluationSteps), 24);
+            assert_eq!(result.usage.get(EvidenceCounter::Visited), 24);
         },
     );
 }
