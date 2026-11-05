@@ -155,7 +155,9 @@ site from text.
     exactly as the S4 emitter wrote them in the unit's compile), and
     `function` (`FunctionSite`, the members above, located in the
     library's checked package); the `CallSite`'s own `package_id` and
-    `package` stay the unit's;
+    `package` stay the unit's; a replay request names that function by
+    `library` as the target's `function_owner` and `function`'s declared name
+    (FR-071, FR-098);
 - or a typed `CallSiteRefusal` with no partial result.
 
 ## Behavior
