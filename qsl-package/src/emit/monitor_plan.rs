@@ -995,6 +995,9 @@ pub(super) fn carry_rows(
         } = row;
         rekey.id(declaration);
     }
+    for (_, _, declaration) in &mut temporal.declarations {
+        rekey.id(declaration);
+    }
     let mut temporal_rows = retained.temporal_rows.clone();
     for super::TemporalClauseRef {
         declaration,
