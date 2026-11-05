@@ -3175,6 +3175,184 @@ fn covered_positions_over_the_setting_report_incomplete_with_the_limit_fields() 
     );
 }
 
+/// A progress assertion that retains `watermark` with the given completeness.
+fn assertion(
+    watermark: u64,
+    completeness: crate::spine::ProgressCompleteness,
+) -> crate::spine::ProgressAssertion {
+    crate::spine::ProgressAssertion {
+        watermark,
+        completeness,
+        scope: crate::spine::ProgressClosure::Open,
+        execution: crate::spine::ProgressClosure::Open,
+    }
+}
+
+fn observed(identity: &str, stamp: u64) -> crate::spine::ObservedPosition {
+    crate::spine::ObservedPosition {
+        identity: identity.to_owned(),
+        stamp,
+    }
+}
+
+/// FR-502-AC-9: the covered-positions capacity is counted over every entry of
+/// the ledger together. With a capacity of 3 and two covered positions held
+/// under one binding, a second binding covering two positions would make four
+/// and returns the limit outcome with the ledger unchanged; the second binding
+/// covering one position makes three and is accepted.
+#[trace("FR-502-AC-9", "TC-1296")]
+#[test]
+fn the_covered_positions_capacity_counts_every_binding_of_the_ledger() {
+    let first = retained_ledger().0;
+    let second = crate::spine::LedgerBinding {
+        occurrence: first.occurrence + 1,
+        ..first.clone()
+    };
+    let incomplete = || assertion(3, crate::spine::ProgressCompleteness::Incomplete);
+    let held = crate::spine::admit_progress(
+        &crate::spine::ProgressLedger::new(),
+        &first,
+        incomplete(),
+        &[observed("a0", 0), observed("a1", 1)],
+        3,
+    )
+    .expect("two positions fit a capacity of three");
+    let before = held.clone();
+
+    let disposition = crate::spine::admit_progress(
+        &held,
+        &second,
+        incomplete(),
+        &[observed("b0", 0), observed("b1", 1)],
+        3,
+    )
+    .expect_err("four covered positions exceed a capacity of three");
+    assert_eq!(disposition.category(), Category::Incomplete);
+    let ClauseDisposition::Temporal(TemporalVerdict::ProgressLimitReached(reached)) = *disposition
+    else {
+        panic!("expected a progress limit outcome");
+    };
+    assert_eq!(
+        (reached.limit, reached.value, reached.setting),
+        ("node count", 3, "progress.covered_positions")
+    );
+    assert_eq!(held, before, "the ledger is unchanged");
+
+    let accepted =
+        crate::spine::admit_progress(&held, &second, incomplete(), &[observed("b0", 0)], 3)
+            .expect("three covered positions fit a capacity of three");
+    assert_eq!(accepted.len(), 2);
+}
+
+/// FR-502-AC-10: after `Complete { through: 100 }` is retained over a position
+/// of identity `p1` stamped 80, a later trace holding another identity
+/// stamped 80 is refused `Completeness`, and one holding `p1` stamped 80 is
+/// accepted.
+#[trace("FR-502-AC-10", "TC-1296")]
+#[test]
+fn a_position_of_another_identity_inside_the_retained_extent_is_refused() {
+    let binding = retained_ledger().0;
+    let complete = || {
+        assertion(
+            100,
+            crate::spine::ProgressCompleteness::Complete { through: 100 },
+        )
+    };
+    let held = crate::spine::admit_progress(
+        &crate::spine::ProgressLedger::new(),
+        &binding,
+        complete(),
+        &[observed("p1", 80)],
+        1_000,
+    )
+    .expect("the first assertion");
+
+    let refused =
+        crate::spine::admit_progress(&held, &binding, complete(), &[observed("p2", 80)], 1_000)
+            .expect_err("another identity at a stamp the retained assertion covered");
+    let ClauseDisposition::ProgressContradiction(contradiction) = *refused else {
+        panic!("expected a progress contradiction");
+    };
+    assert_eq!(
+        contradiction
+            .record
+            .fields
+            .get("contradicted_dimension")
+            .map(String::as_str),
+        Some("Completeness")
+    );
+
+    crate::spine::admit_progress(&held, &binding, complete(), &[observed("p1", 80)], 1_000)
+        .expect("the covered identity at the covered stamp is accepted");
+}
+
+/// FR-502-AC-11: the report of a request refused by FR-502 returns the ledger
+/// the request supplied, equal to it: a watermark regression returns the
+/// retained ledger, and a request that outgrows `progress.covered_positions`
+/// returns the empty ledger it carried. The no-ledger half of the AC is
+/// unreachable: `run_clause` admits progress only against a supplied ledger,
+/// so no FR-502 refusal exists for a request that supplied none.
+#[trace("FR-502-AC-11", "TC-1296")]
+#[test]
+fn a_refused_request_returns_the_ledger_it_supplied() {
+    let (_, ledger) = retained_ledger();
+    let regressed = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        50,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &ledger,
+    ));
+    let ClauseDisposition::ProgressContradiction(_) = &regressed.disposition else {
+        panic!(
+            "expected a progress contradiction: {:?}",
+            regressed.disposition
+        );
+    };
+    assert_eq!(regressed.ledger, Some(ledger));
+
+    let empty = crate::spine::ProgressLedger::new();
+    let mut request = with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &empty,
+    );
+    request.limits.progress.covered_positions = 2;
+    let limited = report(request);
+    assert_eq!(limited.disposition.category(), Category::Incomplete);
+    assert_eq!(limited.ledger, Some(empty));
+}
+
+/// FR-522-AC-14: the `Finite` and `Lasso` traces carry no `TraceBinding`, and
+/// their reports hold no authenticated selection; a progressed trace, which
+/// carries one, does. This does not exercise a `Model` trace: the replay's
+/// `TraceInput` has none (the model lasso lives in `qsl-analyze`).
+#[trace("FR-522-AC-14", "TC-1317")]
+#[test]
+fn a_finite_trace_and_a_lasso_report_no_authenticated_selection() {
+    let finite_report = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
+    assert_eq!(
+        outcome(&finite_report),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    assert!(finite_report.authenticated_temporal_selection.is_none());
+
+    let lasso_report = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
+    assert!(matches!(
+        lasso_report.disposition,
+        ClauseDisposition::Temporal(_)
+    ));
+    assert!(lasso_report.authenticated_temporal_selection.is_none());
+
+    let progressed = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &crate::spine::ProgressLedger::new(),
+    ));
+    assert!(progressed.authenticated_temporal_selection.is_some());
+}
+
 /// FR-044-AC-7, FR-501-AC-10 (TC-1295): an `on each` guard that cannot be
 /// established is an incomplete activation naming that guard, not a false
 /// guard and not a violation.

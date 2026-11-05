@@ -446,13 +446,15 @@ fn both_routes_give_the_evaluator_the_same_formula() {
     );
 }
 
+/// FR-522-AC-20 (TC-1317) runs here too, and only under `--features
+/// checked-handoff`.
 /// FR-516-AC-18, FR-516-AC-29 (TC-1311 rows 18 and 29): the result of the call
 /// over the package from the `Emission` equals, field for field, the one over
 /// the read-back package, the charge log and the `result_identity` included,
 /// and the clause's own `binding` authenticates; replacing one clock row, one
 /// `CheckedNodeId` or one instance-bound atom of either side makes the two
 /// results differ.
-#[trace("FR-516-AC-18", "FR-516-AC-29", "TC-1311")]
+#[trace("FR-516-AC-18", "FR-516-AC-29", "FR-522-AC-20", "TC-1311", "TC-1317")]
 #[test]
 fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs() {
     for kind in KINDS {

@@ -1850,7 +1850,7 @@ fn s3_checks_and_keeps_each_capture() {
 /// FR-337-AC-8 (TC-1267 step 2): each defect refuses with its existing code
 /// and tag at the stated text, and the first in the order activation,
 /// captures, `holds` conditions is the one refusal.
-#[trace("TC-1267", "FR-337-AC-8")]
+#[trace("TC-1267", "FR-337-AC-8", "FR-524-AC-23")]
 #[test]
 fn s3_refuses_each_capture_defect_at_its_locus() {
     let tail = "always holds(c.versionNumber <= 1)";

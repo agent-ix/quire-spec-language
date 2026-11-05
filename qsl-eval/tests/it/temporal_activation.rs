@@ -191,6 +191,22 @@ impl Env {
         self
     }
 
+    /// The same clause under another clock binding name, in the row and in
+    /// the binding the request asserts.
+    pub(crate) fn with_clock_name(mut self, name: &str) -> Self {
+        self.row.clock_name = name.into();
+        self.binding.clock_name = name.into();
+        self
+    }
+
+    /// The same clause under another profile identity, in the lock and in
+    /// the binding the request asserts.
+    pub(crate) fn with_profile(mut self, identity: &str) -> Self {
+        self.profile.definition.identity = identity.into();
+        self.binding.profile = identity.into();
+        self
+    }
+
     pub(crate) fn with_row(mut self, control: &str) -> Self {
         let control: CheckedNodeId =
             serde_json::from_value(json!({"package": "recipe", "path": [control], "ordinal": 0}))
