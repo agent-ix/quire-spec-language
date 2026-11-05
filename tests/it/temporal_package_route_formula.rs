@@ -288,7 +288,8 @@ fn bindings_that_are_not_the_packages_are_refused() {
     ));
 }
 
-/// FR-516-AC-47, FR-516-AC-49, FR-532-AC-11 (TC-1311): the package subject
+/// FR-516-AC-47 (its `count` part only; `sum`, `min` and `max` are covered in
+/// `qsl-eval`) and FR-516-AC-49 (TC-1311): the package subject
 /// view reads an aggregate atom, so both clauses of the package are readable
 /// and the aggregate atom is valued from the request's `aggregate_samples`,
 /// never from the `holds` valuation map. `count over past[0,1]` of `Counted`
@@ -297,7 +298,7 @@ fn bindings_that_are_not_the_packages_are_refused() {
 /// result has no truth and a `Missing` `insufficient-data` non-value (count 1,
 /// min_count 5) at position 0, although the request also supplies
 /// `Valuation::True` at atom 0, which must not answer for it.
-#[trace("FR-516-AC-47", "FR-516-AC-49", "FR-532-AC-11", "TC-1311")]
+#[trace("FR-516-AC-47", "FR-516-AC-49", "TC-1311")]
 #[test]
 fn a_clause_with_an_aggregate_atom_is_read_from_its_samples() {
     let clauses = "record Sample { level: Int[0, 9]; }\n\
@@ -343,6 +344,7 @@ fn a_clause_with_an_aggregate_atom_is_read_from_its_samples() {
         .expect("the starved window is a non-value");
     assert_eq!(non_value.kind, NonValueKind::Missing);
     assert_eq!(non_value.code, "insufficient-data");
+    assert_eq!(non_value.dimension.as_deref(), Some("valuation:0@0"));
     assert_eq!(
         non_value.detail,
         [
