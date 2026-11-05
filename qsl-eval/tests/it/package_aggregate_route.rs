@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use ix_trace_rs::trace;
 use qsl_eval::temporal::evidence::{
-    EvidenceCounter, EvidenceIncomplete, EvidencePackage, EvidenceRequest, NonValueKind, Truth,
+    EvidenceCounter, EvidenceIncomplete, EvidencePackage, EvidenceRequest, NonValueKind,
+    Settlement, Truth,
 };
 use qsl_eval::temporal::{AggregateSample, UndefinedCause};
 use qsl_foundation::SourceIdentity;
@@ -251,6 +252,38 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
                 [2, 3, 2]
             );
             assert_eq!(limit.setting, "monitor.max_window_values");
+        },
+    );
+}
+
+#[trace("FR-516-AC-47", "FR-516-AC-50", "FR-532-AC-11")]
+#[test]
+fn false_aggregate_result_matches_all_package_routes() {
+    with_routes(
+        "always[3,3] (sum of e over past[0,2] <= 14)",
+        |routes, clause, env| {
+            let mut request = asked(env, &values(&[3, 4, 5, 6]));
+            request.decision_closure = Some(qsl_eval::temporal::ProgressClosure::Open);
+            let mut meter = unlimited();
+            let result = routes
+                .from_emission
+                .evaluate_temporal_evidence(clause, &request, &mut meter)
+                .expect("the false aggregate evaluates");
+            let charges = meter.admitted_charges().to_vec();
+            assert_eq!(result.truth, Some(Truth::False));
+            assert_eq!(result.settlement, Some(Settlement::DecisiveCounterexample));
+            for package in [&routes.from_read, &routes.from_package] {
+                let mut route_meter = unlimited();
+                let route_result = package
+                    .evaluate_temporal_evidence(clause, &request, &mut route_meter)
+                    .expect("the package read route evaluates the false result");
+                assert_eq!(route_result.truth, result.truth);
+                assert_eq!(route_result.settlement, result.settlement);
+                assert_eq!(route_result.usage, result.usage);
+                assert_eq!(route_result.non_value, result.non_value);
+                assert_eq!(route_result.incomplete, result.incomplete);
+                assert_eq!(route_meter.admitted_charges(), charges);
+            }
         },
     );
 }
