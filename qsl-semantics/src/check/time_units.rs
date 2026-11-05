@@ -156,7 +156,7 @@ impl TimeUnits {
                 continue;
             };
             let dependencies = match &node.form {
-                NominalUnitForm::Dimension { terms } => {
+                NominalUnitForm::Dimension { terms, .. } => {
                     terms.iter().map(|(key, _)| key.clone()).collect()
                 }
                 NominalUnitForm::Unit {
@@ -179,8 +179,13 @@ impl TimeUnits {
                         name_span: *span,
                     },
                     nominal: Some(match &node.form {
-                        NominalUnitForm::Dimension { terms } => {
-                            NominalPayload::Dimension(DimensionPayload::new(terms.clone()))
+                        NominalUnitForm::Dimension { base, terms } => {
+                            let payload = if *base {
+                                DimensionPayload::new(terms.clone())
+                            } else {
+                                DimensionPayload::new_derived(terms.clone())
+                            };
+                            NominalPayload::Dimension(payload)
                         }
                         NominalUnitForm::Unit {
                             dimension,
@@ -201,8 +206,8 @@ impl TimeUnits {
                 continue;
             };
             match &node.form {
-                NominalUnitForm::Dimension { terms } => {
-                    if terms.is_empty() && name == TIME_DIMENSION {
+                NominalUnitForm::Dimension { base, .. } => {
+                    if *base && name == TIME_DIMENSION {
                         time = Some(key.clone());
                     }
                 }

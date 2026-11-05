@@ -104,18 +104,21 @@ impl EnumPayload {
     }
 }
 
-/// A dimension: its `(base dimension node, exponent)` terms, empty for a
-/// base dimension.
+/// A dimension: whether it is a base dimension and its `(base dimension
+/// node, exponent)` terms. Empty terms may describe a base dimension or an
+/// empty derived dimension.
 #[derive(Clone, Eq, PartialEq)]
 pub struct DimensionPayload {
+    base: bool,
     terms: Vec<(NodeKey, Integer)>,
     owner: Option<NodeOwner>,
 }
 
 impl DebugWith for DimensionPayload {
     fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
-        let Self { terms, owner } = self;
+        let Self { base, terms, owner } = self;
         f.debug_struct("DimensionPayload")
+            .field("base", base)
             .field(
                 "terms",
                 &terms
@@ -135,14 +138,29 @@ impl std::fmt::Debug for DimensionPayload {
 }
 
 impl DimensionPayload {
-    /// A dimension over `terms`; empty terms declare a base dimension.
+    /// A dimension over `terms`, treating an empty list as a base dimension.
     pub fn new(terms: Vec<(NodeKey, Integer)>) -> Self {
-        Self { terms, owner: None }
+        let base = terms.is_empty();
+        Self::new_with_base(base, terms)
+    }
+
+    /// A derived dimension over `terms`, including one whose normalized base
+    /// map is empty.
+    pub fn new_derived(terms: Vec<(NodeKey, Integer)>) -> Self {
+        Self::new_with_base(false, terms)
+    }
+
+    fn new_with_base(base: bool, terms: Vec<(NodeKey, Integer)>) -> Self {
+        Self {
+            base,
+            terms,
+            owner: None,
+        }
     }
 
     /// The payload of `preimage`.
     pub fn of(preimage: &DimensionPreimage) -> Self {
-        let mut payload = Self::new(preimage.terms().to_vec());
+        let mut payload = Self::new_with_base(preimage.is_base(), preimage.terms().to_vec());
         payload.owner = Some(preimage.owner().clone());
         payload
     }
@@ -159,7 +177,7 @@ impl DimensionPayload {
 
     /// Whether this is a base dimension.
     pub fn is_base(&self) -> bool {
-        self.terms.is_empty()
+        self.base
     }
 }
 

@@ -5367,8 +5367,9 @@ impl<'a> Lowering<'a> {
                         let Some(nominal) = self.units.nominal_node(&key) else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };
-                        let quire_semantic_value::unit::NominalUnitForm::Dimension { terms } =
-                            &nominal.form
+                        let quire_semantic_value::unit::NominalUnitForm::Dimension {
+                            terms, ..
+                        } = &nominal.form
                         else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };
@@ -5449,8 +5450,9 @@ impl<'a> Lowering<'a> {
                         let Some(nominal) = self.units.nominal_node(&key) else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };
-                        let quire_semantic_value::unit::NominalUnitForm::Dimension { terms } =
-                            &nominal.form
+                        let quire_semantic_value::unit::NominalUnitForm::Dimension {
+                            terms, ..
+                        } = &nominal.form
                         else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };
