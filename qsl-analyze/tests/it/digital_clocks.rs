@@ -4,8 +4,9 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    build_product, decide_bounded_event, settle_product_refusal, ExactProbLimits, FhResult,
-    ProbBuild, ProbProduct, ProductAction, ProductKind, ProductRefusal, ProductRequest,
+    build_product, decide_bounded_event, settle_product_refusal, witness_scheduler, ActionChoice,
+    EntryChoice, ExactProbLimits, FhResult, MonitorVerdict, ProbBuild, ProbProduct, ProductAction,
+    ProductKind, ProductRefusal, ProductRequest, SchedulerChoice, WitnessError, WitnessScope,
 };
 use qsl_analyze::exact_probabilistic::{DeadlinePhase, MonitorState};
 use qsl_eval::model_subject::ModelSubject;
@@ -895,4 +896,62 @@ fn idle_observe_reads_at_the_deadline_and_idle_delay_crosses_it() {
     };
     assert_eq!(phase(observed), DeadlinePhase::Pending);
     assert_eq!(phase(crossed), DeadlinePhase::Reject);
+}
+
+/// FR-202 (TC-642, FR-204): a randomized entry at a plain MDP state, where
+/// the scheduler chooses between `UnitDelay` and `WorkloadResolve`, is bounded
+/// by the transition limit: two alternatives pass a limit of 2 and refuse a
+/// limit of 1.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn a_randomized_mdp_entry_is_bounded_by_the_transition_limit() {
+    let world = one_workload("");
+    let built = product(&world, "Under");
+    let choosing = built
+        .ids()
+        .find(|state| {
+            built
+                .outgoing(*state)
+                .iter()
+                .any(|edge| matches!(edge.choice, ProductAction::WorkloadResolve { .. }))
+        })
+        .expect("a state offers WorkloadResolve beside UnitDelay");
+    let mut policy: Vec<Option<SchedulerChoice>> =
+        vec![Some(SchedulerChoice::Deterministic(ActionChoice(0))); built.states.len()];
+    policy[choosing.index()] = Some(SchedulerChoice::Randomized(vec![
+        (ActionChoice(0), ratio(1, 2)),
+        (ActionChoice(1), ratio(1, 2)),
+    ]));
+    let mut accepting = vec![false; built.states.len()];
+    for (state, verdict) in &built.decided {
+        accepting[state.index()] = *verdict == MonitorVerdict::Accept;
+    }
+    let capped = |max: usize| {
+        let mut limits = ExactProbLimits::default();
+        limits.model.limits.max_transitions = max;
+        limits
+    };
+    let entries = |max: usize| {
+        witness_scheduler(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            built.initial[0].2,
+            &accepting,
+            &capped(max),
+        )
+    };
+    let admitted = entries(2).expect("two alternatives fit a limit of two");
+    let randomized = admitted
+        .iter()
+        .find(|(state, _)| *state == choosing)
+        .expect("the choosing state has an entry");
+    let EntryChoice::Randomized(alternatives) = &randomized.1 else {
+        panic!("a randomized entry: {randomized:?}");
+    };
+    assert_eq!(alternatives.len(), 2);
+    assert!(matches!(
+        entries(1),
+        Err(WitnessError::TooManyAlternatives { state }) if state == choosing.index()
+    ));
 }
