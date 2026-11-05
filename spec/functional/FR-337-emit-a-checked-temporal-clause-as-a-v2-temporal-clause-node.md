@@ -119,8 +119,8 @@ reader returns.
   as a binding or write it.
 - The I2 reader SHALL refuse a clause node selecting the finite-window profile
   whose interval member is a `timed_interval` or a `temporal_interval` with
-  `upper: null`, `invalid_package`/`operation-member-mismatch` at the member's
-  locus, so a package from other bytes meets the same rule at read time.
+  `upper: null`, `invalid_package`/`operation-member-mismatch` (QSpec FR-370),
+  so a package from other bytes meets the same rule at read time.
 - The emitter SHALL write one `quire.op.temporal.fair` application per
   member of the resolved fairness set, in fairness-set order, each with the
   resolved `fairness_kind` and `granularity`, so an unmarked constraint and
