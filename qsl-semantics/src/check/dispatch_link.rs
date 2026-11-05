@@ -74,7 +74,7 @@ impl PendingLinks {
     /// its first call, and the reported families come in charge order
     /// (ascending alias, then root key), not call order. Every other refusal
     /// is kept as it is, and a failed family no call needed is dropped.
-    pub fn report(self, refusals: Vec<CheckRefusal>) -> Vec<CheckRefusal> {
+    pub fn report(&self, refusals: Vec<CheckRefusal>) -> Vec<CheckRefusal> {
         // Each reached family, by its place in the charge order, with the
         // location of its first call.
         let mut reached: BTreeMap<usize, Location> = BTreeMap::new();

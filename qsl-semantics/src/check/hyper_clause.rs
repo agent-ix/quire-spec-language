@@ -2343,6 +2343,7 @@ fn check_match(
                 | ExprNode::Binary { .. }
                 | ExprNode::Not(_)
                 | ExprNode::Negate(_)
+                | ExprNode::Power { .. }
                 | ExprNode::If { .. }
                 | ExprNode::Present(_)
                 | ExprNode::Value(_)
@@ -2363,6 +2364,8 @@ fn check_match(
                 | ExprNode::Seq { .. }
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }
+                | ExprNode::DropFirst(_)
+                | ExprNode::RemoveOne { .. }
                 | ExprNode::AllInstances { .. }
                 | ExprNode::Lookup { .. }
                 | ExprNode::Dispatch { .. }
@@ -2782,6 +2785,7 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::Lookup { .. }
         | ExprNode::Dispatch { .. }
         | ExprNode::Quantity(_)
+        | ExprNode::Power { .. }
         | ExprNode::Reaches { .. }
         | ExprNode::ProtocolReference { .. } => true,
         ExprNode::Boolean(_)
@@ -2804,6 +2808,8 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::Call { .. }
         | ExprNode::Size(_)
         | ExprNode::Contains { .. }
+        | ExprNode::DropFirst(_)
+        | ExprNode::RemoveOne { .. }
         | ExprNode::Pre(_)
         | ExprNode::SelfRef
         | ExprNode::Result
@@ -2990,6 +2996,8 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ExprNode::Pre(_) => (b"pre".to_vec(), Vec::new()),
         ExprNode::Size(_) => (b"size".to_vec(), Vec::new()),
         ExprNode::Contains { .. } => (b"contains".to_vec(), Vec::new()),
+        ExprNode::DropFirst(_) => (b"drop-first".to_vec(), Vec::new()),
+        ExprNode::RemoveOne { .. } => (b"remove-one".to_vec(), Vec::new()),
         ExprNode::If { .. } => (b"if".to_vec(), Vec::new()),
         ExprNode::SelfRef => (b"self".to_vec(), Vec::new()),
         ExprNode::Result => (b"result".to_vec(), Vec::new()),
@@ -3004,6 +3012,7 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ),
         ExprNode::Binary { .. }
         | ExprNode::Quantity(_)
+        | ExprNode::Power { .. }
         | ExprNode::Case(_)
         | ExprNode::Let { .. }
         | ExprNode::Record { .. }

@@ -118,3 +118,33 @@ fn an_indexed_read_outside_a_hyper_or_temporal_condition_is_a_syntax_error() {
         text.find('@').expect("the read")
     );
 }
+
+/// FR-091 "Integer power spelling" with FR-171: `@` binds tighter than every
+/// operator, so an indexed read is the base of a power, `v.l @ a ^ 2` being
+/// `(v.l @ a) ^ 2`; a power is no operand of `@`, so `v.l ^ 2 @ a` is a
+/// syntax error at the `@`.
+#[trace("TC-596", "FR-171-AC-1", "FR-091-AC-3")]
+#[test]
+fn an_indexed_read_is_the_base_of_a_power_and_a_power_is_not_indexed() {
+    let clause = |condition: &str| {
+        source(&format!(
+            "hyper NonInterference using inf over behaviours (v: V::Vault)\n\
+             forall trace a of V forall trace b of V\n\
+             {{ always holds({condition}) }}"
+        ))
+    };
+    let text = clause("v.l @ a ^ 2 = v.l @ b ^ -1");
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert_eq!(
+        texts(&text, &parsed, Production::IndexedRead),
+        ["v.l @ a", "v.l @ b"]
+    );
+    let text = clause("v.l ^ 2 @ a = v.l");
+    let parsed = parse(&text);
+    assert!(!parsed.is_admissible());
+    assert_eq!(
+        parsed.diagnostics()[0].byte_span().expect("located").start,
+        text.find('@').expect("the read")
+    );
+}

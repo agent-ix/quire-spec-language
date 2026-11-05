@@ -448,8 +448,16 @@ ascending node key for `Node` loci, then this reason order:
 `MissingChargeSemantics`. The three
 equality-witness reasons are those of the equality rows the producer issues for a
 `==` or `!=` application (FR-531 "The equality file"): a package read by a consumer
-that holds no source raises them for a slot whose walk holds an equality
-application and no other. Producer-row
+that holds no source raises them for a slot whose walk reaches an equality
+application and no other, the walk being the slot walk and the bodies of the
+functions it calls (FR-533 "Equality slots"), not the dependency closure. Over one
+supply the three reasons are mutually exclusive: `MissingEqualityWitness` when no
+equality rows are supplied; `ForeignEqualityWitness` when the supplied rows were
+produced for another package (the rows' package name differs from the package's; rows of a different package with the same name are not detected), decided before any row is joined, so foreign rows are
+never `UnknownEqualityWitness`; `UnknownEqualityWitness` when the rows are the
+package's own and the row of a reached application is absent or Contract IR does not
+admit it. The identity-witness reasons are decided the same way and before the
+equality-witness reasons. Producer-row
 validation SHALL be checked after successful I2 admission and before node
 projection; any package-locus identity-witness refusal SHALL yield no partial
 view or meter charge and SHALL leave the successful I2 read intact.
@@ -851,7 +859,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-64 | The `Unavailable` result's read location is `Some(location)` for a view backed by the in-process checked package, and for a reader-backed view `Some(location)` when the read's leaf node carries a location of its own (QSpec FR-322-AC-310) and `None` when the admitted wire carries none for it; QSL supplies no location the wire did not. Over TC-1072 row 1 read through each backing, the first two give the read of `activated` located and the third gives `Unavailable` naming the binder and the cause with `None`. | Test (TC-1072) |
 | FR-390-AC-65 | For every slot of TC-1070 fixtures E, E-C and L the source route's selected descriptor and the bytes route's agree on the triple (node, member, index), the root node key and the origin; the bytes route's descriptor carries no span, and in fixture L `Decide.visible[0]` and `Decide.cases.guard[1]`, which share the root `got.ready`, select distinct origins. | Test (TC-1070) |
 | FR-390-AC-66 | The bytes route reports `MissingIdentityWitness`, `ForeignIdentityWitness`, `UnknownIdentityWitness` and the three equality-witness reasons as `CallAdmissionLocus::Package`, and the in-process reader view reports the same three as the `Package` locus of `UnsupportedView`; neither reports a `Node` or `Binder` locus for them. | Test (TC-1070) |
-| FR-390-AC-67 | View creation reports the first unsupported projection by package identity, then locus (`Package` before `Node`), then node key, then reason. A package with a `MissingTypeRepresentation` at a `Node` locus and a `ForeignIdentityWitness` reports `ForeignIdentityWitness`; with `MissingLiteralProjection` at a `Node` locus and `MissingEqualityWitness` reports `MissingEqualityWitness`; with `ForeignIdentityWitness` and `MissingEqualityWitness` (both `Package`) reports `ForeignIdentityWitness`, the reason order breaking the tie; with the three equality-witness reasons present and removed one at a time in turn, the order is `MissingEqualityWitness`, `UnknownEqualityWitness`, `ForeignEqualityWitness`. The equality-witness reasons are at the `Package` locus and charge nothing. | Test (TC-1070) |
+| FR-390-AC-67 | View creation reports the first unsupported projection by package identity, then locus (`Package` before `Node`), then node key, then reason. A package with a `MissingTypeRepresentation` at a `Node` locus and a `ForeignIdentityWitness` reports `ForeignIdentityWitness`; with `MissingLiteralProjection` at a `Node` locus and `MissingEqualityWitness` reports `MissingEqualityWitness`; with `ForeignIdentityWitness` and `MissingEqualityWitness` (both `Package`) reports `ForeignIdentityWitness`, the reason order breaking the tie; with `MissingIdentityWitness` and `MissingEqualityWitness` reports `MissingIdentityWitness`. The three equality-witness reasons never co-occur over one supply: over a slot that reaches an equality application, a supply with no equality rows reports `MissingEqualityWitness` alone; rows of another package report `ForeignEqualityWitness` alone, also when those rows hold no row of the application; and the package's own rows with the row of the reached application removed report `UnknownEqualityWitness` alone. The equality-witness reasons are at the `Package` locus and charge nothing. | Test (TC-1070) |
 
 ## Dependencies
 

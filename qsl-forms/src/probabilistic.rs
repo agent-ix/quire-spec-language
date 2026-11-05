@@ -22,8 +22,8 @@ use super::syntax::{
     BoundOp, ConfidenceItemForm, ConfidenceKey, DeclarationForm, DeclaredName,
     DelayDistributionForm, DelayForm, EventForm, ExactValueForm, ExpectedQuantity, FractionForm,
     HorizonForm, MeasureForm, MeasureWindowForm, ProbabilisticBody, ProbabilisticForm, RandomForm,
-    RewardForm, SchedulerForm, UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm,
-    WorkloadForm, WorkloadWeightForm,
+    RewardForm, SchedulerForm, SignificantContent, UsingAlias, WeightedDelayForm,
+    WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
 };
 use super::temporal_clause::{expression_form, fairness_form, formula_form, parameter_form};
 use super::value::{
@@ -217,7 +217,7 @@ pub(crate) fn probabilistic_clause(
             activation,
             confidence,
             body,
-            content: cst.significant_content(node),
+            content: SignificantContent::from_cst(&cst.significant_content(node)),
             span: node.span(),
         },
     )))

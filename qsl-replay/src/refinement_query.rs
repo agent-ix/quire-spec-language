@@ -27,7 +27,25 @@ use quire_exact::{NodeKey, ScalarLimits};
 use qsl_package::CheckedPackage;
 
 use crate::application::CheckedClosureHandle;
-use crate::SmtEncodingRefusal;
+use crate::{
+    CertificateCheckLimits, CertificateRejection, RefinementSmtCertificate, SmtEncodingRefusal,
+    SmtProofCheck,
+};
+
+mod handoff;
+pub use handoff::RefinementHandoffRefusal;
+
+pub(crate) fn refinement_step_rows(package: &CheckedPackage, key: &NodeKey) -> Option<u64> {
+    package
+        .graph()
+        .refinements()
+        .iter()
+        .find_map(|refinement| {
+            let emission = refinement.v2_emission().ok()?;
+            (emission.identity == *key).then_some(refinement.steps().len())
+        })
+        .and_then(|rows| u64::try_from(rows).ok())
+}
 
 /// One simulated population and its finite key set.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -166,6 +184,71 @@ impl<'a> RefinementQueryRequest<'a> {
             concrete,
             abstract_,
         }
+    }
+
+    /// The exact refinement key selected when this request was constructed.
+    pub fn refinement_key(&self) -> &NodeKey {
+        &self.refinement
+    }
+
+    /// The number of declaration-order steps in the retained selected refinement.
+    ///
+    /// # Errors
+    ///
+    /// An existing encoding invariant fault if this request does not name a
+    /// refinement of its retained package, or its count cannot fit the host.
+    pub fn step_count(&self) -> Result<usize, SmtEncodingRefusal> {
+        refinement_step_rows(self.closure.checked_package(), &self.refinement)
+            .and_then(|count| usize::try_from(count).ok())
+            .ok_or_else(|| {
+                SmtEncodingRefusal::fault("the request names a refinement of its package")
+            })
+    }
+
+    /// Assemble a certificate from CG FR-045's complete serialized Base/Step handoff.
+    ///
+    /// The selected retained refinement determines the required rows. Assembly
+    /// has its own fresh byte/record budget; no failed result exposes a partial
+    /// certificate. Present proof bytes are preserved without judging them.
+    ///
+    /// # Errors
+    ///
+    /// [`RefinementHandoffRefusal`] distinguishes malformed framing, row shape,
+    /// configured limits/cancellation and a broken retained-request invariant.
+    pub fn assemble_smt_certificate(
+        &self,
+        handoff: &[u8],
+        limits: &CertificateCheckLimits,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<RefinementSmtCertificate, RefinementHandoffRefusal> {
+        handoff::assemble(self, handoff, limits, cancel)
+    }
+
+    /// Check a certificate against this retained request with FR-314's checker.
+    ///
+    /// The checker has its existing fresh budget, independent of assembly.
+    /// No internal certificate-request type crosses this facade.
+    ///
+    /// The internal request bridge remains private:
+    ///
+    /// ```compile_fail,E0624
+    /// fn internal(request: &qsl_replay::RefinementQueryRequest<'_>) {
+    ///     request.with_certificate_request(|_| ());
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The native [`CertificateRejection`] identifies the first failed rule.
+    pub fn check_smt_proof(
+        &self,
+        certificate: &RefinementSmtCertificate,
+        limits: &CertificateCheckLimits,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<SmtProofCheck, CertificateRejection> {
+        self.with_certificate_request(|inner| {
+            crate::check_refinement_smt_proof(inner, certificate, limits, cancel)
+        })
     }
 
     fn with_certificate_request<T>(

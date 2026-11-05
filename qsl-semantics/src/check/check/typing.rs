@@ -433,6 +433,7 @@ struct UnaryFrame<'r> {
 
 enum Unary<'r> {
     Negate(Option<Want<'r>>),
+    Power(Integer),
     Not,
     Present,
     Value,
@@ -440,6 +441,7 @@ enum Unary<'r> {
     Deref,
     Pre,
     Flatten,
+    DropFirst,
     Size,
     Convert(ValueType),
     AllInstances(ValueType),
@@ -674,8 +676,16 @@ struct SeqFrame<'e> {
     stage: SeqStage,
 }
 
-/// `contains(c, v)`.
+/// Which form a [`ContainsFrame`] types: both type `v` as the element type.
+#[derive(Clone, Copy)]
+enum ProbeForm {
+    Contains,
+    RemoveOne,
+}
+
+/// `contains(c, v)` or `removeOne(c, v)`.
 struct ContainsFrame<'e> {
+    form: ProbeForm,
     item: ExprRef<'e>,
     location: Location,
     /// The typed collection and its element type, once typed.
@@ -1264,6 +1274,21 @@ impl<'a> Typer<'a> {
                 let goal = Goal::Infer(operand, operand_hint, location.child(0));
                 return Ok(Self::unary(Unary::Negate(hint), goal, location, frames));
             }
+            ExprNode::Power { base, exponent } => {
+                if let Some(outside) = IntegerOutsideI128::of(IntegerSite::Literal, exponent) {
+                    return Err(CheckRefusal {
+                        location,
+                        cause: CheckCause::IntegerOutsideI128(outside),
+                    });
+                }
+                let goal = Goal::Infer(expression.at(*base), None, location.child(0));
+                return Ok(Self::unary(
+                    Unary::Power(exponent.clone()),
+                    goal,
+                    location,
+                    frames,
+                ));
+            }
             ExprNode::Not(operand) => {
                 let goal = Goal::Expect(
                     expression.at(*operand),
@@ -1674,9 +1699,19 @@ impl<'a> Typer<'a> {
                 let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Size, goal, location, frames));
             }
-            ExprNode::Contains { collection, item } => {
+            ExprNode::DropFirst(operand) => {
+                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
+                return Ok(Self::unary(Unary::DropFirst, goal, location, frames));
+            }
+            ExprNode::Contains { collection, item } | ExprNode::RemoveOne { collection, item } => {
+                let form = if matches!(expression.node(), ExprNode::Contains { .. }) {
+                    ProbeForm::Contains
+                } else {
+                    ProbeForm::RemoveOne
+                };
                 let collection_location = location.child(0);
                 frames.push(Frame::Contains(Box::new(ContainsFrame {
+                    form,
                     item: expression.at(*item),
                     location,
                     collection: None,
@@ -2829,6 +2864,7 @@ impl<'a> Typer<'a> {
         let UnaryFrame { form, location } = frame;
         match form {
             Unary::Negate(hint) => self.negate(operand, hint.as_deref(), &location),
+            Unary::Power(exponent) => self.power(operand, exponent, &location),
             Unary::Not => Ok(node(
                 NodeKind::Not(self.push(operand)),
                 ValueType::Boolean,
@@ -2878,6 +2914,7 @@ impl<'a> Typer<'a> {
                 ))
             }
             Unary::Flatten => self.flatten(operand, &location),
+            Unary::DropFirst => self.drop_first(operand, &location),
             Unary::Size => {
                 self.element_type(&operand)?;
                 Ok(node(
@@ -3522,9 +3559,13 @@ impl<'a> Typer<'a> {
                 frames.push(Frame::Contains(frame));
                 Ok(Step::Descend(goal))
             }
-            Some((collection, element)) => self
-                .contains(collection, typed, element, &frame.location)
-                .map(Step::Typed),
+            Some((collection, element)) => match frame.form {
+                ProbeForm::Contains => self.contains(collection, typed, element, &frame.location),
+                ProbeForm::RemoveOne => {
+                    self.remove_one(collection, typed, element, &frame.location)
+                }
+            }
+            .map(Step::Typed),
         }
     }
 }

@@ -2676,14 +2676,21 @@ fn protocol_check_outcome(
     }
     if first_failure.is_none() && !graph.unit_refusals().is_empty() {
         // FR-096: a unit-level refusal is located like any other check
-        // refusal, by the span its cause carries or by its `location`.
+        // refusal, by the span its cause carries or by its `location`. The
+        // continuation graph omits the refused clause's own spans, so a
+        // refusal the lifecycle re-reported at a call (a dispatch family that
+        // did not link, FR-302) keeps the region resolved against the
+        // declarations before the graph dropped them; the locator is the
+        // fallback.
         let regions = graph.memoized_regions();
         let refusals = graph.unit_refusals().to_vec();
-        let region = refusals.first().and_then(|refusal| match &refusal.cause {
-            CheckCause::LayerEquality {
-                span: Some(span), ..
-            } => region(parsed.source().reference(), *span),
-            _ => regions(&refusal.location),
+        let region = graph.unit_refusal_region().cloned().or_else(|| {
+            refusals.first().and_then(|refusal| match &refusal.cause {
+                CheckCause::LayerEquality {
+                    span: Some(span), ..
+                } => region(parsed.source().reference(), *span),
+                _ => regions(&refusal.location),
+            })
         });
         first_failure = Some(CompileRefusal::Check { refusals, region });
     }
@@ -3489,6 +3496,17 @@ impl<'a> Resolution<'a> {
             });
             Box::new(CompileRefusal::Check { region, refusals })
         })?;
+        // The protocol continuation check keeps a refused state clause on the
+        // graph instead of failing: report it the same way (FR-302).
+        let graph = if graph.unit_refusals().is_empty() {
+            graph
+        } else {
+            let refusals = pending.report(graph.unit_refusals().to_vec());
+            let region = refusals
+                .first()
+                .and_then(|refusal| regions.refusal_region(refusal));
+            graph.with_unit_refusals(refusals, region)
+        };
         charged(cancel, &mut self.work.s4, || {
             pkg::CheckedPackage::link_with(graph, links)
         })

@@ -151,9 +151,17 @@ fn append(
     Ok(())
 }
 
-/// `selected` retains intake's canonical selection order and meter. Every
-/// real clause has completed before entry; a denied charge discards all
-/// failures collected in this unfinished conformance stage.
+/// The package identity bytes a selection is ordered by.
+fn identity_bytes(model: &SelectedModel) -> &[u8] {
+    model.view.model_selection().identity.as_bytes()
+}
+
+/// `selected` arrives in source order and carries intake's meter; the stage
+/// walks it in canonical selection order (package identity bytes, then alias),
+/// so the failures and the charges do not depend on alias or source order
+/// (FR-151-AC-15). Every real clause has completed before entry; a denied
+/// charge discards all failures collected in this unfinished conformance
+/// stage.
 pub(crate) fn check(
     selected: &[SelectedModel],
     meter: &mut Meter,
@@ -163,7 +171,13 @@ pub(crate) fn check(
     mut pending: Option<&mut PendingTypeEnvironment>,
 ) -> Result<(), StageDenial> {
     let mut failures = Vec::new();
-    for selection in selected {
+    let mut canonical: Vec<&SelectedModel> = selected.iter().collect();
+    canonical.sort_by(|left, right| {
+        identity_bytes(left)
+            .cmp(identity_bytes(right))
+            .then_with(|| left.alias.as_bytes().cmp(right.alias.as_bytes()))
+    });
+    for selection in canonical {
         let index = selection.view.model_index();
         let model = models
             .iter()
