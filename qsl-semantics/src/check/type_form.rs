@@ -56,7 +56,7 @@ impl TypeNames for SourceScope<'_> {
     }
 
     fn unit_named(&self, name: &str) -> Option<UnitId> {
-        self.scope.unit_named(name)
+        SourceScope::unit_named(self, name)
     }
 }
 

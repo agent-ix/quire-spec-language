@@ -2714,24 +2714,32 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
-    /// The `ModelOwner` of the dimension node `key` an admitted domain
-    /// package declares: the package's identity and the dimension's IR node
-    /// identity.
+    /// The `ModelOwner` of the dimension or unit node `key` an admitted
+    /// domain package declares: the package's identity and the node's IR
+    /// node identity.
     /// The selecting model alias comes with it, the declaration its
     /// `generated` occurrence is rooted at.
     fn foreign_nominal_owner(&self, key: &NodeKey) -> Option<(ModelOwner, String)> {
         self.models.iter().find_map(|model| {
-            model.dimensions.iter().find_map(|dimension| {
-                let (dimension_key, _, _) =
-                    crate::check::assemble::package_dimension(model, dimension, &mut Vec::new())?;
-                if &dimension_key != key {
-                    return None;
-                }
-                let owner =
-                    ModelOwner::new(model.selection.identity.clone(), dimension.key.node.clone())
-                        .ok()?;
-                Some((owner, model.alias()?.to_owned()))
-            })
+            let node = model
+                .dimensions
+                .iter()
+                .find_map(|dimension| {
+                    let (dimension_key, _, _) = crate::check::assemble::package_dimension(
+                        model,
+                        dimension,
+                        &mut Vec::new(),
+                    )?;
+                    (&dimension_key == key).then(|| dimension.key.node.clone())
+                })
+                .or_else(|| {
+                    model.units.iter().find_map(|unit| {
+                        let unit_key = crate::check::assemble::package_unit_key(model, unit)?;
+                        (&unit_key == key).then(|| unit.key.node.clone())
+                    })
+                })?;
+            let owner = ModelOwner::new(model.selection.identity.clone(), node).ok()?;
+            Some((owner, model.alias()?.to_owned()))
         })
     }
 

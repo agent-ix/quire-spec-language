@@ -53,7 +53,7 @@ use super::check::{
 use super::layer::LayerAdmission;
 use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel};
 use super::model_gate::{self, ModelGateRefusal};
-use super::model_spelling::{package_names, ModelName, ModelSpellings, PackageNames};
+use super::model_spelling::{package_names, ModelName, ModelSpellings, PackageNames, Spelled};
 use super::node_key::{NodeKeyRefusal, NodeTag, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
@@ -73,7 +73,7 @@ use std::sync::Arc;
 mod equivalence;
 mod units;
 
-pub(crate) use units::package_dimension;
+pub(crate) use units::{package_dimension, package_unit_key};
 
 pub use equivalence::{
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
@@ -1171,7 +1171,10 @@ impl TypeNames for UnitNames<'_> {
     }
 
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
-        self.names.units.get(name).cloned()
+        match self.spellings.spelled(self.unit, name) {
+            Spelled::Model(_) => self.spellings.unit(self.unit, name),
+            Spelled::Other => self.names.units.get(name).cloned(),
+        }
     }
 }
 
@@ -2743,6 +2746,7 @@ fn check_names(
                             .units
                             .iter()
                             .any(|declared| declared.name.name == name.name)
+                            && spellings.unit(source, &name.name).is_none()
                         {
                             errors.push(AssemblyError {
                                 cause: AssemblyCause::UnresolvedTypeName {
@@ -3650,6 +3654,18 @@ impl PackageDeclarations {
         // imports").
         let mut model_spellings = ModelSpellings::new(source.clone());
         let mut packages: BTreeMap<&str, usize> = BTreeMap::new();
+        // Each unit of the admitted graph by its node key, for the package
+        // units a selection spells.
+        let graph_unit_ids: BTreeMap<NodeKey, quire_exact::UnitId> = quantity_result
+            .as_ref()
+            .map(|quantities| {
+                quantities
+                    .graph
+                    .units()
+                    .map(|unit| (unit.key(), unit.id()))
+                    .collect()
+            })
+            .unwrap_or_default();
         for (selection, source_unit) in selections.models.iter().zip(&model_selection_units) {
             let unit_source = sources.get(*source_unit).unwrap_or(&source);
             let Some(model) = models.iter().find(|model| {
@@ -3679,6 +3695,19 @@ impl PackageDeclarations {
                 model_spellings.add_package(model.view.domain_package().model_selection.clone());
             packages.insert(&selection.identity, package);
             model_spellings.bind_model(unit_source, &selection.alias, Some(package));
+            let prefix = format!("{}::", selection.alias);
+            model_spellings.set_units(
+                package,
+                imported
+                    .units
+                    .iter()
+                    .filter_map(|(name, imported_unit)| {
+                        let member = name.strip_prefix(&prefix)?;
+                        let id = graph_unit_ids.get(&imported_unit.key)?.clone();
+                        Some((member.to_owned(), id))
+                    })
+                    .collect(),
+            );
             match model_object_types(
                 &selection.alias,
                 model,
