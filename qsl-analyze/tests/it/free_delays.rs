@@ -1499,7 +1499,7 @@ fn alternatives_are_in_canonical_choice_order() {
 }
 
 /// FR-202 (TC-642, FR-204): zero or negative mass, a repeated choice, a total
-/// other than 1 and a choice the row lacks give no entry.
+/// other than 1 (below or above) and a choice the row lacks give no entry.
 #[trace("TC-642", "FR-204")]
 #[test]
 fn malformed_distributions_give_no_entry() {
@@ -1514,6 +1514,7 @@ fn malformed_distributions_give_no_entry() {
         weights(&[(0, half.clone()), (0, half.clone())]),
         weights(&[(0, ratio(1, 3))]),
         weights(&[(0, half.clone()), (9, half.clone())]),
+        weights(&[(0, half.clone()), (1, ratio(3, 4))]),
     ];
     for bad in malformed {
         for in_first_row in [true, false] {
