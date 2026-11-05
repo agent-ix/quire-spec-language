@@ -715,7 +715,7 @@ impl sealed::Locate for ImportedFunctionName {
     type Site = ImportedFunctionSite;
 
     /// `self.function` in the checked package of `self.library`, one of the
-    /// unit's direct imports, from the unit's own compile: no second compile
+    /// unit's direct imports (`CheckedPackage::dependencies` holds only those), from the unit's own compile: no second compile
     /// and no same-named function of the unit.
     fn locate(
         &self,
@@ -727,9 +727,6 @@ impl sealed::Locate for ImportedFunctionName {
                 package: unit.package_name.clone(),
             })
         };
-        if !unit.package.imports_directly(&self.library) {
-            return Err(no_import());
-        }
         let library = unit
             .package
             .dependencies()
@@ -752,7 +749,7 @@ impl sealed::Locate for ImportedFunctionName {
         }
         let emitted = unit.libraries.get(&self.library).ok_or_else(|| {
             Box::new(CallSiteRefusal::Fault(InternalFault::new(
-                "call-site",
+                "call_site",
                 "direct-import-has-emitted-bytes",
             )))
         })?;
