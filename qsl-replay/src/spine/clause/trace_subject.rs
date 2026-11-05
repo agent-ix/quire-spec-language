@@ -422,11 +422,9 @@ fn temporal_clock_selections(
                 .find(|profile| profile.alias == clause.profile.alias)?;
             let profile = TemporalProfile::from_identity(&selected.identity)?;
             let clock = match profile {
-                TemporalProfile::EventPositionFalseExtension => {
-                    ClockConfiguration::EventPosition {
-                        sequence_authority: "caller-supplied-trace".into(),
-                    }
-                }
+                TemporalProfile::EventPositionFalseExtension => ClockConfiguration::EventPosition {
+                    sequence_authority: "caller-supplied-trace".into(),
+                },
                 TemporalProfile::FixedSampleFalseExtension => ClockConfiguration::FixedSample {
                     epoch: qsl_package::ClockExactNumber::Integer {
                         decimal: "0".into(),

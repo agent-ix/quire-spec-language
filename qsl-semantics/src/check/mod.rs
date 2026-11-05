@@ -1278,9 +1278,18 @@ impl TemporalClauseNode {
     ) -> Option<CheckedAggregateConditionsRef<'_>> {
         let aggregate = self.aggregates.get(&atom.index())?;
         Some(CheckedAggregateConditionsRef {
-            value: aggregate.value.as_ref().map(|(body, slots)| (body.root(), *slots)),
-            filter: aggregate.filter.as_ref().map(|(body, slots)| (body.root(), *slots)),
-            predicate: aggregate.predicate.as_ref().map(|(body, slots)| (body.root(), *slots)),
+            value: aggregate
+                .value
+                .as_ref()
+                .map(|(body, slots)| (body.root(), *slots)),
+            filter: aggregate
+                .filter
+                .as_ref()
+                .map(|(body, slots)| (body.root(), *slots)),
+            predicate: aggregate
+                .predicate
+                .as_ref()
+                .map(|(body, slots)| (body.root(), *slots)),
             threshold: (aggregate.threshold.0.root(), aggregate.threshold.1),
         })
     }

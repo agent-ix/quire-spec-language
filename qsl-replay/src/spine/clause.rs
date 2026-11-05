@@ -31,7 +31,6 @@ use quire_semantic_value::catalog::InternalFault;
 mod progress;
 mod temporal;
 mod trace_subject;
-pub use trace_subject::{run_trace_subject_clause, TraceSubjectClauseRequest};
 pub use progress::{
     ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
     ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
@@ -44,6 +43,7 @@ pub use temporal::{
     TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
     TraceBinding, TraceInput,
 };
+pub use trace_subject::{run_trace_subject_clause, TraceSubjectClauseRequest};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};

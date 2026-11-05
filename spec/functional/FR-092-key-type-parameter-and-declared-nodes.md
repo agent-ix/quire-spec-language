@@ -117,7 +117,10 @@ rows from the checked declaration and the lowered record node, never from
 package bytes, decoded nodes or display names. A source record's fields
 have no issued member identities, so the row carries none; model records do.
 The row keeps both the declared field name and the record node's binding
-name, which a writer that renames a binding changes independently. A
+name, which a writer that renames a binding changes independently; a writer
+that renames a binding SHALL carry the final binding name in the row's
+`admitted_name`, so the row names each member by the binding the written
+package holds at that position (QSL FR-251 "Plan root"). A
 model-owned record carries no source record row. A record node that is not
 emitted has no row. An emitted source record node that no declared record
 joins to, a record whose bindings disagree with its declaration in count, and
