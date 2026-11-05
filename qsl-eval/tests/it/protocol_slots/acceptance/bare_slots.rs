@@ -597,7 +597,7 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
 /// unprojectable (no field rows) with no equality rows report
 /// `MissingEqualityWitness` at `Package`, and with the equality rows the
 /// `MissingTypeRepresentation` of the first such binder at its `Node`.
-#[trace("FR-390-AC-67", "TC-1070", "TC-1333")]
+#[trace("FR-390-AC-67", "FR-533-AC-7", "TC-1070", "TC-1333")]
 #[test]
 fn the_call_reports_identity_then_equality_then_node_refusals() {
     let package = fixture();
