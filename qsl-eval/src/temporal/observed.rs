@@ -235,25 +235,25 @@ pub fn evaluate_observed_finite_window(
         &mut letters,
         meter,
     );
+    // As `evaluate_observed`: a refusal the result passed over is dropped.
+    let stopped = match (letters.stopped, &result) {
+        (Some(HoldsStop::Refused { .. }), Ok(_)) => None,
+        (stopped, _) => stopped,
+    };
     ObservedWindowRun {
         result,
-        stopped: letters.stopped,
+        stopped,
         undefined: letters.undefined,
     }
 }
 
-/// The fault codes of a `holds` condition: a failed call, a refusal and a
-/// non-Boolean completion.
-const HOLDS_CODES: [&str; 3] = [
-    "holds-condition-call-failed",
-    "holds-condition-refused",
-    "holds-condition-boolean",
-];
+/// The fault codes of a `holds` condition: a failed call and a non-Boolean
+/// completion. A refusal is a refused condition, not a fault.
+const HOLDS_CODES: [&str; 2] = ["holds-condition-call-failed", "holds-condition-boolean"];
 
 /// The fault codes of an `on each` guard, as [`HOLDS_CODES`].
-const ACTIVATION_CODES: [&str; 3] = [
+const ACTIVATION_CODES: [&str; 2] = [
     "activation-condition-call-failed",
-    "activation-condition-refused",
     "activation-condition-boolean",
 ];
 
@@ -340,7 +340,7 @@ impl ObservedLetters<'_> {
         stopped: &mut Option<HoldsStop>,
         position: TemporalPosition,
         evaluation: Result<Evaluation, CallFailure>,
-        [failed, refused_code, boolean]: [&'static str; 3],
+        [failed, boolean]: [&'static str; 2],
     ) -> Result<AtomReading, LetterStop> {
         let stop =
             |code: &'static str| LetterStop::Fault(InternalFault::new("temporal.observed", code));
@@ -378,7 +378,7 @@ impl ObservedLetters<'_> {
                 Err(LetterStop::Incomplete(incomplete))
             }
             FamilyOutcome::Evaluated(Outcome::Refused(_))
-            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => Err(stop(refused_code)),
+            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => Err(LetterStop::Refused),
             FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => Ok(
                 AtomReading::Undefined(UndefinedCause::Family(cause.undefined_record())),
             ),
@@ -515,7 +515,7 @@ impl ObservedLetters<'_> {
                     })
                 }
                 AtomReading::True | AtomReading::False => Err(LetterStop::Fault(
-                    InternalFault::new("temporal.observed", CAPTURE_CODES[2]),
+                    InternalFault::new("temporal.observed", CAPTURE_CODES[1]),
                 )),
             };
         }
@@ -524,9 +524,8 @@ impl ObservedLetters<'_> {
 }
 
 /// The fault codes of a capture's initializer, as [`HOLDS_CODES`].
-const CAPTURE_CODES: [&str; 3] = [
+const CAPTURE_CODES: [&str; 2] = [
     "capture-initializer-call-failed",
-    "capture-initializer-refused",
     "capture-initializer-completes-a-value",
 ];
 
@@ -585,6 +584,49 @@ mod tests {
             FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant {
                 cause: CheckedInvariantCause::EqualityOperandSourceNotAdmitted
             }))
+        ));
+    }
+
+    /// A family refusal with the catalog code `invalid_runtime_input`/
+    /// `absent-key`.
+    #[derive(Debug)]
+    struct FamilyCause;
+
+    impl quire_semantic_value::catalog::CatalogCoded for FamilyCause {
+        fn catalog_code(&self) -> quire_semantic_value::catalog::CatalogCode {
+            quire_semantic_value::catalog::CatalogCode::new("invalid_runtime_input", "absent-key")
+        }
+
+        fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+            None
+        }
+    }
+
+    /// FR-327 "Refused condition": a family's `FamilyResult::Refused` is a
+    /// refused condition as a kernel refusal is, kept whole at its position.
+    #[trace("TC-1160", "FR-327-AC-6")]
+    #[test]
+    fn a_family_refusal_is_a_refused_condition_at_its_position() {
+        let mut stopped = None;
+        let evaluation = Evaluation {
+            outcome: FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(Box::new(FamilyCause))),
+            location: None,
+            losses: Vec::new(),
+        };
+        let reading = ObservedLetters::reading(
+            &mut stopped,
+            TemporalPosition::new(2),
+            Ok(evaluation),
+            HOLDS_CODES,
+        );
+        assert_eq!(reading, Err(LetterStop::Refused));
+        let Some(HoldsStop::Refused { at, evaluation }) = stopped else {
+            panic!("the refusal is kept whole, got {stopped:?}");
+        };
+        assert_eq!(at, TemporalPosition::new(2));
+        assert!(matches!(
+            evaluation.outcome,
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
         ));
     }
 }
