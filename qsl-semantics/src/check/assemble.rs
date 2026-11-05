@@ -53,7 +53,7 @@ use super::check::{
 use super::layer::LayerAdmission;
 use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel};
 use super::model_gate::{self, ModelGateRefusal};
-use super::model_spelling::{package_names, ModelName, ModelSpellings, PackageNames};
+use super::model_spelling::{package_names, ModelName, ModelSpellings, PackageNames, Spelled};
 use super::node_key::{NodeKeyRefusal, NodeTag, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
@@ -73,7 +73,7 @@ use std::sync::Arc;
 mod equivalence;
 mod units;
 
-pub(crate) use units::package_dimension;
+pub(crate) use units::{package_dimension, package_unit_key};
 
 pub use equivalence::{
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
@@ -1171,7 +1171,10 @@ impl TypeNames for UnitNames<'_> {
     }
 
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
-        self.names.units.get(name).cloned()
+        match self.spellings.spelled(self.unit, name) {
+            Spelled::Model(_) => self.spellings.unit(self.unit, name),
+            Spelled::Other => self.names.units.get(name).cloned(),
+        }
     }
 }
 
@@ -2743,6 +2746,7 @@ fn check_names(
                             .units
                             .iter()
                             .any(|declared| declared.name.name == name.name)
+                            && spellings.unit(source, &name.name).is_none()
                         {
                             errors.push(AssemblyError {
                                 cause: AssemblyCause::UnresolvedTypeName {
@@ -3679,6 +3683,25 @@ impl PackageDeclarations {
                 model_spellings.add_package(model.view.domain_package().model_selection.clone());
             packages.insert(&selection.identity, package);
             model_spellings.bind_model(unit_source, &selection.alias, Some(package));
+            if let Ok(quantities) = &quantity_result {
+                let prefix = format!("{}::", selection.alias);
+                model_spellings.set_units(
+                    package,
+                    imported
+                        .units
+                        .iter()
+                        .filter_map(|(name, imported_unit)| {
+                            let member = name.strip_prefix(&prefix)?;
+                            let id = quantities
+                                .graph
+                                .units()
+                                .find(|unit| unit.key() == imported_unit.key)?
+                                .id();
+                            Some((member.to_owned(), id))
+                        })
+                        .collect(),
+                );
+            }
             match model_object_types(
                 &selection.alias,
                 model,

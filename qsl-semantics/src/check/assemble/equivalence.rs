@@ -15,7 +15,7 @@ use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, NodeKey, PathSegment, Rational};
 
-use super::units::{Assembled, Provisional};
+use super::units::{Assembled, Provisional, UnitDimension};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits};
 use crate::check::lowering::AdmittedModel;
 use crate::check::model_spelling::ModelSpellings;
@@ -313,26 +313,29 @@ impl SourceView<'_> {
                 let (dimension, composed) = fixed.units.get(name)?;
                 Some(Unit {
                     name: name.to_owned(),
-                    dimension: DimensionRef::Source(dimension.clone()),
+                    dimension: dimension_ref(dimension),
                     composed: composed.clone(),
                     package: false,
                 })
             }
             Self::Admitted(assembled) => {
                 let unit = assembled.units.get(name)?;
-                let dimension = assembled
-                    .dimensions
-                    .iter()
-                    .find(|(_, (key, _))| *key == unit.dimension)
-                    .map(|(name, _)| name.clone())?;
                 Some(Unit {
                     name: name.to_owned(),
-                    dimension: DimensionRef::Source(dimension),
+                    dimension: dimension_ref(&unit.named),
                     composed: Some((unit.scale.clone(), unit.offset.clone())),
                     package: false,
                 })
             }
         }
+    }
+}
+
+/// What a source unit's `:` name denotes, as an equivalence names it.
+fn dimension_ref(named: &UnitDimension) -> DimensionRef {
+    match named {
+        UnitDimension::Source(name) => DimensionRef::Source(name.clone()),
+        UnitDimension::Package(declaration) => DimensionRef::Package(declaration.clone()),
     }
 }
 

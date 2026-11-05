@@ -81,6 +81,8 @@ pub(crate) enum Spelled<'a> {
 struct Package {
     selection: DomainPackageRef,
     names: PackageNames,
+    /// The package's units by member name, as the unit graph holds them.
+    units: BTreeMap<String, quire_exact::UnitId>,
 }
 
 /// Each selected package's type names and each source unit's model aliases.
@@ -116,6 +118,7 @@ impl ModelSpellings {
         self.packages.push(Package {
             selection,
             names: PackageNames::new(),
+            units: BTreeMap::new(),
         });
         self.packages.len() - 1
     }
@@ -125,6 +128,33 @@ impl ModelSpellings {
         if let Some(slot) = self.packages.get_mut(package) {
             slot.names = names;
         }
+    }
+
+    /// Give the package at `package` its units by member name.
+    pub(crate) fn set_units(
+        &mut self,
+        package: usize,
+        units: BTreeMap<String, quire_exact::UnitId>,
+    ) {
+        if let Some(slot) = self.packages.get_mut(package) {
+            slot.units = units;
+        }
+    }
+
+    /// The package unit `name` (`Alias::unit`), written in `unit` (the
+    /// primary unit when `None`), names through the unit's model alias, for
+    /// `Quantity<Alias::unit>` (QSpec FR-142-AC-19).
+    #[ix_trace_rs::string_edge]
+    pub(crate) fn unit(
+        &self,
+        unit: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Option<quire_exact::UnitId> {
+        let (alias, member) = name.split_once("::")?;
+        if !matches!(self.spelled(unit, name), Spelled::Model(_)) {
+            return None;
+        }
+        self.package(unit, alias)?.units.get(member).cloned()
     }
 
     /// The package `unit` (the primary unit when `None`) binds its model

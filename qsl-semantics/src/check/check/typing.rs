@@ -1094,7 +1094,10 @@ impl<'a> Typer<'a> {
                     self.limits.rational_bits(),
                     &location,
                 )?;
-                let Some(unit) = self.scope.unit_named(&quantity.unit.name) else {
+                let Some(unit) = self
+                    .scope
+                    .unit_named(self.source_owner.as_ref(), &quantity.unit.name)
+                else {
                     return Err(CheckRefusal {
                         location,
                         cause: if quantity.unit.is_qualified() {

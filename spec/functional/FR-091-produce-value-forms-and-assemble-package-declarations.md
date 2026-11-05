@@ -596,8 +596,12 @@ rules, order and causes and none of its own:
   package unit of its own node adds no cycle and no targetless unit. Row 5
   applies only to a local root of a node with no package root. The
   base-dimension rule applies to a package base dimension at its turn as to
-  a local one. A refusal of a package node is located at the `model_root` node of its
-  selected package and names the node's FCD identity.
+  a local one. A refusal of the package node itself (row 4 beside the
+  package's root, row 6 over a cycle of local units, the base-dimension rule)
+  is located at the `model` selection that selects its package, whose
+  `model_root` node records it, and names the node's FCD identity. A refusal
+  of one local unit (rows 1 to 3, and row 5 for a local root of a node with
+  no package root) is located at that unit.
 - At each node's turn it runs FR-142's step (-1) over a local dimension's
   own terms (a term that names no dimension; a dimension in a dimension
   cycle or with a self-term, its edges from the cycle's dimension declared

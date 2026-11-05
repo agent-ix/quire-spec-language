@@ -662,7 +662,10 @@ fn a_package_dimension_node_is_model_owned_with_no_declaration() {
 /// `acme/rpc` declares no `Speed`, refuses `missing_declaration`/`missing-name`
 /// at the name, and a second `dimension Time;` refuses
 /// `ambiguous_declaration`/`ambiguous-name`. The admission half (a source unit
-/// typed by `R::Time`, `Quantity<R::s>`) is not implemented: see QSL-1478.
+/// typed by a package dimension, `Quantity<R::s>`, an equivalence naming a
+/// source unit typed by a package dimension) is covered by
+/// `package_units_and_dimensions_resolve_in_source_unit_graphs` and the
+/// package-unit tests below.
 #[trace("TC-483", "QSpec-TC-187")]
 #[test]
 fn unknown_package_dimensions_and_repeated_source_dimensions_refuse() {
@@ -876,4 +879,327 @@ fn package_units_and_dimensions_resolve_in_source_unit_graphs() {
         &error.cause,
         Cause::UnresolvedQuantityName { name } if name == "Rate"
     ));
+}
+
+/// `identity`'s package: base `Time` (root `s`), then `dimensions` and
+/// `units` as [`with_quantities`] takes them.
+fn domain(
+    identity: &str,
+    dimensions: &[(&str, &[(&str, &str)])],
+    units: &[(&str, &str, Option<&str>, &str)],
+) -> Vec<u8> {
+    with_quantities(
+        time_package(identity, false, &[("s", None, "1")]),
+        dimensions,
+        units,
+    )
+}
+
+/// `body` over `packages`, refused with exactly one error: the cause and the
+/// text it is located at.
+fn refused_over(packages: &[Package], body: &str) -> (AssemblyCause, String) {
+    let (text, assembled) = assemble_selected_as(("agent-ix", "example"), packages, body);
+    let errors = match assembled {
+        Ok(_) => panic!("{body}: refused"),
+        Err(refusal) => refusal.errors,
+    };
+    let [error] = errors.as_slice() else {
+        panic!("{body}: exactly one error: {errors:?}");
+    };
+    (
+        error.cause.clone(),
+        text[error.span.start..error.span.end].to_owned(),
+    )
+}
+
+/// A unit node as the checked graph holds it: its declared name, its model
+/// owner's node when it has one, and its dimension and target nodes' model
+/// owners' nodes.
+type UnitNode = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+/// The unit nodes `body` over `packages` checks to, with one function using
+/// each of `used`.
+fn unit_nodes(packages: &[Package], body: &str, used: &[&str]) -> Vec<UnitNode> {
+    use qsl_semantics::check::Owner;
+    use qsl_semantics::value::nominal_payload::NominalPayload;
+    use quire_semantic_value::checking::CheckingLimits;
+    let uses: String = used
+        .iter()
+        .map(|unit| {
+            format!("\nfunction use_{unit} using v(d: Quantity<{unit}>): Boolean pure {{ true }}")
+        })
+        .collect();
+    let (_, assembled) =
+        assemble_selected_as(("agent-ix", "example"), packages, &format!("{body}{uses}"));
+    let checked = assembled
+        .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}"))
+        .check(CheckingLimits::default())
+        .expect("the unit checks");
+    let graph = checked.semantic_graph();
+    let nodes: Vec<_> = graph.nodes().collect();
+    let model_node = |key: &quire_exact::NodeKey| {
+        nodes.iter().find_map(|node| match node.owner() {
+            Some(Owner::Model(owner)) if node.key() == *key => Some(owner.node().to_owned()),
+            _ => None,
+        })
+    };
+    nodes
+        .iter()
+        .filter(|node| node.semantic_form() == "unit")
+        .map(|node| {
+            let Some(NominalPayload::Unit(payload)) = node.nominal_payload() else {
+                panic!("a unit payload: {node:?}");
+            };
+            let own = match node.owner() {
+                Some(Owner::Model(owner)) => Some(owner.node().to_owned()),
+                _ => None,
+            };
+            (
+                node.declaration().map(|name| {
+                    name.iter()
+                        .map(|part| part.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".")
+                }),
+                own,
+                model_node(payload.dimension()),
+                payload.target().and_then(model_node),
+            )
+        })
+        .collect()
+}
+
+fn two_domains() -> [Package; 2] {
+    [
+        (
+            "P",
+            "acme/p",
+            domain("acme/p", &[("L", &[])], &[("m", "L", None, "1")]),
+        ),
+        ("Q", "acme/q", domain("acme/q", &[("T", &[])], &[])),
+    ]
+}
+
+/// FR-091-AC-55 and AC-72 (QSpec FR-142-AC-18, TC-187 U11r): a local unit
+/// typed by a package dimension and targeting the package's root joins the
+/// package node's graph, and the checked package holds it with the package's
+/// unit and dimension as model-owned nodes, so a function using it checks.
+#[trace(
+    "TC-483",
+    "FR-091-AC-55",
+    "FR-091-AC-72",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-18"
+)]
+#[test]
+fn a_local_unit_targeting_a_package_unit_checks_with_model_owned_nodes() {
+    let units = unit_nodes(
+        &two_domains(),
+        "unit cm : P::L = rational(1, 100) * P::m;",
+        &["cm"],
+    );
+    let identity = |name: &str| Some(format!("ix://acme/p/{name}"));
+    let cm = units
+        .iter()
+        .find(|(declared, ..)| declared.as_deref() == Some("cm"))
+        .expect("the unit's own node");
+    assert_eq!(
+        (&cm.1, &cm.2, &cm.3),
+        (&None, &identity("dimension/L"), &identity("unit/m"))
+    );
+    let package_root = units
+        .iter()
+        .find(|(_, own, ..)| own.as_deref() == Some("ix://acme/p/unit/m"))
+        .expect("the package root's node");
+    assert_eq!(
+        (&package_root.0, &package_root.2),
+        (&None, &identity("dimension/L"))
+    );
+}
+
+/// FR-091-AC-72 (QSpec FR-142-AC-18, AC-19): `tick : M::Rate` over `M::us`
+/// and `tock` over `tick` check with the package's `Rate` and `us` as
+/// model-owned nodes, and `convert<Quantity<M::us>>(d)` in a function body
+/// over `Quantity<tick>` checks.
+#[trace("TC-483", "FR-091-AC-72", "QSpec-TC-187", "QSpec-FR-142-AC-18")]
+#[test]
+fn a_function_converting_a_package_typed_unit_to_a_package_unit_checks() {
+    use quire_semantic_value::checking::CheckingLimits;
+    let packages: [Package; 1] = [(
+        "M",
+        "acme/rpc",
+        domain("acme/rpc", &[("Rate", &[])], &[("us", "Rate", None, "1")]),
+    )];
+    let body = "unit tick : M::Rate = rational(1, 2) * M::us;\n\
+                unit tock : M::Rate = rational(3, 1) * tick;\n\
+                function k1 using v(d: Quantity<tick>): Boolean pure \
+                { convert<Quantity<M::us>>(d) = 1 M::us }";
+    let (_, assembled) = assemble_selected_as(("agent-ix", "example"), &packages, body);
+    assembled
+        .expect("assembles")
+        .check(CheckingLimits::default())
+        .expect("k1 checks");
+    let units = unit_nodes(
+        &packages,
+        &body[..body.find("function").unwrap_or(0)],
+        &["tock"],
+    );
+    let tock = units
+        .iter()
+        .find(|(declared, ..)| declared.as_deref() == Some("tock"))
+        .expect("tock's node");
+    assert_eq!(
+        (&tock.2, &tock.3),
+        (&Some("ix://acme/rpc/dimension/Rate".to_owned()), &None)
+    );
+}
+
+/// FR-091-AC-55 (QSpec FR-142-AC-18, AC-19): a source unit typed by a
+/// package dimension and targeting a package unit composes its scale through
+/// the package unit's chain, so an equivalence naming it fixes the root ratio
+/// from `tick = 1/2 ms = 500 us`.
+#[trace("TC-483", "FR-091-AC-55", "QSpec-TC-187", "QSpec-FR-142-AC-18")]
+#[test]
+fn a_source_unit_over_a_package_unit_composes_through_the_package_chain() {
+    let packages: [Package; 1] = [(
+        "M",
+        "acme/rpc",
+        domain(
+            "acme/rpc",
+            &[("Rate", &[])],
+            &[
+                ("us", "Rate", None, "1"),
+                ("ms", "Rate", Some("us"), "1000"),
+            ],
+        ),
+    )];
+    let (_, assembled) = assemble_selected_as(
+        ("agent-ix", "example"),
+        &packages,
+        "dimension Dur;\nunit d : Dur = rational(1, 1);\n\
+         unit tick : M::Rate = rational(1, 2) * M::ms;\n\
+         dimension Dur ~ M::Rate by 1 d = 1 tick;",
+    );
+    let declarations = assembled.expect("the equivalence is admitted");
+    let [equivalence] = declarations.dimension_equivalences.as_slice() else {
+        panic!("one equivalence: {:?}", declarations.dimension_equivalences);
+    };
+    assert!(
+        equivalence.root_scale == exact(500, 1) || equivalence.root_scale == exact(1, 500),
+        "{:?}",
+        equivalence.root_scale
+    );
+}
+
+/// FR-091-AC-55 and QSpec FR-142 "Dimension equivalence" step 5: the composed
+/// offset of a source unit over an affine package unit is the package
+/// unit's, so an equivalence naming it refuses `invalid-value` retaining that
+/// offset, at the declaration.
+#[trace("TC-483", "FR-091-AC-55", "QSpec-TC-187", "QSpec-FR-142-AC-18")]
+#[test]
+fn a_source_unit_over_an_affine_package_unit_carries_its_offset_into_step_five() {
+    let mut package: Value = serde_json::from_slice(&domain(
+        "acme/rpc",
+        &[("Rate", &[])],
+        &[
+            ("us", "Rate", None, "1"),
+            ("ms", "Rate", Some("us"), "1000"),
+        ],
+    ))
+    .expect("JSON");
+    let units = package["units"].as_array_mut().expect("units");
+    for unit in units.iter_mut().filter(|unit| unit["name"] == "ms") {
+        unit["offset"] = json!("5");
+    }
+    let packages: [Package; 1] = [("M", "acme/rpc", serde_json::to_vec(&package).expect("JSON"))];
+    let (cause, at) = refused_over(
+        &packages,
+        "dimension Dur;\nunit d : Dur = rational(1, 1);\n\
+         unit tick : M::Rate = rational(1, 2) * M::ms;\n\
+         dimension Dur ~ M::Rate by 1 d = 1 tick;",
+    );
+    assert_eq!(
+        cause.catalog_code().to_string(),
+        "invalid_package/invalid-value"
+    );
+    assert!(
+        retained(&cause).contains(&exact(5, 1).to_string()),
+        "{cause:?}"
+    );
+    assert!(at.starts_with("dimension Dur ~"), "{at}");
+}
+
+/// FR-091-AC-55 and AC-72: a refusal of a package node that is not about one
+/// local unit (row 4 beside the package root, row 6 over a cycle of local
+/// units, the base-dimension rule) is located at the `model` selection of
+/// its package; rows 1 to 3 and row 5 are located at the local unit.
+#[trace(
+    "TC-483",
+    "FR-091-AC-55",
+    "FR-091-AC-72",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-18"
+)]
+#[test]
+fn a_package_node_refusal_is_located_at_its_model_selection() {
+    let packages = two_domains();
+    let selection = "model P = \"acme/p\";";
+    let (cause, at) = refused_over(&packages, "unit m2 : P::L = rational(1, 1);");
+    assert!(
+        matches!(
+            &cause,
+            AssemblyCause::UnitGraphTopology {
+                fault: TopologyFault::TwoRoots,
+                ..
+            }
+        ),
+        "{cause:?}"
+    );
+    assert_eq!(at, selection);
+    let (cause, at) = refused_over(
+        &packages,
+        "unit a : P::L = rational(1, 1) * b; unit b : P::L = rational(1, 1) * a;",
+    );
+    assert!(
+        matches!(
+            &cause,
+            AssemblyCause::UnitGraphTopology {
+                fault: TopologyFault::TargetCycle,
+                ..
+            }
+        ),
+        "{cause:?}"
+    );
+    assert_eq!(at, selection);
+    // The base-dimension rule: `L` has no unit in `P`, and `Area` is the
+    // local unit's dimension.
+    let bare: [Package; 1] = [(
+        "P",
+        "acme/p",
+        domain("acme/p", &[("L", &[]), ("Area", &[("L", "2")])], &[]),
+    )];
+    let (cause, at) = refused_over(&bare, "unit m2 : P::Area = rational(1, 1);");
+    assert!(
+        matches!(
+            &cause,
+            AssemblyCause::UnanchoredBaseDimension { dimension, unit }
+                if dimension == "ix://acme/p/dimension/L" && unit == "m2"
+        ),
+        "{cause:?}"
+    );
+    assert_eq!(at, selection);
+    for (body, local) in [
+        ("unit z : P::L = rational(0, 1) * P::m;", "z"),
+        ("unit u : P::L = rational(1, 1) * P::ghost;", "P::ghost"),
+        ("unit w : Time = rational(1, 1) * P::m;", "w"),
+        ("unit t : Q::T = rational(2, 1);", "t"),
+    ] {
+        let (_, at) = refused_over(&packages, body);
+        assert_eq!(at, local, "{body}");
+    }
 }

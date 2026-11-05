@@ -1040,6 +1040,11 @@ impl<'a> SourceScope<'a> {
         self.scope.named_types(self.source, name)
     }
 
+    /// The unit `name` names in this unit; see [`Scope::unit_named`].
+    pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
+        self.scope.unit_named(self.source, name)
+    }
+
     /// The object type `name` names in this unit; see
     /// [`Scope::object_type_named`].
     pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
@@ -1495,9 +1500,18 @@ impl Scope {
         self
     }
 
-    /// The unit the unit declares under `name`, as a quantity's unit id.
-    pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
-        self.index.units.get(name).cloned()
+    /// The unit `name`, written in the source unit `source`, names as a
+    /// quantity's unit id: a declared unit of the unit, or `Alias::unit` of
+    /// the admitted package its model alias selects.
+    pub(crate) fn unit_named(
+        &self,
+        source: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Option<quire_exact::UnitId> {
+        match self.model_spellings.spelled(source, name) {
+            Spelled::Model(_) => self.model_spellings.unit(source, name),
+            Spelled::Other => self.index.units.get(name).cloned(),
+        }
     }
 
     /// This scope with the unit's protocol declarations named `names`, in

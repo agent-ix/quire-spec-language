@@ -19,7 +19,7 @@ use crate::check::lowering::AdmittedModel;
 use crate::check::lowering::{quantity_origin, strongly_connected, QuantityKind};
 use crate::check::node_key::SourceOwner;
 use crate::check::time_units::{package_unit_scale, rational, scalar_type_key};
-use crate::model::domain_package::PackageDimensionRecord;
+use crate::model::domain_package::{PackageDimensionRecord, PackageUnitRecord};
 use crate::value::semantic_node::{ModelSubject, NodeOwner, NominalRefusal, OwnerSelection};
 use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
 use quire_checked::key::DeclarationKey;
@@ -57,7 +57,7 @@ pub(super) struct Provisional {
     pub(super) derived: BTreeSet<String>,
     /// Each unit's dimension name and, when no row 1, 2, 3 or 6 defect
     /// breaks its target chain, its composed scale and offset to the root.
-    pub(super) units: BTreeMap<String, (String, Option<(Rational, Rational)>)>,
+    pub(super) units: BTreeMap<String, (UnitDimension, Option<(Rational, Rational)>)>,
 }
 
 /// Why the declarations admit no unit graph.
@@ -71,10 +71,20 @@ pub(super) struct Refused {
     pub(super) provisional: Provisional,
 }
 
+/// What a unit's `:` names: a dimension of this source or of an admitted
+/// package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum UnitDimension {
+    Source(String),
+    Package(DeclarationKey),
+}
+
 /// A unit's dimension node and its composed edge to the canonical root of
 /// that dimension: `root = scale × value + offset`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ComposedUnit {
+    /// What the unit's dimension name denotes.
+    pub(super) named: UnitDimension,
     /// The unit's dimension node.
     pub(crate) dimension: NodeKey,
     /// The composed scale to the root.
@@ -221,6 +231,8 @@ pub(super) struct ImportedDimension {
     pub(super) key: NodeKey,
     /// Its FCD identity.
     pub(super) identity: String,
+    /// Its declaration in its package.
+    pub(super) declaration: DeclarationKey,
     /// Its normalized base map over imported base keys.
     pub(super) map: BTreeMap<NodeKey, Integer>,
     /// Whether its package declares a unit of it.
@@ -286,6 +298,7 @@ impl Imported {
                     ImportedDimension {
                         key,
                         identity: dimension.key.node.clone(),
+                        declaration: dimension.key.clone(),
                         map,
                         has_unit: model
                             .units
@@ -309,36 +322,10 @@ impl Imported {
                 let Some(dimension) = dimension_keys.get(&unit.dimension).cloned() else {
                     continue;
                 };
-                let Some(_model_key) = scalar_type_key(&unit.key, "unit") else {
+                let Some((preimage, key)) = package_unit_preimage(model, unit, &dimension) else {
                     continue;
                 };
-                let Some(scale) = rational(&unit.scale) else {
-                    continue;
-                };
-                let Some(offset) = rational(&unit.offset) else {
-                    continue;
-                };
-                let target = unit
-                    .target
-                    .as_ref()
-                    .and_then(|target| scalar_type_key(target, "unit"));
-                let node_owner = NodeOwner::Model(ModelSubject {
-                    identity: model.selection().identity.clone(),
-                    node: unit.key.node.clone(),
-                });
-                let Ok(preimage) = UnitPreimage::new(
-                    node_owner.clone(),
-                    vec![unit.name.clone()],
-                    dimension.clone(),
-                    target.clone(),
-                    &scale,
-                    &offset,
-                ) else {
-                    continue;
-                };
-                let Some(key) = preimage.key().ok() else {
-                    continue;
-                };
+                let node_owner = preimage.owner().clone();
                 let Some((root_scale, root_offset)) = package_unit_scale(unit, &model.units) else {
                     continue;
                 };
@@ -381,6 +368,47 @@ impl Imported {
         }
         imported
     }
+}
+
+/// A package unit's preimage and node key over its dimension's node key.
+/// `None` for a unit whose numbers or identity intake refuses.
+fn package_unit_preimage(
+    model: &AdmittedModel,
+    unit: &PackageUnitRecord,
+    dimension: &NodeKey,
+) -> Option<(UnitPreimage, NodeKey)> {
+    scalar_type_key(&unit.key, "unit")?;
+    let scale = rational(&unit.scale)?;
+    let offset = rational(&unit.offset)?;
+    let target = unit
+        .target
+        .as_ref()
+        .and_then(|target| scalar_type_key(target, "unit"));
+    let node_owner = NodeOwner::Model(ModelSubject {
+        identity: model.selection().identity.clone(),
+        node: unit.key.node.clone(),
+    });
+    let preimage = UnitPreimage::new(
+        node_owner,
+        vec![unit.name.clone()],
+        dimension.clone(),
+        target,
+        &scale,
+        &offset,
+    )
+    .ok()?;
+    let key = preimage.key().ok()?;
+    Some((preimage, key))
+}
+
+/// The node key of the unit `unit` an admitted domain package declares.
+pub(crate) fn package_unit_key(model: &AdmittedModel, unit: &PackageUnitRecord) -> Option<NodeKey> {
+    let dimension = model
+        .dimensions
+        .iter()
+        .find(|dimension| dimension.key == unit.dimension)?;
+    let (dimension_key, _, _) = package_dimension(model, dimension, &mut Vec::new())?;
+    package_unit_preimage(model, unit, &dimension_key).map(|(_, key)| key)
 }
 
 /// A package dimension's key, normalized base map and preimage: a base
@@ -432,6 +460,7 @@ fn provisional(
     offsets: &[Option<Rational>],
     owner: &SourceOwner,
     owners: &BTreeMap<String, SourceOwner>,
+    imported: &Imported,
     package_name: &str,
 ) -> Provisional {
     let mut fixed = Provisional::default();
@@ -461,10 +490,13 @@ fn provisional(
             scales,
             offsets,
         );
-        fixed
-            .units
-            .entry(form.name.name.clone())
-            .or_insert((form.dimension.name.clone(), composed));
+        fixed.units.entry(form.name.name.clone()).or_insert((
+            match imported.dimensions.get(&form.dimension.name) {
+                Some(dimension) => UnitDimension::Package(dimension.declaration.clone()),
+                None => UnitDimension::Source(form.dimension.name.clone()),
+            },
+            composed,
+        ));
     }
     fixed
 }
@@ -878,16 +910,13 @@ impl Walk<'_> {
             key: None,
         }));
         if roots.len() > 1 {
-            let second = local_roots
-                .first()
-                .copied()
-                .or_else(|| local.first().copied())?;
+            local_roots.first().or(local.first())?;
             let mut retained = vec![TopologyRetained::Dimension {
                 name: dimension.identity.clone(),
                 key: Some(dimension.key.clone()),
             }];
             retained.extend(roots);
-            return Some(self.topology(TopologyFault::TwoRoots, retained, self.unit_spans[second]));
+            return Some(self.topology(TopologyFault::TwoRoots, retained, dimension.selection));
         }
         if dimension.roots.is_empty() {
             if let Some(&root) = local_roots.first() {
@@ -924,7 +953,7 @@ impl Walk<'_> {
                 break;
             }
         }
-        Some(self.topology(TopologyFault::TargetCycle, retained, self.unit_spans[least]))
+        Some(self.topology(TopologyFault::TargetCycle, retained, dimension.selection))
     }
 
     fn local_turn(&self, index: usize, context: &Context<'_>) -> Option<AssemblyError> {
@@ -1262,6 +1291,7 @@ pub(super) fn assemble(
         &offsets,
         owner,
         owners,
+        imported,
         package_name,
     );
     if !errors.is_empty() {
@@ -1384,6 +1414,17 @@ pub(super) fn assemble(
     let mut unit_nodes = Vec::with_capacity(units.len());
     for component in strongly_connected(&unit_edges) {
         for index in component {
+            let named = match &unit_dimension[index] {
+                DimensionRef::Local(dimension) => {
+                    UnitDimension::Source(dimension_names[*dimension].to_owned())
+                }
+                DimensionRef::Imported(key) => {
+                    match imported.dimensions.values().find(|d| &d.key == key) {
+                        Some(dimension) => UnitDimension::Package(dimension.declaration.clone()),
+                        None => UnitDimension::Source(units[index].dimension.name.clone()),
+                    }
+                }
+            };
             let dimension = match &unit_dimension[index] {
                 DimensionRef::Local(dimension) => dimension_keys[*dimension].clone(),
                 DimensionRef::Imported(dimension) => Some(dimension.clone()),
@@ -1433,6 +1474,7 @@ pub(super) fn assemble(
                         )
                     })?;
                     ComposedUnit {
+                        named: named.clone(),
                         dimension: dimension.clone(),
                         scale: to.scale.mul(&scales[index]),
                         offset: to.scale.mul(&offsets[index]).add(&to.offset),
@@ -1440,11 +1482,13 @@ pub(super) fn assemble(
                 }
                 None => match &package_targets[index] {
                     Some(to) => ComposedUnit {
+                        named: named.clone(),
                         dimension: dimension.clone(),
                         scale: to.root_scale.mul(&scales[index]),
                         offset: to.root_scale.mul(&offsets[index]).add(&to.root_offset),
                     },
                     None => ComposedUnit {
+                        named: named.clone(),
                         dimension: dimension.clone(),
                         scale: scales[index].clone(),
                         offset: offsets[index].clone(),
