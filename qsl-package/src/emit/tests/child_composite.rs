@@ -15,7 +15,7 @@ pub(super) mod fixture;
 /// `unit_body` as model `M` over the FR-359 package, through the spine to the
 /// v2 emitter with nothing omitted, and a read of the bytes with the package
 /// document as evidence.
-fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
+pub(super) fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
@@ -48,7 +48,7 @@ fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
     (emission, wire, read)
 }
 
-const UNIT: &str = "\
+pub(super) const UNIT: &str = "\
 function occurredAt using v(e: M::OrderPlaced): Integer pure { e.occurred_at }\n\
 function fromExpress using v(e: M::ExpressOrderPlaced): Integer pure { occurredAt(e) }\n\
 function fromRush using v(e: M::RushOrderPlaced): Integer pure { occurredAt(e) }\n";

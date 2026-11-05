@@ -14,7 +14,7 @@ relationships:
 
 ## Description
 
-Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18, FR-092-AC-19, FR-092-AC-20.
+Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18, FR-092-AC-19, FR-092-AC-20, FR-092-AC-21.
 
 Catches an implementation that binds by name and looks it up again at emission, one that emits a `dependency_reference` or a separate collection, one that emits a second carrier or refuses for a repeated reference, one that changes the carrier id when a reference is repeated, one that lets the occurrences enter node identity, one that carries a semantic type other than the target's, one that emits a bare union key with no member or payload witness, and one that builds the carrier path without its target.
 
@@ -43,6 +43,11 @@ Catches an implementation that binds by name and looks it up again at emission, 
     first package back through IR, join its union row, and project the union node
     with the row, without it, and with a row that misorders its members or drops a
     payload node.
+11. Emit a unit that declares `record Point { x: Integer; y: Integer; }` and
+    `record Tagged { p: Point; note: Boolean?; maybe: Option<Integer>; }`, a
+    recursive record with a sequence and an `Option` self-reference, and a
+    unit with a tuple, a union and a unit whose records are model-owned. Read the first package
+    back through IR.
 
 ## Expected Results
 
@@ -79,4 +84,15 @@ Catches an implementation that binds by name and looks it up again at emission, 
   `Composite` of the type handle; with no row it refuses
   `UnavailableIdentityWitness`; the misordered and truncated rows refuse
   `MismatchedIdentityWitness`.
+- Step 11 gives one `SelectedSourceRecordRow` per source record. `Tagged`'s row
+  names the emitted `composite_type`/`record` node, its source authority and
+  identity equal that node's owner, its qualified declaration is `["Tagged"]`
+  and its record key is the checked declaration's key. Its members are `p`,
+  `note` and `maybe` in order, with equal declared and binding names,
+  presence `Required`, `Optional`, `Required`, field types `Composite(Point)`,
+  `Boolean` and `Option<Integer>`, and type node ids equal to the targets of
+  the node's bindings. The recursive record's collection and `Option` member
+  type nodes share its recursion group. The tuple, union and model-owned-record
+  units give no source record row. IR admits each row's record node and
+  type nodes.
 - Assertions compare typed fields, causes and keys, never message text.

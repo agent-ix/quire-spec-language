@@ -296,6 +296,38 @@ impl SemanticNode {
         &self.content.body
     }
 
+    /// QSpec FR-440 "Record type node": a record type node's bindings in
+    /// declared order, each as its binding name and the node its reference
+    /// names (through the `optional` group of an optional field). `None` for
+    /// every node whose body is not that shape.
+    pub fn record_member_nodes(&self) -> Option<Vec<(&str, NodeKey)>> {
+        if self.content.node_tag != NodeTag::CompositeType {
+            return None;
+        }
+        let BodyTerm::Aggregate(AggregateTerm { members }) = &self.content.body else {
+            return None;
+        };
+        members
+            .iter()
+            .map(|member| {
+                let MemberTerm::Binding(Binding { name, value }) = member else {
+                    return None;
+                };
+                let leaf = match value {
+                    BindingValue::Leaf(leaf) => leaf,
+                    BindingValue::Group(group) => match group.members.as_slice() {
+                        [GroupMember::Binding(Binding { value: leaf, .. })] => leaf,
+                        _ => return None,
+                    },
+                    BindingValue::Tuple(_)
+                    | BindingValue::Aggregate(_)
+                    | BindingValue::ExecutionPoint(_) => return None,
+                };
+                Some((name.as_str(), leaf.reference_target()?.admitted().cloned()?))
+            })
+            .collect()
+    }
+
     /// FR-092 "Function nodes": a function node's body expression node, read
     /// from its `body` binding. `None` for every node that is not a function
     /// node and for a function node whose body is not a keyed reference.
@@ -436,6 +468,9 @@ pub struct SemanticGraph {
     source_enum_declarations: BTreeMap<NodeKey, SourceEnumDeclaration>,
     /// Source-owned enum members keyed by their lowered member node.
     source_enum_members: BTreeMap<NodeKey, SourceEnumMember>,
+    /// Each declared composite's final node key by its declaration key
+    /// (FR-092 "Source record identity rows"), set when lowering finishes.
+    composite_nodes: BTreeMap<NodeKey, NodeKey>,
     /// `nodes`' keys ascending, once ranked.
     order: Vec<NodeKey>,
 }
@@ -529,6 +564,12 @@ impl SemanticGraph {
     /// The source-owned enum members associated with lowered nodes.
     pub fn source_enum_members(&self) -> impl Iterator<Item = (&NodeKey, &SourceEnumMember)> {
         self.source_enum_members.iter()
+    }
+
+    /// The final node key of the declared composite `declaration`, if
+    /// lowering emitted one.
+    pub fn composite_node(&self, declaration: &NodeKey) -> Option<&NodeKey> {
+        self.composite_nodes.get(declaration)
     }
 
     /// The node keyed `key`.
@@ -1993,6 +2034,19 @@ impl<'a> Lowering<'a> {
             .into_iter()
             .map(|(name, members)| Ok((name, members.into_admitted(root)?)))
             .collect::<Result<_, CheckRefusal>>()?;
+        // Ranked first, so collecting compares each key with one neighbour.
+        let composites: BTreeMap<NodeKey, NodeKey> = super::key_order::sorted_by_key(
+            self.composites
+                .into_iter()
+                .filter_map(|(declaration, node)| {
+                    node.admitted().cloned().map(|node| (declaration, node))
+                })
+                .collect(),
+            |(declaration, _)| declaration,
+        )
+        .into_iter()
+        .collect();
+        self.graph.composite_nodes = composites.clone();
         Ok(Lowered {
             graph: self.graph,
             correspondence: self.correspondence,
@@ -2005,17 +2059,7 @@ impl<'a> Lowering<'a> {
             parameter_spans,
             population_nodes: self.population_nodes,
             // Ranked first, so collecting compares each key with one neighbour.
-            composites: super::key_order::sorted_by_key(
-                self.composites
-                    .into_iter()
-                    .filter_map(|(declaration, node)| {
-                        node.admitted().cloned().map(|node| (declaration, node))
-                    })
-                    .collect(),
-                |(declaration, _)| declaration,
-            )
-            .into_iter()
-            .collect(),
+            composites,
             protocol_members,
             equality_producer_data: self.equality_producer_data,
             equality_producer_identities: self.equality_producer_identities,

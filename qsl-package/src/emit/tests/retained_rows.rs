@@ -58,6 +58,10 @@ fn composite() -> Emission {
         .extend(source_enums.wire_nodes.iter().cloned());
     let (_, source_unions) = emit_from_text(super::source_union_rows::SHAPE);
     base.selected_source_union_rows = source_unions.selected_source_union_rows.clone();
+    let (_, source_records) = emit_from_text(super::source_record_rows::RECORDS);
+    base.selected_source_record_rows = source_records.selected_source_record_rows.clone();
+    base.wire_nodes
+        .extend(source_records.wire_nodes.iter().cloned());
     base.wire_nodes
         .extend(source_unions.wire_nodes.iter().cloned());
     base.equality_producer_identity_rows
@@ -181,6 +185,10 @@ fn renames_of(emission: &Emission) -> Vec<(CheckedNodeId, CheckedNodeId)> {
     }
     for row in &emission.selected_source_unit_rows {
         push(&row.structural_node);
+    }
+    for row in &emission.selected_source_record_rows {
+        push(&row.structural_node);
+        row.members.iter().for_each(|m| push(&m.type_node));
     }
     for row in &emission.selected_source_union_rows {
         push(&row.structural_node);
@@ -352,6 +360,24 @@ fn every_retained_row_kind_is_carried_with_its_node_ids_rekeyed() {
         }
         assert_eq!(got, &want, "source union");
         assert!(want.members.iter().any(|m| !m.payload_nodes.is_empty()));
+    }
+
+    assert_eq!(
+        rows.selected_source_record_rows.len(),
+        emission.selected_source_record_rows.len()
+    );
+    assert!(!rows.selected_source_record_rows.is_empty());
+    for (got, was) in rows
+        .selected_source_record_rows
+        .iter()
+        .zip(&emission.selected_source_record_rows)
+    {
+        let mut want = was.clone();
+        want.structural_node = renamed(&was.structural_node);
+        for member in &mut want.members {
+            member.type_node = renamed(&member.type_node);
+        }
+        assert_eq!(got, &want, "source record");
     }
 
     assert_eq!(rows.selected_exact_declaration_rows.len(), 1);

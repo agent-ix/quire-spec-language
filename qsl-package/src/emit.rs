@@ -468,6 +468,42 @@ thread_local! {
     > = const { std::cell::RefCell::new(None) };
 }
 
+/// One source-owned record's QSL-stage declaration witness (FR-092 "Source
+/// record identity rows"). The checking stage identifies a source record's
+/// fields by declared name and issues them no member identity, so this row
+/// has no `MemberId`; only model records carry one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedSourceRecordRow {
+    /// The record declaration's emitted `composite_type` node.
+    pub structural_node: CheckedNodeId,
+    /// Authority of the selected raw source.
+    pub source_authority: Box<str>,
+    /// Identity of the selected raw source.
+    pub source_identity: Box<str>,
+    /// Original qualified declaration segments in that source.
+    pub qualified_declaration: Vec<Box<str>>,
+    /// The checked declaration's key, which every `ValueType::Composite` of
+    /// the record carries.
+    pub record_key: NodeKey,
+    /// Every member in declaration order, unselected members included.
+    pub members: Vec<SelectedSourceRecordMemberRow>,
+}
+
+/// One member of a [`SelectedSourceRecordRow`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedSourceRecordMemberRow {
+    /// The declared field name, read from the checked declaration.
+    pub original_member_identity: Box<str>,
+    /// The record node's binding name, read from the emitted node.
+    pub admitted_name: Box<str>,
+    /// The declared presence, never inferred from an `Option` type.
+    pub presence: quire_exact::Presence,
+    /// The emitted type node the binding references.
+    pub type_node: CheckedNodeId,
+    /// The checked field type after presence handling.
+    pub value_type: quire_exact::ValueType,
+}
+
 /// The emitted package and the nodes it omits.
 #[derive(Clone)]
 pub struct Emission {
@@ -506,6 +542,9 @@ pub struct Emission {
     /// sealed members and ordered payload nodes (FR-092 "Source union
     /// identity rows").
     pub(crate) selected_source_union_rows: Vec<quire_contract_model::SelectedSourceUnionRow>,
+    /// QSL-stage declaration witnesses for emitted source-owned records
+    /// (FR-092 "Source record identity rows").
+    pub(crate) selected_source_record_rows: Vec<SelectedSourceRecordRow>,
     /// The checking stage's selected model declaration rows (record, object,
     /// declared unit), retained from the acquisition these bytes were
     /// emitted from. A collection type is structural and has no row.
@@ -741,6 +780,7 @@ impl DebugWith for Emission {
             selected_enum_declaration_rows,
             selected_enum_member_rows,
             selected_source_union_rows,
+            selected_source_record_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
             equality_producer_identity_rows,
@@ -778,6 +818,7 @@ impl DebugWith for Emission {
             )
             .field("selected_enum_member_rows", selected_enum_member_rows)
             .field("selected_source_union_rows", selected_source_union_rows)
+            .field("selected_source_record_rows", selected_source_record_rows)
             .field(
                 "selected_exact_declaration_rows",
                 selected_exact_declaration_rows,
@@ -1072,6 +1113,12 @@ impl Emission {
     /// emitted union node, its sealed members and their ordered payload nodes.
     pub fn selected_source_union_rows(&self) -> &[quire_contract_model::SelectedSourceUnionRow] {
         &self.selected_source_union_rows
+    }
+
+    /// Source-owned record rows carried by this emission, ascending by the
+    /// record nodes' keys.
+    pub fn selected_source_record_rows(&self) -> &[SelectedSourceRecordRow] {
+        &self.selected_source_record_rows
     }
 
     /// Selected model declaration rows (record, object, declared unit) of the
@@ -5113,6 +5160,7 @@ pub fn emit_timed_models(
         selected_enum_declaration_rows: Vec::new(),
         selected_enum_member_rows: Vec::new(),
         selected_source_union_rows: Vec::new(),
+        selected_source_record_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
@@ -6033,6 +6081,7 @@ fn emit_package_inner(
     let (selected_enum_declaration_rows, selected_enum_member_rows) =
         source_enum_rows(graph.semantic_graph(), &emitted_node_ids)?;
     let selected_source_union_rows = source_union_rows(graph, &emitted_node_ids)?;
+    let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -6088,6 +6137,7 @@ fn emit_package_inner(
         selected_enum_declaration_rows,
         selected_enum_member_rows,
         selected_source_union_rows,
+        selected_source_record_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
         equality_producer_identity_rows,
@@ -6190,33 +6240,7 @@ fn source_union_rows(
         let payloads = node
             .union_member_payload_nodes()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        if payloads.len() != declared.len() {
-            return Err(EmitRefusal::SourceMapInvariant);
-        }
-        let members = declared
-            .iter()
-            .zip(&sealed)
-            .zip(payloads)
-            .map(|((declared, sealed), (name, payload))| {
-                if name != sealed.identifier() || payload.len() != declared.positions().len() {
-                    return Err(EmitRefusal::SourceMapInvariant);
-                }
-                let payload_nodes = payload
-                    .iter()
-                    .map(|key| {
-                        emitted
-                            .get(key)
-                            .cloned()
-                            .ok_or(EmitRefusal::SourceMapInvariant)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(quire_contract_model::SelectedUnionMemberRow::new(
-                    (*sealed).clone(),
-                    payload_nodes,
-                    declared.positions().to_vec(),
-                ))
-            })
-            .collect::<Result<Vec<_>, EmitRefusal>>()?;
+        let members = union_member_rows(declared, &sealed, payloads, emitted)?;
         rows.push(quire_contract_model::SelectedSourceUnionRow::new(
             structural_node.clone(),
             owner.authority(),
@@ -6231,6 +6255,159 @@ fn source_union_rows(
         ));
     }
     Ok(rows)
+}
+
+/// FR-092 "Source record identity rows": one row per emitted source-owned
+/// record, joined to its final structural id. Declared names, presence and
+/// field types come from the checked declaration; binding names and type
+/// nodes come from the emitted record node; the two are joined by position.
+fn source_record_rows(
+    graph: &CheckedGraph,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<SelectedSourceRecordRow>, EmitRefusal> {
+    source_record_rows_over(graph, emitted, graph.scope().types().composites())
+}
+
+/// [`source_record_rows`] over the record declarations `declarations`. An
+/// emitted source record node that no declaration of `declarations` joins to,
+/// a declared record whose node is absent from the graph or is a source
+/// composite without an owner or declaration, and a binding list or type node
+/// that cannot be joined are writer faults; a record node that was not
+/// emitted, and a model-owned record, have no row.
+fn source_record_rows_over<'d>(
+    graph: &CheckedGraph,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+    declarations: impl Iterator<Item = &'d quire_semantic_value::declaration::CompositeDeclaration>,
+) -> Result<Vec<SelectedSourceRecordRow>, EmitRefusal> {
+    use quire_semantic_value::declaration::CompositeShape;
+
+    let semantic = graph.semantic_graph();
+    let mut rows = Vec::new();
+    for declaration in declarations {
+        let CompositeShape::Record(declared) = declaration.shape() else {
+            continue;
+        };
+        let Some(node_key) = semantic.composite_node(&declaration.key()) else {
+            continue;
+        };
+        let node = semantic
+            .node(node_key.clone())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        if node.node_tag() != NodeTag::CompositeType {
+            // A selected model record uses its model-owned node.
+            continue;
+        }
+        let (Some(Owner::Source(owner)), Some(qualified)) = (node.owner(), node.declaration())
+        else {
+            return Err(EmitRefusal::SourceMapInvariant);
+        };
+        let Some(structural_node) = emitted.get(node_key) else {
+            continue;
+        };
+        let bindings = node
+            .record_member_nodes()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let members = record_member_rows(declared, bindings, emitted)?;
+        rows.push((
+            node_key.clone(),
+            SelectedSourceRecordRow {
+                structural_node: structural_node.clone(),
+                source_authority: owner.authority().into(),
+                source_identity: owner.identity().into(),
+                qualified_declaration: qualified
+                    .iter()
+                    .map(|segment| segment.as_str().into())
+                    .collect(),
+                record_key: declaration.key(),
+                members,
+            },
+        ));
+    }
+    let rowed: std::collections::BTreeSet<&NodeKey> = rows.iter().map(|(key, _)| key).collect();
+    let unmatched = semantic.nodes().any(|node| {
+        node.node_tag() == NodeTag::CompositeType
+            && matches!(node.owner(), Some(Owner::Source(_)))
+            && node
+                .record_member_nodes()
+                .is_some_and(|bindings| !bindings.is_empty())
+            && emitted.contains_key(&node.key())
+            && !rowed.contains(&node.key())
+    });
+    if unmatched {
+        return Err(EmitRefusal::SourceMapInvariant);
+    }
+    rows.sort_by(|(left, _), (right, _)| left.cmp(right));
+    Ok(rows.into_iter().map(|(_, row)| row).collect())
+}
+
+/// The member entries of one record row, joining the declared fields to the
+/// record node's bindings position by position and keeping both the declared
+/// name and the node's binding name. A binding list that disagrees with the
+/// declaration in member count, or names a type node that was not emitted, is
+/// a writer fault.
+fn record_member_rows(
+    declared: &[quire_semantic_value::declaration::FieldDeclaration],
+    bindings: Vec<(&str, NodeKey)>,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<SelectedSourceRecordMemberRow>, EmitRefusal> {
+    if bindings.len() != declared.len() {
+        return Err(EmitRefusal::SourceMapInvariant);
+    }
+    declared
+        .iter()
+        .zip(bindings)
+        .map(|(field, (name, type_key))| {
+            Ok(SelectedSourceRecordMemberRow {
+                original_member_identity: field.name().into(),
+                admitted_name: name.into(),
+                presence: field.presence(),
+                type_node: emitted
+                    .get(&type_key)
+                    .cloned()
+                    .ok_or(EmitRefusal::SourceMapInvariant)?,
+                value_type: field.value_type().clone(),
+            })
+        })
+        .collect()
+}
+
+/// The member entries of one union row: the sealed members, the payload node
+/// ids and the payload types, joined position by position. A payload list
+/// that disagrees with the declaration in member count, member name or
+/// payload count, or names a node that was not emitted, is a writer fault.
+fn union_member_rows(
+    declared: &[quire_semantic_value::declaration::UnionMemberDeclaration],
+    sealed: &[&quire_exact::UnionMember],
+    payloads: Vec<(&str, Vec<NodeKey>)>,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<quire_contract_model::SelectedUnionMemberRow>, EmitRefusal> {
+    if payloads.len() != declared.len() {
+        return Err(EmitRefusal::SourceMapInvariant);
+    }
+    declared
+        .iter()
+        .zip(sealed)
+        .zip(payloads)
+        .map(|((declared, sealed), (name, payload))| {
+            if name != sealed.identifier() || payload.len() != declared.positions().len() {
+                return Err(EmitRefusal::SourceMapInvariant);
+            }
+            let payload_nodes = payload
+                .iter()
+                .map(|key| {
+                    emitted
+                        .get(key)
+                        .cloned()
+                        .ok_or(EmitRefusal::SourceMapInvariant)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(quire_contract_model::SelectedUnionMemberRow::new(
+                (*sealed).clone(),
+                payload_nodes,
+                declared.positions().to_vec(),
+            ))
+        })
+        .collect()
 }
 
 fn temporal_clock_matches_profile(
