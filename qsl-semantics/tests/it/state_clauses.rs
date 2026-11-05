@@ -1554,6 +1554,40 @@ fn run_frame_clause_with(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_frame_clause_labeled(
+        ("pre-snap", "post-snap"),
+        clause_name,
+        pre_objects,
+        post_objects,
+        self_key,
+        created,
+        deleted,
+        edit_invocation,
+        edit_pre,
+        edit_post,
+        limits,
+    )
+}
+
+/// [`run_frame_clause_with`], with the pre and post snapshots admitted under
+/// the document references whose identity labels are `labels`.
+#[allow(clippy::too_many_arguments)]
+fn run_frame_clause_labeled(
+    labels: (&str, &str),
+    clause_name: &str,
+    pre_objects: &[(&str, i64, Option<&str>)],
+    post_objects: &[(&str, i64, Option<&str>)],
+    self_key: &str,
+    created: &[&str],
+    deleted: &[&str],
+    edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_pre: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_post: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let document = frame_test_document();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
 
@@ -1564,10 +1598,10 @@ fn run_frame_clause_with(
         .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
     let clause = graph.state_clause(clause_name).expect("clause is declared");
 
-    let pre = frame_label("pre-snap");
+    let pre = frame_label(labels.0);
     let pre_bytes = edit_pre(frame_snapshot_bytes(&pre, "pre", pre_objects));
     let pre = qsl_semantics::model::observation::DocumentRef { ..pre };
-    let post = frame_label("post-snap");
+    let post = frame_label(labels.1);
     let post_bytes = edit_post(frame_snapshot_bytes(&post, "post", post_objects));
     let post = qsl_semantics::model::observation::DocumentRef { ..post };
     let invocation = frame_label("invocation");
@@ -3847,7 +3881,7 @@ fn tc465_row14_wrong_operation_refuses_wrong_invocation() {
 }
 
 /// Row 15 (check 6.1): population `ix://example/config-version/other`.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "TC-1308", "FR-106-AC-3", "FR-513-AC-14")]
 #[test]
 fn tc465_row15_unknown_population_refuses_wrong_role_mapping() {
     let document = tc465_document();
@@ -3858,7 +3892,7 @@ fn tc465_row15_unknown_population_refuses_wrong_role_mapping() {
 }
 
 /// Row 16 (check 6.3): a second object keyed `root`.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "TC-1308", "FR-106-AC-3", "FR-513-AC-14")]
 #[test]
 fn tc465_row16_duplicate_key_refuses_conflicting_identity() {
     let document = tc465_document();
@@ -3874,11 +3908,16 @@ fn tc465_row16_duplicate_key_refuses_conflicting_identity() {
     assert_tc465_refused(result, "invalid_runtime_input", "conflicting-identity");
 }
 
-/// FR-106-AC-70 (FR-513-AC-14, TC-1308 row 24): one snapshot's content
-/// admitted under two distinct document references gives two observations.
-/// Each keeps its own authority and identity labels, and both hold the same
-/// populations, completeness and object environment, and the `self` object
-/// carries the same universe, object type and object identifier in both.
+/// FR-106-AC-70 (FR-513-AC-14, TC-1308 row 24): the occurrence identity of an
+/// admitted observation is its document reference, the authority and identity
+/// labels of FR-001 (QSpec FR-207's authority-qualified observation identity;
+/// QSL FR-049's `ObservationIdentity`). One snapshot's content admitted under
+/// two distinct references gives two observations that keep their own labels
+/// and hold the same populations, completeness and object environment, with
+/// the `self` object carrying the same universe, object type and object
+/// identifier in both. This case is the `current` observation; the `pre` and
+/// `post` observations are
+/// `pre_and_post_snapshots_admitted_under_two_reference_pairs_keep_each_identity`.
 ///
 /// Mutation used: in `admit_observations`, replaced `identity: read.identity`
 /// with a constant `DocumentRef`; the identity assertions went red as
@@ -3920,27 +3959,87 @@ fn one_snapshot_admitted_under_two_references_keeps_each_identity_and_the_full_t
     assert_eq!(a.object(), b.object());
 }
 
-/// FR-513-AC-14 (TC-1308 row 24): a second object with an existing key (a
-/// duplicate member, whether an identical copy or a different record) refuses
-/// `invalid_runtime_input`/`conflicting-identity` naming the key.
+/// FR-106-AC-70 (FR-513-AC-14, TC-1308 row 24), `pre` and `post`: one
+/// invocation's snapshot contents admitted under two pairs of document
+/// references give two pairs of observations, each keeping its own labels,
+/// with equal populations and environments and the same `self` tuple.
+///
+/// Mutation used: in `admit_observations`, replaced the `pre` and `post`
+/// `identity` with constants; the identity assertions went red as expected,
+/// reverted.
+#[trace("TC-1308", "FR-513-AC-14", "FR-106-AC-70")]
+#[test]
+fn pre_and_post_snapshots_admitted_under_two_reference_pairs_keep_each_identity() {
+    let pre_objects = [("root", 1, None)];
+    let post_objects = [("root", 2, None)];
+    let admit = |labels: (&str, &str)| {
+        run_frame_clause_labeled(
+            labels,
+            "AttemptUpdatePost",
+            &pre_objects,
+            &post_objects,
+            "root",
+            &[],
+            &[],
+            |bytes| bytes,
+            |bytes| bytes,
+            |bytes| bytes,
+            qsl_semantics::model::observation::ObservationLimits::default(),
+        )
+        .expect("the invocation admits")
+    };
+    let first = admit(("pre-a", "post-a"));
+    let second = admit(("pre-b", "post-b"));
+
+    let sides = |admitted: &qsl_semantics::model::observation::AdmittedObservations| {
+        (
+            admitted.pre.clone().expect("a pre observation"),
+            admitted.post.clone().expect("a post observation"),
+        )
+    };
+    let ((pre_one, post_one), (pre_two, post_two)) = (sides(&first), sides(&second));
+    assert_eq!(pre_one.identity, frame_label("pre-a"));
+    assert_eq!(post_one.identity, frame_label("post-a"));
+    assert_eq!(pre_two.identity, frame_label("pre-b"));
+    assert_eq!(post_two.identity, frame_label("post-b"));
+    assert_ne!(pre_one.identity, post_one.identity);
+    assert_ne!(pre_one.identity, pre_two.identity);
+    assert_ne!(post_one.identity, post_two.identity);
+
+    assert_eq!(pre_one.populations, pre_two.populations);
+    assert_eq!(post_one.populations, post_two.populations);
+    assert_eq!(
+        format!("{:?}", pre_one.environment),
+        format!("{:?}", pre_two.environment)
+    );
+    assert_eq!(
+        format!("{:?}", post_one.environment),
+        format!("{:?}", post_two.environment)
+    );
+    assert_ne!(
+        format!("{:?}", pre_one.environment),
+        format!("{:?}", post_one.environment),
+        "pre and post hold different contents, so the equalities above are not vacuous"
+    );
+    assert_eq!(first.self_object.universe(), second.self_object.universe());
+    assert_eq!(
+        first.self_object.object_type(),
+        second.self_object.object_type()
+    );
+    assert_eq!(first.self_object.object(), second.self_object.object());
+    assert_eq!(first.self_object.object().as_str(), "root");
+}
+
+/// FR-513-AC-14 (TC-1308 row 24), the cases `tc465_row15`, `row16`, `row32`
+/// and `row34` do not assert: a second record with different content under an
+/// existing storage key refuses `conflicting-identity` naming that key
+/// (row 16 repeats an identical record), and a member whose type no model
+/// declares refuses `wrong-role-mapping` naming the object (row 32's type is
+/// declared but not taken by the population).
 #[trace("TC-1308", "FR-513-AC-14", "FR-106-AC-3")]
 #[test]
-fn a_duplicate_member_and_a_duplicate_storage_key_each_refuse_conflicting_identity() {
+fn a_second_record_under_one_key_and_a_member_of_an_undeclared_type_each_refuse() {
     let document = tc465_document();
-    let copy = run_tc465_current(&document, |value| {
-        let mut objects = value["populations"][0]["objects"]
-            .as_array()
-            .unwrap()
-            .clone();
-        objects.push(objects[0].clone());
-        value["populations"][0]["objects"] = json!(objects);
-    });
-    let record = assert_tc465_refused(copy, "invalid_runtime_input", "conflicting-identity");
-    assert_eq!(
-        record.fields.get("object").map(String::as_str),
-        Some("root")
-    );
-
     let other = run_tc465_current(&document, |value| {
         let mut object = value["populations"][0]["objects"][0].clone();
         object["fields"]["versionNumber"] = json!({"integer": "9"});
@@ -3954,29 +4053,6 @@ fn a_duplicate_member_and_a_duplicate_storage_key_each_refuse_conflicting_identi
         record.fields.get("object").map(String::as_str),
         Some("root")
     );
-}
-
-/// FR-513-AC-14 (TC-1308 row 24): a surplus member (a field the type does not
-/// declare) refuses `unknown-member`; a foreign member (a type the model does
-/// not declare), a wrong-type member (a declared type the population does not
-/// take) and a foreign population each refuse `wrong-role-mapping`, naming
-/// the object or population.
-#[trace("TC-1308", "FR-513-AC-14", "FR-106-AC-3")]
-#[test]
-fn a_surplus_foreign_and_wrong_type_member_each_refuse_at_their_own_check() {
-    let document = tc465_document();
-    let surplus = run_tc465_current(&document, |value| {
-        value["populations"][0]["objects"][0]["fields"]["label"] = json!({"boolean": true});
-    });
-    let record = assert_tc465_refused(surplus, "invalid_runtime_input", "unknown-member");
-    assert_eq!(
-        record.fields.get("object").map(String::as_str),
-        Some("root")
-    );
-    assert_eq!(
-        record.fields.get("field").map(String::as_str),
-        Some("label")
-    );
 
     let foreign = run_tc465_current(&document, |value| {
         value["populations"][0]["objects"][0]["type"] = json!("ix://example/config-version/Absent");
@@ -3985,26 +4061,6 @@ fn a_surplus_foreign_and_wrong_type_member_each_refuse_at_their_own_check() {
     assert_eq!(
         record.fields.get("object").map(String::as_str),
         Some("root")
-    );
-
-    let with_note = tc465_document_with_note_type();
-    let wrong_type = run_tc465_current(&with_note, |value| {
-        value["populations"][0]["objects"][0]["type"] = json!("ix://example/config-version/Note");
-        value["populations"][0]["objects"][0]["fields"] = json!({});
-    });
-    let record = assert_tc465_refused(wrong_type, "invalid_runtime_input", "wrong-role-mapping");
-    assert_eq!(
-        record.fields.get("object").map(String::as_str),
-        Some("root")
-    );
-
-    let population = run_tc465_current(&document, |value| {
-        value["populations"][0]["population"] = json!("ix://example/config-version/other");
-    });
-    let record = assert_tc465_refused(population, "invalid_runtime_input", "wrong-role-mapping");
-    assert_eq!(
-        record.fields.get("population").map(String::as_str),
-        Some("ix://example/config-version/other")
     );
 }
 
@@ -4522,7 +4578,7 @@ fn tc465_row31_an_unauthorized_deletion_beats_a_field_change_in_the_same_populat
 /// Row 32 (check 6.1): a package variant that adds object type `Note`, a
 /// member type of no population, and an object `n1` of type `Note` in
 /// `config_history`.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "TC-1308", "FR-106-AC-3", "FR-513-AC-14")]
 #[test]
 fn tc465_row32_an_object_of_an_undeclared_member_type_refuses_wrong_role_mapping() {
     let document = tc465_document_with_note_type();
@@ -5026,7 +5082,7 @@ fn tc465_row33_missing_declared_field_refuses_missing_member() {
 }
 
 /// Row 34 (check 6.4): `root` with an extra field `label`.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "TC-1308", "FR-106-AC-3", "FR-513-AC-14")]
 #[test]
 fn tc465_row34_undeclared_field_refuses_unknown_member() {
     let document = tc465_document();
