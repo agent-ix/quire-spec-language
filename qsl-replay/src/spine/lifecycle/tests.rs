@@ -1765,9 +1765,9 @@ fn aggregate_check_resolves_profiles_selected_under_later_unit_aliases() {
         .all(|unit| unit.type_report().declarations().len() == 1));
 }
 
-/// FR-514-AC-5 and FR-480-AC-6: aggregate quantity failures preserve their
+/// FR-514-AC-5, FR-480-AC-6 and FR-091-AC-47: aggregate quantity failures preserve their
 /// topology cause, dependency edges, declaration span and owning source.
-#[trace("FR-514-AC-5", "FR-480-AC-6", "TC-1309")]
+#[trace("FR-514-AC-5", "FR-480-AC-6", "FR-091-AC-47", "TC-1309")]
 #[test]
 fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     fn refusal(documents: &[(&str, &str)]) -> (Box<CompileRefusal>, Vec<SourceIdentity>) {
@@ -1856,11 +1856,18 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     else {
         panic!("quantity cycles are assembler refusals");
     };
-    assert!(matches!(
-        &assembly_refusal.errors[0].cause,
-        qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
-            if edges == &[("u_self".to_owned(), "u_self".to_owned())]
-    ));
+    // FR-091-AC-47: a unit-graph cycle is a topology refusal retaining its
+    // edges from the least unit by source position.
+    assert_eq!(
+        assembly_refusal.errors[0].cause,
+        qsl_semantics::check::AssemblyCause::UnitGraphTopology {
+            fault: qsl_semantics::check::TopologyFault::TargetCycle,
+            retained: vec![qsl_semantics::check::TopologyRetained::Edge {
+                from: "u_self".to_owned(),
+                to: "u_self".to_owned(),
+            }],
+        }
+    );
 
     let (cross_unit_cycle, identities) = refusal(&[
         (
@@ -1888,11 +1895,22 @@ fn aggregate_quantity_cycles_and_zero_scale_name_the_declaration_source() {
     else {
         panic!("quantity cycles are assembler refusals");
     };
-    assert!(matches!(
-        &assembly_refusal.errors[0].cause,
-        qsl_semantics::check::AssemblyCause::QuantityCycle { edges }
-            if edges == &[("z".to_owned(), "z2".to_owned()), ("z2".to_owned(), "z".to_owned())]
-    ));
+    assert_eq!(
+        assembly_refusal.errors[0].cause,
+        qsl_semantics::check::AssemblyCause::UnitGraphTopology {
+            fault: qsl_semantics::check::TopologyFault::TargetCycle,
+            retained: vec![
+                qsl_semantics::check::TopologyRetained::Edge {
+                    from: "z".to_owned(),
+                    to: "z2".to_owned(),
+                },
+                qsl_semantics::check::TopologyRetained::Edge {
+                    from: "z2".to_owned(),
+                    to: "z".to_owned(),
+                },
+            ],
+        }
+    );
 
     let (dimension_cycle, identities) = refusal(&[
         ("test:lifecycle:dimension-cycle-a", "dimension A = B;"),
