@@ -56,6 +56,9 @@ pub struct BarePackage<'p> {
 pub struct BareSupply<'p> {
     /// The selected model identity rows of the package.
     pub identities: &'p ReadIdentityRows,
+    /// The producer's equality rows, read from `equality.json`; `None` for
+    /// a package whose slots hold no equality application (FR-531).
+    pub equality: Option<&'p crate::equality_file::ReadEqualityRows>,
 }
 
 impl<'p> BarePackage<'p> {
