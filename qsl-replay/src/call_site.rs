@@ -23,7 +23,9 @@ use qsl_foundation::bound::DomainKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClause};
+use qsl_semantics::check::{
+    CallableFunction, CheckedGraph, CheckedOperationFrame, CheckedStateClause,
+};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
 use quire_exact::{Cancel, Identifier, NodeKey, ValueType};
@@ -50,9 +52,12 @@ use crate::FrameOperation;
 /// - a [`FieldName`] `M::T.f` selects a state field of an object type and
 ///   locates a [`FieldSite`], its ADR-012 §15.4 domain key;
 /// - a [`PopulationName`] `M::P` selects a population of a model and
-///   locates a [`PopulationSite`], its ADR-012 §15.7 domain key.
+///   locates a [`PopulationSite`], its ADR-012 §15.7 domain key;
+/// - an [`ImportedFunctionName`] selects a function a direct import of the
+///   unit declares and locates an [`ImportedFunctionSite`] in the library's
+///   checked package from the unit's own compile (FR-121).
 ///
-/// Sealed: these five are the selections.
+/// Sealed: these six are the selections.
 pub trait CallSiteSelection: sealed::Locate {}
 
 impl CallSiteSelection for QualifiedName {}
@@ -60,6 +65,23 @@ impl CallSiteSelection for OperationName {}
 impl CallSiteSelection for ClauseName {}
 impl CallSiteSelection for FieldName {}
 impl CallSiteSelection for PopulationName {}
+impl CallSiteSelection for ImportedFunctionName {}
+
+/// A function a library declares: the `library` the unit imports by its
+/// [`LibraryName`] (ADR-015 D-3) and the `function`'s [`Identifier`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportedFunctionName {
+    /// The library, as the unit's `import` names it.
+    pub library: LibraryName,
+    /// The function the library declares.
+    pub function: Identifier,
+}
+
+impl std::fmt::Display for ImportedFunctionName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}::{}", self.library.as_str(), self.function.as_str())
+    }
+}
 
 /// A population `M::P`: the `model` alias `M` and a population declaration
 /// `P` of that model's domain package, by its artifact id (the `P` of
@@ -115,10 +137,23 @@ impl std::fmt::Display for ClauseName {
 }
 
 mod sealed {
-    use qsl_package::CheckedPackage;
+    use std::collections::BTreeMap;
+
+    use qsl_package::{CheckedPackage, EmittedPackage};
     use qsl_semantics::library::LibraryName;
 
     use super::CallSiteRefusal;
+
+    /// The unit one compile produced: its checked package, its name, and the
+    /// v2 bytes the same compile emitted for each library it resolved.
+    pub struct Compiled<'a> {
+        /// The unit's checked package.
+        pub package: &'a CheckedPackage,
+        /// The unit's package name.
+        pub package_name: &'a LibraryName,
+        /// The emitted v2 bytes of every resolved library.
+        pub libraries: &'a BTreeMap<LibraryName, EmittedPackage>,
+    }
 
     /// How a selection locates itself in a compiled package.
     pub trait Locate {
@@ -126,18 +161,14 @@ mod sealed {
         type Site;
 
         /// Locate `self` in `package`, whose name is `package_name`.
-        fn locate(
-            &self,
-            package: &CheckedPackage,
-            package_name: &LibraryName,
-        ) -> Result<Self::Site, Box<CallSiteRefusal>>;
+        fn locate(&self, unit: &Compiled<'_>) -> Result<Self::Site, Box<CallSiteRefusal>>;
     }
 }
 
 /// What [`call_site`] returns: the compiled package's lowered bytes, and
 /// what the selection located, a
 /// [`FunctionSite`], an [`OperationSite`], a [`ClauseSite`], a
-/// [`FieldSite`] or a [`PopulationSite`].
+/// [`FieldSite`], a [`PopulationSite`] or an [`ImportedFunctionSite`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSite<S> {
     /// The compiled package's `quire.checked-package/v2` bytes, exactly as
@@ -234,6 +265,21 @@ pub struct FieldSite {
     /// inside the field's type extends this path with the child-index path
     /// into that type. The key a `DeclaredDomain` bounding the field names.
     pub domain: DomainKey,
+}
+
+/// A function a direct import of the unit declares, located in the
+/// library's checked package from the unit's own compile (FR-121).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportedFunctionSite {
+    /// The declaring library: the `package` of the `dependency_reference`
+    /// term every call of the function in the unit lowers to.
+    pub library: LibraryName,
+    /// The library's `quire.checked-package/v2` bytes exactly as the S4
+    /// emitter wrote them in the unit's compile.
+    pub package: Vec<u8>,
+    /// The function located in the library's package, derived as a
+    /// [`QualifiedName`] selection derives it over the library alone.
+    pub function: FunctionSite,
 }
 
 /// A population's domain in the compiled package (ADR-012 §15.7).
@@ -399,6 +445,39 @@ pub enum CallSiteRefusal {
         /// The compiled package's name.
         package: LibraryName,
     },
+    /// `selection` names a library that no `import` of the unit names: one
+    /// supplied but imported by nothing, imported only through another
+    /// library, or not supplied. Paired with the unit's compiled package, as
+    /// [`Self::UnknownFunction`] is; the pair ADR-015 D-1 step 3 gives an
+    /// import no supplied library selects.
+    #[error("missing_import/missing-selection: package {package} imports no library {}", .selection.library)]
+    UnknownImport {
+        /// The imported function `call_site` was given.
+        selection: ImportedFunctionName,
+        /// The unit's compiled package name.
+        package: LibraryName,
+    },
+    /// `selection`'s library declares no function of that name. Paired with
+    /// the library's package name.
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no function {selection}"
+    )]
+    UnknownImportedFunction {
+        /// The imported function `call_site` was given.
+        selection: ImportedFunctionName,
+        /// The library's package name.
+        package: LibraryName,
+    },
+    /// `selection`'s function has a parameter or result type that is not
+    /// package-independent, so ADR-015 D-5 refuses a use of it as an
+    /// imported name. Paired with the library's package name.
+    #[error("ill_typed/operator-ineligible: package {package} function {selection} has a package-dependent signature")]
+    NotImportable {
+        /// The imported function `call_site` was given.
+        selection: ImportedFunctionName,
+        /// The library's package name.
+        package: LibraryName,
+    },
     /// A broken invariant: the compiled package's own function node for a
     /// selected function is not itself a function node, or its parameter
     /// count does not match its checked signature, or a declared parameter
@@ -425,7 +504,10 @@ impl CallSiteRefusal {
             | Self::UnknownOperation { .. }
             | Self::UnknownClause { .. }
             | Self::UnknownField { .. }
-            | Self::UnknownPopulation { .. } => Code::MissingDeclaration,
+            | Self::UnknownPopulation { .. }
+            | Self::UnknownImportedFunction { .. } => Code::MissingDeclaration,
+            Self::UnknownImport { .. } => Code::MissingImport,
+            Self::NotImportable { .. } => Code::IllTyped,
             Self::NotAnOperationOwner { .. } => Code::InvalidModelBinding,
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::Fault(_) => Code::RuntimeInvariant,
@@ -541,7 +623,11 @@ pub fn call_site<'a, S: CallSiteSelection>(
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    let site = selection.locate(checked.package(), &library_name)?;
+    let site = selection.locate(&sealed::Compiled {
+        package: checked.package(),
+        package_name: &library_name,
+        libraries: checked.shared_library_packages(),
+    })?;
     Ok(CallSite {
         package: emitted.package().bytes().to_vec(),
         site,
@@ -606,62 +692,122 @@ impl sealed::Locate for QualifiedName {
     /// `self`'s parameters in `package`, each paired with its own node id,
     /// by the one-segment name lookup and node-key derivation `replay`'s own
     /// selection uses.
-    fn locate(
-        &self,
-        package: &CheckedPackage,
-        package_name: &LibraryName,
-    ) -> Result<FunctionSite, Box<CallSiteRefusal>> {
+    fn locate(&self, unit: &sealed::Compiled<'_>) -> Result<FunctionSite, Box<CallSiteRefusal>> {
         let unknown = || {
             Box::new(CallSiteRefusal::UnknownFunction {
                 selection: self.clone(),
-                package: package_name.clone(),
+                package: unit.package_name.clone(),
             })
         };
         let [segment] = self.segments() else {
             return Err(unknown());
         };
-        let callable = package
+        let callable = unit
+            .package
             .graph()
             .callable(segment.as_str())
             .ok_or_else(unknown)?;
-        let keys = callable_parameter_keys(package, &callable)
-            .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
-        let parameters = callable
-            .parameters
-            .iter()
-            .zip(keys.iter().cloned())
-            .map(|((name, _value_type), key)| {
-                Ok((
-                    identifier(name, "declared-parameter-name-is-a-valid-identifier")?,
-                    key,
-                ))
-            })
-            .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
-        let function = callable.identity.clone();
-        let value_parity = if *callable.result == ValueType::Boolean {
-            None
-        } else {
-            let preimage = value_parity_preimage(package, callable.identity.clone(), &keys)
-                .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
-            let obligation_identity = value_parity_obligation(&preimage).map_err(|error| {
-                Box::new(CallSiteRefusal::Fault(
-                    InternalFault::new("call_site", "value-parity-preimage-encodes")
-                        .with_named(vec![("cause", error.to_string())]),
-                ))
-            })?;
-            Some(ValueParitySite {
-                preimage,
-                obligation_identity,
+        function_site(unit.package, &callable)
+    }
+}
+
+impl sealed::Locate for ImportedFunctionName {
+    type Site = ImportedFunctionSite;
+
+    /// `self.function` in the checked package of `self.library`, one of the
+    /// unit's direct imports, from the unit's own compile: no second compile
+    /// and no same-named function of the unit.
+    fn locate(
+        &self,
+        unit: &sealed::Compiled<'_>,
+    ) -> Result<ImportedFunctionSite, Box<CallSiteRefusal>> {
+        let no_import = || {
+            Box::new(CallSiteRefusal::UnknownImport {
+                selection: self.clone(),
+                package: unit.package_name.clone(),
             })
         };
-        Ok(FunctionSite {
-            function: function.clone(),
-            declaration: declaration_occurrence(function.clone()),
-            obligation_identity: ObligationIdentity::new(function, None, 0),
-            parameters,
-            value_parity,
+        if !unit.package.imports_directly(&self.library) {
+            return Err(no_import());
+        }
+        let library = unit
+            .package
+            .dependencies()
+            .get(&self.library)
+            .ok_or_else(no_import)?;
+        let callable = library
+            .graph()
+            .callable(self.function.as_str())
+            .ok_or_else(|| {
+                Box::new(CallSiteRefusal::UnknownImportedFunction {
+                    selection: self.clone(),
+                    package: self.library.clone(),
+                })
+            })?;
+        if !callable.is_importable() {
+            return Err(Box::new(CallSiteRefusal::NotImportable {
+                selection: self.clone(),
+                package: self.library.clone(),
+            }));
+        }
+        let emitted = unit.libraries.get(&self.library).ok_or_else(|| {
+            Box::new(CallSiteRefusal::Fault(InternalFault::new(
+                "call-site",
+                "direct-import-has-emitted-bytes",
+            )))
+        })?;
+        Ok(ImportedFunctionSite {
+            library: self.library.clone(),
+            package: emitted.bytes().to_vec(),
+            function: function_site(library, &callable)?,
         })
     }
+}
+
+/// The [`FunctionSite`] of `callable`, a function of `package`: its node,
+/// declaration occurrence and obligation identity, each parameter paired with
+/// its node key, and its value parity.
+fn function_site(
+    package: &CheckedPackage,
+    callable: &CallableFunction<'_>,
+) -> Result<FunctionSite, Box<CallSiteRefusal>> {
+    let keys = callable_parameter_keys(package, callable)
+        .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
+    let parameters = callable
+        .parameters
+        .iter()
+        .zip(keys.iter().cloned())
+        .map(|((name, _value_type), key)| {
+            Ok((
+                identifier(name, "declared-parameter-name-is-a-valid-identifier")?,
+                key,
+            ))
+        })
+        .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
+    let function = callable.identity.clone();
+    let value_parity = if *callable.result == ValueType::Boolean {
+        None
+    } else {
+        let preimage = value_parity_preimage(package, callable.identity.clone(), &keys)
+            .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
+        let obligation_identity = value_parity_obligation(&preimage).map_err(|error| {
+            Box::new(CallSiteRefusal::Fault(
+                InternalFault::new("call_site", "value-parity-preimage-encodes")
+                    .with_named(vec![("cause", error.to_string())]),
+            ))
+        })?;
+        Some(ValueParitySite {
+            preimage,
+            obligation_identity,
+        })
+    };
+    Ok(FunctionSite {
+        function: function.clone(),
+        declaration: declaration_occurrence(function.clone()),
+        obligation_identity: ObligationIdentity::new(function, None, 0),
+        parameters,
+        value_parity,
+    })
 }
 
 impl sealed::Locate for OperationName {
@@ -669,11 +815,8 @@ impl sealed::Locate for OperationName {
 
     /// `self`'s frame in `package`, resolved as FR-115's `Frame` selection
     /// resolves it, with its identities.
-    fn locate(
-        &self,
-        package: &CheckedPackage,
-        package_name: &LibraryName,
-    ) -> Result<OperationSite, Box<CallSiteRefusal>> {
+    fn locate(&self, unit: &sealed::Compiled<'_>) -> Result<OperationSite, Box<CallSiteRefusal>> {
+        let (package, package_name) = (unit.package, unit.package_name);
         let graph = package.graph();
         let refuse = |build: fn(OperationName, LibraryName) -> CallSiteRefusal| {
             Box::new(build(self.clone(), package_name.clone()))
@@ -703,11 +846,8 @@ impl sealed::Locate for ClauseName {
     type Site = ClauseSite;
 
     /// The state clause of `package` declared `self`, with its identities.
-    fn locate(
-        &self,
-        package: &CheckedPackage,
-        package_name: &LibraryName,
-    ) -> Result<ClauseSite, Box<CallSiteRefusal>> {
+    fn locate(&self, unit: &sealed::Compiled<'_>) -> Result<ClauseSite, Box<CallSiteRefusal>> {
+        let (package, package_name) = (unit.package, unit.package_name);
         let clause = package
             .graph()
             .state_clause(self.0.as_str())
@@ -725,11 +865,8 @@ impl sealed::Locate for FieldName {
     type Site = FieldSite;
 
     /// `self`'s domain key in `package` (ADR-012 §15.4).
-    fn locate(
-        &self,
-        package: &CheckedPackage,
-        package_name: &LibraryName,
-    ) -> Result<FieldSite, Box<CallSiteRefusal>> {
+    fn locate(&self, unit: &sealed::Compiled<'_>) -> Result<FieldSite, Box<CallSiteRefusal>> {
+        let (package, package_name) = (unit.package, unit.package_name);
         package
             .graph()
             .field_domain(&self.model, &self.object, &self.field)
@@ -748,11 +885,8 @@ impl sealed::Locate for PopulationName {
     type Site = PopulationSite;
 
     /// `self`'s domain key in `package` (ADR-012 §15.7).
-    fn locate(
-        &self,
-        package: &CheckedPackage,
-        package_name: &LibraryName,
-    ) -> Result<PopulationSite, Box<CallSiteRefusal>> {
+    fn locate(&self, unit: &sealed::Compiled<'_>) -> Result<PopulationSite, Box<CallSiteRefusal>> {
+        let (package, package_name) = (unit.package, unit.package_name);
         package
             .graph()
             .population_domain(&self.model, &self.population)
