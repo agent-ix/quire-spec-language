@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The single FR-390 protocol-slot selector owned by the admitted package view.
+use crate::wire_form::{is_expression_role, WireForm};
 use crate::CheckedPackage;
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 use qsl_semantics::check::{
@@ -253,6 +254,7 @@ fn compensation_retry(compensation: &CheckedRetry) -> Vec<(String, ValueType)> {
 /// `#[string_edge]`: the member names and checked control labels are the
 /// protocol slot's declared discriminator vocabulary (FR-390), not values
 /// decoded from arbitrary text.
+#[ix_trace_rs::string_edge]
 fn run_body<'a>(
     package: &'a CheckedPackage,
     protocol: &'a CheckedProtocol,
@@ -405,6 +407,7 @@ fn run_body<'a>(
 
 /// `#[string_edge]`: dispatches the caller's exact FR-390 member key against
 /// the checked protocol member and slot table.
+#[ix_trace_rs::string_edge]
 pub(crate) fn select<'a>(
     package: &'a CheckedPackage,
     slot: &ProtocolSlotDescriptor,
@@ -781,7 +784,7 @@ pub(crate) fn select<'a>(
 pub(crate) fn root_node(package: &CheckedPackage, body: &CheckedBody) -> Option<NodeKey> {
     let root_location = body.root().location();
     let required_form = match body.root().kind() {
-        quire_checked::node::NodeKind::Attribute { .. } => Some("query"),
+        quire_checked::node::NodeKind::Attribute { .. } => Some(WireForm::Query),
         _ => None,
     };
     package
@@ -793,9 +796,11 @@ pub(crate) fn root_node(package: &CheckedPackage, body: &CheckedBody) -> Option<
                     .graph()
                     .semantic_graph()
                     .node(key.clone())
-                    .is_some_and(|node| node.semantic_form() == required)
+                    .is_some_and(|node| WireForm::from_wire(node.semantic_form()) == Some(required))
             });
-            (origin.role().as_str() == "expression" && location == root_location && form_matches)
+            (is_expression_role(origin.role().as_str())
+                && location == root_location
+                && form_matches)
                 .then(|| key.clone())
         })
 }

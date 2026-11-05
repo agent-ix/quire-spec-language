@@ -13,20 +13,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{protocol_site, ProtocolSite};
-use quire_contract_model::{
-    CheckedNodeId, CheckedPackageV2, CheckedProtocolLocationOrigin, CheckedSemanticNodeV2,
-    CheckedTerm,
-};
+use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm};
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
 use crate::bare::{BarePackage, IdentityWitnessRefusal};
 use crate::checked_v2::wire_graph;
+use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
 use crate::protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 use crate::protocol_view::{
     argument, control_operation, group_member, integer, reference, text, ControlOperation,
 };
-use crate::reader_protocol_projection::{node_value_type, TypeError, TypeReader, UnsupportedView};
+use crate::reader_protocol_projection::{
+    node_value_type, BareWalker, TypeError, TypeReader, UnsupportedView, WalkFailure,
+};
+use crate::wire_form::{has_tag, WireTag};
 
 type Node = CheckedSemanticNodeV2;
 
@@ -36,6 +37,9 @@ pub enum BareSelectionFailure {
     /// The identity rows of the supply are absent, foreign or name nothing
     /// the package admits (FR-531-AC-5); decided before any node is read.
     Identity(IdentityWitnessRefusal),
+    /// The equality rows of the supply are absent, foreign or join no
+    /// equality application of the slot's walk (FR-531 "Refusals").
+    Equality(EqualityWitnessRefusal),
     /// The descriptor names no slot (FR-390 "Selection and supply admission",
     /// rules 1 and 2).
     Slot(SlotSelectionFailure),
@@ -86,7 +90,7 @@ impl BareSource {
 #[derive(Clone, Debug)]
 pub struct BareSlot {
     root: NodeKey,
-    origins: Vec<String>,
+    origin: Option<String>,
     sources: Vec<BareSource>,
 }
 
@@ -95,18 +99,12 @@ impl BareSlot {
     pub fn root(&self) -> &NodeKey {
         &self.root
     }
-    /// Every site name the slot may be located under, in UTF-8 byte order of
-    /// the name: the one name the node determines, or for a span-named slot
-    /// (`related`, `visible`, case guard, repeat guard) every origin of its
-    /// control that the root's rows hold. B1 does not choose among them:
-    /// FR-533 "Slot naming on the bytes route" rules 2 to 5 (numeric
-    /// `(start, end)` order, tied-slot rank, `related` interleaving, exactly
-    /// one origin) are delivered by B2a, so a span-named slot may list several
-    /// origins here, in byte order, which is not the order those rules fix.
-    /// A span-named slot whose root holds no row lists none: the root is a
-    /// leaf and the walk has no term to pair.
-    pub fn origins(&self) -> &[String] {
-        &self.origins
+    /// The site name the slot's `protocol_locations` rows are keyed under:
+    /// the name the node determines, the one origin FR-533 "Slot naming on
+    /// the bytes route" resolves for a span-named slot, or `None` for a slot
+    /// with no application to locate.
+    pub fn origin(&self) -> Option<&str> {
+        self.origin.as_deref()
     }
     /// The binders the expression reads, ascending by (level, key); each
     /// source's `index` is its position in that order.
@@ -149,19 +147,26 @@ enum Tail {
 }
 
 impl Tail {
-    /// Whether `rest`, the name after the control's site, is this tail.
-    fn matches(self, rest: &str) -> bool {
-        let numbers = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+    /// The spelling that follows the control's site and a space.
+    fn word(self) -> &'static str {
         match self {
-            Self::Related => rest
-                .strip_prefix("related ")
-                .and_then(|spans| spans.split_once(' '))
-                .is_some_and(|(start, end)| numbers(start) && numbers(end)),
-            Self::Decision => rest
-                .strip_prefix("decision ")
-                .and_then(|spans| spans.split_once(".."))
-                .is_some_and(|(start, end)| numbers(start) && numbers(end)),
+            Self::Related => "related ",
+            Self::Decision => "decision ",
         }
+    }
+
+    /// The numeric `(start, end)` of the name after `word`.
+    fn parse(self, rest: &str) -> Option<(u64, u64)> {
+        let (start, end) = match self {
+            Self::Related => rest.split_once(' ')?,
+            Self::Decision => rest.split_once("..")?,
+        };
+        let number = |text: &str| {
+            (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| text.parse().ok())
+                .flatten()
+        };
+        Some((number(start)?, number(end)?))
     }
 }
 
@@ -175,6 +180,7 @@ fn names(node: &Node) -> Vec<&str> {
 /// The term a slot's member names and the site it is located under. The
 /// site names come from `qsl_semantics::check::protocol_site`, the one
 /// registry the emitter writes them with.
+#[ix_trace_rs::string_edge]
 fn slot_term<'n>(
     node: &'n Node,
     op: ControlOperation,
@@ -329,26 +335,75 @@ fn slot_term<'n>(
     })
 }
 
+/// A slot read from the package, before its origin is resolved.
+struct Resolved<'p> {
+    root: &'p CheckedNodeId,
+    site: Site,
+    sources: Vec<BareSource>,
+}
+
+/// The slots of one control that a span-named origin may be shared by, in the
+/// rank order of FR-533 rule 4: `visible`, `cases.guard`, then the `related`
+/// ends by record (`from[0]`, `to[0]`, `from[1]`, ...).
+#[ix_trace_rs::string_edge]
+fn tied_order<'n>(
+    node: &'n Node,
+    op: ControlOperation,
+    key: &NodeKey,
+    package: &'n CheckedPackageV2,
+) -> Vec<ProtocolSlotDescriptor> {
+    let mut slots: Vec<((usize, usize), ProtocolSlotDescriptor)> = Vec::new();
+    for (member, rank) in [
+        ("visible", 0),
+        ("cases.guard", 1),
+        ("related.from", 2),
+        ("related.to", 2),
+    ] {
+        for index in 0.. {
+            let descriptor = ProtocolSlotDescriptor::new(key.clone(), member, Some(index));
+            if slot_term(node, op, &descriptor, package).is_err() {
+                break;
+            }
+            let order = match member {
+                "related.from" => 2 * index,
+                "related.to" => 2 * index + 1,
+                _ => index,
+            };
+            slots.push(((rank, order), descriptor));
+        }
+    }
+    // A `repeat`'s guard is its only decision slot besides `visible`.
+    let guard = ProtocolSlotDescriptor::new(key.clone(), "guard", None);
+    if slot_term(node, op, &guard, package).is_ok() {
+        slots.push(((1, 0), guard));
+    }
+    slots.sort_by_key(|(order, _)| *order);
+    slots
+        .into_iter()
+        .map(|(_, descriptor)| descriptor)
+        .collect()
+}
+
 impl<'p> BarePackage<'p> {
     /// Select the slot `descriptor` names from the package's nodes, with the
-    /// binders its expression reads (FR-533). Charges nothing and takes no
+    /// binders its expression reads and the origin FR-533 "Slot naming on
+    /// the bytes route" resolves (FR-533). Charges nothing and takes no
     /// meter.
     ///
     /// # Errors
     ///
     /// [`BareSelectionFailure`].
+    #[ix_trace_rs::string_edge]
     pub fn select_protocol_slot(
         &self,
         descriptor: &ProtocolSlotDescriptor,
     ) -> Result<BareSlot, BareSelectionFailure> {
         let package = self.package();
-        let rows = self
-            .supply()
-            .ok_or(BareSelectionFailure::Identity(
-                IdentityWitnessRefusal::Missing,
-            ))?
-            .identities;
-        let identities = rows
+        let supply = self.supply().ok_or(BareSelectionFailure::Identity(
+            IdentityWitnessRefusal::Missing,
+        ))?;
+        let identities = supply
+            .identities
             .selected(package)
             .map_err(BareSelectionFailure::Identity)?;
         let graph = wire_graph(package).map_err(|_| fault("bare-package-has-structural-keys"))?;
@@ -372,35 +427,19 @@ impl<'p> BarePackage<'p> {
             .and_then(|id| nodes.get(id))
             .copied()
             .ok_or_else(|| SlotSelectionFailure::MissingNode(descriptor.node().clone()))?;
-        if &*node.node_tag != "protocol" {
+        if !has_tag(node, WireTag::Protocol) {
             return Err(SlotSelectionFailure::MalformedNode(descriptor.node().clone()).into());
         }
         // A protocol node outside the member table (a queue, a reference
         // carrier, a sequence, a role without `until`) has no expression.
         let op = control_operation(node).map_err(|_| absent(descriptor))?;
-        let (term, site) = slot_term(node, op, descriptor, package)?;
-        let root = reference(term)
-            .ok_or_else(|| fault("selected-protocol-expression-has-a-keyed-root"))?;
-        let origins = origin_of(package, root, site);
-
-        // The binders: `value`/`parameter` nodes of the root's dependency
-        // closure, stopping at a binder and at a function (FR-390 rule 3).
-        let mut found: BTreeSet<&CheckedNodeId> = BTreeSet::new();
-        let mut seen: BTreeSet<&CheckedNodeId> = BTreeSet::new();
-        let mut pending = vec![root];
-        while let Some(id) = pending.pop() {
-            if !seen.insert(id) {
-                continue;
-            }
-            let Some(next) = nodes.get(id) else { continue };
-            match (&*next.node_tag, &*next.semantic_form) {
-                ("value", "parameter") => {
-                    found.insert(id);
-                }
-                ("expression", _) | ("value", _) => pending.extend(&next.dependencies),
-                _ => {}
-            }
-        }
+        let walker = BareWalker::new(
+            package,
+            identities.clone(),
+            supply.equality,
+            package_work_limit(),
+        )
+        .map_err(SlotSelectionFailure::Fault)?;
         let reader = TypeReader {
             admitted: package,
             identities: &identities,
@@ -408,53 +447,187 @@ impl<'p> BarePackage<'p> {
             graph: &graph,
             work_limit: package_work_limit(),
         };
-        let mut sources = Vec::with_capacity(found.len());
-        for id in found {
-            let binder = nodes
-                .get(id)
-                .copied()
-                .ok_or_else(|| fault("bare-binder-is-held"))?;
-            let key = graph
-                .key(id)
-                .map_err(|_| fault("bare-package-has-structural-keys"))?;
-            let name = group_member(&binder.body, "name").and_then(text);
-            let level = group_member(&binder.body, "level").and_then(integer);
-            let (Some(name), Some(level)) = (name, level) else {
-                return Err(fault("bare-binder-has-a-name-and-a-level").into());
-            };
-            let value_type = match node_value_type(&reader, id) {
-                Ok(value_type) => value_type,
-                Err(TypeError::Unsupported) => {
-                    return Err(BareSelectionFailure::Unsupported(Box::new(
-                        UnsupportedView::missing_type(package.name(), key),
-                    )))
+        let resolve =
+            |descriptor: &ProtocolSlotDescriptor| -> Result<Resolved<'_>, BareSelectionFailure> {
+                let (term, site) = slot_term(node, op, descriptor, package)?;
+                let root = reference(term)
+                    .ok_or_else(|| fault("selected-protocol-expression-has-a-keyed-root"))?;
+                // The binders: `value`/`parameter` nodes of the root's
+                // dependency closure, stopping at a binder and at a function
+                // (FR-390 rule 3).
+                let mut found: BTreeSet<&CheckedNodeId> = BTreeSet::new();
+                let mut seen: BTreeSet<&CheckedNodeId> = BTreeSet::new();
+                let mut pending = vec![root];
+                while let Some(id) = pending.pop() {
+                    if !seen.insert(id) {
+                        continue;
+                    }
+                    let Some(next) = nodes.get(id) else { continue };
+                    match (&*next.node_tag, &*next.semantic_form) {
+                        ("value", "parameter") => {
+                            found.insert(id);
+                        }
+                        ("expression", _) | ("value", _) => pending.extend(&next.dependencies),
+                        _ => {}
+                    }
                 }
-                Err(TypeError::Fault(failure)) => {
-                    return Err(SlotSelectionFailure::Fault(failure).into())
+                check_equality(package, supply.equality, &reached(&nodes, root))?;
+                let mut sources = Vec::with_capacity(found.len());
+                for id in found {
+                    let binder = nodes
+                        .get(id)
+                        .copied()
+                        .ok_or_else(|| fault("bare-binder-is-held"))?;
+                    let key = graph
+                        .key(id)
+                        .map_err(|_| fault("bare-package-has-structural-keys"))?;
+                    let name = group_member(&binder.body, "name").and_then(text);
+                    let level = group_member(&binder.body, "level").and_then(integer);
+                    let (Some(name), Some(level)) = (name, level) else {
+                        return Err(fault("bare-binder-has-a-name-and-a-level").into());
+                    };
+                    let value_type = match node_value_type(&reader, id) {
+                        Ok(value_type) => value_type,
+                        Err(TypeError::Unsupported) => {
+                            return Err(BareSelectionFailure::Unsupported(Box::new(
+                                UnsupportedView::missing_type(package.name(), key),
+                            )))
+                        }
+                        Err(TypeError::Fault(failure)) => {
+                            return Err(SlotSelectionFailure::Fault(failure).into())
+                        }
+                    };
+                    sources.push(BareSource {
+                        index: 0,
+                        name: name.to_owned(),
+                        level: usize::try_from(level)
+                            .map_err(|_| fault("bare-binder-level-fits"))?,
+                        value_type,
+                        binder: key,
+                    });
                 }
+                sources.sort_by(|left, right| {
+                    (left.level, &left.binder).cmp(&(right.level, &right.binder))
+                });
+                for (index, source) in sources.iter_mut().enumerate() {
+                    source.index = index;
+                }
+                Ok(Resolved {
+                    root,
+                    site,
+                    sources,
+                })
             };
-            sources.push(BareSource {
-                index: 0,
-                name: name.to_owned(),
-                level: usize::try_from(level).map_err(|_| fault("bare-binder-level-fits"))?,
-                value_type,
-                binder: key,
-            });
-        }
-        sources
-            .sort_by(|left, right| (left.level, &left.binder).cmp(&(right.level, &right.binder)));
-        for (index, source) in sources.iter_mut().enumerate() {
-            source.index = index;
-        }
+        let slot = resolve(descriptor)?;
         let root = graph
-            .key(root)
+            .key(slot.root)
             .map_err(|_| fault("bare-package-has-structural-keys"))?;
+        let origin = match &slot.site {
+            Site::Exact(name) => Some(name.clone()),
+            Site::Spanned(control, tail) => {
+                let prefix = format!("{control} {}", tail.word());
+                let binders = |sources: &[BareSource]| -> Vec<NodeKey> {
+                    sources.iter().map(|source| source.binder.clone()).collect()
+                };
+                let visits = |root: &NodeKey, sources: &[BareSource]| {
+                    walker
+                        .visits(root, &binders(sources))
+                        .map_err(|failure| match failure {
+                            WalkFailure::Unsupported(view) => {
+                                BareSelectionFailure::Unsupported(Box::new(view))
+                            }
+                            WalkFailure::Equality(refusal) => {
+                                BareSelectionFailure::Equality(refusal)
+                            }
+                            WalkFailure::Fault(failure) => {
+                                SlotSelectionFailure::Fault(failure).into()
+                            }
+                        })
+                };
+                let own = visits(&root, &slot.sources)?;
+                if own.is_empty() {
+                    // A leaf root: no application, no row, no origin.
+                    None
+                } else {
+                    // Rule 2: the origins of the span family whose rows
+                    // name exactly the applications of this walk.
+                    let rows = walker.origin_rows();
+                    let candidates = ordered_candidates(
+                        rows.iter()
+                            .filter(|(_, held)| **held == own)
+                            .map(|(name, _)| *name),
+                        &prefix,
+                        *tail,
+                    );
+                    // Rule 4: this slot's rank among the control's slots
+                    // that share its walk.
+                    let mut rank = 0;
+                    for other in tied_order(node, op, descriptor.node(), package) {
+                        if other.member() == descriptor.member()
+                            && other.index() == descriptor.index()
+                        {
+                            break;
+                        }
+                        let Ok(sibling) = resolve(&other) else {
+                            continue;
+                        };
+                        let Ok(key) = graph.key(sibling.root) else {
+                            continue;
+                        };
+                        if matches!(&sibling.site, Site::Spanned(held, held_tail) if held == control && held_tail.word() == tail.word())
+                            && visits(&key, &sibling.sources)? == own
+                        {
+                            rank += 1;
+                        }
+                    }
+                    match candidates.get(rank) {
+                        Some(name) => Some((*name).to_owned()),
+                        None => {
+                            // Rule 5.
+                            let first = own
+                                .iter()
+                                .next()
+                                .map(|(application, count)| (application, *count));
+                            let (application, count) =
+                                first.ok_or_else(|| fault("bare-walk-holds-an-application"))?;
+                            let key = walker
+                                .key(application)
+                                .map_err(SlotSelectionFailure::Fault)?;
+                            return Err(BareSelectionFailure::Unsupported(Box::new(
+                                UnsupportedView::missing_origin(
+                                    package.name(),
+                                    &prefix,
+                                    key,
+                                    count,
+                                ),
+                            )));
+                        }
+                    }
+                }
+            }
+        };
         Ok(BareSlot {
             root,
-            origins,
-            sources,
+            origin,
+            sources: slot.sources,
         })
     }
+}
+
+/// The origins among `names` that the control's span family spells with
+/// `prefix` and a span of `form`, in ascending numeric `(start, end)` order,
+/// parsing both as decimal integers and not comparing the names' bytes
+/// (FR-533 rule 4).
+fn ordered_candidates<'a>(
+    names: impl Iterator<Item = &'a str>,
+    prefix: &str,
+    form: Tail,
+) -> Vec<&'a str> {
+    let mut spanned: Vec<((u64, u64), &str)> = names
+        .filter_map(|name| Some((form.parse(name.strip_prefix(prefix)?)?, name)))
+        .collect();
+    spanned.sort();
+    spanned.into_iter().map(|(_, name)| name).collect()
 }
 
 /// The projection work bound: the I2 reader's default.
@@ -462,28 +635,107 @@ fn package_work_limit() -> u64 {
     crate::checked_v2::V2ReadLimits::default().work
 }
 
-/// The site names of the slot rooted at `root`: the exact name, or every
-/// span-named origin of the control the root's rows hold, in UTF-8 byte
-/// order of the name.
-fn origin_of(package: &CheckedPackageV2, root: &CheckedNodeId, site: Site) -> Vec<String> {
-    match site {
-        Site::Exact(name) => vec![name],
-        Site::Spanned(control, tail) => package
-            .checked_term_data()
-            .map_or(&[][..], |data| data.protocol_locations.as_slice())
-            .iter()
-            .filter(|row| &row.application == root)
-            .filter_map(|row| match &row.location.origin {
-                CheckedProtocolLocationOrigin::TypeDeclaration { name } => Some(name.to_string()),
-                _ => None,
-            })
-            .filter(|name| {
-                name.strip_prefix(control.as_str())
-                    .and_then(|rest| rest.strip_prefix(' '))
-                    .is_some_and(|rest| tail.matches(rest))
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect(),
+/// The nodes the slot's walk can visit from `root`: every node reachable by
+/// reference from the root's term, through called functions as well (the span
+/// walk enters them; the binder search of FR-390 rule 3 stops there). A node
+/// reachable only from another slot is not in the set.
+fn reached<'n>(
+    nodes: &BTreeMap<&'n CheckedNodeId, &'n Node>,
+    root: &'n CheckedNodeId,
+) -> BTreeSet<&'n CheckedNodeId> {
+    let mut seen = BTreeSet::new();
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        if let Some(node) = nodes.get(id) {
+            pending.extend(node.body.reference_targets());
+        }
+    }
+    seen
+}
+
+/// The equality witness of a slot whose walk holds an `==` or `!=`
+/// application (FR-531 "Refusals"): decided over the nodes the walk reaches before any node
+/// is projected, so a `Package` refusal precedes a `Node` one (FR-390-AC-67).
+fn check_equality(
+    package: &CheckedPackageV2,
+    equality: Option<&ReadEqualityRows>,
+    closure: &BTreeSet<&CheckedNodeId>,
+) -> Result<(), BareSelectionFailure> {
+    let held: BTreeSet<&CheckedNodeId> = package
+        .checked_term_data()
+        .map(|data| {
+            data.equality_decisions
+                .iter()
+                .map(|decision| &decision.application)
+                .collect()
+        })
+        .unwrap_or_default();
+    let used: Vec<&&CheckedNodeId> = closure.iter().filter(|id| held.contains(**id)).collect();
+    if used.is_empty() {
+        return Ok(());
+    }
+    let rows = equality.ok_or(BareSelectionFailure::Equality(
+        EqualityWitnessRefusal::Missing,
+    ))?;
+    for application in used {
+        rows.decision(package, application, package_work_limit())
+            .map_err(BareSelectionFailure::Equality)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// FR-533-AC-12, FR-533-AC-14: candidates are ordered by numeric
+    /// `(start, end)`, not by the bytes of their names, for a `decision` and
+    /// a `related` span, and a name outside the family is no candidate.
+    #[trace("FR-533-AC-12", "FR-533-AC-14", "TC-1333")]
+    #[test]
+    fn candidates_are_ordered_numerically_by_start_then_end() {
+        let decision = [
+            "protocol P run M C decision 1000..1004",
+            "protocol P run M C decision 999..1005",
+            "protocol P run M C decision 1001..1002",
+            "protocol P run M C related 1 2",
+            "protocol P run M D decision 1..2",
+            "protocol P run M C decision x..9",
+        ];
+        let got = ordered_candidates(
+            decision.iter().copied(),
+            "protocol P run M C decision ",
+            Tail::Decision,
+        );
+        assert_eq!(
+            got,
+            [
+                "protocol P run M C decision 999..1005",
+                "protocol P run M C decision 1000..1004",
+                "protocol P run M C decision 1001..1002",
+            ]
+        );
+        let related = [
+            "protocol P run M G related 100 105",
+            "protocol P run M G related 99 100",
+        ];
+        assert_eq!(
+            ordered_candidates(
+                related.iter().copied(),
+                "protocol P run M G related ",
+                Tail::Related
+            ),
+            [
+                "protocol P run M G related 99 100",
+                "protocol P run M G related 100 105"
+            ],
+            "related.from[0] takes `99 100`, related.to[0] takes `100 105`"
+        );
+        assert_eq!(Tail::Related.parse("1  2"), None);
+        assert_eq!(Tail::Decision.parse("1..2..3"), None);
     }
 }

@@ -800,8 +800,10 @@ fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route()
         graph.selected_exact_declaration_rows().to_vec(),
         graph.selected_exact_field_rows().to_vec(),
     );
-    let bare = BarePackage::new(read.admitted())
-        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let bare = BarePackage::new(read.admitted()).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: None,
+    });
     let package = EvidencePackage::from_package(&bare).expect("bare");
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let subject = package

@@ -4723,15 +4723,20 @@ fn bare_rows(
 /// site names equal to the source selector's: over every slot kind of TC-1070
 /// the selection read from the package's nodes alone names the root and the
 /// binders (name, level, type, key) the source selector names.
-#[trace("FR-533-AC-1", "FR-533-AC-4", "TC-1333")]
+#[trace("FR-533-AC-1", "FR-533-AC-4", "FR-533-AC-12", "TC-1333")]
 #[test]
 fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let package = fixture();
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let bare = qsl_package::BarePackage::new(v2)
-        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
     let view = package.evaluation_view();
     let row_origins: std::collections::BTreeSet<String> = v2
         .checked_term_data()
@@ -4741,13 +4746,6 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
         .map(|row| format!("{:?}", row.location.origin))
         .collect();
     let mut kinds = std::collections::BTreeSet::new();
-    let spanned = [
-        "visible",
-        "cases.guard",
-        "related.from",
-        "related.to",
-        "guard",
-    ];
     for parity in parity_slots(&package) {
         let wanted = slot(
             &package,
@@ -4838,23 +4836,22 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
         assert_eq!(chosen.frame_len(), got.len());
         // The site name the source selector locates the slot under.
         let source_origin = format!("{:?}", source.checked_body().root().location().origin);
-        let ours: Vec<String> = chosen
-            .origins()
-            .iter()
-            .map(|origin| format!("TypeDeclaration {{ name: {origin:?} }}"))
-            .collect();
-        if ours.len() == 1 && !spanned.contains(&parity.member) {
-            assert_eq!(ours[0], source_origin, "{}", parity.name);
-        } else if !ours.is_empty() {
-            assert!(
-                ours.contains(&source_origin),
-                "{}: {ours:?} does not hold {source_origin}",
+        // A slot whose root holds rows has exactly one origin, never none.
+        assert!(
+            !row_origins.contains(&source_origin) || chosen.origin().is_some(),
+            "{}: the slot's rows exist under {source_origin} but the bytes route found no origin",
+            parity.name
+        );
+        // FR-533-AC-12: exactly one origin, the source route's.
+        if let Some(origin) = chosen.origin() {
+            assert_eq!(
+                format!("TypeDeclaration {{ name: {origin:?} }}"),
+                source_origin,
+                "{}",
                 parity.name
             );
-        }
-        for origin in &ours {
             assert!(
-                row_origins.contains(origin) || origin.ends_with(" body\" }"),
+                row_origins.contains(&source_origin) || origin.ends_with(" body"),
                 "{}: {origin}",
                 parity.name
             );
@@ -4888,8 +4885,11 @@ fn rows_of_another_package_are_a_foreign_identity_witness() {
         qsl_package::V2ReadLimits::default(),
     )
     .expect("the other package is admitted");
-    let bare = qsl_package::BarePackage::new(other_read.admitted())
-        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let bare =
+        qsl_package::BarePackage::new(other_read.admitted()).with_supply(qsl_package::BareSupply {
+            identities: &rows,
+            equality: None,
+        });
     let clause = slot(&other, "Refunds", "Refunds", "activation.guard", None).node;
     let result = bare.select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
         clause,
@@ -4916,8 +4916,10 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let bare = qsl_package::BarePackage::new(v2)
-        .with_supply(qsl_package::BareSupply { identities: &rows });
+    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: None,
+    });
     let view = package.evaluation_view();
     let clause = slot(&package, "Refunds", "Refunds", "activation.guard", None).node;
     let descriptor = |member: &str, index| {
@@ -4963,4 +4965,41 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
             SlotSelectionFailure::MalformedNode(_)
         ))
     ));
+}
+
+/// FR-533-AC-11: over TC-1070 fixture L the bare route selects the visible
+/// entry and both case guards of `Decide` by (control node, member, index)
+/// alone, each with the one origin the table of "Slot naming on the bytes
+/// route" gives, and the `related` ends of `Got` (leaf references) have none.
+#[trace("FR-533-AC-11", "FR-533-AC-12", "TC-1333")]
+#[test]
+fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
+    let origin = |owner: &str, member: &str, index: usize| {
+        let wanted = slot(&package, "Pipeline", owner, member, Some(index));
+        bare.select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            wanted.node,
+            member,
+            Some(index),
+        ))
+        .unwrap_or_else(|failure| panic!("{owner}.{member}[{index}]: {failure:?}"))
+        .origin()
+        .map(str::to_owned)
+    };
+    let name = |span: &str| format!("protocol Pipeline run Main Decide decision {span}");
+    assert_eq!(origin("Decide", "visible", 0), Some(name("2641..2650")));
+    assert_eq!(origin("Decide", "cases.guard", 0), Some(name("2735..2748")));
+    assert_eq!(origin("Decide", "cases.guard", 1), Some(name("2676..2685")));
+    assert_eq!(origin("Got", "related.from", 0), None);
+    assert_eq!(origin("Got", "related.to", 0), None);
 }

@@ -16,6 +16,8 @@ use quire_contract_model::CheckedNodePathSegment as Segment;
 use quire_contract_model::{CheckedSemanticNodeV2, CheckedTerm};
 use quire_exact::Rational;
 
+use crate::wire_form::{has_form, has_tag, WireForm, WireTag};
+
 use super::{
     own_evidence, read_index_segments, write_index_segments, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef,
@@ -296,10 +298,8 @@ fn formula_nodes(
             .reference_targets()
             .into_iter()
             .filter(|target| {
-                by_id(target).is_some_and(|child| {
-                    child.node_tag.as_ref() == "temporal"
-                        && child.semantic_form.as_ref() == "formula"
-                })
+                by_id(target)
+                    .is_some_and(|child| has_form(child, WireTag::Temporal, WireForm::Formula))
             })
             .cloned()
             .collect();
@@ -396,7 +396,7 @@ fn emit_monitor_plan(
     let mut all_changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
     let mut changes = Vec::new();
     for node in nodes.iter_mut() {
-        if node.semantic_form.as_ref() == "record_value"
+        if WireForm::from_wire(&node.semantic_form) == Some(WireForm::RecordValue)
             && renamed_types.contains(&node.semantic_type)
         {
             rename_bindings(&mut node.body, plan.renames);
@@ -464,8 +464,7 @@ fn emit_monitor_plan(
     let results = nodes
         .iter()
         .find(|node| {
-            node.semantic_form.as_ref() == "sequence"
-                && node.node_tag.as_ref() == "composite_type"
+            has_form(node, WireTag::CompositeType, WireForm::Sequence)
                 && node
                     .body
                     .reference_targets()
@@ -474,22 +473,21 @@ fn emit_monitor_plan(
         })
         .map(|node| node.node_id.clone())
         .ok_or_else(|| invariant("the results sequence is in the graph"))?;
-    let scalar = |form: &str| -> Option<CheckedNodeId> {
+    let scalar = |form: WireForm| -> Option<CheckedNodeId> {
         nodes
             .iter()
-            .find(|node| {
-                node.node_tag.as_ref() == "scalar_type" && node.semantic_form.as_ref() == form
-            })
+            .find(|node| has_form(node, WireTag::ScalarType, form))
             .map(|node| node.node_id.clone())
     };
-    let integer = scalar("integer").ok_or_else(|| invariant("the integer type is in the graph"))?;
-    let text = scalar("text").ok_or_else(|| invariant("the text type is in the graph"))?;
+    let integer =
+        scalar(WireForm::Integer).ok_or_else(|| invariant("the integer type is in the graph"))?;
+    let text = scalar(WireForm::Text).ok_or_else(|| invariant("the text type is in the graph"))?;
     let clause_region = source_map
         .iter()
         .find(|entry| entry.node_id == nodes[clause_at].node_id)
         .map(|entry| entry.regions.clone())
         .ok_or_else(|| invariant("the clause is located"))?;
-    let rational = match scalar("rational") {
+    let rational = match scalar(WireForm::Rational) {
         Some(id) => id,
         None => {
             let id = CheckedNodeId {
@@ -527,15 +525,13 @@ fn emit_monitor_plan(
         }
     };
     let clause = nodes[clause_at].clone();
-    if clause.node_tag.as_ref() != "temporal" || clause.semantic_form.as_ref() != "temporal_clause"
-    {
+    if !has_form(&clause, WireTag::Temporal, WireForm::TemporalClause) {
         return Err(invariant("the selected node is a temporal clause"));
     }
     let tick_unit = nodes
         .iter()
         .find(|node| {
-            node.node_tag.as_ref() == "scalar_type"
-                && node.semantic_form.as_ref() == "unit"
+            has_form(node, WireTag::ScalarType, WireForm::Unit)
                 && node.declaration.as_ref().is_some_and(|d| {
                     d.qualified_name
                         .iter()
@@ -708,7 +704,7 @@ fn call_closure_body_roots(
         let node = by_id
             .get(id)
             .ok_or_else(|| invariant("a node of the call closure is in the graph"))?;
-        if node.node_tag.as_ref() == "function" && node.declaration.is_some() {
+        if has_tag(node, WireTag::Function) && node.declaration.is_some() {
             let (_, body) = param_targets(node)?;
             called.insert(&node.node_id, body);
         }

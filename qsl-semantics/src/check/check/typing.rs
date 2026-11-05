@@ -433,6 +433,7 @@ struct UnaryFrame<'r> {
 
 enum Unary<'r> {
     Negate(Option<Want<'r>>),
+    Power(Integer),
     Not,
     Present,
     Value,
@@ -1272,6 +1273,21 @@ impl<'a> Typer<'a> {
                 });
                 let goal = Goal::Infer(operand, operand_hint, location.child(0));
                 return Ok(Self::unary(Unary::Negate(hint), goal, location, frames));
+            }
+            ExprNode::Power { base, exponent } => {
+                if let Some(outside) = IntegerOutsideI128::of(IntegerSite::Literal, exponent) {
+                    return Err(CheckRefusal {
+                        location,
+                        cause: CheckCause::IntegerOutsideI128(outside),
+                    });
+                }
+                let goal = Goal::Infer(expression.at(*base), None, location.child(0));
+                return Ok(Self::unary(
+                    Unary::Power(exponent.clone()),
+                    goal,
+                    location,
+                    frames,
+                ));
             }
             ExprNode::Not(operand) => {
                 let goal = Goal::Expect(
@@ -2848,6 +2864,7 @@ impl<'a> Typer<'a> {
         let UnaryFrame { form, location } = frame;
         match form {
             Unary::Negate(hint) => self.negate(operand, hint.as_deref(), &location),
+            Unary::Power(exponent) => self.power(operand, exponent, &location),
             Unary::Not => Ok(node(
                 NodeKind::Not(self.push(operand)),
                 ValueType::Boolean,

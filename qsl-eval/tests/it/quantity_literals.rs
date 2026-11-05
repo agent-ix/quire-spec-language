@@ -14,7 +14,7 @@ use quire_exact::{Meter, Outcome, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::loss::ValueLoss;
 
-const UNLIMITED: ScalarLimits = ScalarLimits {
+pub(super) const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
     decimal_digits: u64::MAX,
     scale_expansion: u64::MAX,
@@ -64,7 +64,7 @@ fn package() -> CheckedPackage {
     package_with(FUNCTIONS).expect("the quantity unit checks")
 }
 
-fn package_with(functions: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
+pub(super) fn package_with(functions: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{functions}"
@@ -91,7 +91,7 @@ fn package_with(functions: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
         .map(CheckedPackage::link)
 }
 
-fn truth(package: &CheckedPackage, name: &str) -> bool {
+pub(super) fn truth(package: &CheckedPackage, name: &str) -> bool {
     let evaluation = package
         .call(
             &QualifiedName::unqualified(name).expect("an identifier"),

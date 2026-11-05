@@ -30,6 +30,8 @@ mod checked_v2;
 pub mod checked_views;
 #[cfg(feature = "std")]
 mod emit;
+#[cfg(feature = "std")]
+mod equality_file;
 pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
@@ -46,6 +48,7 @@ mod protocol_selection;
 pub mod protocol_view;
 #[cfg(feature = "std")]
 mod reader_protocol_projection;
+mod wire_form;
 
 #[cfg(feature = "std")]
 pub use bare::{
@@ -82,6 +85,10 @@ pub use emit::{
     Emission, EmitRefusal, MonitorPlanWire, OmissionCause, OmittedNode, ProtocolEmission,
     ProtocolEmissionAggregate, ProtocolEmissionResult, TemporalBindingRows, TemporalClauseRef,
     TemporalClockSelection, TemporalRows, TimedOrderFault,
+};
+#[cfg(feature = "std")]
+pub use equality_file::{
+    EqualityFileRefusal, EqualityWitnessRefusal, ReadEqualityRows, EQUALITY_FORMAT,
 };
 pub use evaluation_view::{
     AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, SelectedProtocolTerm,

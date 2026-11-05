@@ -146,13 +146,32 @@ impl std::fmt::Debug for ModelTimeSource {
     }
 }
 
+/// The form of a nominal unit-graph node: a dimension or a unit.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TimeNominalForm {
+    /// A dimension.
+    Dimension,
+    /// A unit.
+    Unit,
+}
+
+impl TimeNominalForm {
+    /// The checked wire's `semantic_form` word for the form.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dimension => "dimension",
+            Self::Unit => "unit",
+        }
+    }
+}
+
 /// A nominal unit-graph node that S4 must include when a timed model names it.
 #[derive(Clone, Eq, PartialEq)]
 pub struct TimeNominalNode {
     /// The exact nominal node identity.
     pub key: quire_exact::NodeKey,
-    /// `dimension` or `unit`.
-    pub form: String,
+    /// Whether the node is a dimension or a unit.
+    pub form: TimeNominalForm,
     /// Who declares the node, and where.
     pub origin: TimeNominalOrigin,
     /// Nominal nodes this node names.

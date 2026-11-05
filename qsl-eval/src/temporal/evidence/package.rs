@@ -16,8 +16,8 @@ use std::collections::BTreeSet;
 
 use qsl_package::checked_views::{
     activation_relation, instance_bound_atoms as view_bound_atoms, temporal_subject,
-    Activation as WireActivation, ClauseOccurrence, FormulaNodeUse, TemporalSubjectView,
-    ViewRefusal,
+    Activation as WireActivation, ClauseOccurrence, FormulaNodeUse, FormulaOperation,
+    TemporalSubjectView, ViewRefusal,
 };
 use qsl_package::{
     AdmittedPackageRead, BarePackage, CheckedNodeId, CheckedOccurrence, CheckedPackageV2,
@@ -496,7 +496,7 @@ fn finite_window_profile(identity: &str) -> Option<TemporalProfile> {
 pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Option<BTreeSet<u64>> {
     let holds = graph
         .iter()
-        .filter(|entry| entry.operation == "quire.op.temporal.holds")
+        .filter(|entry| entry.kind() == Some(FormulaOperation::Holds))
         .count();
     if holds != reads.len() {
         return None;
@@ -506,7 +506,7 @@ pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Optio
         graph
             .iter()
             .zip(numbers)
-            .filter(|(entry, _)| entry.operation == "quire.op.temporal.holds")
+            .filter(|(entry, _)| entry.kind() == Some(FormulaOperation::Holds))
             .zip(reads)
             .filter_map(|((_, number), bound)| bound.then_some(number).flatten())
             .collect(),

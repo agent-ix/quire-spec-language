@@ -55,6 +55,19 @@ impl Emission {
         )
     }
 
+    /// The producer's equality witness of this emission for the package
+    /// `package` was emitted as, as the handoff writes it to `equality.json`
+    /// (FR-531 "The equality file").
+    pub fn equality_witness(&self, package: &CheckedPackageV2) -> crate::ReadEqualityRows {
+        let rows = self.equality_rows();
+        crate::ReadEqualityRows::of_rows(
+            package,
+            rows.application_rows,
+            rows.fact_rows,
+            self.selected_source_unit_rows().to_vec(),
+        )
+    }
+
     /// Every producer equality row of this emission, in IR's row types.
     pub(crate) fn equality_rows(&self) -> EqualityRows {
         let application_rows = self

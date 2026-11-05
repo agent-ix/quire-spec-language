@@ -277,7 +277,7 @@ pub fn instance_bound_atoms(subject: &TemporalSubjectView<'_>) -> Result<Vec<boo
     let holds = subject
         .formula_graph()
         .iter()
-        .filter(|node| node.operation == super::subject::HOLDS)
+        .filter(|node| node.kind() == Some(super::subject::FormulaOperation::Holds))
         .count();
     if holds != subject.predicate_leaves().len() {
         return Err(ViewRefusal::UnresolvedClause);
