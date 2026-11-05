@@ -458,6 +458,12 @@ enum Reading {
     Holds(bool),
 }
 
+struct AggregateEvaluationCallbacks<'a> {
+    retained: &'a mut dyn FnMut(usize),
+    visit: &'a mut dyn FnMut() -> Result<(), LetterStop>,
+    charge_meter: bool,
+}
+
 impl Gathered {
     fn new(kind: &AggregateKind) -> Self {
         match kind {
@@ -695,15 +701,19 @@ impl AggregateAtom {
         meter: &mut Meter,
         visit: &mut dyn FnMut() -> Result<(), LetterStop>,
     ) -> Result<Valuation, LetterStop> {
+        let mut retained = |_| {};
+        let mut callbacks = AggregateEvaluationCallbacks {
+            retained: &mut retained,
+            visit,
+            charge_meter: true,
+        };
         self.evaluate_observed_with_visits(
             trace,
             source,
             max_window_values,
             position,
             meter,
-            &mut |_| {},
-            visit,
-            true,
+            &mut callbacks,
         )
     }
 
@@ -726,15 +736,19 @@ impl AggregateAtom {
         meter: &mut Meter,
         retained: &mut dyn FnMut(usize),
     ) -> Result<Valuation, LetterStop> {
+        let mut visit = || Ok(());
+        let mut callbacks = AggregateEvaluationCallbacks {
+            retained,
+            visit: &mut visit,
+            charge_meter: true,
+        };
         self.evaluate_observed_with_visits(
             trace,
             source,
             max_window_values,
             position,
             meter,
-            retained,
-            &mut || Ok(()),
-            true,
+            &mut callbacks,
         )
     }
 
@@ -745,16 +759,14 @@ impl AggregateAtom {
         max_window_values: u64,
         position: TemporalPosition,
         meter: &mut Meter,
-        retained: &mut dyn FnMut(usize),
-        visit: &mut dyn FnMut() -> Result<(), LetterStop>,
-        charge_meter: bool,
+        callbacks: &mut AggregateEvaluationCallbacks<'_>,
     ) -> Result<Valuation, LetterStop> {
         let window = trace.window(&self.term.window, position.index())?;
         let mut gathered = Gathered::new(&self.term.kind);
         let mut count = 0_u64;
         for index in window {
-            visit()?;
-            if charge_meter {
+            (callbacks.visit)()?;
+            if callbacks.charge_meter {
                 meter.charge(Charge::new(ChargePoint::TemporalVisit))?;
             }
             let at = TemporalPosition::new(index);
@@ -777,7 +789,7 @@ impl AggregateAtom {
                 )));
             }
             gathered.fold(reading)?;
-            retained(gathered.retained());
+            (callbacks.retained)(gathered.retained());
             count += 1;
         }
         if count < self.term.min_count {

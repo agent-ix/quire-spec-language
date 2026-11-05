@@ -338,6 +338,9 @@ fn aggregate_rational(term: &CheckedTerm, key: &str) -> Result<Rational, Interna
     }
 }
 
+/// `#[string_edge]`: turns checked package string tokens into typed aggregate
+/// discriminants before evaluator branching.
+#[ix_trace_rs::string_edge]
 fn aggregate_atom(term: &CheckedTerm) -> Result<AggregateAtom, InternalFault> {
     let kind = match aggregate_text(term, "kind")? {
         "count" => AggregateKind::Count,
