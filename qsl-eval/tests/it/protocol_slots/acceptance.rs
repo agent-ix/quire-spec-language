@@ -3759,7 +3759,7 @@ fn reader_backed_projection_preserves_nested_option_and_collection_value_types()
 /// FR-390-AC-24: native String, UUID and Timestamp equality keeps its exact
 /// result and charges when protocol slot evaluation crosses the I2 reader.
 #[test]
-#[trace("TC-1028", "FR-390-AC-24")]
+#[trace("TC-1289", "FR-390-AC-24")]
 fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charges() {
     let source = SOURCE
         .replace(
@@ -3817,7 +3817,7 @@ fn reader_backed_projection_native_equality_preserves_scalar_identity_and_charge
 /// one dimension as distinct identities, including conversion to the selected
 /// target unit.
 #[test]
-#[trace("FR-390-AC-25")]
+#[trace("TC-1290", "FR-390-AC-25")]
 fn reader_backed_projection_preserves_declared_and_compound_quantity_units() {
     let source = SOURCE
         .replace(
@@ -3872,7 +3872,7 @@ fn reader_backed_projection_preserves_declared_and_compound_quantity_units() {
 /// FR-390-AC-25: a compound quantity identity is retained by equality and by
 /// the reader-backed protocol slot view.
 #[test]
-#[trace("FR-390-AC-25")]
+#[trace("TC-1290", "FR-390-AC-25")]
 fn reader_backed_projection_preserves_compound_quantity_identity() {
     let source = SOURCE
         .replace(
@@ -3973,7 +3973,7 @@ fn protocol_capture_compound_quantity_identity_is_held() {
 /// FR-390-AC-26: aliases to native scalars, Quantity and Union keep the target
 /// type's behavior through protocol slot reader admission.
 #[test]
-#[trace("FR-390-AC-26")]
+#[trace("TC-1291", "FR-390-AC-26")]
 fn reader_backed_projection_preserves_alias_target_behavior() {
     let source = SOURCE
         .replace(
@@ -4031,7 +4031,7 @@ fn reader_backed_projection_preserves_alias_target_behavior() {
 /// FR-390-AC-27: the reader projection retains exact Union/member identity and
 /// positional payload when a case selects each active constructor.
 #[test]
-#[trace("FR-390-AC-27")]
+#[trace("TC-1292", "FR-390-AC-27")]
 fn reader_backed_projection_preserves_union_identity_and_case_payload_order() {
     let source = SOURCE
         .replace(
