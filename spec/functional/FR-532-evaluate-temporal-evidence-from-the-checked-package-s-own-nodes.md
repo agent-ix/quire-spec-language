@@ -147,14 +147,13 @@ from the entry's members read from the bytes and the per-position samples of the
 request. `formula_graph()` SHALL read the entry (FR-515: `aggregate` member) and the
 truth plan SHALL walk it as the atom it is.
 
-This does not run on a package route today, and no package route has ever raised a cause
-for it: QSL emits the node (FR-337-AC-15), QSpec FR-370 catalogues it and the Contract IR
-reader QSL locks admits it. The in-process evaluator plans the node as an atom and
-evaluates it from the observation owner's per-position samples, but the package subject
-view does not yet read the node's argument and the evidence request carries no
-`aggregate_samples`, so a package route over a clause with the node is refused
-`clause-root-unresolved` and evaluates nothing. The criteria for aggregate
-atoms (FR-532-AC-11, FR-516-AC-47 to AC-50) are gated on those two.
+A package route evaluates such an atom. QSL emits the node (FR-337-AC-15), QSpec FR-370
+catalogues it and the Contract IR reader QSL locks admits it. The package subject view
+reads the node's argument and the evidence request carries the per-position
+`aggregate_samples`, so a clause with the node is evaluated from the entry's members
+and those samples, never from a `holds` valuation. A window position the request does not list gives a `Missing` non-value
+(FR-516-AC-49), not a refused clause. The in-process route cannot yet emit such a clause, so the agreement of
+all three routes (FR-532-AC-11, FR-516-AC-50) is still to be demonstrated.
 
 ### The package identity of a progress binding and a result
 
@@ -204,6 +203,7 @@ the three routes. Construction charges nothing.
   call and the arena index as an atom spelling, and makes `ClauseFormula::of_graph`
   dedupe shared nodes by the entry's `node` (the per-use list it reads today would
   count a shared node once per use in `formula_nodes`, against FR-523-AC-6 and
-  FR-532-AC-10). The aggregate criteria are gated on QSL-1643 and QSL-1644 (the QSpec catalog
-  entry for the aggregate node and its admission by Contract IR).
+  FR-532-AC-10). The aggregate criteria need the QSpec catalog entry for the aggregate node and its
+  admission by Contract IR, both of which exist, and an in-process emission of an
+  aggregate clause for the three-route agreement.
 - **Downstream:** quire-protocol FR-046.
