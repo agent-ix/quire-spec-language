@@ -102,12 +102,16 @@ fn a_false_activation_before_a_refused_condition_is_the_result() {
     assert!(report.counterexample.is_some());
 }
 
-/// FR-327-AC-6, FR-330: the kernel `Refusal::CheckedInvariant` as a `holds`
-/// condition's S6a result at position 1 is kept as a refused condition at
-/// position 1 (`a_checked_invariant_refusal_is_a_refused_condition_at_its_position`
-/// in `qsl-eval`) and the run reports it as FR-100 maps it: the internal
-/// failure, stage `evaluate`, category `internal-failure`, exit 30, no truth
-/// value, and not a refusal.
+/// FR-327-AC-6, FR-330: the evaluator's result for a `holds` condition whose
+/// S6a result is the kernel `Refusal::CheckedInvariant` at position 1 is the
+/// refused condition at position 1 (`TemporalRefusal::ConditionRefused`, with
+/// the refusal kept in `ObservedRun::stopped`), and the run reports it as
+/// FR-100 maps it: the internal failure, stage `evaluate`, category
+/// `internal-failure`, exit 30, no truth value, not a refusal, carrying the
+/// refused condition's position. The observed run is built as
+/// `evaluate_observed` returns it, as the kernel reserves
+/// `CheckedInvariant` for a broken evaluator invariant and no checked source
+/// reaches it.
 #[trace("TC-1160", "FR-327-AC-6")]
 #[test]
 fn a_checked_invariant_refused_condition_reports_the_internal_failure() {
@@ -121,11 +125,19 @@ fn a_checked_invariant_refused_condition_reports_the_internal_failure() {
         location: None,
         losses: Vec::new(),
     };
-    let disposition = crate::spine::clause::temporal::refused_disposition(
-        evaluation,
+    let at = qsl_eval::temporal::TemporalPosition::new(1);
+    let observed = qsl_eval::temporal::ObservedRun {
+        result: Err(qsl_eval::temporal::TemporalRefusal::ConditionRefused { at }),
+        stopped: Some(qsl_eval::temporal::HoldsStop::Refused { at, evaluation }),
+        undefined: None,
+    };
+    let (disposition, refused_at) = crate::spine::clause::temporal::observed_disposition(
+        observed.stopped,
+        observed.result,
         compiled.package.graph(),
         std::slice::from_ref(&compiled.source),
     );
+    assert_eq!(refused_at, Some(1));
     let ClauseDisposition::EvaluateFault(fault) = &disposition else {
         panic!("expected the internal failure, got {disposition:?}");
     };
@@ -134,4 +146,80 @@ fn a_checked_invariant_refused_condition_reports_the_internal_failure() {
     assert_eq!(disposition.category(), Category::InternalFailure);
     assert_eq!(disposition.category().exit_code(), 30);
     assert_eq!(disposition.truth(), None);
+}
+
+/// FR-501, FR-327 "Refused condition": under the finite-window profile an
+/// `on each` activation that is definitely false at stamp 0 is returned
+/// before a condition refused at the later stamp 10, in evaluation order,
+/// as under every other profile.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn a_false_activation_before_a_refused_condition_is_the_result_under_the_finite_window_profile() {
+    let report = report(timestamped_with(
+        Unit::TimestampedRefusing,
+        &[0, 10],
+        &[0, 1],
+        12,
+        Some(12),
+    ));
+    assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
+    assert_eq!(report.refused_at, None);
+}
+
+/// FR-327 "Refused condition": an atom undefined at position 0 is returned
+/// before the condition refused at position 1. The report is the undefined
+/// evaluation, category violation, and carries no refused condition.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn an_undefined_atom_before_a_refused_condition_is_the_result_and_no_refusal_is_reported() {
+    let report = report(finite(Unit::Refusing, "UndefinedThenRefused", &[2, 1, 0]));
+    assert!(
+        matches!(outcome(&report), TemporalVerdict::Undefined { at: 0, .. }),
+        "{:?}",
+        report.disposition
+    );
+    assert_eq!(report.category(), Category::Violation);
+    assert_eq!(report.refused_at, None);
+    // Two atoms at one position: the first undefined, the second refused. The
+    // undefined atom is earlier in clause-node order, so it is the result and
+    // the refusal the second atom read is not reported.
+    let beside = self::report(finite(Unit::Refusing, "UndefinedBesideRefused", &[2, 0, 0]));
+    assert!(
+        matches!(outcome(&beside), TemporalVerdict::Undefined { at: 0, .. }),
+        "{:?}",
+        beside.disposition
+    );
+    assert_eq!(beside.refused_at, None);
+    // The refusal is the clause's own: with the undefined position first
+    // read as a value, the refused one is returned.
+    let refused = self::report(finite(Unit::Refusing, "UndefinedThenRefused", &[0, 1, 0]));
+    assert_eq!(refused.refused_at, Some(1));
+}
+
+/// FR-501, FR-327: under the finite-window profile an atom undefined at
+/// stamp 0 is returned before a condition refused at stamp 10, and the
+/// refused condition is reported when the undefined atom is a value.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn an_undefined_atom_before_a_refused_condition_is_the_result_under_the_finite_window_profile() {
+    let run = |values: &[i64]| {
+        report(timestamped_with(
+            Unit::TimestampedUndefinedThenRefused,
+            &[0, 10],
+            values,
+            12,
+            Some(12),
+        ))
+    };
+    let undefined = run(&[2, 1]);
+    assert!(
+        matches!(
+            outcome(&undefined),
+            TemporalVerdict::Undefined { at: 0, .. }
+        ),
+        "{:?}",
+        undefined.disposition
+    );
+    assert_eq!(undefined.refused_at, None);
+    assert_eq!(run(&[0, 1]).refused_at, Some(1));
 }

@@ -6,10 +6,13 @@
 //! values of FR-516-AC-47 and AC-48 give the same results.
 
 use ix_trace_rs::trace;
+use qsl_eval::temporal::evidence::ClauseFacts;
 use qsl_eval::temporal::{
-    evaluate, AggregateAtom, AggregateSample, AtomReading, InsufficientData, LetterStop,
-    SampledWindow, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace,
-    UndefinedCause, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
+    evaluate, evaluate_finite_window, AggregateAtom, AggregateSample, AtomReading, ClockCover,
+    InsufficientData, LetterStop, LowerBoundary, ProgressClosure, ProgressCompleteness,
+    SampledWindow, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal,
+    TemporalTrace, TimestampedObservation, TimestampedTrace, UndefinedCause, Valuation, Watermark,
+    WindowClock, WindowProgress, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Integer, Meter, Rational};
@@ -48,12 +51,52 @@ fn read(
     let len = u64::try_from(samples.len()).expect("small");
     atom.evaluate(
         &WindowTrace::positions(len),
-        &mut SampledWindow::new(samples),
+        &mut SampledWindow::new(samples, atom.kind()),
         DEFAULT_MAX_WINDOW_VALUES,
         TemporalPosition::new(position),
         &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
     )
     .expect("the window reads")
+}
+
+/// The checked clause `C` of a timestamped-event unit over `c: Quantity<ms>`
+/// with `body` as its formula, through the whole package check (the family
+/// alone cannot resolve the unit `ms`), handed to `inspect`.
+fn timestamped<R>(
+    body: &str,
+    inspect: impl FnOnce(&qsl_semantics::check::CheckedTemporalClause) -> R,
+) -> R {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile t0 = \"quire.temporal.timestamped-event.finite-window/v1\";\n\
+         dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\n\
+         temporal C using t0 over (c: Quantity<ms>) clock \"model-steps\" on origin {{ {body} }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let graph = qsl_semantics::check::PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        built,
+        qsl_semantics::model::intake::SelectedModels::default(),
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    let [node] = graph.temporal_clauses() else {
+        panic!("one clause");
+    };
+    inspect(node.clause())
 }
 
 fn values(values: &[i64]) -> Vec<AggregateSample> {
@@ -263,4 +306,196 @@ fn the_evaluator_asks_the_letter_for_the_aggregate_node() {
     let aggregate = *fx.clause.aggregates().keys().next().expect("an aggregate");
     assert_eq!(asked.0.len(), 2);
     assert!(asked.0.iter().all(|id| id.index() == aggregate));
+}
+
+/// FR-194-AC-10: a `count` or `sum` with `min_count 0` over a window of no
+/// counted values is 0, not insufficient data; `of_checked` keeps the written
+/// `min_count`.
+#[trace("TC-629", "FR-194-AC-10")]
+#[test]
+fn a_zero_min_count_count_over_an_empty_window_is_zero() {
+    let excluded = [AggregateSample::Excluded, AggregateSample::Excluded];
+    assert!(truth(&read(
+        "count over past[0,1] min_count 0 <= 2",
+        ratio(2, 1),
+        &excluded,
+        1
+    )));
+    assert!(!truth(&read(
+        "count over past[0,1] min_count 0 >= 1",
+        ratio(1, 1),
+        &excluded,
+        1
+    )));
+    assert!(truth(&read(
+        "sum of c.level over past[0,1] min_count 0 = 0",
+        ratio(0, 1),
+        &excluded,
+        1
+    )));
+}
+
+/// FR-194, FR-337-AC-15: the duration window of a timestamped clause is read
+/// from the checked term's bounds, the nearest age `a` first: with stamps 0,
+/// 100, 200, 400 ms, `past[0 ms, 300 ms]` at the last position holds the
+/// stamps 100, 200 and 400, and `past[100 ms, 300 ms]` holds 100 and 200.
+#[trace("TC-629", "FR-194-AC-1")]
+#[test]
+fn a_duration_window_reads_the_checked_terms_bounds_in_order() {
+    let equal = |window: &str, expected: i64| {
+        timestamped(
+            &format!("always[0,3] (count over {window} = {expected})"),
+            |clause| {
+                let (_, checked) = clause.aggregates().iter().next().expect("an aggregate");
+                let samples = vec![AggregateSample::Counted; 4];
+                let stamps = [0_i64, 100, 200, 400]
+                    .map(|stamp| Rational::from_integer(Integer::from(stamp)))
+                    .to_vec();
+                let atom =
+                    AggregateAtom::of_checked(checked, ratio(expected, 1)).expect("well formed");
+                truth(
+                    &atom
+                        .evaluate(
+                            &WindowTrace::timed(stamps).expect("increasing stamps"),
+                            &mut SampledWindow::new(&samples, atom.kind()),
+                            DEFAULT_MAX_WINDOW_VALUES,
+                            TemporalPosition::new(3),
+                            &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
+                        )
+                        .expect("the window reads"),
+                )
+            },
+        )
+    };
+    assert!(equal("past[0 ms, 300 ms]", 3));
+    assert!(!equal("past[0 ms, 300 ms]", 2));
+    assert!(equal("past[100 ms, 300 ms]", 2));
+    assert!(!equal("past[100 ms, 300 ms]", 3));
+}
+
+/// A position the owner supplied no sample for, and a sample of a kind the
+/// term does not take, are faults: a `count` over a `Value` sample and a
+/// `sum` over a `Counted` one alike, and the last sample is not repeated.
+#[trace("TC-629")]
+#[test]
+fn an_unsupplied_position_and_a_sample_of_another_kind_are_faults() {
+    let fault = |code: &'static str| {
+        LetterStop::Fault(quire_semantic_value::catalog::InternalFault::new(
+            "eval.temporal",
+            code,
+        ))
+    };
+    let attempt = |term: &str, samples: &[AggregateSample], len: u64, position: u64| {
+        let fx = fixture(
+            EVENT,
+            "c: Counter",
+            "on origin",
+            &format!("always[0,3] ({term})"),
+        );
+        let (_, checked) = fx.clause.aggregates().iter().next().expect("an aggregate");
+        let atom = AggregateAtom::of_checked(checked, ratio(0, 1)).expect("well formed");
+        atom.evaluate(
+            &WindowTrace::positions(len),
+            &mut SampledWindow::new(samples, atom.kind()),
+            DEFAULT_MAX_WINDOW_VALUES,
+            TemporalPosition::new(position),
+            &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
+        )
+    };
+    let counted = [AggregateSample::Counted, AggregateSample::Counted];
+    // The window at position 3 reaches positions 2 and 3, which the owner
+    // did not supply.
+    assert!(matches!(
+        attempt("count over past[0,1] >= 0", &counted, 4, 3),
+        Err(LetterStop::Fault(_))
+    ));
+    assert_eq!(
+        attempt(
+            "count over past[0,0] >= 0",
+            &[AggregateSample::Value(ratio(1, 1))],
+            1,
+            0
+        ),
+        Err(fault("aggregate-sample-kind"))
+    );
+    assert_eq!(
+        attempt(
+            "sum of c.level over past[0,0] >= 0",
+            &[AggregateSample::Counted],
+            1,
+            0
+        ),
+        Err(fault("aggregate-sample-kind"))
+    );
+}
+
+/// FR-516 "Window aggregate atoms": a finite-window or package run reads an
+/// atom as a `holds` valuation, and an aggregate atom has none until the
+/// request carries its samples, so the facts of a clause with an aggregate
+/// atom are refused and the letter is never asked for the atom (a valuation of
+/// `True` would answer a truth FR-194 does not give for `min_count 5`).
+#[trace("TC-629")]
+#[test]
+fn a_finite_window_run_never_reads_an_aggregate_atom_as_a_valuation() {
+    struct Never;
+    impl TemporalLetters for Never {
+        fn atom(
+            &mut self,
+            _: FormulaNodeId,
+            _: TemporalPosition,
+            _: &mut Meter,
+        ) -> Result<AtomReading, LetterStop> {
+            panic!("the aggregate atom is read from the letter");
+        }
+        fn valuation(
+            &mut self,
+            _: FormulaNodeId,
+            _: TemporalPosition,
+            _: &mut Meter,
+        ) -> Result<Valuation, LetterStop> {
+            panic!("the aggregate atom is read from the valuation map");
+        }
+        fn activation(
+            &mut self,
+            _: TemporalPosition,
+            _: &mut Meter,
+        ) -> Result<AtomReading, LetterStop> {
+            Ok(AtomReading::True)
+        }
+    }
+    let trace = TimestampedTrace::admit(
+        "C",
+        WindowClock {
+            unit: "ms".to_owned(),
+            cover: ClockCover::Exact,
+        },
+        (0..3)
+            .map(|stamp| TimestampedObservation {
+                stamp,
+                order_key: None,
+                observation: format!("obs{stamp}"),
+            })
+            .collect(),
+        WindowProgress {
+            watermark: Watermark::Inclusive(2),
+            completeness: ProgressCompleteness::Complete { through: 2 },
+            scope: ProgressClosure::Closed,
+            execution: ProgressClosure::Closed,
+            lower_boundary: LowerBoundary::AuthoritativeOrigin,
+        },
+    )
+    .expect("the trace admits");
+    let refused = evaluate_finite_window(
+        &timestamped(
+            "always[0,2] (count over past[0 ms, 1 ms] min_count 5 >= 1)",
+            ClauseFacts::of_checked,
+        ),
+        &trace,
+        &mut Never,
+        &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
+    );
+    assert!(
+        matches!(refused, Err(TemporalRefusal::Fault(_))),
+        "{refused:?}"
+    );
 }

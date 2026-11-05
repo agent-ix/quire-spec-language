@@ -638,6 +638,14 @@ impl CheckedPackage {
         &self.selections
     }
 
+    /// Whether this package's own authored `import`s name `identity`
+    /// (FR-121): a library reached only through another library's import
+    /// is in [`Self::dependency_selections`] but is not a direct import.
+    #[cfg(feature = "std")]
+    pub fn imports_directly(&self, identity: &LibraryName) -> bool {
+        self.direct_imports.contains(identity)
+    }
+
     /// Direct imports only, for the FR-322 lock and its reader evidence.
     /// Directness comes from the authored imports, independent of which
     /// equal-package path first populated the resolved closure.

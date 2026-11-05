@@ -104,7 +104,8 @@ pub use call_requirements::{
 };
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
-    FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite, ValueParitySite,
+    FieldSite, FunctionSite, ImportedFunctionName, ImportedFunctionSite, OperationSite,
+    PopulationName, PopulationSite, ValueParitySite,
 };
 pub use certificate::closed_form::outcome::{
     AmcEvidence, ClosedFormAnalysis, ClosedFormEvidence, ClosedFormOutcome, DemandWitness,

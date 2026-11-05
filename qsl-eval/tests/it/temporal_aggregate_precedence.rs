@@ -126,7 +126,7 @@ impl TemporalLetters for Counters<'_> {
                 let trace = WindowTrace::positions(samples.len() as u64);
                 aggregate.evaluate(
                     &trace,
-                    &mut SampledWindow::new(&samples),
+                    &mut SampledWindow::new(&samples, aggregate.kind()),
                     DEFAULT_MAX_WINDOW_VALUES,
                     position,
                     meter,

@@ -1012,7 +1012,7 @@ pub(crate) enum Application<'a> {
 /// gives it. A builtin scalar, and an option or collection over such types,
 /// is; a type naming a declaration (a record, a tuple, an enum, a declared
 /// unit) or a model owner (a reference, a population) is not.
-fn is_package_independent(value_type: &ValueType) -> bool {
+pub(crate) fn is_package_independent(value_type: &ValueType) -> bool {
     // An option or collection is independent when its inner type is: a
     // loop down the chain, so any depth runs on a constant stack.
     let mut current = value_type;

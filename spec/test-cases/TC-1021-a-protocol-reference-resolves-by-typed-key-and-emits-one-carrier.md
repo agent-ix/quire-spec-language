@@ -14,9 +14,9 @@ relationships:
 
 ## Description
 
-Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18, FR-092-AC-19.
+Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18, FR-092-AC-19, FR-092-AC-20.
 
-Catches an implementation that binds by name and looks it up again at emission, one that emits a `dependency_reference` or a separate collection, one that emits a second carrier or refuses for a repeated reference, one that changes the carrier id when a reference is repeated, one that lets the occurrences enter node identity, one that carries a semantic type other than the target's, and one that builds the carrier path without its target.
+Catches an implementation that binds by name and looks it up again at emission, one that emits a `dependency_reference` or a separate collection, one that emits a second carrier or refuses for a repeated reference, one that changes the carrier id when a reference is repeated, one that lets the occurrences enter node identity, one that carries a semantic type other than the target's, one that emits a bare union key with no member or payload witness, and one that builds the carrier path without its target.
 
 ## Test Procedure
 
@@ -37,6 +37,12 @@ Catches an implementation that binds by name and looks it up again at emission, 
    `Status::READY`, then a unit with a model variant type and no source enum.
    Separately lower two bindings of one admitted enum declaration whose names
    resolve different source owners.
+10. Emit a unit that declares `union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }`
+    and constructs `Shape::Rect(2, 3)`, one that declares a recursive union with an
+    optional self-reference, one with two unions, and one with no union. Read the
+    first package back through IR, join its union row, and project the union node
+    with the row, without it, and with a row that misorders its members or drops a
+    payload node.
 
 ## Expected Results
 
@@ -60,4 +66,17 @@ Catches an implementation that binds by name and looks it up again at emission, 
   row names the declaration's emitted id and its own case. The model variant
   unit has no source enum row. The two bindings build one declaration node and
   one row, whose owner is the node's owner.
+- Step 10 gives one `SelectedSourceUnionRow` for `Shape`: its structural id names
+  the emitted `composite_type`/`union` node, its source authority and identity
+  equal that node's owner, its qualified declaration is `["Shape"]`, its type
+  handle is the checked declaration's key and its settled key is its node's key.
+  Its members are `Empty`, `Circle` and `Rect`, each the sealed `UnionMember` of
+  the checked environment, with payload types `[]`, `[Integer]`,
+  `[Integer, Integer]` and payload node ids equal to the references in the union
+  node's member bindings. The recursive union's optional payload node is the
+  `option` node naming the union node. Two unions give two rows, one per emitted
+  union node; the unit with no union gives none. IR joins the row and projects
+  `Composite` of the type handle; with no row it refuses
+  `UnavailableIdentityWitness`; the misordered and truncated rows refuse
+  `MismatchedIdentityWitness`.
 - Assertions compare typed fields, causes and keys, never message text.

@@ -83,6 +83,7 @@ mod schedulability_claims;
 mod selected_model_rows;
 mod source_enum_rows;
 mod source_map_debug;
+mod source_union_rows;
 mod state_graph_claim;
 mod state_transition;
 mod step_relation;
