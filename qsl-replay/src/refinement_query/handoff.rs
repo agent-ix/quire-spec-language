@@ -204,7 +204,10 @@ pub(super) fn assemble(
             query: Some(cursor.field()?),
             proof: Some(cursor.field()?),
         };
-        if parts[slot].replace(part).is_some() {
+        let place = parts
+            .get_mut(slot)
+            .ok_or_else(|| fault("a record slot lies inside the part table"))?;
+        if place.replace(part).is_some() {
             return Err(RefinementHandoffRefusal::Shape);
         }
     }

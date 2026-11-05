@@ -431,6 +431,38 @@ fn public_assembly_keeps_bad_proofs_present_for_the_native_checker() {
     });
 }
 
+/// FR-314 / FR-492-AC-10: a well-formed proof whose last command uses a rule
+/// the checker does not decide (`symm`) reaches the checker with its bytes
+/// unchanged and is `Unverifiable` at that command, never `Verified`.
+#[trace("TC-1275", "FR-314-AC-2", "FR-492-AC-10")]
+#[test]
+fn public_check_reports_an_unsupported_rule_as_unverifiable_not_verified() {
+    use crate::refinement_proofs::initial_proof;
+    use qsl_replay::{CertificateCheckLimits, QueryPart, SmtProofCheck};
+    use quire_exact::Cancel;
+    with_request(&cas_refines_counter(), |request, _| {
+        let limits = CertificateCheckLimits::default();
+        let mut parts = public_parts(request);
+        let query = String::from_utf8(parts[0].1.clone()).expect("query is text");
+        let proof = format!(
+            "{}(step t2 (cl) :rule symm :premises (t1))\n",
+            initial_proof(&query)
+        );
+        parts[0].2 = proof.clone().into_bytes();
+        let certificate = request
+            .assemble_smt_certificate(&handoff(&parts), &limits, &Cancel::new())
+            .expect("an unsupported rule still assembles");
+        assert_eq!(certificate.base.proof, proof.as_bytes());
+        assert_eq!(
+            request.check_smt_proof(&certificate, &limits, &Cancel::new()),
+            Ok(SmtProofCheck::Unverifiable {
+                part: QueryPart::Base,
+                step: 4
+            })
+        );
+    });
+}
+
 #[trace("TC-1275", "FR-492-AC-11")]
 #[test]
 fn public_handoff_stops_at_its_own_exact_stage_limits_and_cancellation() {
