@@ -2228,7 +2228,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     let Value::Float(operand) = self.pop()? else {
                         return Err(invariant("ieee-float-value-expected"));
                     };
-                    if self.scope.ieee_profile().is_none() {
+                    if !self.world.has_ieee_profile() {
                         return Err(invariant("ieee-profile-unresolved"));
                     }
                     let result = outcome_into_stop(
