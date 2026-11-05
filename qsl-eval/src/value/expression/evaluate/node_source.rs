@@ -58,9 +58,10 @@ pub(crate) trait NodeSource<'a>: Copy + 'a {
     ///
     /// `graph` is the function table of the checked source only: the
     /// machine's current package, or the imported library an
-    /// `ImportedCall` resolves to. A source whose functions live elsewhere
-    /// resolves `function` against its own table and ignores `graph`.
-    fn callee(self, graph: &'a CheckedGraph, function: usize) -> Option<Callee<'a, Self>>;
+    /// `ImportedCall` resolves to; a bytes-only package has none. A source
+    /// whose functions live elsewhere resolves `function` against its own
+    /// table and ignores `graph`.
+    fn callee(self, graph: Option<&'a CheckedGraph>, function: usize) -> Option<Callee<'a, Self>>;
 }
 
 /// A called function's body, as a node of the caller's source.
@@ -105,8 +106,8 @@ impl<'a> NodeSource<'a> for CheckedNode<'a> {
         CheckedNode::children(self)
     }
 
-    fn callee(self, graph: &'a CheckedGraph, function: usize) -> Option<Callee<'a, Self>> {
-        graph.function_state(function).map(|state| Callee {
+    fn callee(self, graph: Option<&'a CheckedGraph>, function: usize) -> Option<Callee<'a, Self>> {
+        graph?.function_state(function).map(|state| Callee {
             name: state.name,
             body: state.body,
             slots: state.slots,

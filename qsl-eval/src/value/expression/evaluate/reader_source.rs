@@ -73,7 +73,7 @@ impl<'arena> NodeSource<'arena> for ReaderNode<'arena> {
 
     fn callee(
         self,
-        _graph: &'arena qsl_semantics::check::CheckedGraph,
+        _graph: Option<&'arena qsl_semantics::check::CheckedGraph>,
         function: usize,
     ) -> Option<Callee<'arena, Self>> {
         let function = self.projection.function(function)?;

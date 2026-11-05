@@ -18,6 +18,7 @@ macro_rules! assert_value_eq {
     }};
 }
 
+mod bare_slots;
 mod state_compensation;
 
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]

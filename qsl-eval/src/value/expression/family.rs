@@ -87,14 +87,15 @@ impl std::str::FromStr for QualifiedName {
     }
 }
 
-/// Seals [`super::CheckedPackageEvaluation`]: [`super::CheckedPackage`] is
-/// its one implementor, and an implementation for any other type would have
+/// Seals [`super::CheckedPackageEvaluation`]: [`super::CheckedPackage`] and
+/// the bytes-only `BarePackage` (FR-531) are its implementors, and an implementation for any other type would have
 /// no meaning. Declared here because `value::expression`'s own `mod.rs`
 /// declares only `evaluate` and `family` (TC-170).
 pub(super) mod sealed {
     /// The private supertrait of [`super::super::CheckedPackageEvaluation`].
     pub trait Sealed {}
     impl Sealed for super::super::CheckedPackage {}
+    impl Sealed for qsl_package::BarePackage<'_> {}
 }
 
 /// `ValueFunctionFamily`'s real evaluation environment (ADR-012 §2's
