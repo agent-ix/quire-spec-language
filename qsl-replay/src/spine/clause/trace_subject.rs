@@ -683,7 +683,7 @@ impl WindowSource for SubjectWindowSource<'_> {
 }
 
 #[cfg(test)]
-#[path = "../../../../../qsl-semantics/tests/support/receiver_frames.rs"]
+#[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
 mod model_fixture;
 
 #[cfg(test)]
