@@ -908,6 +908,12 @@ pub struct ClauseRunReport {
     /// The exact temporal profile and clock selected by the checked package
     /// when a clock-bearing trace was authenticated.
     pub authenticated_temporal_selection: Option<AuthenticatedTemporalSelection>,
+    /// FR-327 "Refused condition", FR-330: the trace position of the `holds`
+    /// condition whose S6a evaluation was refused, present exactly when a
+    /// temporal run stopped at that refusal, whatever the disposition maps
+    /// it to (a refusal, or the internal failure of a kernel
+    /// `CheckedInvariant`); `None` for every other report.
+    pub refused_at: Option<u64>,
 }
 
 /// FR-050 provenance retained after a clock-bearing trace agrees with the
@@ -1058,6 +1064,7 @@ pub fn run_clause_with_temporal_selections(
         decisive: None,
         ledger: None,
         authenticated_temporal_selection: None,
+        refused_at: None,
     };
 
     if let Some(language) = unit.language {
@@ -1253,6 +1260,7 @@ impl CompiledRun<'_> {
             decisive: None,
             ledger: None,
             authenticated_temporal_selection: None,
+            refused_at: None,
         }
     }
 }
@@ -1673,6 +1681,7 @@ fn run_function(
         decisive: None,
         ledger: None,
         authenticated_temporal_selection: None,
+        refused_at: None,
     };
 
     let selected = match select(package, name) {

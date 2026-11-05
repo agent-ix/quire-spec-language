@@ -89,6 +89,11 @@ impl From<LetterStop> for Stop {
                 Self::Refused(TemporalRefusal::Fault(fault("window-aggregate-not-read")))
             }
             LetterStop::Fault(internal) => Self::Refused(TemporalRefusal::Fault(internal)),
+            // The finite-window profile keeps a refused condition as the
+            // fault its letter's stop records.
+            LetterStop::Refused => {
+                Self::Refused(TemporalRefusal::Fault(fault("window-condition-refused")))
+            }
         }
     }
 }

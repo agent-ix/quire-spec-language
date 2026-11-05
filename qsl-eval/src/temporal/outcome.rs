@@ -187,6 +187,16 @@ pub enum TemporalRefusal {
     /// A window aggregate cannot be read on the trace.
     #[error(transparent)]
     Window(#[from] WindowRefusal),
+    /// A `holds` condition the clause reads was refused at `at` by its S6a
+    /// evaluation (FR-327 "Refused condition"). The refusal itself, which may
+    /// be the kernel's `CheckedInvariant`, is kept by the letter that read
+    /// the condition; no activation before `at` evaluated false and no atom
+    /// before it was undefined.
+    #[error("a holds condition was refused at {at:?}")]
+    ConditionRefused {
+        /// The position of the refused condition.
+        at: TemporalPosition,
+    },
     /// An invariant of the checked clause or the evaluator broke.
     #[error("temporal evaluation broke invariant {0:?}")]
     Fault(InternalFault),
@@ -220,6 +230,11 @@ impl TemporalRefusal {
                 CatalogCode::new("unsupported_construct", "expression-form")
             }
             Self::Position(refusal) => refusal.catalog_code(),
+            // The refusal's own record is the letter's; this code is only
+            // the evaluator's, for a caller that holds no such record.
+            Self::ConditionRefused { .. } => {
+                CatalogCode::new("runtime_invariant", "established-invariant-broken")
+            }
             Self::Fault(fault) => fault.catalog_code(),
         }
     }

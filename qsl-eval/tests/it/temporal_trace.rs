@@ -178,6 +178,8 @@ struct Letters<'a> {
     uncounted: Vec<u64>,
     /// Whether the step that closes a lasso's loop does not count.
     uncounted_loop_edge: bool,
+    /// The positions whose `holds` condition the S6a evaluation refuses.
+    refused: Vec<u64>,
 }
 
 impl<'a> Letters<'a> {
@@ -188,6 +190,7 @@ impl<'a> Letters<'a> {
             reads: Vec::new(),
             uncounted: Vec::new(),
             uncounted_loop_edge: false,
+            refused: Vec::new(),
         }
     }
 
@@ -242,6 +245,9 @@ impl TemporalLetters for Letters<'_> {
         _meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
         self.reads.push(position.index());
+        if self.refused.contains(&position.index()) {
+            return Err(LetterStop::Refused);
+        }
         let Some(FormulaNode::Holds { span }) =
             self.fixture.clause.formula().nodes().get(atom.index())
         else {
@@ -1480,4 +1486,118 @@ fn negation_is_pointwise_inside_a_window() {
         TemporalOutcome::Holds
     );
     assert_eq!(closed("eventually[0,1] holds(c.level = 9)"), violated(0));
+}
+
+/// [`run`] over a trace whose `holds` condition is refused at the positions
+/// `refused`, returning the evaluator's whole result and the positions it
+/// read.
+fn run_refusing(
+    fixture: &Fixture,
+    trace: TemporalTrace,
+    observations: Vec<Observation>,
+    refused: &[u64],
+) -> (Result<TemporalOutcome, TemporalRefusal>, Vec<u64>) {
+    let mut letters = Letters::new(fixture, observations);
+    letters.refused = refused.to_vec();
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let result = evaluate(&fixture.clause, trace, &mut letters, &mut meter);
+    (result, letters.reads)
+}
+
+fn refused_at(index: u64) -> Result<TemporalOutcome, TemporalRefusal> {
+    Err(TemporalRefusal::ConditionRefused {
+        at: TemporalPosition::new(index),
+    })
+}
+
+/// FR-327-AC-6, the bounded profile: `always[0,2] holds(c.level <= 1)` `on
+/// origin` over `c.level` 0, 0, 0 with the condition refused at position 1
+/// returns the refused condition at position 1 (not a fault) and reads
+/// positions 0 and 1 only; with `c.level` 2 at position 0 the activation
+/// evaluates false there and the result is `Completed(false)` at position 0,
+/// the later refusal never deciding it.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn a_refused_condition_stops_reading_at_its_position_unless_an_earlier_activation_is_false() {
+    let fx = counter(EVENT, "always[0,2] holds(c.level <= 1)");
+    let (result, reads) = run_refusing(&fx, finite(3), counters(&[0, 0, 0]), &[1]);
+    assert_eq!(result, refused_at(1));
+    assert_eq!(reads, [0, 1]);
+
+    let (result, reads) = run_refusing(&fx, finite(3), counters(&[2, 0, 0]), &[1]);
+    assert_eq!(result, Ok(violated(0)));
+    assert_eq!(
+        result.as_ref().map(TemporalOutcome::category),
+        Ok(Category::Violation)
+    );
+    assert_eq!(reads, [0, 1]);
+
+    // A refusal at the first position is the result with nothing before it.
+    let (result, reads) = run_refusing(&fx, finite(3), counters(&[0, 0, 0]), &[0]);
+    assert_eq!(result, refused_at(0));
+    assert_eq!(reads, [0]);
+
+    // Without a refusal the same clause holds, so the refusal was the
+    // condition's.
+    let (result, _) = run_refusing(&fx, finite(3), counters(&[0, 0, 0]), &[]);
+    assert_eq!(result, Ok(TemporalOutcome::Holds));
+}
+
+/// FR-327-AC-6, evaluation order: an atom undefined at an earlier position
+/// is returned before a later refusal, and a refusal at an earlier position
+/// before a later undefined atom; for an `on each` clause the first false
+/// activation before the refusal is returned.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn a_refused_condition_and_an_undefined_atom_are_returned_in_evaluation_order() {
+    let fx = counter(EVENT, "always[0,2] holds(2 / (2 - c.level) >= 1)");
+    let (result, _) = run_refusing(&fx, finite(3), counters(&[2, 0, 0]), &[1]);
+    assert_eq!(
+        result,
+        Ok(undefined_at(0, Undefined::DivisionByZero)),
+        "undefined at 0 precedes the refusal at 1"
+    );
+    let (result, reads) = run_refusing(&fx, finite(3), counters(&[0, 2, 0]), &[0]);
+    assert_eq!(
+        result,
+        refused_at(0),
+        "the refusal at 0 precedes position 1"
+    );
+    assert_eq!(reads, [0]);
+
+    let each = fixture(
+        EVENT,
+        "c: Counter",
+        "on each (q: Counter)",
+        "always[0,0] holds(c.level <= 1)",
+    );
+    let (result, _) = run_refusing(&each, finite(3), counters(&[0, 2, 0]), &[2]);
+    assert_eq!(
+        result,
+        Ok(violated(1)),
+        "the false activation at 1 precedes the refusal at 2"
+    );
+    let (result, _) = run_refusing(&each, finite(3), counters(&[0, 1, 0]), &[2]);
+    assert_eq!(result, refused_at(2));
+}
+
+/// FR-327-AC-6, the infinite-trace profile: the same refusal at position 1
+/// of the prefix 0, 1, 2 (FR-328) and of the lasso with an empty prefix and
+/// loop 0, 1 (FR-329) is the refused condition at position 1.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn a_refused_condition_stops_an_infinite_trace_prefix_and_lasso() {
+    let fx = counter(INFINITE, "always holds(c.level <= 5)");
+    let (result, _) = run_refusing(&fx, finite(3), counters(&[0, 1, 2]), &[1]);
+    assert_eq!(result, refused_at(1));
+    let lasso = TemporalTrace::Lasso {
+        prefix: 0,
+        loop_len: 2,
+    };
+    let (result, reads) = run_refusing(&fx, lasso, counters(&[0, 1]), &[1]);
+    assert_eq!(result, refused_at(1));
+    assert_eq!(reads, [0, 1]);
+    // A false atom at position 0 decides the prefix before the refusal.
+    let (result, _) = run_refusing(&fx, finite(3), counters(&[6, 1, 2]), &[1]);
+    assert_eq!(result, Ok(violated(0)));
 }
