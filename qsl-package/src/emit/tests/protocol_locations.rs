@@ -246,12 +246,12 @@ fn every_row_reads_back_at_i2_with_its_terms_location() {
     use super::protocol_requirements::fixture_w::{document as w_document, PROFILES_W, W};
     let w = super::reachability::lower_with(w_document(), PROFILES_W, W);
     assert_rows_read_back_at_their_terms(&w.package, &w.wire, &w_document());
-    // The reader refuses a `let` binder in a protocol slot, so E-C is read
-    // without `Composed.let`.
+    // The reader admits the `let` binder a slot introduces itself, so E-C is
+    // read with `Composed.let`.
     for source in [
         tc1070::SOURCE.to_owned(),
         E_C_TRIED_PICKED.to_owned(),
-        e_c_with_let(false),
+        e_c_with_let(true),
     ] {
         let (package, wire) = checked_and_emitted(&source);
         assert_rows_read_back_at_their_terms(&package, &wire, &domain());
@@ -578,10 +578,8 @@ fn e_c_let_and_if_rows_cover_every_term_and_no_non_term() {
         );
     }
     assert_rows_follow_the_walk(&wire);
-    // The reader refuses a `let` binder in a protocol slot (`BinderScope`),
-    // whatever its rows, so the read-back runs without `Composed.let`.
-    let (_, without_let) = checked_and_emitted(&e_c_with_let(false));
-    let admitted = read_protocol_over(&without_let, &domain());
+    // The reader admits the `let` binder of `Composed.let` with its rows.
+    let admitted = read_protocol_over(&wire, &domain());
     assert!(matches!(admitted, Read::Verified { .. }), "{admitted:?}");
 }
 
