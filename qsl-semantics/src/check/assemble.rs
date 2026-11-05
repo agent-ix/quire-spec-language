@@ -3654,6 +3654,18 @@ impl PackageDeclarations {
         // imports").
         let mut model_spellings = ModelSpellings::new(source.clone());
         let mut packages: BTreeMap<&str, usize> = BTreeMap::new();
+        // Each unit of the admitted graph by its node key, for the package
+        // units a selection spells.
+        let graph_unit_ids: BTreeMap<NodeKey, quire_exact::UnitId> = quantity_result
+            .as_ref()
+            .map(|quantities| {
+                quantities
+                    .graph
+                    .units()
+                    .map(|unit| (unit.key(), unit.id()))
+                    .collect()
+            })
+            .unwrap_or_default();
         for (selection, source_unit) in selections.models.iter().zip(&model_selection_units) {
             let unit_source = sources.get(*source_unit).unwrap_or(&source);
             let Some(model) = models.iter().find(|model| {
@@ -3683,25 +3695,19 @@ impl PackageDeclarations {
                 model_spellings.add_package(model.view.domain_package().model_selection.clone());
             packages.insert(&selection.identity, package);
             model_spellings.bind_model(unit_source, &selection.alias, Some(package));
-            if let Ok(quantities) = &quantity_result {
-                let prefix = format!("{}::", selection.alias);
-                model_spellings.set_units(
-                    package,
-                    imported
-                        .units
-                        .iter()
-                        .filter_map(|(name, imported_unit)| {
-                            let member = name.strip_prefix(&prefix)?;
-                            let id = quantities
-                                .graph
-                                .units()
-                                .find(|unit| unit.key() == imported_unit.key)?
-                                .id();
-                            Some((member.to_owned(), id))
-                        })
-                        .collect(),
-                );
-            }
+            let prefix = format!("{}::", selection.alias);
+            model_spellings.set_units(
+                package,
+                imported
+                    .units
+                    .iter()
+                    .filter_map(|(name, imported_unit)| {
+                        let member = name.strip_prefix(&prefix)?;
+                        let id = graph_unit_ids.get(&imported_unit.key)?.clone();
+                        Some((member.to_owned(), id))
+                    })
+                    .collect(),
+            );
             match model_object_types(
                 &selection.alias,
                 model,

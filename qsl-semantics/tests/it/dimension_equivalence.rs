@@ -1203,3 +1203,44 @@ fn a_package_node_refusal_is_located_at_its_model_selection() {
         assert_eq!(at, local, "{body}");
     }
 }
+
+/// FR-091-AC-55 and AC-71 (QSpec FR-142 "Dimension equivalence"): when the
+/// unit graph is refused, an equivalence naming a source unit typed by a
+/// package dimension still resolves that unit's dimension, so the one error
+/// is the graph's: row 1 at `z`, the zero scale, and no unresolved name.
+#[trace(
+    "TC-483",
+    "FR-091-AC-55",
+    "FR-091-AC-71",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-18"
+)]
+#[test]
+fn a_refused_unit_graph_still_resolves_package_typed_units_for_equivalences() {
+    let packages: [Package; 1] = [(
+        "M",
+        "acme/rpc",
+        domain("acme/rpc", &[("Rate", &[])], &[("us", "Rate", None, "1")]),
+    )];
+    let (cause, at) = refused_over(
+        &packages,
+        "dimension Dur;\nunit d : Dur = rational(1, 1);\n\
+         unit z : Dur = rational(0, 1) * d;\n\
+         unit tick : M::Rate = rational(1, 2) * M::us;\n\
+         dimension Dur ~ M::Rate by 1 d = 1 tick;",
+    );
+    assert!(
+        matches!(
+            &cause,
+            AssemblyCause::UnitGraphTopology {
+                fault: TopologyFault::ZeroScale,
+                retained,
+            } if matches!(retained.as_slice(), [
+                TopologyRetained::Unit { name, .. },
+                TopologyRetained::Scale(scale),
+            ] if name == "z" && scale.is_zero())
+        ),
+        "{cause:?}"
+    );
+    assert_eq!(at, "z");
+}

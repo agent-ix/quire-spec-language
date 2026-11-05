@@ -161,7 +161,10 @@ fn a_package_typed_unit_conversion_evaluates_true_for_two_ticks() {
                 unit tock : M::Rate = rational(3, 1) * tick;\n\
                 function k1 using v(d: Quantity<tick>): Boolean pure { \
                     convert<Quantity<M::us>>(d) = 1 M::us }\n\
-                function k1_at_two_ticks using v(): Boolean pure { k1(2 tick) }";
+                function k1_at_two_ticks using v(): Boolean pure { k1(2 tick) }\n\
+                function k1_at_three_ticks using v(): Boolean pure { k1(3 tick) }\n\
+                function chained using v(): Boolean pure { \
+                    convert<Quantity<M::us>>(1 tock) = rational(3, 2) M::us }";
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-091-ac-72"),
         "fr-091-ac-72.native",
@@ -185,6 +188,10 @@ fn a_package_typed_unit_conversion_evaluates_true_for_two_ticks() {
             .expect("k1 and its call check"),
     );
     assert!(truth(&package, "k1_at_two_ticks"));
+    assert!(!truth(&package, "k1_at_three_ticks"));
+    assert!(truth(&package, "chained"));
+    // The emit path carries the model-owned unit nodes.
+    qsl_package::emit_checked(&package).expect("the package with package-owned units emits");
 }
 
 /// FR-497-AC-4 (TC-1287): a source-checked carried conversion returns its

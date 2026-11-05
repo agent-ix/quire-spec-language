@@ -910,7 +910,6 @@ impl Walk<'_> {
             key: None,
         }));
         if roots.len() > 1 {
-            local_roots.first().or(local.first())?;
             let mut retained = vec![TopologyRetained::Dimension {
                 name: dimension.identity.clone(),
                 key: Some(dimension.key.clone()),
