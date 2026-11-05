@@ -91,7 +91,10 @@ vocabulary, which is the vocabulary of FR-218's compiled edge relation:
 the package and lists, as node ids in the order the nodes carry them: the clause,
 its roles, channels, queues, controls in layout order, compensations,
 `requirements` (temporal clauses), `terminal` and `scheduling` when present, and
-the FR-449 activation rows (`protocol_activation_relation`).
+the FR-449 activation rows (`protocol_activation_relation`). It also exposes the
+checked `attempts.maximum` term for a compensation returned by
+`ProtocolView::compensations`; callers read the owner's value through this
+accessor rather than inspecting the compensation node body.
 
 ## Behavior
 
@@ -156,6 +159,7 @@ node, lock or source map they read.
 | FR-519-AC-11 | For **R**, the `semantic_type` nodes and the literal and reference terms that stand for `Type`, `Value` and `Number` records are read through `CheckedPackageV2::term` and equal the values the checked clause holds in memory, with numbers in the FR-322 encoding. | Test (TC-1314) |
 | FR-519-AC-12 | For the model of TC-1054 (TC-1046's fixture with the populations `orders` and `people`; **R** of FR-517 declares no population), the population declaration node of the emitted package, selected from the `CheckedPackageV2` by its node id, equals the node the checked clause holds in memory. | Test (TC-1314) |
 | FR-519-AC-13 | `qsl_package::protocol_view` exports no item for a window binding; a compile-fail `use` of `qsl_package::protocol_view::Window` fails to resolve. | Test (TC-1314) |
+| FR-519-AC-14 | For **R** of FR-517, the `ProtocolView` accessor for the `Full` compensation's `attempts.maximum` returns its checked integer term equal to the authored count 3. Removing `maximum` from that compensation's `attempts` group in the checked node makes the accessor refuse with `ViewRefusal::MissingMember` naming `attempts.maximum` and return no value. | Test (TC-1314) |
 
 ## Dependencies
 
