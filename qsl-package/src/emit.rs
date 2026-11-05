@@ -39,7 +39,7 @@ use qsl_semantics::check::{
     CheckedRefinement, CheckedScheduleClaim, CheckedTaskSets, FrameDeletesScoped, FrameModifies,
     FrameScope, FrameTerm, GroupMember, GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm,
     NodeRef, NodeTag, OperationLaw, Operator, Owner, ScheduleClaim, SchedulingPolicy, SemanticNode,
-    TemporalProfile, TimeNominalOrigin, TupleMember, TupleTerm, Wcet,
+    TemporalProfile, TimeNominalForm, TimeNominalOrigin, TupleMember, TupleTerm, Wcet,
 };
 use qsl_semantics::value::nominal_payload::NominalPayload;
 use qsl_semantics::value::{
@@ -56,6 +56,14 @@ use crate::checked_v2::{
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
     CheckedTimedModel, CheckedUrgency, ClockComparison, TimedNodeMetadata,
 };
+use crate::wire_form::{OperationSuffix, WireForm};
+
+/// Whether a member binding is named `body`, the binding that carries a
+/// function's body term.
+#[string_edge]
+fn is_body_binding(name: &str) -> bool {
+    name == "body"
+}
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -2738,9 +2746,12 @@ fn equality_fact_witness_rows(
                     quire_semantic_value::quantity::QuantityUnit::Declared(unit) => {
                         unit.key() == *quantity_key
                     }
-                    quire_semantic_value::quantity::QuantityUnit::Compound(_) => graph_nodes
-                        .get(quantity_key)
-                        .is_some_and(|node| node.semantic_form() == "compound_unit"),
+                    quire_semantic_value::quantity::QuantityUnit::Compound(_) => {
+                        graph_nodes.get(quantity_key).is_some_and(|node| {
+                            WireForm::from_wire(node.semantic_form())
+                                == Some(WireForm::CompoundUnit)
+                        })
+                    }
                 };
                 if !exact_unit_key {
                     return Err(EmitRefusal::MissingEqualityIdentityContext {
@@ -2989,10 +3000,10 @@ fn checked_equality_term_data(
         let operation = application_body.operation.identity();
         let operator_matches = match row.producer_data.operator() {
             quire_semantic_value::declaration::EqualityOperator::Equal => {
-                operation.ends_with(".eq")
+                OperationSuffix::of(operation) == Some(OperationSuffix::Eq)
             }
             quire_semantic_value::declaration::EqualityOperator::NotEqual => {
-                operation.ends_with(".ne")
+                OperationSuffix::of(operation) == Some(OperationSuffix::Ne)
             }
         };
         if !operator_matches || application_body.arguments.len() != 2 {
@@ -3048,7 +3059,9 @@ fn checked_equality_term_data(
                     if let qsl_semantics::check::BodyTerm::Application(convert) =
                         operand_node.body()
                     {
-                        if convert.operation.identity().ends_with(".convert") {
+                        if OperationSuffix::of(convert.operation.identity())
+                            == Some(OperationSuffix::Convert)
+                        {
                             let Some(qsl_semantics::check::MemberTerm::Leaf(
                                 qsl_semantics::check::LeafTerm::Reference { target },
                             )) = convert.arguments.first()
@@ -3408,7 +3421,7 @@ fn equality_enum_members(
         .map(|(_, declaration, member, case, ordinal, ordered)| {
             let member_id = if let Some(member_node) = graph_nodes.get(member) {
                 if member_node.semantic_type().as_ref() != Some(declaration)
-                    || member_node.semantic_form() != "enum_value"
+                    || WireForm::from_wire(member_node.semantic_form()) != Some(WireForm::EnumValue)
                     || !matches!(
                         member_node.body(),
                         qsl_semantics::check::BodyTerm::Leaf(
@@ -3498,7 +3511,7 @@ fn equality_units(
                 unit.key() == quantity_type
             }
             quire_semantic_value::quantity::QuantityUnit::Compound(_) => {
-                quantity_node.semantic_form() == "compound_unit"
+                WireForm::from_wire(quantity_node.semantic_form()) == Some(WireForm::CompoundUnit)
             }
         };
         if !exact_unit_type {
@@ -4274,7 +4287,7 @@ fn append_schedulability_claims(
                 .map(|segment| segment.as_str().into())
                 .collect(),
         });
-        let semantic_type = if nominal.form == "unit" {
+        let semantic_type = if nominal.form == TimeNominalForm::Unit {
             nominal
                 .dependencies
                 .first()
@@ -6156,7 +6169,7 @@ fn hyper_wrapper(graph: &CheckedGraph, hyper: &NodeKey) -> Result<NodeKey, EmitR
             let MemberTerm::Binding(binding) = member else {
                 return None;
             };
-            if binding.name != "body" {
+            if !is_body_binding(&binding.name) {
                 return None;
             }
             let BindingValue::Leaf(LeafTerm::Reference { target }) = &binding.value else {
@@ -6276,9 +6289,9 @@ fn write_time_nominal(
         ),
     };
     let body = if source_owned {
-        match (nominal.form.as_str(), nominal.nominal_payload()) {
-            ("dimension", Some(payload @ NominalPayload::Dimension(_)))
-            | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
+        match (nominal.form, nominal.nominal_payload()) {
+            (TimeNominalForm::Dimension, Some(payload @ NominalPayload::Dimension(_)))
+            | (TimeNominalForm::Unit, Some(payload @ NominalPayload::Unit(_))) => {
                 nominal_term(ids, &nominal.key, payload)?
             }
             _ => {
@@ -6292,7 +6305,7 @@ fn write_time_nominal(
             members: Vec::new(),
         }
     };
-    let semantic_type = if nominal.form == "unit" {
+    let semantic_type = if nominal.form == TimeNominalForm::Unit {
         nominal
             .dependencies
             .first()

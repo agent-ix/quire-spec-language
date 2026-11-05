@@ -27,7 +27,7 @@ pub use predicate::{
 pub(crate) use subject::temporal_subject_within;
 pub use subject::{
     activation_relation, temporal_subject, Activation, ClauseOccurrence, FormulaNodeUse,
-    OperatorDirection, OperatorUse, TemporalSubjectView,
+    FormulaOperation, OperatorDirection, OperatorUse, TemporalSubjectView,
 };
 
 /// Why a view was not read: a closed set, so a caller branches on the

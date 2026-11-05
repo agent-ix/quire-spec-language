@@ -32,6 +32,8 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::location::{Location, Origin};
 
+use crate::wire_form::{has_form, split_tag_form, OperationSuffix, WireForm, WireTag};
+
 /// One projected protocol slot: owned evaluator nodes, the admitted function
 /// table its calls reach, and the frame its locals and case binders use.
 /// Wire terms and producer rows stay inside qsl-package.
@@ -652,10 +654,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let declarations = reachable
             .iter()
             .filter_map(|id| self.index.node(id))
-            .filter(|node| {
-                node.node_tag.as_ref() == "function"
-                    && node.semantic_form.as_ref() == "pure_function"
-            })
+            .filter(|node| has_form(node, WireTag::Function, WireForm::PureFunction))
             .map(|node| {
                 let (parameters, body) = function_parts(&node.body)
                     .ok_or_else(|| fault("reader-pure-function-has-checked-body"))?;
@@ -749,8 +748,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 (NodeKind::Literal(CheckedLiteral(literal)), Vec::new(), None)
             }
             CheckedTerm::Aggregate { members }
-                if node.node_tag.as_ref() == "value"
-                    && node.semantic_form.as_ref() == "union_value" =>
+                if has_form(node, WireTag::Value, WireForm::UnionValue) =>
             {
                 let (kind, children) = self.union_value(node, members, context, locals)?;
                 (kind, children, None)
@@ -814,10 +812,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let union_node = self
             .index
             .node(&node.semantic_type)
-            .filter(|candidate| {
-                candidate.node_tag.as_ref() == "composite_type"
-                    && candidate.semantic_form.as_ref() == "union"
-            })
+            .filter(|candidate| has_form(candidate, WireTag::CompositeType, WireForm::Union))
             .ok_or_else(|| fault("reader-union-value-type-is-union"))?;
         let CheckedTerm::Aggregate {
             members: union_members,
@@ -1031,24 +1026,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [left, right] = children.as_slice() else {
                     return Err(fault("reader-order-has-two-operands").into());
                 };
-                let (family, operator) = identity
-                    .and_then(|identity| identity.strip_prefix("quire.op."))
-                    .and_then(|identity| identity.split_once('.'))
+                let (kind, operator) = identity
+                    .and_then(order_of)
                     .ok_or_else(|| fault("reader-order-family-is-catalogued"))?;
-                let kind = match family {
-                    "integer" => OrderedKind::Integers,
-                    "rational" => OrderedKind::Rationals,
-                    "decimal" => OrderedKind::Decimals,
-                    "enum" => OrderedKind::Enums,
-                    "text" => OrderedKind::Texts,
-                    _ => OrderedKind::Quantities,
-                };
-                let operator = match operator {
-                    "lt" => OrderingOperator::Less,
-                    "le" => OrderingOperator::LessOrEqual,
-                    "gt" => OrderingOperator::Greater,
-                    _ => OrderingOperator::GreaterOrEqual,
-                };
                 Ok((NodeKind::Order(operator, kind, *left, *right), children))
             }
             Some("quire.op.record.project") => {
@@ -1154,7 +1134,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             )
             .map_err(|_| fault("reader-equality-decision-is-admitted"))?;
         let equality = CheckedEquality::from_admitted_decision(&decision);
-        let operator = if identity.is_some_and(|identity| identity.ends_with(".ne")) {
+        let operator = if identity.and_then(OperationSuffix::of) == Some(OperationSuffix::Ne) {
             EqualityOperator::NotEqual
         } else {
             EqualityOperator::Equal
@@ -1193,10 +1173,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .ids
             .get(&declaration)
             .and_then(|id| self.index.node(id))
-            .filter(|candidate| {
-                candidate.node_tag.as_ref() == "composite_type"
-                    && candidate.semantic_form.as_ref() == "union"
-            })
+            .filter(|candidate| has_form(candidate, WireTag::CompositeType, WireForm::Union))
             .ok_or_else(|| fault("reader-union-case-declaration-is-admitted"))?;
         let CheckedTerm::Aggregate {
             members: union_members,
@@ -1371,10 +1348,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 .index
                 .node(field_declaration)
                 .ok_or_else(|| fault("reader-record-field-node-is-admitted"))?;
-            let record_form = (declaration.node_tag.as_ref() == "model"
-                && declaration.semantic_form.as_ref() == "record_value_type")
-                || (declaration.node_tag.as_ref() == "composite_type"
-                    && declaration.semantic_form.as_ref() == "record");
+            let record_form = (has_form(declaration, WireTag::Model, WireForm::RecordValueType))
+                || (has_form(declaration, WireTag::CompositeType, WireForm::Record));
             if !record_form || declaration_key != record_key {
                 return Err(fault("reader-record-field-exact-type-matches-operand").into());
             }
@@ -1436,9 +1411,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .get(record)
             .and_then(|id| self.index.node(id))
             .ok_or_else(|| fault("reader-record-declaration-is-admitted"))?;
-        if declaration.node_tag.as_ref() != "composite_type"
-            || declaration.semantic_form.as_ref() != "record"
-        {
+        if !has_form(declaration, WireTag::CompositeType, WireForm::Record) {
             return Ok(None);
         }
         let CheckedTerm::Aggregate { members } = &declaration.body else {
@@ -1463,9 +1436,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .and_then(|target| self.index.node(target))
             .ok_or_else(|| fault("reader-record-field-member-is-admitted"))?;
         Ok(Some(
-            if member_type.node_tag.as_ref() == "composite_type"
-                && member_type.semantic_form.as_ref() == "option"
-            {
+            if has_form(member_type, WireTag::CompositeType, WireForm::Option) {
                 quire_exact::Presence::Optional
             } else {
                 quire_exact::Presence::Required
@@ -1560,7 +1531,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             self.index.work_limit,
         ) {
             Ok(projection) => projection.value_type().clone(),
-            Err(error) if error.form.as_ref() == "scalar_type/text" => ValueType::String,
+            Err(error)
+                if split_tag_form(&error.form) == Some((WireTag::ScalarType, WireForm::Text)) =>
+            {
+                ValueType::String
+            }
             Err(_) => return Err(unsupported()),
         };
         Ok(self.push(ReaderProjectedNode::leaf(
@@ -1597,6 +1572,30 @@ impl TypeReader<'_> {
     }
 }
 
+/// The comparison family and operator a `quire.op.<family>.<operator>` order
+/// identity names, `None` for any other identity.
+#[ix_trace_rs::string_edge]
+fn order_of(identity: &str) -> Option<(OrderedKind, OrderingOperator)> {
+    let (family, operator) = identity.strip_prefix("quire.op.")?.split_once('.')?;
+    let kind = match family {
+        "integer" => OrderedKind::Integers,
+        "rational" => OrderedKind::Rationals,
+        "decimal" => OrderedKind::Decimals,
+        "enum" => OrderedKind::Enums,
+        "text" => OrderedKind::Texts,
+        "quantity" => OrderedKind::Quantities,
+        _ => return None,
+    };
+    let operator = match operator {
+        "lt" => OrderingOperator::Less,
+        "le" => OrderingOperator::LessOrEqual,
+        "gt" => OrderingOperator::Greater,
+        "ge" => OrderingOperator::GreaterOrEqual,
+        _ => return None,
+    };
+    Some((kind, operator))
+}
+
 /// The selected exact type of admitted node `id`, joining declared and
 /// structural identities where IR's projection leaves the join to QSL.
 pub(crate) fn node_value_type(
@@ -1626,51 +1625,51 @@ pub(crate) fn node_value_type(
     };
     // A checked declaration node of `form` is itself the exact structural
     // identity when no selected identity row exists; equal shape never is.
-    let structural = |declaration: &CheckedNodeId, tag: &str, form: &str| {
+    let structural = |declaration: &CheckedNodeId, tag: WireTag, form: WireForm| {
         index
             .node(declaration)
-            .filter(|node| node.node_tag.as_ref() == tag && node.semantic_form.as_ref() == form)
+            .filter(|node| has_form(node, tag, form))
             .and_then(|_| index.graph.key(declaration).ok())
     };
-    match error.form.as_ref() {
-        "scalar_type/text" if unresolved => {
+    match split_tag_form(&error.form) {
+        Some((WireTag::ScalarType, WireForm::Text)) if unresolved => {
             index
                 .node(at.ok_or_else(|| fault("reader-string-type-node-is-admitted"))?)
-                .filter(|node| {
-                    node.node_tag.as_ref() == "scalar_type" && node.semantic_form.as_ref() == "text"
-                })
+                .filter(|node| has_form(node, WireTag::ScalarType, WireForm::Text))
                 .ok_or_else(|| fault("reader-string-type-has-checked-form"))?;
             Ok(ValueType::String)
         }
-        "composite_type/record" if unresolved => {
+        Some((WireTag::CompositeType, WireForm::Record)) if unresolved => {
             let declaration = at.ok_or_else(|| fault("reader-record-type-error-has-node"))?;
             let key = match selected(declaration) {
                 Some(Identity::Record(key)) => Some(key.clone()),
-                _ => structural(declaration, "composite_type", "record"),
+                _ => structural(declaration, WireTag::CompositeType, WireForm::Record),
             }
             .ok_or_else(|| fault("reader-record-type-has-exact-identity"))?;
             Ok(ValueType::Composite(key))
         }
-        "composite_type/union" if error.code == Code::UnavailableIdentityWitness => {
+        Some((WireTag::CompositeType, WireForm::Union))
+            if error.code == Code::UnavailableIdentityWitness =>
+        {
             let declaration = at.ok_or_else(|| fault("reader-union-type-error-has-node"))?;
             let key = match selected(declaration) {
                 Some(Identity::Union(key)) => Some(key.clone()),
-                _ => structural(declaration, "composite_type", "union"),
+                _ => structural(declaration, WireTag::CompositeType, WireForm::Union),
             }
             .ok_or_else(|| fault("reader-union-type-has-exact-identity"))?;
             Ok(ValueType::Composite(key))
         }
-        "scalar_type/unit" if unresolved => {
+        Some((WireTag::ScalarType, WireForm::Unit)) if unresolved => {
             let declaration = at.ok_or_else(|| fault("reader-unit-has-exact-identity"))?;
             let unit = match selected(declaration) {
                 Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
-                _ => structural(declaration, "scalar_type", "unit")
+                _ => structural(declaration, WireTag::ScalarType, WireForm::Unit)
                     .map(quire_exact::UnitId::declared),
             }
             .ok_or_else(|| fault("reader-unit-has-exact-identity"))?;
             Ok(ValueType::Quantity(unit))
         }
-        "scalar_type/compound_unit" if unresolved => {
+        Some((WireTag::ScalarType, WireForm::CompoundUnit)) if unresolved => {
             let unit_node = at.ok_or_else(|| fault("reader-compound-unit-type-has-node"))?;
             let unit = crate::checked_v2::compound_unit(index.admitted, unit_node)
                 .ok_or_else(|| fault("reader-compound-unit-has-exact-identity"))?;
@@ -1686,16 +1685,18 @@ pub(crate) fn node_value_type(
             if error.code == Code::UnresolvedSelectedDeclaration {
                 let record = match selected(semantic_type) {
                     Some(Identity::Record(key)) => Some(key.clone()),
-                    _ => structural(semantic_type, "model", "record_value_type"),
+                    _ => structural(semantic_type, WireTag::Model, WireForm::RecordValueType),
                 };
                 if let Some(key) = record {
                     return Ok(ValueType::Composite(key));
                 }
             }
-            if unresolved && error.form.as_ref() == "scalar_type/dimension" {
+            if unresolved
+                && split_tag_form(&error.form) == Some((WireTag::ScalarType, WireForm::Dimension))
+            {
                 let unit = match selected(semantic_type) {
                     Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
-                    _ => structural(semantic_type, "scalar_type", "unit")
+                    _ => structural(semantic_type, WireTag::ScalarType, WireForm::Unit)
                         .map(quire_exact::UnitId::declared),
                 };
                 if let Some(unit) = unit {
@@ -1809,9 +1810,7 @@ fn literal_value(
         Literal::String(value) => Value::String(value.into()),
         Literal::Text(value) => {
             let checked_type = index.node(type_id)?;
-            if checked_type.node_tag.as_ref() == "scalar_type"
-                && checked_type.semantic_form.as_ref() == "text"
-            {
+            if has_form(checked_type, WireTag::ScalarType, WireForm::Text) {
                 return Some(Value::String(value.into()));
             }
             let type_projection = admitted.project_exact_type(type_id, identities, work_limit);
@@ -1851,15 +1850,16 @@ fn project_literal_type(type_id: &CheckedNodeId, index: &WireIndex<'_>) -> Optio
                 error.code,
                 quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
                     | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
-            ) || !matches!(error.form.as_ref(), "scalar_type/unit" | "scalar_type/dimension")
+            ) || !matches!(
+                split_tag_form(&error.form),
+                Some((WireTag::ScalarType, WireForm::Unit | WireForm::Dimension))
+            )
             {
                 return None;
             }
             let declaration = type_id;
             let unit_node = index.node(declaration)?;
-            if unit_node.node_tag.as_ref() != "scalar_type"
-                || unit_node.semantic_form.as_ref() != "unit"
-            {
+            if !has_form(unit_node, WireTag::ScalarType, WireForm::Unit) {
                 return None;
             }
             let unit = identities
