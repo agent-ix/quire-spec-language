@@ -13,6 +13,7 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_semantics::check::{
     CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate,
 };
+use serde_json::{Value, json};
 
 use crate::identity::ObligationIdentity;
 
@@ -30,6 +31,141 @@ impl ProbabilityProductKey {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+}
+
+/// The timed-tail control included in an FR-204 model key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DigitalTail {
+    /// A state that still admits ordinary discrete operations.
+    Running,
+    /// A selected idle tail before its first positive delay.
+    IdleReady,
+    /// A selected idle tail after a positive delay.
+    IdleDelayed,
+}
+
+impl DigitalTail {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::IdleReady => "idle-ready",
+            Self::IdleDelayed => "idle-delayed",
+        }
+    }
+}
+
+/// One admitted digital clock and its checker-derived cap.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DigitalClockKey {
+    /// The checked declaring type, field and receiver tuple.
+    pub identity: Value,
+    /// The clock value in digital units.
+    pub value: u64,
+    /// The checker-derived saturation cap in digital units.
+    pub cap: u64,
+}
+
+/// A timed deadline clock and its scaled closed bound.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DigitalDeadlineKey {
+    /// The scaled closed deadline bound.
+    pub limit: u64,
+    /// The current non-resetting deadline clock value.
+    pub elapsed: u64,
+}
+
+/// Encode the FR-196 canonical ProductKey for one admitted digital state.
+///
+/// `discrete` is the complete non-clock simulation-state form and `unit` is
+/// FR-196's closed time-unit form. Clock identities are canonical three-part
+/// tuples; the encoder orders them by their complete JCS bytes. The numeric
+/// fields use decimal strings in the key so values are not rounded through
+/// JSON numbers.
+///
+/// The JSON forms supplied for `binding`, `discrete`, `unit`, `monitor`,
+/// `accumulator` and `pending` must already have been derived from the checked
+/// subject and claim. This routine owns only their canonical representation;
+/// contextual admission and derivation remain the caller's responsibility.
+pub fn digital_probability_product_key(
+    binding: Option<Value>,
+    discrete: Value,
+    unit: Value,
+    scale: u64,
+    clocks: Vec<DigitalClockKey>,
+    deadline: Option<DigitalDeadlineKey>,
+    tail: DigitalTail,
+    monitor: Option<Value>,
+    accumulator: Option<Value>,
+    pending: Option<Value>,
+) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+    if scale == 0 {
+        return Err(ExactProbabilityGraphError::InvalidDigitalKey);
+    }
+
+    let mut keyed_clocks = clocks
+        .into_iter()
+        .map(|clock| {
+            if clock
+                .identity
+                .as_array()
+                .is_none_or(|parts| parts.len() != 3)
+                || clock.value > clock.cap
+            {
+                return Err(ExactProbabilityGraphError::InvalidDigitalKey);
+            }
+            let identity_bytes = canonical_json(&clock.identity)?;
+            Ok((identity_bytes, clock.identity, clock.value, clock.cap))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    keyed_clocks.sort_by(|left, right| left.0.cmp(&right.0));
+    if keyed_clocks.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return Err(ExactProbabilityGraphError::InvalidDigitalKey);
+    }
+    let clocks = keyed_clocks
+        .into_iter()
+        .map(|(_, identity, value, cap)| json!([identity, value.to_string(), cap.to_string()]))
+        .collect::<Vec<_>>();
+
+    let deadline = match deadline {
+        Some(DigitalDeadlineKey { limit, elapsed })
+            if limit.checked_add(1).is_some_and(|cap| elapsed <= cap) =>
+        {
+            json!(["deadline", limit.to_string(), elapsed.to_string()])
+        }
+        Some(_) => return Err(ExactProbabilityGraphError::InvalidDigitalKey),
+        None => Value::Null,
+    };
+    let model = json!([
+        "quire.simulation.state-key/v1",
+        [
+            "digital",
+            discrete,
+            unit,
+            scale.to_string(),
+            clocks,
+            deadline,
+            tail.tag()
+        ]
+    ]);
+    let model_bytes = canonical_json(&model)?;
+    let encoded_model = base64::Engine::encode(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        model_bytes,
+    );
+    let product = json!([
+        "quire.probability-product-key/v1",
+        binding,
+        encoded_model,
+        monitor,
+        accumulator,
+        pending
+    ]);
+    canonical_json(&product).map(ProbabilityProductKey)
+}
+
+fn canonical_json(value: &Value) -> Result<Vec<u8>, ExactProbabilityGraphError> {
+    quire_canonical::to_vec(value, quire_canonical::Limits::new(u64::MAX))
+        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)
 }
 
 /// The exact rational value certified for one probabilistic product state.
@@ -132,6 +268,8 @@ pub enum ExactProbabilityGraphError {
     LimitReached,
     /// The model API exposed a draw that was not a single-state probability.
     UnsupportedDraw,
+    /// A digital key contains an invalid or inconsistent timed component.
+    InvalidDigitalKey,
     /// The model has no single initial state; this slice checks exactly one.
     UnsupportedInitial,
     /// No checked claim has the requested obligation's node as its checked
@@ -587,6 +725,7 @@ fn rational(value: i64) -> Rational {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
     use ix_trace_rs::trace;
 
     fn key(value: u8) -> ProbabilityProductKey {
@@ -751,6 +890,111 @@ mod tests {
                 &Bound::AtLeast(rational(0)),
             ),
             Err(ExactProbabilityGraphError::Cycle)
+        );
+    }
+
+    #[trace("FR-196-AC-6")]
+    #[test]
+    fn digital_product_key_encodes_the_complete_timed_model_and_orders_clocks() {
+        let key = digital_probability_product_key(
+            None,
+            json!(["state", {"z": 1, "a": true}]),
+            json!(["unit", "second"]),
+            10,
+            vec![
+                DigitalClockKey {
+                    identity: json!(["Type", "zeta", ["u", "object-z"]]),
+                    value: 1,
+                    cap: 3,
+                },
+                DigitalClockKey {
+                    identity: json!(["Type", "alpha", ["u", "object-a"]]),
+                    value: 0,
+                    cap: 3,
+                },
+            ],
+            Some(DigitalDeadlineKey {
+                limit: 4,
+                elapsed: 1,
+            }),
+            DigitalTail::IdleDelayed,
+            None,
+            None,
+            None,
+        )
+        .expect("the complete timed key is representable");
+        let outer: Value = serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
+        let model_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(outer[2].as_str().expect("the model key is base64url"))
+            .expect("the model key decodes");
+        assert_eq!(
+            model_bytes,
+            br#"["quire.simulation.state-key/v1",["digital",["state",{"a":true,"z":1}],["unit","second"],"10",[[["Type","alpha",["u","object-a"]],"0","3"],[["Type","zeta",["u","object-z"]],"1","3"]],["deadline","4","1"],"idle-delayed"]]"#
+        );
+        assert_eq!(
+            outer,
+            json!([
+                "quire.probability-product-key/v1",
+                null,
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(model_bytes),
+                null,
+                null,
+                null
+            ])
+        );
+    }
+
+    #[trace("FR-196-AC-6")]
+    #[test]
+    fn digital_product_key_rejects_invalid_scale_clock_and_deadline_values() {
+        let clock = || DigitalClockKey {
+            identity: json!(["Type", "clock", ["u", "object"]]),
+            value: 1,
+            cap: 1,
+        };
+        let key = |scale, clocks, deadline| {
+            digital_probability_product_key(
+                None,
+                json!([]),
+                json!(["unit", "second"]),
+                scale,
+                clocks,
+                deadline,
+                DigitalTail::Running,
+                None,
+                None,
+                None,
+            )
+        };
+        assert_eq!(
+            key(0, vec![], None),
+            Err(ExactProbabilityGraphError::InvalidDigitalKey)
+        );
+        assert_eq!(
+            key(
+                1,
+                vec![DigitalClockKey {
+                    value: 2,
+                    ..clock()
+                }],
+                None
+            ),
+            Err(ExactProbabilityGraphError::InvalidDigitalKey)
+        );
+        assert_eq!(
+            key(1, vec![clock(), clock()], None),
+            Err(ExactProbabilityGraphError::InvalidDigitalKey)
+        );
+        assert_eq!(
+            key(
+                1,
+                vec![clock()],
+                Some(DigitalDeadlineKey {
+                    limit: 1,
+                    elapsed: 3,
+                })
+            ),
+            Err(ExactProbabilityGraphError::InvalidDigitalKey)
         );
     }
 }
