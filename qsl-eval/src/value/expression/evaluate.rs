@@ -2541,15 +2541,16 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     // FR-397 "Evaluate once": the numeric-equality parts of
                     // an ordering's composition add no charge. The decision
                     // is the owned core's, run on a scratch meter with no
-                    // limits so the evaluation's own meter is untouched. A
-                    // width mismatch is the core's ill-typed refusal and is
-                    // not equal.
+                    // limits so the evaluation's own meter is untouched. The
+                    // checker types both operands at one width and the call
+                    // boundary rejects a mismatched argument, so the core's
+                    // ill-typed refusal is an invariant fault, as it is for a
+                    // standalone node.
                     let mut scratch = Meter::new(UNMETERED);
-                    let numeric_equal = matches!(
-                        compare_ieee(IeeeComparison::NumericEqual, left, right, &mut scratch),
-                        Ok(Outcome::Completed(true))
-                    );
-                    Value::Boolean(numeric_equal)
+                    let numeric_equal =
+                        compare_ieee(IeeeComparison::NumericEqual, left, right, &mut scratch)
+                            .map_err(|_| invariant("ieee-operation-rejected"))?;
+                    Value::Boolean(outcome_into_stop(numeric_equal)?)
                 }
             }
             NodeKind::Not(_) => {
