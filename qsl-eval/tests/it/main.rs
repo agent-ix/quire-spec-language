@@ -52,6 +52,7 @@ mod named_population;
 mod native_literals;
 mod native_scalar_equality;
 mod one_occurrence;
+mod package_aggregate_route;
 mod property_automata;
 mod protocol_delivery_interval;
 mod protocol_reference;

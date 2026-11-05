@@ -221,6 +221,14 @@ impl<'m> CallMeter<'m> {
         Ok(())
     }
 
+    /// Admit a visit's counters when the evaluator already charged the
+    /// shared meter for this same unit of work.
+    pub(super) fn visit_counters(&mut self, visit: Visit) -> Result<(), LimitReached> {
+        let next = self.admit(visit.spends().iter().map(|counter| (*counter, 1)))?;
+        self.usage = next;
+        Ok(())
+    }
+
     /// Admit the clause before any instance is assessed (FR-523 "Tick
     /// arithmetic", "Stop scope"): the distinct formula nodes, the history
     /// span, and the sum `t0 + Hf + m` of every activation anchor `t0` in

@@ -120,6 +120,18 @@ pub trait TemporalLetters {
         self.atom(atom, position, meter).map(Valuation::from)
     }
 
+    /// Read an atom while exposing one charge seam per aggregate window
+    /// position. Ordinary atoms use `valuation` without calling the seam.
+    fn valuation_with_window_visits(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        meter: &mut Meter,
+        _visit: &mut dyn FnMut() -> Result<(), LetterStop>,
+    ) -> Result<Valuation, LetterStop> {
+        self.valuation(atom, position, meter)
+    }
+
     /// The atom `atom` stands for under the finite-window profile: nodes that
     /// are the same atom (the same `holds` condition) return one value, a node
     /// index, and share one valuation at a position (QSpec FR-160). The

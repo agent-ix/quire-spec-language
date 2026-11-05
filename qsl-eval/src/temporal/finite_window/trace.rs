@@ -5,6 +5,8 @@ use super::cover::ClockCover;
 use crate::temporal::ledger::{ProgressClosure, ProgressCompleteness};
 use crate::temporal::outcome::TemporalRefusal;
 use crate::temporal::position::TemporalPosition;
+use crate::temporal::window::{PastWindow, WindowTrace};
+use quire_exact::{Integer, Rational};
 
 /// Whether the completeness assertion covers every tick up to `tick`.
 pub(super) fn covers(completeness: ProgressCompleteness, tick: i128) -> bool {
@@ -116,6 +118,25 @@ pub struct TimestampedTrace {
 }
 
 impl TimestampedTrace {
+    /// A window trace over this call's positions or exact clock stamps,
+    /// selected by the aggregate's package window kind.
+    pub(crate) fn aggregate_window_trace(
+        &self,
+        window: &PastWindow,
+    ) -> Result<WindowTrace, crate::temporal::window::WindowRefusal> {
+        match window {
+            PastWindow::Positions { .. } => Ok(WindowTrace::positions(
+                u64::try_from(self.len()).unwrap_or(u64::MAX),
+            )),
+            PastWindow::Duration { .. } => WindowTrace::timed(
+                self.positions
+                    .iter()
+                    .map(|position| Rational::from_integer(Integer::from(position.stamp)))
+                    .collect(),
+            ),
+        }
+    }
+
     /// Admit `positions`, given in any order. A trace with no position is
     /// [`TemporalRefusal::EmptyTrace`], refused before any position is
     /// visited. The positions are put in canonical order (FR-501 "Canonical

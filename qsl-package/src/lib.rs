@@ -108,6 +108,7 @@ pub use protocol_occurrence::{
     SubjectKind,
 };
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
+pub use quire_contract_model::{CheckedBindingNameKind, CheckedLiteralValue, CheckedTerm};
 #[cfg(feature = "std")]
 pub use reader_protocol_projection::{
     MissingLocation, ReaderProtocolFunction, ReaderProtocolProjection, ReaderSlot,

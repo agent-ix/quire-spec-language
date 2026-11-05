@@ -384,9 +384,10 @@ fn a_window_one_value_over_the_limit_stops() {
     assert_eq!(
         read(&atom, &trace, &mut Rows::values(&[1; 20]), 10, 10),
         Err(LetterStop::WindowLimit(WindowLimitReached {
-            limit: "max_window_values",
-            value: 10,
+            limit: 10,
+            value: 11,
             setting: "monitor.max_window_values",
+            position: TemporalPosition::new(10),
         }))
     );
     assert_eq!(MAX_WINDOW_VALUES_SETTING, "monitor.max_window_values");
@@ -749,9 +750,10 @@ fn a_window_over_the_limit_settles_the_run_with_the_limit_record() {
     assert_eq!(
         outcome,
         TemporalOutcome::WindowLimitReached(WindowLimitReached {
-            limit: "max_window_values",
-            value: 2,
+            limit: 2,
+            value: 3,
             setting: "monitor.max_window_values",
+            position: TemporalPosition::new(2),
         })
     );
     assert_eq!(outcome.category(), Category::Incomplete);
@@ -1367,9 +1369,10 @@ fn an_undefined_position_at_the_limit_is_undefined_and_not_an_overflow() {
     assert_eq!(
         read(&sum, &trace, &mut rows(&[]), 2, 2),
         Err(LetterStop::WindowLimit(WindowLimitReached {
-            limit: "max_window_values",
-            value: 2,
+            limit: 2,
+            value: 3,
             setting: MAX_WINDOW_VALUES_SETTING,
+            position: TemporalPosition::new(2),
         }))
     );
 }
@@ -1438,9 +1441,10 @@ fn the_read_past_the_limit_is_charged_and_the_budget_stops_before_the_limit() {
     assert_eq!(
         outcome(6),
         Err(LetterStop::WindowLimit(WindowLimitReached {
-            limit: "max_window_values",
-            value: 2,
+            limit: 2,
+            value: 3,
             setting: MAX_WINDOW_VALUES_SETTING,
+            position: TemporalPosition::new(2),
         }))
     );
     assert!(

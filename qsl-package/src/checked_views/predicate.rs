@@ -282,30 +282,58 @@ pub fn instance_bound_atoms(subject: &TemporalSubjectView<'_>) -> Result<Vec<boo
     if holds != subject.predicate_leaves().len() {
         return Err(ViewRefusal::UnresolvedClause);
     }
+    let graph = Graph::new(subject.package());
+    let mut leaves = subject.predicate_leaves().iter();
     subject
-        .predicate_leaves()
+        .formula_graph()
         .iter()
-        .map(|leaf| {
-            let view = read_predicate(
-                subject.package(),
-                subject.package().source_map(),
-                &PredicateSelection {
-                    clause: subject.declaration().clone(),
-                    leaf: leaf.clone(),
-                },
-            )?;
-            Ok(view.binders().iter().any(|binder| {
-                subject
-                    .package()
-                    .term(binder)
-                    .and_then(super::subject::parameter_name)
-                    .is_some_and(|name| {
-                        subject
-                            .capture_names()
-                            .iter()
-                            .any(|capture| capture == name)
-                    })
-            }))
+        .filter(|node| node.kind().is_some_and(|operation| operation.is_atom()))
+        .map(|node| match node.kind() {
+            Some(super::subject::FormulaOperation::Holds) => {
+                let leaf = leaves.next().ok_or(ViewRefusal::UnresolvedClause)?;
+                let view = read_predicate(
+                    subject.package(),
+                    subject.package().source_map(),
+                    &PredicateSelection {
+                        clause: subject.declaration().clone(),
+                        leaf: leaf.clone(),
+                    },
+                )?;
+                Ok(view.binders().iter().any(|binder| {
+                    subject
+                        .package()
+                        .term(binder)
+                        .and_then(super::subject::parameter_name)
+                        .is_some_and(|name| {
+                            subject
+                                .capture_names()
+                                .iter()
+                                .any(|capture| capture == name)
+                        })
+                }))
+            }
+            Some(super::subject::FormulaOperation::Aggregate) => {
+                let aggregate = node.aggregate.ok_or(ViewRefusal::UnresolvedClause)?;
+                let roots: Vec<_> = aggregate
+                    .reference_targets()
+                    .into_iter()
+                    .filter_map(|target| graph.position(target))
+                    .collect();
+                let bound = graph.reachable_terms(&roots).into_iter().any(|at| {
+                    graph.kind(at) == Some(CheckedNodeKind::Value(ValueForm::Parameter))
+                        && graph
+                            .term(at)
+                            .and_then(super::subject::parameter_name)
+                            .is_some_and(|name| {
+                                subject
+                                    .capture_names()
+                                    .iter()
+                                    .any(|capture| capture == name)
+                            })
+                });
+                Ok(bound)
+            }
+            _ => Err(ViewRefusal::UnresolvedClause),
         })
         .collect()
 }

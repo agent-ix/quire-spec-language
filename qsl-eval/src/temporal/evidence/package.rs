@@ -149,6 +149,7 @@ pub struct EvidencePackage<'p> {
     rows: PackageRows,
     activation_map: Vec<ActivationRow>,
     progress_capacity: u64,
+    max_window_values: u64,
 }
 
 impl<'p> EvidencePackage<'p> {
@@ -286,6 +287,7 @@ impl<'p> EvidencePackage<'p> {
             rows,
             activation_map,
             progress_capacity: DEFAULT_COVERED_POSITIONS,
+            max_window_values: crate::temporal::DEFAULT_MAX_WINDOW_VALUES,
         }
     }
 
@@ -294,6 +296,13 @@ impl<'p> EvidencePackage<'p> {
     #[must_use]
     pub fn with_progress_capacity(mut self, positions: u64) -> Self {
         self.progress_capacity = positions;
+        self
+    }
+
+    /// The package with the system's `monitor.max_window_values` ceiling.
+    #[must_use]
+    pub fn with_max_window_values(mut self, values: u64) -> Self {
+        self.max_window_values = values;
         self
     }
 
@@ -458,6 +467,7 @@ impl<'p> EvidencePackage<'p> {
                 profile: profile.identity().to_owned(),
             },
             progress_capacity: self.progress_capacity,
+            max_window_values: self.max_window_values,
         })
     }
 
@@ -488,17 +498,17 @@ fn finite_window_profile(identity: &str) -> Option<TemporalProfile> {
 }
 
 /// The atom indices of the instance-bound atoms (FR-532 "Atom index"), given
-/// for each `holds` use of `graph` in pre-order whether its operand reads an
+/// for each atom use of `graph` in pre-order whether its inputs read an
 /// instance binder (`reads`, FR-515 `instance_bound_atoms`). A shared atom
-/// node has one index. `None` when `reads` and the `holds` entries differ in
+/// node has one index. `None` when `reads` and the atom entries differ in
 /// number (FR-516 `clause-unreadable` `atom-count`).
 #[doc(hidden)]
 pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Option<BTreeSet<u64>> {
-    let holds = graph
+    let atoms = graph
         .iter()
-        .filter(|entry| entry.kind() == Some(FormulaOperation::Holds))
+        .filter(|entry| entry.kind().is_some_and(FormulaOperation::is_atom))
         .count();
-    if holds != reads.len() {
+    if atoms != reads.len() {
         return None;
     }
     let numbers = atom_numbers(graph);
@@ -506,7 +516,7 @@ pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Optio
         graph
             .iter()
             .zip(numbers)
-            .filter(|(entry, _)| entry.kind() == Some(FormulaOperation::Holds))
+            .filter(|(entry, _)| entry.kind().is_some_and(FormulaOperation::is_atom))
             .zip(reads)
             .filter_map(|((_, number), bound)| bound.then_some(number).flatten())
             .collect(),
@@ -527,9 +537,7 @@ enum IntervalKey {
     },
 }
 
-/// The operation identity of `node` and its interval, `None` for a node the
-/// package route does not read (a window aggregate: its samples are not a
-/// request member yet).
+/// The operation identity of `node` and its interval.
 fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>)> {
     use qsl_foundation::bound::TemporalUpper;
     use qsl_semantics::check::{BinaryTemporal, CheckedInterval, UnaryTemporal};
@@ -561,6 +569,7 @@ fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>
         FormulaNode::Constant(true) => ("quire.op.temporal.true", None),
         FormulaNode::Constant(false) => ("quire.op.temporal.false", None),
         FormulaNode::Holds { .. } => ("quire.op.temporal.holds", None),
+        FormulaNode::Aggregate { .. } => ("quire.op.temporal.aggregate", None),
         FormulaNode::Not(_) => ("quire.op.temporal.not", None),
         FormulaNode::And(..) => ("quire.op.temporal.and", None),
         FormulaNode::Or(..) => ("quire.op.temporal.or", None),
@@ -587,7 +596,6 @@ fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>
             },
             key(interval),
         ),
-        FormulaNode::Aggregate { .. } => return None,
     })
 }
 
@@ -680,9 +688,12 @@ mod tests {
     /// FR-516 "Window aggregate atoms": the package cross-check reads no
     /// aggregate node, so `same_formula` never takes it for a `holds` atom.
     #[test]
-    fn an_aggregate_node_has_no_package_operation() {
+    fn an_aggregate_node_has_a_package_operation() {
         let span = Span { start: 0, end: 1 };
-        assert_eq!(operation_of(&FormulaNode::Aggregate { span }), None);
+        assert_eq!(
+            operation_of(&FormulaNode::Aggregate { span }),
+            Some(("quire.op.temporal.aggregate", None))
+        );
         assert_eq!(
             operation_of(&FormulaNode::Holds { span }).map(|(identity, _)| identity),
             Some("quire.op.temporal.holds")

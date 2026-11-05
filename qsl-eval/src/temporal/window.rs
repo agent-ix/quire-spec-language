@@ -41,6 +41,7 @@ use qsl_semantics::check::{
 use quire_exact::{Charge, ChargePoint, ComparisonOperator, Integer, Meter, Rational};
 use quire_semantic_value::catalog::InternalFault;
 
+use super::finite_window::Valuation;
 use super::letters::{AtomReading, LetterStop, UndefinedCause};
 use super::plan::fault;
 use super::position::TemporalPosition;
@@ -162,20 +163,23 @@ pub struct InsufficientData {
 /// V-7): the run stops `Incomplete`, with no truth value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WindowLimitReached {
-    /// The limit's name, `max_window_values`.
-    pub limit: &'static str,
-    /// The limit's value in this run.
+    /// The maximum number of values the window may hold.
+    pub limit: u64,
+    /// The first value count that exceeds the limit.
     pub value: u64,
     /// The setting that raises it, `monitor.max_window_values`.
     pub setting: &'static str,
+    /// The position at which the window tried to exceed the limit.
+    pub position: TemporalPosition,
 }
 
 impl WindowLimitReached {
-    fn at(value: u64) -> Self {
+    fn at(limit: u64, value: u64, position: TemporalPosition) -> Self {
         Self {
-            limit: "max_window_values",
+            limit,
             value,
             setting: MAX_WINDOW_VALUES_SETTING,
+            position,
         }
     }
 }
@@ -279,6 +283,8 @@ pub enum WindowRead<T> {
     Defined(T),
     /// The read is undefined (ADR-018 UE-2).
     Undefined(UndefinedCause),
+    /// The observation owner supplied no sample at this window position.
+    Missing,
 }
 
 /// Reads what an aggregate gathers at a trace position. The caller owns the
@@ -478,11 +484,13 @@ impl Gathered {
                 match source.value(position, meter)? {
                     WindowRead::Defined(value) => WindowRead::Defined(Reading::Value(value)),
                     WindowRead::Undefined(cause) => WindowRead::Undefined(cause),
+                    WindowRead::Missing => WindowRead::Missing,
                 }
             }
             Self::Fraction { .. } => match source.predicate(position, meter)? {
                 WindowRead::Defined(holds) => WindowRead::Defined(Reading::Holds(holds)),
                 WindowRead::Undefined(cause) => WindowRead::Undefined(cause),
+                WindowRead::Missing => WindowRead::Missing,
             },
         })
     }
@@ -621,6 +629,11 @@ impl AggregateAtom {
         &self.term.kind
     }
 
+    /// The past window whose samples this atom reads.
+    pub(crate) fn window(&self) -> &PastWindow {
+        &self.term.window
+    }
+
     /// The atom `term <operator> threshold`.
     pub fn new(term: AggregateTerm, operator: ComparisonOperator, threshold: Rational) -> Self {
         Self {
@@ -643,6 +656,24 @@ impl AggregateAtom {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
+        match self.evaluate_valuation(trace, source, max_window_values, position, meter)? {
+            Valuation::True => Ok(AtomReading::True),
+            Valuation::False => Ok(AtomReading::False),
+            Valuation::Undefined(cause) => Ok(AtomReading::Undefined(cause)),
+            Valuation::Missing => Err(fault("aggregate-sample-is-present").into()),
+        }
+    }
+
+    /// Evaluate an aggregate as a valuation, preserving an absent source
+    /// sample as `Missing` for evidence calls (FR-516-AC-49).
+    pub(crate) fn evaluate_valuation<S: WindowSource>(
+        &self,
+        trace: &WindowTrace,
+        source: &mut S,
+        max_window_values: u64,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<Valuation, LetterStop> {
         self.evaluate_observed(
             trace,
             source,
@@ -650,6 +681,29 @@ impl AggregateAtom {
             position,
             meter,
             &mut |_| {},
+        )
+    }
+
+    /// [`Self::evaluate_valuation`] with a callback charged once for every
+    /// position in the window, including an absent sample.
+    pub(crate) fn evaluate_valuation_with_visits<S: WindowSource>(
+        &self,
+        trace: &WindowTrace,
+        source: &mut S,
+        max_window_values: u64,
+        position: TemporalPosition,
+        meter: &mut Meter,
+        visit: &mut dyn FnMut() -> Result<(), LetterStop>,
+    ) -> Result<Valuation, LetterStop> {
+        self.evaluate_observed_with_visits(
+            trace,
+            source,
+            max_window_values,
+            position,
+            meter,
+            &mut |_| {},
+            visit,
+            true,
         )
     }
 
@@ -671,25 +725,55 @@ impl AggregateAtom {
         position: TemporalPosition,
         meter: &mut Meter,
         retained: &mut dyn FnMut(usize),
-    ) -> Result<AtomReading, LetterStop> {
+    ) -> Result<Valuation, LetterStop> {
+        self.evaluate_observed_with_visits(
+            trace,
+            source,
+            max_window_values,
+            position,
+            meter,
+            retained,
+            &mut || Ok(()),
+            true,
+        )
+    }
+
+    fn evaluate_observed_with_visits<S: WindowSource>(
+        &self,
+        trace: &WindowTrace,
+        source: &mut S,
+        max_window_values: u64,
+        position: TemporalPosition,
+        meter: &mut Meter,
+        retained: &mut dyn FnMut(usize),
+        visit: &mut dyn FnMut() -> Result<(), LetterStop>,
+        charge_meter: bool,
+    ) -> Result<Valuation, LetterStop> {
         let window = trace.window(&self.term.window, position.index())?;
         let mut gathered = Gathered::new(&self.term.kind);
         let mut count = 0_u64;
         for index in window {
-            meter.charge(Charge::new(ChargePoint::TemporalVisit))?;
+            visit()?;
+            if charge_meter {
+                meter.charge(Charge::new(ChargePoint::TemporalVisit))?;
+            }
             let at = TemporalPosition::new(index);
             match source.admits(at, meter)? {
                 WindowRead::Defined(true) => {}
                 WindowRead::Defined(false) => continue,
-                WindowRead::Undefined(cause) => return Ok(AtomReading::Undefined(cause)),
+                WindowRead::Undefined(cause) => return Ok(Valuation::Undefined(cause)),
+                WindowRead::Missing => return Ok(Valuation::Missing),
             }
             let reading = match gathered.read(source, at, meter)? {
                 WindowRead::Defined(reading) => reading,
-                WindowRead::Undefined(cause) => return Ok(AtomReading::Undefined(cause)),
+                WindowRead::Undefined(cause) => return Ok(Valuation::Undefined(cause)),
+                WindowRead::Missing => return Ok(Valuation::Missing),
             };
             if count >= max_window_values {
                 return Err(LetterStop::WindowLimit(WindowLimitReached::at(
                     max_window_values,
+                    count.saturating_add(1),
+                    position,
                 )));
             }
             gathered.fold(reading)?;
@@ -697,7 +781,7 @@ impl AggregateAtom {
             count += 1;
         }
         if count < self.term.min_count {
-            return Ok(AtomReading::Undefined(UndefinedCause::InsufficientData(
+            return Ok(Valuation::Undefined(UndefinedCause::InsufficientData(
                 InsufficientData {
                     count,
                     min_count: self.term.min_count,
@@ -707,9 +791,9 @@ impl AggregateAtom {
         let aggregate = gathered.finish(&self.term.kind, count)?;
         let ordering: Ordering = aggregate.cmp(&self.threshold);
         Ok(if self.operator.holds(ordering) {
-            AtomReading::True
+            Valuation::True
         } else {
-            AtomReading::False
+            Valuation::False
         })
     }
 }
@@ -717,8 +801,62 @@ impl AggregateAtom {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
+    use qsl_semantics::check::SCALAR_LIMITS_UNLIMITED;
 
     use super::*;
+
+    struct OneMissing;
+
+    impl WindowSource for OneMissing {
+        fn admits(
+            &mut self,
+            position: TemporalPosition,
+            _meter: &mut Meter,
+        ) -> Result<WindowRead<bool>, LetterStop> {
+            Ok(if position.index() == 0 {
+                WindowRead::Missing
+            } else {
+                WindowRead::Defined(true)
+            })
+        }
+
+        fn value(
+            &mut self,
+            _position: TemporalPosition,
+            _meter: &mut Meter,
+        ) -> Result<WindowRead<Rational>, LetterStop> {
+            Ok(WindowRead::Defined(Rational::from_integer(Integer::one())))
+        }
+
+        fn predicate(
+            &mut self,
+            _position: TemporalPosition,
+            _meter: &mut Meter,
+        ) -> Result<WindowRead<bool>, LetterStop> {
+            Ok(WindowRead::Defined(true))
+        }
+    }
+
+    #[test]
+    fn an_unlisted_aggregate_window_position_stays_missing() {
+        let term = AggregateTerm::new(AggregateKind::Sum, PastWindow::Positions { a: 0, b: 1 }, 1)
+            .expect("valid sum term");
+        let aggregate = AggregateAtom::new(
+            term,
+            ComparisonOperator::GreaterOrEqual,
+            Rational::from_integer(Integer::one()),
+        );
+        let value = aggregate
+            .evaluate_valuation(
+                &WindowTrace::positions(2),
+                &mut OneMissing,
+                DEFAULT_MAX_WINDOW_VALUES,
+                TemporalPosition::new(1),
+                &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+            )
+            .expect("missing is a valuation, not a fault");
+        assert_eq!(value, Valuation::Missing);
+    }
 
     /// Every position holds the value 1 and every filter admits.
     struct Ones;
@@ -789,7 +927,11 @@ mod tests {
         );
         assert_eq!(
             stop,
-            Err(LetterStop::WindowLimit(WindowLimitReached::at(2)))
+            Err(LetterStop::WindowLimit(WindowLimitReached::at(
+                2,
+                3,
+                TemporalPosition::new(3),
+            )))
         );
         assert_eq!(retained, vec![1, 2]);
     }

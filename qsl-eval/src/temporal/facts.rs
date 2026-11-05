@@ -19,17 +19,21 @@
 use std::collections::BTreeMap;
 
 use qsl_package::checked_views::{FormulaNodeUse, FormulaOperation, OperatorDirection};
-use qsl_package::{CheckedIntervalEnd, CheckedOperationInterval, CheckedOperationRational};
+use qsl_package::{
+    CheckedBindingNameKind, CheckedIntervalEnd, CheckedLiteralValue, CheckedOperationInterval,
+    CheckedOperationRational, CheckedTerm,
+};
 use qsl_semantics::check::{
     Activation, CaptureSite, CheckedFormula, CheckedTemporalClause, FormulaNode, FormulaNodeId,
     TemporalProfile,
 };
-use quire_exact::ValueType;
+use quire_exact::{ComparisonOperator, Integer, Rational, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::evidence::ClauseWork;
 use super::evidence::{shape, NodeReach, NodeShape, ReachFault};
 use super::plan::{Base, Node, Plan, Scan, Window};
+use super::window::{AggregateAtom, AggregateKind, AggregateTerm, PastWindow};
 
 /// The facts of one clause the evaluator reads (FR-532).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -144,6 +148,8 @@ pub struct ClauseFormula {
     ids: Vec<FormulaNodeId>,
     /// The atom index of each node, `None` for a node that is no atom.
     atom_of: Vec<Option<u64>>,
+    /// Package aggregate atoms keyed by their shared atom index.
+    aggregate_atoms: Vec<Option<AggregateAtom>>,
     root: usize,
 }
 
@@ -169,9 +175,8 @@ impl ClauseFormula {
             .collect();
         Self {
             shapes: formula.nodes().iter().map(shape).collect(),
-            // A finite-window or package run reads an atom as a `holds`
-            // valuation; an aggregate atom has no valuation to read until the
-            // request carries its samples (FR-516), so the plan is refused.
+            // A finite-window run reads atoms as `holds` valuations; only a
+            // package graph carries the samples needed by aggregate atoms.
             plan: if formula
                 .nodes()
                 .iter()
@@ -186,6 +191,7 @@ impl ClauseFormula {
             },
             ids,
             atom_of,
+            aggregate_atoms: Vec::new(),
             root: formula.root().index(),
         }
     }
@@ -206,6 +212,7 @@ impl ClauseFormula {
                 )),
                 ids: Vec::new(),
                 atom_of: Vec::new(),
+                aggregate_atoms: Vec::new(),
                 root: 0,
             },
         }
@@ -243,6 +250,15 @@ impl ClauseFormula {
         self.atom_of.iter().flatten().count()
     }
 
+    /// The aggregate atom at the shared atom index, when this formula came
+    /// from a package graph that carries its aggregate bindings.
+    pub(crate) fn aggregate_atom(&self, index: u64) -> Option<&AggregateAtom> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.aggregate_atoms.get(index))
+            .and_then(Option::as_ref)
+    }
+
     pub(super) fn plan(&self) -> Result<&Plan, InternalFault> {
         self.plan.as_ref().map_err(Clone::clone)
     }
@@ -250,6 +266,125 @@ impl ClauseFormula {
     pub(super) fn node_id(&self, index: usize) -> Option<FormulaNodeId> {
         self.ids.get(index).copied()
     }
+}
+
+fn aggregate_fault() -> InternalFault {
+    InternalFault::new("temporal.facts", "aggregate-members-are-readable")
+}
+
+fn aggregate_binding<'a>(term: &'a CheckedTerm, key: &str) -> Option<&'a CheckedTerm> {
+    let CheckedTerm::Aggregate { members } = term else {
+        return None;
+    };
+    members.iter().find_map(|member| match member {
+        CheckedTerm::Binding { name, value }
+            if name.kind() == CheckedBindingNameKind::Other(key) =>
+        {
+            Some(value.as_ref())
+        }
+        _ => None,
+    })
+}
+
+fn aggregate_text<'a>(term: &'a CheckedTerm, key: &str) -> Result<&'a str, InternalFault> {
+    let value = aggregate_binding(term, key)
+        .and_then(CheckedTerm::literal_read)
+        .map(|literal| literal.value)
+        .ok_or_else(aggregate_fault)?;
+    match value {
+        CheckedLiteralValue::Text(value) => Ok(value),
+        _ => Err(aggregate_fault()),
+    }
+}
+
+fn aggregate_integer(term: &CheckedTerm, key: &str) -> Result<Integer, InternalFault> {
+    let value = aggregate_binding(term, key)
+        .and_then(CheckedTerm::literal_read)
+        .map(|literal| literal.value)
+        .ok_or_else(aggregate_fault)?;
+    match value {
+        CheckedLiteralValue::Integer(value) => {
+            value.to_string().parse().map_err(|_| aggregate_fault())
+        }
+        _ => Err(aggregate_fault()),
+    }
+}
+
+fn aggregate_rational(term: &CheckedTerm, key: &str) -> Result<Rational, InternalFault> {
+    let value = aggregate_binding(term, key)
+        .and_then(CheckedTerm::literal_read)
+        .map(|literal| literal.value)
+        .ok_or_else(aggregate_fault)?;
+    match value {
+        CheckedLiteralValue::Integer(value) => {
+            let integer = value.to_string().parse().map_err(|_| aggregate_fault())?;
+            Ok(Rational::from_integer(integer))
+        }
+        CheckedLiteralValue::Rational {
+            numerator,
+            denominator,
+        } => Rational::new(
+            numerator
+                .to_string()
+                .parse()
+                .map_err(|_| aggregate_fault())?,
+            denominator
+                .to_string()
+                .parse()
+                .map_err(|_| aggregate_fault())?,
+        )
+        .map_err(|_| aggregate_fault()),
+        _ => Err(aggregate_fault()),
+    }
+}
+
+fn aggregate_atom(term: &CheckedTerm) -> Result<AggregateAtom, InternalFault> {
+    let kind = match aggregate_text(term, "kind")? {
+        "count" => AggregateKind::Count,
+        "sum" => AggregateKind::Sum,
+        "min" => AggregateKind::Min,
+        "max" => AggregateKind::Max,
+        "fraction" => AggregateKind::Fraction,
+        "quantile" => AggregateKind::Quantile(aggregate_rational(term, "q")?),
+        _ => return Err(aggregate_fault()),
+    };
+    let window = match aggregate_text(term, "window_kind")? {
+        "positions" => PastWindow::Positions {
+            a: aggregate_integer(term, "lower")?
+                .to_string()
+                .parse()
+                .map_err(|_| aggregate_fault())?,
+            b: aggregate_integer(term, "upper")?
+                .to_string()
+                .parse()
+                .map_err(|_| aggregate_fault())?,
+        },
+        // Duration terms are carried in the package as quantities of the
+        // clause clock's unit; their magnitudes are exact rationals.
+        "duration" => PastWindow::Duration {
+            a: aggregate_rational(term, "lower")?,
+            b: aggregate_rational(term, "upper")?,
+        },
+        _ => return Err(aggregate_fault()),
+    };
+    let min_count = aggregate_integer(term, "min_count")?
+        .to_string()
+        .parse()
+        .map_err(|_| aggregate_fault())?;
+    let aggregate = AggregateTerm::new(kind, window, min_count).map_err(|_| aggregate_fault())?;
+    let comparison = match aggregate_text(term, "comparison")? {
+        "<" => ComparisonOperator::Less,
+        "<=" => ComparisonOperator::LessOrEqual,
+        "=" => ComparisonOperator::Equal,
+        ">=" => ComparisonOperator::GreaterOrEqual,
+        ">" => ComparisonOperator::Greater,
+        _ => return Err(aggregate_fault()),
+    };
+    Ok(AggregateAtom::new(
+        aggregate,
+        comparison,
+        aggregate_rational(term, "threshold")?,
+    ))
 }
 
 /// Whether a timed package interval counts ticks: both ends closed and both
@@ -404,6 +539,25 @@ impl Built {
         }
         by_number.sort_unstable();
         let atoms: Vec<usize> = by_number.into_iter().map(|(_, arena)| arena).collect();
+        let aggregate_count = numbers.iter().flatten().count();
+        let mut aggregate_atoms = vec![None; aggregate_count];
+        for (position, entry) in graph.iter().enumerate() {
+            if entry.kind() != Some(FormulaOperation::Aggregate) {
+                continue;
+            }
+            if let (Some(number), Some(term)) =
+                (numbers.get(position).copied().flatten(), entry.aggregate)
+            {
+                if let Ok(atom) = aggregate_atom(term) {
+                    if let Some(slot) = usize::try_from(number)
+                        .ok()
+                        .and_then(|number| aggregate_atoms.get_mut(number))
+                    {
+                        *slot = Some(atom);
+                    }
+                }
+            }
+        }
         let plan = self
             .order
             .iter()
@@ -423,6 +577,7 @@ impl Built {
             plan,
             ids,
             atom_of,
+            aggregate_atoms,
             root: 0,
         }
     }
@@ -523,10 +678,7 @@ fn plan_node(entry: &FormulaNodeUse<'_>, operands: &[usize]) -> Result<Node, Int
         FormulaOperation::Release => binary(Base::Until, true),
         FormulaOperation::Since => binary(Base::Since, false),
         FormulaOperation::Triggered => binary(Base::Since, true),
-        // The package route carries no aggregate samples yet (FR-516
-        // "Window aggregate atoms"): reading the atom as a `holds` valuation
-        // would give a truth FR-194 does not.
-        FormulaOperation::Aggregate => Err(fault("aggregate-atom-needs-samples")),
+        FormulaOperation::Aggregate => Ok(Node::Atom),
     }
 }
 
@@ -592,6 +744,7 @@ mod tests {
                 serde_json::from_value(serde_json::json!({"lower": "1", "upper": "4"}))
                     .expect("an interval")
             }),
+            aggregate: None,
             operands: operands.to_vec(),
         }
     }
