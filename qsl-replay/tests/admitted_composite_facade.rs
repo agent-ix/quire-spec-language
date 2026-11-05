@@ -86,6 +86,11 @@ fn library(identity: &str, name: &str, body: &str) -> SuppliedLibrary {
 
 /// Run `read` over the spine's own checked graph of `text`.
 fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
+    with_spine_package(text, |package| read(package.graph()))
+}
+
+/// Run `read` over the spine's own checked package of `text`.
+fn with_spine_package<T>(text: &str, read: impl FnOnce(&qsl_package::CheckedPackage) -> T) -> T {
     let source = unit_identity();
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -113,7 +118,7 @@ fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
     )
     .expect("checks")
     .into_value();
-    read(checked.package().graph())
+    read(checked.package())
 }
 
 /// One record or tuple declaration as the spine's own checked package holds
@@ -292,6 +297,45 @@ fn spine_members(graph: &CheckedGraph, name: &str) -> (NodeKey, Vec<ExpectedMemb
         })
         .collect();
     (node, members)
+}
+
+/// FR-092-AC-20: the union rows the emission carries are read from the same
+/// sealed declarations the admitted composites expose, not rebuilt: for every
+/// admitted union, the row's settled key is the composite's node, its type
+/// handle the composite's key, and each member entry the composite's sealed
+/// `UnionMember` and payload positions in declared order.
+#[trace("TC-1021", "FR-092-AC-20")]
+#[test]
+fn emitted_union_rows_carry_the_admitted_composites_sealed_members_and_payloads() {
+    let text = format!("{HEADER}{UNIT}");
+    let admitted = admit(&text, &DependencyInput::default());
+    let rows = with_spine_package(&text, |package| {
+        qsl_package::emit_checked(package)
+            .expect("the package emits")
+            .selected_source_union_rows()
+            .to_vec()
+    });
+    let unions: Vec<_> = admitted
+        .context()
+        .composites()
+        .filter(|composite| composite.form() == AdmittedCompositeForm::Union)
+        .collect();
+    assert_eq!(unions.len(), 4, "Shape, Twin, Holder and Nest");
+    assert_eq!(rows.len(), unions.len());
+    for composite in unions {
+        let row = rows
+            .iter()
+            .find(|row| &row.settled_key == composite.node())
+            .expect("an admitted union has a row under its settled key");
+        assert_eq!(&row.type_handle, composite.key());
+        let members = composite.union_members().expect("a union has members");
+        assert_eq!(row.members.len(), members.len());
+        for (row, member) in row.members.iter().zip(members) {
+            assert_eq!(&row.member, member.member());
+            assert_eq!(row.payload, member.payload());
+            assert_eq!(row.payload_nodes.len(), member.payload().len());
+        }
+    }
 }
 
 /// A union is found by its `composite_type` node id with its kernel key and
