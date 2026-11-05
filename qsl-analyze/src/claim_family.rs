@@ -13,7 +13,6 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_route::request::ItemKind;
 use qsl_semantics::check::{Capability, CheckedGraph, DeclarationFamily, NodeTag};
-use quire_exact::ValueType;
 
 /// The `semantic_form` words the reader selects by, decoded once at
 /// [`Form::from_wire`] (ADR-012 section 9).
@@ -104,14 +103,14 @@ fn node_family(graph: &CheckedGraph, claim: &OccurrenceKey) -> Option<Declaratio
     let role = Role::from_wire(claim.origin().role().as_str());
     let (tag, form) = node_form(graph, claim)?;
     match (tag, form, role) {
-        // A Boolean value clause (FR-484 form `clause`). Interim carrier: the
-        // producer writes the clause on the function node, where QSpec FR-290
-        // puts it on a Boolean `expression` node; this row moves with the
-        // producer (QSL-1714).
-        (NodeTag::Function, _, Role::Claim | Role::Declaration) => graph
-            .callable_by_identity(claim.node().clone())
-            .filter(|callable| *callable.result == ValueType::Boolean)
-            .map(|_| DeclarationFamily::Value),
+        // A Boolean value clause (FR-484 form `clause`), on its Boolean
+        // expression node at the claim or declaration occurrence (QSpec
+        // FR-290).
+        (NodeTag::Expression, _, Role::Claim | Role::Declaration)
+            if boolean_expression(graph, claim) =>
+        {
+            Some(DeclarationFamily::Value)
+        }
         // A scalar operation application in a `Value` function body (FR-484
         // form `scalar-operation`): an occurrence a `value-validity`
         // requirement record keys, owned by the function that holds it.
@@ -139,6 +138,25 @@ fn node_family(graph: &CheckedGraph, claim: &OccurrenceKey) -> Option<Declaratio
         (NodeTag::Protocol, _, _) => Some(DeclarationFamily::Protocol),
         _ => None,
     }
+}
+
+/// Whether `claim` names a Boolean expression node.
+/// The semantic graph exposes the scalar type form as a wire word; this
+/// comparison recognizes its canonical Boolean spelling at that boundary.
+#[ix_trace_rs::string_edge]
+fn boolean_expression(graph: &CheckedGraph, claim: &OccurrenceKey) -> bool {
+    let Some(expression) = graph.semantic_graph().node(claim.node().clone()) else {
+        return false;
+    };
+    let Some(semantic_type) = expression.semantic_type() else {
+        return false;
+    };
+    graph
+        .semantic_graph()
+        .node(semantic_type)
+        .is_some_and(|node| {
+            node.node_tag() == NodeTag::ScalarType && node.semantic_form() == "boolean"
+        })
 }
 
 /// The `node_tag` and decoded `semantic_form` of the node `claim` names, or `None`

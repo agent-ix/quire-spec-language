@@ -880,9 +880,6 @@ fn a_bound_step_relation_is_unsupported_with_no_implementation_engine() {
     assert_eq!(form.as_str(), "step-relation");
     assert_eq!(reason.as_str(), "no-implementation-engine");
 
-    let model = relation.occurrence().expect("the model claim");
-    assert_eq!(
-        select_contract(&world.package, model),
-        Err(ContractSelection::NoForm)
-    );
+    let model = relation.occurrence().expect("the shared claim occurrence");
+    assert_eq!(model, code, "the code and model items share one occurrence");
 }

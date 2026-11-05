@@ -81,6 +81,7 @@ use quire_semantic_value::quantity::{
 };
 use quire_semantic_value::relationship_extent::Resolution;
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
+pub(crate) use world::World;
 
 /// FR-096, ADR-013 O-17: `evaluation`'s refusal as an O-17 [`RefusalRecord`]:
 /// the family cause's code and catalog fields, and, as its locus, the
@@ -538,8 +539,7 @@ enum Task<'a, N> {
 /// functions, dispatch tables, units and enum members. An imported call
 /// evaluates the callee's body against the library's own package.
 struct PackageContext<'a> {
-    scope: &'a Scope,
-    graph: &'a CheckedGraph,
+    world: World<'a>,
     dispatch_tables: &'a [DispatchTable],
     units: UnitScope<'a>,
     enum_members: &'a EnumMemberIndex,
@@ -631,12 +631,9 @@ enum EvaluationFamily {
 }
 
 pub(crate) struct Machine<'a, 'm, N> {
-    scope: &'a Scope,
-    /// The checked package's functions, read by index where a call runs
-    /// one: each one's body, slot count, and declared name (the FR-151
-    /// `precondition-false` payload's selected method, per
-    /// `native-diagnostics.md`).
-    graph: &'a CheckedGraph,
+    /// The package the body evaluates against: a checked package's scope
+    /// and function table, or a bytes-only package's own world (FR-533).
+    world: World<'a>,
     objects: &'a ObjectEnvironment,
     /// FR-107: a precondition's or postcondition's pre observation, distinct
     /// from `objects` (the clause's own observation: `current` for an
@@ -770,8 +767,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
         Self::build(
-            scope,
-            graph,
+            World::Checked { scope, graph },
             objects,
             None,
             None,
@@ -821,9 +817,33 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
+        Self::with_world(
+            World::Checked { scope, graph },
+            objects,
+            pre_objects,
+            reads,
+            meter,
+            dispatch_tables,
+        )
+    }
+
+    /// [`Self::with_pre`] over any package world: a checked package's, or the
+    /// world a bytes-only package gives (FR-533).
+    pub(crate) fn with_world(
+        world: World<'a>,
+        objects: &'a ObjectEnvironment,
+        pre_objects: Option<&'a ObjectEnvironment>,
+        reads: Option<
+            &'a std::collections::BTreeMap<
+                Location,
+                qsl_semantics::model::clause_observation::Observation,
+            >,
+        >,
+        meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
+    ) -> Self {
         Self::build(
-            scope,
-            graph,
+            world,
             objects,
             pre_objects,
             reads,
@@ -833,10 +853,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn build(
-        scope: &'a Scope,
-        graph: &'a CheckedGraph,
+        world: World<'a>,
         objects: &'a ObjectEnvironment,
         pre_objects: Option<&'a ObjectEnvironment>,
         reads: Option<
@@ -849,10 +867,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         dispatch_tables: &'a [DispatchTable],
         family: EvaluationFamily,
     ) -> Self {
-        let enum_members = scope.enum_member_index();
+        let enum_members = world.enum_member_index();
         Self {
-            scope,
-            graph,
+            world,
             objects,
             pre_objects,
             reads,
@@ -875,7 +892,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
-            units: UnitScope::new(scope.types().units()),
+            units: UnitScope::new(world.types().units()),
             enum_members,
             imported: Vec::new(),
             trail: None,
@@ -950,8 +967,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     /// machine evaluated against until now.
     fn enter(&mut self, package: PackageContext<'a>) -> PackageContext<'a> {
         PackageContext {
-            scope: std::mem::replace(&mut self.scope, package.scope),
-            graph: std::mem::replace(&mut self.graph, package.graph),
+            world: std::mem::replace(&mut self.world, package.world),
             dispatch_tables: std::mem::replace(&mut self.dispatch_tables, package.dispatch_tables),
             units: std::mem::replace(&mut self.units, package.units),
             enum_members: std::mem::replace(&mut self.enum_members, package.enum_members),
@@ -1313,7 +1329,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         if let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(collection))) {
             return Some(provenance.clone());
         }
-        let occurrence = occurrence_at(self.graph, node.location()?, None)?;
+        let occurrence = occurrence_at(self.world.graph()?, node.location()?, None)?;
         Some(Provenance::built(trail.observation.clone(), occurrence))
     }
 
@@ -1519,7 +1535,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         value: &Value,
         target: FloatType,
     ) -> Result<Value, Halt> {
-        if self.scope.ieee_profile().is_none() {
+        if !self.world.has_ieee_profile() {
             return Err(invariant("ieee-profile-unresolved"));
         }
         let (width, rounding) = (target.width(), target.rounding());
@@ -1616,7 +1632,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             return Err(invariant("case-scrutinee-union-expected"));
         };
         let (position, _) = self
-            .scope
+            .world
             .types()
             .union_member(declaration.clone(), scrutinee.variant().clone())
             .ok_or_else(|| invariant("case-scrutinee-member-unresolved"))?;
@@ -1856,7 +1872,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     ))));
                 }
                 let callable = node
-                    .callee(self.graph, body_function)
+                    .callee(self.world.graph(), body_function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 // The call is made over its arguments, so its charge belongs to
                 // the binder they derive from.
@@ -2069,7 +2085,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             } => {
                 let payload = self.pop_many(arguments.len())?;
                 let binding = match self
-                    .scope
+                    .world
                     .types()
                     .composite(declaration.clone())
                     .map(|union| union.shape())
@@ -2288,7 +2304,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     ArithmeticOperator::Multiply => IeeeOperation::Multiply(left, right),
                     ArithmeticOperator::Divide => IeeeOperation::Divide(left, right),
                 };
-                if self.scope.ieee_profile().is_none() {
+                if !self.world.has_ieee_profile() {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
                 let result = outcome_into_stop(
@@ -2304,7 +2320,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let Value::Float(operand) = self.pop()? else {
                     return Err(invariant("ieee-float-value-expected"));
                 };
-                if self.scope.ieee_profile().is_none() {
+                if !self.world.has_ieee_profile() {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
                 let result = outcome_into_stop(
@@ -2322,7 +2338,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 else {
                     return Err(invariant("ieee-float-value-expected"));
                 };
-                if self.scope.ieee_profile().is_none() {
+                if !self.world.has_ieee_profile() {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
                 let result = outcome_into_stop(
@@ -2347,7 +2363,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let (Value::Float(right), Value::Float(left)) = (self.pop()?, self.pop()?) else {
                     return Err(invariant("ieee-float-value-expected"));
                 };
-                if self.scope.ieee_profile().is_none() {
+                if !self.world.has_ieee_profile() {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
                 Value::Boolean(outcome_into_stop(
@@ -2409,7 +2425,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 let outcome = quire_eval::collection::remove_one(
                     &source,
                     &probe,
-                    self.scope.types(),
+                    self.world.types(),
                     self.meter,
                 )
                 .map_err(|_| invariant("collection-removal-rejected"))?;
@@ -2444,7 +2460,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         Value::Boolean((l == r) == (*operator == EqualityOperator::Equal))
                     }
                     _ => Value::Boolean(outcome_into_stop(checked.evaluate(
-                        self.scope.types(),
+                        self.world.types(),
                         &left,
                         &right,
                         self.meter,
@@ -2463,7 +2479,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 if !node.is_ordering_part() {
                     // A standalone `=` or `numericEqual` is the one owned
                     // core of FR-148: it charges its operands and result.
-                    if self.scope.ieee_profile().is_none() {
+                    if !self.world.has_ieee_profile() {
                         return Err(invariant("ieee-profile-unresolved"));
                     }
                     Value::Boolean(outcome_into_stop(
@@ -2508,7 +2524,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 // child of the record the read is typed at, whose own fields
                 // are not a positional prefix of that record's.
                 let index = self
-                    .scope
+                    .world
                     .record_slot(composite.declaration().clone(), field)
                     .ok_or_else(|| invariant("field-slot-unresolved"))?;
                 let slot = composite
@@ -2516,7 +2532,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     .get(index)
                     .ok_or_else(|| invariant("field-slot-unresolved"))?;
                 let value = Self::project(
-                    self.scope.types(),
+                    self.world.types(),
                     slot,
                     *optional,
                     node.value_type(),
@@ -2588,7 +2604,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     self.witnessed_reads.remove(location);
                 }
                 let value = Self::project(
-                    self.scope.types(),
+                    self.world.types(),
                     slot,
                     *optional,
                     node.value_type(),
@@ -2669,7 +2685,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 arguments,
             } => {
                 let callable = node
-                    .callee(self.graph, *function)
+                    .callee(self.world.graph(), *function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let arguments_len = arguments.len();
                 let PoppedArguments {
@@ -2706,13 +2722,13 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 function,
                 arguments,
             } => {
-                let Some(library) = self.graph.scope().imported_graph(callee) else {
+                let Some(library) = self.world.imported(callee) else {
                     if let Some(unavailable) = self.unavailable_imported_call.as_deref_mut() {
                         *unavailable = true;
                     }
                     return Err(invariant("evaluation-imported-graph-unresolved"));
                 };
-                let Some(callable) = node.callee(library, *function) else {
+                let Some(callable) = node.callee(Some(library), *function) else {
                     if let Some(unavailable) = self.unavailable_imported_call.as_deref_mut() {
                         *unavailable = true;
                     }
@@ -2732,8 +2748,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 frame_provenance.resize(frame.len(), false);
                 self.push_frame_owned(frame, frame_provenance, argument_owners);
                 let previous = self.enter(PackageContext {
-                    scope: library.scope(),
-                    graph: library,
+                    world: World::Checked {
+                        scope: library.scope(),
+                        graph: library,
+                    },
                     dispatch_tables: library.dispatch_tables(),
                     units: UnitScope::new(library.scope().types().units()),
                     enum_members: library.scope().enum_member_index(),
@@ -2753,7 +2771,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             } => {
                 let arguments = self.pop_many(arguments.len())?;
                 let value = self
-                    .scope
+                    .world
                     .types()
                     .tuple(declaration.clone(), arguments)
                     .map_err(|refusal| construction_fault(ConstructionSite::Tuple, &refusal))?;
@@ -2766,7 +2784,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     .count();
                 let mut values = self.pop_many(present)?.into_iter();
                 let Some(CompositeShape::Record(declared)) = self
-                    .scope
+                    .world
                     .types()
                     .composite(declaration.clone())
                     .map(|declaration| declaration.shape())
@@ -2787,7 +2805,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     fields.push((field.name(), value));
                 }
                 let value = self
-                    .scope
+                    .world
                     .types()
                     .record(declaration.clone(), fields)
                     .map_err(|refusal| construction_fault(ConstructionSite::Record, &refusal))?;
@@ -2888,14 +2906,14 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     };
                     Value::Quantity(Quantity::new(magnitude, unit_id))
                 } else {
-                    operand_value(self.scope.types(), operand, &value, &self.units, self.meter)?
+                    operand_value(self.world.types(), operand, &value, &self.units, self.meter)?
                 }
             }
             NodeKind::IeeeToRational(_, domain) => {
                 let Value::Float(value) = self.pop()? else {
                     return Err(invariant("ieee-conversion-float-value-expected"));
                 };
-                if self.scope.ieee_profile().is_none() {
+                if !self.world.has_ieee_profile() {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
                 let exact = outcome_into_stop(ieee_to_exact(value, domain, self.meter))?;
@@ -3080,7 +3098,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 // whichever operation happens to come first, not the one
                 // this node's own `receiver.member(args)` actually named.
                 let operation = self
-                    .scope
+                    .world
                     .dispatch_operations()
                     .get(*operation)
                     .ok_or_else(|| invariant("dispatch-operation-unresolved"))?;
@@ -3099,10 +3117,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 match candidate.precondition {
                     Some(precondition_function) => {
                         let callable = node
-                            .callee(self.graph, precondition_function)
+                            .callee(self.world.graph(), precondition_function)
                             .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                         let selected = node
-                            .callee(self.graph, candidate.body)
+                            .callee(self.world.graph(), candidate.body)
                             .ok_or_else(|| invariant("evaluation-callable-unresolved"))?
                             .name
                             .to_owned();
@@ -3127,7 +3145,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     }
                     None => {
                         let callable = node
-                            .callee(self.graph, candidate.body)
+                            .callee(self.world.graph(), candidate.body)
                             .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                         charge_call(self.meter)?;
                         let mut frame: Vec<Option<Value>> =
@@ -3207,7 +3225,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             return Ok(());
         };
         let attribute = self
-            .scope
+            .world
             .types()
             .attributes(reference.object_type().clone())
             .and_then(|attributes| {
@@ -3286,7 +3304,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             return Err(invariant("all-instances-reference-element-expected"));
         };
         self.named_covers(members, target.clone())?;
-        let types = self.scope.types();
+        let types = self.world.types();
         let listed = self.named_members(node, population)?;
         let mut selected = Vec::new();
         for reference in listed {
@@ -3311,7 +3329,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         members: &[quire_exact::EffectiveId],
         target: quire_exact::EffectiveId,
     ) -> Result<(), Halt> {
-        let types = self.scope.types();
+        let types = self.world.types();
         if members
             .iter()
             .any(|member| types.conforms(target.clone(), member.clone()))
@@ -3319,11 +3337,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             return Ok(());
         }
         let queried = self
-            .graph
-            .object_type_key(target)
-            .ok_or_else(|| invariant("named-queried-type-declared"))?
-            .node
-            .clone();
+            .world
+            .object_type_node(target)
+            .ok_or_else(|| invariant("named-queried-type-declared"))?;
         Err(ModelQueryHalt::IncompleteClosure {
             queried_type: queried.clone(),
             uncovered_subtypes: vec![queried],
@@ -3380,23 +3396,19 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         };
         self.named_covers(members, target.clone())?;
         if !self
-            .scope
+            .world
             .types()
             .conforms(reference.object_type().clone(), target.clone())
         {
             return Err(Halt::Family(FamilyResult::Refused(Box::new(
                 ModelQueryRefusal::from(
                     qsl_semantics::model::normalize::ModelRefusal::type_mismatch(
-                        self.graph
-                            .object_type_key(reference.object_type().clone())
-                            .ok_or_else(|| invariant("named-reference-type-declared"))?
-                            .node
-                            .clone(),
-                        self.graph
-                            .object_type_key(target.clone())
-                            .ok_or_else(|| invariant("named-queried-type-declared"))?
-                            .node
-                            .clone(),
+                        self.world
+                            .object_type_node(reference.object_type().clone())
+                            .ok_or_else(|| invariant("named-reference-type-declared"))?,
+                        self.world
+                            .object_type_node(target.clone())
+                            .ok_or_else(|| invariant("named-queried-type-declared"))?,
                     ),
                 ),
             ))));
@@ -3534,7 +3546,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             EndSide::Source => extents.targets(relationship, &receiver).collect(),
             EndSide::Target => extents.sources(relationship, &receiver).collect(),
         };
-        let types = self.scope.types();
+        let types = self.world.types();
         let manifest = extents
             .manifest(types)
             .map_err(|_| invariant("navigate-manifest-unavailable"))?;
@@ -3661,7 +3673,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         let refuse =
             |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));
         let extents = objects.extents();
-        let types = self.scope.types();
+        let types = self.world.types();
         let manifest = extents
             .map(|extents| extents.manifest(types))
             .transpose()
@@ -3740,7 +3752,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         edge: &FieldRef,
     ) -> Result<Vec<ObjectReference>, Halt> {
         let declared = self
-            .scope
+            .world
             .types()
             .attributes(current.object_type().clone())
             .ok_or_else(|| invariant("edge-attribute-declarations-unresolved"))?;
@@ -3808,7 +3820,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         reference: &ObjectReference,
         field: &FieldRef,
     ) -> Result<(&'o FieldValue, bool), Halt> {
-        let types = self.scope.types();
+        let types = self.world.types();
         let refuse = || {
             Halt::Family(FamilyResult::Refused(Box::new(ObjectFieldIllTyped {
                 field: field.name.clone(),
@@ -4189,10 +4201,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         if !self.on_claim_level() {
             return;
         }
-        let Some(occurrence) = node
-            .location()
-            .and_then(|location| occurrence_at(self.graph, location, Some(Operator::Collection)))
-        else {
+        let Some(occurrence) = node.location().and_then(|location| {
+            occurrence_at(self.world.graph()?, location, Some(Operator::Collection))
+        }) else {
             return;
         };
         if let Some(trail) = self.trail.as_mut() {
@@ -4434,7 +4445,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             return;
         };
         let Some(CompositeShape::Record(fields)) = self
-            .scope
+            .world
             .types()
             .composite(composite.declaration().clone())
             .map(|declaration| declaration.shape())
@@ -4560,7 +4571,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         let quantifier = iteration
             .node
             .location()
-            .and_then(|location| occurrence_at(self.graph, location, Some(Operator::Quantify)))
+            .and_then(|location| {
+                occurrence_at(self.world.graph()?, location, Some(Operator::Quantify))
+            })
             .ok_or_else(|| {
                 Halt::Fault(InternalFault::new("S6a", "quantifier-has-an-occurrence"))
             })?;
@@ -4667,6 +4680,7 @@ mod invariants;
 
 mod node_source;
 pub(super) mod reader_source;
+mod world;
 
 /// The machine over checked bodies, the one source every test drives.
 #[cfg(test)]

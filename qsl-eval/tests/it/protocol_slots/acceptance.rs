@@ -18,6 +18,7 @@ macro_rules! assert_value_eq {
     }};
 }
 
+mod bare_slots;
 mod state_compensation;
 
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
@@ -4723,7 +4724,7 @@ fn bare_rows(
 /// site names equal to the source selector's: over every slot kind of TC-1070
 /// the selection read from the package's nodes alone names the root and the
 /// binders (name, level, type, key) the source selector names.
-#[trace("FR-533-AC-1", "FR-533-AC-4", "FR-533-AC-12", "TC-1333")]
+#[trace("FR-533-AC-4", "FR-533-AC-12", "TC-1333")]
 #[test]
 fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let package = fixture();

@@ -12,6 +12,7 @@
 //! through its public accessors, never through a private field (US-009).
 
 use quire_checked::node::{NodeKind, Visit};
+mod bare;
 mod causes;
 mod clause_set;
 mod closure;
@@ -21,9 +22,12 @@ mod family;
 mod protocol_slot;
 mod s6a;
 mod slot_admission;
+mod slot_supply;
 pub use slot_admission::object_environment_refusal;
+use slot_supply::SourceView;
 mod value_invariants;
 
+pub use bare::evaluate_selected_protocol_slot as bare_evaluate_selected_protocol_slot;
 use evaluate::Machine;
 use qsl_semantics::check::StepRead;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -1638,334 +1642,25 @@ impl CheckedPackageEvaluation for CheckedPackage {
         let sources = selected
             .sources()
             .iter()
-            .map(|source| (source.index(), source, source.binder().clone()))
+            .map(|source| SourceView {
+                index: source.index(),
+                value_type: source.value_type(),
+                binder: source.binder(),
+            })
             .collect::<Vec<_>>();
-        let mut supplied = supply.binders.iter().collect::<Vec<_>>();
-        supplied.sort_by_key(|(key, _)| {
-            (
-                self.graph()
-                    .protocols()
-                    .iter()
-                    .filter_map(|protocol| self.graph().protocol_node_keys(&protocol.name))
-                    .flat_map(|keys| &keys.binders)
-                    .find(|binder| binder.node == *key)
-                    .map_or(usize::MAX, |binder| binder.level),
-                key.clone(),
-            )
-        });
-        for (position, (key, _)) in supplied.iter().enumerate() {
-            if supplied[..position].iter().any(|(prior, _)| prior == key) {
-                return Err(protocol_slot::resolve::refused(
-                    "invalid_runtime_input",
-                    "duplicate-member",
-                    CallAdmissionLocus::Binder(key.clone()),
-                ));
-            }
-        }
-        for (key, _) in &supplied {
-            if !sources.iter().any(|(_, _, source)| *source == *key) {
-                return Err(protocol_slot::resolve::refused(
-                    "invalid_runtime_input",
-                    "unknown-member",
-                    CallAdmissionLocus::Binder(key.clone()),
-                ));
-            }
-        }
-        for (_, _, key) in &sources {
-            if !supplied.iter().any(|(candidate, _)| candidate == key) {
-                return Err(protocol_slot::resolve::refused(
-                    "invalid_runtime_input",
-                    "missing-member",
-                    CallAdmissionLocus::Binder(key.clone()),
-                ));
-            }
-        }
-        let mut frame = vec![None; selected.frame_len()];
-        let mut unavailable = std::collections::BTreeMap::new();
-        let binder_slots = sources
-            .iter()
-            .map(|(index, _, binder)| (*index, binder.clone()))
-            .collect::<std::collections::BTreeMap<_, _>>();
-        for (index, source, key) in sources {
-            let Some((_, supplied)) = supply
-                .binders
-                .iter()
-                .find(|(candidate, _)| *candidate == key)
-            else {
-                return Err(CallFailure::Fault(InternalFault::new(
-                    "FR-390",
-                    "admitted-source-is-supplied",
-                )));
-            };
-            match &supplied.value {
-                SuppliedValue::Value(value) => {
-                    if let Some(quire_semantic_value::admission::ObservationAdmission::Admitted(
-                        observation,
-                    )) = supply.observation
-                    {
-                        let occurrences = protocol_slot::reference_occurrences(
-                            value,
-                            self.graph().scope().types(),
-                        );
-                        let offending = occurrences.iter().find(|(_, reference)| {
-                            protocol_slot::foreign_to_observation(reference, observation)
-                                || !observation
-                                    .environment()
-                                    .has_population_universe(reference.universe())
-                        });
-                        if let Some((_, reference)) = offending {
-                            let required = match source.value_type() {
-                                quire_exact::ValueType::Reference(expected) => observation
-                                    .environment()
-                                    .population_universe_for_type(expected),
-                                _ => None,
-                            };
-                            let supplied_universe = reference.universe();
-                            return Err(protocol_slot::resolve::foreign_reference_refused(
-                                required,
-                                supplied_universe,
-                                CallAdmissionLocus::Binder(key.clone()),
-                            ));
-                        }
-                    }
-                    let admitted = self
-                        .graph()
-                        .scope()
-                        .types()
-                        .admits(source.value_type(), value)
-                        .map_err(|failure| CallFailure::Storage {
-                            parameter: index,
-                            failure,
-                        })?;
-                    if !admitted {
-                        return Err(protocol_slot::resolve::refused(
-                            "invalid_runtime_input",
-                            if protocol_slot::resolve::shape_matches(
-                                source.value_type(),
-                                value,
-                                self.graph().scope().types(),
-                            ) {
-                                "invalid-value"
-                            } else {
-                                "wrong-value-kind"
-                            },
-                            CallAdmissionLocus::Binder(key),
-                        ));
-                    }
-                    let occurrences =
-                        protocol_slot::reference_occurrences(value, self.graph().scope().types());
-                    for (position, metadata) in supplied.references.iter().enumerate() {
-                        if supplied.references[..position]
-                            .iter()
-                            .any(|prior| prior.path == metadata.path)
-                        {
-                            return Err(CallFailure::Admission(Box::new(
-                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
-                                    record: occurrence_record(
-                                        "invalid_runtime_input",
-                                        "duplicate-member",
-                                        metadata.path.clone(),
-                                    ),
-                                    locus: CallAdmissionLocus::Binder(key),
-                                }),
-                            )));
-                        }
-                    }
-                    for metadata in &supplied.references {
-                        if !occurrences.iter().any(|(path, _)| *path == metadata.path) {
-                            return Err(CallFailure::Admission(Box::new(
-                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
-                                    record: occurrence_record(
-                                        "invalid_runtime_input",
-                                        "unknown-member",
-                                        metadata.path.clone(),
-                                    ),
-                                    locus: CallAdmissionLocus::Binder(key),
-                                }),
-                            )));
-                        }
-                    }
-                    for (path, _) in &occurrences {
-                        if !supplied
-                            .references
-                            .iter()
-                            .any(|metadata| metadata.path == *path)
-                        {
-                            return Err(CallFailure::Admission(Box::new(
-                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
-                                    record: occurrence_record(
-                                        "invalid_runtime_input",
-                                        "missing-member",
-                                        path.clone(),
-                                    ),
-                                    locus: CallAdmissionLocus::Binder(key),
-                                }),
-                            )));
-                        }
-                    }
-                    for (path, reference) in &occurrences {
-                        let Some(metadata) = supplied
-                            .references
-                            .iter()
-                            .find(|metadata| metadata.path == *path)
-                        else {
-                            return Err(CallFailure::Fault(InternalFault::new(
-                                "FR-390",
-                                "reference-occurrence-metadata-is-matched",
-                            )));
-                        };
-                        let Some((declaration, members)) =
-                            self.graph().protocol_population_types(&metadata.population)
-                        else {
-                            return Err(protocol_slot::resolve::refused(
-                                "invalid_model_binding",
-                                "wrong-model-selection",
-                                CallAdmissionLocus::Binder(key.clone()),
-                            ));
-                        };
-                        if declaration.package != reference.object_type().original().package() {
-                            return Err(protocol_slot::resolve::refused(
-                                "invalid_model_binding",
-                                "wrong-model-selection",
-                                CallAdmissionLocus::Binder(key.clone()),
-                            ));
-                        }
-                        if !members.iter().any(|member| {
-                            self.graph()
-                                .scope()
-                                .types()
-                                .conforms(reference.object_type().clone(), member.clone())
-                        }) {
-                            return Err(protocol_slot::resolve::refused(
-                                "invalid_runtime_input",
-                                "wrong-value-kind",
-                                CallAdmissionLocus::Binder(key.clone()),
-                            ));
-                        }
-                    }
-                    if !occurrences.is_empty() {
-                        let Some(observation_admission) = supply.observation else {
-                            return Err(CallFailure::Admission(Box::new(
-                                CallAdmissionFailure::Incomplete(quire_eval::CallAdmissionRecord {
-                                    record: occurrence_record(
-                                        "unavailable_observation",
-                                        "missing-required-artifact",
-                                        occurrences[0].0.clone(),
-                                    ),
-                                    locus: CallAdmissionLocus::Binder(key),
-                                }),
-                            )));
-                        };
-                        let observation = match observation_admission {
-                            quire_semantic_value::admission::ObservationAdmission::Admitted(
-                                observation,
-                            ) => observation,
-                            quire_semantic_value::admission::ObservationAdmission::Refused(
-                                record,
-                            ) => {
-                                return Err(CallFailure::Admission(Box::new(
-                                    CallAdmissionFailure::Refused(
-                                        quire_eval::CallAdmissionRecord {
-                                            record: record.clone(),
-                                            locus: CallAdmissionLocus::Binder(key),
-                                        },
-                                    ),
-                                )))
-                            }
-                            quire_semantic_value::admission::ObservationAdmission::Incomplete(
-                                record,
-                            ) => {
-                                return Err(CallFailure::Admission(Box::new(
-                                    CallAdmissionFailure::Incomplete(
-                                        quire_eval::CallAdmissionRecord {
-                                            record: record.clone(),
-                                            locus: CallAdmissionLocus::Binder(key),
-                                        },
-                                    ),
-                                )))
-                            }
-                            quire_semantic_value::admission::ObservationAdmission::Fault(fault) => {
-                                return Err(CallFailure::Fault(fault.clone()))
-                            }
-                        };
-                        if !self
-                            .graph()
-                            .model_selections()
-                            .contains(observation.model_selection())
-                        {
-                            return Err(protocol_slot::resolve::refused(
-                                "invalid_model_binding",
-                                "wrong-model-selection",
-                                CallAdmissionLocus::Binder(key),
-                            ));
-                        }
-                        if !observation.is_for_view(selected.root().view()) {
-                            return Err(protocol_slot::resolve::refused(
-                                "invalid_model_binding",
-                                "wrong-model-selection",
-                                CallAdmissionLocus::Binder(key),
-                            ));
-                        }
-                        let mut seeds = Vec::with_capacity(occurrences.len());
-                        for (path, reference) in occurrences {
-                            let metadata = supplied
-                                .references
-                                .iter()
-                                .find(|metadata| metadata.path == path)
-                                .ok_or_else(|| {
-                                    CallFailure::Fault(InternalFault::new(
-                                        "FR-390",
-                                        "reference-occurrence-metadata-is-matched",
-                                    ))
-                                })?;
-                            if protocol_slot::foreign_to_observation(&reference, observation)
-                                || !observation
-                                    .environment()
-                                    .has_population_universe(reference.universe())
-                            {
-                                let required = match source.value_type() {
-                                    quire_exact::ValueType::Reference(expected) => observation
-                                        .environment()
-                                        .population_universe_for_type(expected),
-                                    _ => None,
-                                };
-                                return Err(protocol_slot::resolve::foreign_reference_refused(
-                                    required,
-                                    reference.universe(),
-                                    CallAdmissionLocus::Binder(key),
-                                ));
-                            }
-                            seeds.push((reference, metadata.population.clone(), path));
-                        }
-                        if let Err(failure) =
-                            qsl_semantics::model::observation::admit_protocol_reference_seeds(
-                                self.graph().scope().types(),
-                                observation.observation(),
-                                &seeds,
-                            )
-                        {
-                            return Err(protocol_reference_failure(observation, key, failure));
-                        }
-                    }
-                    frame[index] = Some(value.clone());
-                }
-                SuppliedValue::Unavailable(cause) => {
-                    if let Some(metadata) = supplied.references.first() {
-                        return Err(CallFailure::Admission(Box::new(
-                            CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
-                                record: occurrence_record(
-                                    "invalid_runtime_input",
-                                    "unknown-member",
-                                    metadata.path.clone(),
-                                ),
-                                locus: CallAdmissionLocus::Binder(key),
-                            }),
-                        )));
-                    }
-                    unavailable.insert(index, (key, *cause));
-                }
-            }
-        }
+        let slot_supply::AdmittedSupply {
+            mut frame,
+            unavailable,
+            binder_slots,
+        } = slot_supply::admit_slot_supply(
+            &slot_supply::CheckedHost {
+                package: self,
+                selected,
+            },
+            &sources,
+            selected.frame_len(),
+            supply,
+        )?;
         let empty = ObjectEnvironment::default();
         let current = supply
             .observation

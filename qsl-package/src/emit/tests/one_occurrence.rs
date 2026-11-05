@@ -122,3 +122,71 @@ fn one_occurrence_packages_are_admitted_by_the_v2_reader() {
         assert_eq!(read_identities(function), [identity], "{name}");
     }
 }
+
+/// QSL FR-507-AC-11, QSpec FR-290/FR-484: the Boolean clause occurrence pair
+/// is carried by its Boolean expression node and accepted by Contract IR.
+#[trace("FR-507-AC-11", "QSpec-FR-290", "QSpec-FR-484")]
+#[test]
+fn a_boolean_value_clause_expression_is_admitted_by_the_v2_reader() {
+    let emission = emit(&package(vec![both()]));
+    let wire = wire(&emission);
+    let expression = nodes(&wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "expression"
+                && node["occurrences"].as_array().is_some_and(|occurrences| {
+                    occurrences
+                        .iter()
+                        .filter(|occurrence| occurrence["role"] == "claim")
+                        .count()
+                        == 1
+                        && occurrences
+                            .iter()
+                            .filter(|occurrence| occurrence["role"] == "declaration")
+                            .count()
+                            == 1
+                })
+        })
+        .expect("a Boolean expression with claim and declaration occurrences");
+    let semantic_type = nodes(&wire)
+        .iter()
+        .find(|node| node["node_id"] == expression["semantic_type"])
+        .expect("the expression's type node");
+    assert_eq!(semantic_type["semantic_form"], "boolean");
+    let admitted = match read_back(&emission) {
+        Read::Verified { admitted, .. } => admitted,
+        other => panic!("Contract IR admits the Boolean clause: {other:?}"),
+    };
+    let admitted_expression = admitted
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| {
+            node.node_tag.as_ref() == "expression"
+                && node
+                    .occurrences
+                    .iter()
+                    .filter(|occurrence| {
+                        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Claim
+                    })
+                    .count()
+                    == 1
+                && node
+                    .occurrences
+                    .iter()
+                    .filter(|occurrence| {
+                        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Declaration
+                    })
+                    .count()
+                    == 1
+        })
+        .expect("the reader retains the clause expression and both occurrences");
+    assert!(admitted_expression.occurrences.iter().any(|occurrence| {
+        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Claim
+            && occurrence.ordinal == 0
+    }));
+    assert!(admitted_expression.occurrences.iter().any(|occurrence| {
+        occurrence.role == quire_contract_model::CheckedOccurrenceRole::Declaration
+            && occurrence.ordinal == 0
+    }));
+}

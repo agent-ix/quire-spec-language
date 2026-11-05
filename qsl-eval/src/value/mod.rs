@@ -15,6 +15,7 @@ mod expression;
 // `CheckedPackageEvaluation` is the trait that carries `call` and `evaluate`
 // over the foreign-to-`value` `CheckedPackage` typestate, since an inherent
 // impl here is E0116: `CheckedPackage` is `qsl-package`'s own type (X-7).
+pub use expression::bare_evaluate_selected_protocol_slot;
 pub use expression::collection_write::{Provenance, WrittenCollection};
 pub(crate) use expression::evaluate_over_admitted_environment;
 pub use expression::object_environment_refusal;

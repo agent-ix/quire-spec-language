@@ -219,9 +219,7 @@ fn claims_world() -> World {
 /// `claim`/`step_relation` node.
 ///
 /// QSpec FR-477 and FR-507-AC-7 put both claims on one `claim` occurrence,
-/// told apart by kind; the producer writes the code claim on its own
-/// occurrence until QSL-1715 lands, so the callers assert only that both name
-/// the one node.
+/// told apart by capability kind.
 fn relation_claims(package: &CheckedPackage) -> (OccurrenceKey, OccurrenceKey) {
     let graph = package.graph();
     let [relation] = graph.step_relations() else {
@@ -230,19 +228,28 @@ fn relation_claims(package: &CheckedPackage) -> (OccurrenceKey, OccurrenceKey) {
     let model = relation.occurrence().expect("the model claim").clone();
     let node = relation.identity().expect("assembled");
     assert_eq!(model.node(), &node);
-    let code: Vec<&OccurrenceKey> = graph
+    assert_eq!(
+        graph
+            .requirements()
+            .get_kind(&model, Capability::TemporalSatisfaction)
+            .expect("the model claim has a temporal-satisfaction record")
+            .requirements()
+            .kind(),
+        Capability::TemporalSatisfaction
+    );
+    let code_records: Vec<_> = graph
         .requirements()
         .iter()
         .filter(|(occurrence, record)| {
             occurrence.node() == &node
                 && record.requirements().kind() == Capability::OperationContract
         })
-        .map(|(occurrence, _)| occurrence)
+        .map(|(occurrence, _)| occurrence.clone())
         .collect();
-    let [code] = code[..] else {
-        panic!("one code claim: {code:?}");
-    };
-    (model, code.clone())
+    assert_eq!(code_records.len(), 1, "one operation-contract record");
+    let code = code_records.into_iter().next().expect("the code claim");
+    assert_eq!(model, code);
+    (model, code)
 }
 
 /// The refinement's node, its `declaration` occurrence, and the occurrences
@@ -507,26 +514,53 @@ fn value_package() -> CheckedPackage {
     )
 }
 
-/// A Boolean value clause is read as `value` on the function node, at roles
-/// `claim` and `declaration`: the interim carrier the producer writes today.
-/// QSpec FR-290 and FR-484 put the clause on a Boolean `expression` node, so
-/// this is not FR-507-AC-11's form. Remaining work: QSL-1714.
+/// A Boolean value clause is read as `value` on its Boolean `expression`
+/// node, at roles `claim` and `declaration` (QSpec FR-290, FR-484).
+#[trace("TC-1302", "FR-507-AC-11")]
 #[test]
-fn a_boolean_value_clause_is_read_on_its_function_node() {
+fn a_boolean_value_clause_is_read_on_its_expression_node() {
     let package = value_package();
-    let function = package
-        .graph()
-        .callable("subject")
-        .expect("subject is callable")
-        .identity;
+    let graph = package.graph();
+    let mut claims = graph.occurrences().filter_map(|(node, origin, _)| {
+        (origin.role().as_str() == "claim"
+            && graph
+                .semantic_graph()
+                .node(node.clone())
+                .is_some_and(|node| node.node_tag() == qsl_semantics::check::NodeTag::Expression))
+        .then_some(node)
+    });
+    let clause = claims.next().expect("a Boolean expression claim");
+    assert!(claims.next().is_none(), "one Boolean expression claim");
+    let expression = graph
+        .semantic_graph()
+        .node(clause.clone())
+        .expect("the expression node");
+    let semantic_type = expression.semantic_type().expect("Boolean type");
+    assert_eq!(
+        graph
+            .semantic_graph()
+            .node(semantic_type)
+            .expect("the scalar type node")
+            .semantic_form(),
+        "boolean"
+    );
     for role in ["claim", "declaration"] {
         assert_family_read(
             &package,
-            &at(&function, role, 0),
+            &at(&clause, role, 0),
             Capability::ValueValidity,
             DeclarationFamily::Value,
         );
     }
+    let function = graph
+        .callable("subject")
+        .expect("subject is callable")
+        .identity;
+    assert_eq!(
+        claim_family(&package, ItemKind::Formula, &at(&function, "claim", 0)),
+        None,
+        "the function node does not carry the value claim"
+    );
 }
 
 /// FR-507-AC-9 evidence for the reader's remaining rows: an `item_kind` of
@@ -569,8 +603,8 @@ fn item_kind_and_occurrence_role_decide_the_family() {
 
 /// FR-507-AC-11: every claim form of "QSL claim forms and their families"
 /// that requires a kind is read from its node, tag, `semantic_form` and
-/// occurrence role, except the Boolean value clause, which
-/// `a_boolean_value_clause_is_read_on_its_function_node` covers.
+/// occurrence role; the Boolean value clause's expression carrier is covered
+/// by `a_boolean_value_clause_is_read_on_its_expression_node`.
 #[trace("TC-1302", "FR-507-AC-11")]
 #[test]
 fn each_claim_form_is_read_from_its_node_tag_form_and_role() {
