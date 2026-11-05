@@ -32,10 +32,14 @@ and `CheckedPackage::evaluate` return `Evaluation<Value>`, written
 `Evaluation`: `FamilyOutcome<Value>` beside the location and the losses.
 The public `qsl_eval::value::ApplicationObservation` passed to checked
 function-body evaluation SHALL expose that same evaluation's outcome and
-losses, its ten accounting-counter totals (FR-255), and an ordered ledger of
-the charged operations at the operation granularity defined by FR-397 and
-FR-520. The observation is QSL's owned public contract; it does not redefine
-the Meter's charge points, counter semantics, or operation-record contents.
+losses, its ten accounting-counter totals (FR-255), and an ordered
+charge-operation ledger. The ledger has one record for each Meter charge
+admission, in admission order; a charge refused by the Meter has no record.
+Each record identifies the admitted charge point and its counter request. A
+partial evaluation retains the admitted prefix. The per-binder aggregation
+remains the separate contract of FR-520; FR-397 defines the ordered charge
+points for IEEE evaluation. The observation does not redefine the Meter's
+charge points or counter semantics.
 `FamilyOutcome` is a layer-E `quire-eval` type with exactly two variants:
 `Evaluated(quire_exact::Outcome<T>)`, which carries the kernel evaluation
 outcome unchanged, and `FamilyEvaluated(FamilyResult)`, which carries a
@@ -639,7 +643,7 @@ undefined cause type.
 | FR-090-AC-18 | Inspection of the Record producer establishes that `record-present-value-missing` is locally unreachable: `pop_many(present)` either stops earlier or supplies exactly the number of Present slots counted, and `zip(slots, declared)` consumes at most that many values. | Inspection |
 | FR-090-AC-20 | The production IEEE-to-rational caller uses `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` directly. The evaluator contains no outer construction-error arm or `ieee-conversion-rejected` producer row, and the producer inventory retains verification obligations for every remaining producer. | Inspection |
 | FR-090-AC-22 | When an admitted state predicate reads an attribute through a reference to an object absent from the current state, S6a returns `Err(InternalFault)` with stage `S6a`, invariant `attribute-slot-unresolved` and category `Category::InternalFailure`; the public call or evaluate seam preserves it as `CallFailure::Fault`. The evaluator does not panic or manufacture a kernel/family result. | Test (TC-917) |
-| FR-090-AC-23 | For one checked function-body evaluation through the public `ApplicationObservation`, its `outcome` equals the outcome returned for that evaluation, its ordered `losses` equal the evaluation's loss records, its ten accounting-counter totals equal the Meter totals for the same evaluation, and its ordered operation ledger equals the Meter's operation records for that evaluation at FR-397/FR-520 granularity. Exercise a completed evaluation, a typed refusal, and an incomplete evaluation; in each case the observation is present and retains the corresponding outcome, losses, totals and operation prefix, including an empty ledger when no operation was charged. The observation introduces no alternate outcome or accounting semantics. | Test |
+| FR-090-AC-23 | For one checked function-body evaluation through the public `ApplicationObservation`, its `outcome` equals the outcome returned for that evaluation, its ordered `losses` equal the evaluation's loss records, its ten accounting-counter totals equal the Meter totals for the same evaluation, and its charge-operation ledger contains exactly the Meter's admitted charges in admission order, with each record preserving the charge point and counter request. Exercise a completed evaluation, a typed refusal and an incomplete evaluation; in each case the observation is present and retains the corresponding outcome, losses, totals and admitted-charge prefix, including an empty ledger when no charge was admitted. The observation introduces no alternate outcome or accounting semantics. | Test |
 
 ## Dependencies
 
