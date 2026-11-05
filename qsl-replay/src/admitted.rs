@@ -625,6 +625,9 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::DependencySelections(_)
             | ReplayRefusal::InvalidPackageName(_)
             | ReplayRefusal::UnknownFunction { .. }
+            | ReplayRefusal::UnknownOwner { .. }
+            | ReplayRefusal::NotImportable { .. }
+            | ReplayRefusal::ImportedFunctionTarget { .. }
             | ReplayRefusal::ClaimOccurrence { .. }
             | ReplayRefusal::UnknownParameter(_)
             | ReplayRefusal::DuplicateArgument(_)

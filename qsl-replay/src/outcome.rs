@@ -1852,6 +1852,9 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::DependencySelections(_)
         | ReplayRefusal::DependencyInput(_)
         | ReplayRefusal::UnknownFunction { .. }
+        | ReplayRefusal::UnknownOwner { .. }
+        | ReplayRefusal::NotImportable { .. }
+        | ReplayRefusal::ImportedFunctionTarget { .. }
         | ReplayRefusal::ClaimOccurrence { .. }
         | ReplayRefusal::UnknownOperation { .. }
         | ReplayRefusal::WrongReplayTarget { .. }

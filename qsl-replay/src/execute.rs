@@ -206,6 +206,34 @@ pub enum ReplayRefusal {
         /// The recompiled package it was looked up in.
         package: LibraryName,
     },
+    /// FR-098, FR-121: a `function` request names an owner the unit does not
+    /// import directly, so the dependency input holds no package for it
+    /// (`missing_import`/`missing-selection` at `/replay/function_owner`).
+    #[error("missing_import/missing-selection at /replay/function_owner: package {package} imports no library {owner}")]
+    UnknownOwner {
+        /// The request's `function_owner`.
+        owner: LibraryName,
+        /// The recompiled package that was asked for the owner.
+        package: LibraryName,
+    },
+    /// FR-098, FR-121: the owner's function has a package-dependent
+    /// signature (ADR-015 D-5), so no importing package may call it.
+    #[error("ill_typed/operator-ineligible: package {package} function {selection} has a package-dependent signature")]
+    NotImportable {
+        /// The request's selection.
+        selection: QualifiedName,
+        /// The owner's package name.
+        package: LibraryName,
+    },
+    /// FR-098: this entry replays the unit's own function and reads no
+    /// `function_owner`.
+    #[error("invalid_runtime_input/unknown-member at /replay/function_owner: the request's target is {target}, but `{entry}` replays only the unit's own functions")]
+    ImportedFunctionTarget {
+        /// The request's replay target.
+        target: Box<ReplayTarget>,
+        /// The entry that refused it.
+        entry: ReplayEntry,
+    },
     /// FR-098 "The claim a function request decides": the request's
     /// `occurrence_key` selects no claim of the selected function. It is
     /// neither the function's `declaration` occurrence nor the key of a
@@ -525,6 +553,9 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
             | Self::ClaimOccurrence { .. } => Code::MissingDeclaration,
+            Self::UnknownOwner { .. } => Code::MissingImport,
+            Self::NotImportable { .. } => Code::IllTyped,
+            Self::ImportedFunctionTarget { .. } => Code::InvalidRuntimeInput,
             Self::MissingFairnessPremise { .. } => Code::UnsupportedProjection,
             Self::ObservedTemporalMismatch { .. } => Code::StaleDependency,
             Self::ModelGraphMismatch { .. } => Code::StaleDependency,
@@ -588,6 +619,9 @@ impl ReplayRefusal {
             | Self::UnknownOperation { .. }
             | Self::ClaimOccurrence { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
+            Self::UnknownOwner { .. } => Some("missing-selection"),
+            Self::NotImportable { .. } => Some("operator-ineligible"),
+            Self::ImportedFunctionTarget { .. } => Some("unknown-member"),
             Self::MissingFairnessPremise { .. } => Some("missing-fairness-premise"),
             Self::ObservedTemporalMismatch { .. } => Some("content-mismatch"),
             Self::ModelGraphMismatch { .. } => Some("content-mismatch"),
@@ -1150,7 +1184,7 @@ pub fn replay_with_cancel_and_temporal_selections(
         ReplaySource::ObservedTemporal(_) => None,
         ReplaySource::ModelGraph(_) => None,
         ReplaySource::Witness(_) | ReplaySource::Input(_) => {
-            Some(function_target(&request, ReplayEntry::Replay)?)
+            Some(declared_function_target(&request, ReplayEntry::Replay)?)
         }
     };
     let caller = request_limits(
@@ -1159,21 +1193,24 @@ pub fn replay_with_cancel_and_temporal_selections(
         replay_limits,
     )?;
     let compiled = recompile_with_temporal_selections(&request, &caller, temporal_selections)?;
-    let package = compiled.checked.package();
     if let ReplaySource::ObservedTemporal(_) = request.source() {
         return replay_observed_temporal(request, compiled, caller, cancel);
     }
-    let function = function.ok_or_else(|| {
+    let (function, owner) = function.ok_or_else(|| {
         ReplayRefusal::Fault(InternalFault::new(
             "replay",
             "non-temporal-source-has-function-target",
         ))
     })?;
+    // FR-098, FR-121: the function is looked up in the owner's package when
+    // the target names one, and in the unit's own only otherwise.
+    let declaring = compiled.declaring(owner)?;
+    let package = declaring.package;
     let replay_target = request
         .replay_target()
         .ok_or(ReplayRefusal::WrongModelGraphEntry)?;
-    let claim = function_claim(&compiled, function, replay_target)?;
-    let call = select(&compiled, function, claim.kind())?;
+    let claim = function_claim(declaring, function, replay_target)?;
+    let call = select(declaring, function, claim.kind())?;
     let joined = arguments(
         &call,
         request.source(),
@@ -1195,7 +1232,7 @@ pub fn replay_with_cancel_and_temporal_selections(
         &joined,
         &limits,
         &mut run,
-        &compiled.reference_model(),
+        &compiled.reference_model(package),
     ) {
         Ok(converted) => converted,
         Err(Stopped::Refusal(refusal)) => return Err(*refusal),
@@ -1460,10 +1497,59 @@ pub(crate) struct Recompiled {
 }
 
 impl Recompiled {
-    /// Where a reference argument's universe is read from.
-    pub(crate) fn reference_model(&self) -> argument::ReferenceModel<'_> {
-        argument::ReferenceModel::new(self.checked.package(), &self.packages, self.model_limits)
+    /// Where a reference argument's universe is read from, over `package`.
+    pub(crate) fn reference_model<'a>(
+        &'a self,
+        package: &'a CheckedPackage,
+    ) -> argument::ReferenceModel<'a> {
+        argument::ReferenceModel::new(package, &self.packages, self.model_limits)
     }
+
+    /// The unit's own package, the one a one-segment function name resolves in.
+    pub(crate) fn own(&self) -> Declaring<'_> {
+        Declaring {
+            package: self.checked.package(),
+            library: &self.package,
+            imported: false,
+        }
+    }
+
+    /// The package that declares a `function` target's function: the unit's
+    /// own, or the checked package of the direct import `owner` names (FR-121:
+    /// `CheckedPackage::dependencies` holds only direct imports, built from the
+    /// request's dependency lock).
+    pub(crate) fn declaring<'a>(
+        &'a self,
+        owner: Option<&'a LibraryName>,
+    ) -> Result<Declaring<'a>, ReplayRefusal> {
+        let Some(owner) = owner else {
+            return Ok(self.own());
+        };
+        let package = self
+            .checked
+            .package()
+            .dependencies()
+            .get(owner)
+            .ok_or_else(|| ReplayRefusal::UnknownOwner {
+                owner: owner.clone(),
+                package: self.package.clone(),
+            })?;
+        Ok(Declaring {
+            package,
+            library: owner,
+            imported: true,
+        })
+    }
+}
+
+/// The checked package a replayed function is declared in, with the name its
+/// refusals pair the function with.
+#[derive(Clone, Copy)]
+pub(crate) struct Declaring<'a> {
+    pub(crate) package: &'a CheckedPackage,
+    pub(crate) library: &'a LibraryName,
+    /// The package is a direct import's, not the unit's own.
+    pub(crate) imported: bool,
 }
 
 /// The one source unit a spine run recompiles: its identity, the library name
@@ -1942,11 +2028,11 @@ impl FunctionClaim {
 /// application claim of a `value-validity` record the function owns, else
 /// [`ReplayRefusal::ClaimOccurrence`].
 fn function_claim(
-    compiled: &Recompiled,
+    declaring: Declaring<'_>,
     name: &QualifiedName,
     target: &ReplayTarget,
 ) -> Result<FunctionClaim, ReplayRefusal> {
-    let (segment, callable) = lookup(compiled, name)?;
+    let (segment, callable) = lookup(declaring, name)?;
     let fault = |invariant| ReplayRefusal::Fault(InternalFault::new("replay", invariant));
     let key = target
         .occurrence_key()
@@ -1954,7 +2040,7 @@ fn function_claim(
     if *key == declaration_occurrence(callable.identity.clone()) {
         return Ok(FunctionClaim::Predicate);
     }
-    let graph = compiled.checked.package().graph();
+    let graph = declaring.package.graph();
     let refused = || ReplayRefusal::ClaimOccurrence {
         key: key.clone(),
         function: name.clone(),
@@ -2082,11 +2168,27 @@ pub(crate) fn function_target(
     request: &ReplayRequest,
     entry: ReplayEntry,
 ) -> Result<&QualifiedName, ReplayRefusal> {
+    let (name, owner) = declared_function_target(request, entry)?;
+    match (owner, request.replay_target()) {
+        (Some(_), Some(target)) => Err(ReplayRefusal::ImportedFunctionTarget {
+            target: Box::new(target.clone()),
+            entry,
+        }),
+        (Some(_), None) | (None, _) => Ok(name),
+    }
+}
+
+/// The `function` target's name and its declaring owner, if it names one.
+pub(crate) fn declared_function_target(
+    request: &ReplayRequest,
+    entry: ReplayEntry,
+) -> Result<(&QualifiedName, Option<&LibraryName>), ReplayRefusal> {
     let target = request
         .replay_target()
         .ok_or(ReplayRefusal::WrongModelGraphEntry)?;
     target
         .as_function()
+        .map(|name| (name, target.function_owner()))
         .ok_or_else(|| wrong_target(target, entry, TargetMember::Function))
 }
 
@@ -2121,22 +2223,29 @@ pub(crate) fn check_envelope_target(
 }
 
 pub(crate) fn lookup<'a>(
-    compiled: &'a Recompiled,
+    declaring: Declaring<'a>,
     name: &'a QualifiedName,
 ) -> Result<(&'a Identifier, qsl_semantics::check::CallableFunction<'a>), ReplayRefusal> {
     let unknown = || ReplayRefusal::UnknownFunction {
         selection: name.clone(),
-        package: compiled.package.clone(),
+        package: declaring.library.clone(),
     };
     let [segment] = name.segments() else {
         return Err(unknown());
     };
-    let callable = compiled
-        .checked
-        .package()
+    let callable = declaring
+        .package
         .graph()
         .callable(segment.as_str())
         .ok_or_else(unknown)?;
+    // A function of another package is callable only through an import, which
+    // ADR-015 D-5 allows when its signature is package-independent.
+    if declaring.imported && !callable.is_importable() {
+        return Err(ReplayRefusal::NotImportable {
+            selection: name.clone(),
+            package: declaring.library.clone(),
+        });
+    }
     Ok((segment, callable))
 }
 
@@ -2148,24 +2257,24 @@ pub(crate) fn lookup<'a>(
 /// result is `Boolean` is a predicate's; each refuses here, before any call
 /// or charge.
 fn select(
-    compiled: &Recompiled,
+    declaring: Declaring<'_>,
     name: &QualifiedName,
     claim: Claim,
 ) -> Result<Selected, ReplayRefusal> {
-    let package = compiled.checked.package();
-    let (segment, callable) = lookup(compiled, name)?;
+    let package = declaring.package;
+    let (segment, callable) = lookup(declaring, name)?;
     match (claim, *callable.result == ValueType::Boolean) {
         (Claim::Predicate, true) | (Claim::ValueParity, false) | (Claim::Application, _) => {}
         (Claim::Predicate, false) => {
             return Err(ReplayRefusal::NotAPredicate {
                 selection: name.clone(),
-                package: compiled.package.clone(),
+                package: declaring.library.clone(),
             });
         }
         (Claim::ValueParity, true) => {
             return Err(ReplayRefusal::NotAValueFunction {
                 selection: name.clone(),
-                package: compiled.package.clone(),
+                package: declaring.library.clone(),
             });
         }
     }
@@ -2178,7 +2287,7 @@ fn select(
     let name = qsl_eval::value::QualifiedName::unqualified(segment.as_str()).map_err(|_| {
         ReplayRefusal::UnknownFunction {
             selection: name.clone(),
-            package: compiled.package.clone(),
+            package: declaring.library.clone(),
         }
     })?;
     Ok(Selected {

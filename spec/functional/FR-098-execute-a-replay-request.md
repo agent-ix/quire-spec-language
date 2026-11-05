@@ -181,8 +181,30 @@ list.
   request or backend `Witness`.
 - For requests without that typed arm, the function-only target refusal SHALL
   continue to apply.
-- The executor SHALL resolve the `function` replay target by name lookup in the recompiled
-  package's declarations (OQ-5), and then select the claim as "The claim a
+- A `function` replay target MAY carry a `function_owner`, a `LibraryName`
+  (FR-071). Without one, the executor SHALL resolve the `function` replay
+  target by name lookup in the recompiled
+  package's declarations (OQ-5), so a unit's own function is the only one a
+  request without an owner can name. With one, the executor SHALL resolve the
+  same one-segment name in the checked package of that library, one of the
+  recompiled unit's direct imports (FR-121), built from the same dependency
+  input the request's `dependencies` entries name, and SHALL NOT search the
+  unit's own declarations, so a unit function of the same name never answers
+  an owner-carrying request. The executor SHALL select the claim, convert the
+  arguments, admit them and call the function against that library's package,
+  and join the arguments by the parameter node ids that package derives. It
+  SHALL refuse, before any argument join or call and with no charge, a
+  `function_owner` the recompiled unit does not import directly as
+  `ReplayRefusal::UnknownOwner` (`missing_import`/`missing-selection` at
+  `/replay/function_owner`), a name the library's package declares no function
+  for as `UnknownFunction` paired with the library's name, and a function
+  whose signature is not package-independent (ADR-015 D-5), which no
+  importing package may call, as `ReplayRefusal::NotImportable`
+  (`ill_typed`/`operator-ineligible`). The value-parity, operator-parity and
+  composite-parity entries replay the unit's own functions only and refuse an
+  owner-carrying target as `ReplayRefusal::ImportedFunctionTarget`
+  (`invalid_runtime_input`/`unknown-member` at `/replay/function_owner`).
+  The executor then selects the claim as "The claim a
   function request decides" states, which also states the `NotAPredicate`
   refusal (FR-357's value-parity entry replays a non-`Boolean` function).
   It SHALL convert each argument's
@@ -636,6 +658,8 @@ predicate claim (ADR-031 SW-7).
 | FR-098-AC-29 | A `ProtocolAssumption` request is decoded, its package references are validated and its concrete and abstract packages are recompiled exactly once before `ProtocolAssumptionWitness` dispatch to FR-145; a malformed refinement identity refuses before witness replay, and the existing Witness/Input and observed-temporal dispatches retain their own arms. | Test (TC-553) |
 | FR-098-AC-30 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement. | Test (TC-1324), retired |
 | FR-098-AC-31 | **RETIRED (source-byte integrity removed).** Withdrawn with no replacement. | Test (TC-1324), retired |
+| FR-098-AC-32 | For TC-444 step 7's library `test/units` (here also declaring `function both using v(a: Int[0, 9], b: Int[0, 9]): Boolean pure { a < b }`) and unit `q`, a `function` request for `{owner test/units, big}` with `x = 3`, keyed by the `ImportedFunctionSite` of FR-121 and given the unit as its package with `test/units` as its one `dependencies` entry, settles `reproduced-without-witness` with value `false`, the value the in-process call of `big(3)` gives; `x = 7` settles value `true`. A request for `both` with `a = 1, b = 5` is `true` and with `a = 5, b = 1` is `false`, the arguments joined by the library's own parameter node ids in declared order. With the unit's own `function big using v(x: Int[0, 9]): Boolean pure { x < 2 }` added, the owner-carrying request for `big` with `x = 1` still settles `false` (`big` of the library, `x > 5`), and the same request without an owner settles `true` (`x < 2`, the unit's). | Test (TC-444) |
+| FR-098-AC-33 | A `function` request whose `function_owner` is `test/absent`, which the unit does not import, or, for a unit importing only `test/wrap` that itself imports `test/units`, `test/units`, which the request carries in `dependencies` but no `import` of the unit names, refuses `UnknownOwner` (`missing_import`/`missing-selection` at `/replay/function_owner`) naming the owner and the unit's package. For AC-32's library with `function pick using v(r: R): Boolean pure { true }` over a record `R` added, the owner-carrying request for `nope` refuses `UnknownFunction` paired with `test/units`, and the one for `pick` refuses `NotImportable` (`ill_typed`/`operator-ineligible`); each refuses before any call and with no charge, and none yields a result. | Test (TC-444) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union

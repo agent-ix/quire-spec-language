@@ -74,7 +74,7 @@ pub(super) fn locate(
 ) -> Result<Site, ReplayRefusal> {
     let package_name = compiled.package.clone();
     let mismatch = |cause: ScalarIdentityMismatch| ReplayRefusal::ScalarIdentity(Box::new(cause));
-    let (segment, callable) = lookup(compiled, function)?;
+    let (segment, callable) = lookup(compiled.own(), function)?;
     let package = compiled.checked.package();
     let graph = package.graph().semantic_graph();
     let semantic = graph.node(node.clone()).ok_or_else(|| {
