@@ -23,8 +23,8 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, CheckedTerm,
 };
 use quire_exact::{
-    admit_text, ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload,
-    Timestamp, Uuid, Value, ValueType,
+    ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload, Timestamp,
+    Uuid, Value, ValueType, admit_text,
 };
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
@@ -33,7 +33,7 @@ use quire_semantic_value::declaration::{
 use quire_semantic_value::location::{Location, Origin};
 
 use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
-use crate::wire_form::{has_form, split_tag_form, OperationSuffix, WireForm, WireTag};
+use crate::wire_form::{OperationSuffix, WireForm, WireTag, has_form, split_tag_form};
 
 /// One projected protocol slot: owned evaluator nodes, the admitted function
 /// table its calls reach, and the frame its locals and case binders use.
@@ -423,15 +423,19 @@ pub(crate) fn project_package(
                 ReaderSlot::Projected(projection)
             }
             Err(BuildError::Unsupported { reason, node }) => {
-                ReaderSlot::Unsupported(UnsupportedView {
+                let unsupported = UnsupportedView {
                     package: package.to_owned(),
                     locus: ViewLocus::node(index.key(&node).map_err(PackageRefusal::Fault)?),
                     reason,
-                })
+                };
+                refusal = first_refusal(refusal, Some(unsupported.clone()));
+                ReaderSlot::Unsupported(unsupported)
             }
-            Err(BuildError::Fault(fault)) => ReaderSlot::Fault(fault),
+            Err(BuildError::Fault(fault)) => return Err(PackageRefusal::Fault(fault)),
             Err(BuildError::Equality(_)) => {
-                ReaderSlot::Fault(self::fault("source-route-equality-has-producer-rows"))
+                return Err(PackageRefusal::Fault(self::fault(
+                    "source-route-equality-has-producer-rows",
+                )));
             }
         };
         slots.insert((request.root, request.origin), slot);
@@ -1122,6 +1126,53 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let (kind, children) = self.union_value(node, members, context, locals)?;
                 (kind, children, None)
             }
+            CheckedTerm::Aggregate { members }
+                if has_form(node, WireTag::Value, WireForm::TupleValue) =>
+            {
+                let ValueType::Composite(declaration) = self.value_type(id)? else {
+                    return Err(fault("reader-tuple-value-has-declared-type").into());
+                };
+                let children = members
+                    .iter()
+                    .map(|member| self.project_argument(id, member, context, locals))
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    NodeKind::Tuple {
+                        declaration,
+                        arguments: children.clone(),
+                    },
+                    children,
+                    None,
+                )
+            }
+            CheckedTerm::Aggregate { members }
+                if has_form(node, WireTag::Value, WireForm::OptionValue) =>
+            {
+                let [member] = members.as_slice() else {
+                    return Err(fault("reader-option-value-has-one-member").into());
+                };
+                let child = self.project_argument(id, member, context, locals)?;
+                (NodeKind::OptionSome(child), vec![child], None)
+            }
+            CheckedTerm::Aggregate { members }
+                if has_form(node, WireTag::Value, WireForm::CollectionValue) =>
+            {
+                let ValueType::Collection(collection_type) = self.value_type(id)? else {
+                    return Err(fault("reader-collection-value-has-collection-type").into());
+                };
+                let children = members
+                    .iter()
+                    .map(|member| self.project_argument(id, member, context, locals))
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    NodeKind::Collection {
+                        collection_type,
+                        elements: children.clone(),
+                    },
+                    children,
+                    None,
+                )
+            }
             CheckedTerm::Aggregate { members } => {
                 let (kind, children) = self.record_value(id, members, context, locals)?;
                 (kind, children, None)
@@ -1144,8 +1195,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 // FR-383 assumption A1: a `case` (like a `let` or a
                 // conditional) is no term and has no row; every other
                 // application of the slot's own walk has one.
-                let term = (context == Context::Root && identity != Some("quire.op.control.case"))
-                    .then(|| id.clone());
+                let has_location_row = !matches!(
+                    identity,
+                    Some("quire.op.control.let" | "quire.op.control.if" | "quire.op.control.case")
+                );
+                let term = (context == Context::Root && has_location_row).then(|| id.clone());
                 (kind, children, term)
             }
             _ => {
@@ -1262,6 +1316,39 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
         let identity = operation.identity();
         match identity {
+            Some("quire.op.control.let") => {
+                let [CheckedTerm::Binding { name, value }, body] = arguments else {
+                    return Err(fault("reader-let-has-binding-and-body").into());
+                };
+                let binder = self
+                    .index
+                    .nodes
+                    .values()
+                    .find(|node| {
+                        node.node_tag == "value"
+                            && node.semantic_form == "parameter"
+                            && node
+                                .declaration
+                                .as_ref()
+                                .and_then(|declaration| declaration.qualified_name.last())
+                                .is_some_and(|declared| declared.as_ref() == name.as_ref())
+                    })
+                    .map(|node| node.node_id.clone())
+                    .ok_or_else(|| fault("reader-let-binder-is-admitted"))?;
+                let slot = match context {
+                    Context::Root => self.root_slots,
+                    Context::Function(function) => self
+                        .functions
+                        .get(function)
+                        .map_or(0, |function| function.slots),
+                };
+                let value = self.project_argument(id, value, context, locals)?;
+                let mut body_locals = locals.clone();
+                body_locals.insert(binder, slot);
+                let body = self.project_argument(id, body, context, &body_locals)?;
+                self.grow_frame(context, slot.saturating_add(1));
+                Ok((NodeKind::Let { slot, value, body }, vec![value, body]))
+            }
             Some("quire.op.function.call") => {
                 let callee = arguments
                     .first()
@@ -1303,6 +1390,27 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 };
                 Ok((NodeKind::Not(*operand), children))
             }
+            Some("quire.op.control.if") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [condition, then, otherwise] = children.as_slice() else {
+                    return Err(fault("reader-conditional-has-three-operands").into());
+                };
+                Ok((
+                    NodeKind::If {
+                        condition: *condition,
+                        then: *then,
+                        otherwise: *otherwise,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.integer.negate") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-integer-negation-has-one-operand").into());
+                };
+                Ok((NodeKind::Negate(*operand), children))
+            }
             Some("quire.op.integer.add" | "quire.op.integer.sub" | "quire.op.integer.mul") => {
                 let children = self.project_arguments(id, Some(arguments), context, locals)?;
                 let [left, right] = children.as_slice() else {
@@ -1314,6 +1422,132 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     _ => Arithmetic::Multiply,
                 };
                 Ok((NodeKind::Arithmetic(operator, *left, *right), children))
+            }
+            Some("quire.op.rational.div") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-rational-division-has-two-operands").into());
+                };
+                let ValueType::Rational(domain) = self.value_type(id)? else {
+                    return Err(fault("reader-rational-division-has-rational-result").into());
+                };
+                Ok((
+                    NodeKind::Divide {
+                        left: *left,
+                        right: *right,
+                        domain,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.rational.add" | "quire.op.rational.sub" | "quire.op.rational.mul") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-rational-arithmetic-has-two-operands").into());
+                };
+                let ValueType::Rational(domain) = self.value_type(id)? else {
+                    return Err(fault("reader-rational-arithmetic-has-rational-result").into());
+                };
+                let operator = arithmetic_operator(identity)
+                    .ok_or_else(|| fault("reader-rational-arithmetic-is-catalogued"))?;
+                Ok((
+                    NodeKind::Rational {
+                        operator,
+                        left: *left,
+                        right: *right,
+                        domain,
+                    },
+                    children,
+                ))
+            }
+            Some(
+                "quire.op.decimal.add"
+                | "quire.op.decimal.sub"
+                | "quire.op.decimal.mul"
+                | "quire.op.decimal.div",
+            ) => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-decimal-arithmetic-has-two-operands").into());
+                };
+                let ValueType::Decimal(target) = self.value_type(id)? else {
+                    return Err(fault("reader-decimal-arithmetic-has-decimal-result").into());
+                };
+                let operator = arithmetic_operator(identity)
+                    .ok_or_else(|| fault("reader-decimal-arithmetic-is-catalogued"))?;
+                Ok((
+                    NodeKind::Decimal {
+                        operator,
+                        left: *left,
+                        right: *right,
+                        target,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.rational.negate") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-rational-negation-has-one-operand").into());
+                };
+                let ValueType::Rational(domain) = self.value_type(id)? else {
+                    return Err(fault("reader-rational-negation-has-rational-result").into());
+                };
+                Ok((NodeKind::RationalNegate(*operand, domain), children))
+            }
+            Some("quire.op.decimal.negate") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-decimal-negation-has-one-operand").into());
+                };
+                let ValueType::Decimal(target) = self.value_type(id)? else {
+                    return Err(fault("reader-decimal-negation-has-decimal-result").into());
+                };
+                Ok((NodeKind::DecimalNegate(*operand, target), children))
+            }
+            Some("quire.op.option.present") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-presence-test-has-one-operand").into());
+                };
+                Ok((NodeKind::Present(*operand), children))
+            }
+            Some("quire.op.option.value") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-option-value-has-one-operand").into());
+                };
+                Ok((NodeKind::Value(*operand), children))
+            }
+            Some("quire.op.collection.size") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-collection-size-has-one-operand").into());
+                };
+                Ok((NodeKind::Size(*operand), children))
+            }
+            Some("quire.op.collection.contains") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [collection, item] = children.as_slice() else {
+                    return Err(fault("reader-collection-containment-has-two-operands").into());
+                };
+                Ok((NodeKind::Contains(*collection, *item), children))
+            }
+            Some("quire.op.numeric.convert") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-numeric-conversion-has-one-operand").into());
+                };
+                let operand_id = arguments
+                    .first()
+                    .and_then(reference_target)
+                    .ok_or_else(|| fault("reader-numeric-conversion-has-checked-operand"))?;
+                let source = self.value_type(operand_id)?;
+                let target = self.value_type(id)?;
+                Ok((
+                    NodeKind::ConvertScalar(EqualityOperand::converted(source, target), *operand),
+                    children,
+                ))
             }
             Some(
                 "quire.op.quantity.add"
@@ -1932,6 +2166,16 @@ fn order_of(identity: &str) -> Option<(OrderedKind, OrderingOperator)> {
         _ => return None,
     };
     Some((kind, operator))
+}
+
+fn arithmetic_operator(identity: Option<&str>) -> Option<ArithmeticOperator> {
+    match identity?.rsplit('.').next()? {
+        "add" => Some(ArithmeticOperator::Add),
+        "sub" => Some(ArithmeticOperator::Subtract),
+        "mul" => Some(ArithmeticOperator::Multiply),
+        "div" => Some(ArithmeticOperator::Divide),
+        _ => None,
+    }
 }
 
 /// The selected exact type of admitted node `id`, joining declared and

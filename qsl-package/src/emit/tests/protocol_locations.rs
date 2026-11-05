@@ -6,8 +6,8 @@
 //! verdict on an edited package is the reader's.
 
 use super::protocol_controls::{
-    assert_refused_at, expression_occurrences_of_node_at, read_protocol_over, tc1070,
-    E_C_TRIED_PICKED,
+    E_C_TRIED_PICKED, assert_refused_at, expression_occurrences_of_node_at, read_protocol_over,
+    tc1070,
 };
 use super::*;
 use crate::ViewFailure;
@@ -225,7 +225,7 @@ fn assert_rows_read_back_at_their_terms(package: &CheckedPackage, wire: &Value, 
 #[trace("TC-1063", "FR-383-AC-32", "FR-383-AC-33")]
 #[test]
 fn every_slot_has_one_row_per_walk_visit_over_w_e_and_e_c() {
-    use super::protocol_requirements::fixture_w::{document as w_document, PROFILES_W, W};
+    use super::protocol_requirements::fixture_w::{PROFILES_W, W, document as w_document};
     let w = super::reachability::lower_with(w_document(), PROFILES_W, W);
     assert_one_row_per_walk_visit(&w.package, &w.wire);
     for source in [
@@ -243,7 +243,7 @@ fn every_slot_has_one_row_per_walk_visit_over_w_e_and_e_c() {
 #[trace("TC-1063", "FR-383-AC-35")]
 #[test]
 fn every_row_reads_back_at_i2_with_its_terms_location() {
-    use super::protocol_requirements::fixture_w::{document as w_document, PROFILES_W, W};
+    use super::protocol_requirements::fixture_w::{PROFILES_W, W, document as w_document};
     let w = super::reachability::lower_with(w_document(), PROFILES_W, W);
     assert_rows_read_back_at_their_terms(&w.package, &w.wire, &w_document());
     // The reader admits the `let` binder a slot introduces itself, so E-C is
@@ -548,9 +548,11 @@ fn e_c_let_and_if_rows_cover_every_term_and_no_non_term() {
     row_at(&wire, &branch, &[2]);
     // The condition `im.ready` is a term; the conditional at the root is not.
     row_at(&wire, &branch, &[0]);
-    assert!(rows(&wire)
-        .iter()
-        .all(|row| !(origin_name(row) == branch && path(row).is_empty())));
+    assert!(
+        rows(&wire)
+            .iter()
+            .all(|row| !(origin_name(row) == branch && path(row).is_empty()))
+    );
 
     // `let c = lm.count in c + c >= 1`: `lm.count` once, the comparison and
     // the sum; the `let` at the root and the two `c` reads have none.
@@ -934,37 +936,23 @@ fn reader_refuses_a_slot_whose_origin_has_no_row() {
     );
 }
 
-/// Interim behavior (QSL-1666): a slot whose admitted root has no projection
-/// yet (E-C's conditional) keeps a typed `MissingOperationProjection` at its
-/// node, not a runtime fault, and the package's other slots stay projected.
-/// FR-390 makes this refusal package-wide (AC-41, AC-51) and AC-17 is the
-/// distinct `MissingTypeRepresentation` refusal, so no criterion is claimed
-/// until QSL-1666 projects the remaining kinds.
+/// FR-390-AC-42: conditional slot roots have the canonical reader kind.
+#[trace("TC-1070", "FR-390-AC-42")]
 #[test]
-fn an_unprojected_slot_root_is_a_typed_refusal_at_its_node() {
+fn the_reader_projects_a_conditional_slot_root() {
     reader_view_over(
         &e_c_with_let(false),
         |_| {},
-        |slots| {
-            let slots = slots.expect("the view is created");
-            let Some(crate::ReaderSlot::Unsupported(view)) = slots.slot_named(&composed("Branch"))
+        |result| {
+            let slots = result.expect("the admitted conditional is projected");
+            let Some(crate::ReaderSlot::Projected(projection)) =
+                slots.slot_named(&composed("Branch"))
             else {
-                panic!("the conditional root is a typed refusal");
+                panic!("the conditional root is projected");
             };
-            assert_eq!(
-                view.catalog(),
-                ("unknown_required_feature", "unsupported-feature")
-            );
-            assert_eq!(
-                view.reason(),
-                &crate::UnsupportedReason::MissingOperationProjection {
-                    operation: "quire.op.control.if".to_owned()
-                }
-            );
-            assert_eq!(view.locus().location(), None);
             assert!(matches!(
-                slots.slot_named(&composed("Tried")),
-                Some(crate::ReaderSlot::Projected(_))
+                projection.kind(projection.root()),
+                Some(quire_checked::node::NodeKind::If { .. })
             ));
         },
     );
