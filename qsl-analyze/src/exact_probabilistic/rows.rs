@@ -286,7 +286,7 @@ pub(super) enum DistributionFault {
     /// Not a `FreeDelays` state, a row without a selected choice, an
     /// out-of-range choice, or a distribution FR-202 refuses.
     NoChoice,
-    /// The entry's alternatives exceed the transition limit.
+    /// The entry exceeds the configured or analyzer-owned expansion bound.
     TooMany,
 }
 
@@ -295,8 +295,8 @@ pub(super) enum DistributionFault {
 /// row's [`SchedulerChoice`] is a distribution over the row's choices, and
 /// the entry is the product measure over the whole actions, so every row has
 /// the distribution the policy gives it. The alternatives are in canonical
-/// order (rows in order, each row's choices by index) and number at most
-/// `max_alternatives`.
+/// order (rows in order, each row's choices by index) and stay within
+/// `max_alternatives` and the cumulative row-copy budget.
 ///
 /// # Errors
 ///
@@ -308,9 +308,40 @@ pub(super) fn free_delays_distribution(
     state: ProbStateId,
     policy: &[Option<SchedulerChoice>],
     max_alternatives: usize,
+    max_row_copies: usize,
 ) -> Result<Vec<(ProductAction, Rational)>, DistributionFault> {
     let fault = DistributionFault::NoChoice;
     let (node, rows) = rows_at(product, state).ok_or(fault)?;
+    // Preflight the entire product before constructing any whole-action
+    // vectors. The caller's transition limit is not a safe allocation bound
+    // for this Cartesian representation.
+    let mut alternatives = 1usize;
+    let mut expanded_row_copies = 0usize;
+    for (offset, row) in rows.iter().enumerate() {
+        let choice = policy
+            .get(node + offset)
+            .and_then(Option::as_ref)
+            .ok_or(fault)?;
+        let weighted = scheduler_distribution(choice).ok_or(fault)?;
+        for (index, _) in &weighted {
+            row.get(*index).ok_or(fault)?;
+        }
+        let Some(next_alternatives) = alternatives.checked_mul(weighted.len()) else {
+            return Err(DistributionFault::TooMany);
+        };
+        let Some(row_copies) = next_alternatives.checked_mul(offset + 1) else {
+            return Err(DistributionFault::TooMany);
+        };
+        let Some(total_row_copies) = expanded_row_copies.checked_add(row_copies) else {
+            return Err(DistributionFault::TooMany);
+        };
+        if next_alternatives > max_alternatives || total_row_copies > max_row_copies {
+            return Err(DistributionFault::TooMany);
+        }
+        alternatives = next_alternatives;
+        expanded_row_copies = total_row_copies;
+    }
+
     let mut actions: Vec<(Vec<FreeDelayRow>, Rational)> = vec![(Vec::new(), one())];
     for (offset, row) in rows.iter().enumerate() {
         let choice = policy
@@ -318,10 +349,12 @@ pub(super) fn free_delays_distribution(
             .and_then(Option::as_ref)
             .ok_or(fault)?;
         let weighted = scheduler_distribution(choice).ok_or(fault)?;
-        if actions.len().saturating_mul(weighted.len()) > max_alternatives {
+        let Some(product_len) = actions.len().checked_mul(weighted.len()) else {
             return Err(DistributionFault::TooMany);
-        }
-        let mut next = Vec::with_capacity(actions.len() * weighted.len());
+        };
+        let mut next = Vec::new();
+        next.try_reserve_exact(product_len)
+            .map_err(|_| DistributionFault::TooMany)?;
         for (chosen, mass) in &actions {
             for (index, weight) in &weighted {
                 let (body, _) = row.get(*index).ok_or(fault)?;

@@ -42,6 +42,15 @@ use super::{
     ExactProbLimits, ProbProduct, ProbStateId, ProductAction, ProductKind, SchedulerChoice,
 };
 
+/// The largest randomized whole-action entry this analyzer materializes.
+/// Product transition limits can be much larger and do not bound the memory
+/// cost of cloning every row into every whole action.
+const MAX_WITNESS_ENTRY_ALTERNATIVES: usize = 1_024;
+
+/// Bound cumulative row copies while preflighting one randomized whole-action
+/// entry.
+const MAX_WITNESS_ENTRY_ROW_COPIES: usize = 16_384;
+
 /// Which choices a witness scheduler resolves (FR-202, FR-204 "Evidence").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WitnessScope {
@@ -101,8 +110,8 @@ pub enum WitnessError {
         /// The state's discovery index.
         state: usize,
     },
-    /// A randomized entry has more alternatives than the transition limit.
-    #[error("the randomized entry at state {state} exceeds the transition limit")]
+    /// A randomized entry exceeds the configured or analyzer-owned resource bound.
+    #[error("the randomized entry at state {state} exceeds its resource bound")]
     TooManyAlternatives {
         /// The state's discovery index.
         state: usize,
@@ -177,14 +186,15 @@ impl EntryChoice {
 
 /// The entry a randomized `policy` takes at `state`; the one choice of a
 /// DTMC state. Alternatives are in canonical choice order, each with a
-/// positive probability, and number at most `limits`' `max_transitions`.
+/// positive probability, and are bounded by both `limits`' `max_transitions`
+/// and the analyzer's witness-entry resource limit.
 ///
 /// # Errors
 ///
 /// [`WitnessError::NoChoice`] when the state has no edges, the policy selects
 /// none, or a distribution repeats a choice, gives a choice no positive
 /// probability, names a choice the state lacks, or does not sum to 1;
-/// [`WitnessError::TooManyAlternatives`] past the limit.
+/// [`WitnessError::TooManyAlternatives`] past either resource limit.
 pub fn entry_choice(
     product: &ProbProduct,
     state: ProbStateId,
@@ -197,13 +207,16 @@ pub fn entry_choice(
     let first = product.outgoing(state).first().ok_or(no_choice)?;
     let alternatives: Vec<(ProductAction, Rational)> =
         if matches!(first.choice, ProductAction::FreeDelays(_)) {
-            free_delays_distribution(product, state, policy, max_alternatives).map_err(|fault| {
-                match fault {
-                    DistributionFault::NoChoice => no_choice,
-                    DistributionFault::TooMany => {
-                        WitnessError::TooManyAlternatives { state: index }
-                    }
-                }
+            free_delays_distribution(
+                product,
+                state,
+                policy,
+                max_alternatives.min(MAX_WITNESS_ENTRY_ALTERNATIVES),
+                MAX_WITNESS_ENTRY_ROW_COPIES,
+            )
+            .map_err(|fault| match fault {
+                DistributionFault::NoChoice => no_choice,
+                DistributionFault::TooMany => WitnessError::TooManyAlternatives { state: index },
             })?
         } else if product.kind == ProductKind::Dtmc {
             vec![(first.choice.clone(), rational(1))]

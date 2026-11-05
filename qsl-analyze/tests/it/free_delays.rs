@@ -1291,6 +1291,8 @@ fn detour_max_claim() -> World {
 #[trace("TC-642", "FR-204")]
 #[test]
 fn witness_entries_cover_continuation_states_beside_the_paths() {
+    use std::collections::{BTreeSet, VecDeque};
+
     let world = detour_max_claim();
     let (built, policy) = detour_maximum(&world);
     let start = built.initial[0].2;
@@ -1311,10 +1313,38 @@ fn witness_entries_cover_continuation_states_beside_the_paths() {
         left.extend(sources.take(path.steps.len()));
     }
     let entered: Vec<ProbStateId> = witness.entries.iter().map(|(state, _)| *state).collect();
-    assert!(
-        entered.contains(&start),
-        "the race state has an entry: {entered:?}"
-    );
+    let accepting = accepted(&built);
+    let mut expected = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    let mut queue = VecDeque::from([start]);
+    while let Some(state) = queue.pop_front() {
+        if accepting[state.index()] || built.outgoing(state).is_empty() || !visited.insert(state) {
+            continue;
+        }
+        let Some(first) = built.outgoing(state).first() else {
+            continue;
+        };
+        let action = if matches!(first.choice, ProductAction::FreeDelays(_)) {
+            free_delays_choice(&built, state, &policy).expect("the policy selects each row")
+        } else {
+            first.choice.clone()
+        };
+        if matches!(
+            &action,
+            ProductAction::UnitDelay
+                | ProductAction::EnterIdleDelay
+                | ProductAction::IdleDelay
+                | ProductAction::IdleObserve
+                | ProductAction::WorkloadResolve { .. }
+                | ProductAction::FreeDelays(_)
+        ) {
+            expected.insert(state);
+        }
+        for step in action_steps(&built, state, &action).expect("the action is enabled") {
+            queue.push_back(step.to);
+        }
+    }
+    assert_eq!(entered.iter().copied().collect::<BTreeSet<_>>(), expected);
     assert!(
         entered.iter().any(|state| !left.contains(state)),
         "a continuation state without an emitted path has an entry: {entered:?}"
@@ -1503,12 +1533,11 @@ fn malformed_distributions_give_no_entry() {
     }
 }
 
-/// FR-202 (TC-642, FR-204): the entry's alternatives are bounded by the
-/// transition limit; one more than the bound refuses, the bound itself
-/// admits.
+/// FR-202 (TC-642, FR-204): alternatives respect the transition limit, while
+/// an independent safe bound refuses large whole-action materializations.
 #[trace("TC-642", "FR-204")]
 #[test]
-fn randomized_entries_are_bounded_by_the_transition_limit() {
+fn randomized_entries_respect_alternative_and_expansion_bounds() {
     let world = detour_max_claim();
     let (built, _) = detour_maximum(&world);
     let start = built.initial[0].2;
@@ -1529,5 +1558,71 @@ fn randomized_entries_are_bounded_by_the_transition_limit() {
     assert_eq!(
         race_entry(&entries_of(&built, &policy, &capped(4)).expect("four alternatives fit")).len(),
         4
+    );
+
+    let mut large = built.clone();
+    let originals: Vec<_> = large
+        .outgoing(start)
+        .iter()
+        .filter_map(|edge| match &edge.choice {
+            ProductAction::FreeDelays(rows) => rows.first().map(|row| (edge.clone(), row.clone())),
+            _ => None,
+        })
+        .collect();
+    let first_given = originals[0].1.given.clone();
+    let mut base_choices: Vec<(qsl_analyze::exact_probabilistic::ProbEdge, FreeDelayRow)> =
+        Vec::new();
+    for candidate in originals
+        .into_iter()
+        .filter(|(_, row)| row.given == first_given)
+    {
+        if !base_choices
+            .iter()
+            .any(|existing| existing.1.eq(&candidate.1))
+        {
+            base_choices.push(candidate);
+            if base_choices.len() == 2 {
+                break;
+            }
+        }
+    }
+    assert_eq!(base_choices.len(), 2, "the source row has two choices");
+
+    let mut expanded_edges = Vec::with_capacity(23 * 2);
+    for row_index in 0..23 {
+        for (template, source_row) in &base_choices {
+            let mut row = source_row.clone();
+            row.given[0].1 = 100 + row_index as u64;
+            let mut edge = template.clone();
+            edge.choice = ProductAction::FreeDelays(vec![row]);
+            expanded_edges.push(edge);
+        }
+    }
+    let range = large.edges.partition_point(|edge| edge.from < start)
+        ..large.edges.partition_point(|edge| edge.from <= start);
+    large.edges.splice(range, expanded_edges);
+    let mut large_policy =
+        vec![Some(SchedulerChoice::Deterministic(ActionChoice(0))); large.states.len() + 23];
+    for row in 0..23 {
+        large_policy[large.states.len() + row] =
+            Some(weights(&[(0, ratio(1, 2)), (1, ratio(1, 2))]));
+    }
+    assert!(
+        free_delays_choice(&large, start, &vec![Some(0); large_policy.len()]).is_some(),
+        "synthetic rows are well formed"
+    );
+    assert!(
+        free_delays_choice(&large, start, &vec![Some(1); large_policy.len()]).is_some(),
+        "each synthetic row has its second choice"
+    );
+    let mut generous = ExactProbLimits::default();
+    generous.model.limits.max_transitions = 100_000_000;
+    let result = entries_of(&large, &large_policy, &generous);
+    assert!(
+        matches!(
+            &result,
+            Err(WitnessError::TooManyAlternatives { state }) if *state == start.index()
+        ),
+        "23 two-choice rows should be refused, got {result:?}"
     );
 }
