@@ -14,7 +14,7 @@
 use super::*;
 
 /// The names of the clauses of `differential_clauses!`.
-const CLAUSES: usize = 17;
+const CLAUSES: usize = 25;
 
 /// What the run reported, reduced to the parts both evaluators define.
 fn summary(report: &ClauseRunReport) -> String {
