@@ -283,6 +283,14 @@ its `node` member), because an in-process `CheckedNodeId` or `NodeKey` carries
 structural path segments and the wire form carries operand indices. A node the
 package does not name is the writer's `Error::Unnameable`.
 
+The file's value-type vocabulary covers every `quire_exact::ValueType` variant (the
+tags listed under "Value encodings" below, `carried_quantity`, `map` and
+`bounded_quantity` included), so the writer names the value type of any equality
+fact. FR-517-AC-14's `Full` recover compares a receipt sum with a captured target
+that FR-517-AC-13 types as a carried quantity; whether the checker records that
+operand type as `Quantity` or as `CarriedQuantity` is not established by FR-505 or
+FR-517, and the vocabulary admits both.
+
 | Member | Content |
 | --- | --- |
 | `format` | the string `quire.checked-handoff.equality/1` |
@@ -338,7 +346,23 @@ text is UTF-8 as written.
   reference>, "case": <text> }, ... ] }`; `option` `{ "element": <value type> }`;
   `composite` `{ "node": <node reference> }`; `collection` `{ "collection": <kind>,
   "element": <value type>, "bound": null | { "minimum", "maximum" } }`; `reference`
-  `{ "effective": <effective id> }`; `population` `{ "maximum": null | <integer> }`.
+  `{ "effective": <effective id> }`; `population` `{ "maximum": null | <integer> }`; `carried_quantity` `{ "unit":
+  <unit id>, "carrier": <carrier> }`; `bounded_quantity` `{ "unit": <unit id>, "min":
+  null | <quantity>, "max": null | <quantity> }`; `map` `{ "values": <value type>,
+  "bound": null | { "minimum", "maximum" } }` (a map's keys are Text, so the member
+  names no key type). A *quantity* is `{ "magnitude": <checked rational>, "unit":
+  <unit id> }`. A *carrier* is a tagged object `{ "kind": "decimal", "lower", "upper",
+  "min_scale", "max_scale", "rounding" }`, `{ "kind": "integer", "lower", "upper",
+  "rounding" }` or `{ "kind": "rational", "numerator": <interval>, "denominator":
+  <interval> }`, with the members and spellings of `decimal`, `int` and `rational`
+  above. For example a `map` of `bounded_quantity` values over the unit node `["U"]` of package
+  `p`, with `min` null, is, as a JSON value with members in the order shown (the
+  bound members are JSON integers, the magnitude components canonical decimal
+  strings): `{ "kind": "map", "values": { "kind": "bounded_quantity", "unit": {
+  "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal": 0 } },
+  "min": null, "max": { "magnitude": { "numerator": "5", "denominator": "1" },
+  "unit": { "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal":
+  0 } } } }, "bound": { "minimum": 0, "maximum": 4 } }`.
   An *interval* is `{ "lower": <text>, "upper": <text> }` and `lower`, `upper` of
   `int` and `decimal` are canonical decimal integer strings; `rounding` is one of
   `exact`, `toward_zero`, `toward_positive`, `toward_negative`, `nearest_even`,
@@ -560,10 +584,13 @@ names this file beside `identities.json`.
   above is evaluation-input admission before S6a, category
   unsupported, exit 21, `CallFailure::Admission` carrying the catalog pair
   `unknown_required_feature`/`unsupported-feature`, with nothing charged.
-- A slot call whose walk holds an `==` or `!=` application, over a supply with no
+- A slot call whose walk reaches an `==` or `!=` application (FR-533 "Equality
+  slots"), over a supply with no
   equality rows, refuses `ViewFailure::Unsupported` with `MissingEqualityWitness`;
-  with rows of another package, `ForeignEqualityWitness`; with rows that join to no
-  equality application of the package, `UnknownEqualityWitness`. Each is
+  with rows of another package, `ForeignEqualityWitness` (decided before any row is
+  joined, by comparing the rows' package name with the package's name; rows of a
+  different package that has the same name are not detected); with rows of the package that hold no row for an equality application the
+  walk reaches, or that Contract IR does not admit, `UnknownEqualityWitness`. Each is
   evaluation-input admission like the identity-witness refusals above, at the
   `Package` locus, which the bytes route reports as `CallAdmissionLocus::Package`
   (FR-533 "Refusals and loci of the bare slot call"). A slot call whose walk holds no
@@ -604,7 +631,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-2 | `BarePackage` has no constructor from bytes, from a decoded graph or from a term, and no public signature of `BarePackage`, `BareSupply`, `EvidencePackage::from_package` or the `BarePackage` evaluation names `CheckedPackage`, `Emission` or `AdmittedPackageRead`; compile-fail probes of each construction fail, and an API-surface inspection lists the signatures. | Test (TC-1331) |
 | FR-531-AC-3 | The evaluation code reached from `BarePackage` does not read a source graph: the same calls over a `BarePackage` whose package was read in a run where the source unit was never compiled give the results the calls give where it was (TC-1331 row 1 runs the calls in a child run that is given the handoff directory only). | Test (TC-1331) |
 | FR-531-AC-4 | Over **R**'s three packages the bare route evaluates every temporal clause form (event position, fixed sample, timestamped event) and every protocol slot kind of FR-390's slot table that **R** holds; a node that is not a temporal clause refuses `clause-root-unresolved` and a slot node that is not a protocol node refuses as FR-390-AC-4 states, each with an empty charge log. | Test (TC-1331) |
-| FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows naming no admitted identity, `UnknownIdentityWitness`. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result; and `read_checked_package` over bytes whose lock selects a dependency the evidence does not supply refuses `MissingImport`, so no `BarePackage` exists for it and no dependency refusal is defined. | Test (TC-1331) |
+| FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows of the package naming no admitted identity, `UnknownIdentityWitness`; rows of another package are `ForeignIdentityWitness` also when they name no admitted identity. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result; and `read_checked_package` over bytes whose lock selects a dependency the evidence does not supply refuses `MissingImport`, so no `BarePackage` exists for it and no dependency refusal is defined. | Test (TC-1331) |
 | FR-531-AC-6 | Over a package whose `temporal_bindings` rows are absent, the call returns `activation = Unavailable` with the `Missing` non-value for the clock row; over a lock with no `profile_selections` row for the clause, `clause-unreadable` with reason `profile-selection`; over a lock whose row names a definition no profile of the evaluator, `clause-unreadable` with reason `profile-unknown`; over a row naming an infinite-trace profile, the `not-finite-window-profile` temporal refusal. Each has the charges FR-516 gives its counterpart over a source. | Test (TC-1331) |
 | FR-531-AC-7 | No result of the bare route holds, in its canonical bytes or its fields, a clause name, a source label or a source span: over **R**, the encoded `EvidenceResult` and `ProtocolSlotEvaluation` values do not contain the unit's `source:` labels or a byte region of the source map, and a clause name appears only as the `temporal_clause_names` row of its occurrence gives it, identically on every route. Identity is spelled as the "What the bytes do not carry" list states, and the progress binding of a result holds `package.name()`. | Test (TC-1331) |
 | FR-531-AC-8 | The handoff directory of **R** holds `identities.json` with `format` `quire.checked-handoff.identities/1`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
@@ -615,8 +642,9 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-11 | A search of FR-515 for the phrases `bytes-only` and `separate future capability` and of FR-515, FR-516 and FR-520 for the heading `Consumer entry` finds that FR-515 no longer states that an evaluator over `formula_graph()` with no source graph is out of scope, and FR-515, FR-516 and FR-520 each carry a "Consumer entry" section that names this requirement. | Inspection (TC-1331) |
 | FR-531-AC-14 | The handoff directory written for TC-1070 fixture E holds `equality.json` with `format` `quire.checked-handoff.equality/1`; `ReadEqualityRows::read` over it and the package gives a slot call on `Refund`'s retry relation (an integer `=` application) that evaluates to the in-process route's value and charge log; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files. | Test (TC-1331) |
 | FR-531-AC-15 | `ReadEqualityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with an unknown fact tag, one with another `format`, one with a row whose node id string the package does not hold and one whose application is not an equality application returns `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the tag, the format string or the first row, and returns no rows. | Test (TC-1331) |
-| FR-531-AC-16 | A slot call on TC-1070 fixture E's `Refund` retry relation refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows that join to no equality application of the package, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; `Refund`'s `trigger.guard`, whose walk holds no equality application, over the same supply evaluates. | Test (TC-1331) |
+| FR-531-AC-16 | A slot call on TC-1070 fixture E's `Refund` retry relation refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows of the package from which the row of the retry relation's application is removed, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; `Refund`'s `trigger.guard`, whose walk holds no equality application, over the same supply evaluates. | Test (TC-1331) |
 | FR-531-AC-17 | The encoding of the rows of "The equality file" vector equals the vector's bytes exactly; `ReadEqualityRows::read` over those bytes and a package that holds the node `["E"]` and `["U"]` returns rows equal to the input rows; for a row of every fact tag, every value-type tag, every owner kind and a compound unit id in a fact row, writing then reading returns equal rows and a second write is byte-identical; a checked rational whose numerator is spelled `+1`, `01` or `-0`, or whose denominator is `0` or `-2`, returns `Malformed`; a compound unit id in a `source_units` row returns `Malformed`. | Test (TC-1331) |
+| FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the value-type subtree the writer emits for the example, parsed as JSON, equals the example's JSON value with its members in the stated order (members compared in order, not as a set); a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
 
 ## Dependencies
 
@@ -626,6 +654,10 @@ outcome map. Each carries a "Consumer entry" section that points here.
   and `SelectedExactIdentities`; QSL-1377 (selected-model identity-row production).
 - **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533. quire-protocol
   FR-043's admission input list follows the two files.
+- **Writer and reader encoders for the three added tags:** the code ticket for the
+  `carried_quantity`, `bounded_quantity` and `map` encoders follows in the B2a work;
+  until it lands FR-531-AC-18 is unmet and the writer refuses the three types
+  `Error::Unnameable`.
 - **Wire forms the writer adds:** the equality file's leaf encodings are pinned in
   "The equality file". `CheckedNodeId`, `CheckedOccurrence`, `CheckedSourceMapEntry`,
   `CheckedNodeOwner` and `CheckedRational` have `serde` forms in Contract IR today and
