@@ -912,7 +912,7 @@ mod tests {
         assert_eq!(decisive.position, Some(0));
 
         let each_samples = [0, 1, 2].map(|level| sample(key.clone(), level)).to_vec();
-        let each = run_trace_subject_clause(request("Each", counter.clone(), each_samples))
+        let each = run_trace_subject_clause(request("Each", counter.clone(), each_samples.clone()))
             .expect("valid on-each input reports");
         assert!(matches!(
             each.disposition,
