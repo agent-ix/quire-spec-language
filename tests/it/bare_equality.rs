@@ -108,7 +108,10 @@ fn select(
 /// `equality.json`; reading it with the package gives rows that encode back
 /// to the file, the file is stable across writes, and the retry relation of
 /// `Refund` (an integer `=`) selects over them.
-#[trace("FR-531-AC-14", "FR-517-AC-21", "TC-1331", "TC-1312")]
+///
+/// Selection level only: FR-531-AC-14's evaluation parity (value and charge
+/// log) belongs to the evaluation call (B2b), so only FR-517-AC-21 is tagged.
+#[trace("FR-517-AC-21", "TC-1331", "TC-1312")]
 #[test]
 fn the_directory_for_fixture_e_holds_the_equality_file_a_slot_call_reads() {
     let (holder, request, files) = handoff(tc1070::SOURCE);
@@ -124,6 +127,9 @@ fn the_directory_for_fixture_e_holds_the_equality_file_a_slot_call_reads() {
         );
     }
     let rows = ReadEqualityRows::read(file, &package).expect("the file reads");
+    // The emitter produces no selected source-unit row for fixture E (it
+    // declares no unit), so FR-517-AC-21's non-empty `source_units` is not met.
+    assert!(text["source_units"].as_array().is_some_and(Vec::is_empty));
     assert_eq!(rows.to_bytes(&package).expect("encodes"), *file);
     let again = holder.path().join("again");
     write(&request, &again).expect("a second write");
@@ -151,7 +157,11 @@ fn the_directory_for_fixture_e_holds_the_equality_file_a_slot_call_reads() {
 
 /// FR-531-AC-16, FR-533-AC-15 (equality half): a missing, foreign and
 /// unknown equality witness each refuse the retry relation.
-#[trace("FR-531-AC-16", "FR-533-AC-15", "TC-1331", "TC-1333")]
+///
+/// Selection level only: the `Admission` failure, exit 21, `Package` locus and
+/// meter halves of FR-531-AC-16 and FR-533-AC-15 are B2b's, so those ACs are
+/// not tagged here.
+#[trace("TC-1331", "TC-1333")]
 #[test]
 fn the_equality_witness_refusals_are_missing_foreign_and_unknown() {
     let (_holder, request, files) = handoff(tc1070::SOURCE);
@@ -392,8 +402,90 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     else {
         panic!("the slot has no origin");
     };
+    // Selection takes no meter and charges nothing; the refusal is a Node
+    // locus at the application, and no slot (no partial view) is returned.
+    let UnsupportedReason::MissingLocationProjection(missing) = view.reason() else {
+        panic!("not a missing location projection");
+    };
+    assert_eq!(view.locus().key, missing.application);
+    assert_eq!((missing.rows, missing.index), (0, 0));
+}
+
+/// FR-390-AC-65 (selection level): a slot is named by (control node, member,
+/// index) alone: equal triples select the same root, distinct indexes of one
+/// member select distinct roots, and an index the control does not hold
+/// refuses.
+#[trace("FR-390-AC-65", "TC-1331")]
+#[test]
+fn a_slot_is_named_by_control_node_member_and_index() {
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let package = read(&request, &files["checked-package.json"]);
+    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let decide = node_key(&package, "Pipeline", "Decide");
+    let root = |member: &str, index| {
+        select(
+            &package,
+            &identities,
+            None,
+            decide.clone(),
+            member,
+            Some(index),
+        )
+        .map(|slot| slot.root().clone())
+    };
+    let guard0 = root("cases.guard", 0).expect("selects");
+    let guard1 = root("cases.guard", 1).expect("selects");
+    assert_eq!(root("cases.guard", 0).expect("selects"), guard0);
+    assert_ne!(guard0, guard1);
+    assert_ne!(root("visible", 0).expect("selects"), guard0);
     assert!(matches!(
-        view.reason(),
-        UnsupportedReason::MissingLocationProjection(_)
+        root("cases.guard", 2),
+        Err(BareSelectionFailure::Slot(_))
     ));
+}
+
+/// FR-390-AC-67 (selection level): a slot with both a `Node` refusal (a
+/// binder type the identity rows cannot project) and an equality-witness
+/// refusal reports the equality one, `Package` before `Node`; the witness
+/// refusals are Missing for no rows, Foreign for another package's rows and
+/// Unknown for rows that join nothing. The `Package` locus half of AC-66 and
+/// AC-67 waits for `CallAdmissionLocus::Package` (quire-eval).
+#[trace("FR-390-AC-67", "TC-1331")]
+#[test]
+fn an_equality_witness_refusal_is_reported_before_a_node_refusal() {
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let package = read(&request, &files["checked-package.json"]);
+    let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
+    let mut stripped: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
+    stripped["fields"] = Value::Array(Vec::new());
+    let identities =
+        ReadIdentityRows::read(&serde_json::to_vec(&stripped).expect("bytes"), &package)
+            .expect("fewer rows still read");
+    let refund = node_key(&package, "Refunds", "Refund");
+    let relation = |equality: Option<&ReadEqualityRows>| {
+        select(
+            &package,
+            &identities,
+            equality,
+            refund.clone(),
+            "retry.relation",
+            None,
+        )
+        .map(|_| ())
+        .map_err(|failure| match failure {
+            BareSelectionFailure::Equality(refusal) => format!("equality {refusal:?}"),
+            BareSelectionFailure::Unsupported(view) => format!("node {}", view.reason().name()),
+            other => format!("{other:?}"),
+        })
+    };
+    assert_eq!(
+        relation(Some(&rows)),
+        Err("node missing-type-representation".to_owned()),
+        "with the witness the node refusal is what remains"
+    );
+    assert_eq!(relation(None), Err("equality Missing".to_owned()));
+    let other = request_other_package();
+    assert_eq!(relation(Some(&other)), Err("equality Foreign".to_owned()));
+    let empty = ReadEqualityRows::read(&empty_file(), &package).expect("empty rows read");
+    assert_eq!(relation(Some(&empty)), Err("equality Unknown".to_owned()));
 }

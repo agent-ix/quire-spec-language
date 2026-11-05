@@ -467,7 +467,7 @@ impl<'p> BarePackage<'p> {
                         _ => {}
                     }
                 }
-                check_equality(package, supply.equality, &seen)?;
+                check_equality(package, supply.equality, &reached(&nodes, root))?;
                 let mut sources = Vec::with_capacity(found.len());
                 for id in found {
                     let binder = nodes
@@ -631,8 +631,29 @@ fn package_work_limit() -> u64 {
     crate::checked_v2::V2ReadLimits::default().work
 }
 
+/// The nodes the slot's walk can visit from `root`: every node reachable by
+/// reference from the root's term, through called functions as well (the span
+/// walk enters them; the binder search of FR-390 rule 3 stops there). A node
+/// reachable only from another slot is not in the set.
+fn reached<'n>(
+    nodes: &BTreeMap<&'n CheckedNodeId, &'n Node>,
+    root: &'n CheckedNodeId,
+) -> BTreeSet<&'n CheckedNodeId> {
+    let mut seen = BTreeSet::new();
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        if let Some(node) = nodes.get(id) {
+            pending.extend(node.body.reference_targets());
+        }
+    }
+    seen
+}
+
 /// The equality witness of a slot whose walk holds an `==` or `!=`
-/// application (FR-531 "Refusals"): decided from the closure before any node
+/// application (FR-531 "Refusals"): decided over the nodes the walk reaches before any node
 /// is projected, so a `Package` refusal precedes a `Node` one (FR-390-AC-67).
 fn check_equality(
     package: &CheckedPackageV2,

@@ -390,11 +390,15 @@ fn integer(json: &Json) -> Result<Integer, Bad> {
         .or_else(|_| malformed(format!("integer `{spelling}`")))
 }
 
-fn rational(value: &CheckedRational) -> Json {
-    object(vec![
+/// The encoding of a canonical rational; the writer refuses what the reader
+/// refuses.
+fn rational(value: &CheckedRational) -> Result<Json, Bad> {
+    let json = object(vec![
         ("numerator", text(&*value.numerator)),
         ("denominator", text(&*value.denominator)),
-    ])
+    ]);
+    rational_from(&json)?;
+    Ok(json)
 }
 
 fn rational_from(json: &Json) -> Result<CheckedRational, Bad> {
@@ -811,8 +815,8 @@ fn fact(joins: &Joins, value: &EqualityFactWitness) -> Result<Json, Bad> {
             ("ordinal", count(*ordinal)),
             ("target", joins.node_id(target)?),
             ("target_node", of(target_node)?),
-            ("scale", rational(scale)),
-            ("offset", rational(offset)),
+            ("scale", rational(scale)?),
+            ("offset", rational(offset)?),
         ]),
         F::TextPlanType { position, role } => object(vec![
             ("kind", text("text_plan_type")),
@@ -1601,13 +1605,14 @@ mod tests {
                     },
                 },
             )];
-            rows.encode(&joins).unwrap()
+            rows.encode(&joins)
         };
         let good = CheckedRational {
             numerator: "1".into(),
             denominator: "2".into(),
         };
-        assert!(ReadEqualityRows::decode(&edge(good), "p", &joins).is_ok());
+        let good_bytes = edge(good).unwrap();
+        assert!(ReadEqualityRows::decode(&good_bytes, "p", &joins).is_ok());
         for (numerator, denominator) in [
             ("+1", "2"),
             ("01", "2"),
@@ -1615,16 +1620,36 @@ mod tests {
             ("1", "0"),
             ("1", "-2"),
         ] {
-            let bytes = edge(CheckedRational {
-                numerator: numerator.into(),
-                denominator: denominator.into(),
-            });
+            // The writer refuses what the reader refuses (FND-005) ...
             assert!(
                 matches!(
-                    ReadEqualityRows::decode(&bytes, "p", &joins),
+                    edge(CheckedRational {
+                        numerator: numerator.into(),
+                        denominator: denominator.into(),
+                    }),
                     Err(EqualityFileRefusal::Malformed { .. })
                 ),
-                "{numerator}/{denominator}"
+                "write {numerator}/{denominator}"
+            );
+            // ... and the reader refuses the spelling in a file.
+            let text = String::from_utf8(good_bytes.clone())
+                .unwrap()
+                .replacen(
+                    "\"numerator\": \"1\"",
+                    &format!("\"numerator\": \"{numerator}\""),
+                    1,
+                )
+                .replacen(
+                    "\"denominator\": \"2\"",
+                    &format!("\"denominator\": \"{denominator}\""),
+                    1,
+                );
+            assert!(
+                matches!(
+                    ReadEqualityRows::decode(text.as_bytes(), "p", &joins),
+                    Err(EqualityFileRefusal::Malformed { .. })
+                ),
+                "read {numerator}/{denominator}"
             );
         }
         let mut compound = vector_rows(&keys);
