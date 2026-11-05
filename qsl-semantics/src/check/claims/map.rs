@@ -221,6 +221,7 @@ mod tests {
     use super::*;
     use crate::check::Capability;
     use crate::family::{ClaimExtent, Requirements};
+    use ix_trace_rs::trace;
     use quire_exact::ValueType;
 
     fn record(fill: u64) -> RequirementRecord {
@@ -311,6 +312,7 @@ mod tests {
 
     /// Different capability records share an occurrence, while a duplicate
     /// occurrence and capability pair replaces its earlier record.
+    #[trace("FR-507-AC-7")]
     #[test]
     fn one_occurrence_can_hold_records_of_distinct_kinds() {
         let key = keys().remove(0);

@@ -516,6 +516,7 @@ fn value_package() -> CheckedPackage {
 
 /// A Boolean value clause is read as `value` on its Boolean `expression`
 /// node, at roles `claim` and `declaration` (QSpec FR-290, FR-484).
+#[trace("TC-1302", "FR-507-AC-11")]
 #[test]
 fn a_boolean_value_clause_is_read_on_its_expression_node() {
     let package = value_package();
