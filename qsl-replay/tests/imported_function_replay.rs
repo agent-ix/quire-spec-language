@@ -9,10 +9,10 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     call_site, replay, CallSite, CanonicalAssignment, Code, DependencyEntryWire, DependencyInput,
-    EvaluatedValue, FunctionSite, Identifier, ImportedFunctionName, ImportedFunctionSite,
-    InputArmResult, InputSettlement, LibraryName, QualifiedName, ReplayLimits, ReplayRefusal,
-    ReplayRequestWire, ReplayResult, ReplaySource, RequestTargetWire, SourceIdentity,
-    StateEnvironment, SuppliedLibrary, WitnessValue,
+    EnvironmentLabels, EvaluatedValue, FunctionSite, Identifier, ImportedFunctionName,
+    ImportedFunctionSite, InputArmResult, InputSettlement, LibraryName, ObjectEnvironmentRef,
+    QualifiedName, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplayResult, ReplaySource,
+    RequestTargetWire, SourceIdentity, StateEnvironment, SuppliedLibrary, WitnessValue,
 };
 use quire_exact::ScalarLimits;
 use std::collections::BTreeMap;
@@ -392,4 +392,73 @@ fn a_function_the_owner_cannot_call_refuses_typed() {
     assert_eq!(package.as_str(), "test/units");
     assert_eq!(refusal.code(), Code::IllTyped);
     assert_eq!(refusal.cause(), Some("operator-ineligible"));
+}
+
+/// FR-098-AC-33: an owner-carrying request with an object environment is
+/// checked against the owner's types, not the unit's. The owner's function is
+/// importable only with package-independent types, so it holds no reference
+/// parameter and the environment is `UnusedObjectEnvironment`; a function
+/// with a reference parameter is `NotImportable` before any environment is
+/// admitted. The unit's own `big` takes the same environment as an unused one
+/// too, so the refusal is not the unit's package answering.
+#[trace("FR-098-AC-33", "TC-444")]
+#[test]
+fn an_owner_carrying_request_checks_the_environment_against_the_owner() {
+    let unit = unit_source("test/units", "u", UNIT_BODY);
+    let libraries = [units()];
+    let big = imported(&unit, libraries.to_vec(), "big");
+    let located = Located {
+        site: big.site.function.clone(),
+    };
+    let environment = || {
+        Some(ObjectEnvironmentRef::new(EnvironmentLabels {
+            authority: "a".to_owned(),
+            identity: "env".to_owned(),
+        }))
+    };
+    let mut wire = request(&unit, &libraries, owned(&big, "big"), &located, &[3]);
+    wire.object_environment = environment();
+    let refusal = refusal_of(wire);
+    assert!(
+        matches!(refusal, ReplayRefusal::UnusedObjectEnvironment),
+        "{refusal:?}"
+    );
+
+    let library = library(
+        "test/units",
+        "units",
+        &format!("{BIG}record R {{ a: Boolean; }}\nfunction pick using v(r: R): Boolean pure {{ true }}\n"),
+    );
+    let mut wire = request(&unit, &[library], owned(&big, "pick"), &located, &[3]);
+    wire.object_environment = environment();
+    let refusal = refusal_of(wire);
+    assert!(
+        matches!(refusal, ReplayRefusal::NotImportable { .. }),
+        "{refusal:?}"
+    );
+}
+
+/// FR-071: no deserializer exists for a replay request, its target or its
+/// target members in this repository, so no JSON route can accept
+/// `function_owner` until QSpec carries it.
+#[trace("FR-071-AC-1")]
+#[test]
+fn no_serialized_route_accepts_the_function_owner() {
+    use std::marker::PhantomData;
+    trait Fallback {
+        const DESERIALIZES: bool = false;
+    }
+    struct Probe<T>(PhantomData<T>);
+    impl<T> Fallback for Probe<T> {}
+    impl<T: serde::de::DeserializeOwned> Probe<T> {
+        const DESERIALIZES: bool = true;
+    }
+    let found = [
+        Probe::<RequestTargetWire>::DESERIALIZES,
+        Probe::<qsl_replay::ReplayTargetMembers>::DESERIALIZES,
+        Probe::<ReplayRequestWire>::DESERIALIZES,
+        // Control: the probe does detect a deserializer.
+        Probe::<String>::DESERIALIZES,
+    ];
+    assert_eq!(found, [false, false, false, true]);
 }

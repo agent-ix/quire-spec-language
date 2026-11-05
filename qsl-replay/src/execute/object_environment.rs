@@ -17,7 +17,7 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::relationship_extent::Resolution;
 
-use super::{Recompiled, ReplayRefusal};
+use super::{Declaring, Recompiled, ReplayRefusal};
 use crate::request::ReplayRequest;
 
 /// Why a reference argument is not held by the environment (FR-364 `resolve`).
@@ -183,6 +183,7 @@ fn fault(invariant: &'static str) -> ReplayRefusal {
 pub(super) fn admit(
     request: &ReplayRequest,
     compiled: &Recompiled,
+    declaring: Declaring<'_>,
     function: NodeKey,
     references: &[(usize, ObjectReference)],
     limits: &crate::limits::CallerLimits,
@@ -190,7 +191,9 @@ pub(super) fn admit(
     let Some(named) = request.object_environment() else {
         return Err(fault("environment-admitted-only-when-named"));
     };
-    let package = compiled.checked.package();
+    // The environment resolves in the package that declares the function
+    // (the owner's for an owner-carrying request), with that package's source.
+    let package = declaring.package;
     let provision = request.byte_provision().snapshots();
     let labels = named.identity();
     let selected = DocumentRef {
@@ -213,10 +216,16 @@ pub(super) fn admit(
     )
     .map_err(environment_refusal)?;
 
-    let unit = request
-        .sources()
-        .first()
-        .ok_or_else(|| fault("decoded-request-names-a-source"))?;
+    let unit = if declaring.imported {
+        request
+            .dependencies()
+            .iter()
+            .find(|entry| entry.identity() == declaring.library)
+            .and_then(|entry| entry.sources().first())
+    } else {
+        request.sources().first()
+    }
+    .ok_or_else(|| fault("decoded-request-names-a-source"))?;
     let source = RawSourceRef::new(unit.authority(), unit.identity())
         .map_err(|_| fault("package-source-names-a-source-document"))?;
     let key = BundleKey {

@@ -1244,6 +1244,7 @@ pub fn replay_with_cancel_and_temporal_selections(
         object_environment::admit(
             &request,
             &compiled,
+            declaring,
             call.identity,
             &converted.references,
             &caller,

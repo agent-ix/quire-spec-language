@@ -218,9 +218,10 @@ key or request `over` member on that arm.
   SHALL be refused at decode as `invalid_runtime_input`/`unknown-member` at
   `/replay/function_owner`, before the byte-provision rule, and the target
   round-trips with its owner.
-- The replay target SHALL hold typed names only (`QualifiedName`,
-  `Identifier`, `LibraryName`); the request's public constructors and decoders SHALL NOT
-  accept a bare `&str` or `String` in any replay target position.
+- The replay target SHALL hold typed names only
+  (`QualifiedName`, `Identifier`, `LibraryName`); the request's public
+  constructors and decoders SHALL NOT accept a bare `&str` or `String` in any
+  replay target position.
 - A request whose source is `ModelGraph` SHALL carry no generic replay
   target. The decoder SHALL accept that absence for `ModelGraph` and no other
   source, and SHALL refuse target members, arguments, occurrence key or
