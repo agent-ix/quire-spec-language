@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-330-AC-17: run a temporal clause over caller-supplied record samples.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::temporal::{
     AggregateAtom, AtomReading, CaptureReading, DEFAULT_MAX_WINDOW_VALUES, LetterStop,
@@ -241,10 +241,8 @@ fn decisive_aggregate(
     };
     let formula = node.clause().formula();
     let root = formula.nodes().get(formula.root().index())?;
-    match root {
-        FormulaNode::Aggregate { .. } => {
-            first_false_in_range(atom_values, formula.root(), at.index(), at.index())
-        }
+    let (formula_node, start, end) = match root {
+        FormulaNode::Aggregate { .. } => (formula.root(), at.index(), at.index()),
         FormulaNode::Unary {
             operator: UnaryTemporal::Always,
             interval: Some(CheckedInterval::Steps(interval)),
@@ -255,155 +253,99 @@ fn decisive_aggregate(
             };
             let start = at.index().checked_add(interval.lower())?;
             let end = at.index().checked_add(upper)?;
-            match formula.nodes().get(operand.index())? {
-                FormulaNode::Aggregate { .. } => {
-                    first_false_in_range(atom_values, *operand, start, end)
-                }
-                FormulaNode::And(left, right) => {
-                    let left_node = formula.nodes().get(left.index())?;
-                    let right_node = formula.nodes().get(right.index())?;
-                    match (left_node, right_node) {
-                        (FormulaNode::Aggregate { .. }, FormulaNode::Holds { .. }) => {
-                            first_false_conjunct_aggregate(
-                                atom_values,
-                                *left,
-                                *right,
-                                true,
-                                start,
-                                end,
-                            )
-                        }
-                        (FormulaNode::Holds { .. }, FormulaNode::Aggregate { .. }) => {
-                            first_false_conjunct_aggregate(
-                                atom_values,
-                                *right,
-                                *left,
-                                false,
-                                start,
-                                end,
-                            )
-                        }
-                        _ => None,
-                    }
-                }
-                FormulaNode::Or(left, right) => {
-                    let left_node = formula.nodes().get(left.index())?;
-                    let right_node = formula.nodes().get(right.index())?;
-                    match (left_node, right_node) {
-                        (FormulaNode::Aggregate { .. }, FormulaNode::Holds { .. }) => {
-                            first_false_disjunct_aggregate(
-                                atom_values,
-                                *left,
-                                *right,
-                                true,
-                                start,
-                                end,
-                            )
-                        }
-                        (FormulaNode::Holds { .. }, FormulaNode::Aggregate { .. }) => {
-                            first_false_disjunct_aggregate(
-                                atom_values,
-                                *right,
-                                *left,
-                                false,
-                                start,
-                                end,
-                            )
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            }
+            (*operand, start, end)
         }
-        _ => None,
-    }
-}
-
-fn first_false_in_range(
-    atom_values: &BTreeMap<(usize, u64), Option<bool>>,
-    atom: FormulaNodeId,
-    start: u64,
-    end: u64,
-) -> Option<(usize, u64)> {
-    atom_values
-        .range((atom.index(), start)..=(atom.index(), end))
-        .find_map(|((_, position), value)| {
-            (*value == Some(false)).then_some((atom.index(), *position))
-        })
-}
-
-fn first_false_conjunct_aggregate(
-    atom_values: &BTreeMap<(usize, u64), Option<bool>>,
-    aggregate: FormulaNodeId,
-    holds: FormulaNodeId,
-    aggregate_is_first: bool,
-    start: u64,
-    end: u64,
-) -> Option<(usize, u64)> {
-    let first_atom = if aggregate_is_first { aggregate } else { holds };
-    for ((_, position), first_value) in
-        atom_values.range((first_atom.index(), start)..=(first_atom.index(), end))
-    {
-        let aggregate_value = atom_values.get(&(aggregate.index(), *position)).copied();
-        let holds_value = atom_values.get(&(holds.index(), *position)).copied();
-        if aggregate_is_first {
-            match (first_value, holds_value) {
-                (Some(false), _) => return Some((aggregate.index(), *position)),
-                (Some(true), Some(Some(false))) => return None,
-                (Some(true), Some(Some(true))) => {}
-                _ => return None,
-            }
-        } else {
-            match (first_value, aggregate_value) {
-                (Some(false), _) => return None,
-                (Some(true), Some(Some(false))) => {
-                    return Some((aggregate.index(), *position));
-                }
-                (None, Some(Some(false))) => {
-                    return Some((aggregate.index(), *position));
-                }
-                (Some(true), Some(Some(true))) => {}
-                _ => return None,
-            }
+        _ => return None,
+    };
+    let positions: BTreeSet<_> = atom_values
+        .keys()
+        .filter_map(|(_, position)| (*position >= start && *position <= end).then_some(*position))
+        .collect();
+    for position in positions {
+        match descend_false_formula(node, formula_node, position, atom_values) {
+            FormulaDecision::True => {}
+            FormulaDecision::False(Some(decisive)) => return Some(decisive),
+            FormulaDecision::False(None) | FormulaDecision::Unknown => return None,
         }
     }
     None
 }
 
-fn first_false_disjunct_aggregate(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FormulaDecision {
+    True,
+    False(Option<(usize, u64)>),
+    Unknown,
+}
+
+fn combine_and(left: FormulaDecision, right: FormulaDecision) -> FormulaDecision {
+    match left {
+        FormulaDecision::False(_) => left,
+        FormulaDecision::True => right,
+        FormulaDecision::Unknown => match right {
+            FormulaDecision::False(_) => right,
+            FormulaDecision::True | FormulaDecision::Unknown => FormulaDecision::Unknown,
+        },
+    }
+}
+
+fn combine_or(left: FormulaDecision, right: FormulaDecision) -> FormulaDecision {
+    match left {
+        FormulaDecision::True => FormulaDecision::True,
+        FormulaDecision::False(left_decisive) => match right {
+            FormulaDecision::True => FormulaDecision::True,
+            FormulaDecision::False(_) => FormulaDecision::False(left_decisive),
+            FormulaDecision::Unknown => FormulaDecision::Unknown,
+        },
+        FormulaDecision::Unknown => match right {
+            FormulaDecision::True => FormulaDecision::True,
+            FormulaDecision::False(_) | FormulaDecision::Unknown => FormulaDecision::Unknown,
+        },
+    }
+}
+
+fn descend_false_formula(
+    node: &TemporalClauseNode,
+    formula_node: FormulaNodeId,
+    position: u64,
     atom_values: &BTreeMap<(usize, u64), Option<bool>>,
-    aggregate: FormulaNodeId,
-    holds: FormulaNodeId,
-    aggregate_is_first: bool,
-    start: u64,
-    end: u64,
-) -> Option<(usize, u64)> {
-    let first_atom = if aggregate_is_first { aggregate } else { holds };
-    for ((_, position), first_value) in
-        atom_values.range((first_atom.index(), start)..=(first_atom.index(), end))
-    {
-        let aggregate_value = atom_values.get(&(aggregate.index(), *position)).copied();
-        let holds_value = atom_values.get(&(holds.index(), *position)).copied();
-        if aggregate_is_first {
-            match (first_value, holds_value) {
-                (Some(true), _) | (Some(false), Some(Some(true))) => {}
-                (Some(false), Some(Some(false))) => {
-                    return Some((aggregate.index(), *position));
-                }
-                _ => return None,
-            }
-        } else {
-            match (first_value, aggregate_value) {
-                (Some(true), _) | (Some(false), Some(Some(true))) => {}
-                (Some(false), Some(Some(false))) => {
-                    return Some((aggregate.index(), *position));
-                }
-                _ => return None,
+) -> FormulaDecision {
+    let Some(formula) = node.clause().formula().nodes().get(formula_node.index()) else {
+        return FormulaDecision::Unknown;
+    };
+    match formula {
+        FormulaNode::Aggregate { .. } | FormulaNode::Holds { .. } => {
+            match atom_values.get(&(formula_node.index(), position)) {
+                Some(Some(true)) => FormulaDecision::True,
+                Some(Some(false)) => FormulaDecision::False(
+                    matches!(formula, FormulaNode::Aggregate { .. })
+                        .then_some((formula_node.index(), position)),
+                ),
+                Some(None) | None => FormulaDecision::Unknown,
             }
         }
+        FormulaNode::And(left, right) => {
+            let left_decision = descend_false_formula(node, *left, position, atom_values);
+            if matches!(left_decision, FormulaDecision::False(_)) {
+                return left_decision;
+            }
+            combine_and(
+                left_decision,
+                descend_false_formula(node, *right, position, atom_values),
+            )
+        }
+        FormulaNode::Or(left, right) => {
+            let left_decision = descend_false_formula(node, *left, position, atom_values);
+            if matches!(left_decision, FormulaDecision::True) {
+                return FormulaDecision::True;
+            }
+            combine_or(
+                left_decision,
+                descend_false_formula(node, *right, position, atom_values),
+            )
+        }
+        _ => FormulaDecision::Unknown,
     }
-    None
 }
 
 #[cfg(test)]
@@ -413,34 +355,26 @@ mod decisive_aggregate_tests {
     #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
     #[test]
     fn a_false_aggregate_decides_after_an_undefined_holds_conjunct() {
-        let holds = FormulaNodeId::from_arena_index(0);
-        let aggregate = FormulaNodeId::from_arena_index(1);
-        let atom_values = BTreeMap::from([
-            ((holds.index(), 0), None),
-            ((aggregate.index(), 0), Some(false)),
-        ]);
-
         assert_eq!(
-            first_false_conjunct_aggregate(&atom_values, aggregate, holds, false, 0, 2),
-            Some((aggregate.index(), 0)),
+            combine_and(
+                FormulaDecision::Unknown,
+                FormulaDecision::False(Some((1, 0)))
+            ),
+            FormulaDecision::False(Some((1, 0))),
             "false is decisive for `undefined and false`"
         );
     }
 
     #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
     #[test]
-    fn a_left_false_aggregate_is_selected_for_a_false_or_formula() {
-        let aggregate = FormulaNodeId::from_arena_index(0);
-        let holds = FormulaNodeId::from_arena_index(1);
-        let atom_values = BTreeMap::from([
-            ((aggregate.index(), 0), Some(false)),
-            ((holds.index(), 0), Some(false)),
-        ]);
-
+    fn a_false_left_or_operand_precedes_a_false_right_aggregate() {
         assert_eq!(
-            first_false_disjunct_aggregate(&atom_values, aggregate, holds, true, 0, 2),
-            Some((aggregate.index(), 0)),
-            "the left aggregate is the selected false disjunct"
+            combine_or(
+                FormulaDecision::False(None),
+                FormulaDecision::False(Some((1, 0)))
+            ),
+            FormulaDecision::False(None),
+            "the left false holds operand is selected before the right aggregate"
         );
     }
 }
@@ -916,6 +850,12 @@ mod tests {
          temporal ComposedOr using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,2] ((count where holds(c.level > 9) over past[0,0] min_count 0 >= 1) or holds(c.level > 0))\n\
          }\n\
+         temporal ComposedOrReverse using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,2] (holds(c.level > 9) or (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1))\n\
+         }\n\
+         temporal ComposedNested using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,2] (((count where holds(c.level > 9) over past[0,0] min_count 0 >= 1) and holds(c.level > 0)) and holds(c.level > 0))\n\
+         }\n\
          temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,0] holds(c.level > 0)\n\
          }\n";
@@ -1175,7 +1115,7 @@ mod tests {
         );
 
         let composed_or_false =
-            run_trace_subject_clause(request("ComposedOr", counter, each_samples))
+            run_trace_subject_clause(request("ComposedOr", counter.clone(), each_samples.clone()))
                 .expect("valid composed disjunction reports");
         assert!(matches!(
             composed_or_false.disposition,
@@ -1186,6 +1126,34 @@ mod tests {
             .expect("the false left aggregate is selected in the disjunction");
         assert!(decisive.aggregate.is_some());
         assert_eq!(decisive.position, Some(0));
+
+        let composed_nested = run_trace_subject_clause(request(
+            "ComposedNested",
+            counter.clone(),
+            each_samples.clone(),
+        ))
+        .expect("valid nested formula reports");
+        assert!(matches!(
+            composed_nested.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        let decisive = composed_nested
+            .decisive
+            .expect("recursive descent reaches the nested false aggregate");
+        assert!(decisive.aggregate.is_some());
+        assert_eq!(decisive.position, Some(0));
+
+        let reverse_or =
+            run_trace_subject_clause(request("ComposedOrReverse", counter, each_samples))
+                .expect("valid reverse-order disjunction reports");
+        assert!(matches!(
+            reverse_or.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        assert!(
+            reverse_or.decisive.is_none(),
+            "the false left holds atom precedes the right aggregate"
+        );
     }
 
     #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
