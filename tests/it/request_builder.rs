@@ -13,6 +13,7 @@ use qsl_package::CheckedPackage;
 use qsl_route::request::{
     items_from_requirements, ExtentClassification, RequestWriter, RequirementItem,
 };
+use qsl_route::routing::{route, Disposition};
 use qsl_route::{BackendDescriptor, Candidate, CandidateOutcome, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{
     ApplicationTerm, BodyTerm, Capability, CheckedGraph, LeafTerm, MemberTerm, PackageDeclarations,
@@ -390,13 +391,13 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
     assert_eq!(item.conversion_context(), None);
 }
 
-/// FR-495-AC-7 (TC-1284 step 6; QSpec FR-147-AC-3, AC-8): an integer `div`,
-/// `rem` or `mod` over mathematical `Integer` operands has one
-/// `value-validity` record whose extent is `Unbounded` over both operand
-/// parameter nodes. Its item is written with a finite bound available and
-/// names `Integer` domains, never an `Int[..]`. A bounded-only descriptor's
-/// `requires-bound` settlement routes no target, with or without a second
-/// registered backend, so the disposition is the same in both runs.
+/// FR-495-AC-7 (TC-1284 step 6; QSpec FR-147-AC-3 and AC-8): request writing
+/// keeps integer-division operand domains mathematical and unbounded, even
+/// when a finite backend is registered and a finite bound is available.
+/// The known `requires-bound` disposition routes no target with either
+/// registry. Negotiation and qualification verdicts belong to their provider
+/// and qualification lanes; this test covers QSL's request construction and
+/// routing boundary.
 #[trace(
     "TC-1284",
     "FR-495-AC-7",
@@ -405,7 +406,7 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
     "QSpec-FR-147-AC-8"
 )]
 #[test]
-fn a_finite_backend_settles_integer_division_requires_bound_unnarrowed() {
+fn request_items_keep_integer_division_domains_unbounded() {
     use qsl_semantics::value::{admit_integer_division, DefinitionRole};
     use quire_exact::DivisionProfile;
 
@@ -425,7 +426,7 @@ fn a_finite_backend_settles_integer_division_requires_bound_unnarrowed() {
                  {{ if b != 0 then a {operator} b else 0 }}\n"
             );
             let parsed = qsl_cst::parse(
-                SourceIdentity::new("a", "u", "git", "1"),
+                SourceIdentity::new("a", "u"),
                 "unit.native",
                 text.as_bytes(),
                 qsl_cst::Limits::default(),
@@ -434,6 +435,7 @@ fn a_finite_backend_settles_integer_division_requires_bound_unnarrowed() {
             let unit = build_unit(&parsed).expect("S2 builds the unit");
             let mut declarations = PackageDeclarations::assemble(
                 parsed.source().reference().clone(),
+                "fixture".to_string(),
                 unit,
                 Vec::new(),
                 Vec::new(),
@@ -458,13 +460,15 @@ fn a_finite_backend_settles_integer_division_requires_bound_unnarrowed() {
                 .map(|parameter| {
                     (
                         DomainKey::Node {
-                            node: WireNodeId::from_digest(*parameter.as_bytes()),
+                            node: parameter.clone(),
                             path: Vec::new(),
                         },
                         DomainKind::Integer,
                     )
                 })
                 .collect();
+            let mut integer_domains = integer_domains;
+            integer_domains.sort();
 
             let descriptor = backend("kani", (Capability::ValueValidity, Mode::Bounded));
             let kani = descriptor.candidate().clone();
@@ -475,7 +479,10 @@ fn a_finite_backend_settles_integer_division_requires_bound_unnarrowed() {
             let mut with_smt = Registry::new();
             with_smt.register(descriptor).expect("one registration");
             with_smt
-                .register(backend("cvc5", (Capability::ValueValidity, Mode::Unbounded)))
+                .register(backend(
+                    "cvc5",
+                    (Capability::ValueValidity, Mode::Unbounded),
+                ))
                 .expect("the SMT registration");
 
             for registry in [&with_smt, &bounded_alone] {
