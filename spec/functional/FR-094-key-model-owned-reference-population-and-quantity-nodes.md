@@ -332,14 +332,16 @@ node. A declared unit `u` and the
 single-term compound unit `u^1` are different `UnitId`s (ADR-013 OQ-B), so
 they have different type nodes.
 
-A function body that divides by a quantity literal of nonzero magnitude
-([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals))
-is admitted: the literal is a nonzero fact for the division. A body that
-divides by any other quantity refuses with
+A function body that divides by a quantity literal of nonzero magnitude, or
+by one or more unary negations rooted directly in such a literal, is admitted
+([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals),
+QSpec FR-146-AC-9). The literal and its exact negations are nonzero facts for
+the division. A body that divides by any other quantity refuses with
 `undefined_expression`/`unproved-nonzero`: a checked quantity type carries no
-value interval, so no guard proves a divisor that is not a literal nonzero
-(QSpec FR-146; the `Quantity` divide arm of `check::facts`). A checked graph
-therefore holds the compound unit that each product forms, such as `metre^2`, and the compound unit that each admitted quotient forms, whose terms are
+value interval, so no guard proves a divisor that is not a literal nonzero or
+its direct negation (the `Quantity` divide arm of `check::facts`). This
+includes a negated zero and a negated parameter, call or `let` value. A checked
+graph therefore holds the compound unit that each product forms, such as `metre^2`, and the compound unit that each admitted quotient forms, whose terms are
 the dividend's with the divisor's exponents subtracted. FR-094-AC-6 identifies the
 quotient units from the units `value::quantity::result_unit` forms,
 which is the forming `check` does while it types a quantity division, and
