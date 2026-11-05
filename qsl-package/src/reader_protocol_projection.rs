@@ -1166,7 +1166,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     .collect::<Result<Vec<_>, _>>()?;
                 (
                     NodeKind::Collection {
-                        collection_type,
+                        collection_type: (*collection_type).clone(),
                         elements: children.clone(),
                     },
                     children,
@@ -1325,8 +1325,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     .nodes
                     .values()
                     .find(|node| {
-                        node.node_tag == "value"
-                            && node.semantic_form == "parameter"
+                        node.node_tag.as_ref() == "value"
+                            && node.semantic_form.as_ref() == "parameter"
                             && node
                                 .declaration
                                 .as_ref()
