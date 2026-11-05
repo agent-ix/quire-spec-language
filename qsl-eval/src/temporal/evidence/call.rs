@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{Activation as ClauseActivation, TemporalProfile};
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallAdmissionRecord, CallFailure};
-use quire_exact::{ChargePoint, Incomplete, LimitKind, Meter};
+use quire_exact::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
 use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
