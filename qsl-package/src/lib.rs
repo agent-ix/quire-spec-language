@@ -23,6 +23,8 @@ extern crate alloc;
 mod bare;
 #[cfg(feature = "std")]
 mod bare_slot;
+#[cfg(feature = "std")]
+mod bare_world;
 mod checked;
 #[cfg(feature = "std")]
 mod checked_v2;
@@ -57,6 +59,8 @@ pub use bare::{
 };
 #[cfg(feature = "std")]
 pub use bare_slot::{BareSelectionFailure, BareSlot, BareSource};
+#[cfg(feature = "std")]
+pub use bare_world::BareWorld;
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};

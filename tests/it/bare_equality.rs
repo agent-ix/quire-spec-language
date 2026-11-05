@@ -407,7 +407,7 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     let UnsupportedReason::MissingLocationProjection(missing) = view.reason() else {
         panic!("not a missing location projection");
     };
-    assert_eq!(view.locus().key, missing.application);
+    assert_eq!(view.locus().key(), Some(&missing.application));
     assert_eq!((missing.rows, missing.index), (0, 0));
 }
 
@@ -448,8 +448,9 @@ fn a_slot_is_named_by_control_node_member_and_index() {
 /// binder type the identity rows cannot project) and an equality-witness
 /// refusal reports the equality one, `Package` before `Node`; the witness
 /// refusals are Missing for no rows, Foreign for another package's rows and
-/// Unknown for rows that join nothing. The `Package` locus half of AC-66 and
-/// AC-67 waits for `CallAdmissionLocus::Package` (quire-eval).
+/// Unknown for rows that join nothing. The `Package` locus of the call
+/// (FR-390-AC-66) is asserted by the evaluation tests of qsl-eval
+/// (`bare_slots`).
 #[trace("FR-390-AC-67", "TC-1331")]
 #[test]
 fn an_equality_witness_refusal_is_reported_before_a_node_refusal() {
