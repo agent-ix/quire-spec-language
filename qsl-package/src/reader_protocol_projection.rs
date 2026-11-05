@@ -1323,7 +1323,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     return Err(fault("reader-let-has-binding-and-body").into());
                 };
                 let binder = self.binder_node(name.as_ref())?;
-                let slot = self.next_slot(context);
+                let slot = self.next_slot(context, locals);
                 let value = self.project_argument(id, value, context, locals)?;
                 let mut body_locals = locals.clone();
                 body_locals.insert(binder, slot);
@@ -1573,7 +1573,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     return Err(fault("reader-collection-query-has-source-and-binder").into());
                 };
                 let binder = self.binder_node(name.as_ref())?;
-                let slot = self.next_slot(context);
+                let slot = self.next_slot(context, locals);
                 let source = self.project_argument(id, source_term, context, locals)?;
                 let mut body_locals = locals.clone();
                 body_locals.insert(binder, slot);
@@ -1964,29 +1964,60 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         }
     }
 
-    fn next_slot(&self, context: Context) -> usize {
-        match context {
+    fn next_slot(&self, context: Context, locals: &BTreeMap<CheckedNodeId, usize>) -> usize {
+        let first_free = match context {
             Context::Root => self.root_slots,
             Context::Function(function) => self
                 .functions
                 .get(function)
                 .map_or(0, |function| function.slots),
-        }
+        };
+        let after_active_locals = locals
+            .values()
+            .copied()
+            .max()
+            .map_or(0, |slot| slot.saturating_add(1));
+        first_free.max(after_active_locals)
     }
 
     fn binder_node(&self, name: &str) -> Result<CheckedNodeId, BuildError> {
         self.index
             .nodes
             .values()
-            .find(|node| {
-                node.node_tag.as_ref() == "value"
-                    && node.semantic_form.as_ref() == "parameter"
-                    && node
-                        .declaration
-                        .as_ref()
-                        .and_then(|declaration| declaration.qualified_name.last())
-                        .is_some_and(|declared| declared.as_ref() == name)
+            .filter(|node| {
+                node.node_tag.as_ref() == "value" && node.semantic_form.as_ref() == "parameter"
             })
+            .filter_map(|node| {
+                let CheckedTerm::Aggregate { members } = &node.body else {
+                    return None;
+                };
+                let (mut declared_name, mut level) = (None, None);
+                for member in members {
+                    let CheckedTerm::Binding { name, value } = member else {
+                        continue;
+                    };
+                    match name.as_ref() {
+                        "name" => {
+                            declared_name = match value.literal_read()?.value {
+                                quire_contract_model::CheckedLiteralValue::Text(name) => Some(name),
+                                _ => None,
+                            }
+                        }
+                        "level" => {
+                            level = match value.literal_read()?.value {
+                                quire_contract_model::CheckedLiteralValue::Integer(level) => {
+                                    level.to_string().parse::<usize>().ok()
+                                }
+                                _ => None,
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                (declared_name == Some(name)).then_some((level?, node))
+            })
+            .max_by_key(|(level, _)| *level)
+            .map(|(_, node)| node)
             .map(|node| node.node_id.clone())
             .ok_or_else(|| fault("reader-expression-binder-is-admitted").into())
     }

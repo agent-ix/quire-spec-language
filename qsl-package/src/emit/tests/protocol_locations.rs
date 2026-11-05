@@ -955,3 +955,41 @@ fn the_reader_projects_a_conditional_slot_root() {
         },
     );
 }
+
+/// Nested let binders occupy distinct reader frame slots (FR-390-AC-42).
+#[trace("TC-1070", "FR-390-AC-42")]
+#[test]
+fn the_reader_projects_nested_let_binders_into_distinct_slots() {
+    let source = e_c_with_let(true).replace(
+        "let c = lm.count in c + c >= 1",
+        "let c = lm.count in let d = c in d + d >= 1",
+    );
+    reader_view_over(
+        &source,
+        |_| {},
+        |result| {
+            let slots = result.expect("the admitted nested lets are projected");
+            let Some(crate::ReaderSlot::Projected(projection)) =
+                slots.slot_named(&composed("Bound"))
+            else {
+                panic!("the nested let root is projected");
+            };
+            let Some(quire_checked::node::NodeKind::Let {
+                slot: outer_slot,
+                body: inner,
+                ..
+            }) = projection.kind(projection.root())
+            else {
+                panic!("the outer let is the projected root");
+            };
+            let Some(quire_checked::node::NodeKind::Let {
+                slot: inner_slot, ..
+            }) = projection.kind(*inner)
+            else {
+                panic!("the inner let is projected in the outer body");
+            };
+            assert_eq!(*inner_slot, *outer_slot + 1);
+            assert_eq!(projection.frame_slots(), *inner_slot + 1);
+        },
+    );
+}
