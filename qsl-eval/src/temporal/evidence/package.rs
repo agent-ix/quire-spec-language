@@ -16,8 +16,8 @@ use std::collections::BTreeSet;
 
 use qsl_package::checked_views::{
     activation_relation, instance_bound_atoms as view_bound_atoms, temporal_subject,
-    Activation as WireActivation, ClauseOccurrence, FormulaNodeUse, TemporalSubjectView,
-    ViewRefusal,
+    Activation as WireActivation, ClauseOccurrence, FormulaNodeUse, FormulaOperation,
+    TemporalSubjectView, ViewRefusal,
 };
 use qsl_package::{
     AdmittedPackageRead, BarePackage, CheckedNodeId, CheckedOccurrence, CheckedPackageV2,
@@ -496,7 +496,7 @@ fn finite_window_profile(identity: &str) -> Option<TemporalProfile> {
 pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Option<BTreeSet<u64>> {
     let holds = graph
         .iter()
-        .filter(|entry| entry.operation == "quire.op.temporal.holds")
+        .filter(|entry| entry.kind() == Some(FormulaOperation::Holds))
         .count();
     if holds != reads.len() {
         return None;
@@ -506,7 +506,7 @@ pub fn bound_atom_indices(graph: &[FormulaNodeUse<'_>], reads: &[bool]) -> Optio
         graph
             .iter()
             .zip(numbers)
-            .filter(|(entry, _)| entry.operation == "quire.op.temporal.holds")
+            .filter(|(entry, _)| entry.kind() == Some(FormulaOperation::Holds))
             .zip(reads)
             .filter_map(|((_, number), bound)| bound.then_some(number).flatten())
             .collect(),
@@ -541,28 +541,19 @@ fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>
                     TemporalUpper::Open => None,
                 },
             },
-            CheckedInterval::Timed(timed) => {
-                // Closed ends and integral bounds count ticks, as the work
-                // counters read them (`ClauseWork`), and are the integer
-                // interval the package lists.
-                match timed.closed_integral_bounds() {
-                    Some((lower, upper)) => IntervalKey::Steps {
-                        lower,
-                        upper: Some(upper),
-                    },
-                    None => IntervalKey::Timed {
-                        lower: (
-                            timed.lower().numerator().to_string(),
-                            timed.lower().denominator().to_string(),
-                        ),
-                        upper: Some((
-                            timed.upper().numerator().to_string(),
-                            timed.upper().denominator().to_string(),
-                        )),
-                        closed: (timed.lower_closed(), timed.upper_closed()),
-                    },
-                }
-            }
+            // A finite-window clause holds only step intervals (FR-326): a
+            // timed interval is the timed profile's, in its rational form.
+            CheckedInterval::Timed(timed) => IntervalKey::Timed {
+                lower: (
+                    timed.lower().numerator().to_string(),
+                    timed.lower().denominator().to_string(),
+                ),
+                upper: Some((
+                    timed.upper().numerator().to_string(),
+                    timed.upper().denominator().to_string(),
+                )),
+                closed: (timed.lower_closed(), timed.upper_closed()),
+            },
         })
     };
     Some(match node {

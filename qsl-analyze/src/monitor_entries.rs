@@ -446,6 +446,39 @@ fn sig(value: i128) -> String {
     }
 }
 
+/// One field of the generated monitor `State` record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StateField {
+    Now,
+    HistoryStart,
+    Buffer(usize),
+    Activations,
+    EventPosition,
+}
+
+impl StateField {
+    /// The source type of the field.
+    fn state_type(self) -> &'static str {
+        match self {
+            Self::Buffer(_) => "Cells",
+            Self::Activations => "Sequence<Activation>",
+            Self::Now | Self::HistoryStart | Self::EventPosition => "Integer",
+        }
+    }
+}
+
+impl std::fmt::Display for StateField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Now => f.write_str("now"),
+            Self::HistoryStart => f.write_str("history_start"),
+            Self::Buffer(n) => write!(f, "buffer_{n}"),
+            Self::Activations => f.write_str("activations"),
+            Self::EventPosition => f.write_str("event_position"),
+        }
+    }
+}
+
 struct Gen<'a> {
     spec: &'a EntrySpec,
     /// The interval operators, ascending: the buffer table.
@@ -516,11 +549,11 @@ impl<'a> Gen<'a> {
         }
     }
 
-    fn state_fields(&self) -> Vec<String> {
-        let mut fields = vec!["now".to_owned(), "history_start".to_owned()];
-        fields.extend((0..self.buffers.len()).map(|n| format!("buffer_{n}")));
-        fields.push("activations".to_owned());
-        fields.push("event_position".to_owned());
+    fn state_fields(&self) -> Vec<StateField> {
+        let mut fields = vec![StateField::Now, StateField::HistoryStart];
+        fields.extend((0..self.buffers.len()).map(StateField::Buffer));
+        fields.push(StateField::Activations);
+        fields.push(StateField::EventPosition);
         fields
     }
 
@@ -538,13 +571,7 @@ impl<'a> Gen<'a> {
         let fields = self.state_fields();
         let mut out = String::new();
         for field in &fields {
-            let ty = if field.starts_with("buffer_") {
-                "Cells"
-            } else if field == "activations" {
-                "Sequence<Activation>"
-            } else {
-                "Integer"
-            };
+            let ty = field.state_type();
             let body = fields
                 .iter()
                 .map(|f| {

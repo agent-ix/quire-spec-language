@@ -1869,3 +1869,55 @@ fn a_step_relations_executions_are_its_own_units_packages_operations() {
         .collect();
     assert_eq!(packages, [VAULT, VAULT]);
 }
+
+/// FR-233-AC-2, FR-488-AC-18: a timed interval in a hyper clause that counts
+/// steps (infinite-trace) refuses `ill_typed`/`type-mismatch` at the interval,
+/// and under the timed profile, which a hyper clause does not read yet,
+/// refuses `unsupported_construct`/`not-yet-implemented` at the interval.
+#[trace("TC-688", "FR-233-AC-2")]
+#[test]
+fn a_timed_interval_in_a_hyper_clause_refuses_by_how_the_clause_counts() {
+    let body = "hyper H using inf over behaviours (v: V::ConfigVersion) \
+         forall trace a of V { eventually[0 ms, 3 ms] holds(v.versionNumber @ a = 0) }";
+    let (text, cause) = match check_under(&["V"], INFINITE, body) {
+        (
+            text,
+            Err(StageFailure::Refused(CheckRefusal {
+                cause: CheckCause::Temporal(cause),
+                ..
+            })),
+        ) => (text, *cause),
+        (_, other) => panic!("a temporal refusal, not {other:?}"),
+    };
+    assert_eq!(
+        cause,
+        TemporalCause::TimedIntervalUnderStepCount {
+            span: first(&text, "[0 ms, 3 ms]")
+        }
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::IllTyped, "type-mismatch")
+    );
+
+    let (text, cause) = match check_under(&["V"], "quire.temporal.timed/v1", body) {
+        (
+            text,
+            Err(StageFailure::Refused(CheckRefusal {
+                cause: CheckCause::Temporal(cause),
+                ..
+            })),
+        ) => (text, *cause),
+        (_, other) => panic!("a temporal refusal, not {other:?}"),
+    };
+    assert_eq!(
+        cause,
+        TemporalCause::TimedIntervalNotChecked {
+            span: first(&text, "[0 ms, 3 ms]")
+        }
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::UnsupportedConstruct, "not-yet-implemented")
+    );
+}

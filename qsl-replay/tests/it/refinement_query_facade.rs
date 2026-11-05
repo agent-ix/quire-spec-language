@@ -162,3 +162,455 @@ fn a_population_universe_is_keyed_by_declared_name() {
         RefinementUniverse::new(key(CAS, "counters"), vec!["a".to_owned()])
     );
 }
+
+// A zero-row refinement needs models with no operation classes. Merely
+// deleting rows from CasRefinesCounter correctly fails QSL MissingRow.
+fn with_zero_step_request(body: impl FnOnce(&RefinementQueryRequest<'_>)) {
+    let world = World::new(&cas_refines_counter());
+    let mut documents = packages(Variant::CAS);
+    for bytes in documents.values_mut() {
+        let mut document: serde_json::Value =
+            serde_json::from_slice(bytes).expect("fixture document");
+        for declaration in document["types"].as_array_mut().expect("selected types") {
+            if let Some(operations) = declaration.get_mut("operations") {
+                operations
+                    .as_array_mut()
+                    .expect("operation declarations")
+                    .clear();
+            }
+        }
+        *bytes = serde_json::to_vec(&document).expect("operation-free fixture document");
+    }
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model Spec = \"{SPEC}\";\n\
+         model Impl = \"{CAS}\";\n\
+         refinement CasRefinesCounter using inf abstract Spec concrete Impl {{\n\
+         population Spec::counters from Impl::counters;\n\
+         object Spec::Counter from Impl::Counter {{ value = self.value; }}\n\
+         }}\n"
+    );
+    let compiled = acquire_checked_closure(
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "zero-step-refinement"),
+            package_name: "zero-step".to_owned(),
+            path: "zero.native",
+            bytes: text.as_bytes(),
+        },
+        documents.values().map(Vec::as_slice),
+        &DependencyInput::default(),
+        StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("operation-free models admit a genuine zero-row refinement");
+    let subject = |model: &str, initial| {
+        RefinementQuerySubject::new(
+            &documents,
+            world.snapshot_provision(),
+            vec![initial],
+            vec![RefinementUniverse::for_population(
+                model,
+                "counters",
+                world.object_keys().to_vec(),
+            )],
+            1_000_000,
+            UNLIMITED,
+        )
+    };
+    let request = RefinementQueryRequest::new(
+        compiled.handle(),
+        compiled
+            .handle()
+            .refinement_node_key(REFINEMENT)
+            .expect("zero-row refinement key"),
+        subject(CAS, world.concrete_initial()),
+        subject(SPEC, world.abstract_initial()),
+    );
+    body(&request);
+}
+
+// These are authored adapter framing controls, not CG solver-run evidence.
+type HandoffPart = (Option<u64>, Vec<u8>, Vec<u8>);
+
+fn handoff(parts: &[HandoffPart]) -> Vec<u8> {
+    let mut bytes = u64::try_from(parts.len())
+        .expect("fixture count")
+        .to_le_bytes()
+        .to_vec();
+    for (row, query, proof) in parts {
+        match row {
+            None => bytes.push(0),
+            Some(row) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&row.to_le_bytes());
+            }
+        }
+        for field in [query, proof] {
+            bytes.extend_from_slice(
+                &u64::try_from(field.len())
+                    .expect("fixture bytes")
+                    .to_le_bytes(),
+            );
+            bytes.extend_from_slice(field);
+        }
+    }
+    bytes
+}
+
+fn public_parts(request: &RefinementQueryRequest<'_>) -> Vec<HandoffPart> {
+    use crate::refinement_proofs::{initial_proof, step_proof};
+    let query = script(request, RefinementQueryKind::Initial);
+    let mut parts = vec![(
+        None,
+        query.as_bytes().to_vec(),
+        initial_proof(&query).into_bytes(),
+    )];
+    for row in 0..request.step_count().expect("selected steps") {
+        let row = u64::try_from(row).expect("fixture row");
+        let query = script(request, RefinementQueryKind::Step { row });
+        parts.push((
+            Some(row),
+            query.as_bytes().to_vec(),
+            step_proof(&query).into_bytes(),
+        ));
+    }
+    parts
+}
+
+#[trace(
+    "TC-1275",
+    "FR-492-AC-8",
+    "FR-492-AC-10",
+    "FR-492-AC-12",
+    "FR-492-AC-13"
+)]
+#[test]
+fn public_handoff_preserves_selected_rows_and_delegates_the_native_checker() {
+    use qsl_replay::{CertificateCheckLimits, SmtProofCheck};
+    use quire_exact::Cancel;
+    with_request(&cas_refines_counter(), |request, world| {
+        assert_eq!(
+            request.refinement_key(),
+            &world.refinement().v2_emission().expect("emits").identity
+        );
+        assert_eq!(request.step_count().expect("row count"), 7);
+        let parts = public_parts(request);
+        let limits = CertificateCheckLimits::default();
+        let certificate = request
+            .assemble_smt_certificate(&handoff(&parts), &limits, &Cancel::new())
+            .expect("complete adapter input");
+        let mut reversed = parts.clone();
+        reversed.reverse();
+        assert_eq!(
+            request.assemble_smt_certificate(&handoff(&reversed), &limits, &Cancel::new()),
+            Ok(certificate.clone())
+        );
+        assert_eq!(certificate.base.query, parts[0].1);
+        assert_eq!(certificate.base.proof, parts[0].2);
+        for (part, expected) in certificate.steps.iter().zip(parts.iter().skip(1)) {
+            assert_eq!(part.query, expected.1);
+            assert_eq!(part.proof, expected.2);
+        }
+        assert_eq!(
+            request.check_smt_proof(&certificate, &limits, &Cancel::new()),
+            Ok(SmtProofCheck::Verified)
+        );
+    });
+    with_zero_step_request(|request| {
+        assert_eq!(request.step_count().expect("zero selected rows"), 0);
+        let parts = public_parts(request);
+        let certificate = request
+            .assemble_smt_certificate(
+                &handoff(&parts),
+                &CertificateCheckLimits::default(),
+                &Cancel::new(),
+            )
+            .expect("base only");
+        assert!(certificate.steps.is_empty());
+        assert_eq!(
+            request.check_smt_proof(
+                &certificate,
+                &CertificateCheckLimits::default(),
+                &Cancel::new()
+            ),
+            Ok(SmtProofCheck::Verified)
+        );
+    });
+}
+
+#[trace("TC-1275", "FR-492-AC-9")]
+#[test]
+fn public_handoff_refuses_invalid_framing_and_selected_record_shapes() {
+    use qsl_replay::{CertificateCheckLimits, RefinementHandoffRefusal as Error};
+    use quire_exact::Cancel;
+    with_request(&cas_refines_counter(), |request, _| {
+        let original = public_parts(request);
+        let limits = CertificateCheckLimits::default();
+        let assert_error = |bytes: Vec<u8>, error| {
+            assert_eq!(
+                request.assemble_smt_certificate(&bytes, &limits, &Cancel::new()),
+                Err(error)
+            )
+        };
+        for removed in [0, 4] {
+            let mut parts = original.clone();
+            parts.remove(removed);
+            assert_error(handoff(&parts), Error::Shape);
+        }
+        for slot in [0, 4] {
+            let mut parts = original.clone();
+            parts[slot] = parts[1].clone();
+            assert_error(handoff(&parts), Error::Shape);
+        }
+        let mut duplicate_base = original.clone();
+        duplicate_base[4] = original[0].clone();
+        assert_error(handoff(&duplicate_base), Error::Shape);
+        let mut parts = original.clone();
+        parts[4].0 = Some(7);
+        assert_error(handoff(&parts), Error::Shape);
+        assert_error(handoff(&original[..1]), Error::Shape);
+        let honest = handoff(&original);
+        for end in 0..honest.len() {
+            let result = request.assemble_smt_certificate(&honest[..end], &limits, &Cancel::new());
+            assert!(
+                matches!(result, Err(Error::Malformed)),
+                "truncated at {end}: {result:?}"
+            );
+        }
+        let mut unknown = honest.clone();
+        unknown[8] = 2;
+        assert_error(unknown, Error::Malformed);
+        let mut impossible = honest.clone();
+        impossible[9..17].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_error(impossible, Error::Malformed);
+        let mut trailing = honest;
+        trailing.push(0);
+        assert_error(trailing, Error::Malformed);
+    });
+}
+
+#[trace("TC-1275", "FR-492-AC-10")]
+#[test]
+fn public_assembly_keeps_bad_proofs_present_for_the_native_checker() {
+    use qsl_replay::{CertificateCheckLimits, CertificateLocus, CertificateRule, QueryPart};
+    use quire_exact::Cancel;
+    with_request(&cas_refines_counter(), |request, _| {
+        let limits = CertificateCheckLimits::default();
+        for (proof, rule) in [
+            (vec![], CertificateRule::NotRefutation),
+            (vec![0xff], CertificateRule::Malformed),
+        ] {
+            let mut parts = public_parts(request);
+            parts[0].2 = proof.clone();
+            let certificate = request
+                .assemble_smt_certificate(&handoff(&parts), &limits, &Cancel::new())
+                .expect("present proof assembles");
+            assert_eq!(certificate.base.proof, proof);
+            let rejected = request
+                .check_smt_proof(&certificate, &limits, &Cancel::new())
+                .expect_err("native proof rejection");
+            assert_eq!(rejected.rule, rule);
+            assert_eq!(
+                rejected.at,
+                CertificateLocus::Query {
+                    part: QueryPart::Base
+                }
+            );
+        }
+        let mut parts = public_parts(request);
+        parts[0].1.push(b' ');
+        let certificate = request
+            .assemble_smt_certificate(&handoff(&parts), &limits, &Cancel::new())
+            .expect("query copied without reinterpretation");
+        let rejected = request
+            .check_smt_proof(&certificate, &limits, &Cancel::new())
+            .expect_err("wrong query refuses");
+        assert_eq!(rejected.rule, CertificateRule::QueryMismatch);
+    });
+}
+
+/// FR-314 / FR-492-AC-10: a well-formed proof whose last command uses a rule
+/// the checker does not decide (`symm`) reaches the checker with its bytes
+/// unchanged and is `Unverifiable` at that command, never `Verified`.
+#[trace("TC-1275", "FR-314-AC-2", "FR-492-AC-10")]
+#[test]
+fn public_check_reports_an_unsupported_rule_as_unverifiable_not_verified() {
+    use crate::refinement_proofs::initial_proof;
+    use qsl_replay::{CertificateCheckLimits, QueryPart, SmtProofCheck};
+    use quire_exact::Cancel;
+    with_request(&cas_refines_counter(), |request, _| {
+        let limits = CertificateCheckLimits::default();
+        let mut parts = public_parts(request);
+        let query = String::from_utf8(parts[0].1.clone()).expect("query is text");
+        let proof = format!(
+            "{}(step t2 (cl) :rule symm :premises (t1))\n",
+            initial_proof(&query)
+        );
+        parts[0].2 = proof.clone().into_bytes();
+        let certificate = request
+            .assemble_smt_certificate(&handoff(&parts), &limits, &Cancel::new())
+            .expect("an unsupported rule still assembles");
+        assert_eq!(certificate.base.proof, proof.as_bytes());
+        assert_eq!(
+            request.check_smt_proof(&certificate, &limits, &Cancel::new()),
+            Ok(SmtProofCheck::Unverifiable {
+                part: QueryPart::Base,
+                step: 4
+            })
+        );
+    });
+}
+
+#[trace("TC-1275", "FR-492-AC-11")]
+#[test]
+fn public_handoff_stops_at_its_own_exact_stage_limits_and_cancellation() {
+    use qsl_replay::{
+        CertificateCheckLimits, IncompleteCause, ModelCheckLimit,
+        RefinementHandoffRefusal as Error, SmtProofCheck,
+    };
+    use quire_exact::{Cancel, CancelCause};
+    with_request(&cas_refines_counter(), |request, _| {
+        let bytes = handoff(&public_parts(request));
+        let limits = CertificateCheckLimits {
+            max_certificate_bytes: u64::try_from(bytes.len()).expect("size"),
+            max_certificate_edges: 8,
+            ..CertificateCheckLimits::default()
+        };
+        let certificate = request
+            .assemble_smt_certificate(&bytes, &limits, &Cancel::new())
+            .expect("exact assembly budgets");
+        for bound in [0, limits.max_certificate_bytes - 1] {
+            let short = CertificateCheckLimits {
+                max_certificate_bytes: bound,
+                ..limits
+            };
+            assert_eq!(
+                request.assemble_smt_certificate(&bytes, &short, &Cancel::new()),
+                Err(Error::Stopped(IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::CertificateMaxBytes,
+                    value: bound
+                }))
+            );
+        }
+        for bound in [0, 7] {
+            let short = CertificateCheckLimits {
+                max_certificate_edges: bound,
+                ..limits
+            };
+            assert_eq!(
+                request.assemble_smt_certificate(&bytes, &short, &Cancel::new()),
+                Err(Error::Stopped(IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::CertificateMaxEdges,
+                    value: bound
+                }))
+            );
+        }
+        let cancel = Cancel::new();
+        cancel.cancel(CancelCause::Requested);
+        assert_eq!(
+            request.assemble_smt_certificate(&bytes, &limits, &cancel),
+            Err(Error::Stopped(IncompleteCause::Cancelled {
+                source: CancelCause::Requested
+            }))
+        );
+        assert!(matches!(
+            request.check_smt_proof(&certificate, &limits, &Cancel::new()),
+            Ok(SmtProofCheck::Stopped(IncompleteCause::LimitReached { .. }))
+        ));
+        assert_eq!(
+            request.check_smt_proof(
+                &certificate,
+                &CertificateCheckLimits::default(),
+                &Cancel::new()
+            ),
+            Ok(SmtProofCheck::Verified)
+        );
+    });
+}
+
+#[trace("TC-1275", "FR-492-AC-9", "FR-492-AC-13")]
+#[test]
+fn a_request_key_from_another_refinement_cannot_define_the_selected_rows() {
+    use qsl_replay::{CertificateCheckLimits, RefinementHandoffRefusal, SmtEncodingRefusal};
+    use quire_exact::Cancel;
+    let foreign = World::new(&cas_refines_counter().replace(
+        "refinement CasRefinesCounter ",
+        "refinement OtherRefinement ",
+    ));
+    let foreign_key = foreign
+        .refinement()
+        .v2_emission()
+        .expect("foreign refinement emits")
+        .identity;
+    with_closure(&cas_refines_counter(), |handle, world| {
+        let subject = |model: &str, initial| {
+            RefinementQuerySubject::new(
+                world.package_provision(),
+                world.snapshot_provision(),
+                vec![initial],
+                vec![RefinementUniverse::for_population(
+                    model,
+                    "counters",
+                    world.object_keys().to_vec(),
+                )],
+                1_000_000,
+                UNLIMITED,
+            )
+        };
+        let request = RefinementQueryRequest::new(
+            handle,
+            foreign_key.clone(),
+            subject(CAS, world.concrete_initial()),
+            subject(SPEC, world.abstract_initial()),
+        );
+        assert_eq!(request.refinement_key(), &foreign_key);
+        assert!(matches!(
+            request.step_count(),
+            Err(SmtEncodingRefusal::Fault(_))
+        ));
+        assert!(matches!(
+            request.assemble_smt_certificate(
+                &handoff(&[(None, vec![], vec![])]),
+                &CertificateCheckLimits::default(),
+                &Cancel::new()
+            ),
+            Err(RefinementHandoffRefusal::Fault(_))
+        ));
+    });
+}
+
+#[trace("TC-1275", "FR-492-AC-8", "FR-492-AC-13")]
+#[test]
+fn removing_steps_from_a_model_with_operations_is_not_a_zero_row_selection() {
+    use qsl_replay::{AdmittedRefusal, CompileRefusal};
+    use qsl_semantics::check::{CheckCause, RefinementCause};
+    let documents = packages(Variant::CAS);
+    let missing = cas_refines_counter()
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("step "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = unit_text(&documents, &missing, Variant::CAS);
+    let result = acquire_checked_closure(
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "missing-step-refinement"),
+            package_name: "missing-step".to_owned(),
+            path: "missing.native",
+            bytes: source.as_bytes(),
+        },
+        documents.values().map(Vec::as_slice),
+        &DependencyInput::default(),
+        StageLimits::default(),
+        ReplayLimits::default(),
+    );
+    let Err(AdmittedRefusal::Package(refusal)) = result else {
+        panic!("missing operation rows must not produce a retained closure");
+    };
+    let CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("operation completeness must reach the checker");
+    };
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause,
+        CheckCause::Refinement(refusal) if matches!(refusal.cause, RefinementCause::MissingRow { .. }))));
+}

@@ -191,25 +191,10 @@ pub(in crate::temporal) fn shape(node: &FormulaNode) -> Result<NodeShape, ReachF
     };
     let upper = match interval {
         None => return Err(ReachFault::Unbounded),
-        // A finite-window clause measures ticks of its clock unit, both ends
-        // inclusive (FR-501): closed, integral bounds are a tick count (the predicate of the planner's
-        // `Window::of`).
-        // Any other timed interval counts rational time and has no tick
+        // A finite-window clause holds only tick intervals, as step intervals
+        // (FR-326). A timed interval counts rational time and has no tick
         // reach.
-        Some(CheckedInterval::Timed(timed)) => {
-            if !timed.lower_closed()
-                || !timed.upper_closed()
-                || !timed.lower().is_integer()
-                || !timed.upper().is_integer()
-            {
-                return Err(ReachFault::Timed);
-            }
-            timed
-                .upper()
-                .numerator()
-                .to_u64()
-                .ok_or(ReachFault::Overflow)?
-        }
+        Some(CheckedInterval::Timed(_)) => return Err(ReachFault::Timed),
         Some(CheckedInterval::Steps(steps)) => match steps.upper() {
             TemporalUpper::Finite(upper) => upper,
             TemporalUpper::Open => return Err(ReachFault::Unbounded),

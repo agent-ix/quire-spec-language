@@ -18,7 +18,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_package::checked_views::{FormulaNodeUse, OperatorDirection};
+use qsl_package::checked_views::{FormulaNodeUse, FormulaOperation, OperatorDirection};
 use qsl_package::{CheckedIntervalEnd, CheckedOperationInterval, CheckedOperationRational};
 use qsl_semantics::check::{
     Activation, CaptureSite, CheckedFormula, CheckedTemporalClause, FormulaNode, FormulaNodeId,
@@ -30,11 +30,6 @@ use quire_semantic_value::catalog::InternalFault;
 use super::evidence::ClauseWork;
 use super::evidence::{shape, NodeReach, NodeShape, ReachFault};
 use super::plan::{Base, Node, Plan, Scan, Window};
-
-/// The operation identities of the atoms of a formula (FR-337): a `holds`
-/// application and a window aggregate.
-const HOLDS: &str = "quire.op.temporal.holds";
-const AGGREGATE: &str = "quire.op.temporal.aggregate";
 
 /// The facts of one clause the evaluator reads (FR-532).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -271,7 +266,7 @@ pub(crate) fn atom_numbers(graph: &[FormulaNodeUse<'_>]) -> Vec<Option<u64>> {
     graph
         .iter()
         .map(|entry| {
-            if !matches!(entry.operation, HOLDS | AGGREGATE) {
+            if !entry.kind().is_some_and(FormulaOperation::is_atom) {
                 return None;
             }
             let next = u64::try_from(assigned.len()).ok()?;
@@ -495,26 +490,28 @@ fn plan_node(entry: &FormulaNodeUse<'_>, operands: &[usize]) -> Result<Node, Int
             witness: right,
         }))
     };
-    match entry.operation {
-        "quire.op.temporal.true" => Ok(Node::Constant(true)),
-        "quire.op.temporal.false" => Ok(Node::Constant(false)),
-        HOLDS => Ok(Node::Atom),
-        "quire.op.temporal.not" => Ok(Node::Not(one()?)),
-        "quire.op.temporal.and" => two().map(|(left, right)| Node::And(left, right)),
-        "quire.op.temporal.or" => two().map(|(left, right)| Node::Or(left, right)),
-        "quire.op.temporal.implies" => two().map(|(left, right)| Node::Implies(left, right)),
-        "quire.op.temporal.eventually" => unary(Base::Eventually, false),
-        "quire.op.temporal.always" => unary(Base::Eventually, true),
-        "quire.op.temporal.once" => unary(Base::Once, false),
-        "quire.op.temporal.historically" => unary(Base::Once, true),
-        "quire.op.temporal.until" => binary(Base::Until, false),
-        "quire.op.temporal.release" => binary(Base::Until, true),
-        "quire.op.temporal.since" => binary(Base::Since, false),
-        "quire.op.temporal.triggered" => binary(Base::Since, true),
+    let Some(operation) = entry.kind() else {
+        return Err(fault("formula-operation-is-temporal"));
+    };
+    match operation {
+        FormulaOperation::True => Ok(Node::Constant(true)),
+        FormulaOperation::False => Ok(Node::Constant(false)),
+        FormulaOperation::Holds => Ok(Node::Atom),
+        FormulaOperation::Not => Ok(Node::Not(one()?)),
+        FormulaOperation::And => two().map(|(left, right)| Node::And(left, right)),
+        FormulaOperation::Or => two().map(|(left, right)| Node::Or(left, right)),
+        FormulaOperation::Implies => two().map(|(left, right)| Node::Implies(left, right)),
+        FormulaOperation::Eventually => unary(Base::Eventually, false),
+        FormulaOperation::Always => unary(Base::Eventually, true),
+        FormulaOperation::Once => unary(Base::Once, false),
+        FormulaOperation::Historically => unary(Base::Once, true),
+        FormulaOperation::Until => binary(Base::Until, false),
+        FormulaOperation::Release => binary(Base::Until, true),
+        FormulaOperation::Since => binary(Base::Since, false),
+        FormulaOperation::Triggered => binary(Base::Since, true),
         // A window aggregate atom is gated on its emission and admission
         // (FR-532 "Window aggregates"): no admitted package carries one.
-        AGGREGATE => Err(fault("aggregate-formula-not-emitted")),
-        _ => Err(fault("formula-operation-is-temporal")),
+        FormulaOperation::Aggregate => Err(fault("aggregate-formula-not-emitted")),
     }
 }
 

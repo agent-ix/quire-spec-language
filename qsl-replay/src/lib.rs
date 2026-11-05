@@ -66,6 +66,7 @@ mod monitor_plan;
 mod object_environment;
 mod outcome;
 mod probability_certificate;
+mod product_action;
 mod proof_result;
 mod refinement;
 mod refinement_query;
@@ -287,8 +288,8 @@ pub use monitor_plan::{
 // replay-owned wrappers (FR-100-AC-8), so CG names neither `spine` nor
 // `qsl_eval` (ADR-011 FB-05, T-12).
 pub use refinement_query::{
-    encode_refinement_query, RefinementKeyRefusal, RefinementQueryKind, RefinementQueryRequest,
-    RefinementQuerySubject, RefinementUniverse,
+    encode_refinement_query, RefinementHandoffRefusal, RefinementKeyRefusal, RefinementQueryKind,
+    RefinementQueryRequest, RefinementQuerySubject, RefinementUniverse,
 };
 
 pub use refinement::{
@@ -321,6 +322,10 @@ pub use probability_certificate::{
     ExactProbabilityGraphError, ExactProbabilityValue, ProbabilityBoundSide,
     ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
     ProbabilityObjective, ProbabilityProductKey,
+};
+pub use product_action::{
+    ActionBody, ActionBodyError, ActionBodyRefusal, BodyRow, FreeDelayRow, FreeDelaysRace,
+    FreeRacer, GivenRacer, NotMixedRace, Schedule,
 };
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,

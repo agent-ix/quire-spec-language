@@ -911,6 +911,20 @@ pub(crate) fn admitted_step_relation_key(
     .map_err(|refusal| fault(location, KeyFault::ModelRootKey(refusal.to_string())))
 }
 
+/// The original identity of a model variant whose owner path is
+/// `model/variant_type/<identity>`, `None` for any other owner path.
+#[ix_trace_rs::string_edge]
+fn variant_type_identity(path: &[quire_exact::PathSegment]) -> Option<&String> {
+    match path {
+        [quire_exact::PathSegment::Text(kind), quire_exact::PathSegment::Text(form), quire_exact::PathSegment::Text(identity)]
+            if kind == "model" && form == "variant_type" =>
+        {
+            Some(identity)
+        }
+        _ => None,
+    }
+}
+
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
     CheckRefusal {
         location: location.clone(),
@@ -5313,14 +5327,7 @@ impl<'a> Lowering<'a> {
                 };
                 for (position, variant) in shape.variants().enumerate() {
                     let owner_path = variant.owner().path();
-                    let original_identity = match owner_path.as_slice() {
-                        [quire_exact::PathSegment::Text(kind), quire_exact::PathSegment::Text(form), quire_exact::PathSegment::Text(identity)]
-                            if kind == "model" && form == "variant_type" =>
-                        {
-                            Some(identity)
-                        }
-                        _ => None,
-                    };
+                    let original_identity = variant_type_identity(owner_path.as_slice());
                     let (source_declaration, declaration, member_key, case, ordinal, ordered) =
                         if let Some(original_identity) = original_identity {
                             let declarations = self

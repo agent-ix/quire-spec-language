@@ -3,7 +3,7 @@ id: SR-20261104231201
 title: "PR 2312 (batch T-S1) spec review: numeric, quantity and collection forms"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language PR 2312 diff only; FR-091, FR-093, FR-397, FR-495, TC-483, TC-1091, TC-1284, TC-1334, TC-1335"
+scope: "agent-ix/quire-spec-language PR 2312 diff only; FR-091, FR-093, FR-397, FR-495, TC-483, TC-1091, TC-1284, TC-1336, TC-1335"
 review_set: subset
 ---
 
@@ -14,7 +14,7 @@ Spec-only batch for QSL-1655/1656/1654/1454/1485/1488/1601/1602. Re-measured aga
 CONDITIONAL. FND-001 must be resolved in-PR, either with a carve-out and an OQ row or by aligning with FR-148. The low findings are optional polish.
 
 ## Scope
-- FR-091 mapping rows, "Integer power spelling", "Topology error fields", AC-71, AC-72 and OQ-15. FR-093 "Integer power", "One-occurrence collection forms", the lowering rows, AC-58 and AC-59. FR-397 "Evaluate once" edit, Meter bullet, AC-27 and AC-28. FR-495 negotiation bullets and AC-7. TC-483 steps 16-17, TC-1091 steps 22-23, TC-1284 step 6, TC-1334 and TC-1335.
+- FR-091 mapping rows, "Integer power spelling", "Topology error fields", AC-71, AC-72 and OQ-15. FR-093 "Integer power", "One-occurrence collection forms", the lowering rows, AC-58 and AC-59. FR-397 "Evaluate once" edit, Meter bullet, AC-27 and AC-28. FR-495 negotiation bullets and AC-7. TC-483 steps 16-17, TC-1091 steps 22-23, TC-1284 step 6, TC-1336 and TC-1335.
 - QSpec cross-checks: FR-142, FR-145, FR-147, FR-148, FR-322 (prose and AC-117), the checked-package-v2 schema, the shared grammar, TC-187, TC-190 and TC-193.
 - `quire validate` (0.36.2) passes on all 9 files. The one warning is FR-397:156 `ears:non-singular`, which is also on main. `git diff --check` is clean.
 
@@ -31,7 +31,7 @@ CONDITIONAL. FND-001 must be resolved in-PR, either with a carve-out and an OQ r
 
 ## Author questions
 
-- Q1, the `e ^ n` spelling (FR-091-OQ-15): acceptable as a lead default. It is recorded with a veto and a reopen condition, uses no new token, and is consistent across FR-091, FR-093, TC-1334 and the shared grammar (`signed-int`, `postfix`/`unary`). It extends a QSpec-owned grammar, so raise it with QSpec as a production request. It does not block this spec PR.
+- Q1, the `e ^ n` spelling (FR-091-OQ-15): acceptable as a lead default. It is recorded with a veto and a reopen condition, uses no new token, and is consistent across FR-091, FR-093, TC-1336 and the shared grammar (`signed-int`, `postfix`/`unary`). It extends a QSpec-owned grammar, so raise it with QSpec as a production request. It does not block this spec PR.
 - Q2, the `quire.op.quantity.pow` operand contract: needs a QSpec ruling. Confirmed: FR-322 prose says nothing about it, and only the v2 schema enum names the identity. The QSL choice `[ref(e), ref(n)]` is a sound lead default. FR-093-AC-58's "IR's v2 reader admits each package" cannot be met until QSpec and IR state the contract, so file the QSpec ask now.
 - Q3, IEEE negate in `quire_exact`: not a ruling. It is a dependency on the quire-exact lane, which must add an IEEE negate operation. File a blocking ticket for QSL-1655's negation path.
 - FND-001 (the ordering charge vs FR-148) needs a QSpec or user ruling, or explicit lead-default recording in-PR.

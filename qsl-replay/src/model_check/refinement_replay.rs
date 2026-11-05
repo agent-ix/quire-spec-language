@@ -84,6 +84,13 @@ pub enum ProtocolAssumptionReplaySettlement {
     Stopped(ReachedLimit),
 }
 
+/// The contract-operation key a protocol-expansion `undecided_locus` names,
+/// `None` for a locus of any other expansion.
+#[ix_trace_rs::string_edge]
+fn protocol_undetermined_locus(locus: &str) -> Option<&str> {
+    locus.strip_prefix("ProtocolContractUndetermined:")
+}
+
 /// FR-145: replay one typed FR-148 assumption-relation witness over the same
 /// admitted concrete and protocol systems used by the checker. The replay
 /// re-executes both sides of every paired edge, checks the recorded loop
@@ -299,25 +306,24 @@ pub fn replay_protocol_assumption_witness(
                     disagreement(Category::Success),
                 ));
             };
-            let reproduced =
-                if let Some(expected) = locus.strip_prefix("ProtocolContractUndetermined:") {
-                    let expansion = protocol.successors(&candidate).map_err(|_| {
-                        fault("assumption-replay-protocol-undetermined-expansion-succeeds")
-                    })?;
-                    expansion.findings.iter().any(|finding| {
+            let reproduced = if let Some(expected) = protocol_undetermined_locus(locus) {
+                let expansion = protocol.successors(&candidate).map_err(|_| {
+                    fault("assumption-replay-protocol-undetermined-expansion-succeeds")
+                })?;
+                expansion.findings.iter().any(|finding| {
                     matches!(finding, ModelFinding::ContractUndetermined { transition, clause, .. }
                         if expected == format!("{clause}:{}", transition.operation()))
                 })
-                } else {
-                    let expansion = systems
-                        .concrete
-                        .successors(&concrete)
-                        .map_err(|_| fault("assumption-replay-undetermined-expansion-succeeds"))?;
-                    expansion.findings.iter().any(|finding| {
-                        matches!(finding, ModelFinding::ContractUndetermined { clause, .. }
+            } else {
+                let expansion = systems
+                    .concrete
+                    .successors(&concrete)
+                    .map_err(|_| fault("assumption-replay-undetermined-expansion-succeeds"))?;
+                expansion.findings.iter().any(|finding| {
+                    matches!(finding, ModelFinding::ContractUndetermined { clause, .. }
                         if locus == format!("ContractUndetermined:{clause}"))
-                    })
-                };
+                })
+            };
             if reproduced {
                 Ok(ProtocolAssumptionReplaySettlement::Reproduced)
             } else {

@@ -563,7 +563,7 @@ fn round_scaled(value: &Rational, bits: u32, upward: bool) -> Result<Dyadic, FhE
     })
 }
 
-fn rational_fits(value: &Rational, max_bits: u64) -> bool {
+pub(super) fn rational_fits(value: &Rational, max_bits: u64) -> bool {
     value.numerator().as_big().bits() <= max_bits && value.denominator().as_big().bits() <= max_bits
 }
 

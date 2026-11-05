@@ -1709,7 +1709,7 @@ fn polynomial(
             Ok(Some(result))
         }
         Term::Symbol(_) | Term::Binder { .. } | Term::Other(_) => Ok(None),
-        Term::App(name, args) if &**name == "+" && !args.is_empty() => {
+        Term::App(name, args) if Operator::of(name) == Some(Operator::Add) && !args.is_empty() => {
             let mut result = Polynomial::new();
             for arg in args {
                 let Some(part) = polynomial(arg, query, charge)? else {
@@ -1719,7 +1719,7 @@ fn polynomial(
             }
             Ok(Some(result))
         }
-        Term::App(name, args) if &**name == "-" && !args.is_empty() => {
+        Term::App(name, args) if Operator::of(name) == Some(Operator::Sub) && !args.is_empty() => {
             let Some(first) = args.first() else {
                 return Ok(None);
             };
@@ -1740,7 +1740,7 @@ fn polynomial(
             }
             Ok(Some(result))
         }
-        Term::App(name, args) if &**name == "*" && !args.is_empty() => {
+        Term::App(name, args) if Operator::of(name) == Some(Operator::Mul) && !args.is_empty() => {
             let mut result = Polynomial::from([(Vec::new(), Integer::one())]);
             for arg in args {
                 let Some(part) = polynomial(arg, query, charge)? else {
@@ -1845,7 +1845,10 @@ fn polynomial_rule(
         if left_op != right_op {
             let reversed = matches!(
                 (left_op, right_op),
-                ("<", ">") | ("<=", ">=") | (">", "<") | (">=", "<=")
+                (AtomRelation::Lt, AtomRelation::Gt)
+                    | (AtomRelation::Le, AtomRelation::Ge)
+                    | (AtomRelation::Gt, AtomRelation::Lt)
+                    | (AtomRelation::Ge, AtomRelation::Le)
             );
             return Ok(
                 if reversed && relation_scale(&left, &right, charge)? == Some(false) {
@@ -1857,7 +1860,7 @@ fn polynomial_rule(
         }
         return Ok(match relation_scale(&left, &right, charge)? {
             Some(true) => Check::Holds,
-            Some(false) if left_op == "=" => Check::Undecided,
+            Some(false) if left_op == AtomRelation::Eq => Check::Undecided,
             Some(false) => Check::Fails,
             None => Check::Fails,
         });
@@ -1869,29 +1872,95 @@ fn polynomial_rule(
     })
 }
 
+/// The Alethe arithmetic and Boolean function symbols the checker evaluates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Operator {
+    Add,
+    Sub,
+    Mul,
+    And,
+    Or,
+}
+
+impl Operator {
+    /// The operator an application's function symbol names, `None` for any
+    /// other symbol.
+    #[ix_trace_rs::string_edge]
+    fn of(symbol: &str) -> Option<Self> {
+        match symbol {
+            "+" => Some(Self::Add),
+            "-" => Some(Self::Sub),
+            "*" => Some(Self::Mul),
+            "and" => Some(Self::And),
+            "or" => Some(Self::Or),
+            _ => None,
+        }
+    }
+}
+
+/// The relation symbol of an Alethe arithmetic atom.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AtomRelation {
+    Eq,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl AtomRelation {
+    /// The relation a symbol names, `None` for any other symbol.
+    #[ix_trace_rs::string_edge]
+    fn of(symbol: &str) -> Option<Self> {
+        match symbol {
+            "=" => Some(Self::Eq),
+            "<" => Some(Self::Lt),
+            "<=" => Some(Self::Le),
+            ">" => Some(Self::Gt),
+            ">=" => Some(Self::Ge),
+            _ => None,
+        }
+    }
+}
+
+/// The rewrite rules a `rare_rewrite` step names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RareRewrite {
+    BoolDoubleNotElim,
+    ArithElimLt,
+    ArithElimLeq,
+    ArithLeqNorm,
+    EqRefl,
+}
+
+impl RareRewrite {
+    /// The rule a double-quoted rule name names, `None` for any other text.
+    #[ix_trace_rs::string_edge]
+    fn from_quoted(text: &str) -> Option<Self> {
+        match text.strip_prefix('"')?.strip_suffix('"')? {
+            "bool-double-not-elim" => Some(Self::BoolDoubleNotElim),
+            "arith-elim-lt" => Some(Self::ArithElimLt),
+            "arith-elim-leq" => Some(Self::ArithElimLeq),
+            "arith-leq-norm" => Some(Self::ArithLeqNorm),
+            "eq-refl" => Some(Self::EqRefl),
+            _ => None,
+        }
+    }
+}
+
 fn relation_polynomial(
     relations: Option<&PolyRelations>,
     query: &Query,
     charge: &mut impl FnMut(u64) -> bool,
-) -> Result<Option<(&'static str, Polynomial, &'static str, Polynomial)>, ()> {
+) -> Result<Option<(AtomRelation, Polynomial, AtomRelation, Polynomial)>, ()> {
     let Some(relations) = relations else {
         return Ok(None);
     };
-    let left_op = match &*relations.left_operator {
-        "=" => "=",
-        "<" => "<",
-        "<=" => "<=",
-        ">" => ">",
-        ">=" => ">=",
-        _ => return Ok(None),
+    let Some(left_op) = AtomRelation::of(&relations.left_operator) else {
+        return Ok(None);
     };
-    let right_op = match &*relations.right_operator {
-        "=" => "=",
-        "<" => "<",
-        "<=" => "<=",
-        ">" => ">",
-        ">=" => ">=",
-        _ => return Ok(None),
+    let Some(right_op) = AtomRelation::of(&relations.right_operator) else {
+        return Ok(None);
     };
     let (ll, lr) = &relations.left;
     let (rl, rr) = &relations.right;
@@ -1909,7 +1978,7 @@ fn relation_polynomial(
         return Ok(None);
     };
     add_polynomial(&mut third, fourth, &Integer::from(-1_i64), charge)?;
-    if left_op == "=" {
+    if left_op == AtomRelation::Eq {
         first = canonical_equality_difference(first, charge)?;
         third = canonical_equality_difference(third, charge)?;
     }
@@ -2047,11 +2116,12 @@ fn evaluate_integer(term: &Term) -> Option<Integer> {
         Term::Number { value, real: false } if value.is_integer() => {
             Some(value.numerator().clone())
         }
-        Term::App(name, args) if &**name == "+" && !args.is_empty() => args
-            .iter()
-            .map(|arg| evaluate_integer(arg))
-            .try_fold(Integer::zero(), |sum, value| Some(sum.add(&value?))),
-        Term::App(name, args) if &**name == "-" && !args.is_empty() => {
+        Term::App(name, args) if Operator::of(name) == Some(Operator::Add) && !args.is_empty() => {
+            args.iter()
+                .map(|arg| evaluate_integer(arg))
+                .try_fold(Integer::zero(), |sum, value| Some(sum.add(&value?)))
+        }
+        Term::App(name, args) if Operator::of(name) == Some(Operator::Sub) && !args.is_empty() => {
             let [first, rest @ ..] = args.as_slice() else {
                 return None;
             };
@@ -2064,10 +2134,11 @@ fn evaluate_integer(term: &Term) -> Option<Integer> {
             }
             Some(value)
         }
-        Term::App(name, args) if &**name == "*" && !args.is_empty() => args
-            .iter()
-            .map(|arg| evaluate_integer(arg))
-            .try_fold(Integer::one(), |product, value| Some(product.mul(&value?))),
+        Term::App(name, args) if Operator::of(name) == Some(Operator::Mul) && !args.is_empty() => {
+            args.iter()
+                .map(|arg| evaluate_integer(arg))
+                .try_fold(Integer::one(), |product, value| Some(product.mul(&value?)))
+        }
         _ => None,
     }
 }
@@ -2076,8 +2147,10 @@ fn evaluate_integer(term: &Term) -> Option<Integer> {
 /// junctions, with their neutral and absorbing constants.
 fn aci_normal(term: &Term) -> Option<Rc<Term>> {
     match term {
-        Term::App(name, args) if &**name == "and" || &**name == "or" => {
-            let conjunction = &**name == "and";
+        Term::App(name, args)
+            if matches!(Operator::of(name), Some(Operator::And | Operator::Or)) =>
+        {
+            let conjunction = Operator::of(name) == Some(Operator::And);
             let mut pending: Vec<Rc<Term>> = args
                 .iter()
                 .map(|arg| aci_normal(arg))
@@ -2263,33 +2336,19 @@ impl Step {
         let Term::Symbol(name) = &**name else {
             return Ok(Check::Undecided);
         };
-        let Some(name) = name
-            .strip_prefix('"')
-            .and_then(|name| name.strip_suffix('"'))
-        else {
+        let Some(name) = RareRewrite::from_quoted(name) else {
             return Ok(Check::Undecided);
         };
-        let known = matches!(
-            name,
-            "bool-double-not-elim"
-                | "arith-elim-lt"
-                | "arith-elim-leq"
-                | "arith-leq-norm"
-                | "eq-refl"
-        );
-        if !known {
-            return Ok(Check::Undecided);
-        }
-        if name == "arith-leq-norm"
+        if name == RareRewrite::ArithLeqNorm
             && matches!(arguments, [_, bound] if !matches!(bound.as_ref(), Term::Number { real: false, .. }))
         {
             return Ok(Check::Undecided);
         }
         self.charge_work(charge)?;
         let arithmetic_arguments = match (name, arguments) {
-            ("arith-elim-lt", [value, bound])
-            | ("arith-elim-leq", [bound, value])
-            | ("arith-leq-norm", [value, bound]) => Some([value, bound]),
+            (RareRewrite::ArithElimLt, [value, bound])
+            | (RareRewrite::ArithElimLeq, [bound, value])
+            | (RareRewrite::ArithLeqNorm, [value, bound]) => Some([value, bound]),
             _ => None,
         };
         if arithmetic_arguments.is_some_and(|arguments| {
@@ -2299,28 +2358,28 @@ impl Step {
         }) {
             return Ok(Check::Undecided);
         }
-        if name == "bool-double-not-elim"
+        if name == RareRewrite::BoolDoubleNotElim
             && matches!(arguments, [operand] if sort_of(operand, query, &mut Vec::new()) != Ok(Sort::Bool))
         {
             return Ok(Check::Undecided);
         }
         let holds = match (name, arguments) {
-            ("bool-double-not-elim", [operand]) => {
+            (RareRewrite::BoolDoubleNotElim, [operand]) => {
                 let double_not = Term::not(&Term::not(operand));
                 self.equality_is(operand, &double_not)
             }
-            ("arith-elim-lt", [value, bound]) => {
+            (RareRewrite::ArithElimLt, [value, bound]) => {
                 let less = Term::app("<", vec![value.clone(), bound.clone()]);
                 let greater_equal = Term::app(">=", vec![value.clone(), bound.clone()]);
                 let negated = Term::not(&greater_equal);
                 self.equality_is(&less, &negated)
             }
-            ("arith-elim-leq", [bound, value]) => {
+            (RareRewrite::ArithElimLeq, [bound, value]) => {
                 let less_equal = Term::app("<=", vec![bound.clone(), value.clone()]);
                 let greater_equal = Term::app(">=", vec![value.clone(), bound.clone()]);
                 self.equality_is(&less_equal, &greater_equal)
             }
-            ("arith-leq-norm", [value, bound]) => {
+            (RareRewrite::ArithLeqNorm, [value, bound]) => {
                 let incremented = Term::app(
                     "+",
                     vec![
@@ -2336,7 +2395,7 @@ impl Step {
                 let less_equal = Term::app("<=", vec![value.clone(), bound.clone()]);
                 self.equality_is(&less_equal, &negated)
             }
-            ("eq-refl", [term]) => {
+            (RareRewrite::EqRefl, [term]) => {
                 let reflexive = Term::app("=", vec![term.clone(), term.clone()]);
                 let truth = Rc::new(Term::Symbol("true".into()));
                 self.equality_is(&reflexive, &truth)

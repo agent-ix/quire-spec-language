@@ -300,7 +300,9 @@ fn applications_at<'g>(
 ) -> HashMap<&'g Location, Vec<(NodeKey, quire_exact::Origin)>> {
     let mut at: HashMap<&'g Location, Vec<(NodeKey, quire_exact::Origin)>> = HashMap::new();
     for (key, origin, location) in graph.occurrences() {
-        if origin.role().as_str() != "expression" || !origins.contains(&location.origin) {
+        if !crate::wire_form::is_expression_role(origin.role().as_str())
+            || !origins.contains(&location.origin)
+        {
             continue;
         }
         let application = graph

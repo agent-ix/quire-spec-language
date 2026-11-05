@@ -507,7 +507,7 @@ fn clause_clock_selections(
 
 /// Join each named clock selection to the checked temporal clause or
 /// compensation template of that name.
-fn clock_selections(
+pub(crate) fn clock_selections(
     checked: &CheckedUnit,
     selections: &[ClockSelection],
 ) -> Result<Vec<qsl_package::TemporalClockSelection>, Error> {

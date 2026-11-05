@@ -1242,6 +1242,64 @@ mod quantities {
         assert_ne!(keys[2], node_key(METRE));
     }
 
+    /// FR-093-AC-58 (TC-1336; QSpec TC-187 QP-01): `a ^ 2` lowers to one
+    /// binary `quire.op.quantity.pow` node over `[ref(a), ref(N)]`, `N` the
+    /// `Integer` literal `2`, typed by the one compound-unit node `a * a` is
+    /// typed by, with no law, mode, member or leaves.
+    #[trace("FR-093-AC-58", "TC-1336", "QSpec-TC-187")]
+    #[test]
+    fn an_integer_power_lowers_to_one_binary_pow_node_typed_like_the_product() {
+        let checked = check_declarations(PackageDeclarations {
+            types: TypeEnvironment::default().with_units(units()),
+            aliases: vec![("Length".to_owned(), quantity(METRE))],
+            functions: vec![function(
+                "q",
+                &[("a", named("Length"))],
+                builtin(BuiltinType::Boolean),
+                Expression::binary(
+                    BinaryOperator::Equal,
+                    Expression::power(name("a"), Integer::from(2_i64)),
+                    Expression::binary(BinaryOperator::Multiply, name("a"), name("a")),
+                ),
+            )],
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        });
+        let graph = checked.semantic_graph();
+        let power = applications(graph, "quire.op.quantity.pow");
+        assert_eq!(power.len(), 1);
+        let product = applications(graph, "quire.op.quantity.mul");
+        assert_eq!(product.len(), 1);
+        assert_eq!(power[0].semantic_type(), product[0].semantic_type());
+        assert_eq!(
+            graph
+                .node(power[0].semantic_type().expect("a typed power"))
+                .expect("the result unit node")
+                .semantic_form(),
+            "compound_unit"
+        );
+        let body = preimage(power[0]);
+        assert_eq!(body["body"]["operator"], "binary");
+        let operation = &body["body"]["operation"];
+        assert_eq!(operation["member"], Json::Null);
+        assert_eq!(operation["mode"], Json::Null);
+        assert_eq!(operation["laws"], json!([]));
+        assert_eq!(operation["leaves"], json!([]));
+        let arguments = body["body"]["arguments"].as_array().expect("arguments");
+        assert_eq!(arguments.len(), 2, "{body}");
+        // `[ref(a), ref(N)]`: the parameter, then the `Integer` literal `2`.
+        let digest = |argument: &Json| argument["target"]["digest"].to_string();
+        assert!(digest(&arguments[0]).contains("parameter"), "{body}");
+        let exponent = digest(&arguments[1]);
+        assert!(
+            exponent.contains("\\\"literal\\\"") && exponent.contains("\\\"2\\\""),
+            "{exponent}"
+        );
+    }
+
     /// FR-093 `ConvertScalar` quantity row (FR-093-AC-3): converting a
     /// metre quantity to kilometres is `quire.op.quantity.convert`, with
     /// member `type_argument` of the kilometre unit's node and mode

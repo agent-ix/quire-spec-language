@@ -88,29 +88,9 @@ impl Window {
                     lower: interval.lower(),
                 },
             },
-            // A finite-window clause measures ticks of its clock unit, both
-            // ends inclusive (FR-501): integral closed bounds are offsets.
-            Some(CheckedInterval::Timed(interval)) => {
-                if !interval.lower_closed()
-                    || !interval.upper_closed()
-                    || !interval.lower().is_integer()
-                    || !interval.upper().is_integer()
-                {
-                    return Err(fault("step-interval-has-offsets"));
-                }
-                Self::Closed {
-                    lower: interval
-                        .lower()
-                        .numerator()
-                        .to_u64()
-                        .ok_or_else(|| fault("interval-bound-in-u64"))?,
-                    upper: interval
-                        .upper()
-                        .numerator()
-                        .to_u64()
-                        .ok_or_else(|| fault("interval-bound-in-u64"))?,
-                }
-            }
+            // A finite-window clause holds only tick intervals, as step
+            // intervals (FR-326): a timed interval has no offsets.
+            Some(CheckedInterval::Timed(_)) => return Err(fault("step-interval-has-offsets")),
         })
     }
 }
@@ -373,5 +353,35 @@ impl Plan {
             }
         }
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use qsl_foundation::bound::{TemporalInterval, TemporalUpper, TimedInterval};
+    use qsl_semantics::check::CheckedInterval;
+    use quire_exact::{Integer, Rational};
+
+    use super::Window;
+
+    /// FR-326: a step interval has offsets, an open one reads from its lower
+    /// bound, and a timed interval, closed and integral or not, has none: it
+    /// is an internal fault, never read as ticks.
+    #[test]
+    fn a_timed_interval_has_no_offsets() {
+        let whole = |value: i64| Rational::from_integer(Integer::from(value));
+        let steps = |upper| {
+            CheckedInterval::Steps(TemporalInterval::new(1, upper).expect("an ordered interval"))
+        };
+        assert_eq!(
+            Window::of(Some(&steps(TemporalUpper::Finite(5)))).expect("offsets"),
+            Window::Closed { lower: 1, upper: 5 }
+        );
+        assert_eq!(
+            Window::of(Some(&steps(TemporalUpper::Open))).expect("offsets"),
+            Window::From { lower: 1 }
+        );
+        let timed = TimedInterval::new(whole(1), true, whole(5), true).expect("a valid interval");
+        assert!(Window::of(Some(&CheckedInterval::Timed(timed))).is_err());
     }
 }
