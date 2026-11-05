@@ -67,16 +67,18 @@ enum Stop {
     Undefined(UndefinedEvaluation),
     /// A `holds` condition, an `on each` guard or a capture was refused at
     /// this position (FR-327 "Refused condition").
-    ConditionRefused(TemporalPosition),
+    /// The flag is whether the refused condition is a `holds` atom, not an
+    /// `on each` guard or a capture.
+    ConditionRefused(TemporalPosition, bool),
     Refused(TemporalRefusal),
 }
 
 impl Stop {
     /// The stop of a letter that failed at `at`: its refusal is the refused
     /// condition at `at`.
-    fn at(stop: LetterStop, at: TemporalPosition) -> Self {
+    fn at(stop: LetterStop, at: TemporalPosition, atom: bool) -> Self {
         match stop {
-            LetterStop::Refused => Self::ConditionRefused(at),
+            LetterStop::Refused => Self::ConditionRefused(at, atom),
             other => other.into(),
         }
     }
@@ -275,20 +277,21 @@ fn run_window<'a, L: TemporalLetters>(
         // In evaluation order: an atom undefined at an earlier position, or
         // an activation that ended false before the refused condition, is
         // returned instead of it.
-        Err(Stop::ConditionRefused(at)) => {
+        Err(Stop::ConditionRefused(at, atom)) => {
             let refused = usize::try_from(at.index()).unwrap_or(usize::MAX);
-            // An atom undefined at the refused position or before it
-            // precedes the refusal. Every undefined atom stored at the
-            // refused position has a lower clause-node order than a refused
-            // atom there, because `read_atom` reads a position's atoms in
-            // that order and stops at the first refusal; a refused guard or
-            // capture is read before the activation's atoms, so no undefined
-            // atom of its own closure exists, and one left by an earlier
-            // activation that ended false is overridden by that activation.
+            // An atom undefined before the refused position precedes the
+            // refusal. At the refused position itself, an undefined atom
+            // precedes a refused atom: `read_atom` reads a position's atoms in
+            // ascending clause-node order in one call that stops at the first
+            // refusal, so every undefined atom stored at that position is of
+            // a lower order than the refused one. It does not precede a
+            // refused guard or capture, which is read before that position's
+            // atoms: an undefined atom stored there was read for another
+            // activation's closure.
             if let Some(((position, _), cause)) = run
                 .undefined
                 .iter()
-                .find(|((position, _), _)| *position <= refused)
+                .find(|((position, _), _)| *position < refused || (atom && *position == refused))
             {
                 Tail::Undefined(UndefinedEvaluation {
                     at: position_of(*position).map_err(TemporalRefusal::Fault)?,
@@ -406,7 +409,7 @@ impl<L: TemporalLetters> Run<'_, L> {
                 match self
                     .letters
                     .activation(at, &mut *self.meter)
-                    .map_err(|stop| Stop::at(stop, at))?
+                    .map_err(|stop| Stop::at(stop, at, false))?
                 {
                     AtomReading::True => {}
                     AtomReading::False => continue,
@@ -424,7 +427,7 @@ impl<L: TemporalLetters> Run<'_, L> {
                 if let CaptureReading::Undefined { cause, .. } = self
                     .letters
                     .captures(at, &mut *self.meter)
-                    .map_err(|stop| Stop::at(stop, at))?
+                    .map_err(|stop| Stop::at(stop, at, false))?
                 {
                     return Err(Stop::Undefined(UndefinedEvaluation { at, cause }));
                 }
@@ -533,7 +536,7 @@ impl<L: TemporalLetters> Run<'_, L> {
         match self
             .letters
             .valuation(id, at, &mut *self.meter)
-            .map_err(|stop| Stop::at(stop, at))?
+            .map_err(|stop| Stop::at(stop, at, true))?
         {
             Valuation::True => {
                 self.cells.insert((member, class), Cell::True);
