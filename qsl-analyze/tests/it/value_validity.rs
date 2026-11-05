@@ -358,7 +358,7 @@ fn marked_scalar_key(package: &CheckedPackage, model: &Json) -> OccurrenceKey {
 
 // ---- compiling and running ----
 
-fn package_of(declarations: &str) -> CheckedPackage {
+pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}\n"
@@ -469,7 +469,12 @@ fn run_in(
         max_cases: ask.max_cases.and_then(NonZeroU64::new),
         reported: ask.reported,
     });
-    analyze_items(engines, vec![value_item(index(), request)], &guarded()).remove(0)
+    analyze_items(
+        engines,
+        vec![value_item(index(), package, key, request)],
+        &guarded(),
+    )
+    .remove(0)
 }
 
 fn run(
@@ -899,6 +904,8 @@ fn recursive_function_body_evaluations_consume_the_item_case_budget() {
         &Engines::qsl().unwrap(),
         vec![value_item(
             index(),
+            &package,
+            &key,
             Ok(ValueRequest {
                 target,
                 max_cases: NonZeroU64::new(5),
@@ -1013,6 +1020,8 @@ fn an_unsatisfiable_domain_is_inconclusive_with_the_value_check_vacuity_cause() 
         &Engines::qsl().unwrap(),
         vec![value_item(
             index(),
+            &package,
+            &key,
             Ok(ValueRequest {
                 target,
                 max_cases: None,
@@ -1112,7 +1121,11 @@ fn a_replay_confirms_the_violation_it_was_asked_about_and_no_other() {
 #[trace("QSpec-TC-972", "QSpec-FR-483-AC-5")]
 #[test]
 fn a_claim_that_selects_no_form_is_declined_without_a_check() {
-    let package = package_of("function f using v(x: Int[0, 3]): Int[0, 4] pure { x + 1 }");
+    let package = package_of(
+        "function f using v(x: Int[0, 3]): Int[0, 4] pure { x + 1 }\n\
+         function a using v(x: Int[0, 3]): Boolean pure { x >= 0 }\n\
+         function b using v(x: Int[0, 3]): Boolean pure { x >= 1 }",
+    );
     let none = OccurrenceKey::new(
         crate::fixture_ids::node_key([7]),
         Origin::new(Role::new("claim"), 0),
@@ -1129,7 +1142,16 @@ fn a_claim_that_selects_no_form_is_declined_without_a_check() {
             Err(Selection::NoForm)
         ));
     }
-    let record = run(&package, &none, "f", None);
+    // A node the package does not hold has no family, so FR-507 refuses it
+    // before the arm; the clause of `a` is a `value` claim that selects no
+    // form of the function `b`.
+    let clause_of_a =
+        OccurrenceKey::new(wire_of(&package, "a"), Origin::new(Role::new("claim"), 0));
+    assert!(matches!(
+        ValueTarget::select(&package, "b", &clause_of_a),
+        Err(Selection::NoForm)
+    ));
+    let record = run(&package, &clause_of_a, "b", None);
     let TerminalValue::Declined { cause, .. } = terminal(&record) else {
         panic!("declined, not {:?}", record.settlement)
     };
@@ -1235,7 +1257,7 @@ fn a_huge_domain_and_a_huge_budget_are_enumerated_lazily() {
     });
     let huge = analyze_items(
         &Engines::qsl().unwrap(),
-        vec![value_item(index(), request)],
+        vec![value_item(index(), &package, &breaks, request)],
         &cancel,
     )
     .remove(0);
@@ -1266,7 +1288,7 @@ fn a_cancelled_run_is_incomplete_cancelled_and_evaluates_nothing() {
     });
     let records = analyze_items(
         &Engines::qsl().unwrap(),
-        vec![value_item(index(), request)],
+        vec![value_item(index(), &package, &key, request)],
         &cancel,
     );
     assert!(matches!(
@@ -1304,6 +1326,8 @@ fn an_unbounded_integer_parameter_needs_a_bound_and_a_bound_makes_it_bounded() {
         &Engines::qsl().unwrap(),
         vec![value_item(
             index(),
+            &package,
+            &key,
             Ok(ValueRequest {
                 target,
                 max_cases: None,
@@ -1363,7 +1387,7 @@ fn the_production_registry_holds_the_arm_and_an_absent_provider_is_refused() {
     });
     let records = analyze_items(
         &Engines::default(),
-        vec![value_item(index(), request)],
+        vec![value_item(index(), &package, &key, request)],
         &Cancel::new(),
     );
     let Settlement::Disposed(disposed) = &records[0].settlement else {
@@ -1455,7 +1479,8 @@ fn negotiated_refusals_run_no_arm() {
             max_cases: None,
             reported: None,
         });
-        let item: AnalyzeItem<'_> = value_item(index(), request).disposed(disposition, None);
+        let item: AnalyzeItem<'_> =
+            value_item(index(), &package, &key, request).disposed(disposition, None);
         let records = analyze_items(&Engines::qsl().unwrap(), vec![item], &guarded());
         let Settlement::Disposed(disposed) = &records[0].settlement else {
             panic!()

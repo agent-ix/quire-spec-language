@@ -209,7 +209,4 @@ families".
   (quire-specification#608).
 - The node-to-family reader that AC-7, AC-8 and AC-11 require, which reads an
   item's family from the claim node's tag, `semantic_form` and occurrence role
-  through QSpec FR-290's table, is delivered by a code change. Until it lands,
-  each item adapter in `qsl-analyze` supplies its own family when it builds its
-  `AnalyzeItem`, no adapter yields an `operation-contract` item on
-  `relation-claim`, and those three criteria are not yet satisfied by the code.
+  through QSpec FR-290's table, is `qsl-analyze`'s `claim_family`.

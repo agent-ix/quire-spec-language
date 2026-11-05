@@ -30,6 +30,7 @@ use std::num::NonZeroU64;
 
 use qsl_eval::simulation::model::{ModelSimulationRequest, ModelSystem};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
 use qsl_replay::contract_check::{
@@ -37,13 +38,15 @@ use qsl_replay::contract_check::{
     ContractForm, ContractSelection, ContractTarget, ReproducedContractViolation,
 };
 use qsl_replay::{open_systems, Cancel, DeclineCode, ProofRefusalCause, SubjectRefusal};
+use qsl_route::request::ItemKind;
 use qsl_route::Mode;
-use qsl_semantics::check::{Capability, DeclarationFamily};
+use qsl_semantics::check::Capability;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{CancelCause, ScalarLimits};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 use crate::analyze::{AnalyzeItem, EngineReport, Refusal};
+use crate::claim_family::claim_family;
 
 /// What the arm found, before settlement.
 #[derive(Debug)]
@@ -274,19 +277,22 @@ fn incomplete_input() -> Refusal {
     )
 }
 
-/// The `operation-contract` item that runs `selection` on the arm: a claim
+/// The `operation-contract` item at `claim` of `package` that runs
+/// `selection` on the arm, in the family `claim`'s node is in (FR-507): a claim
 /// that selects no form is `declined` `invalid-input`; one whose package
 /// lacks a required node, or a bound item that reads an element with no
 /// abstraction binding, is `declined` `incomplete-input`; none of them runs
 /// a check (QSpec FR-483 "The check input", FR-485 "The oracle").
 pub fn contract_item<'a>(
     index: RequestIndex,
+    package: &CheckedPackage,
+    claim: &OccurrenceKey,
     selection: Result<ContractRequest<'a>, ContractSelection>,
 ) -> AnalyzeItem<'a> {
     AnalyzeItem::new(
         index,
         Capability::OperationContract,
-        Some(DeclarationFamily::StateModel),
+        claim_family(package, ItemKind::Formula, claim),
         Mode::Bounded,
         manifest::BACKEND_ID,
         move |cancel| {
