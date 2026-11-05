@@ -16,9 +16,9 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::value_check::{Selection, ValueTarget};
-use qsl_replay::{Cancel, InconclusiveCause, TerminalRecord, Value};
+use qsl_replay::{Cancel, Certification, InconclusiveCause, TerminalRecord, Value};
 use qsl_route::request::ItemKind;
-use qsl_route::Mode;
+use qsl_route::{Mode, ProviderOrigin};
 use qsl_semantics::check::Capability;
 use quire_semantic_value::catalog::InternalFault;
 
@@ -160,15 +160,28 @@ fn report(
     }
 }
 
+/// The certification of a provider's proof (QSpec FR-331, FR-354): a linked
+/// first-party provider is `uncertified`, a plugin process `trusted`.
+fn certification(origin: ProviderOrigin) -> Certification {
+    match origin {
+        ProviderOrigin::Linked => Certification::Uncertified,
+        ProviderOrigin::Process => Certification::Trusted,
+    }
+}
+
 /// Settle the arm's report as the item's FR-331 terminal record, with the
 /// counterexample a `refuted` item keeps.
 pub(crate) fn settle(
     report: ProviderReport,
     index: RequestIndex,
     backend: BackendId,
+    origin: ProviderOrigin,
 ) -> (TerminalRecord, Option<ValueCounterexample>) {
     match report {
-        ProviderReport::Proved => (TerminalRecord::proved_by_provider(index, backend), None),
+        ProviderReport::Proved => (
+            TerminalRecord::proved_by_provider(index, backend, certification(origin)),
+            None,
+        ),
         ProviderReport::Unknown => (
             TerminalRecord::inconclusive(
                 index,

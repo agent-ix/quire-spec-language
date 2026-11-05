@@ -12,7 +12,7 @@ relationships:
 
 Verify the external provider arm of `analyze` with a deterministic test provider that returns a fixed verdict. The test provider is a test double: it exercises QSL's arm and is not a cvc5 or Z3 run.
 
-Scope: FR-281-AC-14 to FR-281-AC-17.
+Scope: FR-281-AC-14 to FR-281-AC-19.
 
 ## Test Procedure
 
@@ -21,6 +21,8 @@ Scope: FR-281-AC-14 to FR-281-AC-17.
 3. Run the unguarded item with the provider reporting `refuted` at `a` = 7, `b` = 2; at a one-element assignment; at a Boolean and an integer; then reporting `unknown`.
 4. Run the unguarded item settled `Supported` on the value-validity arm, with the provider registered and with no provider registered, and count the provider's calls.
 5. Build an engine from the test provider with a descriptor advertising only (`value-validity`, `bounded`), then with (`value-validity`, `unbounded`).
+6. Run the AC-14 `proved` item under a descriptor of origin `Linked`, then `Process`.
+7. Run the AC-14 `refuted` item under a descriptor publishing `max_cases` 1; with the run cancelled before `analyze`; and with a provider that cancels the run during its check.
 
 Tag the tests `#[trace("TC-1337", "<AC id>")]`. A test double does not carry QSpec FR-147-AC-7, FR-147-AC-8 or TC-266.
 
@@ -30,3 +32,5 @@ Tag the tests `#[trace("TC-1337", "<AC id>")]`. A test double does not carry QSp
 - Step 3: the first four items settle `inconclusive` with cause `replay_parity` and carry no counterexample; the last settles `inconclusive` with cause `solver-inconclusive`.
 - Step 4: both runs return the same record, `unsupported` with `unsupported_projection`/`unbounded-extent` naming the value-validity arm, and the provider is called zero times.
 - Step 5: the bounded-only descriptor is refused naming its `BackendId`, and the provider is never called; the unbounded descriptor yields an engine.
+- Step 6: `uncertified` for `Linked`, `trusted` for `Process`, basis `inductive` at depth 0 in both.
+- Step 7: `incomplete` with the `ValueCheckMaxCases` limit; `incomplete` `cancelled` with zero provider calls; `incomplete` `cancelled`, never `refuted`.

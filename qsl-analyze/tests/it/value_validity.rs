@@ -1748,21 +1748,36 @@ impl ExternalProvider for Fake {
 const SMT: &str = "qsl.test-smt";
 
 fn smt_descriptor(mode: Mode) -> qsl_route::BackendDescriptor {
-    qsl_route::descriptor_from_manifest(
-        qsl_route::Candidate::new(qsl_foundation::BackendId::new(SMT)),
-        qsl_route::ProviderOrigin::Linked,
-        [(
-            Some(Capability::ValueValidity.to_wire()),
-            Some(mode.to_wire()),
-        )],
-        qsl_route::ManifestMembers {
-            domains: Some(&[qsl_foundation::bound::DomainKind::Integer.to_wire()]),
-            fairness_kinds: None,
-            evidence_kinds: None,
-            memory_models: None,
-            reductions: None,
-        },
-    )
+    smt_descriptor_of(mode, qsl_route::ProviderOrigin::Linked, None)
+}
+
+fn smt_descriptor_of(
+    mode: Mode,
+    origin: qsl_route::ProviderOrigin,
+    max_cases: Option<u64>,
+) -> qsl_route::BackendDescriptor {
+    let members = qsl_route::ManifestMembers {
+        domains: Some(&[qsl_foundation::bound::DomainKind::Integer.to_wire()]),
+        fairness_kinds: None,
+        evidence_kinds: None,
+        memory_models: None,
+        reductions: None,
+    };
+    let advertised = [(
+        Some(Capability::ValueValidity.to_wire()),
+        Some(mode.to_wire()),
+    )];
+    let candidate = qsl_route::Candidate::new(qsl_foundation::BackendId::new(SMT));
+    match max_cases {
+        None => qsl_route::descriptor_from_manifest(candidate, origin, advertised, members),
+        Some(count) => qsl_route::descriptor_from_manifest_with_max_cases(
+            candidate,
+            origin,
+            advertised,
+            members,
+            qsl_route::MaxCasesMember::Count(count),
+        ),
+    }
     .expect("a well-formed descriptor")
 }
 
@@ -1779,10 +1794,17 @@ fn fake(verdict: ProviderVerdict) -> (Fake, std::sync::Arc<std::sync::atomic::At
 fn engines_with_provider(
     verdict: ProviderVerdict,
 ) -> (Engines, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    engines_under(verdict, smt_descriptor(Mode::Unbounded))
+}
+
+fn engines_under(
+    verdict: ProviderVerdict,
+    descriptor: qsl_route::BackendDescriptor,
+) -> (Engines, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
     let (provider, calls) = fake(verdict);
     let mut engines = Engines::qsl().unwrap();
     engines
-        .with(Engine::external(smt_descriptor(Mode::Unbounded), Box::new(provider)).unwrap())
+        .with(Engine::external(descriptor, Box::new(provider)).unwrap())
         .unwrap();
     (engines, calls)
 }
@@ -1926,4 +1948,117 @@ fn a_provider_is_refused_under_a_bounded_only_descriptor() {
     let (provider, _) = fake(ProviderVerdict::Proved);
     let engine = Engine::external(smt_descriptor(Mode::Unbounded), Box::new(provider)).unwrap();
     assert_eq!(engine.id().as_str(), SMT);
+}
+
+/// FR-281-AC-18: a first-party provider's proof is `uncertified`, a plugin's
+/// `trusted` (QSpec FR-331, FR-354).
+#[trace("FR-281-AC-18", "TC-1337")]
+#[test]
+fn a_provider_proof_is_uncertified_first_party_and_trusted_as_a_plugin() {
+    use qsl_route::ProviderOrigin;
+    let package = package_of(GUARDED);
+    let key = only_scalar_key(&package, "q");
+    for (origin, certification) in [
+        (ProviderOrigin::Linked, Certification::Uncertified),
+        (ProviderOrigin::Process, Certification::Trusted),
+    ] {
+        let (engines, _) = engines_under(
+            ProviderVerdict::Proved,
+            smt_descriptor_of(Mode::Unbounded, origin, None),
+        );
+        let record = provider_run(&engines, &package, &key);
+        assert_eq!(
+            terminal(&record),
+            &TerminalValue::Proved {
+                basis: ProofBasis::Inductive { depth: 0 },
+                certification,
+            },
+            "{origin:?}"
+        );
+    }
+}
+
+/// A provider that cancels the run during its check, then reports `verdict`.
+#[derive(Debug)]
+struct Cancelling(ProviderVerdict);
+
+impl ExternalProvider for Cancelling {
+    fn check(&self, _request: &ProviderRequest<'_, '_>, cancel: &Cancel) -> ProviderVerdict {
+        cancel.cancel(quire_exact::CancelCause::Deadline);
+        self.0.clone()
+    }
+}
+
+/// FR-281-AC-19: a replay that exhausts the case budget, and a cancelled
+/// run, settle `incomplete`, never `refuted`.
+#[trace("FR-281-AC-19", "TC-1337")]
+#[test]
+fn a_provider_item_stopped_by_the_case_budget_or_cancellation_is_incomplete() {
+    let package = package_of(UNGUARDED);
+    let key = only_scalar_key(&package, "q");
+    let at = vec![integer(1_i128 << 100), integer(0)];
+    let refuted = ProviderVerdict::Refuted {
+        counterexample: at.clone(),
+    };
+
+    let (engines, _) = engines_under(
+        refuted.clone(),
+        smt_descriptor_of(Mode::Unbounded, qsl_route::ProviderOrigin::Linked, Some(1)),
+    );
+    let record = provider_run(&engines, &package, &key);
+    assert!(
+        matches!(
+            terminal(&record),
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::ValueCheckMaxCases,
+                ..
+            })
+        ),
+        "{:?}",
+        record.settlement
+    );
+    assert!(record.value_check.is_none());
+
+    let (engines, calls) = engines_with_provider(refuted.clone());
+    let cancel = Cancel::new();
+    cancel.cancel(quire_exact::CancelCause::Deadline);
+    let target = ValueTarget::select(&package, "q", &key);
+    let record = analyze_items(
+        &engines,
+        vec![provider_item(
+            index(),
+            &package,
+            &key,
+            &qsl_foundation::BackendId::new(SMT),
+            target,
+        )],
+        &cancel,
+    )
+    .remove(0);
+    assert!(matches!(
+        terminal(&record),
+        TerminalValue::Incomplete(IncompleteCause::Cancelled { .. })
+    ));
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    let mut engines = Engines::qsl().unwrap();
+    engines
+        .with(
+            Engine::external(
+                smt_descriptor(Mode::Unbounded),
+                Box::new(Cancelling(refuted)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let record = provider_run(&engines, &package, &key);
+    assert!(
+        matches!(
+            terminal(&record),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled { .. })
+        ),
+        "{:?}",
+        record.settlement
+    );
+    assert!(record.value_check.is_none());
 }

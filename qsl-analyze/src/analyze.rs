@@ -1074,7 +1074,7 @@ fn settle(
         }
         EngineReport::Provider(report) => {
             let (settled_record, counterexample) =
-                external_provider::settle(*report, index, backend);
+                external_provider::settle(*report, index, backend, engine.descriptor.origin());
             let mut settled = record(terminal(settled_record), None);
             settled.value_check = counterexample.map(Box::new);
             settled

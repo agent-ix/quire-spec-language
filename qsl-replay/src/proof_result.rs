@@ -1497,15 +1497,20 @@ impl TerminalRecord {
     /// FR-281 "External provider arm": a `proved` record for a registered
     /// external provider's `proved` verdict over a `value-validity` item.
     /// The proof basis is `inductive` at depth 0 (a value-validity item has
-    /// no transition) and the certification `uncertified`: no core checker
-    /// covers the provider's proof (QSpec FR-331 "Certification").
-    pub fn proved_by_provider(request_index: RequestIndex, backend: BackendId) -> Self {
+    /// no transition). `certification` is `uncertified` for a first-party
+    /// provider and `trusted` for a plugin's (QSpec FR-331 "Certification",
+    /// FR-354); no core checker covers either proof.
+    pub fn proved_by_provider(
+        request_index: RequestIndex,
+        backend: BackendId,
+        certification: Certification,
+    ) -> Self {
         Self::with_backend(
             request_index,
             backend,
             TerminalValue::Proved {
                 basis: ProofBasis::Inductive { depth: 0 },
-                certification: Certification::Uncertified,
+                certification,
             },
         )
     }

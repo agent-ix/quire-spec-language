@@ -152,9 +152,11 @@ depends on no CG crate for it (FR-280).
   unbounded settles as it would with no provider registered.
 - The verdict is the provider's; QSL adds no verdict route of its own. A
   `proved` verdict settles the item `proved`, proof basis `inductive` at depth
-  0, certification `uncertified`, naming the provider: no core checker covers
-  the provider's proof. An `unknown` verdict settles the item `inconclusive`
-  with cause `solver-inconclusive`. A `refuted` verdict is a candidate
+  0, naming the provider, with certification `uncertified` for a provider
+  registered as first-party (descriptor origin `Linked`) and `trusted` for a
+  plugin's (origin `Process`), as QSpec FR-331 and FR-354 give each; no core
+  checker covers either proof. An `unknown` verdict settles the item
+  `inconclusive` with cause `solver-inconclusive`. A `refuted` verdict is a candidate
   violation, not a result: QSL replays the counterexample through the native
   evaluator at the assignment's own integers, never narrowed to any `Int[..]`
   (the replay of "A counterexample counts only after S6a replay reproduces
@@ -162,7 +164,13 @@ depends on no CG crate for it (FR-280).
   the replay reproduces the violation; a counterexample that is not an
   assignment of the claim's parameters, or that the replay does not reproduce,
   settles the item `inconclusive` with cause `replay_parity`, and a
-  counterexample that exhausts the case budget in replay settles `incomplete`.
+  counterexample that exhausts the case budget in replay settles `incomplete`
+  with the case-budget limit cause. Cancellation ends a provider item as it
+  ends any engine's: a cancelled run settles the item `incomplete` with the
+  cancellation cause, and a cancellation that fires during the provider's
+  check or the replay stops the replay the same way. A provider that panics is
+  a caller defect, handled as a panic in any other engine is: `analyze` does
+  not catch it.
 
 ### Engine refusals
 
@@ -357,8 +365,10 @@ holding the `AdmissionFailure`, and no record.
 | FR-281-AC-13 | With `engines` holding `qsl.test-a` advertising only (`value-validity`, `bounded`), a `finite-replay` item on a state clause's claim settles `invalid-request` with `invalid_capability`/`inapplicable-kind`, payload `family` `state-model`, and no engine runs, in each case: handed `Supported(qsl.test-c)`, which `engines` does not hold (not `unknown-backend`); handed `Supported(qsl.test-a)`, which does not advertise its (kind, mode) (not `inconsistent-candidates`); and handed `InvalidRequest` with `invalid_capability`/`ambiguous-backend` (not that disposition). A `temporal-satisfaction` item on a temporal clause's claim, whose kind applies, handed the same three settles `unknown-backend` naming `qsl.test-c`, `inconsistent-candidates` naming `qsl.test-a`, and `ambiguous-backend` respectively. | Test (TC-762, TC-1302) |
 | FR-281-AC-14 | With a test provider registered under `qsl.test-smt` advertising (`value-validity`, `unbounded`) beside the value-validity arm, the item `function q using v(a: Integer, b: Integer): Integer pure { a div b }` settled `Supported(qsl.test-smt)` whose provider reports `refuted` with the counterexample `a` = 2^100, `b` = 0 settles `refuted`, category violation, naming `qsl.test-smt`, and the record carries that counterexample at those integers; the replay of the counterexample reproduces the `division-by-zero` violation at the `div`. The item `if b != 0 then a div b else 0` over the same parameters, whose provider reports `proved`, settles `proved` with basis `inductive` at depth 0, certification `uncertified`, naming `qsl.test-smt`. | Test (TC-1337) |
 | FR-281-AC-15 | With the AC-14 provider reporting `refuted` with `a` = 7, `b` = 2 (an assignment at which the claim holds), with `b` = 0 and a missing second operand, or with a Boolean in place of an `Integer`, the item settles `inconclusive` with cause `replay_parity` and no counterexample, never `refuted`. With the provider reporting `unknown` the item settles `inconclusive` with cause `solver-inconclusive`. | Test (TC-1337) |
-| FR-281-AC-16 | With the AC-14 provider registered beside the value-validity arm, the arm's item over the AC-14 claim settled `Supported(value-checker)` settles as it does with no provider registered: `unsupported` with `unsupported_projection`/`unbounded-extent`, naming `value-checker`, and the provider is called for neither item; the same record results with no provider registered. | Test (TC-1337) |
+| FR-281-AC-16 | With the AC-14 provider registered beside the value-validity arm, the arm's item over the AC-14 claim settled `Supported(value-checker)` settles as it does with no provider registered: `unsupported` with `unsupported_projection`/`unbounded-extent`, naming `value-checker`, and the provider is not called for it; the same record results with no provider registered. | Test (TC-1337) |
 | FR-281-AC-17 | Building an engine from a provider with a descriptor advertising only (`value-validity`, `bounded`) is refused naming that descriptor's `BackendId`, and with one advertising (`value-validity`, `unbounded`) succeeds; the refused provider is never called. | Test (TC-1337) |
+| FR-281-AC-18 | With the AC-14 `proved` provider registered under a descriptor of origin `Linked` the record's certification is `uncertified`; under an otherwise identical descriptor of origin `Process` it is `trusted`; basis `inductive` at depth 0 in both. | Test (TC-1337) |
+| FR-281-AC-19 | With the AC-14 `refuted` provider whose descriptor publishes `max_cases` 1, the item settles `incomplete` with the `ValueCheckMaxCases` limit cause and no counterexample. With the run's `Cancel` cancelled before `analyze`, the provider item settles `incomplete` with `cancelled` and the provider is not called; with a provider that cancels the run during its check and reports the AC-14 counterexample, the item settles `incomplete` with `cancelled`, never `refuted`. | Test (TC-1337) |
 
 ## Dependencies
 
