@@ -390,7 +390,7 @@ impl Lowering<'_> {
                 crate::check::temporal_clause::CheckedProtocolTarget::CompensationTemplate {
                     index,
                 } => FairnessTarget::CompensationTemplate {
-                    node: members.compensations.get(*index).cloned().ok_or_else(|| {
+                    node: members.compensations.get(index).cloned().ok_or_else(|| {
                         stage_fault(&location, "compensation-fairness-node-emitted")
                     })?,
                 },

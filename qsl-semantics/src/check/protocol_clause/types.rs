@@ -29,8 +29,10 @@ pub struct CheckedProtocolNodeKeys {
     pub channels: std::collections::BTreeMap<String, quire_exact::NodeKey>,
     /// Role nodes, by declared role name.
     pub roles: std::collections::BTreeMap<String, quire_exact::NodeKey>,
-    /// Compensation nodes, by declaration order.
-    pub compensations: Vec<quire_exact::NodeKey>,
+    /// Compensation nodes, by the checked template's index in the protocol's
+    /// compensation obligations: the declared identity, never a position in
+    /// a differently ordered list.
+    pub compensations: std::collections::BTreeMap<usize, quire_exact::NodeKey>,
     /// The terminal obligation node, when the protocol declares one.
     pub terminal: Option<quire_exact::NodeKey>,
     /// Parameter identities emitted for this protocol, including nested
@@ -81,7 +83,13 @@ impl DebugWith for CheckedProtocolNodeKeys {
                     .map(|(key, value)| (key, NodeKeyDebug(value, table)))
                     .collect::<Vec<_>>(),
             )
-            .field("compensations", &NodeList(compensations.iter(), table))
+            .field(
+                "compensations",
+                &compensations
+                    .iter()
+                    .map(|(key, value)| (key, NodeKeyDebug(value, table)))
+                    .collect::<Vec<_>>(),
+            )
             .field(
                 "terminal",
                 &terminal.as_ref().map(|key| NodeKeyDebug(key, table)),

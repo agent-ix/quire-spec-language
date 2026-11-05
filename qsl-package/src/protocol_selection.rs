@@ -127,12 +127,14 @@ fn identify<'a>(
         {
             return Ok((protocol, Node::Channel(name)));
         }
-        if let Some(index) = keys
+        // The keys map is keyed by the checked template's own index, so the
+        // node's template is read from its identity, not from a position.
+        if let Some((index, _)) = keys
             .compensations
             .iter()
-            .position(|candidate| *candidate == key)
+            .find(|(_, candidate)| **candidate == key)
         {
-            return Ok((protocol, Node::Compensation(index)));
+            return Ok((protocol, Node::Compensation(*index)));
         }
         if keys.terminal == Some(key.clone()) {
             return Ok((protocol, Node::Terminal));

@@ -549,7 +549,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let saved = match package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0].clone(),
+                node: keys.compensations[&0].clone(),
                 member: "registration_captures".to_owned(),
                 index: Some(0),
             },
@@ -581,7 +581,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let trigger = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0].clone(),
+                node: keys.compensations[&0].clone(),
                 member: "trigger.guard".to_owned(),
                 index: None,
             },
@@ -617,7 +617,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let activation = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0].clone(),
+                node: keys.compensations[&0].clone(),
                 member: "activation_captures".to_owned(),
                 index: Some(0),
             },
@@ -647,7 +647,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let retry = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0].clone(),
+                node: keys.compensations[&0].clone(),
                 member: "retry.relation".to_owned(),
                 index: None,
             },
@@ -691,7 +691,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let recovery = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0].clone(),
+                node: keys.compensations[&0].clone(),
                 member: "recovery.predicate".to_owned(),
                 index: None,
             },
