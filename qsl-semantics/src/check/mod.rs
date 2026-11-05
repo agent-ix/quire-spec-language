@@ -365,7 +365,7 @@ pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
     ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
-    TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
+    TimedDeclaration, TopologyFault, TopologyRetained, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{

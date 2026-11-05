@@ -728,9 +728,23 @@ fn assembly_error_source<'a>(
         AssemblyCause::QuantityCycle { edges } => edges
             .first()
             .map(|(declaration, _)| vec![declaration.as_str()]),
-        AssemblyCause::UnitGraphTopology { declarations, .. } => {
-            Some(declarations.iter().map(String::as_str).collect())
-        }
+        AssemblyCause::UnitGraphTopology { retained, .. } => Some(
+            retained
+                .iter()
+                .filter_map(|value| match value {
+                    qsl_semantics::check::TopologyRetained::Unit { name, .. }
+                    | qsl_semantics::check::TopologyRetained::Dimension { name, .. }
+                    | qsl_semantics::check::TopologyRetained::TargetName(name) => {
+                        Some(name.as_str())
+                    }
+                    qsl_semantics::check::TopologyRetained::Scale(_)
+                    | qsl_semantics::check::TopologyRetained::Offset(_) => None,
+                    qsl_semantics::check::TopologyRetained::Edge { from, .. } => {
+                        Some(from.as_str())
+                    }
+                })
+                .collect(),
+        ),
         _ => None,
     }?;
 
