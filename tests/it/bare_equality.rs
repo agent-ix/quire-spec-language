@@ -747,4 +747,60 @@ fn the_retry_relation_evaluates_from_the_handoff_files_alone() {
         &completed(without_rows.evaluate_protocol_slot(&guard, &given, &mut meter)),
         true
     ));
+
+/// FR-390-AC-67 (through the real walk): the slot walk of `Refund`'s
+/// `recovery.predicate` reaches a `Node` refusal (the `recovered.total`
+/// operand of its `=`, whose record type the identity rows cannot project)
+/// before the `=` application that finds no equality decision. The walk
+/// reports the equality-witness refusal at the `Package` locus, whatever
+/// the walk reached first: Missing for no rows, Foreign for another
+/// package's, Unknown for rows that join nothing; with the rows the `Node`
+/// refusal is what remains.
+#[trace("FR-390-AC-67", "FR-533-AC-15", "TC-1331", "TC-1333")]
+#[test]
+fn a_package_refusal_found_after_a_node_refusal_in_the_walk_is_reported_first() {
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let package = read(&request, &files["checked-package.json"]);
+    let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
+    let full = ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
+    let refund = node_key(&package, "Refunds", "Refund");
+    let slot = select(
+        &package,
+        &full,
+        Some(&rows),
+        refund,
+        "recovery.predicate",
+        None,
+    )
+    .expect("selects with the whole supply");
+    let mut stripped: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
+    stripped["fields"] = Value::Array(Vec::new());
+    let identities =
+        ReadIdentityRows::read(&serde_json::to_vec(&stripped).expect("bytes"), &package)
+            .expect("fewer rows still read");
+    let project = |equality: Option<&ReadEqualityRows>| {
+        BarePackage::new(&package)
+            .with_supply(BareSupply {
+                identities: &identities,
+                equality,
+            })
+            .project_protocol_slot(&slot)
+            .map(|_| ())
+            .map_err(|failure| match failure {
+                BareSelectionFailure::Equality(refusal) => format!("equality {refusal:?}"),
+                BareSelectionFailure::Unsupported(view) => {
+                    format!("node {}", view.reason().name())
+                }
+                other => format!("{other:?}"),
+            })
+    };
+    assert_eq!(
+        project(Some(&rows)),
+        Err("node missing-type-representation".to_owned())
+    );
+    assert_eq!(project(None), Err("equality Missing".to_owned()));
+    let other = request_other_package();
+    assert_eq!(project(Some(&other)), Err("equality Foreign".to_owned()));
+    let empty = ReadEqualityRows::read(&empty_file(), &package).expect("empty rows read");
+    assert_eq!(project(Some(&empty)), Err("equality Unknown".to_owned()));
 }
