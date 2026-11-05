@@ -64,22 +64,62 @@ pub use items::{
     ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 
+use crate::external_provider::{ExternalProvider, NotUnbounded, ProviderReport};
 use crate::statistical::StatisticalRequest;
 use crate::zone_check::ZoneCheckRecord;
-use crate::{contract_check, model_check, statistical, value_check, zone_check};
+use crate::{contract_check, external_provider, model_check, statistical, value_check, zone_check};
 
 /// One layer-A engine as `analyze` runs it: its backend identity and the
 /// descriptor FR-288 converts its manifest into.
 #[derive(Clone, Debug)]
 pub struct Engine {
     descriptor: BackendDescriptor,
+    /// The external provider an [`Engine::external`] engine decides items
+    /// with; absent for the in-process engines.
+    provider: Option<std::sync::Arc<dyn ExternalProvider>>,
 }
 
 impl Engine {
     /// The engine a descriptor describes: only the crate's own adapters name
     /// one.
     pub(crate) fn new(descriptor: BackendDescriptor) -> Self {
-        Self { descriptor }
+        Self {
+            descriptor,
+            provider: None,
+        }
+    }
+
+    /// An engine that decides `value-validity` items with `provider`, a
+    /// registered decision procedure outside QSL (FR-281 "External provider
+    /// arm"). Its verdicts settle only as that section states: a `refuted`
+    /// verdict after its counterexample replays.
+    ///
+    /// # Errors
+    ///
+    /// [`NotUnbounded`] when `descriptor` does not advertise `value-validity`
+    /// in the `unbounded` mode; no engine is made and `provider` is never
+    /// called.
+    pub fn external(
+        descriptor: BackendDescriptor,
+        provider: Box<dyn ExternalProvider>,
+    ) -> Result<Self, NotUnbounded> {
+        let unbounded = descriptor
+            .advertises()
+            .any(|pair| pair == (Capability::ValueValidity, Mode::Unbounded));
+        if !unbounded {
+            return Err(NotUnbounded {
+                backend: descriptor.id().clone(),
+            });
+        }
+        Ok(Self {
+            descriptor,
+            provider: Some(provider.into()),
+        })
+    }
+
+    /// The external provider this engine decides items with, if any.
+    pub(crate) fn provider(&self) -> Option<&dyn ExternalProvider> {
+        self.provider.as_deref()
     }
 
     /// A probe engine `id` that advertises every capability kind in bounded
@@ -492,6 +532,8 @@ pub(crate) enum EngineReport {
     Value(Box<value_check::ValueReport>),
     /// The operation-contract arm's finding.
     Contract(Box<contract_check::ContractReport>),
+    /// An external provider's verdict, its counterexample replayed.
+    Provider(Box<ProviderReport>),
     /// EN-6's record, settled by FR-235's map, or a timed refinement's by
     /// FR-144's rows over EN-6's causes.
     Zone(Box<ZoneCheckRecord>),
@@ -1026,6 +1068,13 @@ fn settle(
         ),
         EngineReport::Value(report) => {
             let (settled_record, counterexample) = value_check::settle(*report, index, backend);
+            let mut settled = record(terminal(settled_record), None);
+            settled.value_check = counterexample.map(Box::new);
+            settled
+        }
+        EngineReport::Provider(report) => {
+            let (settled_record, counterexample) =
+                external_provider::settle(*report, index, backend, engine.descriptor.origin());
             let mut settled = record(terminal(settled_record), None);
             settled.value_check = counterexample.map(Box::new);
             settled
