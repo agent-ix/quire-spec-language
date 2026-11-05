@@ -4,9 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::temporal::{
-    AggregateAtom, AtomReading, CaptureReading, DEFAULT_MAX_WINDOW_VALUES, LetterStop,
-    TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace, UndefinedCause, WindowRead,
-    WindowSource, WindowTrace,
+    AggregateAtom, AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome,
+    TemporalPosition, TemporalTrace, UndefinedCause, WindowRead, WindowSource, WindowTrace,
+    DEFAULT_MAX_WINDOW_VALUES,
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source_map::NativeLanguage;
@@ -21,8 +21,8 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::declaration::CompositeShape;
 
 use super::{
-    ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunSource, ClauseRunUsage,
-    CompiledRun, TemporalUndefinedCause, front_end,
+    front_end, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunSource,
+    ClauseRunUsage, CompiledRun, TemporalUndefinedCause,
 };
 /// Inputs for the non-model trace-subject clause route.
 pub struct TraceSubjectClauseRequest {
@@ -261,14 +261,11 @@ fn decisive_aggregate(
         .keys()
         .filter_map(|(_, position)| (*position >= start && *position <= end).then_some(*position))
         .collect();
-    for position in positions {
-        match descend_false_formula(node, formula_node, position, atom_values) {
-            FormulaDecision::True => {}
-            FormulaDecision::False(Some(decisive)) => return Some(decisive),
-            FormulaDecision::False(None) | FormulaDecision::Unknown => return None,
-        }
-    }
-    None
+    first_decisive_aggregate(
+        positions
+            .into_iter()
+            .map(|position| descend_false_formula(node, formula_node, position, atom_values)),
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -276,6 +273,19 @@ enum FormulaDecision {
     True,
     False(Option<(usize, u64)>),
     Unknown,
+}
+
+fn first_decisive_aggregate(
+    decisions: impl IntoIterator<Item = FormulaDecision>,
+) -> Option<(usize, u64)> {
+    for decision in decisions {
+        match decision {
+            FormulaDecision::True | FormulaDecision::Unknown => {}
+            FormulaDecision::False(Some(aggregate)) => return Some(aggregate),
+            FormulaDecision::False(None) => return None,
+        }
+    }
+    None
 }
 
 fn combine_and(left: FormulaDecision, right: FormulaDecision) -> FormulaDecision {
@@ -375,6 +385,18 @@ mod decisive_aggregate_tests {
             ),
             FormulaDecision::False(None),
             "the left false holds operand is selected before the right aggregate"
+        );
+    }
+
+    #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
+    #[test]
+    fn an_unknown_position_does_not_hide_a_later_false_aggregate() {
+        assert_eq!(
+            first_decisive_aggregate([
+                FormulaDecision::Unknown,
+                FormulaDecision::False(Some((1, 1))),
+            ]),
+            Some((1, 1))
         );
     }
 }
@@ -856,6 +878,9 @@ mod tests {
          temporal ComposedNested using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,2] (((count where holds(c.level > 9) over past[0,0] min_count 0 >= 1) and holds(c.level > 0)) and holds(c.level > 0))\n\
          }\n\
+         temporal UnknownThenFalse using t over (c: Counter) clock \"model-steps\" on each (q: Counter) {\n\
+           always[0,2] (count where holds(c.level = 0) over past[1,1] min_count 1 >= 2)\n\
+         }\n\
          temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,0] holds(c.level > 0)\n\
          }\n";
@@ -1082,6 +1107,22 @@ mod tests {
             Some(0),
             "always[0,2] descends to the least eligible false aggregate position"
         );
+
+        let unknown_then_false = run_trace_subject_clause(request(
+            "UnknownThenFalse",
+            counter.clone(),
+            each_samples.clone(),
+        ))
+        .expect("valid formula with insufficient then false aggregate reports");
+        assert!(matches!(
+            &unknown_then_false.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 1 })
+        ));
+        let decisive = unknown_then_false
+            .decisive
+            .expect("the later false aggregate decides after earlier insufficient data");
+        assert!(decisive.aggregate.is_some());
+        assert_eq!(decisive.position, Some(1));
 
         let composed_aggregate_false = run_trace_subject_clause(request(
             "BoundedFalse",
