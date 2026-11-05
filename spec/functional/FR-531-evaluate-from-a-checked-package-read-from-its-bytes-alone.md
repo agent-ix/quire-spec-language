@@ -207,7 +207,7 @@ from the bare package, or is listed here with the reason it needs source:
 | --- | --- |
 | `EvidencePackage::from_emission`, `from_read` | unchanged; they hold a source and keep the cross-check of FR-515 |
 | `EvidencePackage::from_package` | new; FR-532 |
-| `with_progress_capacity`, `rows`, `temporal_subject`, `profile`, `clock`, `clock_of`, `subject`, `evaluate_temporal_evidence` | available; the rows are the package's own |
+| `with_progress_capacity`, `with_max_window_values`, `rows`, `temporal_subject`, `profile`, `clock`, `clock_of`, `subject`, `evaluate_temporal_evidence` | available; the rows are the package's own |
 | the construction refusals of `PackageMismatch` | `AmbiguousName` applies; `ClauseRow`, `ProfileSelections` and `Bindings` need an `Emission` and have no bare route (FR-532) |
 | `evaluate_protocol_slot` and `evaluate_selected_protocol_slot` | available; FR-533 |
 | `AdmittedEvaluationView::admit_protocol_observation` | available; FR-533 |
