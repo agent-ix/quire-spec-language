@@ -784,8 +784,8 @@ mod tests {
     fn model_subject() -> (String, PackageInput, ValueType) {
         let document = serde_json::to_vec(&model_fixture::document(&[], &[]))
             .expect("model fixture serializes");
-        let packages =
-            PackageInput::package_input([document.as_slice()]).expect("model fixture is admitted");
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
+            .expect("model fixture is admitted");
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
@@ -990,7 +990,7 @@ mod tests {
             dependencies: super::super::super::DependencyInput::default(),
             name: "ModelPlain".to_owned(),
             subject,
-            samples: vec![Value::Null],
+            samples: vec![Value::Boolean(true)],
             limits: super::super::super::SpineLimits::default(),
             accounting: crate::spine::default_accounting(crate::spine::DEFAULT_WORK_UNITS),
         };
