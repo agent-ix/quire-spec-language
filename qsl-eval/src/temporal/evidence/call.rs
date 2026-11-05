@@ -1073,7 +1073,12 @@ impl TemporalLetters for EvidenceLetters<'_> {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<Valuation, LetterStop> {
-        self.valuation_with_window_visits(atom, position, meter, &mut || Ok(()))
+        let mut visit = |meter: &mut Meter| {
+            meter
+                .charge(Charge::new(ChargePoint::TemporalVisit))
+                .map_err(LetterStop::Incomplete)
+        };
+        self.valuation_with_window_visits(atom, position, meter, &mut visit)
     }
 
     fn valuation_with_window_visits(
@@ -1081,7 +1086,7 @@ impl TemporalLetters for EvidenceLetters<'_> {
         atom: FormulaNodeId,
         position: TemporalPosition,
         meter: &mut Meter,
-        visit: &mut dyn FnMut() -> Result<(), LetterStop>,
+        visit: &mut dyn FnMut(&mut Meter) -> Result<(), LetterStop>,
     ) -> Result<Valuation, LetterStop> {
         let atom_index = self
             .formula

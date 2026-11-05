@@ -127,7 +127,7 @@ pub trait TemporalLetters {
         atom: FormulaNodeId,
         position: TemporalPosition,
         meter: &mut Meter,
-        _visit: &mut dyn FnMut() -> Result<(), LetterStop>,
+        _visit: &mut dyn FnMut(&mut Meter) -> Result<(), LetterStop>,
     ) -> Result<Valuation, LetterStop> {
         self.valuation(atom, position, meter)
     }

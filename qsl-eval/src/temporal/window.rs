@@ -460,7 +460,7 @@ enum Reading {
 
 struct AggregateEvaluationCallbacks<'a> {
     retained: &'a mut dyn FnMut(usize),
-    visit: &'a mut dyn FnMut() -> Result<(), LetterStop>,
+    visit: &'a mut dyn FnMut(&mut Meter) -> Result<(), LetterStop>,
     charge_meter: bool,
 }
 
@@ -699,7 +699,7 @@ impl AggregateAtom {
         max_window_values: u64,
         position: TemporalPosition,
         meter: &mut Meter,
-        visit: &mut dyn FnMut() -> Result<(), LetterStop>,
+        visit: &mut dyn FnMut(&mut Meter) -> Result<(), LetterStop>,
     ) -> Result<Valuation, LetterStop> {
         let mut retained = |_| {};
         let mut callbacks = AggregateEvaluationCallbacks {
@@ -736,7 +736,7 @@ impl AggregateAtom {
         meter: &mut Meter,
         retained: &mut dyn FnMut(usize),
     ) -> Result<Valuation, LetterStop> {
-        let mut visit = || Ok(());
+        let mut visit = |_meter: &mut Meter| Ok(());
         let mut callbacks = AggregateEvaluationCallbacks {
             retained,
             visit: &mut visit,
@@ -765,7 +765,7 @@ impl AggregateAtom {
         let mut gathered = Gathered::new(&self.term.kind);
         let mut count = 0_u64;
         for index in window {
-            (callbacks.visit)()?;
+            (callbacks.visit)(meter)?;
             if callbacks.charge_meter {
                 meter.charge(Charge::new(ChargePoint::TemporalVisit))?;
             }

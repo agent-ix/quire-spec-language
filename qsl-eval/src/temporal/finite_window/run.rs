@@ -544,7 +544,7 @@ impl<L: TemporalLetters> Run<'_, L> {
             visits,
             ..
         } = self;
-        let mut aggregate_visit = || {
+        let mut aggregate_visit = |meter: &mut Meter| {
             if let Some(units) = units.as_deref_mut() {
                 units
                     .aggregate_window_visit(meter)
