@@ -333,12 +333,37 @@ fn first_false_conjunct_aggregate(
                 (Some(true), Some(Some(false))) => {
                     return Some((aggregate.index(), *position));
                 }
+                (None, Some(Some(false))) => {
+                    return Some((aggregate.index(), *position));
+                }
                 (Some(true), Some(Some(true))) => {}
                 _ => return None,
             }
         }
     }
     None
+}
+
+#[cfg(test)]
+mod decisive_aggregate_tests {
+    use super::*;
+
+    #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
+    #[test]
+    fn a_false_aggregate_decides_after_an_undefined_holds_conjunct() {
+        let holds = FormulaNodeId::from_arena_index(0);
+        let aggregate = FormulaNodeId::from_arena_index(1);
+        let atom_values = BTreeMap::from([
+            ((holds.index(), 0), None),
+            ((aggregate.index(), 0), Some(false)),
+        ]);
+
+        assert_eq!(
+            first_false_conjunct_aggregate(&atom_values, aggregate, holds, false, 0, 2),
+            Some((aggregate.index(), 0)),
+            "false is decisive for `undefined and false`"
+        );
+    }
 }
 
 fn temporal_clock_selections(
@@ -1053,7 +1078,7 @@ mod tests {
         assert_eq!(decisive.position, Some(0));
 
         let composed_holds_false =
-            run_trace_subject_clause(request("ComposedHeld", counter, each_samples))
+            run_trace_subject_clause(request("ComposedHeld", counter.clone(), each_samples))
                 .expect("valid composed formula reports");
         assert!(matches!(
             composed_holds_false.disposition,
