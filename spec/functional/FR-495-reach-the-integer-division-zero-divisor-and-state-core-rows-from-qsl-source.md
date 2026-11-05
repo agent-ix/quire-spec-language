@@ -132,7 +132,12 @@ the finite-backend negotiation of an integer division over unbounded operands
   through the QSL complete-V1 executor (QSpec FR-197, FR-098). The row is not
   a QSL evaluation and is not admission-only: until a cvc5 provider is in a
   consumer's lock the row is pending with that missing provider as its owner
-  work, and no synthetic verdict counts. QSL adds no verdict route of its own.
+  work, and no synthetic verdict counts. QSL adds no verdict route of its own. A provider registered through
+  FR-281's external provider arm owns its verdict, and QSL settles `refuted`
+  only after the counterexample replays to the violation at the original
+  integers, so a provider's `refuted` is never assumed. A test double
+  provider exercises that arm and does not make the DIV-14 row `proved` or
+  `refuted`: only the registered cvc5 provider does.
 
 - **Finite-backend negotiation (QSpec FR-147-AC-3).** An integer `div`,
   `rem` or `mod` application is a `value-validity` claim site (FR-062), and

@@ -129,6 +129,41 @@ it to run test engines. SMT, Kani and plugin providers are not `Engine`s:
 they reach a claim through the driver's `prove`, never through `analyze`
 (ADR-029 OP-2).
 
+### External provider arm
+
+`analyze` also runs a registered external provider: a decision procedure
+outside QSL, such as an SMT solver, that decides a `value-validity` item over
+unbounded mathematical `Integer` operands, which no in-process engine decides
+(FR-495). The provider is a QSL-owned interface. It receives the item's claim
+target and reports one of three verdicts, `proved`, `refuted` with a
+counterexample assignment, or `unknown`; its types are QSL's own, so QSL
+depends on no CG crate for it (FR-280).
+
+- An engine is built from a provider only with a descriptor that advertises
+  `value-validity` in the `unbounded` mode. A descriptor that does not is
+  refused, naming its `BackendId`, and no engine is made. The provider is
+  registered beside the in-process engines under its own `BackendId`; it never
+  replaces one, and `Engines::with` keeps FR-281's one-engine-per-`BackendId`
+  rule for it.
+- A provider item runs on its provider only when it reaches `analyze` settled
+  `Supported` on that provider's `BackendId`. Registering a provider does not
+  change any other item: an item settled for a bounded engine runs on that
+  engine and no other, and a bounded engine's item whose operands are
+  unbounded settles as it would with no provider registered.
+- The verdict is the provider's; QSL adds no verdict route of its own. A
+  `proved` verdict settles the item `proved`, proof basis `inductive` at depth
+  0, certification `uncertified`, naming the provider: no core checker covers
+  the provider's proof. An `unknown` verdict settles the item `inconclusive`
+  with cause `solver-inconclusive`. A `refuted` verdict is a candidate
+  violation, not a result: QSL replays the counterexample through the native
+  evaluator at the assignment's own integers, never narrowed to any `Int[..]`
+  (the replay of "A counterexample counts only after S6a replay reproduces
+  it"). The item settles `refuted` and carries the counterexample only when
+  the replay reproduces the violation; a counterexample that is not an
+  assignment of the claim's parameters, or that the replay does not reproduce,
+  settles the item `inconclusive` with cause `replay_parity`, and a
+  counterexample that exhausts the case budget in replay settles `incomplete`.
+
 ### Engine refusals
 
 An engine's settlement map (FR-127 for EN-1, FR-192 for EN-4, FR-203 for
@@ -320,12 +355,17 @@ holding the `AdmissionFailure`, and no record.
 | FR-281-AC-11 | With test engines that each refuse a `Supported` item, `analyze` settles: an `Admission` refusal `declined` with cause `invalid-input` and its diagnostic, and an incomplete admission `declined` with `incomplete-input`; a `RequiresBound` refusal `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names the item's kind, the engine's `BackendId` and the modes its manifest advertises for that kind; a `Symmetry` refusal `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; a `NotStatistical` refusal `invalid-request` with `invalid_capability`/`not-statistical` and no result; a refusal carrying `unsupported_construct`/`not-yet-implemented` `unsupported` with that diagnostic; and a refusal carrying `invalid_runtime_input`/`wrong-value-kind` `failed` with that diagnostic. Each record names its engine. One request holding the refused-admission case and the five cases after it returns those six records in `request_index` order; the incomplete admission is a seventh case, run as a request of its own because a test engine reports one admission outcome per run, and returns one `declined`, `incomplete-input` record. Over a model one of whose operations `modifies` a field of type `Integer` (an unbounded FR-120 root), an EN-1 item over `Engines::qsl()` settled `Supported` on EN-1 settles `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`, EN-1's one advertised mode. | Test (TC-763) |
 | FR-281-AC-12 | The `analyze` operation measures a finite `AnalyzeLimits.deadline_ms` from entry and applies it to the whole request; when it expires, `analyze` settles each open item `incomplete` with cause `cancelled{source: deadline}` and preserves records already settled. If caller cancellation ends the run first, open items carry `cancelled{source: requested}`; if an engine or accounting limit stops an item first, `analyze` keeps that item's typed limit result. A binding admission failure still returns `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs. | Test (TC-763) |
 | FR-281-AC-13 | With `engines` holding `qsl.test-a` advertising only (`value-validity`, `bounded`), a `finite-replay` item on a state clause's claim settles `invalid-request` with `invalid_capability`/`inapplicable-kind`, payload `family` `state-model`, and no engine runs, in each case: handed `Supported(qsl.test-c)`, which `engines` does not hold (not `unknown-backend`); handed `Supported(qsl.test-a)`, which does not advertise its (kind, mode) (not `inconsistent-candidates`); and handed `InvalidRequest` with `invalid_capability`/`ambiguous-backend` (not that disposition). A `temporal-satisfaction` item on a temporal clause's claim, whose kind applies, handed the same three settles `unknown-backend` naming `qsl.test-c`, `inconsistent-candidates` naming `qsl.test-a`, and `ambiguous-backend` respectively. | Test (TC-762, TC-1302) |
+| FR-281-AC-14 | With a test provider registered under `qsl.test-smt` advertising (`value-validity`, `unbounded`) beside the value-validity arm, the item `function q using v(a: Integer, b: Integer): Integer pure { a div b }` settled `Supported(qsl.test-smt)` whose provider reports `refuted` with the counterexample `a` = 2^100, `b` = 0 settles `refuted`, category violation, naming `qsl.test-smt`, and the record carries that counterexample at those integers; the replay of the counterexample reproduces the `division-by-zero` violation at the `div`. The item `if b != 0 then a div b else 0` over the same parameters, whose provider reports `proved`, settles `proved` with basis `inductive` at depth 0, certification `uncertified`, naming `qsl.test-smt`. | Test (TC-1337) |
+| FR-281-AC-15 | With the AC-14 provider reporting `refuted` with `a` = 7, `b` = 2 (an assignment at which the claim holds), with `b` = 0 and a missing second operand, or with a Boolean in place of an `Integer`, the item settles `inconclusive` with cause `replay_parity` and no counterexample, never `refuted`. With the provider reporting `unknown` the item settles `inconclusive` with cause `solver-inconclusive`. | Test (TC-1337) |
+| FR-281-AC-16 | With the AC-14 provider registered beside the value-validity arm, the arm's item over the AC-14 claim settled `Supported(value-checker)` settles as it does with no provider registered: `unsupported` with `unsupported_projection`/`unbounded-extent`, naming `value-checker`, and the provider is called for neither item; the same record results with no provider registered. | Test (TC-1337) |
+| FR-281-AC-17 | Building an engine from a provider with a descriptor advertising only (`value-validity`, `bounded`) is refused naming that descriptor's `BackendId`, and with one advertising (`value-validity`, `unbounded`) succeeds; the refused provider is never called. | Test (TC-1337) |
 
 ## Dependencies
 
 - ADR-029 OP-2, CB-3: the operation and layer A.
 - ADR-013 O-16, O-24: categories and terminal records.
 - ADR-011 FB-07: replay through S6a.
+- [FR-495](FR-495-reach-the-integer-division-zero-divisor-and-state-core-rows-from-qsl-source.md): the unbounded `Integer` division items the external provider arm decides.
 - ADR-018, ADR-024, ADR-026, ADR-028 (drafts): the engines and their
   certificates.
 - [FR-282](FR-282-check-analyze-certificates-in-the-qualified-core.md): the certificate checkers.
