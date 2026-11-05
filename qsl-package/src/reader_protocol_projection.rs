@@ -1308,6 +1308,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         Ok((NodeKind::Record { declaration, slots }, children))
     }
 
+    /// `#[string_edge]`: operation names are the admitted wire's fixed
+    /// discriminator vocabulary, not source text selected at runtime.
+    #[ix_trace_rs::string_edge]
     fn project_application(
         &mut self,
         id: &CheckedNodeId,
@@ -1980,6 +1983,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         first_free.max(after_active_locals)
     }
 
+    /// `#[string_edge]`: node tags and semantic forms are admitted wire
+    /// discriminators used to recover the binder selected by the checker.
+    #[ix_trace_rs::string_edge]
     fn binder_node(
         &self,
         name: &str,
@@ -2014,6 +2020,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     }
 
     fn referenced_parameters(&self, term: &CheckedTerm) -> BTreeSet<CheckedNodeId> {
+        /// `#[string_edge]`: the node tag and semantic form identify admitted
+        /// parameter nodes; they do not gate behavior on arbitrary input text.
+        #[ix_trace_rs::string_edge]
         fn collect(
             index: &WireIndex<'_>,
             term: &CheckedTerm,
@@ -2508,6 +2517,9 @@ pub(crate) fn node_value_type(
     }
 }
 
+/// `#[string_edge]`: `name` is an admitted binding key in the parameter wire
+/// form.
+#[ix_trace_rs::string_edge]
 fn parameter_name(term: &CheckedTerm) -> Option<&str> {
     let CheckedTerm::Aggregate { members } = term else {
         return None;
@@ -2523,6 +2535,9 @@ fn parameter_name(term: &CheckedTerm) -> Option<&str> {
     })
 }
 
+/// `#[string_edge]`: `level` is an admitted binding key in the parameter wire
+/// form.
+#[ix_trace_rs::string_edge]
 fn parameter_level(node: &CheckedSemanticNodeV2) -> Option<usize> {
     let CheckedTerm::Aggregate { members } = &node.body else {
         return None;
