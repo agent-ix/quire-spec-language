@@ -682,6 +682,7 @@ fn insufficient_data_window_limit_and_family_undefined_rows_round_trip() {
         TemporalVerdict::Undefined {
             at: 0,
             cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+                atom: 0,
                 count: 1,
                 min_count: 5,
             },
@@ -689,7 +690,7 @@ fn insufficient_data_window_limit_and_family_undefined_rows_round_trip() {
     )));
     assert_eq!(
         temporal(&insufficient),
-        &json!({"kind": "insufficient-data", "position": 0, "count": 1, "min_count": 5})
+        &json!({"kind": "insufficient-data", "position": 0, "atom": 0, "count": 1, "min_count": 5})
     );
     assert_eq!(insufficient["disposition"]["category"], "undefined");
     assert_eq!(insufficient["basis"], "unavailable");

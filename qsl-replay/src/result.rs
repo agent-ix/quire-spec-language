@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{TemporalOutcome, TemporalPosition};
+use qsl_eval::value::ObservationIdentity;
 use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
@@ -409,6 +410,10 @@ pub struct TemporalDecisive {
     /// The QSpec FR-207 value path: the deciding element's location, or the
     /// empty path at the observation's root.
     pub value_path: RuntimeValuePath,
+    /// The aggregate formula occurrence for a trace-subject violation.
+    pub aggregate: Option<OccurrenceKey>,
+    /// The sample position that supplied the decisive aggregate.
+    pub position: Option<u64>,
 }
 
 impl PartialEq for TemporalDecisive {
@@ -417,6 +422,8 @@ impl PartialEq for TemporalDecisive {
             && same_element(&self.element, &other.element)
             && self.index == other.index
             && self.value_path == other.value_path
+            && self.aggregate == other.aggregate
+            && self.position == other.position
     }
 }
 
@@ -430,6 +437,8 @@ impl TemporalDecisive {
             element: report.element.clone(),
             index: Some(report.index),
             value_path: report.value_path.clone(),
+            aggregate: None,
+            position: None,
         }
     }
 
@@ -441,6 +450,28 @@ impl TemporalDecisive {
             element: Value::Boolean(false),
             index: None,
             value_path: root,
+            aggregate: None,
+            position: None,
+        }
+    }
+
+    /// The deciding trace-subject aggregate occurrence and sample position.
+    pub(crate) fn aggregate(
+        occurrence: OccurrenceKey,
+        position: u64,
+        observation: ObservationIdentity,
+    ) -> Self {
+        Self {
+            quantifier: None,
+            element: Value::Boolean(false),
+            index: None,
+            value_path: RuntimeValuePath {
+                observation,
+                subject: ValuePathSubject::Built(occurrence.clone()),
+                steps: Vec::new(),
+            },
+            aggregate: Some(occurrence),
+            position: Some(position),
         }
     }
 }

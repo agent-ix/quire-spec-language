@@ -1616,6 +1616,7 @@ fn verdict(outcome: TemporalOutcome) -> TemporalVerdict {
                     UndefinedCause::Family(record) => TemporalUndefinedCause::Family(record),
                     UndefinedCause::InsufficientData(data) => {
                         TemporalUndefinedCause::InsufficientData {
+                            atom: 0,
                             count: data.count,
                             min_count: data.min_count,
                         }
@@ -1626,6 +1627,7 @@ fn verdict(outcome: TemporalOutcome) -> TemporalVerdict {
         TemporalOutcome::InsufficientData(insufficient) => TemporalVerdict::Undefined {
             at: insufficient.at.index(),
             cause: TemporalUndefinedCause::InsufficientData {
+                atom: insufficient.atom.index(),
                 count: insufficient.data.count,
                 min_count: insufficient.data.min_count,
             },

@@ -1,0 +1,780 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-330-AC-17: run a temporal clause over caller-supplied record samples.
+
+use std::collections::BTreeMap;
+
+use qsl_eval::temporal::{
+    AggregateAtom, AtomReading, CaptureReading, DEFAULT_MAX_WINDOW_VALUES, LetterStop,
+    TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace, UndefinedCause, WindowRead,
+    WindowSource, WindowTrace,
+};
+use qsl_foundation::source::NativeLanguage;
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::check::{
+    CheckedAggregateConditionsRef, CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode,
+    TemporalProfile,
+};
+use qsl_semantics::model::observation::{DocumentProvision, ObservationLimits, Provisions};
+use quire_eval::{FamilyOutcome, FamilyResult};
+use quire_exact::Role;
+use quire_exact::{Cancel, Meter, Outcome, Rational, ScalarLimits, Value, ValueType};
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
+use quire_semantic_value::declaration::CompositeShape;
+use quire_semantic_value::location::Origin;
+
+use super::{
+    ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunSource, ClauseRunUsage,
+    CompiledRun, TemporalUndefinedCause, front_end,
+};
+use crate::proof_result::SettlementBasis;
+
+/// Inputs for the non-model trace-subject clause route.
+pub struct TraceSubjectClauseRequest {
+    /// Program source bytes or an extracted native source.
+    pub source: ClauseRunSource,
+    /// The package manifest's top-level name.
+    pub package_name: String,
+    /// FR-056 package input.
+    pub packages: qsl_semantics::model::intake::PackageInput,
+    /// FR-099 dependency input.
+    pub dependencies: super::DependencyInput,
+    /// The selected temporal clause.
+    pub name: String,
+    /// The caller's declared record type for the samples.
+    pub subject: ValueType,
+    /// Ordered samples, one record for each event position.
+    pub samples: Vec<Value>,
+    /// Spine stage limits.
+    pub limits: super::SpineLimits,
+    /// Evaluation accounting limits.
+    pub accounting: ScalarLimits,
+}
+
+/// Run one temporal clause on a closed finite event-position trace of record
+/// samples. Model-subject clauses continue to use [`super::run_clause`].
+pub fn run_trace_subject_clause(
+    request: TraceSubjectClauseRequest,
+) -> Result<ClauseRunReport, ClauseRunRefusal> {
+    let unit = request.source.unit();
+    if unit.bytes.is_empty() {
+        return Err(ClauseRunRefusal::EmptySource);
+    }
+    let empty_report = |disposition| ClauseRunReport {
+        basis: super::undecided_basis(&disposition),
+        witness: None,
+        disposition,
+        usage: ClauseRunUsage::default(),
+        consequent_source_events: super::ConsequentSourceEvents::Unavailable,
+        finite_window: None,
+        counterexample: None,
+        decisive: None,
+        ledger: None,
+        authenticated_temporal_selection: None,
+        refused_at: None,
+    };
+    if let Some(language) = unit.language {
+        if NativeLanguage::of(language).is_none() {
+            return Ok(empty_report(ClauseDisposition::UnknownLanguage {
+                language: language.to_owned(),
+            }));
+        }
+    }
+    let cancel = Cancel::new();
+    let compile = || -> Result<_, front_end::FrontEndFailure> {
+        let parsed = front_end::parse(
+            &front_end::ParseRequest {
+                source: unit.identity,
+                path: unit.path,
+                bytes: unit.bytes,
+            },
+            request.limits.source,
+            &cancel,
+        )?
+        .into_value();
+        let models = front_end::select(&parsed, &request.packages, request.limits.model, &cancel)?
+            .into_value();
+        let checked = front_end::check_with_temporal_selections_and_execution_points(
+            &parsed,
+            request.package_name.clone(),
+            &crate::spine::StateClauseExecutionPoints::new(),
+            &[],
+            &models,
+            &request.dependencies,
+            request.limits,
+            &cancel,
+        )?
+        .into_value();
+        let emitted = front_end::package_with_temporal_selections(
+            &checked,
+            &[],
+            front_end::PackageLimits::default(),
+            &cancel,
+        )?
+        .into_value();
+        Ok((models, checked, emitted))
+    };
+    let (_models, checked, _emitted) = match compile() {
+        Ok(compiled) => compiled,
+        Err(failure) => {
+            let disposition = match front_end::refusal_or_fault(failure) {
+                Ok(refusal) => ClauseDisposition::Compile(refusal),
+                Err(fault) => ClauseDisposition::EvaluateFault(fault),
+            };
+            return Ok(empty_report(disposition));
+        }
+    };
+    let package = checked.package();
+    let empty_snapshots = DocumentProvision::default();
+    let empty_invocations = DocumentProvision::default();
+    let mut sources = Vec::with_capacity(1 + checked.libraries().len());
+    sources.push(checked.source().clone());
+    sources.extend(checked.libraries().iter().cloned());
+    let run = CompiledRun {
+        packages: &request.packages,
+        model_limits: request.limits.model,
+        provisions: Provisions {
+            snapshots: &empty_snapshots,
+            invocations: &empty_invocations,
+        },
+        observation_limits: ObservationLimits::default(),
+        accounting: request.accounting,
+        package,
+        sources: &sources,
+        progress_capacity: request.limits.progress.covered_positions,
+    };
+    let Some(node) = package
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|node| node.clause().name() == request.name)
+    else {
+        return Ok(run.report(ClauseDisposition::MissingName {
+            name: request.name.clone(),
+        }));
+    };
+    let record_type = match &request.subject {
+        ValueType::Composite(key) => package
+            .graph()
+            .scope()
+            .types()
+            .composite(*key)
+            .is_some_and(|declaration| matches!(declaration.shape(), CompositeShape::Record(_))),
+        _ => false,
+    };
+    let matches_subject = request.subject == node.clause().over().1;
+    let has_aggregate = !node.clause().aggregates().is_empty();
+    let profile_supported = node.clause().profile() == TemporalProfile::EventPositionFalseExtension;
+    if request.samples.is_empty() || !record_type || !matches_subject || !profile_supported {
+        return Ok(run.report(refuse("invalid-value", BTreeMap::new())));
+    }
+    if !has_aggregate {
+        return Ok(run.report(refuse("invalid-value", BTreeMap::new())));
+    }
+    for sample in &request.samples {
+        if !package
+            .graph()
+            .scope()
+            .types()
+            .admits(&request.subject, sample)
+        {
+            return Ok(run.report(refuse("invalid-value", BTreeMap::new())));
+        }
+    }
+    let len = match u64::try_from(request.samples.len()) {
+        Ok(len) => len,
+        Err(_) => return Ok(run.report(refuse("invalid-value", BTreeMap::new()))),
+    };
+    let mut meter = Meter::new(request.accounting);
+    let mut letters = TraceSubjectLetters {
+        package,
+        node,
+        samples: &request.samples,
+        trace: WindowTrace::positions(len),
+        captures: Vec::new(),
+        decisive_atom: None,
+        decisive_position: None,
+    };
+    let result = qsl_eval::temporal::evaluate(
+        node.clause(),
+        TemporalTrace::Finite { len },
+        &mut letters,
+        &mut meter,
+    );
+    let disposition = match result {
+        Ok(outcome) => ClauseDisposition::Temporal(map_outcome(outcome)),
+        Err(_) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "FR-330",
+            "trace-subject-temporal-evaluation",
+        )),
+    };
+    let mut report = run.report(disposition);
+    report.usage = ClauseRunUsage::from_meter(&meter, Default::default());
+    if let Some(atom) = letters.decisive_atom {
+        if matches!(
+            report.disposition,
+            ClauseDisposition::Temporal(super::TemporalVerdict::Violated { .. })
+        ) {
+            let Ok(ordinal) = u64::try_from(atom) else {
+                return Ok(report);
+            };
+            let occurrence = OccurrenceKey::new(
+                node.identity(),
+                Origin::new(Role::new("expression"), ordinal),
+            );
+            report.decisive = Some(crate::TemporalDecisive::aggregate(
+                occurrence,
+                letters.decisive_position.unwrap_or(0),
+                qsl_eval::value::ObservationIdentity {
+                    authority: "trace-subject".to_owned(),
+                    identity: letters.decisive_position.unwrap_or(0).to_string(),
+                },
+            ));
+        }
+    }
+    Ok(report)
+}
+
+fn refuse(cause: &'static str, fields: BTreeMap<&'static str, String>) -> ClauseDisposition {
+    ClauseDisposition::Admit(
+        qsl_semantics::model::observation::AdmissionFailure::Refused(Box::new(
+            qsl_semantics::model::observation::AdmissionRecord {
+                catalog: CatalogCode::new("invalid_runtime_input", cause),
+                fields,
+                path: Vec::new(),
+                kernel: None,
+            },
+        )),
+    )
+}
+
+fn map_outcome(outcome: TemporalOutcome) -> super::TemporalVerdict {
+    use super::TemporalVerdict;
+    match outcome {
+        TemporalOutcome::Holds => TemporalVerdict::Holds,
+        TemporalOutcome::Violated { at } => TemporalVerdict::Violated { at: at.index() },
+        TemporalOutcome::Undefined(undefined) => TemporalVerdict::Undefined {
+            at: undefined.at.index(),
+            cause: match undefined.cause {
+                UndefinedCause::Kernel(cause) => TemporalUndefinedCause::Kernel(cause),
+                UndefinedCause::Family(cause) => TemporalUndefinedCause::Family(cause),
+                UndefinedCause::InsufficientData(data) => {
+                    TemporalUndefinedCause::InsufficientData {
+                        atom: 0,
+                        count: data.count,
+                        min_count: data.min_count,
+                    }
+                }
+            },
+        },
+        TemporalOutcome::InsufficientData(data) => TemporalVerdict::Undefined {
+            at: data.at.index(),
+            cause: TemporalUndefinedCause::InsufficientData {
+                atom: data.atom.index(),
+                count: data.data.count,
+                min_count: data.data.min_count,
+            },
+        },
+        TemporalOutcome::Pending => TemporalVerdict::Pending,
+        TemporalOutcome::MissingFairnessPremise { constraint } => {
+            TemporalVerdict::MissingFairnessPremise { constraint }
+        }
+        TemporalOutcome::Incomplete(incomplete) => TemporalVerdict::Incomplete(incomplete),
+        TemporalOutcome::WindowLimitReached(reached) => TemporalVerdict::WindowLimitReached {
+            limit: reached.limit,
+            value: reached.value,
+            setting: reached.setting,
+        },
+    }
+}
+
+fn fault(code: &'static str) -> LetterStop {
+    LetterStop::Fault(InternalFault::new("FR-330.trace-subject", code))
+}
+
+struct Predicate<'a> {
+    body: CheckedNode<'a>,
+    slots: usize,
+}
+
+impl StatePredicate for Predicate<'_> {
+    fn body(&self) -> CheckedNode<'_> {
+        self.body
+    }
+    fn slots(&self) -> usize {
+        self.slots
+    }
+}
+
+struct TraceSubjectLetters<'a> {
+    package: &'a qsl_package::CheckedPackage,
+    node: &'a TemporalClauseNode,
+    samples: &'a [Value],
+    trace: WindowTrace,
+    captures: Vec<Value>,
+    decisive_atom: Option<u64>,
+    decisive_position: Option<u64>,
+}
+
+impl TraceSubjectLetters<'_> {
+    fn sample(&self, position: TemporalPosition) -> Result<Value, LetterStop> {
+        usize::try_from(position.index())
+            .ok()
+            .and_then(|index| self.samples.get(index))
+            .cloned()
+            .ok_or_else(|| fault("position-has-record-sample"))
+    }
+
+    fn evaluate(
+        &mut self,
+        body: CheckedNode<'_>,
+        slots: usize,
+        bindings: Vec<Value>,
+        meter: &mut Meter,
+    ) -> Result<ExpressionReading, LetterStop> {
+        let predicate = Predicate { body, slots };
+        let environment = Default::default();
+        let evaluation = qsl_eval::value::evaluate_state_predicate_with(
+            self.package,
+            &predicate,
+            &environment,
+            None,
+            bindings,
+            meter,
+        )
+        .map_err(|_error| fault("record-expression-evaluation"))?;
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(value)) => {
+                Ok(ExpressionReading::Defined(value))
+            }
+            FamilyOutcome::Evaluated(Outcome::Undefined(undefined)) => Ok(
+                ExpressionReading::Undefined(UndefinedCause::Kernel(undefined)),
+            ),
+            FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
+                Err(LetterStop::Incomplete(incomplete))
+            }
+            FamilyOutcome::Evaluated(Outcome::Refused(_))
+            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => Err(LetterStop::Refused),
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => Ok(
+                ExpressionReading::Undefined(UndefinedCause::Family(cause.undefined_record())),
+            ),
+            #[cfg(seam_probe_eval_downstream)]
+            FamilyOutcome::__SeamProbe => unreachable!("probe outcome is not constructed here"),
+        }
+    }
+
+    fn bindings(&self, position: TemporalPosition) -> Result<Vec<Value>, LetterStop> {
+        let sample = self.sample(position)?;
+        let mut bindings = vec![sample.clone()];
+        if self.node.clause().trigger().is_some() {
+            bindings.push(sample);
+        }
+        bindings.extend(self.captures.iter().cloned());
+        Ok(bindings)
+    }
+}
+
+enum ExpressionReading {
+    Defined(Value),
+    Undefined(UndefinedCause),
+}
+
+impl TemporalLetters for TraceSubjectLetters<'_> {
+    fn atom(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        if let Some(expressions) = self.node.aggregate_conditions(atom) {
+            let checked = self
+                .node
+                .clause()
+                .aggregates()
+                .get(&atom.index())
+                .ok_or_else(|| fault("aggregate-term-retained"))?;
+            let bindings = self.bindings(position)?;
+            let (threshold_body, threshold_slots) = expressions.threshold;
+            let threshold = match self.evaluate(threshold_body, threshold_slots, bindings, meter)? {
+                ExpressionReading::Defined(value) => value,
+                ExpressionReading::Undefined(cause) => return Ok(AtomReading::Undefined(cause)),
+            };
+            let threshold = match threshold {
+                Value::Integer(value) => Rational::from_integer(value),
+                Value::Rational(value) => value,
+                _ => return Err(fault("aggregate-threshold-is-number")),
+            };
+            let aggregate = AggregateAtom::of_checked(checked, threshold)
+                .map_err(|_| fault("checked-aggregate-term-is-valid"))?;
+            let mut source = SubjectWindowSource {
+                package: self.package,
+                expressions,
+                samples: self.samples,
+                captures: &self.captures,
+                subject_trigger: self.node.clause().trigger().is_some(),
+            };
+            let reading = aggregate.evaluate(
+                &self.trace,
+                &mut source,
+                DEFAULT_MAX_WINDOW_VALUES,
+                position,
+                meter,
+            )?;
+            if matches!(reading, AtomReading::False) {
+                self.decisive_atom =
+                    Some(u64::try_from(atom.index()).map_err(|_| fault("atom-index-fits-u64"))?);
+                self.decisive_position = Some(position.index());
+            }
+            return Ok(reading);
+        }
+        let (body, slots) = self
+            .node
+            .condition(atom)
+            .ok_or_else(|| fault("holds-condition-retained"))?;
+        let bindings = self.bindings(position)?;
+        match self.evaluate(body, slots, bindings, meter)? {
+            ExpressionReading::Defined(Value::Boolean(true)) => Ok(AtomReading::True),
+            ExpressionReading::Defined(Value::Boolean(false)) => Ok(AtomReading::False),
+            ExpressionReading::Defined(_) => Err(fault("holds-condition-is-boolean")),
+            ExpressionReading::Undefined(cause) => Ok(AtomReading::Undefined(cause)),
+        }
+    }
+
+    fn activation(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        let Some((guard, slots)) = self.node.guard() else {
+            return Ok(AtomReading::True);
+        };
+        let sample = self.sample(position)?;
+        match self.evaluate(guard, slots, vec![sample.clone(), sample], meter)? {
+            ExpressionReading::Defined(Value::Boolean(true)) => Ok(AtomReading::True),
+            ExpressionReading::Defined(Value::Boolean(false)) => Ok(AtomReading::False),
+            ExpressionReading::Defined(_) => Err(fault("activation-guard-is-boolean")),
+            ExpressionReading::Undefined(cause) => Ok(AtomReading::Undefined(cause)),
+        }
+    }
+
+    fn captures(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<CaptureReading, LetterStop> {
+        self.captures.clear();
+        let mut bindings = vec![self.sample(position)?];
+        if self.node.clause().trigger().is_some() {
+            bindings.push(bindings[0].clone());
+        }
+        for index in 0..self.node.clause().captures().len() {
+            let Some((body, slots)) = self.node.capture(index) else {
+                return Err(fault("capture-expression-retained"));
+            };
+            let value = self.evaluate(body, slots, bindings.clone(), meter)?;
+            match value {
+                ExpressionReading::Defined(value) => {
+                    self.captures.push(value.clone());
+                    bindings.push(value);
+                }
+                ExpressionReading::Undefined(cause) => {
+                    let capture = self
+                        .node
+                        .clause()
+                        .captures()
+                        .nth(index)
+                        .map(|(name, _)| name.to_owned())
+                        .ok_or_else(|| fault("capture-name-retained"))?;
+                    return Ok(CaptureReading::Undefined { capture, cause });
+                }
+            }
+        }
+        Ok(CaptureReading::Fixed)
+    }
+}
+
+struct SubjectWindowSource<'a> {
+    package: &'a qsl_package::CheckedPackage,
+    expressions: CheckedAggregateConditionsRef<'a>,
+    samples: &'a [Value],
+    captures: &'a [Value],
+    subject_trigger: bool,
+}
+
+impl SubjectWindowSource<'_> {
+    fn read(
+        &mut self,
+        expression: Option<(CheckedNode<'_>, usize)>,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<Value>, LetterStop> {
+        let (body, slots) = expression.ok_or_else(|| fault("aggregate-expression-present"))?;
+        let sample = self
+            .samples
+            .get(usize::try_from(position.index()).map_err(|_| fault("position-fits-usize"))?)
+            .cloned()
+            .ok_or_else(|| fault("sample-exists"))?;
+        let mut bindings = vec![sample.clone()];
+        if self.subject_trigger {
+            bindings.push(sample);
+        }
+        bindings.extend(self.captures.iter().cloned());
+        let predicate = Predicate { body, slots };
+        let env = Default::default();
+        let evaluation = qsl_eval::value::evaluate_state_predicate_with(
+            self.package,
+            &predicate,
+            &env,
+            None,
+            bindings,
+            meter,
+        )
+        .map_err(|_| fault("aggregate-expression-call"))?;
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(value)) => Ok(WindowRead::Defined(value)),
+            FamilyOutcome::Evaluated(Outcome::Undefined(undefined)) => {
+                Ok(WindowRead::Undefined(UndefinedCause::Kernel(undefined)))
+            }
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => Ok(
+                WindowRead::Undefined(UndefinedCause::Family(cause.undefined_record())),
+            ),
+            FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
+                Err(LetterStop::Incomplete(incomplete))
+            }
+            FamilyOutcome::Evaluated(Outcome::Refused(_))
+            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => Err(LetterStop::Refused),
+            #[cfg(seam_probe_eval_downstream)]
+            FamilyOutcome::__SeamProbe => unreachable!("probe outcome is not constructed here"),
+        }
+    }
+}
+
+impl WindowSource for SubjectWindowSource<'_> {
+    fn admits(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        let filter = self.expressions.filter;
+        match filter {
+            None => Ok(WindowRead::Defined(true)),
+            Some(expression) => match self.read(Some(expression), position, meter)? {
+                WindowRead::Defined(Value::Boolean(value)) => Ok(WindowRead::Defined(value)),
+                WindowRead::Defined(_) => Err(fault("aggregate-filter-is-boolean")),
+                WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+            },
+        }
+    }
+
+    fn value(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<Rational>, LetterStop> {
+        let expression = self.expressions.value;
+        match self.read(expression, position, meter)? {
+            WindowRead::Defined(Value::Integer(value)) => {
+                Ok(WindowRead::Defined(Rational::from_integer(value)))
+            }
+            WindowRead::Defined(Value::Rational(value)) => Ok(WindowRead::Defined(value)),
+            WindowRead::Defined(_) => Err(fault("aggregate-value-is-number")),
+            WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+        }
+    }
+
+    fn predicate(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        let expression = self.expressions.predicate;
+        match self.read(expression, position, meter)? {
+            WindowRead::Defined(Value::Boolean(value)) => Ok(WindowRead::Defined(value)),
+            WindowRead::Defined(_) => Err(fault("aggregate-predicate-is-boolean")),
+            WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsl_foundation::SourceIdentity;
+    use qsl_semantics::model::intake::PackageInput;
+    use quire_exact::FieldValue;
+
+    const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
+         profile i = \"quire.temporal.infinite-trace/v1\";\n\
+         record Counter { level: Int[0, 9]; }\n\
+         record Other { level: Int[0, 9]; }\n\
+         temporal A using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,2] (count where holds(c.level != 2) over past[0,0] min_count 1 >= 1)\n\
+         }\n\
+         temporal B using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,0] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
+         }\n\
+         temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,0] holds(c.level > 0)\n\
+         }\n\
+         temporal Infinite using i over (c: Counter) clock \"model-steps\" on origin {\n\
+           always holds(c.level > 0)\n\
+         }\n";
+
+    fn sample(key: quire_exact::NodeKey, level: i64) -> Value {
+        quire_exact::from_admitted_slots(
+            key,
+            vec![FieldValue::Present(Value::Integer(level.into()))].into_boxed_slice(),
+        )
+    }
+
+    fn source() -> ClauseRunSource {
+        ClauseRunSource::Program {
+            identity: SourceIdentity::new("agent-ix", "trace-subject-test"),
+            path: "trace-subject.native".to_owned(),
+            bytes: SOURCE.as_bytes().to_vec(),
+        }
+    }
+
+    fn checked_types() -> (ValueType, ValueType) {
+        let identity = SourceIdentity::new("agent-ix", "trace-subject-test");
+        let bytes = SOURCE.as_bytes();
+        let limits = super::super::super::SpineLimits::default();
+        let cancel = Cancel::new();
+        let parsed = front_end::parse(
+            &front_end::ParseRequest {
+                source: &identity,
+                path: "trace-subject.native",
+                bytes,
+            },
+            limits.source,
+            &cancel,
+        )
+        .expect("source parses")
+        .into_value();
+        let packages = PackageInput::default();
+        let models = front_end::select(&parsed, &packages, limits.model, &cancel)
+            .expect("no models selected")
+            .into_value();
+        let checked = front_end::check_with_temporal_selections_and_execution_points(
+            &parsed,
+            "fixture".to_owned(),
+            &crate::spine::StateClauseExecutionPoints::new(),
+            &[],
+            &models,
+            &super::super::super::DependencyInput::default(),
+            limits,
+            &cancel,
+        )
+        .expect("temporal records check")
+        .into_value();
+        let types = checked.package().graph().scope().types();
+        let composite = |name: &str| {
+            ValueType::Composite(
+                types
+                    .composites()
+                    .find(|declaration| declaration.name() == name)
+                    .expect("record declaration exists")
+                    .key(),
+            )
+        };
+        (composite("Counter"), composite("Other"))
+    }
+
+    fn request(name: &str, subject: ValueType, samples: Vec<Value>) -> TraceSubjectClauseRequest {
+        TraceSubjectClauseRequest {
+            source: source(),
+            package_name: "fixture".to_owned(),
+            packages: PackageInput::default(),
+            dependencies: super::super::super::DependencyInput::default(),
+            name: name.to_owned(),
+            subject,
+            samples,
+            limits: super::super::super::SpineLimits::default(),
+            accounting: ScalarLimits::default(),
+        }
+    }
+
+    #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
+    #[test]
+    fn trace_subject_aggregates_report_insufficient_data_and_decisive_occurrences() {
+        let (counter, _) = checked_types();
+        let ValueType::Composite(key) = counter.clone() else {
+            unreachable!("Counter is a record")
+        };
+        let samples = [0, 1, 2].map(|level| sample(key, level)).to_vec();
+
+        let insufficient = run_trace_subject_clause(request("A", counter.clone(), samples.clone()))
+            .expect("valid input reports");
+        assert!(matches!(
+            insufficient.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Undefined {
+                at: 2,
+                cause: TemporalUndefinedCause::InsufficientData {
+                    atom: 0,
+                    count: 0,
+                    min_count: 1,
+                }
+            })
+        ));
+        assert_eq!(insufficient.disposition.category().as_str(), "undefined");
+        assert_eq!(insufficient.disposition.exit_code(), 10);
+        assert_eq!(insufficient.disposition.truth(), None);
+        assert!(insufficient.counterexample.is_none());
+        assert!(insufficient.decisive.is_none());
+
+        let violation = run_trace_subject_clause(request("B", counter.clone(), samples))
+            .expect("valid input reports");
+        assert!(matches!(
+            violation.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        assert_eq!(violation.disposition.exit_code(), 10);
+        assert_eq!(violation.disposition.truth(), Some(false));
+        let decisive = violation
+            .decisive
+            .expect("aggregate false decides the clause");
+        assert!(decisive.aggregate.is_some());
+        assert_eq!(decisive.position, Some(0));
+    }
+
+    #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
+    #[test]
+    fn trace_subject_refuses_malformed_and_unsupported_requests_before_evaluation() {
+        let (counter, other) = checked_types();
+        let ValueType::Composite(key) = counter.clone() else {
+            unreachable!("Counter is a record")
+        };
+        let valid = [0, 1, 2].map(|level| sample(key, level)).to_vec();
+        let ValueType::Composite(other_key) = other.clone() else {
+            unreachable!("Other is a record")
+        };
+        let other_samples = [0, 1, 2].map(|level| sample(other_key, level)).to_vec();
+        let requests = [
+            request("A", counter.clone(), Vec::new()),
+            request("A", counter.clone(), vec![Value::Boolean(true)]),
+            request("A", other, other_samples),
+            request("Plain", counter.clone(), valid.clone()),
+            request("Infinite", counter.clone(), valid.clone()),
+        ];
+        for request in requests {
+            let report = run_trace_subject_clause(request).expect("request reports");
+            assert_eq!(
+                report.disposition.stage(),
+                super::super::ClauseRunStage::Admit
+            );
+            assert_eq!(report.disposition.category().as_str(), "refusal");
+            assert_eq!(report.usage.evaluation_admissions, 0);
+        }
+        let missing = run_trace_subject_clause(request("Absent", counter, valid))
+            .expect("well-formed request reports");
+        assert_eq!(
+            missing.disposition.stage(),
+            super::super::ClauseRunStage::Select
+        );
+        assert!(matches!(
+            missing.disposition,
+            ClauseDisposition::MissingName { .. }
+        ));
+    }
+}

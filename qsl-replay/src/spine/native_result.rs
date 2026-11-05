@@ -2406,7 +2406,7 @@ pub(crate) fn item_record(report: &ClauseRunReport) -> Result<ItemRecord, Native
         },
         TemporalVerdict::Undefined {
             at,
-            cause: TemporalUndefinedCause::InsufficientData { count, min_count },
+            cause: TemporalUndefinedCause::InsufficientData { count, min_count, .. },
         } => ItemRecord {
             position: Some(*at),
             count: Some(*count),

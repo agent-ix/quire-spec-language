@@ -192,8 +192,9 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    admit_progress, run_clause, run_clause_with_temporal_selections, temporal_batch_exit_code,
-    temporal_batch_outcome, AuthenticatedTemporalSelection, ClauseArgument, ClauseArgumentValue,
+    admit_progress, run_clause, run_clause_with_temporal_selections, run_trace_subject_clause,
+    temporal_batch_exit_code, temporal_batch_outcome, AuthenticatedTemporalSelection,
+    ClauseArgument, ClauseArgumentValue,
     ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
     ClauseRunSource, ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent,
     ConsequentSourceEvents, ConsequentState, ContradictedDimension, FiniteWindowAssessment,
@@ -201,7 +202,8 @@ pub use clause::{
     OperationName, OverObject, ProgressAssertion, ProgressClosure, ProgressCompleteness,
     ProgressContradiction, ProgressLedger, ProgressLedgerEntry, ProgressLimitReached,
     ProgressLowerBoundary, ProgressRefusal, ProgressValue, TemporalIndeterminateReason,
-    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
+    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause,
+    TraceSubjectClauseRequest, TemporalVerdict,
     TemporalWindowRefusal, TimestampedCover, TimestampedMissingValuation, TimestampedObservation,
     TimestampedOrderKey, TimestampedWindow, TraceBinding, TraceInput,
 };
