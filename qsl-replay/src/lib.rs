@@ -324,8 +324,8 @@ pub use probability_certificate::{
     ProbabilityObjective, ProbabilityProductKey,
 };
 pub use product_action::{
-    ActionBody, ActionBodyError, ActionBodyRefusal, BodyRow, FreeDelayRow, FreeDelaysRace,
-    FreeRacer, GivenRacer, NotMixedRace, Schedule,
+    FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,
+    ProductAction, ProductActionError, ProductActionRefusal, Schedule,
 };
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,

@@ -3,7 +3,7 @@
 //! `FreeDelays` body at a mixed given/free workload race state (FR-202,
 //! FR-204).
 //!
-//! [`ActionBody`] is the closed body form: `["identity",schedule]`,
+//! [`ProductAction`] is the closed body form: `["identity",schedule]`,
 //! `["post-state",product_key]`, `["terminal-stutter"]`, `["delay"]`,
 //! `["enter-idle-delay"]`, `["idle-delay"]`, `["idle-observe"]`,
 //! `["workload-resolve",schedule,delay]` and
@@ -79,19 +79,19 @@ impl Schedule {
     ///
     /// # Errors
     ///
-    /// [`ActionBodyError::Schedule`] when the identity has no canonical
+    /// [`ProductActionError::Schedule`] when the identity has no canonical
     /// transition identity in `system`.
     #[ix_trace_rs::string_edge]
     pub fn of(
         system: &ModelSystem<'_>,
         identity: &ScheduledIdentity,
-    ) -> Result<Self, ActionBodyError> {
+    ) -> Result<Self, ProductActionError> {
         let transition = system
             .scheduled_identity_key(identity)
-            .map_err(|_| ActionBodyError::Schedule)?;
-        let transition = read_document(&transition).ok_or(ActionBodyError::Schedule)?;
+            .map_err(|_| ProductActionError::Schedule)?;
+        let transition = read_document(&transition).ok_or(ProductActionError::Schedule)?;
         let Node::Object(members) = transition.root().node() else {
-            return Err(ActionBodyError::Schedule);
+            return Err(ProductActionError::Schedule);
         };
         let (mut operation, mut receiver, mut arguments) = (None, None, None);
         for (name, member) in members {
@@ -104,15 +104,15 @@ impl Schedule {
         }
         let (Some(operation), Some(receiver), Some(arguments)) = (operation, receiver, arguments)
         else {
-            return Err(ActionBodyError::Schedule);
+            return Err(ProductActionError::Schedule);
         };
         let Node::String(operation) = operation.node() else {
-            return Err(ActionBodyError::Schedule);
+            return Err(ProductActionError::Schedule);
         };
-        let operation = read_document(operation.as_bytes()).ok_or(ActionBodyError::Schedule)?;
+        let operation = read_document(operation.as_bytes()).ok_or(ProductActionError::Schedule)?;
         let bytes = to_vec(&Triple([operation.root(), receiver, arguments]), LIMITS)
-            .map_err(|_| ActionBodyError::Schedule)?;
-        let document = read_document(&bytes).ok_or(ActionBodyError::Schedule)?;
+            .map_err(|_| ProductActionError::Schedule)?;
+        let document = read_document(&bytes).ok_or(ProductActionError::Schedule)?;
         Ok(Self { bytes, document })
     }
 
@@ -123,22 +123,22 @@ impl Schedule {
 
     /// A schedule member of a body: an array of exactly an operation, an
     /// object receiver and an argument array.
-    fn from_node(node: NodeRef<'_>) -> Result<Self, ActionBodyRefusal> {
+    fn from_node(node: NodeRef<'_>) -> Result<Self, ProductActionRefusal> {
         let Node::Array(items) = node.node() else {
-            return Err(ActionBodyRefusal::Shape);
+            return Err(ProductActionRefusal::Shape);
         };
         let items: Vec<NodeRef<'_>> = items.collect();
         let [operation, receiver, arguments] = items.as_slice() else {
-            return Err(ActionBodyRefusal::Shape);
+            return Err(ProductActionRefusal::Shape);
         };
         if !matches!(operation.node(), Node::Object(_))
             || !matches!(receiver.node(), Node::Object(_))
             || !matches!(arguments.node(), Node::Array(_))
         {
-            return Err(ActionBodyRefusal::Shape);
+            return Err(ProductActionRefusal::Shape);
         }
-        let bytes = to_vec(&node, LIMITS).map_err(|_| ActionBodyRefusal::NotCanonical)?;
-        let document = read_document(&bytes).ok_or(ActionBodyRefusal::NotCanonical)?;
+        let bytes = to_vec(&node, LIMITS).map_err(|_| ProductActionRefusal::NotCanonical)?;
+        let document = read_document(&bytes).ok_or(ProductActionRefusal::NotCanonical)?;
         Ok(Self { bytes, document })
     }
 }
@@ -146,7 +146,7 @@ impl Schedule {
 /// One row of a `free-delays` body: `[given,free]`, each a list of
 /// `[schedule,delay]` pairs in ascending schedule order.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BodyRow {
+pub struct FreeDelayActionRow {
     /// The given racing identities with their drawn delays.
     pub given: Vec<(Schedule, u64)>,
     /// The free racing identities with the scheduler's delays.
@@ -155,7 +155,7 @@ pub struct BodyRow {
 
 /// FR-196's closed canonical semantic action body.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ActionBody {
+pub enum ProductAction {
     /// `["identity",schedule]`.
     Identity(Schedule),
     /// `["post-state",product_key]`: the complete canonical target key.
@@ -178,10 +178,10 @@ pub enum ActionBody {
         delay: u64,
     },
     /// `["free-delays",[[given,free],...]]`.
-    FreeDelays(Vec<BodyRow>),
+    FreeDelays(Vec<FreeDelayActionRow>),
 }
 
-impl ActionBody {
+impl ProductAction {
     /// The body of a `FreeDelays` action over `rows` in `system`: each row's
     /// pairs sorted by schedule, and the rows in ascending numeric order of
     /// their given delays in `given` order (FR-196), whatever order `rows`
@@ -189,29 +189,29 @@ impl ActionBody {
     ///
     /// # Errors
     ///
-    /// [`ActionBodyError::Schedule`] when an identity has no canonical
+    /// [`ProductActionError::Schedule`] when an identity has no canonical
     /// schedule.
     pub fn free_delays(
         system: &ModelSystem<'_>,
         rows: &[FreeDelayRow],
-    ) -> Result<Self, ActionBodyError> {
+    ) -> Result<Self, ProductActionError> {
         let pairs = |list: &[(ScheduledIdentity, u64)]| {
             let mut pairs = list
                 .iter()
                 .map(|(identity, delay)| Ok((Schedule::of(system, identity)?, *delay)))
-                .collect::<Result<Vec<_>, ActionBodyError>>()?;
+                .collect::<Result<Vec<_>, ProductActionError>>()?;
             pairs.sort_by(|left, right| left.0.cmp(&right.0));
-            Ok::<_, ActionBodyError>(pairs)
+            Ok::<_, ProductActionError>(pairs)
         };
         let mut body = rows
             .iter()
             .map(|row| {
-                Ok(BodyRow {
+                Ok(FreeDelayActionRow {
                     given: pairs(&row.given)?,
                     free: pairs(&row.free)?,
                 })
             })
-            .collect::<Result<Vec<_>, ActionBodyError>>()?;
+            .collect::<Result<Vec<_>, ProductActionError>>()?;
         body.sort_by_key(|row| delays(&row.given));
         Ok(Self::FreeDelays(body))
     }
@@ -220,14 +220,14 @@ impl ActionBody {
     ///
     /// # Errors
     ///
-    /// [`ActionBodyError::Canonical`] when a `PostState` key is not one JSON
+    /// [`ProductActionError::Canonical`] when a `PostState` key is not one JSON
     /// document or the body does not encode.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, ActionBodyError> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, ProductActionError> {
         let key;
         let view = match self {
             Self::Identity(schedule) => View::Scheduled("identity", schedule),
             Self::PostState(product_key) => {
-                key = read_document(product_key.as_bytes()).ok_or(ActionBodyError::Canonical)?;
+                key = read_document(product_key.as_bytes()).ok_or(ProductActionError::Canonical)?;
                 View::PostState(key.root())
             }
             Self::TerminalStutter => View::Tag("terminal-stutter"),
@@ -238,29 +238,31 @@ impl ActionBody {
             Self::WorkloadResolve { schedule, delay } => View::Resolve(schedule, *delay),
             Self::FreeDelays(rows) => View::Rows(rows),
         };
-        to_vec(&view, LIMITS).map_err(|_| ActionBodyError::Canonical)
+        to_vec(&view, LIMITS).map_err(|_| ProductActionError::Canonical)
     }
 
     /// Read a body from its complete JCS octets.
     ///
     /// # Errors
     ///
-    /// [`ActionBodyRefusal`]: octets that are not one JCS document, an
+    /// [`ProductActionRefusal`]: octets that are not one JCS document, an
     /// unknown tag or a missing, extra or mistyped member, a noncanonical
     /// delay, or a row whose `given` or `free` pairs are not in strictly
     /// ascending schedule order.
     #[ix_trace_rs::string_edge]
-    pub fn parse(bytes: &[u8]) -> Result<Self, ActionBodyRefusal> {
-        let document = read_document(bytes).ok_or(ActionBodyRefusal::NotCanonical)?;
-        if to_vec(&document.root(), LIMITS).map_err(|_| ActionBodyRefusal::NotCanonical)? != bytes {
-            return Err(ActionBodyRefusal::NotCanonical);
+    pub fn parse(bytes: &[u8]) -> Result<Self, ProductActionRefusal> {
+        let document = read_document(bytes).ok_or(ProductActionRefusal::NotCanonical)?;
+        if to_vec(&document.root(), LIMITS).map_err(|_| ProductActionRefusal::NotCanonical)?
+            != bytes
+        {
+            return Err(ProductActionRefusal::NotCanonical);
         }
         let items = array(document.root())?;
         let Some((tag, members)) = items.split_first() else {
-            return Err(ActionBodyRefusal::Shape);
+            return Err(ProductActionRefusal::Shape);
         };
         let Node::String(tag) = tag.node() else {
-            return Err(ActionBodyRefusal::Shape);
+            return Err(ProductActionRefusal::Shape);
         };
         Ok(match (tag, members) {
             ("identity", [schedule]) => Self::Identity(Schedule::from_node(*schedule)?),
@@ -278,15 +280,15 @@ impl ActionBody {
                 array(*rows)?
                     .into_iter()
                     .map(|row| match array(row)?.as_slice() {
-                        [given, free] => Ok(BodyRow {
+                        [given, free] => Ok(FreeDelayActionRow {
                             given: pairs(*given)?,
                             free: pairs(*free)?,
                         }),
-                        _ => Err(ActionBodyRefusal::Shape),
+                        _ => Err(ProductActionRefusal::Shape),
                     })
                     .collect::<Result<_, _>>()?,
             ),
-            _ => return Err(ActionBodyRefusal::Shape),
+            _ => return Err(ProductActionRefusal::Shape),
         })
     }
 }
@@ -300,39 +302,39 @@ fn read_document(bytes: &[u8]) -> Option<Document> {
     read(bytes, u64::try_from(bytes.len()).ok()?).ok()
 }
 
-fn array(node: NodeRef<'_>) -> Result<Vec<NodeRef<'_>>, ActionBodyRefusal> {
+fn array(node: NodeRef<'_>) -> Result<Vec<NodeRef<'_>>, ProductActionRefusal> {
     match node.node() {
         Node::Array(items) => Ok(items.collect()),
-        _ => Err(ActionBodyRefusal::Shape),
+        _ => Err(ProductActionRefusal::Shape),
     }
 }
 
 /// A canonical unsigned decimal string: no sign, no leading zero.
 #[ix_trace_rs::string_edge]
-fn decimal(node: NodeRef<'_>) -> Result<u64, ActionBodyRefusal> {
+fn decimal(node: NodeRef<'_>) -> Result<u64, ProductActionRefusal> {
     let Node::String(text) = node.node() else {
-        return Err(ActionBodyRefusal::Shape);
+        return Err(ProductActionRefusal::Shape);
     };
     let canonical = !text.is_empty()
         && text.bytes().all(|byte| byte.is_ascii_digit())
         && (text == "0" || !text.starts_with('0'));
     if !canonical {
-        return Err(ActionBodyRefusal::Delay);
+        return Err(ProductActionRefusal::Delay);
     }
-    text.parse().map_err(|_| ActionBodyRefusal::Delay)
+    text.parse().map_err(|_| ProductActionRefusal::Delay)
 }
 
 /// A `[[schedule,delay],...]` list in strictly ascending schedule order.
-fn pairs(node: NodeRef<'_>) -> Result<Vec<(Schedule, u64)>, ActionBodyRefusal> {
+fn pairs(node: NodeRef<'_>) -> Result<Vec<(Schedule, u64)>, ProductActionRefusal> {
     let mut pairs: Vec<(Schedule, u64)> = Vec::new();
     for pair in array(node)? {
         let members = array(pair)?;
         let [schedule, delay] = members.as_slice() else {
-            return Err(ActionBodyRefusal::Shape);
+            return Err(ProductActionRefusal::Shape);
         };
         let schedule = Schedule::from_node(*schedule)?;
         if pairs.last().is_some_and(|(last, _)| *last >= schedule) {
-            return Err(ActionBodyRefusal::ScheduleOrder);
+            return Err(ProductActionRefusal::ScheduleOrder);
         }
         pairs.push((schedule, decimal(*delay)?));
     }
@@ -341,16 +343,16 @@ fn pairs(node: NodeRef<'_>) -> Result<Vec<(Schedule, u64)>, ActionBodyRefusal> {
 
 /// A `post-state` member: a product-key array under its version tag.
 #[ix_trace_rs::string_edge]
-fn product_key(node: NodeRef<'_>) -> Result<ProbabilityProductKey, ActionBodyRefusal> {
+fn product_key(node: NodeRef<'_>) -> Result<ProbabilityProductKey, ProductActionRefusal> {
     let items = array(node)?;
     let tagged = matches!(
         items.first().map(NodeRef::node),
         Some(Node::String(PRODUCT_KEY_TAG))
     );
     if !tagged || items.len() != 6 {
-        return Err(ActionBodyRefusal::Shape);
+        return Err(ProductActionRefusal::Shape);
     }
-    let bytes = to_vec(&node, LIMITS).map_err(|_| ActionBodyRefusal::NotCanonical)?;
+    let bytes = to_vec(&node, LIMITS).map_err(|_| ProductActionRefusal::NotCanonical)?;
     Ok(ProbabilityProductKey::from_canonical_bytes(bytes))
 }
 
@@ -376,7 +378,7 @@ enum View<'a> {
     Scheduled(&'static str, &'a Schedule),
     PostState(NodeRef<'a>),
     Resolve(&'a Schedule, u64),
-    Rows(&'a [BodyRow]),
+    Rows(&'a [FreeDelayActionRow]),
 }
 
 impl Encode for View<'_> {
@@ -432,7 +434,7 @@ fn write_pairs<S: Sink + ?Sized>(
 
 /// Why a body could not be written.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum ActionBodyError {
+pub enum ProductActionError {
     /// A scheduled identity has no canonical schedule in the system.
     #[error("a scheduled identity has no canonical schedule")]
     Schedule,
@@ -442,9 +444,9 @@ pub enum ActionBodyError {
 }
 
 /// Why a body is not an enabled choice: every cause refuses
-/// `invalid_runtime_input`/`invalid-value` ([`ActionBodyRefusal::code`]).
+/// `invalid_runtime_input`/`invalid-value` ([`ProductActionRefusal::code`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum ActionBodyRefusal {
+pub enum ProductActionRefusal {
     /// The octets are not one JSON document equal to its own JCS encoding.
     #[error("the action body is not canonical JCS")]
     NotCanonical,
@@ -503,7 +505,7 @@ pub enum ActionBodyRefusal {
     },
 }
 
-impl ActionBodyRefusal {
+impl ProductActionRefusal {
     /// The catalog code replay refuses with (FR-202).
     pub const fn code(&self) -> CatalogCode {
         CatalogCode::new("invalid_runtime_input", "invalid-value")
@@ -580,10 +582,10 @@ impl FreeDelaysRace {
     ///
     /// # Errors
     ///
-    /// [`ActionBodyRefusal`] naming the first failed condition.
-    pub fn admit(&self, body: &ActionBody) -> Result<Vec<FreeDelayRow>, ActionBodyRefusal> {
-        let ActionBody::FreeDelays(rows) = body else {
-            return Err(ActionBodyRefusal::Disabled);
+    /// [`ProductActionRefusal`] naming the first failed condition.
+    pub fn admit(&self, body: &ProductAction) -> Result<Vec<FreeDelayRow>, ProductActionRefusal> {
+        let ProductAction::FreeDelays(rows) = body else {
+            return Err(ProductActionRefusal::Disabled);
         };
         let mut admitted = Vec::with_capacity(rows.len());
         for (index, row) in rows.iter().enumerate() {
@@ -595,20 +597,20 @@ impl FreeDelaysRace {
         let mut seen = BTreeSet::new();
         for (index, vector) in vectors.iter().enumerate() {
             if !seen.insert(vector) {
-                return Err(ActionBodyRefusal::RowRepeated { row: index });
+                return Err(ProductActionRefusal::RowRepeated { row: index });
             }
         }
         let expected = self.given.iter().try_fold(1_usize, |count, racer| {
             count.checked_mul(racer.support.len())
         });
         if expected != Some(vectors.len()) {
-            return Err(ActionBodyRefusal::RowsMissing);
+            return Err(ProductActionRefusal::RowsMissing);
         }
         if let Some(index) = vectors
             .windows(2)
             .position(|pair| matches!(pair, [left, right] if left > right))
         {
-            return Err(ActionBodyRefusal::RowOrder { row: index + 1 });
+            return Err(ProductActionRefusal::RowOrder { row: index + 1 });
         }
         Ok(admitted)
     }
@@ -617,19 +619,19 @@ impl FreeDelaysRace {
         &self,
         row: usize,
         pairs: &[(Schedule, u64)],
-    ) -> Result<Vec<(ScheduledIdentity, u64)>, ActionBodyRefusal> {
+    ) -> Result<Vec<(ScheduledIdentity, u64)>, ProductActionRefusal> {
         if pairs.len() != self.given.len() {
-            return Err(ActionBodyRefusal::GivenIdentities { row });
+            return Err(ProductActionRefusal::GivenIdentities { row });
         }
         self.given
             .iter()
             .zip(pairs)
             .map(|(racer, (schedule, delay))| {
                 if racer.schedule != *schedule {
-                    return Err(ActionBodyRefusal::GivenIdentities { row });
+                    return Err(ProductActionRefusal::GivenIdentities { row });
                 }
                 if !racer.support.contains(delay) {
-                    return Err(ActionBodyRefusal::GivenOutsideSupport { row });
+                    return Err(ProductActionRefusal::GivenOutsideSupport { row });
                 }
                 Ok((racer.identity.clone(), *delay))
             })
@@ -640,19 +642,19 @@ impl FreeDelaysRace {
         &self,
         row: usize,
         pairs: &[(Schedule, u64)],
-    ) -> Result<Vec<(ScheduledIdentity, u64)>, ActionBodyRefusal> {
+    ) -> Result<Vec<(ScheduledIdentity, u64)>, ProductActionRefusal> {
         if pairs.len() != self.free.len() {
-            return Err(ActionBodyRefusal::FreeIdentities { row });
+            return Err(ProductActionRefusal::FreeIdentities { row });
         }
         self.free
             .iter()
             .zip(pairs)
             .map(|(racer, (schedule, delay))| {
                 if racer.schedule != *schedule {
-                    return Err(ActionBodyRefusal::FreeIdentities { row });
+                    return Err(ProductActionRefusal::FreeIdentities { row });
                 }
                 if !racer.window.contains(delay) {
-                    return Err(ActionBodyRefusal::FreeOutsideWindow { row });
+                    return Err(ProductActionRefusal::FreeOutsideWindow { row });
                 }
                 Ok((racer.identity.clone(), *delay))
             })
@@ -688,11 +690,11 @@ mod tests {
             r#"["idle-observe"]"#.to_owned(),
             format!(r#"["workload-resolve",{B},"0"]"#),
         ] {
-            let parsed = ActionBody::parse(text.as_bytes()).expect("a canonical body parses");
+            let parsed = ProductAction::parse(text.as_bytes()).expect("a canonical body parses");
             assert_eq!(parsed.to_bytes().expect("it writes"), text.as_bytes());
         }
-        let ActionBody::FreeDelays(parsed) =
-            ActionBody::parse(body(&rows).as_bytes()).expect("parses")
+        let ProductAction::FreeDelays(parsed) =
+            ProductAction::parse(body(&rows).as_bytes()).expect("parses")
         else {
             panic!("a free-delays body");
         };
@@ -709,48 +711,48 @@ mod tests {
     #[trace("TC-631", "FR-196-AC-14")]
     #[test]
     fn malformed_octets_tags_members_and_delays_refuse() {
-        let refused = |text: &str| ActionBody::parse(text.as_bytes()).expect_err(text);
-        assert_eq!(refused(r#"[ "delay"]"#), ActionBodyRefusal::NotCanonical);
-        assert_eq!(refused(r#"["delay""#), ActionBodyRefusal::NotCanonical);
-        assert_eq!(refused(r#"["drawn-timed"]"#), ActionBodyRefusal::Shape);
-        assert_eq!(refused(r#"["delay","1"]"#), ActionBodyRefusal::Shape);
-        assert_eq!(refused(r#"{"tag":"delay"}"#), ActionBodyRefusal::Shape);
+        let refused = |text: &str| ProductAction::parse(text.as_bytes()).expect_err(text);
+        assert_eq!(refused(r#"[ "delay"]"#), ProductActionRefusal::NotCanonical);
+        assert_eq!(refused(r#"["delay""#), ProductActionRefusal::NotCanonical);
+        assert_eq!(refused(r#"["drawn-timed"]"#), ProductActionRefusal::Shape);
+        assert_eq!(refused(r#"["delay","1"]"#), ProductActionRefusal::Shape);
+        assert_eq!(refused(r#"{"tag":"delay"}"#), ProductActionRefusal::Shape);
         assert_eq!(
             refused(&format!(r#"["workload-resolve",{B},"01"]"#)),
-            ActionBodyRefusal::Delay
+            ProductActionRefusal::Delay
         );
         assert_eq!(
             refused(&format!(r#"["workload-resolve",{B},1]"#)),
-            ActionBodyRefusal::Shape
+            ProductActionRefusal::Shape
         );
         assert_eq!(
             refused(&format!(r#"["workload-resolve",{B},"-1"]"#)),
-            ActionBodyRefusal::Delay
+            ProductActionRefusal::Delay
         );
         assert_eq!(
             refused(r#"["identity",[{"op":"A"},null,[]]]"#),
-            ActionBodyRefusal::Shape
+            ProductActionRefusal::Shape
         );
         assert_eq!(
             refused(r#"["identity",["A",{"o":"1"},[]]]"#),
-            ActionBodyRefusal::Shape
+            ProductActionRefusal::Shape
         );
         assert_eq!(
             refused(r#"["post-state",["other",null,null,null,null,null]]"#),
-            ActionBodyRefusal::Shape
+            ProductActionRefusal::Shape
         );
         // Pairs inside a row are in ascending schedule order, unique.
         assert_eq!(
             refused(&body(&format!(r#"[[[],[[{B},"1"],[{A},"1"]]]]"#))),
-            ActionBodyRefusal::ScheduleOrder
+            ProductActionRefusal::ScheduleOrder
         );
         assert_eq!(
             refused(&body(&format!(r#"[[[],[[{A},"1"],[{A},"2"]]]]"#))),
-            ActionBodyRefusal::ScheduleOrder
+            ProductActionRefusal::ScheduleOrder
         );
         assert_eq!(
             refused(&body(&format!(r#"[[[[{A},"1"]]]]"#))),
-            ActionBodyRefusal::Shape
+            ProductActionRefusal::Shape
         );
     }
 }

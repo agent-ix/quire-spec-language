@@ -35,6 +35,7 @@ use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
     AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
     ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause, TimeUnitCause,
+    TopologyRetained,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -858,6 +859,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnresolvedQuantityName { name } => {
             format!("no dimension or unit is named `{name}`")
         }
+        AssemblyCause::UnresolvedDimensionTerm { dimension, term } => {
+            format!("dimension `{dimension}` names undeclared term `{term}`")
+        }
         AssemblyCause::UnanchoredBaseDimension { dimension, unit } => {
             format!("the base dimension `{dimension}` of unit `{unit}` has no unit")
         }
@@ -886,10 +890,21 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
                     .join(", ")
             )
         }
-        AssemblyCause::UnitGraphTopology { declarations, .. } => {
+        AssemblyCause::UnitGraphTopology { retained, .. } => {
             format!(
                 "the unit graph is not admissible at {}",
-                declarations.join(", ")
+                retained
+                    .iter()
+                    .map(|value| match value {
+                        TopologyRetained::Unit { name, .. }
+                        | TopologyRetained::Dimension { name, .. }
+                        | TopologyRetained::TargetName(name) => name.clone(),
+                        TopologyRetained::Scale(value) => value.to_string(),
+                        TopologyRetained::Offset(value) => value.to_string(),
+                        TopologyRetained::Edge { from, to } => format!("{from} -> {to}"),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )
         }
         AssemblyCause::NominalAdmission(_) => {

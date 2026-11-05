@@ -18,14 +18,16 @@ use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
     action_steps, build_product, decide_bounded_event, decide_fair_expected_reward,
     decide_fair_reachability, decide_reachability, free_delays_choice, produce_witness,
-    ActionChoice, ExactProbLimits, ExtRational, FhResult, FreeDelayRow, MonitorVerdict, ProbBuild,
-    ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductRequest,
-    SchedulerChoice, UnboundedObjective, WitnessScope,
+    witness_scheduler, ActionChoice, EntryChoice, ExactProbLimits, ExtRational, FhResult,
+    FreeDelayRow, MonitorVerdict, ProbBuild, ProbProduct, ProbStateId, ProductAction, ProductKind,
+    ProductRefusal, ProductRequest, SchedulerChoice, UnboundedObjective, WitnessError,
+    WitnessScope,
 };
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::ScheduledIdentity;
+use qsl_eval::simulation::{model::ScheduledIdentity, Limits};
 use qsl_replay::{
-    ActionBody, ActionBodyRefusal, BodyRow, FreeDelaysRace, FreeRacer, GivenRacer, Schedule,
+    FreeDelayActionRow, FreeDelaysRace, FreeRacer, GivenRacer,
+    ProductAction as ReplayProductAction, ProductActionRefusal, Schedule,
 };
 use qsl_semantics::check::Bound;
 use quire_exact::{Cancel, Integer, Rational};
@@ -782,23 +784,26 @@ fn stated_race(
     FreeDelaysRace::new(given, free).expect("a mixed race")
 }
 
-fn body_of(world: &World, rows: &[FreeDelayRow]) -> Vec<BodyRow> {
-    match ActionBody::free_delays(&world.system(), rows).expect("the body encodes") {
-        ActionBody::FreeDelays(rows) => rows,
+fn body_of(world: &World, rows: &[FreeDelayRow]) -> Vec<FreeDelayActionRow> {
+    match ReplayProductAction::free_delays(&world.system(), rows).expect("the body encodes") {
+        ReplayProductAction::FreeDelays(rows) => rows,
         other => panic!("a free-delays body: {other:?}"),
     }
 }
 
 /// Write `body` as JCS octets, read it back and admit it at `race`.
-fn admit(race: &FreeDelaysRace, body: ActionBody) -> Result<Vec<FreeDelayRow>, ActionBodyRefusal> {
+fn admit(
+    race: &FreeDelaysRace,
+    body: ReplayProductAction,
+) -> Result<Vec<FreeDelayRow>, ProductActionRefusal> {
     let bytes = body.to_bytes().expect("the body writes");
-    race.admit(&ActionBody::parse(&bytes)?)
+    race.admit(&ReplayProductAction::parse(&bytes)?)
 }
 
 /// Every refusal of `body` at `race` is `cause`, `invalid_runtime_input`/
 /// `invalid-value`.
-fn refuses(race: &FreeDelaysRace, rows: Vec<BodyRow>, cause: ActionBodyRefusal) {
-    let refusal = admit(race, ActionBody::FreeDelays(rows)).expect_err("the body refuses");
+fn refuses(race: &FreeDelaysRace, rows: Vec<FreeDelayActionRow>, cause: ProductActionRefusal) {
+    let refusal = admit(race, ReplayProductAction::FreeDelays(rows)).expect_err("the body refuses");
     assert_eq!(refusal, cause);
     assert_eq!(
         refusal.code(),
@@ -880,11 +885,23 @@ fn detour_maximum_witness_is_a_two_path_set_of_merged_steps() {
     };
     let witness = produce(2).expect("two paths pass the bound");
     let expected = [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])];
-    let [(entry_state, entry)] = witness.entries.as_slice() else {
-        panic!("one entry, at the race state: {:?}", witness.entries);
+    // FR-204 "Evidence": the race state's entry, and the entry of the
+    // continuation state the chain also reaches (a unit delay no emitted path
+    // leaves).
+    let [(entry_state, entry), (continuation, delay)] = witness.entries.as_slice() else {
+        panic!(
+            "the race state and one continuation state: {:?}",
+            witness.entries
+        );
     };
     assert_eq!(*entry_state, start);
     assert_eq!(action_rows(&world, entry), expected);
+    assert!(matches!(delay, ProductAction::UnitDelay));
+    assert!(witness.paths.iter().all(|path| path
+        .steps
+        .iter()
+        .take(path.steps.len() - 1)
+        .all(|step| step.to != *continuation)));
 
     let probabilities: Vec<Rational> = witness
         .paths
@@ -974,28 +991,32 @@ fn detour_witness_body_admits_and_its_variants_refuse() {
     let race = stated_race(&world, &built, &[("A", &[1, 3])], &[("B", &[1, 2, 3])]);
     let body = body_of(&world, &rows);
     assert_eq!(
-        admit(&race, ActionBody::FreeDelays(body.clone())).expect("the witness admits"),
+        admit(&race, ReplayProductAction::FreeDelays(body.clone())).expect("the witness admits"),
         rows
     );
 
     let mut swapped = body.clone();
     swapped.reverse();
-    refuses(&race, swapped, ActionBodyRefusal::RowOrder { row: 1 });
+    refuses(&race, swapped, ProductActionRefusal::RowOrder { row: 1 });
     let mut removed = body.clone();
     removed.truncate(1);
-    refuses(&race, removed, ActionBodyRefusal::RowsMissing);
+    refuses(&race, removed, ProductActionRefusal::RowsMissing);
     let mut late = body;
     late[1].free[0].1 = 4;
-    refuses(&race, late, ActionBodyRefusal::FreeOutsideWindow { row: 1 });
+    refuses(
+        &race,
+        late,
+        ProductActionRefusal::FreeOutsideWindow { row: 1 },
+    );
     let resolve = admit(
         &race,
-        ActionBody::WorkloadResolve {
+        ReplayProductAction::WorkloadResolve {
             schedule: schedule(&world, &built, "B"),
             delay: 1,
         },
     )
     .expect_err("WorkloadResolve is not offered at a mixed race");
-    assert_eq!(resolve, ActionBodyRefusal::Disabled);
+    assert_eq!(resolve, ProductActionRefusal::Disabled);
     assert_eq!(
         resolve.code(),
         CatalogCode::new("invalid_runtime_input", "invalid-value")
@@ -1037,14 +1058,19 @@ fn a_witness_row_naming_b_alone_refuses() {
     );
     let body = body_of(&world, &rows);
     assert_eq!(
-        admit(&race, ActionBody::FreeDelays(body.clone())).expect("both free delays admit"),
+        admit(&race, ReplayProductAction::FreeDelays(body.clone()))
+            .expect("both free delays admit"),
         rows
     );
     let c = schedule(&world, &built, "C");
     let mut alone = body;
     alone[0].free.retain(|(schedule, _)| *schedule != c);
     assert_eq!(alone[0].free.len(), 1, "`B` alone");
-    refuses(&race, alone, ActionBodyRefusal::FreeIdentities { row: 0 });
+    refuses(
+        &race,
+        alone,
+        ProductActionRefusal::FreeIdentities { row: 0 },
+    );
 }
 
 /// FR-204-AC-12 (TC-642 step 8): over `Loop` the maximum's witness entry is
@@ -1099,7 +1125,11 @@ fn loop_witness_reaches_b_through_the_exit() {
     };
     let race = stated_race(&world, &built, &[("A", &[2])], &[("B", &[1, 2])]);
     assert_eq!(
-        admit(&race, ActionBody::FreeDelays(body_of(&world, rows))).expect("the exit admits"),
+        admit(
+            &race,
+            ReplayProductAction::FreeDelays(body_of(&world, rows))
+        )
+        .expect("the exit admits"),
         *rows
     );
 }
@@ -1157,7 +1187,8 @@ fn free_delays_bodies_are_in_numeric_row_order_and_malformed_ones_refuse() {
             actions += 1;
             // Handed over in byte order; the body is in numeric order.
             let rows = [second.clone(), first.clone()];
-            let body = ActionBody::free_delays(&world.system(), &rows).expect("the body encodes");
+            let body =
+                ReplayProductAction::free_delays(&world.system(), &rows).expect("the body encodes");
             let bytes = String::from_utf8(body.to_bytes().expect("writes")).expect("UTF-8");
             assert_eq!(
                 bytes,
@@ -1196,20 +1227,211 @@ fn free_delays_bodies_are_in_numeric_row_order_and_malformed_ones_refuse() {
     let body = body_of(&world, &[nine[0].clone(), ten[0].clone()]);
     let mut byte_order = body.clone();
     byte_order.reverse();
-    refuses(&race, byte_order, ActionBodyRefusal::RowOrder { row: 1 });
-    refuses(&race, vec![body[0].clone()], ActionBodyRefusal::RowsMissing);
+    refuses(&race, byte_order, ProductActionRefusal::RowOrder { row: 1 });
+    refuses(
+        &race,
+        vec![body[0].clone()],
+        ProductActionRefusal::RowsMissing,
+    );
     refuses(
         &race,
         vec![body[0].clone(), body[0].clone()],
-        ActionBodyRefusal::RowRepeated { row: 1 },
+        ProductActionRefusal::RowRepeated { row: 1 },
     );
     let mut empty = body.clone();
     empty[0].free.clear();
-    refuses(&race, empty, ActionBodyRefusal::FreeIdentities { row: 0 });
+    refuses(
+        &race,
+        empty,
+        ProductActionRefusal::FreeIdentities { row: 0 },
+    );
     let mut names_a = body.clone();
     names_a[1].free[0].0 = a.clone();
-    refuses(&race, names_a, ActionBodyRefusal::FreeIdentities { row: 1 });
+    refuses(
+        &race,
+        names_a,
+        ProductActionRefusal::FreeIdentities { row: 1 },
+    );
     let mut late = body;
     late[0].free[0].1 = 3;
-    refuses(&race, late, ActionBodyRefusal::FreeOutsideWindow { row: 0 });
+    refuses(
+        &race,
+        late,
+        ProductActionRefusal::FreeOutsideWindow { row: 0 },
+    );
+}
+
+/// `Detour`'s maximum policy over the `Max` claim.
+fn detour_maximum(world: &World) -> (ProbProduct, Vec<Option<usize>>) {
+    let built = build(world, "Max");
+    let FhResult::Exact { policy, .. } = decide_bounded_event(
+        &built,
+        &Bound::AtMost(ratio(7, 10)),
+        &ExactProbLimits::default(),
+    )
+    .expect("the digital product is acyclic") else {
+        panic!("exact values");
+    };
+    (built, policy)
+}
+
+fn detour_max_claim() -> World {
+    detour(&claim(
+        "Max",
+        "under All",
+        "<= 0.7",
+        "eventually[0 ms, 2 ms] holds(c.late)",
+    ))
+}
+
+/// FR-204 "Evidence" (TC-642): the witness scheduler has an entry at every
+/// digital evidence and continuation state, not only at the states the
+/// emitted paths leave. Under every scheduler `Detour`'s maximum scheduler
+/// also names the `L` branch of `Half`, which no accepted path passes.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn witness_entries_cover_continuation_states_beside_the_paths() {
+    let world = detour_max_claim();
+    let (built, policy) = detour_maximum(&world);
+    let start = built.initial[0].2;
+    let witness = produce_witness(
+        &built,
+        &policy,
+        WitnessScope::EveryScheduler,
+        start,
+        &accepted(&built),
+        &ratio(7, 10),
+        &ExactProbLimits::default(),
+    )
+    .expect("the policy induces a chain")
+    .expect("two paths pass the bound");
+    let mut left: Vec<ProbStateId> = Vec::new();
+    for path in &witness.paths {
+        let sources = std::iter::once(start).chain(path.steps.iter().map(|step| step.to));
+        left.extend(sources.take(path.steps.len()));
+    }
+    let entered: Vec<ProbStateId> = witness.entries.iter().map(|(state, _)| *state).collect();
+    assert!(
+        left.iter().all(|state| entered.contains(state)),
+        "every state an emitted path leaves has an entry: {entered:?} vs {left:?}"
+    );
+    assert!(
+        entered.iter().any(|state| !left.contains(state)),
+        "a continuation state without an emitted path has an entry: {entered:?}"
+    );
+    assert!(entered.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+/// FR-204 with a randomized entry: both rows randomize between `B` delay 1
+/// and 2 with `1/2` each. The witness scheduler emits the four whole actions
+/// in canonical choice order with their exact product probabilities.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn randomized_rows_give_an_exact_randomized_entry() {
+    let world = detour_max_claim();
+    let (built, _) = detour_maximum(&world);
+    let start = built.initial[0].2;
+    let take = |index: usize| SchedulerChoice::Deterministic(ActionChoice(index));
+    let mut policy: Vec<Option<SchedulerChoice>> = vec![Some(take(0)); built.states.len()];
+    let half = ratio(1, 2);
+    let reversed = || {
+        SchedulerChoice::Randomized(vec![
+            (ActionChoice(1), half.clone()),
+            (ActionChoice(0), half.clone()),
+        ])
+    };
+    policy.push(Some(reversed()));
+    policy.push(Some(reversed()));
+    let entries = witness_scheduler(
+        &built,
+        &policy,
+        WitnessScope::Workload,
+        start,
+        &accepted(&built),
+        &ExactProbLimits::default(),
+    )
+    .expect("the policy gives an entry at each reached state");
+    let (_, EntryChoice::Randomized(alternatives)) = entries
+        .iter()
+        .find(|(state, _)| *state == start)
+        .expect("randomized entry at the race state")
+    else {
+        panic!("randomized entry at the race state: {entries:?}");
+    };
+    let [(first, p), (second, q), (third, r), (fourth, s)] = alternatives.as_slice() else {
+        panic!("four whole actions: {alternatives:?}");
+    };
+    let quarter = ratio(1, 4);
+    assert_eq!((p, q, r, s), (&quarter, &quarter, &quarter, &quarter));
+    assert_eq!(
+        action_rows(&world, first),
+        [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 1)])]
+    );
+    assert_eq!(
+        action_rows(&world, second),
+        [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 2)])]
+    );
+    assert_eq!(
+        action_rows(&world, third),
+        [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])]
+    );
+    assert_eq!(
+        action_rows(&world, fourth),
+        [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 2)])]
+    );
+
+    let last = policy.len() - 2;
+    policy[last] = Some(SchedulerChoice::Randomized(vec![
+        (ActionChoice(0), ratio(1, 1)),
+        (ActionChoice(1), ratio(-1, 2)),
+    ]));
+    assert!(matches!(
+        witness_scheduler(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            start,
+            &accepted(&built),
+            &ExactProbLimits::default()
+        ),
+        Err(WitnessError::NoChoice { state }) if state == start.index()
+    ));
+    policy[last] = Some(SchedulerChoice::Randomized(vec![
+        (ActionChoice(0), half.clone()),
+        (ActionChoice(0), half.clone()),
+    ]));
+    assert!(matches!(
+        witness_scheduler(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            start,
+            &accepted(&built),
+            &ExactProbLimits::default()
+        ),
+        Err(WitnessError::NoChoice { state }) if state == start.index()
+    ));
+
+    policy[last] = Some(reversed());
+    let bounded = ExactProbLimits {
+        model: qsl_replay::ModelCheckLimits {
+            limits: Limits {
+                max_transitions: 3,
+                ..Limits::default()
+            },
+            ..ExactProbLimits::default().model
+        },
+        ..ExactProbLimits::default()
+    };
+    assert!(matches!(
+        witness_scheduler(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            start,
+            &accepted(&built),
+            &bounded
+        ),
+        Err(WitnessError::NoChoice { state }) if state == start.index()
+    ));
 }
