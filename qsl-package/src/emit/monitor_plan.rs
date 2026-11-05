@@ -1033,6 +1033,41 @@ pub(super) fn carry_rows(
     }
 }
 
+/// Sets every member's `admitted_name` of each source record row to the
+/// binding name the final record node holds at that position, so a binding
+/// the writer renamed is named by its final name and not the name the base
+/// package gave it. Everything else in the row is left as carried. A row
+/// whose node is absent, or whose node's bindings disagree with its members
+/// in count, is a writer fault.
+fn follow_final_bindings(
+    rows: &mut [super::SelectedSourceRecordRow],
+    nodes: &[CheckedSemanticNodeV2],
+) -> Result<(), EmitRefusal> {
+    for row in rows {
+        let node = nodes
+            .iter()
+            .find(|node| node.node_id == row.structural_node)
+            .ok_or_else(|| invariant("a source record row names a node of the package"))?;
+        let CheckedTerm::Aggregate { members } = &node.body else {
+            return Err(invariant("a source record node's body is an aggregate"));
+        };
+        let names: Vec<&str> = members
+            .iter()
+            .filter_map(|member| match member {
+                CheckedTerm::Binding { name, .. } => Some(name.as_ref()),
+                _ => None,
+            })
+            .collect();
+        if names.len() != row.members.len() || names.len() != members.len() {
+            return Err(invariant("a source record node binds each row member"));
+        }
+        for (member, name) in row.members.iter_mut().zip(names) {
+            member.admitted_name = name.into();
+        }
+    }
+    Ok(())
+}
+
 /// The shared tail: index the graph, encode and wrap the bytes.
 fn finish(
     base: &CheckedPackageV2,
@@ -1081,7 +1116,8 @@ fn finish(
         )
         .map_err(EmitRefusal::from)
     })?;
-    let rows = carry_rows(retained, changes);
+    let mut rows = carry_rows(retained, changes);
+    follow_final_bindings(&mut rows.selected_source_record_rows, &semantic_graph.nodes)?;
     Ok(Emission {
         package,
         omitted: rows.omitted,

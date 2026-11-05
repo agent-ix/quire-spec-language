@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41 and FR-251-AC-42.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42 and FR-251-AC-44.
 
 ## Test Procedure
 
@@ -44,6 +44,7 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 24. Derive the plan of AC-1 and variants differing only in an atom body, the guard body, or a called helper's body; build `TimedMonitorPlan` through its public constructor with an atom body swapped (AC-37, AC-38, AC-39).
 25. Run the AC-7 differential over the unbounded past traces of steps 15 to 19 against the `HistoryCutoff` evaluator and the infinite-trace evaluator (AC-41).
 26. Write the plan-root package over an emission holding rows of every kind (selected model declaration and field, source-unit, model enum declaration and member, tuple declaration, operation-member, equality producer and fact, temporal binding, omitted nodes) with a rename of every node id those rows name, and read every id field of every returned row; write the plan-root package of a unit that selects a model, and read the returned `Emission`'s rows and join its exact rows to the package read back through IR.
+28. Write the plan-root package of AC-1's unit, read it back through the strict reader, and join the returned `Emission`'s source record rows of `Instance`, `Activation` and `LimitReached` through Contract IR's source record join; repeat with each renamed member's `admitted_name` set to its declared field name (AC-44).
 
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
@@ -75,3 +76,4 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 24: each variant has a different `PlanId`, the helper variant also a different plan-root key with the helper's `node_id` unchanged; equal bodies give an equal `PlanId`.
 - Step 25: monitor and `HistoryCutoff` evaluator equal on every trace; every definite monitor verdict equals the infinite-trace verdict; `indeterminate` verdicts are not compared.
 - Step 26: every row kind is carried and non-empty where the acquisition had rows; each node id in each row equals the renamed id, and a row naming no renamed node is unchanged; the declaration and field rows equal the unit's acquisition rows, the source-unit and equality rows each name a node of the package, and the IR join accepts the exact rows.
+- Step 28: the rows name `origin` and `value` at the renamed members and keep `origin_tick` and `amount` as declared names; the join succeeds and projects each record; each row with a declared name as `admitted_name` is refused with `MismatchedIdentityWitness`.
