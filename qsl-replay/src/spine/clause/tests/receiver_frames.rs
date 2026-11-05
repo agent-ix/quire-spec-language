@@ -10,7 +10,7 @@ use crate::spine::{CallOutcome, OperationName};
 use qsl_semantics::model::observation::{AdmissionFailure, FrameChange};
 
 #[path = "../../../../../qsl-semantics/tests/support/receiver_frames.rs"]
-pub(super) mod fixture;
+pub(crate) mod fixture;
 
 fn type_of(name: &str) -> String {
     fixture::id(name)
