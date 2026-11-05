@@ -7,6 +7,10 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::check::{CheckCause, CheckRefusal};
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRef, PackageDimensionRecord, PackageUnitRecord,
+};
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
@@ -119,6 +123,68 @@ fn a_quantity_literal_evaluates_with_its_own_unit_magnitude() {
     assert!(!truth(&package, "other"));
     assert!(truth(&package, "negative"));
     assert!(truth(&package, "converted"));
+}
+
+/// FR-091-AC-72: the checked package-unit conversion is evaluated with the
+/// specified argument, `2 tick`, and returns `true`.
+#[trace("FR-091-AC-72", "QSpec-FR-142-AC-18", "QSpec-FR-142-AC-19")]
+#[test]
+fn a_package_typed_unit_conversion_evaluates_true_for_two_ticks() {
+    let rate = quire_checked::key::DeclarationKey::fixture("dimension/Rate");
+    let us = quire_checked::key::DeclarationKey::fixture("unit/us");
+    let mut model = DomainPackage::new(DomainPackageRef::fixture("rpc"), vec![]);
+    model.dimensions.push(PackageDimensionRecord {
+        key: rate.clone(),
+        name: "Rate".to_owned(),
+        base: true,
+        terms: vec![],
+    });
+    model.units.push(PackageUnitRecord {
+        key: us,
+        name: "us".to_owned(),
+        dimension: rate,
+        target: None,
+        scale: "1".to_owned(),
+        offset: "0".to_owned(),
+    });
+    let selected = SelectedModels::fixture(
+        "M",
+        qsl_foundation::Span { start: 0, end: 1 },
+        model,
+        ModelNormalizationLimits::UNLIMITED,
+    )
+    .expect("the package model admits");
+    let text = "language \"ix:native\" edition \"1-draft\";\n\
+                profile v = \"quire.value.complete/v1\";\n\
+                model M = \"test/orders\";\n\
+                unit tick : M::Rate = rational(1, 2) * M::us;\n\
+                unit tock : M::Rate = rational(3, 1) * tick;\n\
+                function k1 using v(d: Quantity<tick>): Boolean pure { \
+                    convert<Quantity<M::us>>(d) = 1 M::us }\n\
+                function k1_at_two_ticks using v(): Boolean pure { k1(2 tick) }";
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "fr-091-ac-72"),
+        "fr-091-ac-72.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        built,
+        selected,
+        Vec::new(),
+    )
+    .expect("the package-unit declarations assemble");
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("k1 and its call check"),
+    );
+    assert!(truth(&package, "k1_at_two_ticks"));
 }
 
 /// FR-497-AC-4 (TC-1287): a source-checked carried conversion returns its
