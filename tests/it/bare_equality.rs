@@ -407,7 +407,7 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     let UnsupportedReason::MissingLocationProjection(missing) = view.reason() else {
         panic!("not a missing location projection");
     };
-    assert_eq!(view.locus().key, missing.application);
+    assert_eq!(view.locus().key(), Some(&missing.application));
     assert_eq!((missing.rows, missing.index), (0, 0));
 }
 
@@ -448,8 +448,9 @@ fn a_slot_is_named_by_control_node_member_and_index() {
 /// binder type the identity rows cannot project) and an equality-witness
 /// refusal reports the equality one, `Package` before `Node`; the witness
 /// refusals are Missing for no rows, Foreign for another package's rows and
-/// Unknown for rows that join nothing. The `Package` locus half of AC-66 and
-/// AC-67 waits for `CallAdmissionLocus::Package` (quire-eval).
+/// Unknown for rows that join nothing. The `Package` locus of the call
+/// (FR-390-AC-66) is asserted by the evaluation tests of qsl-eval
+/// (`bare_slots`).
 #[trace("FR-390-AC-67", "TC-1331")]
 #[test]
 fn an_equality_witness_refusal_is_reported_before_a_node_refusal() {
@@ -542,4 +543,208 @@ fn an_equality_inside_a_called_function_is_part_of_the_slots_walk() {
     ));
     guard("Refund", Some(&rows)).expect("selects with the rows");
     guard("Partial", None).expect("a guard that calls no such function needs no rows");
+}
+
+const UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+    integer_bits: u64::MAX,
+    decimal_digits: u64::MAX,
+    scale_expansion: u64::MAX,
+    text_input_bytes: u64::MAX,
+    text_scalars: u64::MAX,
+    normalized_scalars: u64::MAX,
+    unit_edges: u64::MAX,
+    value_occurrences: u64::MAX,
+    work_units: u64::MAX,
+    result_units: u64::MAX,
+};
+
+/// A record of the package's own declarations, built field by field.
+fn record(
+    types: &quire_semantic_value::declaration::TypeEnvironment,
+    name: &str,
+    fields: Vec<(&str, quire_exact::Value)>,
+) -> quire_exact::Value {
+    let key = types
+        .composites()
+        .find(|record| record.name().ends_with(name))
+        .expect("the package declares the record")
+        .key();
+    types
+        .record(
+            key,
+            fields
+                .into_iter()
+                .map(|(field, value)| (field, quire_exact::FieldValue::Present(value)))
+                .collect(),
+        )
+        .expect("the record is well formed")
+}
+
+fn is_boolean(value: &quire_exact::Value, expected: bool) -> bool {
+    matches!(value, quire_exact::Value::Boolean(held) if *held == expected)
+}
+
+fn supply_of(
+    slot: &qsl_package::BareSlot,
+    values: Vec<(&str, quire_exact::Value)>,
+) -> qsl_eval::value::ProtocolSupply<'static> {
+    qsl_eval::value::ProtocolSupply {
+        binders: values
+            .into_iter()
+            .map(|(name, value)| {
+                let binder = slot
+                    .sources()
+                    .iter()
+                    .find(|source| source.name() == name)
+                    .unwrap_or_else(|| panic!("the slot reads {name}"))
+                    .binder()
+                    .clone();
+                (binder, qsl_eval::value::SuppliedValue::Value(value).into())
+            })
+            .collect(),
+        observation: None,
+    }
+}
+
+fn completed(
+    result: Result<qsl_eval::value::ProtocolSlotEvaluation, quire_eval::CallFailure>,
+) -> quire_exact::Value {
+    use quire_eval::FamilyOutcome;
+    let Ok(qsl_eval::value::ProtocolSlotEvaluation::Evaluated(evaluation, charges)) = result else {
+        panic!("the slot evaluates: {result:?}");
+    };
+    assert!(
+        charges.binders().count() >= 1,
+        "the per-binder charge log is carried"
+    );
+    let FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)) = evaluation.outcome
+    else {
+        panic!("a completed outcome: {:?}", evaluation.outcome);
+    };
+    value
+}
+
+/// FR-531-AC-14, FR-531-AC-16, FR-533-AC-16, FR-533-AC-3 (evaluate halves):
+/// from the handoff directory's files alone (no `CheckedPackage`, no
+/// `Emission` in this test), the integer equality of `Refund`'s retry
+/// relation evaluates over the equality rows to the value its text states,
+/// and `trigger.guard`, which holds no `==`, evaluates without them.
+#[trace(
+    "FR-531-AC-14",
+    "FR-531-AC-16",
+    "FR-533-AC-16",
+    "FR-533-AC-3",
+    "TC-1331",
+    "TC-1333"
+)]
+#[test]
+fn the_retry_relation_evaluates_from_the_handoff_files_alone() {
+    use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot};
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let package = read(&request, &files["checked-package.json"]);
+    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
+    let with_rows = BarePackage::new(&package).with_supply(BareSupply {
+        identities: &identities,
+        equality: Some(&rows),
+    });
+    let without_rows = BarePackage::new(&package).with_supply(BareSupply {
+        identities: &identities,
+        equality: None,
+    });
+    let world = with_rows.world().expect("the package declares its records");
+    let types = world.types();
+    let refund = node_key(&package, "Refunds", "Refund");
+    let relation = |earlier: i64, later: i64| {
+        let slot = ProtocolSlot {
+            node: refund.clone(),
+            member: "retry.relation".to_owned(),
+            index: None,
+        };
+        let selected = with_rows
+            .select_protocol_slot(&ProtocolSlotDescriptor::new(
+                slot.node.clone(),
+                slot.member.clone(),
+                slot.index,
+            ))
+            .expect("selects");
+        let attempt = |tally: i64| {
+            record(
+                types,
+                "Attempt",
+                vec![("tally", quire_exact::Value::Integer(tally.into()))],
+            )
+        };
+        let given = supply_of(
+            &selected,
+            vec![
+                ("earlier", attempt(earlier)),
+                ("later", attempt(later)),
+                ("target", quire_exact::Value::Integer(5_i64.into())),
+                ("activated", quire_exact::Value::Boolean(false)),
+            ],
+        );
+        let mut meter = quire_exact::Meter::new(UNLIMITED);
+        let result = with_rows.evaluate_protocol_slot(&slot, &given, &mut meter);
+        (completed(result), meter, slot, given)
+    };
+    // earlier.tally < 3 and later.tally = earlier.tally + 1 and target >= 0
+    // and not activated.
+    let (held, meter, slot, given) = relation(1, 2);
+    assert!(is_boolean(&held, true), "{held:?}");
+    assert!(meter.consumed(quire_exact::LimitKind::WorkUnits) > 0);
+    assert!(is_boolean(&relation(1, 3).0, false));
+    assert!(is_boolean(&relation(3, 3).0, false));
+    // The same call over a supply without the equality rows refuses before
+    // any charge, at the package locus.
+    let mut untouched = quire_exact::Meter::new(UNLIMITED);
+    let Err(quire_eval::CallFailure::Admission(refusal)) =
+        without_rows.evaluate_protocol_slot(&slot, &given, &mut untouched)
+    else {
+        panic!("the relation is refused without the equality rows");
+    };
+    let quire_eval::CallAdmissionFailure::Refused(refused) = *refusal else {
+        panic!("a refusal");
+    };
+    assert_eq!(refused.locus, quire_eval::CallAdmissionLocus::Package);
+    assert_eq!(refused.record.catalog.code(), "unknown_required_feature");
+    assert_eq!(refused.record.catalog.cause(), "unsupported-feature");
+    assert_eq!(
+        refused.record.fields.get("reason").map(String::as_str),
+        Some("missing-equality-witness")
+    );
+    for counter in quire_exact::LimitKind::ALL {
+        assert_eq!(untouched.consumed(counter), 0, "{counter:?}");
+    }
+    assert!(untouched.admitted_charges().is_empty());
+    // `trigger.guard` holds no `==`: it needs no rows.
+    let guard = ProtocolSlot {
+        node: refund,
+        member: "trigger.guard".to_owned(),
+        index: None,
+    };
+    let selected = without_rows
+        .select_protocol_slot(&ProtocolSlotDescriptor::new(
+            guard.node.clone(),
+            guard.member.clone(),
+            guard.index,
+        ))
+        .expect("selects");
+    let flag = record(
+        types,
+        "Flag",
+        vec![("ready", quire_exact::Value::Boolean(false))],
+    );
+    let given = supply_of(
+        &selected,
+        vec![
+            ("trigger", flag),
+            ("target", quire_exact::Value::Integer(5_i64.into())),
+        ],
+    );
+    let mut meter = quire_exact::Meter::new(UNLIMITED);
+    assert!(is_boolean(
+        &completed(without_rows.evaluate_protocol_slot(&guard, &given, &mut meter)),
+        true
+    ));
 }

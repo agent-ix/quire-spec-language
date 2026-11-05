@@ -2242,3 +2242,98 @@ impl UnsupportedView {
         }
     }
 }
+
+#[cfg(test)]
+mod order_tests {
+    use super::*;
+    use crate::bare::IdentityWitnessRefusal;
+    use ix_trace_rs::trace;
+    use quire_exact::PathSegment;
+
+    fn key(name: &str) -> NodeKey {
+        NodeKey::new("pkg", vec![PathSegment::Text(name.to_owned())], 0).expect("a key")
+    }
+
+    fn node(package: &str, node: &str, reason: UnsupportedReason) -> UnsupportedView {
+        UnsupportedView {
+            package: package.to_owned(),
+            locus: ViewLocus::node(key(node)),
+            reason,
+        }
+    }
+
+    fn witness(reason: impl Into<UnsupportedReason>) -> UnsupportedView {
+        UnsupportedView::witness("pkg", reason.into())
+    }
+
+    fn first(views: Vec<UnsupportedView>) -> String {
+        let mut views = views.into_iter();
+        let mut chosen = views.next();
+        for view in views {
+            chosen = first_refusal(chosen, Some(view));
+        }
+        chosen.map(|view| view.reason.name()).unwrap_or_default()
+    }
+
+    /// FR-390-AC-67: view creation reports the first unsupported projection
+    /// by package identity, then locus (`Package` before `Node`), then node
+    /// key, then FR-390's reason order, whatever order they were found in.
+    #[trace("FR-390-AC-67", "TC-1070")]
+    #[test]
+    fn the_first_unsupported_projection_is_by_package_locus_node_and_reason() {
+        let type_at_node = node("pkg", "a", UnsupportedReason::MissingTypeRepresentation);
+        let literal_at_node = node("pkg", "a", UnsupportedReason::MissingLiteralProjection);
+        let foreign = || witness(IdentityWitnessRefusal::Foreign);
+        let missing_identity = || witness(IdentityWitnessRefusal::Missing);
+        let missing_equality = || witness(EqualityWitnessRefusal::Missing);
+        // A Node-locus type refusal and a foreign identity witness: Package first.
+        for views in [
+            vec![type_at_node.clone(), foreign()],
+            vec![foreign(), type_at_node.clone()],
+        ] {
+            assert_eq!(first(views), "foreign-identity-witness");
+        }
+        // A Node-locus literal refusal and a missing equality witness.
+        for views in [
+            vec![literal_at_node.clone(), missing_equality()],
+            vec![missing_equality(), literal_at_node.clone()],
+        ] {
+            assert_eq!(first(views), "missing-equality-witness");
+        }
+        // Both at the Package locus: the reason order breaks the tie.
+        for views in [
+            vec![foreign(), missing_equality()],
+            vec![missing_equality(), foreign()],
+        ] {
+            assert_eq!(first(views), "foreign-identity-witness");
+        }
+        for views in [
+            vec![missing_identity(), missing_equality()],
+            vec![missing_equality(), missing_identity()],
+        ] {
+            assert_eq!(first(views), "missing-identity-witness");
+        }
+        // Ascending package identity precedes locus; ascending node key
+        // precedes reason; reason order decides at one node.
+        let earlier_package = node("aaa", "z", UnsupportedReason::MissingLiteralProjection);
+        assert_eq!(
+            first(vec![
+                witness(IdentityWitnessRefusal::Missing),
+                earlier_package
+            ]),
+            "missing-literal-projection"
+        );
+        assert_eq!(
+            first(vec![
+                node("pkg", "b", UnsupportedReason::MissingTypeRepresentation),
+                literal_at_node.clone(),
+            ]),
+            "missing-literal-projection",
+            "the lower node key wins over an earlier reason"
+        );
+        assert_eq!(
+            first(vec![literal_at_node, type_at_node]),
+            "missing-type-representation"
+        );
+    }
+}
