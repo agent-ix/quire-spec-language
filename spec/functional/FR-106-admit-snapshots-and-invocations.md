@@ -95,7 +95,11 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   value paths at it. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object and the relationship extents of the snapshot
-  (FR-364), and keeps its document identity. Admission also
+  (FR-364), and keeps its document identity. Two admissions of one snapshot's content under two
+  distinct document references are two observations: each keeps its own
+  authority and identity labels, and every object of each keeps the same complete
+  model, universe, object-type and object identity; neither observation's
+  document identity stands in for the other's. Admission also
   issues each observation's population manifest and bundle (FR-364): one row
   per population declaration of the package, `complete` exactly when the
   snapshot lists the population `"complete": true`, so a declared population
@@ -1282,6 +1286,7 @@ required; check 10 settles it.
 | FR-106-AC-67 | A snapshot with a required population `P` that has no row returns `Incomplete` with `incomplete_population`/`missing-required-artifact` naming `P` and no collection; the same snapshot with a `P` row marked `"complete": false` returns `incomplete_population`/`incomplete-scope`; with both an unlisted required population and a listed incomplete one, the first in walk order is named with the cause of its own kind. | Test (TC-1076) |
 | FR-106-AC-68 | Over TC-1171's fixture, `ids` written `{"set": [], "extra": 1}` refuses `unknown-member` naming `extra`, and `counts: Bag<Int[0, 9]>[0, 4]` written `{"bag": [], "set": []}` refuses `unknown-member` naming `set`; the first other member in document order is named. This is the native counterpart of QSpec FR-144-AC-16's extra member. | Test (TC-1171) |
 | FR-106-AC-69 | Over TC-1171's fixture, `order: OrderedSet<Int[0, 9]>[0, 3]` written `{"ordered-set": 1}`, `ids` written `[]`, and `ids` written `{"bag": []}` each refuse `wrong-value-kind` (naming the tag for the non-array, the field otherwise). This is the native counterpart of QSpec FR-144-AC-16's wrong-kind tag. | Test (TC-1171) |
+| FR-106-AC-70 | One snapshot's content admitted under two distinct document references gives two observations whose `identity` values are those two references, each holding the same populations, completeness flags and `ObjectEnvironment`, with the selected `self` object carrying the same universe, object type and object identifier in both. Neither observation reports the other's document identity. | Test (TC-1308) |
 
 ## Dependencies
 

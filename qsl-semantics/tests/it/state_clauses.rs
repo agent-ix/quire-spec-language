@@ -2985,7 +2985,20 @@ fn run_tc465_current(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
-    let label = frame_label("current-snap");
+    run_tc465_current_as(document, "current-snap", mutate)
+}
+
+/// [`run_tc465_current`] with the snapshot admitted under the document
+/// reference whose identity label is `identity`.
+fn run_tc465_current_as(
+    document: &[u8],
+    identity: &str,
+    mutate: impl FnOnce(&mut serde_json::Value),
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let label = frame_label(identity);
     let mut value = tc465_healthy_parent(&label);
     mutate(&mut value);
     let bytes = value.to_string().into_bytes();
@@ -3859,6 +3872,140 @@ fn tc465_row16_duplicate_key_refuses_conflicting_identity() {
         value["populations"][0]["objects"] = json!(objects);
     });
     assert_tc465_refused(result, "invalid_runtime_input", "conflicting-identity");
+}
+
+/// FR-106-AC-70 (FR-513-AC-14, TC-1308 row 24): one snapshot's content
+/// admitted under two distinct document references gives two observations.
+/// Each keeps its own authority and identity labels, and both hold the same
+/// populations, completeness and object environment, and the `self` object
+/// carries the same universe, object type and object identifier in both.
+///
+/// Mutation used: in `admit_observations`, replaced `identity: read.identity`
+/// with a constant `DocumentRef`; the identity assertions went red as
+/// expected, reverted.
+#[trace("TC-1308", "FR-513-AC-14", "FR-106-AC-70")]
+#[test]
+fn one_snapshot_admitted_under_two_references_keeps_each_identity_and_the_full_tuple() {
+    let document = tc465_document();
+    let first = run_tc465_current_as(&document, "occurrence-a", |_| {})
+        .expect("the first occurrence admits");
+    let second = run_tc465_current_as(&document, "occurrence-b", |_| {})
+        .expect("the second occurrence admits");
+
+    let (one, two) = (
+        first.current.as_ref().expect("a current observation"),
+        second.current.as_ref().expect("a current observation"),
+    );
+    assert_eq!(one.identity, frame_label("occurrence-a"));
+    assert_eq!(two.identity, frame_label("occurrence-b"));
+    assert_ne!(one.identity, two.identity);
+    assert_eq!(one.identity.authority, two.identity.authority);
+
+    assert_eq!(one.populations, two.populations);
+    assert_eq!(
+        one.populations
+            .get("ix://example/config-version/config_history"),
+        Some(&true)
+    );
+    assert_eq!(
+        format!("{:?}", one.environment),
+        format!("{:?}", two.environment),
+        "the same content gives the same objects under either reference"
+    );
+
+    let (a, b) = (&first.self_object, &second.self_object);
+    assert_eq!(a.object().as_str(), "child");
+    assert_eq!(a.universe(), b.universe());
+    assert_eq!(a.object_type(), b.object_type());
+    assert_eq!(a.object(), b.object());
+}
+
+/// FR-513-AC-14 (TC-1308 row 24): a second object with an existing key (a
+/// duplicate member, whether an identical copy or a different record) refuses
+/// `invalid_runtime_input`/`conflicting-identity` naming the key.
+#[trace("TC-1308", "FR-513-AC-14", "FR-106-AC-3")]
+#[test]
+fn a_duplicate_member_and_a_duplicate_storage_key_each_refuse_conflicting_identity() {
+    let document = tc465_document();
+    let copy = run_tc465_current(&document, |value| {
+        let mut objects = value["populations"][0]["objects"]
+            .as_array()
+            .unwrap()
+            .clone();
+        objects.push(objects[0].clone());
+        value["populations"][0]["objects"] = json!(objects);
+    });
+    let record = assert_tc465_refused(copy, "invalid_runtime_input", "conflicting-identity");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+
+    let other = run_tc465_current(&document, |value| {
+        let mut object = value["populations"][0]["objects"][0].clone();
+        object["fields"]["versionNumber"] = json!({"integer": "9"});
+        value["populations"][0]["objects"]
+            .as_array_mut()
+            .unwrap()
+            .push(object);
+    });
+    let record = assert_tc465_refused(other, "invalid_runtime_input", "conflicting-identity");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+}
+
+/// FR-513-AC-14 (TC-1308 row 24): a surplus member (a field the type does not
+/// declare) refuses `unknown-member`; a foreign member (a type the model does
+/// not declare), a wrong-type member (a declared type the population does not
+/// take) and a foreign population each refuse `wrong-role-mapping`, naming
+/// the object or population.
+#[trace("TC-1308", "FR-513-AC-14", "FR-106-AC-3")]
+#[test]
+fn a_surplus_foreign_and_wrong_type_member_each_refuse_at_their_own_check() {
+    let document = tc465_document();
+    let surplus = run_tc465_current(&document, |value| {
+        value["populations"][0]["objects"][0]["fields"]["label"] = json!({"boolean": true});
+    });
+    let record = assert_tc465_refused(surplus, "invalid_runtime_input", "unknown-member");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("label")
+    );
+
+    let foreign = run_tc465_current(&document, |value| {
+        value["populations"][0]["objects"][0]["type"] = json!("ix://example/config-version/Absent");
+    });
+    let record = assert_tc465_refused(foreign, "invalid_runtime_input", "wrong-role-mapping");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+
+    let with_note = tc465_document_with_note_type();
+    let wrong_type = run_tc465_current(&with_note, |value| {
+        value["populations"][0]["objects"][0]["type"] = json!("ix://example/config-version/Note");
+        value["populations"][0]["objects"][0]["fields"] = json!({});
+    });
+    let record = assert_tc465_refused(wrong_type, "invalid_runtime_input", "wrong-role-mapping");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+
+    let population = run_tc465_current(&document, |value| {
+        value["populations"][0]["population"] = json!("ix://example/config-version/other");
+    });
+    let record = assert_tc465_refused(population, "invalid_runtime_input", "wrong-role-mapping");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some("ix://example/config-version/other")
+    );
 }
 
 /// SR-750 FND-005 round 2 (two defects): an object of an undeclared member
