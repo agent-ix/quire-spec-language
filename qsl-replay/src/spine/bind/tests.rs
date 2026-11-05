@@ -192,6 +192,10 @@ fn occurrences_in(
     let graph = unit.checked.package().graph();
     graph
         .occurrences()
+        // A scalar application is an `expression` occurrence; a Boolean
+        // clause body also holds `claim` and `declaration` occurrences of
+        // its node (QSpec FR-290).
+        .filter(|(_, origin, _)| origin.role().as_str() == "expression")
         .filter(|(_, _, location)| {
             matches!(&location.origin, BodyOrigin::Body { function: f, .. } if f == function)
         })
