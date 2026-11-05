@@ -401,6 +401,7 @@ mod decisive_aggregate_tests {
     }
 }
 
+#[ix_trace_rs::string_edge]
 fn temporal_clock_selections(
     parsed: &front_end::ParsedUnitSource,
 ) -> Vec<qsl_package::TemporalClockSelection> {
@@ -419,29 +420,28 @@ fn temporal_clock_selections(
             let selected = profiles
                 .iter()
                 .find(|profile| profile.alias == clause.profile.alias)?;
-            let clock = match selected.identity.as_str() {
-                "quire.temporal.event-position.false-extension/v1" => {
+            let profile = TemporalProfile::from_identity(&selected.identity)?;
+            let clock = match profile {
+                TemporalProfile::EventPositionFalseExtension => {
                     ClockConfiguration::EventPosition {
                         sequence_authority: "caller-supplied-trace".into(),
                     }
                 }
-                "quire.temporal.fixed-sample.false-extension/v1" => {
-                    ClockConfiguration::FixedSample {
-                        epoch: qsl_package::ClockExactNumber::Integer {
-                            decimal: "0".into(),
-                        },
-                        period: qsl_package::ClockExactNumber::Integer {
-                            decimal: "1".into(),
-                        },
-                        unit: "sample".into(),
-                    }
-                }
-                "quire.temporal.timestamped-event.finite-window/v1" => {
+                TemporalProfile::FixedSampleFalseExtension => ClockConfiguration::FixedSample {
+                    epoch: qsl_package::ClockExactNumber::Integer {
+                        decimal: "0".into(),
+                    },
+                    period: qsl_package::ClockExactNumber::Integer {
+                        decimal: "1".into(),
+                    },
+                    unit: "sample".into(),
+                },
+                TemporalProfile::TimestampedEventFiniteWindow => {
                     ClockConfiguration::TimestampedEvent {
                         timestamp_unit: "caller-supplied-time".into(),
                     }
                 }
-                _ => return None,
+                TemporalProfile::InfiniteTrace | TemporalProfile::Timed => return None,
             };
             Some(TemporalClockSelection {
                 source: parsed.source().reference().clone(),
