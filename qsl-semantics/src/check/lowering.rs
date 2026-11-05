@@ -321,10 +321,10 @@ impl SemanticNode {
     /// QSpec FR-440 "Union type node": a union type node's members in
     /// declared order, each as its name and the payload type nodes its
     /// `Group` of references names in position order. `None` for every node
-    /// that is not a `composite_type`/`union` node.
+    /// whose body is not that shape: a record's bindings hold leaves and a
+    /// tuple's members are bare references, so neither reads as a union.
     pub fn union_member_payload_nodes(&self) -> Option<Vec<(&str, Vec<NodeKey>)>> {
-        if self.content.node_tag != NodeTag::CompositeType || self.content.semantic_form != "union"
-        {
+        if self.content.node_tag != NodeTag::CompositeType {
             return None;
         }
         let BodyTerm::Aggregate(AggregateTerm { members }) = &self.content.body else {
