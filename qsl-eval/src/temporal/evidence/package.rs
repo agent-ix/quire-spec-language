@@ -528,7 +528,7 @@ enum IntervalKey {
 }
 
 /// The operation identity of `node` and its interval, `None` for a node the
-/// package route does not read (a window aggregate).
+/// package route does not read.
 fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>)> {
     use qsl_foundation::bound::TemporalUpper;
     use qsl_semantics::check::{BinaryTemporal, CheckedInterval, UnaryTemporal};
@@ -586,7 +586,7 @@ fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>
             },
             key(interval),
         ),
-        FormulaNode::Aggregate { .. } => return None,
+        FormulaNode::Aggregate { .. } => ("quire.op.temporal.aggregate", None),
     })
 }
 

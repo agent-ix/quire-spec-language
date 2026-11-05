@@ -475,13 +475,14 @@ pub use state_graph_claim::{
 pub use temporal_clause::check_clauses;
 
 pub use lowering::{collection_kind, CollectionShape, PlaceRow, PlaceStep};
+pub use qsl_forms::AggregateComparison;
 pub use temporal_clause::{
-    Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
-    CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, ClockUnitSelection,
-    FormulaNode, FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim,
-    TemporalDeclaration, TemporalDeclarations, TemporalSelection, TemporalTraceFamily,
-    TimeNominalForm, TimeNominalNode, TimeNominalOrigin, TimeSourceKind, TimedPropertyForm,
-    UnaryTemporal,
+    Activation, AggregateKind, AggregateWindow, BinaryTemporal, CaptureSite, CheckedAggregate,
+    CheckedFormula, CheckedInterval, CheckedOperator, CheckedProtocolFairness,
+    CheckedProtocolTarget, CheckedTemporalClause, ClockUnitSelection, DurationWindow, FormulaNode,
+    FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
+    TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeNominalForm, TimeNominalNode,
+    TimeNominalOrigin, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,

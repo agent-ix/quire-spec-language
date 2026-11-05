@@ -87,9 +87,9 @@ pub use tuple::{
     evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,
 };
 pub use window::{
-    AggregateAtom, AggregateKind, AggregateTerm, InsufficientData, PastWindow, TermRefusal,
-    WindowLimitReached, WindowRead, WindowRefusal, WindowSource, WindowTrace,
-    DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
+    AggregateAtom, AggregateKind, AggregateSample, AggregateTerm, InsufficientData, PastWindow,
+    SampledWindow, TermRefusal, WindowLimitReached, WindowRead, WindowRefusal, WindowSource,
+    WindowTrace, DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
 };
 
 use qsl_semantics::check::CheckedTemporalClause;

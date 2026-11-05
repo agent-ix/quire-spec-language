@@ -156,15 +156,12 @@ impl Plan {
         for (index, node) in formula.nodes().iter().enumerate() {
             nodes.push(match node {
                 FormulaNode::Constant(value) => Node::Constant(*value),
-                FormulaNode::Holds { .. } => {
+                // A window aggregate atom is an atom of the plan: the letter
+                // reads it at a position as it reads a `holds` atom (FR-532
+                // "Window aggregates").
+                FormulaNode::Holds { .. } | FormulaNode::Aggregate { .. } => {
                     atoms.push(index);
                     Node::Atom
-                }
-                FormulaNode::Aggregate { .. } => {
-                    return Err(InternalFault::new(
-                        "temporal.plan",
-                        "aggregate-formula-not-emitted",
-                    ));
                 }
                 FormulaNode::Not(operand) => Node::Not(operand.index()),
                 FormulaNode::And(left, right) => Node::And(left.index(), right.index()),
