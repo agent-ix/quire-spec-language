@@ -1322,7 +1322,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [CheckedTerm::Binding { name, value }, body] = arguments else {
                     return Err(fault("reader-let-has-binding-and-body").into());
                 };
-                let binder = self.binder_node(name.as_ref())?;
+                let binder = self.binder_node(name.as_ref(), body, locals)?;
                 let slot = self.next_slot(context, locals);
                 let value = self.project_argument(id, value, context, locals)?;
                 let mut body_locals = locals.clone();
@@ -1572,7 +1572,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [source_term, CheckedTerm::Binding { name, value }] = arguments else {
                     return Err(fault("reader-collection-query-has-source-and-binder").into());
                 };
-                let binder = self.binder_node(name.as_ref())?;
+                let binder = self.binder_node(name.as_ref(), value, locals)?;
                 let slot = self.next_slot(context, locals);
                 let source = self.project_argument(id, source_term, context, locals)?;
                 let mut body_locals = locals.clone();
@@ -1980,46 +1980,73 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         first_free.max(after_active_locals)
     }
 
-    fn binder_node(&self, name: &str) -> Result<CheckedNodeId, BuildError> {
-        self.index
+    fn binder_node(
+        &self,
+        name: &str,
+        body: &CheckedTerm,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<CheckedNodeId, BuildError> {
+        let next_level = locals
+            .keys()
+            .filter_map(|id| self.index.node(id))
+            .filter_map(parameter_level)
+            .max()
+            .map_or(0, |level| level.saturating_add(1));
+        let referenced = self.referenced_parameters(body);
+        let candidates = self
+            .index
             .nodes
             .values()
             .filter(|node| {
                 node.node_tag.as_ref() == "value" && node.semantic_form.as_ref() == "parameter"
             })
-            .filter_map(|node| {
-                let CheckedTerm::Aggregate { members } = &node.body else {
-                    return None;
-                };
-                let (mut declared_name, mut level) = (None, None);
-                for member in members {
-                    let CheckedTerm::Binding { name, value } = member else {
-                        continue;
+            .filter(|node| !locals.contains_key(&node.node_id))
+            .filter(|node| parameter_name(&node.body) == Some(name))
+            .filter(|node| parameter_level(node).is_some_and(|level| level == next_level))
+            .map(|node| &node.node_id)
+            .collect::<Vec<_>>();
+        candidates
+            .iter()
+            .find(|candidate| referenced.contains(*candidate))
+            .or_else(|| candidates.first())
+            .map(|candidate| (*candidate).clone())
+            .ok_or_else(|| fault("reader-expression-binder-is-admitted").into())
+    }
+
+    fn referenced_parameters(&self, term: &CheckedTerm) -> BTreeSet<CheckedNodeId> {
+        fn collect(
+            index: &WireIndex<'_>,
+            term: &CheckedTerm,
+            seen: &mut BTreeSet<CheckedNodeId>,
+            parameters: &mut BTreeSet<CheckedNodeId>,
+        ) {
+            match term {
+                CheckedTerm::Reference { target } => {
+                    let Some(node) = index.node(target) else {
+                        return;
                     };
-                    match name.as_ref() {
-                        "name" => {
-                            declared_name = match value.literal_read()?.value {
-                                quire_contract_model::CheckedLiteralValue::Text(name) => Some(name),
-                                _ => None,
-                            }
-                        }
-                        "level" => {
-                            level = match value.literal_read()?.value {
-                                quire_contract_model::CheckedLiteralValue::Integer(level) => {
-                                    level.to_string().parse::<usize>().ok()
-                                }
-                                _ => None,
-                            }
-                        }
-                        _ => {}
+                    if node.node_tag.as_ref() == "value"
+                        && node.semantic_form.as_ref() == "parameter"
+                    {
+                        parameters.insert(target.clone());
+                    } else if seen.insert(target.clone()) {
+                        collect(index, &node.body, seen, parameters);
                     }
                 }
-                (declared_name == Some(name)).then_some((level?, node))
-            })
-            .max_by_key(|(level, _)| *level)
-            .map(|(_, node)| node)
-            .map(|node| node.node_id.clone())
-            .ok_or_else(|| fault("reader-expression-binder-is-admitted").into())
+                CheckedTerm::Application { arguments, .. }
+                | CheckedTerm::Aggregate { members: arguments } => {
+                    for argument in arguments {
+                        collect(index, argument, seen, parameters);
+                    }
+                }
+                CheckedTerm::Binding { value, .. } => collect(index, value, seen, parameters),
+                _ => {}
+            }
+        }
+
+        let mut parameters = BTreeSet::new();
+        collect(self.index, term, &mut BTreeSet::new(), &mut parameters);
+        parameters
     }
 
     /// `record.project`: a field of a record value, or an attribute of a
@@ -2479,6 +2506,38 @@ pub(crate) fn node_value_type(
             Err(TypeError::Unsupported)
         }
     }
+}
+
+fn parameter_name(term: &CheckedTerm) -> Option<&str> {
+    let CheckedTerm::Aggregate { members } = term else {
+        return None;
+    };
+    members.iter().find_map(|member| {
+        let CheckedTerm::Binding { name, value } = member else {
+            return None;
+        };
+        (name.as_ref() == "name").then(|| match value.literal_read()?.value {
+            quire_contract_model::CheckedLiteralValue::Text(name) => Some(name),
+            _ => None,
+        })?
+    })
+}
+
+fn parameter_level(node: &CheckedSemanticNodeV2) -> Option<usize> {
+    let CheckedTerm::Aggregate { members } = &node.body else {
+        return None;
+    };
+    members.iter().find_map(|member| {
+        let CheckedTerm::Binding { name, value } = member else {
+            return None;
+        };
+        (name.as_ref() == "level").then(|| match value.literal_read()?.value {
+            quire_contract_model::CheckedLiteralValue::Integer(level) => {
+                level.to_string().parse::<usize>().ok()
+            }
+            _ => None,
+        })?
+    })
 }
 
 fn reference_target(term: &CheckedTerm) -> Option<&CheckedNodeId> {
