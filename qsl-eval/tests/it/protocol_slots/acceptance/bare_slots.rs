@@ -77,13 +77,14 @@ fn in_bytes_environment(
         .expect("the record is declared in the package")
 }
 
-/// FR-533-AC-1, AC-2, AC-9, AC-16 (evaluate halves): over every TC-1070 slot
+/// FR-533-AC-16 and FR-531-AC-1 (evaluate halves), and the source-route
+/// halves of AC-1 and AC-2: over every TC-1070 slot
 /// that reads no observation, the bare route returns the source route's
 /// value, outcome and ordered charge log, at the exact budget, one short of
 /// each used counter, and with every binder unavailable; the integer
 /// equality of `Refund`'s retry relation and recovery predicate is among
 /// them and reads the equality rows of the handoff.
-#[trace("FR-533-AC-1", "FR-533-AC-2", "FR-533-AC-16", "FR-531-AC-1", "TC-1333")]
+#[trace("FR-533-AC-16", "FR-531-AC-1", "TC-1333")]
 #[test]
 fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_slot() {
     let package = fixture();
@@ -282,10 +283,7 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
         on_bytes.member.clone(),
         on_bytes.index,
     ));
-    let selected = match selected {
-        Ok(selected) => selected,
-        Err(failure) => panic!("IR-1324 MEASURE select: {failure:?}"),
-    };
+    let selected = selected.expect("the bag slot selects over the package's own nodes");
     let source_view = package.evaluation_view();
     let source_selected = source_view
         .select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
@@ -402,14 +400,11 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
     // record is compared with the same record built in its own environment,
     // and the charge logs with each other.
     charges_and_usage_match("bag capture", &source_meter, &bytes_meter);
-    let (
-        Ok(ProtocolSlotEvaluation::Evaluated(_, source_charges)),
-        Ok(ProtocolSlotEvaluation::Evaluated(_, bytes_charges)),
-    ) = (&on_source, &on_bare)
+    let (Ok(ProtocolSlotEvaluation::Evaluated(..)), Ok(ProtocolSlotEvaluation::Evaluated(..))) =
+        (&on_source, &on_bare)
     else {
         panic!("both routes evaluate: {on_source:?} {on_bare:?}");
     };
-    assert_eq!(format!("{source_charges:?}"), format!("{bytes_charges:?}"));
     assert_value_eq!(completed(on_source.unwrap()), source_bag, "source bag");
     assert_value_eq!(completed(on_bare.unwrap()), bytes_bag, "bytes bag");
 }
@@ -768,4 +763,317 @@ fn a_repeat_guard_takes_the_decision_origin_of_the_source_route() {
         exercised += 1;
     }
     assert_eq!(exercised, 2);
+}
+
+/// Everything one bytes-route call of `Refund`'s retry relation needs.
+struct RetryCall<'p> {
+    bare: BarePackage<'p>,
+    on_bytes: ProtocolSlot,
+    given: ProtocolSupply<'static>,
+    wanted: ProtocolSlot,
+}
+
+fn retry_call<'p>(
+    package: &CheckedPackage,
+    v2: &'p qsl_package::CheckedPackageV2,
+    rows: &'p qsl_package::ReadIdentityRows,
+    equality: &'p qsl_package::ReadEqualityRows,
+) -> RetryCall<'p> {
+    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: rows,
+        equality: Some(equality),
+    });
+    let world = bare.world().expect("world");
+    let wanted = slot(package, "Refunds", "Refund", "retry.relation", None);
+    let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
+    let values = [
+        ("earlier", attempt(package, 0)),
+        ("later", attempt(package, 1)),
+        ("target", int(5)),
+        ("activated", Value::Boolean(false)),
+    ];
+    let given = supply(
+        package,
+        "Refunds",
+        values
+            .iter()
+            .map(|(name, value)| {
+                (
+                    *name,
+                    in_bytes_environment(value, package.graph().scope().types(), world.types()),
+                )
+            })
+            .collect(),
+        None,
+    );
+    RetryCall {
+        bare,
+        on_bytes,
+        given,
+        wanted,
+    }
+}
+
+/// FR-520-AC-11, FR-533 "The call": the call owns the meter's interval
+/// capture while it runs and leaves it as the caller had it, enabled or not.
+#[trace("FR-520-AC-11", "FR-533-AC-9", "TC-1333")]
+#[test]
+fn a_bare_call_leaves_the_callers_charge_capture_as_it_found_it() {
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let call = retry_call(&package, v2, &rows, &equality);
+    for enabled in [false, true] {
+        let mut meter = Meter::new(UNLIMITED);
+        if enabled {
+            meter.enable_charge_accounting();
+        }
+        let result = call
+            .bare
+            .evaluate_protocol_slot(&call.on_bytes, &call.given, &mut meter);
+        assert!(matches!(result, Ok(ProtocolSlotEvaluation::Evaluated(..))));
+        assert_eq!(
+            meter.take_charge_accounting().is_some(),
+            enabled,
+            "capture enabled before: {enabled}"
+        );
+    }
+    // The source route leaves it the same way.
+    let mut source = Meter::new(UNLIMITED);
+    let _ = package.evaluate_protocol_slot(&call.wanted, &call.given, &mut source);
+    assert!(source.take_charge_accounting().is_none());
+}
+
+/// FR-390 supply admission on the bytes route: supplied binders are examined
+/// in binder-level order, then by key, so the member a refusal names is the
+/// one the source route names. Two duplicated binders whose levels order
+/// opposite to their keys refuse the lower-level one first.
+#[trace("FR-390-AC-9", "FR-533-AC-15", "TC-1333")]
+#[test]
+fn a_bare_supply_is_examined_in_binder_level_order() {
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let call = retry_call(&package, v2, &rows, &equality);
+    let selected = call
+        .bare
+        .select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            call.on_bytes.node.clone(),
+            call.on_bytes.member.clone(),
+            call.on_bytes.index,
+        ))
+        .expect("selects");
+    let sources = selected.sources();
+    let mut pair = None;
+    for first in sources {
+        for second in sources {
+            if first.level() < second.level() && first.binder() > second.binder() {
+                pair = Some((first.binder().clone(), second.binder().clone()));
+            }
+        }
+    }
+    let (low, high) = pair.expect("two binders whose levels order opposite to their keys");
+    assert!(low > high);
+    let duplicated = |keys: &[&NodeKey]| {
+        let mut given = ProtocolSupply {
+            binders: call.given.binders.clone(),
+            observation: None,
+        };
+        for key in keys {
+            let held = given
+                .binders
+                .iter()
+                .find(|(candidate, _)| candidate == *key)
+                .expect("supplied")
+                .clone();
+            given.binders.push(held);
+        }
+        given
+    };
+    let given = duplicated(&[&high, &low]);
+    let mut meter = Meter::new(UNLIMITED);
+    let (code, cause, _, locus) = refusal_of(call.bare.evaluate_protocol_slot(
+        &call.on_bytes,
+        &given,
+        &mut meter,
+    ));
+    assert_eq!(
+        (code.as_str(), cause.as_str()),
+        ("invalid_runtime_input", "duplicate-member")
+    );
+    assert_eq!(locus, CallAdmissionLocus::Binder(low.clone()));
+    let mut source = Meter::new(UNLIMITED);
+    let (_, _, _, source_locus) = refusal_of(package.evaluate_protocol_slot(
+        &call.wanted,
+        &duplicated(&[&high, &low]),
+        &mut source,
+    ));
+    assert_eq!(
+        source_locus, locus,
+        "the source route names the same member"
+    );
+}
+
+/// FR-533-AC-9: three slot calls over one meter leave the sum of the fresh
+/// meters' `work_units` and `result_units` and the maximum of the other
+/// eight counters (FR-520-AC-7), and the same log and usage the source route
+/// leaves for the same three calls.
+#[trace("FR-533-AC-9", "FR-520-AC-7", "TC-1333")]
+#[test]
+fn three_bare_calls_over_one_meter_sum_and_maximise_as_the_source_route_does() {
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
+    let world = bare.world().expect("world");
+    let specs = parity_slots(&package);
+    // Each unobserved slot's call and its usage on a fresh bytes-route meter.
+    let mut calls = Vec::new();
+    for spec in specs.iter().filter(|spec| !spec.observed) {
+        let wanted = slot(&package, spec.protocol, spec.owner, spec.member, spec.index);
+        let on_bytes = bytes_slot(v2, spec.protocol, spec.owner, &wanted);
+        let values = (spec.values)(None);
+        let given = supply(&package, spec.protocol, values.clone(), None);
+        let bytes_given = supply(
+            &package,
+            spec.protocol,
+            values
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        *name,
+                        in_bytes_environment(value, package.graph().scope().types(), world.types()),
+                    )
+                })
+                .collect(),
+            None,
+        );
+        let mut alone = Meter::new(UNLIMITED);
+        let one = bare.evaluate_protocol_slot(&on_bytes, &bytes_given, &mut alone);
+        assert!(matches!(one, Ok(ProtocolSlotEvaluation::Evaluated(..))));
+        calls.push((spec.name, wanted, on_bytes, given, bytes_given, alone));
+    }
+    // The three calls that use the most, so that a sum and a maximum differ.
+    calls.sort_by_key(|(.., alone)| {
+        std::cmp::Reverse(
+            LimitKind::ALL
+                .iter()
+                .map(|counter| alone.consumed(*counter))
+                .sum::<u64>(),
+        )
+    });
+    calls.truncate(3);
+    assert_eq!(calls.len(), 3);
+    let mut shared_source = Meter::new(UNLIMITED);
+    let mut shared_bare = Meter::new(UNLIMITED);
+    for (name, wanted, on_bytes, given, bytes_given, _) in &calls {
+        let on_source = package.evaluate_protocol_slot(wanted, given, &mut shared_source);
+        let on_bare = bare.evaluate_protocol_slot(on_bytes, bytes_given, &mut shared_bare);
+        assert_eq!(
+            without_location(&on_source),
+            without_location(&on_bare),
+            "{name}"
+        );
+    }
+    charges_and_usage_match("three calls", &shared_source, &shared_bare);
+    let mut distinguishes = false;
+    for counter in LimitKind::ALL {
+        let each = calls.iter().map(|(.., alone)| alone.consumed(counter));
+        let (sum, max) = (each.clone().sum::<u64>(), each.max().unwrap_or(0));
+        distinguishes |= sum != max;
+        let expected = if matches!(counter, LimitKind::WorkUnits | LimitKind::ResultUnits) {
+            sum
+        } else {
+            max
+        };
+        assert_eq!(shared_bare.consumed(counter), expected, "{counter:?}");
+    }
+    assert!(distinguishes, "the chosen calls tell a sum from a maximum");
+}
+
+/// FR-533-AC-10: constructing the package, supplying rows, creating the
+/// world, selecting and projecting a slot and admitting a supply charge no
+/// counter and take no meter, and a call refused at view creation, selection
+/// or supply admission leaves the caller's meter, which already holds the
+/// charges of an earlier call, equal to what it was.
+#[trace("FR-533-AC-10", "TC-1333")]
+#[test]
+fn nothing_before_the_run_charges_and_a_refusal_leaves_the_meter_unchanged() {
+    let package = fixture();
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let call = retry_call(&package, v2, &rows, &equality);
+    let mut meter = Meter::new(UNLIMITED);
+    let first = call
+        .bare
+        .evaluate_protocol_slot(&call.on_bytes, &call.given, &mut meter);
+    assert!(matches!(first, Ok(ProtocolSlotEvaluation::Evaluated(..))));
+    assert!(meter.consumed(LimitKind::WorkUnits) > 0);
+    let before = meter.clone();
+    let descriptor = qsl_package::ProtocolSlotDescriptor::new(
+        call.on_bytes.node.clone(),
+        call.on_bytes.member.clone(),
+        call.on_bytes.index,
+    );
+    let selected = call
+        .bare
+        .select_protocol_slot(&descriptor)
+        .expect("selects");
+    call.bare.world().expect("world");
+    call.bare
+        .project_protocol_slot(&selected)
+        .expect("projects");
+    assert_eq!(meter, before, "the steps before the run take no meter");
+    // Refused at view creation: no equality rows.
+    let without_rows = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: None,
+    });
+    let refused = without_rows.evaluate_protocol_slot(&call.on_bytes, &call.given, &mut meter);
+    assert!(matches!(refused, Err(CallFailure::Admission(_))));
+    assert_eq!(meter, before, "view creation");
+    // Refused at selection: a member the node does not hold.
+    let missing_member = ProtocolSlot {
+        member: "no.such.member".to_owned(),
+        ..call.on_bytes.clone()
+    };
+    let refused = call
+        .bare
+        .evaluate_protocol_slot(&missing_member, &call.given, &mut meter);
+    assert!(matches!(refused, Err(CallFailure::Admission(_))));
+    assert_eq!(meter, before, "selection");
+    // Refused at supply admission: a missing member.
+    let mut short = ProtocolSupply {
+        binders: call.given.binders.clone(),
+        observation: None,
+    };
+    short.binders.pop();
+    let refused = call
+        .bare
+        .evaluate_protocol_slot(&call.on_bytes, &short, &mut meter);
+    let (code, cause, _, _) = refusal_of(refused);
+    assert_eq!(
+        (code.as_str(), cause.as_str()),
+        ("invalid_runtime_input", "missing-member")
+    );
+    assert_eq!(meter, before, "supply admission");
 }

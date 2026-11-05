@@ -747,6 +747,7 @@ fn the_retry_relation_evaluates_from_the_handoff_files_alone() {
         &completed(without_rows.evaluate_protocol_slot(&guard, &given, &mut meter)),
         true
     ));
+}
 
 /// FR-390-AC-67 (through the real walk): the slot walk of `Refund`'s
 /// `recovery.predicate` reaches a `Node` refusal (the `recovered.total`
