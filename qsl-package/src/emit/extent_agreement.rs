@@ -570,11 +570,45 @@ fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
 fn tc_440_compound_quantity_requires_a_bound_at_its_structural_id() {
-    let (units, metre) = source_metre_units();
-    let quire_exact::UnitId::Declared(metre_key) = metre else {
-        panic!("the fixture metre is a declared unit");
+    use qsl_semantics::value::{
+        DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage, admit_unit_graph,
     };
-    let compound = quire_exact::UnitId::compound(vec![(metre_key, Integer::from(2_i64))]);
+    use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
+
+    let owner = json!({"kind":"source","authority":"a","identity":"u","package_name":"pkg"});
+    let dimension = DimensionPreimage::from_json(json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "Length"],
+        "terms": [],
+    }))
+    .expect("a base dimension");
+    let dimension_key = dimension.key().expect("the dimension has a structural key");
+    let metre = UnitPreimage::from_json(json!({
+        "version": "quire.unit-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "metre"],
+        "dimension_node_id": node_ref(&dimension_key),
+        "target_unit_node_id": null,
+        "scale": {"numerator": "1", "denominator": "1"},
+        "offset": {"numerator": "0", "denominator": "1"},
+    }))
+    .expect("a root unit");
+    let metre_key = metre.key().expect("the unit has a structural key");
+    let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
+    let graph = admit_unit_graph(
+        [(dimension, dimension_key)],
+        [(metre, metre_key.clone())],
+        &OwnerSelection::new([selection]),
+    )
+    .expect("the unit graph admits");
+    let formed = graph
+        .compound_unit(&[(metre_key, Integer::from(2_i64))])
+        .expect("a compound unit over the admitted root");
+    let mut units = UnitTable::declared(&graph);
+    let compound = units
+        .insert(QuantityUnit::Compound(formed))
+        .expect("the compound unit has a structural id");
     let area = record(11, "Area", vec![("value", ValueType::Quantity(compound))]);
     let types = TypeEnvironment::new([area], [])
         .expect("FR-143 admits Area")
