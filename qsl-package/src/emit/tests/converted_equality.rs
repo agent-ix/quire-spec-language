@@ -147,6 +147,44 @@ fn nested_equalities_each_retain_producer_facts() {
     }));
 }
 
+/// QSpec FR-290: the equality expression's producer identity remains keyed by
+/// its expression occurrence when the Boolean function body also carries
+/// claim and declaration occurrences at the same node and location.
+#[ix_trace_rs::trace("QSpec-FR-290")]
+#[test]
+fn boolean_body_equality_selects_its_expression_occurrence() {
+    let declarations = "function same using v(a: Integer, b: Integer): Boolean pure { a = b }";
+    let graph = checked_graph(declarations);
+    let (application, expression_location) = graph
+        .equality_producer_data()
+        .keys()
+        .next()
+        .expect("the Boolean function body is an equality");
+    let mut roles = graph
+        .occurrences()
+        .filter(|(node, _, location)| node == application && *location == expression_location)
+        .map(|(_, origin, _)| origin.role().as_str().to_owned())
+        .collect::<Vec<_>>();
+    roles.sort();
+    assert_eq!(
+        roles,
+        ["claim", "declaration", "expression"],
+        "all three roles share the body equality's node and location"
+    );
+
+    let emission = emitted(declarations);
+    let [row] = emission.equality_producer_identity_rows() else {
+        panic!("the equality retains exactly one producer identity row")
+    };
+    assert_eq!(row.application(), application);
+    assert_eq!(row.location().occurrence().role().as_str(), "expression");
+    assert_eq!(
+        row.source_map_entry().role,
+        quire_contract_model::CheckedOccurrenceRole::Expression
+    );
+    assert_equality_reader_outcomes(&emission, read_with(&emission, &read_evidence(&emission)));
+}
+
 /// Shared structural keys retain exact per-occurrence equality witnesses.
 #[ix_trace_rs::trace("IR-FR-353-AC-1", "QSpec-FR-322-AC-288")]
 #[test]
