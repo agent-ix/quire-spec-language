@@ -250,14 +250,15 @@ fn ir_admits_the_row_nodes_as_record_declarations_and_their_type_nodes() {
     }
 }
 
-/// The declared fields of `Tagged` and the bindings its node holds.
-fn guard_inputs(
-    package: &CheckedPackage,
-) -> (
+/// The declared fields, node bindings and emitted ids of `Tagged`.
+type GuardInputs = (
     Vec<quire_semantic_value::declaration::FieldDeclaration>,
     Vec<(String, NodeKey)>,
     HashMap<NodeKey, CheckedNodeId>,
-) {
+);
+
+/// The declared fields of `Tagged` and the bindings its node holds.
+fn guard_inputs(package: &CheckedPackage) -> GuardInputs {
     let CompositeShape::Record(declared) = declaration(package, "Tagged").shape() else {
         panic!("Tagged is a record");
     };
