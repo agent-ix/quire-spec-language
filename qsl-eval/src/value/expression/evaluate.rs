@@ -2215,14 +2215,49 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 };
                 Value::Integer(outcome_into_stop(outcome)?)
             }
-            NodeKind::Negate(_) => {
-                let operand = self.pop_integer()?;
-                Value::Integer(outcome_into_stop(evaluate_integer_arithmetic(
-                    IntegerArithmetic::Negate(&operand),
-                    None,
-                    self.meter,
-                ))?)
-            }
+            NodeKind::Negate(_) => match node.value_type() {
+                ValueType::Integer | ValueType::Int(_) => {
+                    let operand = self.pop_integer()?;
+                    Value::Integer(outcome_into_stop(evaluate_integer_arithmetic(
+                        IntegerArithmetic::Negate(&operand),
+                        None,
+                        self.meter,
+                    ))?)
+                }
+                ValueType::Float(float) => {
+                    let Value::Float(operand) = self.pop()? else {
+                        return Err(invariant("ieee-float-value-expected"));
+                    };
+                    if !self.world.has_ieee_profile() {
+                        return Err(invariant("ieee-profile-unresolved"));
+                    }
+                    let result = outcome_into_stop(
+                        evaluate_ieee(IeeeOperation::Negate(operand), float.rounding(), self.meter)
+                            .map_err(|_| invariant("ieee-operation-rejected"))?,
+                    )?;
+                    if result.flags() != IeeeFlags::EMPTY {
+                        self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
+                    }
+                    Value::Float(result.value())
+                }
+                ValueType::Boolean
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Quantity(_)
+                | ValueType::CarriedQuantity(_)
+                | ValueType::Text(_)
+                | ValueType::String
+                | ValueType::Uuid
+                | ValueType::Timestamp
+                | ValueType::Enum(_)
+                | ValueType::Option(_)
+                | ValueType::Composite(_)
+                | ValueType::Collection(_)
+                | ValueType::Map(_)
+                | ValueType::BoundedQuantity(_)
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => return Err(invariant("numeric-value-expected")),
+            },
             NodeKind::Divide { domain, .. } => {
                 let right = Rational::from_integer(self.pop_integer()?);
                 let left = Rational::from_integer(self.pop_integer()?);

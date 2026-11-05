@@ -4016,10 +4016,48 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
-            NodeKind::Negate(operand) => (
-                Keyed::Application(Operator::Unary, plain("quire.op.integer.negate")),
-                Operands::One(operand),
-            ),
+            NodeKind::Negate(operand) => match node.at(*operand).value_type() {
+                ValueType::Float(float) => {
+                    let width = match float.width() {
+                        quire_exact::IeeeWidth::Binary32 => "float32",
+                        quire_exact::IeeeWidth::Binary64 => "float64",
+                    };
+                    let law = self.law(LawRole::IeeeProfile, node.location())?;
+                    let identity = format!("quire.op.ieee.{width}.negate");
+                    (
+                        Keyed::Application(
+                            Operator::Unary,
+                            Operation {
+                                laws: vec![law],
+                                ..plain(&identity)
+                            },
+                        ),
+                        Operands::One(operand),
+                    )
+                }
+                ValueType::Boolean
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Quantity(_)
+                | ValueType::CarriedQuantity(_)
+                | ValueType::Text(_)
+                | ValueType::String
+                | ValueType::Uuid
+                | ValueType::Timestamp
+                | ValueType::Enum(_)
+                | ValueType::Option(_)
+                | ValueType::Composite(_)
+                | ValueType::Collection(_)
+                | ValueType::Map(_)
+                | ValueType::BoundedQuantity(_)
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => (
+                    Keyed::Application(Operator::Unary, plain("quire.op.integer.negate")),
+                    Operands::One(operand),
+                ),
+            },
             NodeKind::Divide { left, right, .. } => (
                 Keyed::Application(Operator::Binary, plain("quire.op.rational.div")),
                 Operands::Two(left, right),

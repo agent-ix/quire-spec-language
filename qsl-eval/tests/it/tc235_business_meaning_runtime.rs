@@ -1703,6 +1703,41 @@ fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
     );
 }
 
+/// FR-397-AC-21: the state-clause path evaluates IEEE negation before
+/// comparing two quiet NaNs, and the completed clause result is true.
+#[trace("TC-1091", "FR-397-AC-21")]
+#[test]
+fn ieee_negation_of_quiet_nan_completes_true_in_a_state_clause_set() {
+    let body = "invariant NegatedQuietNaNsDiffer using v on M::Fulfilment at current { \
+        -float64(bits: 0x7ff8000000000000) != -float64(bits: 0x7ff8000000000000) \
+    }";
+    let (package, view, _) =
+        model_package_unpinned(&process_document(), body).expect("the IEEE state clause checks");
+    let (current, runs) = process_observation(&package, &view, "ieee-negation", &[("r1", 0)]);
+    let admitted = process_observations(
+        &package,
+        "NegatedQuietNaNsDiffer",
+        Some(current),
+        None,
+        None,
+        runs[0].clone(),
+    );
+    let clauses = [(
+        QualifiedName::unqualified("NegatedQuietNaNsDiffer").expect("clause name"),
+        &admitted,
+    )];
+    let evaluation = package
+        .evaluate_clause_set(&clauses, UNLIMITED)
+        .expect("admitted state-clause observations evaluate");
+
+    assert_eq!(evaluation.outcome, ClauseSetOutcome::True);
+    assert_eq!(evaluation.results.len(), 1);
+    assert!(matches!(
+        evaluation.results[0].evaluation.evaluation.outcome,
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    ));
+}
+
 /// The package, its offered package documents, snapshots, invocations and the
 /// selected invocation of [`orders_fixture`].
 type OrdersFixture = (

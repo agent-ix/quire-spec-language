@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-397-AC-27 and FR-397-AC-28 (TC-1091 steps 22 and 23): the IEEE width
-//! conversion, exact-to-IEEE conversion, IEEE-to-exact conversion and the
-//! standalone numeric-equality node evaluate through the owned `quire_exact`
-//! operation and charge exactly its `ieee.*` points, read from the meter's
-//! charge log under the row's limit tuple.
+//! conversion, exact-to-IEEE conversion, IEEE-to-exact conversion, IEEE
+//! negation and the standalone numeric-equality node evaluate through the
+//! owned `quire_exact` operation and charge exactly its `ieee.*` points, read
+//! from the meter's charge log under the row's limit tuple.
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
@@ -58,7 +58,7 @@ struct Run {
 
 /// A function body that reads the node's operands and does nothing else: the
 /// call's own charges, which come before the node and are not its budget.
-type Baseline = (&'static str, &'static str);
+type Baseline<'a> = (&'a str, &'a str);
 
 /// Evaluates the node with `row` as the meter's remaining budget at the node:
 /// the budget is the row plus whatever the call spends before it, and the
@@ -69,7 +69,7 @@ fn run(
     body: &str,
     arguments: Vec<Value>,
     row: ScalarLimits,
-    base: Baseline,
+    base: Baseline<'_>,
 ) -> Run {
     let before = evaluate(params, base.0, base.1, arguments.clone(), UNLIMITED);
     let row_kinds = [
@@ -137,7 +137,7 @@ fn evaluate(
         qsl_cst::Limits::default(),
     )
     .expect("S1 reads the unit");
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert!(parsed.is_admissible(), "{text}\n{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
@@ -260,6 +260,176 @@ fn power_of_two_literal(exponent: u32) -> String {
 const DECIMAL: &str = "Decimal[0, 100; 0, 2; nearest-even]";
 const F32: &str = "Float32[nearest-even]";
 const F64: &str = "Float64[nearest-even]";
+
+/// F32: IEEE negation flips only the sign bit, under every rounding mode,
+/// including signed zero and signaling NaN encodings; applying it twice
+/// restores every source bit pattern.
+#[trace("QSpec-TC-193", "FR-397-AC-27")]
+#[test]
+fn f32_ieee_negation_preserves_all_non_sign_bits_under_every_rounding_mode() {
+    let cases = [
+        (0x0000_0000, 0x8000_0000),
+        (0x8000_0000, 0x0000_0000),
+        (0x0000_0001, 0x8000_0001),
+        (0x3f80_0000, 0xbf80_0000),
+        (0x7f80_0000, 0xff80_0000),
+        (0x7fc0_0012, 0xffc0_0012),
+        (0x7f80_0001, 0xff80_0001),
+    ];
+    for mode in ["nearest-even", "toward-zero", "exact"] {
+        let float = format!("Float32[{mode}]");
+        for (source, expected) in cases {
+            let negated = run(
+                &format!("a: {float}"),
+                &float,
+                "-a",
+                vec![f32v(source)],
+                limits(32, 1, 2, 1),
+                (&float, "a"),
+            );
+            same(&negated.outcome, Outcome::Completed(f32v(expected)));
+            assert!(negated.flags.is_empty(), "{mode}, {source:#010x}");
+            assert_eq!(
+                negated.charges,
+                [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain],
+                "{mode}, {source:#010x}"
+            );
+
+            let twice = run(
+                &format!("a: {float}"),
+                &float,
+                "-(-a)",
+                vec![f32v(source)],
+                limits(64, 2, 4, 2),
+                (&float, "a"),
+            );
+            same(&twice.outcome, Outcome::Completed(f32v(source)));
+            assert!(twice.flags.is_empty(), "{mode}, {source:#010x}");
+            assert_eq!(
+                twice.charges,
+                [
+                    ChargePoint::IeeeOperands,
+                    ChargePoint::IeeeResultRetain,
+                    ChargePoint::IeeeOperands,
+                    ChargePoint::IeeeResultRetain,
+                ],
+                "{mode}, {source:#010x}"
+            );
+        }
+    }
+}
+
+/// F33: negation charges the operand and retained result in order, and
+/// refuses to produce a value when either charge cannot be paid.
+#[trace("QSpec-TC-193", "FR-397-AC-27")]
+#[test]
+fn f33_ieee_negation_obeys_operand_and_result_meter_limits() {
+    let complete = run(
+        "a: Float32[nearest-even]",
+        F32,
+        "-a",
+        vec![f32v(0x3f80_0000)],
+        limits(32, 1, 2, 1),
+        (F32, "a"),
+    );
+    same(&complete.outcome, Outcome::Completed(f32v(0xbf80_0000)));
+    assert!(complete.flags.is_empty());
+    assert_eq!(
+        complete.charges,
+        [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain]
+    );
+
+    let retain = run(
+        "a: Float32[nearest-even]",
+        F32,
+        "-a",
+        vec![f32v(0x3f80_0000)],
+        limits(32, 1, 1, 1),
+        (F32, "a"),
+    );
+    same(
+        &retain.outcome,
+        incomplete(LimitKind::WorkUnits, 1, 1, 1, ChargePoint::IeeeResultRetain),
+    );
+    assert_eq!(retain.charges, [ChargePoint::IeeeOperands]);
+
+    let operands = run(
+        "a: Float32[nearest-even]",
+        F32,
+        "-a",
+        vec![f32v(0x3f80_0000)],
+        limits(32, 0, 2, 1),
+        (F32, "a"),
+    );
+    same(
+        &operands.outcome,
+        incomplete(
+            LimitKind::ValueOccurrences,
+            0,
+            0,
+            1,
+            ChargePoint::IeeeOperands,
+        ),
+    );
+    assert!(operands.charges.is_empty());
+}
+
+/// AC-21: binary64 negation preserves the source mode and flips only the sign
+/// bit, including for infinities, NaN payloads and signed zero.
+#[trace("QSpec-TC-193", "FR-397-AC-21", "FR-397-AC-27")]
+#[test]
+fn f64_ieee_negation_preserves_the_source_mode_and_payload() {
+    let cases = [
+        (0x0000_0000_0000_0000, 0x8000_0000_0000_0000),
+        (0x8000_0000_0000_0000, 0x0000_0000_0000_0000),
+        (0x0000_0000_0000_0001, 0x8000_0000_0000_0001),
+        (0x3ff0_0000_0000_0000, 0xbff0_0000_0000_0000),
+        (0x7ff0_0000_0000_0000, 0xfff0_0000_0000_0000),
+        (0x7ff8_0000_0000_0012, 0xfff8_0000_0000_0012),
+        (0x7ff0_0000_0000_0001, 0xfff0_0000_0000_0001),
+    ];
+    for mode in ["nearest-even", "toward-zero", "exact"] {
+        let float = format!("Float64[{mode}]");
+        for (source, expected) in cases {
+            let negated = run(
+                &format!("a: {float}"),
+                &float,
+                "-a",
+                vec![f64v(source)],
+                limits(64, 1, 2, 1),
+                (&float, "a"),
+            );
+            same(&negated.outcome, Outcome::Completed(f64v(expected)));
+            assert!(negated.flags.is_empty(), "{mode}, {source:#018x}");
+            assert_eq!(
+                negated.charges,
+                [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain],
+                "{mode}, {source:#018x}"
+            );
+
+            let twice = run(
+                &format!("a: {float}"),
+                &float,
+                "-(-a)",
+                vec![f64v(source)],
+                limits(128, 2, 4, 2),
+                (&float, "a"),
+            );
+            same(&twice.outcome, Outcome::Completed(f64v(source)));
+            assert!(twice.flags.is_empty(), "{mode}, {source:#018x}");
+            assert_eq!(
+                twice.charges,
+                [
+                    ChargePoint::IeeeOperands,
+                    ChargePoint::IeeeResultRetain,
+                    ChargePoint::IeeeOperands,
+                    ChargePoint::IeeeResultRetain,
+                ],
+                "{mode}, {source:#018x}"
+            );
+        }
+    }
+}
 
 /// F24 and F25: a width conversion rounds once through
 /// `convert_ieee_width`, keeps a NaN's sign and payload, and refuses a
