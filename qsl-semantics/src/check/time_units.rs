@@ -23,7 +23,7 @@ use quire_semantic_value::unit::{NominalUnitForm, UnitGraph};
 
 use crate::check::assemble::{DimensionEquivalence, EquivalenceClasses};
 use crate::check::lowering::AdmittedModel;
-use crate::check::temporal_clause::{TimeNominalNode, TimeNominalOrigin};
+use crate::check::temporal_clause::{TimeNominalForm, TimeNominalNode, TimeNominalOrigin};
 use crate::model::domain_package::PackageUnitRecord;
 use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
 use crate::value::semantic_node::{ModelSubject, OwnerSubject};
@@ -119,7 +119,8 @@ impl TimeUnits {
     /// The source-owned declared units retained by this checked unit.
     pub(crate) fn source_units(&self) -> impl Iterator<Item = &TimeNominalNode> {
         self.nominal_nodes.values().filter(|node| {
-            node.form == "unit" && matches!(&node.origin, TimeNominalOrigin::Source { .. })
+            node.form == TimeNominalForm::Unit
+                && matches!(&node.origin, TimeNominalOrigin::Source { .. })
         })
     }
 
@@ -169,10 +170,9 @@ impl TimeUnits {
                 TimeNominalNode {
                     key: key.clone(),
                     form: match &node.form {
-                        NominalUnitForm::Dimension { .. } => "dimension",
-                        NominalUnitForm::Unit { .. } => "unit",
-                    }
-                    .to_owned(),
+                        NominalUnitForm::Dimension { .. } => TimeNominalForm::Dimension,
+                        NominalUnitForm::Unit { .. } => TimeNominalForm::Unit,
+                    },
                     origin: TimeNominalOrigin::Source {
                         owner: source_owner.clone(),
                         qualified_declaration: node.declaration.qualified_declaration.clone(),
@@ -235,7 +235,7 @@ impl TimeUnits {
                     time_key.clone(),
                     TimeNominalNode {
                         key: time_key,
-                        form: "dimension".to_owned(),
+                        form: TimeNominalForm::Dimension,
                         origin: TimeNominalOrigin::Model(ModelSubject {
                             identity: package.identity.clone(),
                             node: dimension
@@ -527,7 +527,7 @@ fn package_unit_nominal_nodes(
         let mut nodes = target_nodes;
         nodes.push(TimeNominalNode {
             key,
-            form: "unit".to_owned(),
+            form: TimeNominalForm::Unit,
             origin: TimeNominalOrigin::Model(ModelSubject {
                 identity: identity.to_owned(),
                 node: unit.key.node.clone(),

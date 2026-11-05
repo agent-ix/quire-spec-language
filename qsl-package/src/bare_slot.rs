@@ -27,6 +27,7 @@ use crate::protocol_view::{
     argument, control_operation, group_member, integer, reference, text, ControlOperation,
 };
 use crate::reader_protocol_projection::{node_value_type, TypeError, TypeReader, UnsupportedView};
+use crate::wire_form::{has_tag, WireTag};
 
 type Node = CheckedSemanticNodeV2;
 
@@ -150,6 +151,7 @@ enum Tail {
 
 impl Tail {
     /// Whether `rest`, the name after the control's site, is this tail.
+    #[ix_trace_rs::string_edge]
     fn matches(self, rest: &str) -> bool {
         let numbers = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
         match self {
@@ -175,6 +177,7 @@ fn names(node: &Node) -> Vec<&str> {
 /// The term a slot's member names and the site it is located under. The
 /// site names come from `qsl_semantics::check::protocol_site`, the one
 /// registry the emitter writes them with.
+#[ix_trace_rs::string_edge]
 fn slot_term<'n>(
     node: &'n Node,
     op: ControlOperation,
@@ -372,7 +375,7 @@ impl<'p> BarePackage<'p> {
             .and_then(|id| nodes.get(id))
             .copied()
             .ok_or_else(|| SlotSelectionFailure::MissingNode(descriptor.node().clone()))?;
-        if &*node.node_tag != "protocol" {
+        if !has_tag(node, WireTag::Protocol) {
             return Err(SlotSelectionFailure::MalformedNode(descriptor.node().clone()).into());
         }
         // A protocol node outside the member table (a queue, a reference

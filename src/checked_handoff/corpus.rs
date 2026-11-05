@@ -324,6 +324,7 @@ fn declaration_execution(v: &Value) -> Option<Made> {
 
 /// Whether a node is a temporal clause or a compensation template: the two
 /// forms whose application carries the temporal profile law.
+#[ix_trace_rs::string_edge]
 fn carries_profile_law(node: &Value) -> bool {
     let temporal_law = node
         .pointer("/body/operation/laws/0/role")
@@ -336,7 +337,7 @@ fn carries_profile_law(node: &Value) -> bool {
 
 /// Set the identity, revision or authority of the profile law of every
 /// clause and of the lock's matching selection, so they stay consistent.
-fn profile_law(v: &Value, member: &str, value: &str, axis: SelectionAxis) -> Option<Made> {
+fn profile_law(v: &Value, value: &str, axis: SelectionAxis) -> Option<Made> {
     let mut w = clone(v);
     let mut rewritten = None;
     for node in w
@@ -353,7 +354,7 @@ fn profile_law(v: &Value, member: &str, value: &str, axis: SelectionAxis) -> Opt
             .get_mut("laws")?
             .get_mut(0)?
             .get_mut("definition")?;
-        rewritten = Some(rewrite_definition(definition, member, value)?);
+        rewritten = Some(rewrite_definition(definition, axis, value)?);
     }
     let rewritten = rewritten?;
     if axis != SelectionAxis::DefinitionAuthority {
@@ -388,13 +389,19 @@ fn profile_law(v: &Value, member: &str, value: &str, axis: SelectionAxis) -> Opt
     ok(w, expected)
 }
 
-/// `definition` with its revision or its authority changed to `value`.
-fn rewrite_definition(definition: &mut Value, member: &str, value: &str) -> Option<Value> {
+/// `definition` with the member `axis` names -- its revision for
+/// [`SelectionAxis::DefinitionRevision`], its authority for
+/// [`SelectionAxis::DefinitionAuthority`] -- changed to `value`; `None` for
+/// any other axis.
+fn rewrite_definition(definition: &mut Value, axis: SelectionAxis, value: &str) -> Option<Value> {
     let identity = definition.get("identity")?.as_str()?.to_owned();
     let (name, _revision) = identity.rsplit_once('/')?;
-    match member {
-        "revision" => *definition.get_mut("identity")? = json!(format!("{name}/{value}")),
-        _ => *definition.get_mut("authority")? = json!(value),
+    if axis == SelectionAxis::DefinitionRevision {
+        *definition.get_mut("identity")? = json!(format!("{name}/{value}"));
+    } else if axis == SelectionAxis::DefinitionAuthority {
+        *definition.get_mut("authority")? = json!(value);
+    } else {
+        return None;
     }
     Some(definition.clone())
 }
@@ -440,16 +447,11 @@ fn definition_identity(v: &Value) -> Option<Made> {
 /// changed revision is an unknown profile; `definition.revision` is compared by
 /// `Selection::check` but no admitted package can differ on it.
 fn definition_revision(v: &Value) -> Option<Made> {
-    profile_law(v, "revision", "v2", SelectionAxis::DefinitionRevision)
+    profile_law(v, "v2", SelectionAxis::DefinitionRevision)
 }
 
 fn definition_authority(v: &Value) -> Option<Made> {
-    profile_law(
-        v,
-        "authority",
-        "other-authority",
-        SelectionAxis::DefinitionAuthority,
-    )
+    profile_law(v, "other-authority", SelectionAxis::DefinitionAuthority)
 }
 
 fn closed_shape(v: &Value, member: &str) -> Option<Made> {

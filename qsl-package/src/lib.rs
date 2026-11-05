@@ -46,6 +46,7 @@ mod protocol_selection;
 pub mod protocol_view;
 #[cfg(feature = "std")]
 mod reader_protocol_projection;
+mod wire_form;
 
 #[cfg(feature = "std")]
 pub use bare::{

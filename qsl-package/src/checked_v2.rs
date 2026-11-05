@@ -390,8 +390,11 @@ pub(crate) fn compound_unit(
 
     let node = package.graph().nodes.iter().find(|node| {
         node.node_id == *id
-            && node.node_tag.as_ref() == "scalar_type"
-            && node.semantic_form.as_ref() == "compound_unit"
+            && crate::wire_form::has_form(
+                node,
+                crate::wire_form::WireTag::ScalarType,
+                crate::wire_form::WireForm::CompoundUnit,
+            )
     })?;
     let CheckedTerm::Aggregate { members } = &node.body else {
         return None;

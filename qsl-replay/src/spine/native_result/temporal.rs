@@ -1402,6 +1402,7 @@ fn validate_counterexample(
 
 /// The trace refusal a `trace-refused` record names, checking that exactly
 /// the variant's payload members are present.
+#[ix_trace_rs::string_edge]
 fn trace_refusal(
     variant: &str,
     expected: Option<usize>,
@@ -1545,7 +1546,7 @@ pub(super) fn validate_temporal(
     };
     let undefined = |expected: Option<&str>| match outcome {
         Some(OutcomeRead::Undefined { reason })
-            if expected.map_or(reason != INSUFFICIENT_DATA, |expected| reason == expected) =>
+            if expected.map_or(!is_insufficient_data(reason), |expected| reason == expected) =>
         {
             Ok(reason.as_str())
         }
@@ -1555,7 +1556,7 @@ pub(super) fn validate_temporal(
         )),
     };
     let incomplete = |window: bool| match outcome {
-        Some(OutcomeRead::Incomplete { limit }) if (limit == MAX_WINDOW_VALUES) == window => Ok(()),
+        Some(OutcomeRead::Incomplete { limit }) if is_window_limit(limit) == window => Ok(()),
         _ => Err(invalid(
             "disposition.outcome",
             "outcome disagrees with the temporal row",
@@ -1664,7 +1665,7 @@ pub(super) fn validate_temporal(
             unavailable(Category::Incomplete)
         }
         TemporalRecord::ProgressLimitReached { limit, setting, .. } => {
-            if limit != COVERED_POSITIONS_LIMIT || setting != COVERED_POSITIONS_SETTING {
+            if !is_progress_limit(limit, setting) {
                 return Err(invalid(
                     "disposition.temporal.limit",
                     "progress limit names node count and progress.covered_positions",
@@ -1674,7 +1675,7 @@ pub(super) fn validate_temporal(
             unavailable(Category::Incomplete)
         }
         TemporalRecord::WindowLimitReached { limit, setting, .. } => {
-            if limit != MAX_WINDOW_VALUES || setting != MAX_WINDOW_VALUES_SETTING {
+            if !is_window_limit_setting(limit, setting) {
                 return Err(invalid(
                     "disposition.temporal.limit",
                     "window limit names max_window_values and its setting",
@@ -1733,17 +1734,42 @@ pub(super) fn validate_temporal(
     Ok(())
 }
 
+/// Whether an undefined outcome's `reason` is `insufficient-data`.
+#[ix_trace_rs::string_edge]
+fn is_insufficient_data(reason: &str) -> bool {
+    reason == INSUFFICIENT_DATA
+}
+
+/// Whether an incomplete outcome's `limit` is `max_window_values`.
+#[ix_trace_rs::string_edge]
+fn is_window_limit(limit: &str) -> bool {
+    limit == MAX_WINDOW_VALUES
+}
+
+/// Whether a progress-limit row names the covered-positions limit and its
+/// setting.
+#[ix_trace_rs::string_edge]
+fn is_progress_limit(limit: &str, setting: &str) -> bool {
+    limit == COVERED_POSITIONS_LIMIT && setting == COVERED_POSITIONS_SETTING
+}
+
+/// Whether a window-limit row names `max_window_values` and its setting.
+#[ix_trace_rs::string_edge]
+fn is_window_limit_setting(limit: &str, setting: &str) -> bool {
+    limit == MAX_WINDOW_VALUES && setting == MAX_WINDOW_VALUES_SETTING
+}
+
 /// FR-267-AC-16: the undefined reason `insufficient-data` and the incomplete
 /// limit `max_window_values` belong to their temporal rows only.
 pub(super) fn refuse_temporal_only_outcome(
     outcome: Option<&OutcomeRead>,
 ) -> Result<(), NativeRunReadError> {
     match outcome {
-        Some(OutcomeRead::Undefined { reason }) if reason == INSUFFICIENT_DATA => Err(invalid(
+        Some(OutcomeRead::Undefined { reason }) if is_insufficient_data(reason) => Err(invalid(
             "disposition.outcome.reason",
             "insufficient-data is read in the insufficient-data row only",
         )),
-        Some(OutcomeRead::Incomplete { limit }) if limit == MAX_WINDOW_VALUES => Err(invalid(
+        Some(OutcomeRead::Incomplete { limit }) if is_window_limit(limit) => Err(invalid(
             "disposition.outcome.limit",
             "max_window_values is read in the window-limit-reached row only",
         )),

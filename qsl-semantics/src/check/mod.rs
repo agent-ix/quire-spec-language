@@ -480,7 +480,8 @@ pub use temporal_clause::{
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, ClockUnitSelection,
     FormulaNode, FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim,
     TemporalDeclaration, TemporalDeclarations, TemporalSelection, TemporalTraceFamily,
-    TimeNominalNode, TimeNominalOrigin, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
+    TimeNominalForm, TimeNominalNode, TimeNominalOrigin, TimeSourceKind, TimedPropertyForm,
+    UnaryTemporal,
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
@@ -1600,6 +1601,18 @@ fn pending_refusal(failure: quire_semantic_value::declaration::PendingFieldFailu
         PendingFieldFailure::Storage(storage) => type_admission(storage),
         other => CheckCause::InternalFault(Box::new(KeyFault::PendingField(format!("{other:?}")))),
     }
+}
+
+/// The temporal clause index a `temporal <index> ...` type-declaration origin
+/// names, `None` for any other origin name.
+#[ix_trace_rs::string_edge]
+fn temporal_declaration_index(origin: &str) -> Option<usize> {
+    origin
+        .strip_prefix("temporal ")?
+        .split_whitespace()
+        .next()?
+        .parse::<usize>()
+        .ok()
 }
 
 impl PackageDeclarations {
@@ -6769,11 +6782,7 @@ impl PackageDeclarations {
                 }
                 Origin::StateClause { clause, .. } => clause.clone(),
                 Origin::TypeDeclaration { name } => {
-                    if let Some(index) = name
-                        .strip_prefix("temporal ")
-                        .and_then(|name| name.split_whitespace().next())
-                        .and_then(|index| index.parse::<usize>().ok())
-                    {
+                    if let Some(index) = temporal_declaration_index(name) {
                         let Some(temporal) = temporal_clauses.get(index) else {
                             continue;
                         };
