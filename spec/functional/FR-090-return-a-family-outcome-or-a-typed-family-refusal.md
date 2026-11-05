@@ -33,13 +33,17 @@ and `CheckedPackage::evaluate` return `Evaluation<Value>`, written
 The public `qsl_eval::value::ApplicationObservation` passed to checked
 function-body evaluation SHALL expose that same evaluation's outcome and
 losses, its ten accounting-counter totals (FR-255), and an ordered
-charge-operation ledger. The ledger has one record for each Meter charge
-admission, in admission order; a charge refused by the Meter has no record.
-Each record identifies the admitted charge point and its counter request. A
-partial evaluation retains the admitted prefix. The per-binder aggregation
-remains the separate contract of FR-520; FR-397 defines the ordered charge
-points for IEEE evaluation. The observation does not redefine the Meter's
-charge points or counter semantics.
+charge-operation ledger. QSL SHALL capture each charge request and its
+admission result at the `Meter::charge` call boundary. For each admitted
+request, the ledger SHALL append one record in call order containing the
+charge point and every requested counter amount, including `work_units`,
+`result_units` and semantic-size requests. A request refused by the Meter
+does not produce a record. A partial evaluation retains the admitted prefix.
+The ledger is QSL-owned evaluation evidence, captured as each request is
+admitted; it is not reconstructed from the Meter's optional diagnostic log.
+The per-binder aggregation remains the separate contract of FR-520; FR-397
+defines the ordered charge points for IEEE evaluation. The observation does
+not redefine the Meter's charge points or counter semantics.
 `FamilyOutcome` is a layer-E `quire-eval` type with exactly two variants:
 `Evaluated(quire_exact::Outcome<T>)`, which carries the kernel evaluation
 outcome unchanged, and `FamilyEvaluated(FamilyResult)`, which carries a
@@ -643,7 +647,7 @@ undefined cause type.
 | FR-090-AC-18 | Inspection of the Record producer establishes that `record-present-value-missing` is locally unreachable: `pop_many(present)` either stops earlier or supplies exactly the number of Present slots counted, and `zip(slots, declared)` consumes at most that many values. | Inspection |
 | FR-090-AC-20 | The production IEEE-to-rational caller uses `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` directly. The evaluator contains no outer construction-error arm or `ieee-conversion-rejected` producer row, and the producer inventory retains verification obligations for every remaining producer. | Inspection |
 | FR-090-AC-22 | When an admitted state predicate reads an attribute through a reference to an object absent from the current state, S6a returns `Err(InternalFault)` with stage `S6a`, invariant `attribute-slot-unresolved` and category `Category::InternalFailure`; the public call or evaluate seam preserves it as `CallFailure::Fault`. The evaluator does not panic or manufacture a kernel/family result. | Test (TC-917) |
-| FR-090-AC-23 | For one checked function-body evaluation through the public `ApplicationObservation`, its `outcome` equals the outcome returned for that evaluation, its ordered `losses` equal the evaluation's loss records, its ten accounting-counter totals equal the Meter totals for the same evaluation, and its charge-operation ledger contains exactly the Meter's admitted charges in admission order, with each record preserving the charge point and counter request. Exercise a completed evaluation, a typed refusal and an incomplete evaluation; in each case the observation is present and retains the corresponding outcome, losses, totals and admitted-charge prefix, including an empty ledger when no charge was admitted. The observation introduces no alternate outcome or accounting semantics. | Test |
+| FR-090-AC-23 | Given one checked function-body evaluation, `ApplicationObservation` exposes an `outcome` and ordered `losses` equal to that evaluation, along with its ten final Meter counter totals. Its charge ledger contains the fixture's expected requests admitted by `Meter::charge`, in call order, with each point and every requested counter amount. A completed evaluation and a typed refusal retain their full expected ledger; an incomplete evaluation retains its admitted prefix and omits the known refused request. The fixture's expected requests are the ledger oracle; the test does not read the Meter's optional diagnostic log. The observation adds no outcome or accounting semantics. | Test (TC-1338) |
 
 ## Dependencies
 
