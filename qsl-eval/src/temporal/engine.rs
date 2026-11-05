@@ -107,6 +107,8 @@ impl Tri {
 /// Why evaluation stopped before a value.
 enum Stop {
     Incomplete(Incomplete),
+    /// A condition the clause reads was refused at this position.
+    ConditionRefused(TemporalPosition),
     WindowLimit(WindowLimitReached),
     Window(WindowRefusal),
     Fault(InternalFault),
@@ -119,6 +121,9 @@ impl From<LetterStop> for Stop {
             LetterStop::WindowLimit(limit) => Self::WindowLimit(limit),
             LetterStop::Window(refusal) => Self::Window(refusal),
             LetterStop::Fault(fault) => Self::Fault(fault),
+            // Only `read_letters`, which knows the position, receives a
+            // refused condition; any other read of a letter is a fault.
+            LetterStop::Refused => Self::Fault(fault("condition-refused-at-a-read-position")),
         }
     }
 }
@@ -414,6 +419,7 @@ pub(super) fn run<L: TemporalLetters>(
     match evaluation {
         Ok(outcome) => Ok(outcome),
         Err(Stop::Incomplete(incomplete)) => Ok(TemporalOutcome::Incomplete(incomplete)),
+        Err(Stop::ConditionRefused(at)) => Err(TemporalRefusal::ConditionRefused { at }),
         Err(Stop::WindowLimit(limit)) => Ok(TemporalOutcome::WindowLimitReached(limit)),
         Err(Stop::Window(refusal)) => Err(TemporalRefusal::Window(refusal)),
         Err(Stop::Fault(internal)) => Err(TemporalRefusal::Fault(internal)),
@@ -493,6 +499,36 @@ macro_rules! ready {
             Lookup::Missing(node, position) => return Ok(Advance::Need(node, position)),
         }
     };
+}
+
+/// What reading the clause's letters over the read positions found: the
+/// first undefined atom or the first refused condition, in evaluation order
+/// (never both), and the first atom short of data.
+struct LettersRead {
+    undefined: Option<UndefinedEvaluation>,
+    refused: Option<TemporalPosition>,
+    insufficient: Option<InsufficientDataEvaluation>,
+}
+
+impl LettersRead {
+    fn undefined(
+        undefined: UndefinedEvaluation,
+        insufficient: Option<InsufficientDataEvaluation>,
+    ) -> Self {
+        Self {
+            undefined: Some(undefined),
+            refused: None,
+            insufficient,
+        }
+    }
+
+    fn refused(at: TemporalPosition, insufficient: Option<InsufficientDataEvaluation>) -> Self {
+        Self {
+            undefined: None,
+            refused: Some(at),
+            insufficient,
+        }
+    }
 }
 
 struct Evaluator<'a> {
@@ -578,7 +614,9 @@ impl<'a> Evaluator<'a> {
     /// Read the clause's letter at positions `0..read` (ADR-018 UE-1): the
     /// `when` condition when the activation has one, then each atom in
     /// clause-node order. Stops at the first position with an undefined
-    /// atom.
+    /// atom, and at the first condition the letter reports refused (FR-327
+    /// "Refused condition"): an atom undefined earlier in clause-node order
+    /// at the same position is returned instead.
     fn read_letters<L: TemporalLetters>(
         &mut self,
         source: &mut L,
@@ -586,19 +624,17 @@ impl<'a> Evaluator<'a> {
         guarded: bool,
         captured: CaptureSite,
         whens: &mut HashMap<u64, bool>,
-    ) -> Result<
-        (
-            Option<UndefinedEvaluation>,
-            Option<InsufficientDataEvaluation>,
-        ),
-        Stop,
-    > {
+    ) -> Result<LettersRead, Stop> {
         let mut insufficient = None;
         for position in 0..read {
             let at = TemporalPosition::new(position);
             let mut activates = true;
             if guarded {
-                match source.activation(at, &mut *self.meter)? {
+                let reading = match source.activation(at, &mut *self.meter) {
+                    Err(LetterStop::Refused) => return Ok(LettersRead::refused(at, insufficient)),
+                    other => other?,
+                };
+                match reading {
                     AtomReading::True => {
                         whens.insert(position, true);
                     }
@@ -607,7 +643,10 @@ impl<'a> Evaluator<'a> {
                         activates = false;
                     }
                     AtomReading::Undefined(cause) => {
-                        return Ok((Some(Self::undefined(position, cause)), insufficient))
+                        return Ok(LettersRead::undefined(
+                            Self::undefined(position, cause),
+                            insufficient,
+                        ))
                     }
                 }
             }
@@ -620,10 +659,15 @@ impl<'a> Evaluator<'a> {
                 CaptureSite::Activations => true,
             };
             if activates && activation_position {
-                if let CaptureReading::Undefined { cause, .. } =
-                    source.captures(at, &mut *self.meter)?
-                {
-                    return Ok((Some(Self::undefined(position, cause)), insufficient));
+                let reading = match source.captures(at, &mut *self.meter) {
+                    Err(LetterStop::Refused) => return Ok(LettersRead::refused(at, insufficient)),
+                    other => other?,
+                };
+                if let CaptureReading::Undefined { cause, .. } = reading {
+                    return Ok(LettersRead::undefined(
+                        Self::undefined(position, cause),
+                        insufficient,
+                    ));
                 }
             }
             let mut undefined_at_position = None;
@@ -634,7 +678,19 @@ impl<'a> Evaluator<'a> {
                     .formula
                     .node_id(node)
                     .ok_or_else(|| fault("atom-has-node-id"))?;
-                match source.atom(id, at, &mut *self.meter)? {
+                let reading = match source.atom(id, at, &mut *self.meter) {
+                    Err(LetterStop::Refused) => {
+                        return Ok(match undefined_at_position {
+                            Some(cause) => LettersRead::undefined(
+                                Self::undefined(position, cause),
+                                insufficient,
+                            ),
+                            None => LettersRead::refused(at, insufficient),
+                        })
+                    }
+                    other => other?,
+                };
+                match reading {
                     AtomReading::True => {
                         self.letters.insert((node, position), Tri::True);
                     }
@@ -656,10 +712,17 @@ impl<'a> Evaluator<'a> {
                 }
             }
             if let Some(cause) = undefined_at_position {
-                return Ok((Some(Self::undefined(position, cause)), insufficient));
+                return Ok(LettersRead::undefined(
+                    Self::undefined(position, cause),
+                    insufficient,
+                ));
             }
         }
-        Ok((None, insufficient))
+        Ok(LettersRead {
+            undefined: None,
+            refused: None,
+            insufficient,
+        })
     }
 
     fn execute<L: TemporalLetters>(
@@ -683,9 +746,19 @@ impl<'a> Evaluator<'a> {
         } else {
             CaptureSite::Never
         };
-        let (undefined, insufficient) =
-            self.read_letters(source, read, guarded, captured, &mut whens)?;
-        self.unknown_from = undefined.as_ref().map(|undefined| undefined.at.index());
+        let LettersRead {
+            undefined,
+            refused,
+            insufficient,
+        } = self.read_letters(source, read, guarded, captured, &mut whens)?;
+        // No later position is read: a refused condition stops the reading
+        // as an undefined atom does.
+        let stopped_at = undefined
+            .as_ref()
+            .map(|undefined| undefined.at)
+            .or(refused)
+            .map(TemporalPosition::index);
+        self.unknown_from = stopped_at;
         let safety = self.plan.is_safety()?;
         // A prefix decides a violation only for a safety formula whose bad
         // prefix falsifies it; every other prefix is pending (FR-328).
@@ -704,10 +777,10 @@ impl<'a> Evaluator<'a> {
                         i128::from(self.represented)
                     }
                 };
-                // Only activations before the first undefined position can
-                // refute the claim before it is undefined.
-                let limit = match &undefined {
-                    Some(undefined) => limit.min(i128::from(undefined.at.index())),
+                // Only activations before the first undefined or refused
+                // position can refute the claim before it stops.
+                let limit = match stopped_at {
+                    Some(at) => limit.min(i128::from(at)),
                     None => limit,
                 };
                 (0, limit)
@@ -764,6 +837,9 @@ impl<'a> Evaluator<'a> {
         }
         if let Some(undefined) = undefined {
             return Ok(TemporalOutcome::Undefined(undefined));
+        }
+        if let Some(at) = refused {
+            return Err(Stop::ConditionRefused(at));
         }
         if let Some(insufficient) = insufficient {
             return Ok(TemporalOutcome::InsufficientData(insufficient));

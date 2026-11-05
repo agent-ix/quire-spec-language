@@ -192,6 +192,11 @@ impl From<LetterStop> for Stop {
             LetterStop::Incomplete(incomplete) => Self::Incomplete(incomplete),
             LetterStop::Window(refusal) => Self::Refused(TemporalRefusal::Window(refusal)),
             LetterStop::Fault(internal) => Self::Refused(TemporalRefusal::Fault(internal)),
+            // A timed clause is read by letters that keep a refused
+            // condition as a fault.
+            LetterStop::Refused => Self::Refused(TemporalRefusal::Fault(fault(
+                "timed-atom-condition-refused",
+            ))),
             // A timed clause's atoms are `holds` conditions, which hold no
             // window aggregate.
             LetterStop::WindowLimit(_) => {

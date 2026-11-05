@@ -31,8 +31,14 @@ use quire_eval::{CallFailure, Evaluation};
 /// clause (a refusal with its record; a failed call by its own mapping).
 #[derive(Debug)]
 pub enum HoldsStop {
-    /// The condition's S6a result was a refusal.
-    Refused(Evaluation),
+    /// The condition's S6a result was a refusal at `at`, the position of
+    /// the condition (FR-327 "Refused condition").
+    Refused {
+        /// The position the refused condition was read at.
+        at: TemporalPosition,
+        /// The refused S6a evaluation, whole.
+        evaluation: Evaluation,
+    },
     /// The call failed before or during S6a.
     Failed(CallFailure),
 }
@@ -150,9 +156,16 @@ fn evaluate_observed_goal(
         &mut letters,
         meter,
     );
+    // A refusal the result does not stop at was passed over: an activation
+    // before it evaluated false, or an atom before it was undefined, and
+    // that result is the run's (FR-327 "Refused condition").
+    let stopped = match (letters.stopped, &result) {
+        (Some(HoldsStop::Refused { .. }), Ok(_)) => None,
+        (stopped, _) => stopped,
+    };
     ObservedRun {
         result,
-        stopped: letters.stopped,
+        stopped,
         undefined: letters.undefined,
     }
 }
@@ -324,7 +337,8 @@ impl ObservedLetters<'_> {
     /// failed call is kept whole in `stopped` and ends the run.
     #[deny(clippy::wildcard_enum_match_arm)]
     fn reading(
-        &mut self,
+        stopped: &mut Option<HoldsStop>,
+        position: TemporalPosition,
         evaluation: Result<Evaluation, CallFailure>,
         [failed, refused_code, boolean]: [&'static str; 3],
     ) -> Result<AtomReading, LetterStop> {
@@ -333,7 +347,7 @@ impl ObservedLetters<'_> {
         let evaluation = match evaluation {
             Ok(evaluation) => evaluation,
             Err(failure) => {
-                self.stopped = Some(HoldsStop::Failed(failure));
+                *stopped = Some(HoldsStop::Failed(failure));
                 return Err(stop(failed));
             }
         };
@@ -343,8 +357,11 @@ impl ObservedLetters<'_> {
                 | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
         );
         if refused {
-            self.stopped = Some(HoldsStop::Refused(evaluation));
-            return Err(stop(refused_code));
+            *stopped = Some(HoldsStop::Refused {
+                at: position,
+                evaluation,
+            });
+            return Err(LetterStop::Refused);
         }
         match evaluation.outcome {
             FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))) => {
@@ -390,7 +407,7 @@ impl TemporalLetters for ObservedLetters<'_> {
             objects,
             meter,
         );
-        let reading = self.reading(evaluation, HOLDS_CODES)?;
+        let reading = Self::reading(&mut self.stopped, position, evaluation, HOLDS_CODES)?;
         if let AtomReading::Undefined(cause) = &reading {
             self.note(|| ObservedLocus::Atom(atom), position, cause);
         }
@@ -433,7 +450,7 @@ impl TemporalLetters for ObservedLetters<'_> {
             objects,
             meter,
         );
-        let reading = self.reading(evaluation, ACTIVATION_CODES)?;
+        let reading = Self::reading(&mut self.stopped, position, evaluation, ACTIVATION_CODES)?;
         if let AtomReading::Undefined(cause) = &reading {
             self.note(|| ObservedLocus::Activation, position, cause);
         }
@@ -488,7 +505,8 @@ impl ObservedLetters<'_> {
                 values.push(value.clone());
                 continue;
             }
-            return match self.reading(Ok(evaluation), CAPTURE_CODES)? {
+            return match Self::reading(&mut self.stopped, position, Ok(evaluation), CAPTURE_CODES)?
+            {
                 AtomReading::Undefined(cause) => {
                     self.note(|| ObservedLocus::Capture(name.to_owned()), position, &cause);
                     Ok(CaptureReading::Undefined {
@@ -525,5 +543,48 @@ impl qsl_semantics::check::StatePredicate for Capture<'_> {
 
     fn slots(&self) -> usize {
         self.slots
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use quire_exact::{CheckedInvariantCause, Refusal};
+
+    use super::*;
+
+    /// FR-327-AC-6: a condition whose S6a evaluation is the kernel
+    /// `Refusal::CheckedInvariant` at position 1 is kept whole as a refused
+    /// condition at position 1, ending the run with `LetterStop::Refused`
+    /// and not as a fault, as every other refusal is; FR-330 reports it as
+    /// an internal failure (the report layer's mapping).
+    #[trace("TC-1160", "FR-327-AC-6")]
+    #[test]
+    fn a_checked_invariant_refusal_is_a_refused_condition_at_its_position() {
+        let mut stopped = None;
+        let evaluation = Evaluation {
+            outcome: FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant {
+                cause: CheckedInvariantCause::EqualityOperandSourceNotAdmitted,
+            })),
+            location: None,
+            losses: Vec::new(),
+        };
+        let reading = ObservedLetters::reading(
+            &mut stopped,
+            TemporalPosition::new(1),
+            Ok(evaluation),
+            HOLDS_CODES,
+        );
+        assert_eq!(reading, Err(LetterStop::Refused));
+        let Some(HoldsStop::Refused { at, evaluation }) = stopped else {
+            panic!("the refusal is kept whole, got {stopped:?}");
+        };
+        assert_eq!(at, TemporalPosition::new(1));
+        assert!(matches!(
+            evaluation.outcome,
+            FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant {
+                cause: CheckedInvariantCause::EqualityOperandSourceNotAdmitted
+            }))
+        ));
     }
 }

@@ -117,7 +117,10 @@ impl<'a> ObservedWindowSource<'a> {
             }
             FamilyOutcome::Evaluated(Outcome::Refused(_))
             | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => {
-                self.stopped = Some(HoldsStop::Refused(evaluation));
+                self.stopped = Some(HoldsStop::Refused {
+                    at: position,
+                    evaluation,
+                });
                 Err(fault("window-expression-refused"))
             }
             #[cfg(seam_probe_eval_downstream)]

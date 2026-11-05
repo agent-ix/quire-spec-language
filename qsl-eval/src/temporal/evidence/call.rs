@@ -1632,6 +1632,7 @@ fn refusal_kind(refused: &TemporalRefusal) -> (&'static str, Vec<(String, String
             ("not-finite-window-profile", profile(of))
         }
         TemporalRefusal::UnorderedTie { position: at } => ("unordered-tie", position(at)),
+        TemporalRefusal::ConditionRefused { at } => ("condition-refused", position(at)),
         TemporalRefusal::NotTimedProfile { profile: of } => ("not-timed-profile", profile(of)),
         TemporalRefusal::NonPositiveLoopDelay => ("non-positive-loop-delay", Vec::new()),
         TemporalRefusal::LoopReentersBeforeLastStamp => {

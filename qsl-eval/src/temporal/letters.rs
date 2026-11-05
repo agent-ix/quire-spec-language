@@ -63,6 +63,13 @@ pub enum LetterStop {
     Window(WindowRefusal),
     /// An invariant of the letter broke.
     Fault(InternalFault),
+    /// The S6a evaluation of a condition at the requested position was a
+    /// refusal (FR-327 "Refused condition"). The letter keeps the refusal
+    /// whole; the evaluator stops reading at that position and returns
+    /// [`TemporalRefusal::ConditionRefused`](super::TemporalRefusal) there,
+    /// unless an activation before it evaluates false or an atom before it
+    /// is undefined.
+    Refused,
 }
 
 impl From<Incomplete> for LetterStop {

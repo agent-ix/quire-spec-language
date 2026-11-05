@@ -1309,7 +1309,7 @@ fn the_observed_source_reads_numbers_and_faults_on_anything_else() {
         source.value(at(1), &mut meter),
         Err(fault("window-expression-refused"))
     );
-    assert!(matches!(source.stopped(), Some(HoldsStop::Refused(_))));
+    assert!(matches!(source.stopped(), Some(HoldsStop::Refused { .. })));
 
     // An exhausted budget is `Incomplete`, not a value.
     let sum = observed.check(

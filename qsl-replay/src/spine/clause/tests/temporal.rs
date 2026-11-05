@@ -3664,6 +3664,7 @@ fn the_undefined_label_is_written_only_for_the_undefined_category() {
         counterexample: None,
         decisive: None,
         authenticated_temporal_selection: None,
+        refused_at: None,
         ledger: None,
     };
     let insufficient = synthetic(ClauseDisposition::Temporal(TemporalVerdict::Undefined {
@@ -3706,6 +3707,7 @@ fn synthetic_report(disposition: ClauseDisposition) -> ClauseRunReport {
         counterexample: None,
         decisive: None,
         authenticated_temporal_selection: None,
+        refused_at: None,
         ledger: None,
     }
 }
