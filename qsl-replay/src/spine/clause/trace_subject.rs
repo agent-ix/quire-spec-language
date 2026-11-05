@@ -438,7 +438,7 @@ fn map_outcome(outcome: TemporalOutcome, undefined_atom: Option<usize>) -> super
         }
         TemporalOutcome::Incomplete(incomplete) => TemporalVerdict::Incomplete(incomplete),
         TemporalOutcome::WindowLimitReached(reached) => TemporalVerdict::WindowLimitReached {
-            limit: reached.limit,
+            limit: "max_window_values",
             value: reached.value,
             setting: reached.setting,
         },
@@ -684,11 +684,13 @@ impl SubjectWindowSource<'_> {
         meter: &mut Meter,
     ) -> Result<WindowRead<Value>, LetterStop> {
         let (body, slots) = expression.ok_or_else(|| fault("aggregate-expression-present"))?;
-        let sample = self
+        let Some(sample) = self
             .samples
             .get(usize::try_from(position.index()).map_err(|_| fault("position-fits-usize"))?)
             .cloned()
-            .ok_or_else(|| fault("sample-exists"))?;
+        else {
+            return Ok(WindowRead::Missing);
+        };
         let mut bindings = vec![sample.clone()];
         if self.subject_trigger {
             bindings.push(sample);
@@ -737,6 +739,7 @@ impl WindowSource for SubjectWindowSource<'_> {
                 WindowRead::Defined(Value::Boolean(value)) => Ok(WindowRead::Defined(value)),
                 WindowRead::Defined(_) => Err(fault("aggregate-filter-is-boolean")),
                 WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+                WindowRead::Missing => Ok(WindowRead::Missing),
             },
         }
     }
@@ -754,6 +757,7 @@ impl WindowSource for SubjectWindowSource<'_> {
             WindowRead::Defined(Value::Rational(value)) => Ok(WindowRead::Defined(value)),
             WindowRead::Defined(_) => Err(fault("aggregate-value-is-number")),
             WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+            WindowRead::Missing => Ok(WindowRead::Missing),
         }
     }
 
@@ -767,6 +771,7 @@ impl WindowSource for SubjectWindowSource<'_> {
             WindowRead::Defined(Value::Boolean(value)) => Ok(WindowRead::Defined(value)),
             WindowRead::Defined(_) => Err(fault("aggregate-predicate-is-boolean")),
             WindowRead::Undefined(cause) => Ok(WindowRead::Undefined(cause)),
+            WindowRead::Missing => Ok(WindowRead::Missing),
         }
     }
 }
