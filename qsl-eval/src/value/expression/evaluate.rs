@@ -372,6 +372,22 @@ pub(super) fn authored_bound_refusal(
     }))
 }
 
+/// The limits of the scratch meter the ordering-part numeric-equality
+/// decision runs on: nothing is bounded, and nothing it charges reaches the
+/// evaluation's own meter (FR-397 "Evaluate once").
+const UNMETERED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+    integer_bits: u64::MAX,
+    decimal_digits: u64::MAX,
+    scale_expansion: u64::MAX,
+    text_input_bytes: u64::MAX,
+    text_scalars: u64::MAX,
+    normalized_scalars: u64::MAX,
+    unit_edges: u64::MAX,
+    value_occurrences: u64::MAX,
+    work_units: u64::MAX,
+    result_units: u64::MAX,
+};
+
 /// `function.call`: one work unit per checked call.
 fn charge_call(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::FunctionCall))?)
@@ -2523,19 +2539,16 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     )?)
                 } else {
                     // FR-397 "Evaluate once": the numeric-equality parts of
-                    // an ordering's composition add no charge.
-                    let same_width = left.width() == right.width();
-                    let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
-                        false
-                    } else {
-                        let zero = |value: quire_exact::IeeeValue| match value.width() {
-                            quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
-                            quire_exact::IeeeWidth::Binary64 => {
-                                value.bits() & 0x7fff_ffff_ffff_ffff == 0
-                            }
-                        };
-                        (zero(left) && zero(right)) || left.bits() == right.bits()
-                    };
+                    // an ordering's composition add no charge. The decision
+                    // is the owned core's, run on a scratch meter with no
+                    // limits so the evaluation's own meter is untouched. A
+                    // width mismatch is the core's ill-typed refusal and is
+                    // not equal.
+                    let mut scratch = Meter::new(UNMETERED);
+                    let numeric_equal = matches!(
+                        compare_ieee(IeeeComparison::NumericEqual, left, right, &mut scratch),
+                        Ok(Outcome::Completed(true))
+                    );
                     Value::Boolean(numeric_equal)
                 }
             }

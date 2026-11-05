@@ -1080,3 +1080,87 @@ fn f17_standalone_numeric_equality_charges_as_compare_ieee() {
         );
     }
 }
+
+/// FR-397-AC-28 and FR-397 "Evaluate once" (QSL-1724, IR-1282 AC3): the
+/// numeric-equality part of a float ordering's composition takes its decision
+/// from the owned `quire_exact` comparison yet adds no charge: the ordering
+/// charges the `ieee.*` points of its own comparison only. Covers NaN, signed zeros, equal and unequal operands, and
+/// both widths.
+#[trace("TC-1091", "FR-397-AC-28")]
+#[test]
+fn ordering_part_numeric_equality_uses_the_owned_comparison_and_adds_no_charge() {
+    let big = limits(1 << 40, 1 << 40, 1 << 40, 1 << 40);
+    for (width, ty) in [(32_u8, F32), (64, F64)] {
+        let (zero, neg_zero, one, two, nan) = if width == 32 {
+            (
+                f32v(0),
+                f32v(0x8000_0000),
+                f32v(0x3f80_0000),
+                f32v(0x4000_0000),
+                f32v(0x7fc0_0001),
+            )
+        } else {
+            (
+                f64v(0),
+                f64v(0x8000_0000_0000_0000),
+                f64v(0x3ff0_0000_0000_0000),
+                f64v(0x4000_0000_0000_0000),
+                f64v(0x7ff8_0000_0000_0001),
+            )
+        };
+        let params = format!("a: {ty}, b: {ty}");
+        let rows = [
+            ("a <= b", &zero, &neg_zero, true),
+            ("a <= b", &neg_zero, &zero, true),
+            ("a >= b", &zero, &neg_zero, true),
+            ("a < b", &zero, &neg_zero, false),
+            ("a <= b", &one, &one, true),
+            ("a >= b", &one, &one, true),
+            ("a < b", &one, &one, false),
+            ("a <= b", &one, &two, true),
+            ("a >= b", &one, &two, false),
+            ("a <= b", &nan, &one, false),
+            ("a >= b", &nan, &nan, false),
+            ("a <= b", &nan, &nan, false),
+        ];
+        for (body, left, right, expected) in rows {
+            let args = vec![left.clone(), right.clone()];
+            let actual = run(&params, "Boolean", body, args, big, (ty, "a"));
+            same(
+                &actual.outcome,
+                Outcome::Completed(Value::Boolean(expected)),
+            );
+            // The ordering's own comparison charges one operand pair and one
+            // retain; its numeric-equality part adds none.
+            // The ordering's own comparison charges its `ieee.*` points; its
+            // numeric-equality part adds none, so `<=` and `>=` charge the
+            // `ieee.*` points the plain `<` over the same operands does.
+            let ieee_points = |run: &Run| {
+                run.charges
+                    .iter()
+                    .filter(|point| {
+                        matches!(
+                            point,
+                            ChargePoint::IeeeOperands | ChargePoint::IeeeResultRetain
+                        )
+                    })
+                    .count()
+            };
+            let plain = run(
+                &params,
+                "Boolean",
+                "a < b",
+                vec![left.clone(), right.clone()],
+                big,
+                (ty, "a"),
+            );
+            assert_eq!(
+                ieee_points(&actual),
+                ieee_points(&plain),
+                "{body} on {width}-bit operands: {:?}",
+                actual.charges
+            );
+            assert!(ieee_points(&actual) <= 2, "{:?}", actual.charges);
+        }
+    }
+}
