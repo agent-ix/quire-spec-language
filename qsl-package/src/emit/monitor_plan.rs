@@ -729,6 +729,7 @@ pub(super) struct RetainedRows {
         Vec<quire_contract_model::SelectedEnumDeclarationRow>,
     pub(super) selected_enum_member_rows: Vec<quire_contract_model::SelectedEnumMemberRow>,
     pub(super) selected_source_union_rows: Vec<quire_contract_model::SelectedSourceUnionRow>,
+    pub(super) selected_source_record_rows: Vec<super::SelectedSourceRecordRow>,
     pub(super) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     pub(super) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
@@ -908,6 +909,28 @@ pub(super) fn carry_rows(
             }
         }
     }
+    let mut source_records = retained.selected_source_record_rows.clone();
+    for row in &mut source_records {
+        let super::SelectedSourceRecordRow {
+            structural_node,
+            source_authority: _,
+            source_identity: _,
+            qualified_declaration: _,
+            record_key: _,
+            members,
+        } = row;
+        rekey.id(structural_node);
+        for member in members {
+            let super::SelectedSourceRecordMemberRow {
+                original_member_identity: _,
+                admitted_name: _,
+                presence: _,
+                type_node,
+                value_type: _,
+            } = member;
+            rekey.id(type_node);
+        }
+    }
     let mut exact_declarations = retained.selected_exact_declaration_rows.clone();
     for row in &mut exact_declarations {
         let m::SelectedExactDeclarationRow {
@@ -1000,6 +1023,7 @@ pub(super) fn carry_rows(
         selected_enum_declaration_rows: source_enum_declarations,
         selected_enum_member_rows: source_enum_members,
         selected_source_union_rows: source_unions,
+        selected_source_record_rows: source_records,
         selected_exact_declaration_rows: exact_declarations,
         selected_exact_field_rows: exact_fields,
         equality_producer_identity_rows: producers,
@@ -1072,6 +1096,7 @@ fn finish(
         selected_enum_declaration_rows: rows.selected_enum_declaration_rows,
         selected_enum_member_rows: rows.selected_enum_member_rows,
         selected_source_union_rows: rows.selected_source_union_rows,
+        selected_source_record_rows: rows.selected_source_record_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,
         equality_producer_identity_rows: rows.equality_producer_identity_rows,

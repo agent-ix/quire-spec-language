@@ -199,6 +199,9 @@ fn mutually_recursive_unions_each_get_a_row_under_their_type_handle_and_settled_
             types.union_key(handle.clone()),
             Some(row.settled_key.clone())
         );
+        // QSL issues the same key as handle and settled key for every checked
+        // union, so swapping the two fields in the row is an accepted
+        // equivalent mutant; the check above pins the relation.
         assert_eq!(
             node_id_of(&wire, &row.settled_key),
             serde_json::to_value(&row.structural_node).expect("a node id serializes")
@@ -232,6 +235,13 @@ fn every_emitted_union_node_has_one_row_and_other_units_have_none() {
     rowed.sort_by_key(Value::to_string);
     emitted_unions.sort_by_key(Value::to_string);
     assert_eq!(rowed, emitted_unions);
+    assert!(
+        emission
+            .selected_source_union_rows()
+            .windows(2)
+            .all(|pair| pair[0].settled_key < pair[1].settled_key),
+        "rows are in ascending order of their union nodes' keys"
+    );
 
     let (_, plain, _) = emitted("function f using v(): Boolean pure { true }\n");
     assert_eq!(plain.selected_source_union_rows(), []);
@@ -283,4 +293,99 @@ fn ir_projects_a_union_type_through_the_emitted_rows_and_refuses_without_them() 
             ExactTypeProjectionErrorCode::MismatchedIdentityWitness
         );
     }
+}
+
+/// The declared members, emitted ids and payload lists of `Shape`.
+type GuardInputs = (
+    Vec<quire_semantic_value::declaration::UnionMemberDeclaration>,
+    HashMap<NodeKey, CheckedNodeId>,
+    Vec<(String, Vec<NodeKey>)>,
+);
+
+/// The declared members of `Shape` with the payload lists its union node
+/// holds, for driving `union_member_rows` with lists that disagree.
+fn guard_inputs(package: &CheckedPackage, emission: &Emission) -> GuardInputs {
+    let CompositeShape::Union(declared) = declaration(package, "Shape").shape() else {
+        panic!("Shape is a union");
+    };
+    let node = package
+        .graph()
+        .semantic_graph()
+        .node(emission.selected_source_union_rows()[0].settled_key.clone())
+        .expect("the union node");
+    let emitted: HashMap<NodeKey, CheckedNodeId> = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .map(|node| (node.key(), node_id(node.key())))
+        .collect();
+    let payloads = node
+        .union_member_payload_nodes()
+        .expect("a union body")
+        .into_iter()
+        .map(|(name, nodes)| (name.to_owned(), nodes))
+        .collect();
+    (declared.to_vec(), emitted, payloads)
+}
+
+#[trace("FR-092-AC-20", "TC-1021")]
+#[test]
+fn a_payload_list_that_disagrees_with_the_declaration_is_a_writer_fault() {
+    let (package, emission, _) = emitted(SHAPE);
+    let (declared, emitted, payloads) = guard_inputs(&package, &emission);
+    let sealed: Vec<&quire_exact::UnionMember> = declared
+        .iter()
+        .map(|m| m.member().expect("sealed"))
+        .collect();
+    let call = |payloads: &[(String, Vec<NodeKey>)], emitted: &HashMap<NodeKey, CheckedNodeId>| {
+        crate::emit::union_member_rows(
+            &declared,
+            &sealed,
+            payloads
+                .iter()
+                .map(|(n, p)| (n.as_str(), p.clone()))
+                .collect(),
+            emitted,
+        )
+    };
+    assert_eq!(
+        call(&payloads, &emitted)
+            .expect("the agreeing list joins")
+            .len(),
+        3
+    );
+
+    let mut fewer_members = payloads.clone();
+    fewer_members.pop();
+    assert_eq!(
+        call(&fewer_members, &emitted),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+
+    let mut wrong_name = payloads.clone();
+    wrong_name[1].0 = "Other".to_owned();
+    assert_eq!(
+        call(&wrong_name, &emitted),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+
+    let mut short_payload = payloads.clone();
+    short_payload[2].1.pop();
+    assert_eq!(
+        call(&short_payload, &emitted),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+
+    let mut long_payload = payloads.clone();
+    long_payload[0].1.push(payloads[1].1[0].clone());
+    assert_eq!(
+        call(&long_payload, &emitted),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+
+    assert_eq!(
+        call(&payloads, &HashMap::new()),
+        Err(EmitRefusal::SourceMapInvariant),
+        "a payload node that was not emitted"
+    );
 }
