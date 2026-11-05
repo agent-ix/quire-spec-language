@@ -243,8 +243,8 @@ impl AdmittedDimension {
     }
 
     /// The base dimensions a derived dimension is made of, each as its node
-    /// id and nonzero exponent, ascending by node id; empty for a base
-    /// dimension.
+    /// id and nonzero exponent, ascending by node id. This may be empty for a
+    /// base dimension or a dimensionless derived dimension.
     pub fn terms(&self) -> &[(NodeKey, Integer)] {
         &self.terms
     }
