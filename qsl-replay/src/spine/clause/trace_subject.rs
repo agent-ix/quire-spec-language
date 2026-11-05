@@ -683,14 +683,17 @@ impl WindowSource for SubjectWindowSource<'_> {
 }
 
 #[cfg(test)]
+#[path = "../../../../../qsl-semantics/tests/support/receiver_frames.rs"]
+mod model_fixture;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use qsl_foundation::SourceIdentity;
     use qsl_semantics::model::intake::PackageInput;
     use quire_exact::FieldValue;
 
-    #[path = "../../../../../../qsl-semantics/tests/support/receiver_frames.rs"]
-    mod model_fixture;
+    use super::model_fixture;
 
     const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
