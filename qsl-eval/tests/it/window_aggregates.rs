@@ -455,8 +455,9 @@ fn an_exhausted_budget_stops_the_aggregate_without_a_value() {
     );
 }
 
-/// FR-194-AC-4: a quantile of 1 and a `min_count` of 0 are refused when the
-/// term is formed.
+/// FR-194-AC-4: a quantile of 1 and a `min_count` of 0 on a term with no value
+/// over an empty set are refused when the term is formed; a `count` or `sum`
+/// may have `min_count` 0 (FR-194-AC-10).
 #[trace("TC-629", "FR-194-AC-4")]
 #[test]
 fn a_quantile_of_one_and_a_zero_min_count_are_refused() {
@@ -465,10 +466,20 @@ fn a_quantile_of_one_and_a_zero_min_count_are_refused() {
         AggregateTerm::new(AggregateKind::Quantile(whole(1)), positions(), 1),
         Err(TermRefusal::QuantileOutOfRange)
     );
-    assert_eq!(
-        AggregateTerm::new(AggregateKind::Count, positions(), 0),
-        Err(TermRefusal::ZeroMinCount)
-    );
+    for kind in [
+        AggregateKind::Min,
+        AggregateKind::Max,
+        AggregateKind::Fraction,
+        AggregateKind::Quantile(ratio(1, 2)),
+    ] {
+        assert_eq!(
+            AggregateTerm::new(kind, positions(), 0),
+            Err(TermRefusal::ZeroMinCount)
+        );
+    }
+    for kind in [AggregateKind::Count, AggregateKind::Sum] {
+        assert!(AggregateTerm::new(kind, positions(), 0).is_ok());
+    }
 }
 
 /// A quantile of 0, a reversed or negative window, a window of the other

@@ -168,7 +168,10 @@ position (FR-327); `decisive.position` may be later or earlier than it.
   FR-109 reports a state clause that evaluates undefined;
   `InsufficientData` to `undefined` (exit 10, FR-285) with its position,
   `count` and `min_count`, no `truth` and no counterexample, as the trace
-  lacks the data to decide the claim (QSpec FR-414);
+  lacks the data to decide the claim (QSpec FR-414). FR-194 admits a window
+  aggregate only over a trace subject, which a clause run does not take, so
+  this report has no source-level path today; it is reached through a
+  trace-subject spine route that this requirement does not yet specify;
   `Pending` to `pending` (exit 0, completed without violation) with the status and the pending clause ids in the report;
   `MissingFairnessPremise` to `unsupported` (exit 21) with cause
   `unsupported_projection`/`missing-fairness-premise`; and `Incomplete` to
@@ -207,7 +210,8 @@ position (FR-327); `decisive.position` may be later or earlier than it.
     of its future counterpart over its eligible positions, taking the nearest
     eligible position first. The decisive position may therefore be earlier than
     the activation's.
-  - a window aggregate atom (FR-194): the atom, at the position it is read.
+  - a window aggregate atom (FR-194): the atom, at the position it is read
+    (over a trace subject, through the trace-subject spine route above).
 - If the descent reaches a position before the first position of the trace, or,
   under a false-extension profile, a position after the last position (where
   every atom reads false and no observation exists), the clause SHALL have no

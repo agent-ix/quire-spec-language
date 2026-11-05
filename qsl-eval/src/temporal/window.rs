@@ -100,8 +100,8 @@ pub enum TermRefusal {
     /// A quantile outside the open interval from 0 to 1.
     #[error("a quantile q has 0 < q < 1")]
     QuantileOutOfRange,
-    /// `min_count` is zero.
-    #[error("min_count is at least 1")]
+    /// `min_count` is zero on a term that has no value over an empty set.
+    #[error("min_count is at least 1 on a min, max, fraction or quantile term")]
     ZeroMinCount,
 }
 
@@ -135,7 +135,10 @@ impl AggregateTerm {
                 return Err(TermRefusal::QuantileOutOfRange);
             }
         }
-        if min_count == 0 {
+        // QSpec FR-414: a `count` or `sum` over no values is 0, so its
+        // `min_count` may be 0; `min`, `max`, `fraction` and `quantile` have
+        // no value over an empty set.
+        if min_count == 0 && !matches!(kind, AggregateKind::Count | AggregateKind::Sum) {
             return Err(TermRefusal::ZeroMinCount);
         }
         Ok(Self {
@@ -345,23 +348,37 @@ impl AggregateSample {
 }
 
 /// A [`WindowSource`] over the samples the observation owner supplied, one
-/// per trace position, indexed by position.
-#[derive(Clone, Copy, Debug)]
+/// per trace position, indexed by position, for a term of one kind: a sample
+/// the kind does not take, and a position with no sample, are faults.
+///
+/// Nothing outside tests builds one yet: the package route's request carries
+/// no `aggregate_samples` until the package-route aggregates land (FR-516).
+#[derive(Clone, Debug)]
 pub struct SampledWindow<'a> {
     samples: &'a [AggregateSample],
+    kind: AggregateKind,
 }
 
 impl<'a> SampledWindow<'a> {
-    /// A source over `samples`, `samples[i]` being the sample at position `i`.
-    pub fn new(samples: &'a [AggregateSample]) -> Self {
-        Self { samples }
+    /// A source over `samples`, `samples[i]` being the sample at position
+    /// `i`, for a term of `kind`.
+    pub fn new(samples: &'a [AggregateSample], kind: &AggregateKind) -> Self {
+        Self {
+            samples,
+            kind: kind.clone(),
+        }
     }
 
     fn at(&self, position: TemporalPosition) -> Result<&'a AggregateSample, LetterStop> {
-        usize::try_from(position.index())
+        let sample = usize::try_from(position.index())
             .ok()
             .and_then(|index| self.samples.get(index))
-            .ok_or_else(|| fault("aggregate-sample-listed").into())
+            .ok_or_else(|| fault("aggregate-sample-unsupplied-position"))?;
+        if sample.is_taken_by(&self.kind) {
+            Ok(sample)
+        } else {
+            Err(fault("aggregate-sample-kind").into())
+        }
     }
 }
 
@@ -389,7 +406,7 @@ impl WindowSource for SampledWindow<'_> {
             AggregateSample::Value(value) => Ok(WindowRead::Defined(value.clone())),
             AggregateSample::Undefined(cause) => Ok(WindowRead::Undefined(cause.clone())),
             AggregateSample::Excluded | AggregateSample::Holds(_) | AggregateSample::Counted => {
-                Err(fault("aggregate-sample-is-a-value").into())
+                Err(fault("aggregate-sample-kind").into())
             }
         }
     }
@@ -403,7 +420,7 @@ impl WindowSource for SampledWindow<'_> {
             AggregateSample::Holds(held) => Ok(WindowRead::Defined(*held)),
             AggregateSample::Undefined(cause) => Ok(WindowRead::Undefined(cause.clone())),
             AggregateSample::Excluded | AggregateSample::Value(_) | AggregateSample::Counted => {
-                Err(fault("aggregate-sample-is-a-predicate").into())
+                Err(fault("aggregate-sample-kind").into())
             }
         }
     }
@@ -561,8 +578,8 @@ fn nearest_rank(q: &Rational, n: u64) -> Option<u64> {
 impl AggregateAtom {
     /// The atom a checked clause's aggregate `checked` states, compared with
     /// `threshold`: its kind, past window, `min_count` and comparison are the
-    /// checked term's (FR-337-AC-15), so the evaluator plans the aggregate
-    /// from what the clause emits.
+    /// checked term's (FR-337-AC-15). No production caller yet: the package
+    /// route that will build it from a package entry is a follow-up.
     pub fn of_checked(
         checked: &CheckedAggregate,
         threshold: Rational,
