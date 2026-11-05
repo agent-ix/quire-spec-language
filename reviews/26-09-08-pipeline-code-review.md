@@ -38,7 +38,7 @@ The preimplementation handoff is recorded on LC02 #3.
 Applied the actual `/home/peter/dev/agent-skills/code-review/SKILL.md`, its
 Rust dispatch `/home/peter/dev/agent-skills/rust-review/SKILL.md`, the portable
 rust-style defaults and implementation-gap-analysis discovery. Read repository
-AGENTS.md, README.md, LICENSE-DECISION.md, Cargo lints and hosted workflow.
+AGENTS.md, README.md, Cargo lints and hosted workflow.
 No applicable AssuranceProfile, repository-specific Rust skill, deny.toml or
 additional contributor convention was found. The repository's bare single-line
 trace attributes supersede the portable skill's historical doc-tag example.

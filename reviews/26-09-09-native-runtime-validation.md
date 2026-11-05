@@ -38,7 +38,7 @@ by the qualification fixes.
 
 Applied the actual /home/peter/dev/agent-skills/code-review/SKILL.md,
 rust-review/SKILL.md, rust-style/SKILL.md and implementation-gap-analysis
-discovery. AGENTS.md, README.md, LICENSE-DECISION.md and Cargo lints govern.
+discovery. AGENTS.md, README.md and Cargo lints govern.
 No applicable AssuranceProfile, Rust style override or deny.toml was found.
 The optional semantic gap comparison remains declined. Ordinary code/spec
 faithfulness, assertion quality and reverse code-to-spec discovery were reviewed.

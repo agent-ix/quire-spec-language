@@ -36,7 +36,7 @@ that correction; no acceptance result, byte encoding, limit or API changed.
 
 Applied the actual /home/peter/dev/agent-skills/code-review/SKILL.md,
 rust-review/SKILL.md, rust-style/SKILL.md and implementation-gap-analysis
-discovery. AGENTS.md, README.md, LICENSE-DECISION.md and Cargo lints govern.
+discovery. AGENTS.md, README.md and Cargo lints govern.
 No applicable AssuranceProfile, local Rust style override or deny.toml exists.
 The optional semantic gap comparison remains declined. Ordinary code/spec
 faithfulness and assertion quality were inspected; no subagents were used.

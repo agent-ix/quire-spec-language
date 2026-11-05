@@ -32,7 +32,7 @@ concrete docs/native-model-checking.md contract reviewed at ceccabb by the
 owner-selected all-review set SR-066–073 at 3cdeb59. Applied the actual
 /home/peter/dev/agent-skills/code-review/SKILL.md and rust-review/SKILL.md,
 portable rust-style defaults and implementation-gap-analysis discovery.
-AGENTS.md, README.md, LICENSE-DECISION.md and Cargo lints govern. No applicable
+AGENTS.md, README.md and Cargo lints govern. No applicable
 AssuranceProfile, custom Rust idiom document or deny.toml exists in this scope.
 The owner's optional semantic gap comparison was declined; ordinary code/spec
 faithfulness and assertion quality were inspected. No subagents were used.
