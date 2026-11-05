@@ -794,7 +794,7 @@ fn body_of(world: &World, rows: &[FreeDelayRow]) -> Vec<FreeDelayActionRow> {
 /// Write `body` as JCS octets, read it back and admit it at `race`.
 fn admit(
     race: &FreeDelaysRace,
-    body: ProductAction,
+    body: ReplayProductAction,
 ) -> Result<Vec<FreeDelayRow>, ProductActionRefusal> {
     let bytes = body.to_bytes().expect("the body writes");
     race.admit(&ReplayProductAction::parse(&bytes)?)
