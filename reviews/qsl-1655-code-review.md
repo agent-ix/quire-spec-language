@@ -43,8 +43,13 @@ The added bit-level tests cover F32/F64 signed zero, subnormals, finite values, 
 
 No applicable AssuranceProfile was found for the changed paths. The repository matrix commands are recorded in the separate gap-analysis review; semantic intent review was not requested.
 
+## Round 2 Review
+
+Reviewed PR head `0da9ef0e69aa0b61989a45475f6d927f3818f9c3`, including commit `036ab8518`. The F64 test applies two negations for each represented bit pattern and rounding mode, checks exact recovery of source bits, empty flags, and both ordered charge pairs. The AC-tagged state-clause test still asserts `Completed(true)`. Focused `cargo test --locked -p qsl-eval --test it ieee_negation` passed 4/4. The added commit changes tests only; no regression found in the reviewed diff.
+
 ## Dispositions
 
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Commit 1a9975848 adds an AC-tagged `evaluate_clause_set` test asserting the specified Completed(true) result for IEEE-negated quiet NaNs. The focused test passed 1/1. |
+| FND-001 | fixed | Round 2 rechecked that state-clause test and added F64 double-negation coverage; the focused `ieee_negation` filter passed 4/4, with no production-code changes. |

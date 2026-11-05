@@ -30,8 +30,13 @@ Ticket: QSL-1655 / QSL-1665. I mapped the changed negation checker, lowering, ev
 - Plan completion: not assessed.
 - Semantic intent review: not requested and skipped.
 
+## Round 2 Review
+
+At PR head `0da9ef0e69aa0b61989a45475f6d927f3818f9c3`, FND-001 remains fixed: the AC-tagged state-clause test checks `Completed(true)`, and the added F64 double-negation test adds bit-preservation, flags, and charge-order coverage. The focused `ieee_negation` filter passed 4/4. No new matrix run or aggregate gate was performed.
+
 ## Dispositions
 
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Commit 1a9975848 adds an AC-tagged state-clause test asserting the specified Completed(true) result; the focused test passed 1/1. |
+| FND-001 | fixed | Round 2 rechecked that state-clause test and added F64 double-negation coverage; the focused `ieee_negation` filter passed 4/4, with no production-code changes. |
