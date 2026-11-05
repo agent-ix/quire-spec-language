@@ -331,6 +331,14 @@ fn bindings_that_disagree_with_the_declaration_are_a_writer_fault() {
         [("p", "p"), ("note", "annotation"), ("maybe", "maybe")]
     );
 
+    let mut permuted = bindings.clone();
+    permuted.swap(0, 1);
+    assert_eq!(
+        call(&permuted, &emitted),
+        Err(EmitRefusal::SourceMapInvariant),
+        "the declared names in another order would pair fields with the wrong bindings"
+    );
+
     assert_eq!(
         call(&bindings, &HashMap::new()),
         Err(EmitRefusal::SourceMapInvariant),
