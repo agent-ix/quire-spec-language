@@ -1796,7 +1796,7 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
                 "probe".to_owned(),
                 ObjectReference::new(
                     crate::test_ids::universe_id([0]),
-                    m.scope.types().object_types().next().unwrap().key(),
+                    m.world.types().object_types().next().unwrap().key(),
                     quire_exact::ObjectId::new("receiver").unwrap(),
                 ),
             ),

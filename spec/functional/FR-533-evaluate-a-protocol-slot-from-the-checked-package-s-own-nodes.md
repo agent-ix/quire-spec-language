@@ -80,7 +80,7 @@ route.
 | the read location of a binder and of each visit | the `Location` of the admitted node and the `protocol_locations` rows (FR-390) | the source package's occurrence list |
 | the observation's model selection and type environment | the package's `model_root` nodes and the caller's domain package documents | `graph().model_selections()` and `graph().scope().types()` |
 | callee and dispatch candidates | the admitted callable and dispatch projection nodes, within the admitted closure | the source package's dispatch tables |
-| the presence and shape of record members, and the value type of a slot's root | the wire projection; a Collection member (plain or nested) or a nested Option member has none yet ("Types the bytes cannot project") | the checked source record type (`scope().types().composite`) |
+| the presence and shape of record members, and the value type of a slot's root | the wire projection of the selected record: every member's type and presence, including a Collection member (plain or nested) and an Option member | the checked source record type (`scope().types().composite`) |
 
 The view takes the slot root from the slot descriptor and the admitted nodes, and
 the origin from the resolution of "Slot naming on the bytes route" (FR-390-AC-50),
@@ -257,22 +257,15 @@ change, not kept beside it.
 
 A slot whose binder, literal or callee type has no kernel representation in the
 admitted closure refuses `ViewFailure::Unsupported` with `MissingTypeRepresentation`
-(FR-390-AC-17) on the bare route. The bare route SHALL evaluate slots over records
-whose members are Collections, plain or nested, and over records whose members are
-nested Options, as the in-process route does. Recursive record types and plain
-Option members already project and are not part of this gap; a plain Collection
-member is not claimed to project, because Contract IR's record-field projection
-strips one optional layer and refuses a Collection or Option member that remains
-(`UnsupportedExactType`), and IR-1324 is measuring the plain Collection case. The
-code comment at the record-field projection says the wire projector does not yet
-recurse through Option and Collection members, and the code reads presence and the
-record's field shape from the checked source record instead. The bare route has no
-source record, so until the projector carries those member types it refuses
-`MissingTypeRepresentation`, and no bare result substitutes a guessed type. This is
-unmet parity with an unmet dependency, Contract IR-1324 (project Collection members,
-plain or nested, and nested Option members of selected records) (FR-390: an
-unsupported projection of a type QSL emits and evaluates is an unmet dependency,
-not a scope reduction).
+(FR-390-AC-17) on the bare route, and no bare result substitutes a guessed type.
+Contract IR's selected-record projection carries a record's members whether they are
+plain, Optional, Collection members (kind and cardinality bound intact) or
+Collections of Options and Options of Collections, so the bare route reads each
+member's type and presence from the package and evaluates slots over such records as
+the in-process route does. A shape Contract IR cannot carry keeps the refusal, and Contract IR's criteria give
+no positive case for an optional member typed by an Option or for an Option nested in
+an Option through aliases; such a shape is an unmet dependency, not a scope reduction
+(FR-390).
 
 ### Equivalence
 
@@ -296,7 +289,7 @@ FR-520-AC-11 states.
 | FR-533-AC-4 | A call-graph search from `qsl_eval::bare::BarePackage::evaluate_protocol_slot` finds that no function reachable from it takes or reads a `CheckedPackage`, `CheckedBody`, `AdmittedPackageRead::source` or a source `Graph`, that `protocol_selection::select` over a source is not called on the bare route, and that the bare route's `NodeKind` match has no wildcard arm. | Inspection (TC-1333) |
 | FR-533-AC-5 | A bare observation admission over the domain package documents of **R**'s model admits the snapshot that the source route admits, with equal `AdmissionUsage`; a model selection the package does not hold refuses `invalid_model_binding`/`wrong-model-selection` as FR-390-AC-21 states, with equal records on both routes. | Test (TC-1333) |
 | FR-533-AC-6 | Over a package whose `model_root` nodes select a model other than the supply's, the bare slot call refuses before any charge with the record the source route gives for the same mismatch. | Test (TC-1333) |
-| FR-533-AC-7 | The bare route evaluates a slot whose binder type is a record with a plain Collection member, a record with a nested Collection member (a collection of options or of collections) and a record with a nested Option member (an Option of a collection or of an option) to the value and charge log of the source route; a recursive record and a record with a plain Option member evaluate on the bare route already. Until the wire projector carries those member types, the bare route refuses each of the three cases with `ViewFailure::Unsupported` and `MissingTypeRepresentation` at the `Node` locus of the binder, carrying `unknown_required_feature`/`unsupported-feature`, no partial value and no charge, while the source route evaluates the slot; the test records the unmet parity, and where Contract IR's projection is measured to carry a plain Collection member the first case moves from refusal to evaluation. No value of a different type is substituted. | Test (TC-1333) |
+| FR-533-AC-7 | The bare route evaluates a slot whose binder type is a record with a plain Collection member, a record with a plain Option member and a record with an Optional Collection member to the ordered charge log of the source route and to a value of the same record with the same members, and each binder's value type equals the source route's. A record's fields are declared in a different order on the two routes (the source route's by name, the bytes route's as the package declares them), so a value built in one route's type environment does not equal the same value built in the other's; the requirement therefore compares each route's result with the same record built in that route's own environment, and field-order equality across routes is not yet met. A slot whose binder record Contract IR cannot project (its identity rows hold no field rows) refuses with `ViewFailure::Unsupported` and `MissingTypeRepresentation` at the `Node` locus of the binder, carrying `unknown_required_feature`/`unsupported-feature`, no partial value and no charge. No value of a different type is substituted. | Test (TC-1333) |
 | FR-533-AC-8 | A binder unavailable and read returns `Unavailable` naming the binder and the read, with the location the package's rows give (FR-390-AC-32), equal to the in-process route's; where the wire carries no leaf location the bare result is `None` while the in-process result keeps its source location, and the test records that difference as the unmet parity of "Names and locations". | Test (TC-1333) |
 | FR-533-AC-9 | Three slot calls over one `Meter` on the bare route leave a charge log that, per FR-520-AC-7, equals the sum on fresh meters for `work_units` and `result_units` and the maximum for the other eight counters, and equals the log of the same three calls on the source route. | Test (TC-1333) |
 | FR-533-AC-10 | `BarePackage::new`, `with_supply`, view creation, slot selection and supply admission charge no counter and take no `Meter`; a refusal at any of them leaves a caller's meter byte-identical. | Test (TC-1333) |
@@ -320,9 +313,8 @@ FR-520-AC-11 states.
   `protocol_locations` rows with visits) and QSL-1626 (compound `UnitId` in the
   reader projection). Until they land the bare route faults or refuses for those
   slots, which is unmet parity, not a scope reduction.
-- **Contract IR:** IR-1324 (the exact projection carries Collection members, plain or
-  nested, and nested Option members of selected records; owner luna:IR:codex2) is the unmet-parity
-  dependency of FR-533-AC-7. The direct dependencies a package retains from its
+- **Contract IR:** the exact projection of a selected record carries Collection
+  and Option members (FR-352-AC-12 to AC-15 of Contract IR). The direct dependencies a package retains from its
   read evidence are read through `CheckedPackageV2::direct_dependencies()`
   (FR-531), so a package that has dependencies is no unmet parity.
 - **Downstream:** quire-protocol FR-045.
