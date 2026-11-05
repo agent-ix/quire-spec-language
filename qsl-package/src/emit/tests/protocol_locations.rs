@@ -941,10 +941,19 @@ fn reader_refuses_a_slot_whose_origin_has_no_row() {
 #[test]
 fn the_reader_projects_a_conditional_slot_root() {
     reader_view_over(
-        &e_c_with_let(false),
+        &e_c_with_let(true),
         |_| {},
         |result| {
-            let slots = result.expect("the admitted conditional is projected");
+            let slots = result.expect("the admitted let and conditional are projected");
+            let Some(crate::ReaderSlot::Projected(let_projection)) =
+                slots.slot_named(&composed("Bound"))
+            else {
+                panic!("the let root is projected");
+            };
+            assert!(matches!(
+                let_projection.kind(let_projection.root()),
+                Some(quire_checked::node::NodeKind::Let { .. })
+            ));
             let Some(crate::ReaderSlot::Projected(projection)) =
                 slots.slot_named(&composed("Branch"))
             else {
