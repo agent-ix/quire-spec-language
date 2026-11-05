@@ -38,3 +38,10 @@ CONDITIONAL. The AC-8 derived items and the AC-11 rows other than the Boolean cl
 The AC-7 and AC-11 tags over-claim on two units (FND-001, FND-002) and leave AC-7's caller-order clause unexercised (FND-003). Must change in this PR: remove the `assert_ne!` at claim_family.rs:239 (FND-002). Take the Boolean-clause half out of the AC-11 tag, or mark it `Remaining work: QSL-1714` (FND-001). Settle the AC-7 items in one `analyze_items` call so the test checks caller order (FND-003). Asserting the expression-node carrier and `model == code` can wait for QSL-1714/QSL-1715, because the producer does not yet emit that carrier. FND-004 can stay a disclosed stand-in.
 
 The FR-507-AC-11 hybrid row is exercised through a temporal claim over a hybrid subject, as the AC words it. The protocol-abstract refinement row is covered: `cas_twice` has the protocol `Spec::Twice` as its abstract side. FR-507-AC-9 is not tagged by this PR. One `None` read, the function node at role `anchor`, adds evidence for it.
+
+## Dispositions
+
+- FND-001: fixed. The Boolean clause is out of the AC-11 tag, marked `Remaining work: QSL-1714`.
+- FND-002: fixed. The `assert_ne!` is removed; `model == code` waits for QSL-1715.
+- FND-003: fixed. AC-7 items settle in one `analyze_items` call with order and indices asserted.
+- FND-004: accepted-no-change. The `Engine::probe` stand-in stays disclosed.

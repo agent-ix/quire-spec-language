@@ -79,3 +79,15 @@ Gates on the trial merge with origin/main 823b9a9aa (clean auto-merge):
 - Focused `qsl-analyze --test it` (claim_family, hyper_settle, operation_contract, value_validity, refinement_protocol) with QSPEC_DIR: 91 passed.
 - `cargo clippy -p qsl-analyze --all-targets -- -D warnings`, default and `--all-features`: clean.
 - `cargo check --locked --workspace --all-targets`: clean.
+
+## Dispositions
+
+- FND-001: fixed. The Boolean clause half left the AC-11 tag for an untagged test marked `Remaining work: QSL-1714`; the reader's Function row is commented as the interim carrier and kept.
+- FND-002: fixed. The `assert_ne!` is deleted and the `relation_claims` doc names QSL-1715.
+- FND-003: fixed. `semantic_form` and role words decode once at `#[ix_trace_rs::string_edge]` fns into `Form` and `Role` enums; the table matches the enums. `ix-trace-rs` moved from dev-dependencies to dependencies in qsl-analyze (no lock change).
+- FND-004: fixed. `a_protocol_clause_item_is_settled_by_en1_not_refused`; reverting the default to `Protocol` fails it.
+- FND-005: fixed. `item_kind_and_occurrence_role_decide_the_family`; both the `Refinement` and the `operation_anchor` role mutations fail it.
+- FND-006: fixed. The AC-7 tests settle their items in one `analyze_items` call and assert indices and order.
+- FND-007: fixed. FR-507 Dependencies carries the `Remaining work:` line. docs/deletion-table.md P-03 and P-40 now say only AC-6 is untagged.
+- FND-008: deferred: low, can wait.
+- FND-009: deferred: low, can wait.

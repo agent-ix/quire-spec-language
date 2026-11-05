@@ -295,9 +295,19 @@ fn a_bound_relations_model_and_code_claims_are_read_as_relation_claims() {
             Some(relation)
         );
     }
-    assert_inapplicable(&settled[2], 2, Capability::GlobalConformance, Some(relation));
+    assert_inapplicable(
+        &settled[2],
+        2,
+        Capability::GlobalConformance,
+        Some(relation),
+    );
     assert_inapplicable(&settled[3], 3, Capability::Schedulability, Some(relation));
-    assert_inapplicable(&settled[4], 4, Capability::GlobalConformance, Some(relation));
+    assert_inapplicable(
+        &settled[4],
+        4,
+        Capability::GlobalConformance,
+        Some(relation),
+    );
     assert_inapplicable(&settled[5], 5, Capability::Schedulability, Some(relation));
 }
 
@@ -396,7 +406,12 @@ fn a_proof_eligible_refinements_four_occurrences_are_relation_claims() {
         if position < 4 {
             assert_engine_settled(settled, position);
         } else {
-            assert_inapplicable(settled, position, Capability::Schedulability, Some(relation));
+            assert_inapplicable(
+                settled,
+                position,
+                Capability::Schedulability,
+                Some(relation),
+            );
         }
     }
 }
