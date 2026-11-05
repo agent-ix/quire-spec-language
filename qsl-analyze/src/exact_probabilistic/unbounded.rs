@@ -1127,7 +1127,7 @@ impl<'a> Graph<'a> {
     }
 }
 
-fn same_action(left: &ProductAction, right: &ProductAction) -> bool {
+pub(super) fn same_action(left: &ProductAction, right: &ProductAction) -> bool {
     match (left, right) {
         (ProductAction::Identity(a), ProductAction::Identity(b)) => a == b,
         (ProductAction::PostState(a), ProductAction::PostState(b)) => a == b,

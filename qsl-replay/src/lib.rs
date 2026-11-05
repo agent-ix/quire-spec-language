@@ -66,6 +66,7 @@ mod monitor_plan;
 mod object_environment;
 mod outcome;
 mod probability_certificate;
+mod product_action;
 mod proof_result;
 mod refinement;
 mod refinement_query;
@@ -321,6 +322,10 @@ pub use probability_certificate::{
     ExactProbabilityGraphError, ExactProbabilityValue, ProbabilityBoundSide,
     ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
     ProbabilityObjective, ProbabilityProductKey,
+};
+pub use product_action::{
+    ActionBody, ActionBodyError, ActionBodyRefusal, BodyRow, FreeDelayRow, FreeDelaysRace,
+    FreeRacer, GivenRacer, NotMixedRace, Schedule,
 };
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,

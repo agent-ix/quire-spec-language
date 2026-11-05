@@ -33,6 +33,7 @@ pub(crate) mod plan;
 mod rows;
 mod settle;
 mod unbounded;
+mod witness;
 
 pub use build::build_product;
 pub use fair::{
@@ -44,6 +45,7 @@ pub use fair::{
 pub use finite_horizon::{
     backward_induction, decide_bounded_event, Dyadic, FhError, FhObjective, FhResult,
 };
+pub use qsl_replay::FreeDelayRow;
 pub use rows::free_delays_choice;
 pub use settle::settle_product_refusal;
 pub use unbounded::{
@@ -51,6 +53,10 @@ pub use unbounded::{
     decide_reachability, decide_reachability_threshold, decide_until, decide_until_threshold,
     ComponentValue, ExtRational, GainBias, LongRunResult, UnboundedError, UnboundedObjective,
     UnboundedOutcome, UnboundedResult,
+};
+pub use witness::{
+    action_steps, policy_action, produce_witness, ProducedPath, ProducedStep, ProducedWitness,
+    WitnessError, WitnessScope,
 };
 
 use qsl_eval::automaton::{AutomatonError, StateId};
@@ -514,20 +520,6 @@ pub enum ProductAction {
     /// state by FR-204's row-factored operator, and
     /// [`free_delays_choice`] reads back the whole action a policy takes.
     FreeDelays(Vec<FreeDelayRow>),
-}
-
-/// One row of a [`ProductAction::FreeDelays`] action (FR-196): a drawn
-/// given-delay vector and the scheduler's delay for every free racing
-/// identity after that draw, in digital units. Both lists are sorted by the
-/// identities' canonical schedule bytes (FR-187).
-#[derive(Clone, Debug, PartialEq)]
-pub struct FreeDelayRow {
-    /// Each racing identity whose delay a `discrete` distribution gives, with
-    /// its drawn delay.
-    pub given: Vec<(ScheduledIdentity, u64)>,
-    /// Each racing identity whose delay no distribution gives, with the delay
-    /// the scheduler chooses for it.
-    pub free: Vec<(ScheduledIdentity, u64)>,
 }
 
 /// One product edge, with its exact probability.
