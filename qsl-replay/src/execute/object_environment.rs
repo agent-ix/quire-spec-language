@@ -191,8 +191,7 @@ pub(super) fn admit(
     let Some(named) = request.object_environment() else {
         return Err(fault("environment-admitted-only-when-named"));
     };
-    // The environment resolves in the package that declares the function
-    // (the owner's for an owner-carrying request), with that package's source.
+    // The environment resolves in the package that declares the function.
     let package = declaring.package;
     let provision = request.byte_provision().snapshots();
     let labels = named.identity();
@@ -216,16 +215,10 @@ pub(super) fn admit(
     )
     .map_err(environment_refusal)?;
 
-    let unit = if declaring.imported {
-        request
-            .dependencies()
-            .iter()
-            .find(|entry| entry.identity() == declaring.library)
-            .and_then(|entry| entry.sources().first())
-    } else {
-        request.sources().first()
-    }
-    .ok_or_else(|| fault("decoded-request-names-a-source"))?;
+    let unit = request
+        .sources()
+        .first()
+        .ok_or_else(|| fault("decoded-request-names-a-source"))?;
     let source = RawSourceRef::new(unit.authority(), unit.identity())
         .map_err(|_| fault("package-source-names-a-source-document"))?;
     let key = BundleKey {
