@@ -734,3 +734,28 @@ fn two_units_writing_one_spelling_resolve_each_through_its_own_bindings() {
         "{refusal:?}"
     );
 }
+
+#[test]
+fn scratch_probe() {
+    let packages = [(
+        "M",
+        "acme/rpc",
+        with_quantities(
+            time_package("acme/rpc", false, &[("s", None, "1")]),
+            &[("Rate", &[])],
+            &[("us", "Rate", None, "1")],
+        ),
+    )];
+    for body in [
+        "unit tick : M::Rate = rational(1, 2) * M::us;",
+        "unit tick : M::Rate = rational(1, 2) * M::us;\nunit tock : M::Rate = rational(3, 1) * tick;\nfunction k1 using v(d: Quantity<tick>): Boolean pure { convert<Quantity<M::us>>(d) = 1 M::us }",
+        "unit bad : M::Rate = rational(1, 2) * s;",
+        "unit r2 : M::Rate = rational(1, 1);",
+        "unit z : M::Rate = rational(0, 1) * M::us;",
+        "unit g : M::Rate = rational(1, 2) * M::ghost;",
+        "unit tick : M::Time = rational(1, 2) * M::s;",
+    ] {
+        let (_, r) = assemble_selected_as(("agent-ix", "example"), &packages, body);
+        eprintln!("{body}\n => {:?}", r.map(|_| ()).map_err(|e| e.errors));
+    }
+}
