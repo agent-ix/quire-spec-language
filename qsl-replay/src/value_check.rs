@@ -545,6 +545,11 @@ impl<'p> ValueTarget<'p> {
                     (Value::Integer(n), ParameterDomain::Integers(Some(interval))) => {
                         n >= interval.lower() && n <= interval.upper()
                     }
+                    // A mathematical `Integer` has no bound to leave: a
+                    // counterexample an unbounded backend reports (QSpec
+                    // FR-147-AC-7, AC-8) replays at its own integers, never
+                    // narrowed to an `Int[..]` (FR-495-AC-5).
+                    (Value::Integer(_), ParameterDomain::Unbounded) => true,
                     (value, ParameterDomain::Values(values)) => {
                         values.iter().any(|candidate| same_value(candidate, value))
                     }
