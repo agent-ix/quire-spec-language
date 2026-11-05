@@ -1344,7 +1344,10 @@ impl TerminalValue {
             | CallSiteRefusal::AmbiguousOperation { .. }
             | CallSiteRefusal::UnknownClause { .. }
             | CallSiteRefusal::UnknownField { .. }
-            | CallSiteRefusal::UnknownPopulation { .. } => Self::Declined {
+            | CallSiteRefusal::UnknownPopulation { .. }
+            | CallSiteRefusal::UnknownImport { .. }
+            | CallSiteRefusal::UnknownImportedFunction { .. }
+            | CallSiteRefusal::NotImportable { .. } => Self::Declined {
                 cause: ProofRefusalCause::InvalidInput,
                 code: DeclineCode::Qsl(refusal.code()),
             },
