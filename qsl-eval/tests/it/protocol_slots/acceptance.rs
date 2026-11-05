@@ -4836,6 +4836,12 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
         assert_eq!(chosen.frame_len(), got.len());
         // The site name the source selector locates the slot under.
         let source_origin = format!("{:?}", source.checked_body().root().location().origin);
+        // A slot whose root holds rows has exactly one origin, never none.
+        assert!(
+            !row_origins.contains(&source_origin) || chosen.origin().is_some(),
+            "{}: the slot's rows exist under {source_origin} but the bytes route found no origin",
+            parity.name
+        );
         // FR-533-AC-12: exactly one origin, the source route's.
         if let Some(origin) = chosen.origin() {
             assert_eq!(
