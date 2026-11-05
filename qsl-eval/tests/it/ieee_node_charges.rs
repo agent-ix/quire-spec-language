@@ -1080,3 +1080,138 @@ fn f17_standalone_numeric_equality_charges_as_compare_ieee() {
         );
     }
 }
+
+/// FR-397-AC-28 and FR-397 "Evaluate once" (QSL-1724, IR-1282 AC3): the
+/// numeric-equality part of a float ordering's composition takes its decision
+/// from the owned `quire_exact` comparison yet adds no charge: the ordering
+/// charges the `ieee.*` points of its own comparison only. Covers NaN, signed
+/// zeros, equal and unequal operands, and both widths.
+#[trace("TC-1091", "FR-397-AC-26", "FR-397-AC-28")]
+#[test]
+fn ordering_part_numeric_equality_uses_the_owned_comparison_and_adds_no_charge() {
+    let big = limits(1 << 40, 1 << 40, 1 << 40, 1 << 40);
+    for (width, ty) in [(32_u8, F32), (64, F64)] {
+        let (zero, neg_zero, one, two, nan) = if width == 32 {
+            (
+                f32v(0),
+                f32v(0x8000_0000),
+                f32v(0x3f80_0000),
+                f32v(0x4000_0000),
+                f32v(0x7fc0_0001),
+            )
+        } else {
+            (
+                f64v(0),
+                f64v(0x8000_0000_0000_0000),
+                f64v(0x3ff0_0000_0000_0000),
+                f64v(0x4000_0000_0000_0000),
+                f64v(0x7ff8_0000_0000_0001),
+            )
+        };
+        let params = format!("a: {ty}, b: {ty}");
+        let rows = [
+            ("a <= b", &zero, &neg_zero, true),
+            ("a <= b", &neg_zero, &zero, true),
+            ("a >= b", &zero, &neg_zero, true),
+            ("a < b", &zero, &neg_zero, false),
+            ("a <= b", &one, &one, true),
+            ("a >= b", &one, &one, true),
+            ("a < b", &one, &one, false),
+            ("a <= b", &one, &two, true),
+            ("a >= b", &one, &two, false),
+            ("a <= b", &nan, &one, false),
+            ("a >= b", &nan, &nan, false),
+            ("a <= b", &nan, &nan, false),
+        ];
+        for (body, left, right, expected) in rows {
+            let args = vec![left.clone(), right.clone()];
+            let actual = run(&params, "Boolean", body, args, big, (ty, "a"));
+            same(
+                &actual.outcome,
+                Outcome::Completed(Value::Boolean(expected)),
+            );
+            // The ordering's own comparison charges its `ieee.*` points; its
+            // numeric-equality part adds none, so `<=` and `>=` charge the
+            // `ieee.*` points the plain `<` over the same operands does.
+            let ieee_points = |run: &Run| {
+                run.charges
+                    .iter()
+                    .filter(|point| {
+                        matches!(
+                            point,
+                            ChargePoint::IeeeOperands | ChargePoint::IeeeResultRetain
+                        )
+                    })
+                    .count()
+            };
+            let plain = run(
+                &params,
+                "Boolean",
+                "a < b",
+                vec![left.clone(), right.clone()],
+                big,
+                (ty, "a"),
+            );
+            assert_eq!(
+                ieee_points(&actual),
+                ieee_points(&plain),
+                "{body} on {width}-bit operands: {:?}",
+                actual.charges
+            );
+            assert!(ieee_points(&actual) <= 2, "{:?}", actual.charges);
+        }
+    }
+}
+
+/// FR-397-AC-26: a float ordering never meets operands of two widths. The call
+/// boundary refuses an argument whose width is not its parameter's, so the
+/// owned comparison's ill-typed refusal cannot reach the ordering-part
+/// numeric-equality decision.
+#[trace("TC-1091", "FR-397-AC-26")]
+#[test]
+fn ordering_over_a_cross_width_argument_is_refused_at_the_call() {
+    let big = limits(1 << 40, 1 << 40, 1 << 40, 1 << 40);
+    let params = format!("a: {F64}, b: {F64}");
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function f using v({params}): Boolean pure {{ a <= b }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler admits the unit");
+    declarations.ieee_profile =
+        Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the unit checks"),
+    );
+    let mut meter = Meter::new(big);
+    let refusal = package
+        .call(
+            &QualifiedName::unqualified("f").expect("f is an identifier"),
+            vec![f64v(0), f32v(0)],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect_err("a binary32 argument for a binary64 parameter is refused");
+    assert_eq!(
+        format!("{refusal:?}"),
+        "Input(WrongValueKind { parameter: 1 })"
+    );
+    assert!(meter.admitted_charges().is_empty());
+}

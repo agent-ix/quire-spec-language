@@ -152,9 +152,9 @@ into a float. Model float fields are refused at intake (FR-091).
     one `compare_ieee` charge (QSpec FR-148, its operand and result charge
     points) for the `totalOrder` part, charged only when the composition reaches
     that part. The `numericEqual` parts of the composition, `N(a)`, `N(b)` and
-    `numericEqual(a, b)`, are computed inline from the evaluated operand bits;
-    the evaluator SHALL NOT route them through `compare_ieee` and SHALL charge
-    nothing for them. A standalone `quire.op.ieee.numeric_equal`,
+    `numericEqual(a, b)`, take their decision from the owned `compare_ieee`
+    run on an unlimited scratch meter over the evaluated operand bits; the
+    evaluator SHALL NOT charge the evaluation meter anything for them. A standalone `quire.op.ieee.numeric_equal`,
     `quire.op.ieee.total_order` or `quire.op.ieee.bit_identical` node (`a = b`,
     the `numeric_equal` node under the `not` of `a != b`, and the
     `numericEqual`, `totalOrder` and `bitIdentical` calls) charges one
@@ -275,8 +275,9 @@ into a float. Model float fields are refused at intake (FR-091).
   `quire.value.accounting/v1`, at the sizes FR-148 states, in its order, and no
   other charge. The one stated exception is an ordering composition (`<`,
   `<=`, `>`, `>=`) under "Evaluate once" (FR-397-AC-26): its `numericEqual`
-  parts `N(a)`, `N(b)` and `numericEqual(a, b)` are computed inline from the
-  evaluated operand bits and charge nothing, and the composition charges at
+  parts `N(a)`, `N(b)` and `numericEqual(a, b)` take their decision from the
+  owned `compare_ieee` run on an unlimited scratch meter over the evaluated
+  operand bits and charge the evaluation meter nothing, and the composition charges at
   most one `compare_ieee`, for its `totalOrder` part. QSpec FR-148 states that
   a comparison operator's charges are those of the operations composed, so
   this is a QSL lead default (FR-397-OQ-1).
@@ -349,7 +350,7 @@ into a float. Model float fields are refused at intake (FR-091).
 
 | Question | Ruling | Reason | Reopen when |
 | --- | --- | --- | --- |
-| FR-397-OQ-1, charges of an ordering composition | Lead default (2026-11-04, not an owner answer; Peter may veto): an ordering comparison evaluates each operand once, computes its `numericEqual` parts inline with no charge, and charges at most one `compare_ieee` for its `totalOrder` part ("Evaluate once", FR-397-AC-26). Every other IEEE node charges through `quire_exact` as the Meter bullet states. | The inline parts read bits already evaluated and retained, so charging three further `compare_ieee` reads would bill the same operands again; FR-397-AC-26 fixes the spend that follows. QSpec FR-148 says only that a comparison operator's charges are the charges of the operations composed, and states no rule for a shared operand. | QSpec FR-148 rules on the charges of a composed comparison; QSL then charges each composed part as that ruling states and amends FR-397-AC-26. |
+| FR-397-OQ-1, charges of an ordering composition | Lead default (2026-11-04, not an owner answer; Peter may veto): an ordering comparison evaluates each operand once, takes the decision of its `numericEqual` parts from the owned `compare_ieee` on an unlimited scratch meter, charging the evaluation meter nothing for them, and charges at most one `compare_ieee` for its `totalOrder` part ("Evaluate once", FR-397-AC-26). Every other IEEE node charges through `quire_exact` as the Meter bullet states. | The scratch-meter parts read bits already evaluated and retained, so charging three further `compare_ieee` reads would bill the same operands again; FR-397-AC-26 fixes the spend that follows. QSpec FR-148 says only that a comparison operator's charges are the charges of the operations composed, and states no rule for a shared operand. | QSpec FR-148 rules on the charges of a composed comparison; QSL then charges each composed part as that ruling states and amends FR-397-AC-26. |
 
 ## Dependencies
 
