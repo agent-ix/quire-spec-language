@@ -45,7 +45,7 @@ use crate::protocol_compensation::pay;
 
 /// A claim over `k: M::Cell`, `on origin`, under event-position
 /// false-extension.
-fn claim(formula: &str) -> String {
+pub(crate) fn claim(formula: &str) -> String {
     format!(
         "temporal Claim using tb over (k: M::Cell) clock \"model-steps\" on origin \
          {{ {formula} }}\n"
@@ -53,16 +53,16 @@ fn claim(formula: &str) -> String {
 }
 
 /// `body` from one initial snapshot, `c.v = 0`, with its checked package.
-struct Case {
-    body: String,
-    documents: Documents,
-    initial: Vec<DocumentRef>,
-    checked: CheckedPackage,
-    temporal_clock_selections: Vec<qsl_package::TemporalClockSelection>,
+pub(crate) struct Case {
+    pub(crate) body: String,
+    pub(crate) documents: Documents,
+    pub(crate) initial: Vec<DocumentRef>,
+    pub(crate) checked: CheckedPackage,
+    pub(crate) temporal_clock_selections: Vec<qsl_package::TemporalClockSelection>,
 }
 
 impl Case {
-    fn new(body: &str) -> Self {
+    pub(crate) fn new(body: &str) -> Self {
         let mut documents = Documents::new();
         let initial = vec![documents.start("s0", &[("c", 0)])];
         let checked = package(body);
@@ -76,7 +76,7 @@ impl Case {
         }
     }
 
-    fn subject(&self, protocol: &str) -> ProtocolSubject<'_> {
+    pub(crate) fn subject(&self, protocol: &str) -> ProtocolSubject<'_> {
         subject(
             &self.checked,
             &self.documents,
@@ -86,12 +86,12 @@ impl Case {
         )
     }
 
-    fn clause(&self) -> &CheckedTemporalClause {
+    pub(crate) fn clause(&self) -> &CheckedTemporalClause {
         self.checked.graph().temporal_clauses()[0].clause()
     }
 
     /// EN-1 over `protocol`'s claim, read through `letters`.
-    fn check(
+    pub(crate) fn check(
         &self,
         protocol: &str,
         letters: &dyn ModelLetters,
@@ -176,7 +176,7 @@ impl Case {
 }
 
 /// The claim's one atom, a predicate of the bound cell's `v`.
-struct CellV(fn(i64) -> bool);
+pub(crate) struct CellV(pub(crate) fn(i64) -> bool);
 
 impl ModelLetters for CellV {
     crate::units::unguarded!();
@@ -603,7 +603,7 @@ fn a_past_window_is_measured_in_counted_steps() {
 /// on a channel whose delivery is `unknown`, so `duplicate` then `lose`
 /// returns to the state it left, and then runs `A`, which makes `k.v` 1. The
 /// product state of the cycle coalesces and the monitor never rejects.
-fn lossy_channel(members: &str) -> Case {
+pub(crate) fn lossy_channel(members: &str) -> Case {
     let members = format!(
         "channel ch from w to w carries Boolean ordering fifo by (m: Boolean) \
          {{ true }} delivery unknown capacity 2 overflow block; {members}"

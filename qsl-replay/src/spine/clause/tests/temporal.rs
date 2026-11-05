@@ -90,6 +90,13 @@ enum Unit {
     /// the atom from `c.value`, and `Plain`, an atom no quantifier decides,
     /// each activated at every position under the bounded profile.
     Decisive,
+    /// `RefusedAfterTrue`, `FalseThenRefused` and `RefusedWhole`: `holds`
+    /// atoms whose S6a result is a kernel `integer_out_of_domain` refusal
+    /// where `c.value` is 1 or more (FR-327 "Refused condition"), under the
+    /// bounded profile.
+    Refusing,
+    /// The same atom under infinite-trace.
+    RefusingInfinite,
 }
 
 impl Unit {
@@ -98,8 +105,14 @@ impl Unit {
             Self::Bounded | Self::RenamedTwin => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
-            Self::Infinite | Self::Safety => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
-            Self::Undefined | Self::Guarded | Self::GuardUndefined | Self::Decisive => {
+            Self::Infinite | Self::Safety | Self::RefusingInfinite => {
+                "profile t = \"quire.temporal.infinite-trace/v1\";\n"
+            }
+            Self::Undefined
+            | Self::Guarded
+            | Self::GuardUndefined
+            | Self::Decisive
+            | Self::Refusing => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
             Self::Timestamped => {
@@ -238,6 +251,26 @@ impl Unit {
                 "temporal Safety using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { always holds(c.value <= 1) }\n"
             }
+            Self::Refusing => concat!(
+                "type Zero = Int[0, 0];\n",
+                "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
+                 pure { xs }\n",
+                "temporal RefusedAfterTrue using t over (c: Counters::Counter) \
+                 clock \"model-steps\" on origin \
+                 { always[0,2] holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+                "temporal FalseThenRefused using t over (c: Counters::Counter) \
+                 clock \"model-steps\" on origin \
+                 { always[0,2] holds(c.value = 1 and \
+                 count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+            ),
+            Self::RefusingInfinite => concat!(
+                "type Zero = Int[0, 0];\n",
+                "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
+                 pure { xs }\n",
+                "temporal RefusedWhole using t over (c: Counters::Counter) \
+                 clock \"model-steps\" on origin \
+                 { always holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+            ),
             Self::Decisive => {
                 "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
                  pure { xs }\n\
@@ -3254,6 +3287,7 @@ fn timestamped_progress_is_admitted_into_the_ledger() {
 
 mod checked_route_owner;
 mod progressed;
+mod refused;
 mod wire;
 
 /// FR-502 (per-occurrence binding): two clauses with equal bodies and
