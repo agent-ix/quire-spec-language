@@ -390,6 +390,63 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
     assert_eq!(item.conversion_context(), None);
 }
 
+/// The checked package of `q(a, b) = if b != 0 then a <operator> b else 0`
+/// under `role`'s division law, with the sorted integer domains of `a` and `b`.
+fn division_package(
+    operator: &str,
+    role: qsl_semantics::value::DefinitionRole,
+) -> (CheckedPackage, Vec<(DomainKey, DomainKind)>) {
+    use qsl_semantics::value::admit_integer_division;
+    let text = format!(
+        "{HEADER}function q using v(a: Integer, b: Integer): Integer pure \
+         {{ if b != 0 then a {operator} b else 0 }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_string(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the unit assembles");
+    declarations.integer_division =
+        Some(admit_integer_division(&[role.reference()], None).expect("a closed law"));
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{operator}: {refusals:?}")),
+    );
+    let graph = package.graph();
+    let parameters = graph
+        .semantic_graph()
+        .node(graph.function_identity("q").expect("q is declared"))
+        .and_then(|function| function.function_parameters())
+        .expect("q's function node")
+        .to_vec();
+    let mut integer_domains: Vec<_> = parameters
+        .iter()
+        .map(|parameter| {
+            (
+                DomainKey::Node {
+                    node: parameter.clone(),
+                    path: Vec::new(),
+                },
+                DomainKind::Integer,
+            )
+        })
+        .collect();
+    integer_domains.sort();
+    (package, integer_domains)
+}
+
 /// Request construction keeps integer-division operand domains mathematical
 /// and unbounded, even when a finite backend is registered and a finite bound
 /// is available.
@@ -397,7 +454,7 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
 /// occur downstream.
 #[test]
 fn request_items_keep_integer_division_domains_unbounded() {
-    use qsl_semantics::value::{admit_integer_division, DefinitionRole};
+    use qsl_semantics::value::DefinitionRole;
     use quire_exact::DivisionProfile;
 
     for profile in [
@@ -411,55 +468,8 @@ fn request_items_keep_integer_division_domains_unbounded() {
             DivisionProfile::Euclidean => DefinitionRole::IntegerDivisionEuclidean,
         };
         for operator in ["div", "rem", "mod"] {
-            let text = format!(
-                "{HEADER}function q using v(a: Integer, b: Integer): Integer pure \
-                 {{ if b != 0 then a {operator} b else 0 }}\n"
-            );
-            let parsed = qsl_cst::parse(
-                SourceIdentity::new("a", "u"),
-                "unit.native",
-                text.as_bytes(),
-                qsl_cst::Limits::default(),
-            )
-            .expect("S1 reads the unit");
-            let unit = build_unit(&parsed).expect("S2 builds the unit");
-            let mut declarations = PackageDeclarations::assemble(
-                parsed.source().reference().clone(),
-                "fixture".to_string(),
-                unit,
-                Vec::new(),
-                Vec::new(),
-            )
-            .expect("the unit assembles");
-            declarations.integer_division =
-                Some(admit_integer_division(&[role.reference()], None).expect("a closed law"));
-            let package = CheckedPackage::link(
-                declarations
-                    .check(CheckingLimits::default())
-                    .unwrap_or_else(|refusals| panic!("{operator}: {refusals:?}")),
-            );
+            let (package, integer_domains) = division_package(operator, role);
             let graph = package.graph();
-            let parameters = graph
-                .semantic_graph()
-                .node(graph.function_identity("q").expect("q is declared"))
-                .and_then(|function| function.function_parameters())
-                .expect("q's function node")
-                .to_vec();
-            let integer_domains: Vec<_> = parameters
-                .iter()
-                .map(|parameter| {
-                    (
-                        DomainKey::Node {
-                            node: parameter.clone(),
-                            path: Vec::new(),
-                        },
-                        DomainKind::Integer,
-                    )
-                })
-                .collect();
-            let mut integer_domains = integer_domains;
-            integer_domains.sort();
-
             let descriptor = backend("kani", (Capability::ValueValidity, Mode::Bounded));
             let kani = descriptor.candidate().clone();
             let mut bounded_alone = Registry::new();
@@ -496,6 +506,75 @@ fn request_items_keep_integer_division_domains_unbounded() {
                     candidates(item).contains(&cvc5),
                     smt_registered,
                     "{operator}: cvc5 candidate with smt_registered={smt_registered}"
+                );
+            }
+        }
+    }
+}
+
+/// FR-495-AC-7 (TC-1284): an integer `div`, `rem` or `mod` item under each of
+/// the three division laws, beside a bounded descriptor whose settled
+/// disposition for the item is the fixture `requires-bound`, routes to no
+/// target: no harness is chosen, so S6a has nothing to evaluate, and the
+/// item's extent stays `Unbounded` over `a` and `b` as `Integer`, never
+/// narrowed to `Int[..]`. Both a run with a cvc5 provider registered and a run
+/// with the bounded descriptor alone are checked.
+///
+/// QSpec FR-147-AC-3 coverage (FR-495's trace clause) is the request and
+/// route half only; end-to-end negotiation belongs to codegen's `negotiate_*`.
+#[trace("TC-1284", "FR-495-AC-7")]
+#[test]
+fn requires_bound_division_items_route_to_no_target_in_both_runs() {
+    use qsl_route::routing::{route, Disposition};
+    use qsl_semantics::value::DefinitionRole;
+
+    for role in [
+        DefinitionRole::IntegerDivisionTruncating,
+        DefinitionRole::IntegerDivisionFloor,
+        DefinitionRole::IntegerDivisionEuclidean,
+    ] {
+        for operator in ["div", "rem", "mod"] {
+            let (package, integer_domains) = division_package(operator, role);
+            let descriptor = backend("kani", (Capability::ValueValidity, Mode::Bounded));
+            let mut bounded_alone = Registry::new();
+            bounded_alone
+                .register(descriptor.clone())
+                .expect("one registration");
+            let mut with_smt = Registry::new();
+            with_smt.register(descriptor).expect("one registration");
+            with_smt
+                .register(backend(
+                    "cvc5",
+                    (Capability::ValueValidity, Mode::Unbounded),
+                ))
+                .expect("the SMT registration");
+
+            for (registry, run) in [(&with_smt, "with cvc5"), (&bounded_alone, "bounded alone")] {
+                let items = items_from_requirements(package.graph().requirements(), registry, None);
+                let division: Vec<_> = items
+                    .iter()
+                    .filter(|item| item.unbounded() == integer_domains)
+                    .collect();
+                let [item] = division.as_slice() else {
+                    panic!("{role:?} {operator} {run}: one division item: {items:#?}");
+                };
+                assert_eq!(
+                    item.extent(),
+                    ExtentClassification::Unbounded {
+                        finite_bound_available: true
+                    },
+                    "{role:?} {operator} {run}"
+                );
+                assert!(
+                    item.unbounded()
+                        .iter()
+                        .all(|(_, kind)| *kind == DomainKind::Integer),
+                    "{role:?} {operator} {run}"
+                );
+                assert_eq!(
+                    route(&[Disposition::RequiresBound]),
+                    [None],
+                    "{role:?} {operator} {run}"
                 );
             }
         }
