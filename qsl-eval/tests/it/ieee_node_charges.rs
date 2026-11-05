@@ -406,6 +406,27 @@ fn f64_ieee_negation_preserves_the_source_mode_and_payload() {
                 [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain],
                 "{mode}, {source:#018x}"
             );
+
+            let twice = run(
+                &format!("a: {float}"),
+                &float,
+                "-(-a)",
+                vec![f64v(source)],
+                limits(128, 2, 4, 2),
+                (&float, "a"),
+            );
+            same(&twice.outcome, Outcome::Completed(f64v(source)));
+            assert!(twice.flags.is_empty(), "{mode}, {source:#018x}");
+            assert_eq!(
+                twice.charges,
+                [
+                    ChargePoint::IeeeOperands,
+                    ChargePoint::IeeeResultRetain,
+                    ChargePoint::IeeeOperands,
+                    ChargePoint::IeeeResultRetain,
+                ],
+                "{mode}, {source:#018x}"
+            );
         }
     }
 }
